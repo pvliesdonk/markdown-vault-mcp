@@ -160,7 +160,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB",
-          "description": "With EMBEDDING_SEARCH=streamed, the embeddings one batch of a search may hold, in MiB (at least 1). It bounds the search's working memory, not the process's.",
+          "description": "With EMBEDDING_STORE=sqlite and EMBEDDING_SEARCH=streamed, the embeddings one batch of a search may hold, in MiB (at least 1). It bounds the search's working memory, not the process's; postgres scores in the database and does not use it.",
           "format": "number",
           "default": "1"
         },
@@ -181,7 +181,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S",
-          "description": "With EMBEDDING_STORE=postgres, the longest one query may run, in seconds; 0 sets none. The bulk write of a full rebuild is never limited.",
+          "description": "With EMBEDDING_STORE=postgres, the longest one query may run, in seconds (0 sets none; at most 2147483.647). The bulk write of a full rebuild is never limited.",
           "format": "number",
           "default": "30.0"
         },
@@ -801,7 +801,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB",
-          "description": "With EMBEDDING_SEARCH=streamed, the embeddings one batch of a search may hold, in MiB (at least 1). It bounds the search's working memory, not the process's.",
+          "description": "With EMBEDDING_STORE=sqlite and EMBEDDING_SEARCH=streamed, the embeddings one batch of a search may hold, in MiB (at least 1). It bounds the search's working memory, not the process's; postgres scores in the database and does not use it.",
           "format": "number",
           "default": "1"
         },
@@ -822,7 +822,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S",
-          "description": "With EMBEDDING_STORE=postgres, the longest one query may run, in seconds; 0 sets none. The bulk write of a full rebuild is never limited.",
+          "description": "With EMBEDDING_STORE=postgres, the longest one query may run, in seconds (0 sets none; at most 2147483.647). The bulk write of a full rebuild is never limited.",
           "format": "number",
           "default": "30.0"
         },

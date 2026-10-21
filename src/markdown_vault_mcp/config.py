@@ -256,9 +256,10 @@ class ProjectConfig:
         default=1,
         metadata={
             "help": (
-                "With EMBEDDING_SEARCH=streamed, the embeddings one batch of "
-                "a search may hold, in MiB (at least 1). It bounds the "
-                "search's working memory, not the process's."
+                "With EMBEDDING_STORE=sqlite and EMBEDDING_SEARCH=streamed, the "
+                "embeddings one batch of a search may hold, in MiB (at least "
+                "1). It bounds the search's working memory, not the process's; "
+                "postgres scores in the database and does not use it."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -306,8 +307,8 @@ class ProjectConfig:
         metadata={
             "help": (
                 "With EMBEDDING_STORE=postgres, the longest one query may run, "
-                "in seconds; 0 sets none. The bulk write of a full rebuild "
-                "is never limited."
+                "in seconds (0 sets none; at most 2147483.647). The bulk write "
+                "of a full rebuild is never limited."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -1197,8 +1198,8 @@ class ProjectConfig:
         if self.embedding_search != "streamed":
             raise ConfigurationError(
                 "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres searches in the "
-                "database: set MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed, or "
-                "leave it unset."
+                "database: set MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed (read "
+                "from the environment, it defaults to streamed with postgres)."
             )
         if not (self.embedding_postgres_dsn or "").strip():
             raise ConfigurationError(
@@ -1217,10 +1218,12 @@ class ProjectConfig:
                 f"1; got {self.embedding_postgres_pool_size}."
             )
         timeout = self.embedding_postgres_statement_timeout_s
-        if not 0 <= timeout < float("inf"):  # NaN fails both comparisons
+        # PostgreSQL holds statement_timeout as an int of milliseconds; NaN
+        # fails both comparisons.
+        if not 0 <= timeout <= 2147483.647:
             raise ConfigurationError(
                 "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S must be "
-                f"finite and at least 0; got {timeout}."
+                f"between 0 and 2147483.647 (about 24.8 days); got {timeout}."
             )
 
     # CONFIG-FIELDS-END

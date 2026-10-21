@@ -190,3 +190,63 @@ def test_postgres_pool_settings_out_of_range_are_refused(
             settings=settings,
             embedding_provider=MockEmbeddingProvider(dim=16),
         )
+
+
+def test_a_schema_with_surrounding_space_is_used_stripped(
+    tmp_path: Path, postgres_schema: PostgresSchema
+) -> None:
+    settings = _settings(
+        tmp_path,
+        postgres_schema,
+        embedding_postgres_schema=f"  {postgres_schema.name} ",
+    )
+    vault = Vault(
+        source_dir=_root(tmp_path),
+        settings=settings,
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+    try:
+        assert vault._vector_slot.location == postgres_schema.name
+    finally:
+        vault.close()
+
+
+def test_pool_settings_refused_name_their_variables(tmp_path: Path) -> None:
+    settings = VaultSettings(
+        index_path=tmp_path / "index.db",
+        read_only=False,
+        embedding_store="postgres",
+        embedding_search="streamed",
+        embedding_postgres_dsn="host=db",
+        embedding_postgres_schema="vault_a",
+        embedding_postgres_pool_size=0,
+    )
+    with pytest.raises(ConfigurationError, match="EMBEDDING_POSTGRES_POOL_SIZE"):
+        Vault(
+            source_dir=_root(tmp_path),
+            settings=settings,
+            embedding_provider=MockEmbeddingProvider(dim=16),
+        )
+
+
+def test_a_broken_postgres_install_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(sys.modules, "markdown_vault_mcp.stores.postgres_vectors", None)
+    settings = VaultSettings(
+        index_path=tmp_path / "index.db",
+        read_only=False,
+        embedding_store="postgres",
+        embedding_search="streamed",
+        embedding_postgres_dsn="host=db",
+        embedding_postgres_schema="vault_a",
+    )
+    with pytest.raises(
+        ConfigurationError,
+        match=r"postgres\].*import of markdown_vault_mcp\.stores\.postgres_vectors",
+    ):
+        Vault(
+            source_dir=_root(tmp_path),
+            settings=settings,
+            embedding_provider=MockEmbeddingProvider(dim=16),
+        )

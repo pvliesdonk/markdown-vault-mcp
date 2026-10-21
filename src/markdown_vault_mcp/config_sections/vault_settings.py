@@ -66,11 +66,13 @@ class VaultSettings:
             search is on whenever ``Vault`` is given an embedding provider.
         embedding_store: The vector backend's registry name; ``"numpy"``
             (the default) keeps the vectors in files at ``embeddings_path``,
-            ``"sqlite"`` in one SQLite database there.
+            ``"sqlite"`` in one SQLite database there, ``"postgres"`` in the
+            PostgreSQL schema ``embedding_postgres_schema`` names (#1504).
         embedding_search: ``"resident"`` (the default) holds the vectors in
             memory; ``"streamed"`` keeps none resident and reads them in
-            batches per search (#1377). Needs ``embedding_store="sqlite"``;
-            a store held in memory is always resident.
+            batches per search (#1377). Needs ``embedding_store="sqlite"``
+            or ``"postgres"``, which must be streamed; a store held in
+            memory is always resident.
         embedding_search_workspace_bytes: The vector bytes one streamed
             batch may hold (default 1 MiB).
         embedding_postgres_dsn: With ``embedding_store="postgres"``, the

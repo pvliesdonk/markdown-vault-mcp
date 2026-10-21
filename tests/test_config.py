@@ -2534,6 +2534,7 @@ class TestEmbeddingPostgres:
             ({"embedding_postgres_dsn": None}, "EMBEDDING_POSTGRES_DSN"),
             ({"embedding_postgres_dsn": "  "}, "EMBEDDING_POSTGRES_DSN"),
             ({"embedding_postgres_schema": None}, "EMBEDDING_POSTGRES_SCHEMA"),
+            ({"embedding_postgres_schema": "  "}, "EMBEDDING_POSTGRES_SCHEMA"),
             ({"embedding_postgres_pool_size": 0}, "EMBEDDING_POSTGRES_POOL_SIZE"),
             (
                 {"embedding_postgres_statement_timeout_s": -1.0},
@@ -2541,6 +2542,10 @@ class TestEmbeddingPostgres:
             ),
             (
                 {"embedding_postgres_statement_timeout_s": float("inf")},
+                "EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S",
+            ),
+            (  # above PostgreSQL's int milliseconds: refused here, not at first open
+                {"embedding_postgres_statement_timeout_s": 1e9},
                 "EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S",
             ),
         ],
@@ -2586,3 +2591,17 @@ class TestEmbeddingPostgres:
                 embedding_postgres_schema="vault_a",
             )
         assert "s3cret-pw" not in str(refused.value)
+
+
+def test_the_resident_refusal_names_streamed_without_promising_a_default(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ConfigurationError) as refused:
+        ProjectConfig(
+            source_dir=tmp_path,
+            embedding_store="postgres",
+            embedding_postgres_dsn="host=db",
+            embedding_postgres_schema="vault_a",
+        )  # embedding_search keeps its own default, resident
+    assert "EMBEDDING_SEARCH=streamed" in str(refused.value)
+    assert "leave it unset" not in str(refused.value)
