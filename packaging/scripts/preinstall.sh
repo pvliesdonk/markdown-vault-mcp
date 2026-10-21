@@ -1,5 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 # Pre-install script: create system user and group for markdown-vault-mcp.
+# POSIX sh, not bash: rpm runs every scriptlet under /bin/sh whatever its
+# shebang (nfpm's rpmpack sets the interpreter), and dpkg honours this line,
+# so one dialect behaves the same in both packages.
 # Idempotent — safe to run multiple times.
 set -eu
 

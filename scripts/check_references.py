@@ -68,7 +68,7 @@ MARKER_KINDS = ("source", "observed", "unverified", "pins")
 
 _FRONTMATTER_RE = re.compile(r"\A---\n(?P<yaml>.*?)\n---\n(?P<body>.*)\Z", re.DOTALL)
 _MARKER_RE = re.compile(
-    r"\[(?P<kind>source|observed|unverified|pins)(?::\s*(?P<arg>[^\]]*))?\]"
+    r"\[(?P<kind>source|observed|unverified|pins)(?::(?P<arg>[^\]]*))?\]"
 )
 # A pin names a pytest node: a file under tests/, optional Test* classes, and a
 # test_* function.  Anything else (a helper, production code) would let CI
@@ -79,7 +79,9 @@ _PIN_RE = re.compile(
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 # OKF actor convention: `human:<id>`, `process:<id>`, or `<producer>/<version>`.
 _ACTOR_RE = re.compile(r"^(?:human:\S+|process:\S+|[^\s/]+/[^\s/]+)$")
-_LOG_HEADING_RE = re.compile(r"^## (?P<date>.+?)\s*$", re.MULTILINE)
+# The date is stripped where it is read: a trailing `\s*` after a lazy capture
+# backtracks quadratically on a long run of spaces.
+_LOG_HEADING_RE = re.compile(r"^## (?P<date>.*)$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -441,9 +443,10 @@ def bundle_findings(root: Path) -> list[str]:
     log = root / "log.md"
     if log.is_file():
         for hm in _LOG_HEADING_RE.finditer(log.read_text(encoding="utf-8")):
-            if _as_day(hm.group("date")) is None:
+            date = hm.group("date").strip()
+            if _as_day(date) is None:
                 problems.append(
-                    f"{log}: heading `## {hm.group('date')}` is not a `## YYYY-MM-DD` date"
+                    f"{log}: heading `## {date}` is not a `## YYYY-MM-DD` date"
                 )
     return problems
 

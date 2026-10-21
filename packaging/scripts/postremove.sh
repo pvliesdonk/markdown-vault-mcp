@@ -1,5 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 # Post-remove script: clean up venv and optionally remove system user.
+# POSIX sh, not bash: rpm runs every scriptlet under /bin/sh whatever its
+# shebang (nfpm's rpmpack sets the interpreter), and dpkg honours this line,
+# so one dialect behaves the same in both packages.
 # State data in /var/lib/markdown-vault-mcp is intentionally preserved.
 set -eu
 

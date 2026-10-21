@@ -1,5 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 # Pre-remove script: stop and disable the service.
+# POSIX sh, not bash: rpm runs every scriptlet under /bin/sh whatever its
+# shebang (nfpm's rpmpack sets the interpreter), and dpkg honours this line,
+# so one dialect behaves the same in both packages.
 set -eu
 
 SERVICE_NAME="markdown-vault-mcp"

@@ -1,5 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 # Post-install script: create venv and install markdown-vault-mcp from PyPI.
+# POSIX sh, not bash: rpm runs every scriptlet under /bin/sh whatever its
+# shebang (nfpm's rpmpack sets the interpreter), and dpkg honours this line,
+# so one dialect behaves the same in both packages.
 set -eu
 
 INSTALL_DIR="/opt/markdown-vault-mcp"
