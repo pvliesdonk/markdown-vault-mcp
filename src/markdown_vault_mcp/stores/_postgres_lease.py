@@ -38,6 +38,7 @@ from markdown_vault_mcp.stores._postgres import (
 logger = logging.getLogger(__name__)
 
 LEASE_CLASS = 0x4D564D31  # "MVM1"
+_RELEASED = "The writer lease was released."
 
 _DEFAULT_STATEMENT_TIMEOUT_MS = 30_000
 _LOCK_TIMEOUT_MS = 10_000
@@ -171,7 +172,7 @@ class Lease:
     def _refuse_released(self) -> None:
         """Raise when the lease has been released."""
         if self._released:
-            raise RuntimeError("The writer lease was released.")
+            raise RuntimeError(_RELEASED)
 
     def _still_held(self) -> bool:
         """Whether this lease's connection is alive and still holds the key (see :meth:`_holds`)."""
@@ -251,13 +252,13 @@ class LeaseHandle:
     def ensure(self) -> None:
         """See :meth:`Lease.ensure`; a released handle raises ``RuntimeError``."""
         if self._released:
-            raise RuntimeError("The writer lease was released.")
+            raise RuntimeError(_RELEASED)
         self._lease.ensure()
 
     def held(self) -> bool:
         """See :meth:`Lease.held`; a released handle raises ``RuntimeError``."""
         if self._released:
-            raise RuntimeError("The writer lease was released.")
+            raise RuntimeError(_RELEASED)
         return self._lease.held()
 
     def release(self) -> None:
