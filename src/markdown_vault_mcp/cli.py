@@ -570,6 +570,12 @@ def reindex(
         built.close()
 
 
+from markdown_vault_mcp._cli_discovery import (  # noqa: E402 -- retained domain command block
+    register as _register_discovery,
+)
+
+_register_discovery(app)
+
 # DOMAIN-COMMANDS-END
 
 

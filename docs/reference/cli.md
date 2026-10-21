@@ -8,7 +8,7 @@ kind: reference
 # Command line
 
 <!-- DOMAIN-INTRO-START -->
-`serve` runs the server. `index` and `reindex` work on the local vault; `search` can use a local index or a hosted MCP endpoint. Local commands need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index or embeddings path keeps them. Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server. `index` and `reindex` work on the local vault; `search` and the reader commands below can use a local vault or a hosted MCP endpoint. Local commands need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index or embeddings path keeps them. Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
 
 
 ### Search a hosted vault
@@ -45,6 +45,28 @@ Inject the bearer token into the named environment variable before running the c
 `--timeout` overrides the profile's positive finite deadline, default 30 seconds, including connection initialization. Interrupts close the transport and exit 130. Invalid options exit 2; connection, capability and server failures exit 1. A failed remote read never falls back locally. URLs must use HTTP(S). User information and query strings are refused, as are fragments. Certificate verification stays enabled and credentials stay on the endpoint's origin. See the [security model](../security-model.md).
 
 Search keeps keyword mode and the bare JSON result array by default. Unknown server arguments fail explicitly rather than dropping filters. For property tests, install the `property-tests` extra; CI installs it through `--all-extras`.
+
+
+### Read and explore notes
+
+The reader commands share `--server`, `--local`, `--source-dir`, `--timeout`, `--json` and `--agent`. A configured client profile or client environment selects the endpoint for every command. `--source-dir` needs local mode when a remote endpoint is configured.
+
+```bash
+markdown-vault-mcp read Journal/today.md --server https://vault.example/mcp
+markdown-vault-mcp read Journal/today.md --section Decisions --json
+markdown-vault-mcp list --folder Journal --filter tags=release --agent
+markdown-vault-mcp folders --json
+markdown-vault-mcp tags --field tags --json
+markdown-vault-mcp stats --json
+markdown-vault-mcp recent --limit 10 --folder Journal --json
+markdown-vault-mcp toc Journal --max-notes 20 --max-level 2 --json
+markdown-vault-mcp similar Journal/today.md --limit 5 --json
+markdown-vault-mcp context Journal/today.md --similar-limit 0 --json
+```
+
+`read` accepts `--revision` for historical notes. Whole-note and attachment reads retain the server's size limits; use `--section` to read part of a large note. Only `read --json` returns attachment base64. Human and agent attachment reads show metadata, with no binary content. Whole-note OKF reads include sources, and context includes applicable conventions.
+
+`list` supports `--pattern`, repeated frontmatter filters and `--include-attachments`. Empty `--folder ""` selects root notes; other folder values select a subtree. `toc` reports subtree truncation. `similar` requires stored vectors and never builds embeddings. Local indexed reads use an existing disk index without changing it, or build a temporary in-memory keyword index when no index path is configured. Local reads resolve relative or symlinked source directories before opening the existing checkout, without cloning or synchronizing a managed Git source. Indexed reader commands accept `--wait-for-pending-writes` for the remote server; local freshness remains unknown.
 
 <!-- DOMAIN-INTRO-END -->
 
@@ -104,3 +126,161 @@ Incrementally reindex the vault.
 | `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
 | `--index-path` |  |  | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`). |
 | `--force` |  | False | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
+
+## `markdown-vault-mcp read`
+
+Read a note, section, revision or allowed attachment.
+
+| Argument | Description |
+|---|---|
+| `PATH` | Vault-relative note or attachment path. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--section` |  |  | Read one note section. |
+| `--revision` |  |  | Read a historical note revision. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the original structured payload, including attachment base64. |
+| `--agent` |  | False | Return escaped agent records; omit attachment bytes. |
+
+## `markdown-vault-mcp list`
+
+List note metadata with optional folder, glob and frontmatter filters.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--folder` |  |  | Folder subtree; empty means root notes. |
+| `--pattern` |  |  | Path glob, such as Journal/*.md. |
+| `--include-attachments` |  | False | Include allowed attachment metadata. |
+| `--filter` |  |  | Repeat KEY=VALUE predicates (AND). |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return structured metadata. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp folders`
+
+List indexed vault folders.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp stats`
+
+Inspect vault statistics and search capabilities.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp tags`
+
+List values of an indexed frontmatter field.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--field` |  | tags | Indexed frontmatter field to enumerate. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp recent`
+
+List recently modified notes.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--limit` |  | 20 | Maximum notes (default 20). |
+| `--folder` |  |  | Folder subtree; empty means root notes. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return structured metadata. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp toc`
+
+Inspect note headings or a bounded folder outline.
+
+| Argument | Description |
+|---|---|
+| `PATH` | Note path or folder prefix. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--max-level` |  |  | Maximum heading level. |
+| `--max-notes` |  | 200 | Maximum subtree notes (default 200). |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return structured headings and truncation. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp similar`
+
+Find neighbors using existing stored vectors; never build embeddings.
+
+| Argument | Description |
+|---|---|
+| `PATH` | Seed note path. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--limit` |  | 10 | Maximum notes (default 10). |
+| `--folder` |  |  | Folder subtree; empty means root notes. |
+| `--filter` |  |  | Repeat KEY=VALUE predicates (AND). |
+| `--chunks-per-file` |  |  | Maximum sections per note. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return structured neighbors and sections. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp context`
+
+Collect note links, neighbors, folder peers and conventions.
+
+| Argument | Description |
+|---|---|
+| `PATH` | Note path. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--similar-limit` |  | 5 | Similar notes; 0 skips them (default 5). |
+| `--link-limit` |  | 10 | Backlink and outlink limits (default 10). |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the structured context dossier. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |

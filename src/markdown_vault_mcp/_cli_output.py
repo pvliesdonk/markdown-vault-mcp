@@ -54,6 +54,8 @@ def render_reply(
 
 
 def _render(command: str, reply: RemoteReply, output: str) -> None:
+    if command == "read":
+        _validate_read(reply.data)
     if output in {"json", "agent"}:
         _check_json(reply.data)
     observed = reply.meta.get("index_stale")
@@ -64,6 +66,19 @@ def _render(command: str, reply: RemoteReply, output: str) -> None:
         typer.echo(json.dumps(reply.data, indent=2))
         return
     items = reply.data if isinstance(reply.data, list) else [reply.data]
+    if command == "read" and isinstance(reply.data, dict):
+        if output == "text":
+            _read_text(reply.data)
+            return
+        if "content_base64" in reply.data:
+            items = [
+                {
+                    key: value
+                    for key, value in reply.data.items()
+                    if key != "content_base64"
+                }
+            ]
+            items[0]["content_omitted"] = True
     if output == "agent":
         _agent_records(command, reply, items, stale)
         return
@@ -71,6 +86,33 @@ def _render(command: str, reply: RemoteReply, output: str) -> None:
         _search_text(items)
         return
     typer.echo(terminal_text(json.dumps(reply.data, ensure_ascii=False)))
+
+
+def _validate_read(data: Any) -> None:
+    if not isinstance(data, dict) or not isinstance(data.get("path"), str):
+        raise ReadPayloadError("Server returned an invalid read payload.", 1)
+    if "content_base64" in data:
+        valid = (
+            isinstance(data["content_base64"], str)
+            and type(data.get("size_bytes")) is int
+            and data["size_bytes"] >= 0
+            and isinstance(data.get("mime_type"), (str, type(None)))
+        )
+    else:
+        valid = isinstance(data.get("content"), str)
+    if not valid:
+        raise ReadPayloadError("Server returned an invalid read payload.", 1)
+
+
+def _read_text(data: dict[str, Any]) -> None:
+    if "content_base64" in data:
+        typer.echo(
+            f"{terminal_text(data['path'])}: {data['size_bytes']} bytes "
+            f"({terminal_text(data.get('mime_type') or 'unknown type')}); use --json for base64."
+        )
+        return
+    # Preserve note line breaks without letting note text issue terminal commands.
+    typer.echo("\n".join(terminal_text(line) for line in data["content"].split("\n")))
 
 
 def _check_json(data: Any) -> None:
