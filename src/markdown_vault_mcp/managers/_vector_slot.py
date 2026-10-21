@@ -355,6 +355,8 @@ class VectorStoreSlot:
         }
         if isinstance(store, ReportsResources):
             described.update(dataclasses.asdict(store.resources()))
+        # The store's own reads (generation, resources) come first: a store
+        # that cannot be read fails the status there, before its details.
         described["store_details"] = (
             store.describe() if isinstance(store, DescribesStore) else None
         )

@@ -52,7 +52,11 @@ except ImportError as exc:  # pragma: no cover - exercised in a subprocess
         "pip install 'markdown-vault-mcp[postgres]'"
     ) from exc
 
-from markdown_vault_mcp.exceptions import ReadOnlyError, StoreIncompatibleError
+from markdown_vault_mcp.exceptions import (
+    ReadOnlyError,
+    StoreIncompatibleError,
+    StoreUnavailableError,
+)
 from markdown_vault_mcp.stores._identity import served_identity
 from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
 from markdown_vault_mcp.stores._postgres_rows import (
@@ -310,6 +314,7 @@ class PostgresVectorStore:
         self._check_open()
         try:
             with self._conn.pool.connection() as conn:
+                check_schema(conn, schema=self._schema, action="read")
                 measured = stored_bytes(conn, schema=self._schema)
         except PoolTimeout:
             failure = self._pool_unavailable()
@@ -345,7 +350,7 @@ class PostgresVectorStore:
             "lease_held": lease is not None and lease.held(),
         }
 
-    def _pool_unavailable(self) -> Exception:
+    def _pool_unavailable(self) -> StoreUnavailableError:
         """The outcome of finding no free pool connection in time."""
         return unavailable(
             f"No PostgreSQL connection for schema {self._schema} was free in time.",
@@ -404,11 +409,20 @@ class PostgresVectorStore:
     def _read_once(
         self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
     ) -> _T:
-        """One attempt at :meth:`_reading`'s transaction; psycopg's errors pass through."""
-        with self._conn.pool.connection() as conn, conn.transaction():
-            conn.execute(_READ_TRANSACTION)
-            meta = read_meta(conn, schema=self._schema, action="read")
-            return empty if meta is None else self._read_checked(conn, meta, read)
+        """One attempt at :meth:`_reading`'s transaction; psycopg's errors pass through.
+
+        No meta row reads as an empty store, unless the schema itself is
+        gone: PostgreSQL reports both as an undefined table, so the schema
+        is looked up then, after the transaction.
+        """
+        with self._conn.pool.connection() as conn:
+            with conn.transaction():
+                conn.execute(_READ_TRANSACTION)
+                meta = read_meta(conn, schema=self._schema, action="read")
+                if meta is not None:
+                    return self._read_checked(conn, meta, read)
+            check_schema(conn, schema=self._schema, action="read")
+            return empty
 
     def _read_checked(
         self,

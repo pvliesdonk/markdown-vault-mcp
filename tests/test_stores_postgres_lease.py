@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import psycopg
 import pytest
@@ -518,3 +518,68 @@ def test_a_handle_after_release_refuses_held(postgres_schema: PostgresSchema) ->
     handle.release()
     with pytest.raises(RuntimeError, match="released"):
         handle.held()
+
+
+class _SlowLeaseConnection:
+    """A lease connection whose next statement waits for *go*."""
+
+    def __init__(self, conn: Any, started: Any, go: Any) -> None:
+        self._conn, self._started, self._go = conn, started, go
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        self._started.set()
+        self._go.wait(5)
+        return self._conn.execute(*args, **kwargs)
+
+
+def test_held_does_not_block_a_release_while_it_checks(
+    postgres_schema: PostgresSchema,
+) -> None:
+    import threading
+
+    lease = Lease.acquire(_conninfo(postgres_schema), schema=postgres_schema.name)
+    started, go = threading.Event(), threading.Event()
+    lease._conn = _SlowLeaseConnection(lease._conn, started, go)
+    answers: list[bool] = []
+    checking = threading.Thread(target=lambda: answers.append(lease.held()))
+    checking.start()
+    try:
+        assert started.wait(5)
+        releasing = threading.Thread(target=lease.release)
+        releasing.start()
+        releasing.join(2)
+        assert not releasing.is_alive()  # not held up by the check in flight
+    finally:
+        go.set()
+        checking.join(5)
+    assert answers == [False]  # released under it: no longer held
+
+
+def test_held_failing_on_a_live_connection_raises_as_a_read(
+    postgres_schema: PostgresSchema,
+) -> None:
+    lease = Lease.acquire(_conninfo(postgres_schema), schema=postgres_schema.name)
+    real, pid = lease._conn, lease.pid
+
+    class _Refusing:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+        def execute(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise psycopg.errors.LockNotAvailable(
+                "canceling statement due to lock timeout"
+            )
+
+    lease._conn = _Refusing()
+    try:
+        with pytest.raises(
+            StoreUnavailableError, match=r"cannot be read.*reason=timeout"
+        ):
+            lease.held()
+        assert lease.pid == pid  # nothing reconnected
+    finally:
+        lease._conn = real
+        lease.release()

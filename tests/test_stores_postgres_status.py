@@ -200,3 +200,53 @@ def test_describe_after_close_raises(
     closed.close()
     with pytest.raises(RuntimeError, match="closed"):
         closed.describe()
+
+
+def test_describe_raises_when_the_lease_check_fails_on_a_live_connection(
+    store: Any,
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    lease = store._conn.lease._lease
+    real, pid = lease._conn, lease.pid
+
+    class _Refusing:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+        def execute(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise psycopg.errors.LockNotAvailable(
+                "canceling statement due to lock timeout"
+            )
+
+    lease._conn = _Refusing()
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=timeout"):
+            store.describe()
+    finally:
+        lease._conn = real
+    assert lease.pid == pid  # a status read never takes the lease again
+
+
+def test_a_dropped_schema_is_not_configured_for_status_and_reads(
+    backend: Any, postgres_schema: PostgresSchema
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreNotConfiguredError
+
+    reader = backend.open(postgres_schema.name, IDENT, owns_files=False)
+    try:
+        with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+            admin.execute(
+                psycopg.sql.SQL("DROP SCHEMA {} CASCADE").format(
+                    psycopg.sql.Identifier(postgres_schema.name)
+                )
+            )
+        for read in (
+            lambda: reader.resources(),
+            lambda: reader.generation,
+            lambda: reader.tokens(),
+        ):
+            with pytest.raises(StoreNotConfiguredError, match="does not exist"):
+                read()
+    finally:
+        reader.close()

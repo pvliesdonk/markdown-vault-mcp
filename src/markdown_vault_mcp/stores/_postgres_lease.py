@@ -174,7 +174,11 @@ class Lease:
             raise RuntimeError("The writer lease was released.")
 
     def _still_held(self) -> bool:
-        """Whether this lease's connection is alive and still holds the key.
+        """Whether this lease's connection is alive and still holds the key (see :meth:`_holds`)."""
+        return self._holds(self._conn, action="written")
+
+    def _holds(self, conn: psycopg.Connection[Any], *, action: str) -> bool:
+        """Whether *conn* is alive and still holds the key.
 
         A failure on a connection that is still alive (a timeout, a refused
         privilege, too many connections) is reported, not taken as a lost
@@ -185,16 +189,14 @@ class Lease:
                 before any reconnect, so it is never logged as a lost lease).
             StoreUnavailableError: If the check fails on a live connection.
         """
-        if self._conn.closed or self._conn.broken:
+        if conn.closed or conn.broken:
             return False
         try:
-            row = self._conn.execute(_HELD, (LEASE_CLASS, self._schema)).fetchone()
+            row = conn.execute(_HELD, (LEASE_CLASS, self._schema)).fetchone()
         except psycopg.Error as exc:
-            if self._conn.closed or self._conn.broken:
+            if conn.closed or conn.broken:
                 return False
-            failure: Exception = classify_error(
-                exc, schema=self._schema, action="written"
-            )
+            failure: Exception = classify_error(exc, schema=self._schema, action=action)
         else:
             if row is not None and row[0]:
                 return bool(row[1])
@@ -213,7 +215,11 @@ class Lease:
         """
         with self._mutex:
             self._refuse_released()
-            return self._still_held()
+            conn = self._conn
+        # Outside the mutex, so a status read never holds up a write's
+        # ensure() or a release; a release racing it closes the connection,
+        # which then reads as not held.
+        return self._holds(conn, action="read")
 
     def release(self) -> None:
         """Release the lease by closing its connection. Idempotent."""

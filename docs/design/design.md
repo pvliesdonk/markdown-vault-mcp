@@ -4232,7 +4232,12 @@ fills `store_details` with host, port, database, schema, the PostgreSQL
 and pgvector versions, whether it is a writer and whether it holds the
 lease, never credentials: host, port and database are libpq's resolved
 values from the open, never the DSN, and the lease is checked live
-without being taken back, which only a write does. What the store relies on in PostgreSQL, pgvector and psycopg
+without being taken back, which only a write does, and outside the
+lease's lock, so a status read never holds up a write. A schema dropped
+under an open store is *not configured* for its reads and its status
+alike: PostgreSQL reports a missing schema and missing tables the same
+way, so a read that finds no meta row looks the schema up. What the store
+relies on in PostgreSQL, pgvector and psycopg
 is in `docs/design/reference/postgresql-pgvector.md`.
 
 **The vault's slot (#1777).** `Vault` holds its vector store in a

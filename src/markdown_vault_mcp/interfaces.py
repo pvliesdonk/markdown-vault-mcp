@@ -507,7 +507,8 @@ class DescribesStore(Protocol):
 
         Raises:
             RuntimeError: If the store is closed.
-            StoreUnavailableError: If a live detail cannot be read.
+            StoreOpenError: If a live detail cannot be read (*unavailable*),
+                or the store's location is gone (*not configured*).
         """
         ...
 

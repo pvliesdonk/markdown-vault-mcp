@@ -373,7 +373,9 @@ def _checked_extension(row: tuple[Any, ...] | None, *, schema: str) -> Extension
     return found
 
 
-def check_schema(conn: psycopg.Connection[Any], *, schema: str) -> None:
+def check_schema(
+    conn: psycopg.Connection[Any], *, schema: str, action: str = "opened"
+) -> None:
     """Refuse a vault schema that does not exist or that this role cannot use.
 
     PostgreSQL silently skips a missing schema in ``search_path``, so it is
@@ -383,6 +385,7 @@ def check_schema(conn: psycopg.Connection[Any], *, schema: str) -> None:
     Args:
         conn: A connection to the vault's database.
         schema: The vault schema.
+        action: For an error's message ("opened", "read").
 
     Raises:
         StoreNotConfiguredError: If the schema does not exist; the message
@@ -398,7 +401,7 @@ def check_schema(conn: psycopg.Connection[Any], *, schema: str) -> None:
             (schema,),
         ).fetchone()
     except psycopg.Error as exc:
-        failure = classify_error(exc, schema=schema, action="opened")
+        failure = classify_error(exc, schema=schema, action=action)
     else:
         role = str(role_row[0]) if role_row else "<role>"
         _refuse_unusable_schema(conn, row, schema=schema, role=role)

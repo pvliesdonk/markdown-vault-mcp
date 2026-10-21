@@ -56,10 +56,11 @@ The four fields above are null until the store is first opened,
 and when the store does not report them.
 
 - `store_details` (dict | None): Where a database-backed store
-  lives: host, port, database, schema, server and extension
-  versions, and whether this server holds the writer lease.
-  Null for a file or in-memory store, and until the store is
-  first opened. It never shows credentials.
+  lives, with the keys `host`, `port`, `database`, `schema`,
+  `postgresql_version`, `pgvector_version`, `writer` (this
+  server may write) and `lease_held` (it holds the writer lease
+  now). Null for a file or in-memory store, and until the store
+  is first opened. It never shows credentials.
 
 <!-- DOMAIN-EXAMPLE-embeddings_status-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
