@@ -289,6 +289,14 @@ build-backend = "hatchling.build"
 constraint-dependencies = [
   "numpy<2.5", # until: https://github.com/pvliesdonk/fastmcp-server-template/issues/547
 ]
+# pillow 13.0.0 fixes eight advisories in 12.3.0, but every fastembed release
+# through 0.9.0 caps `pillow<13.0` (qdrant/fastembed#830 lifts it).  An override
+# replaces that cap rather than intersecting with it.  `import fastembed` loads
+# Pillow, but only its image models call it, and this server uses text
+# embeddings alone.  Drop it once a fastembed release allows 13.
+override-dependencies = [
+  "pillow>=13", # until: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1824
+]
 # PROJECT-UV-END
 
 [tool.hatch.build.targets.wheel]
