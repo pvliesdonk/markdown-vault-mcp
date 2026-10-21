@@ -1,5 +1,32 @@
 # Reference research log
 
+## 2026-10-21
+
+- Revised how [Pull request size and review effectiveness](pull-request-size.md)
+  is used: the file cap rises from three to five, and the line backstop
+  counts only the files the cap counts, asks for a justification past 400
+  lines and forces a re-plan past 1,000. Recorded the departure from
+  SWE-Bench Pro's three-file cliff and the project history behind the
+  change. No claim changed. Next review unchanged: 2027-04-17.
+
+## 2026-10-17
+
+- Added [Pull request size and review effectiveness](pull-request-size.md),
+  checked against Google's engineering practices, SmartBear's guidance, the
+  Microsoft studies (Bosu 2015, MacLeod 2016), the Google case study
+  (Sadowski 2018), Rigby and Bird 2013, Kudrjavets 2022, Herzig 2013 and
+  di Biase 2019, the Linux kernel's patch rules, LinearB and Graphite data,
+  SWE-bench, Multi-SWE-bench and SWE-Bench Pro, and the Chroma and Anthropic
+  context reports. Found that concern count and file count predict review
+  usefulness and agent success before a line is written, while lines predict
+  neither merge speed nor, in any primary source, post-merge defects. Refute
+  pass re-found the quoted phrases of the ten load-bearing claims in the
+  locally extracted paper text and re-read the web pages' quotes against
+  the fetched text; the Cisco study's figures stay unverified because its
+  write-up was unreachable, and the Google reviewer-guide claim is a
+  paraphrase. Draft until a project reports on the rule. Next review:
+  2027-04-17.
+
 ## 2026-10-15
 
 - Added [SQLite WAL durability, checkpoints, the WAL-reset bug and backup](sqlite-wal-durability.md),
