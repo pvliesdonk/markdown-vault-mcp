@@ -129,6 +129,28 @@ class IndexWriteCoordinator:
         """
         return self._readiness.is_queryable()
 
+    def use_existing_index(self) -> None:
+        """Adopt a completed stored index for reads without scanning or writing.
+
+        The caller opens shared files read-only. Stored build provenance stays
+        authoritative, including when this shell has different build settings.
+        A completed empty index is usable; an incomplete build is refused.
+
+        Raises:
+            IndexUnavailableError: The writer is active or no complete build exists.
+        """
+        if not self.is_drained():
+            raise IndexUnavailableError(
+                "Cannot adopt an index while its local writer is active.",
+                reason="never_built",
+            )
+        if not self._fts.is_build_completed():
+            raise IndexUnavailableError(
+                "Stored index has no completed build. Run index from its owning process.",
+                reason="never_built",
+            )
+        self._readiness.mark_built()
+
     def require_built(self) -> None:
         """Raise :exc:`IndexUnavailableError` if :meth:`build_index` has not run."""
         self._readiness.require_built()

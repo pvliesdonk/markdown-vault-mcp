@@ -127,6 +127,14 @@ class IndexFacet:
         """
         self._coordinator.wait_until_queryable(timeout)
 
+    def use_existing_index(self) -> None:
+        """Adopt a completed shared index for reads without scanning or writing.
+
+        Raises:
+            IndexUnavailableError: The writer is active or no complete build exists.
+        """
+        self._coordinator.use_existing_index()
+
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index.
 

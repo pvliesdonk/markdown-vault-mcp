@@ -142,7 +142,8 @@ src/markdown_vault_mcp/
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
   _cli_client.py       -- nonsecret client TOML/environment selection and credential/URL/timeout validation
   _cli_remote.py       -- lazy native MCP HTTP read transport, capability checks and read dispatch
-  _cli_read.py         -- stable import seam for the shared read runner
+  _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies
+  _cli_discovery.py    -- note, attachment, metadata and context CLI commands
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
