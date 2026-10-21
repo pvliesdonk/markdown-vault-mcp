@@ -186,6 +186,8 @@ all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
 debug = ["fastmcp-pvl-core[debug]"]
+# Property tests only; CI installs all extras, runtime and all stay unchanged.
+property-tests = ["hypothesis>=6"]
 # PROJECT-EXTRAS-END
 
 # Tooling lives under PEP 735 [dependency-groups] (not [project.optional-dependencies])
@@ -295,7 +297,7 @@ constraint-dependencies = [
 # Pillow, but only its image models call it, and this server uses text
 # embeddings alone.  Drop it once a fastembed release allows 13.
 override-dependencies = [
-  "pillow>=13", # until: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1824
+  "pillow>=13", # until: https://github.com/qdrant/fastembed/pull/830
 ]
 # PROJECT-UV-END
 

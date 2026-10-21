@@ -20,6 +20,7 @@ from markdown_vault_mcp.vault import VaultSettings
 # Re-export reusable fixtures so they are auto-discovered by pytest in any
 # test module without requiring a per-file import (which would trip ruff's
 # F811 redefinition check on the parameter shadowing).
+from tests.fixtures.cli_http import cli_client_profile  # noqa: F401
 from tests.fixtures.git import git_repo_pair  # noqa: F401
 
 

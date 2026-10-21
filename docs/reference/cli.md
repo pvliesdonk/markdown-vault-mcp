@@ -8,7 +8,32 @@ kind: reference
 # Command line
 
 <!-- DOMAIN-INTRO-START -->
-`serve` runs the server. `index`, `search` and `reindex` work on the vault and its index directly and need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index or embeddings path keeps them. Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server. `index` and `reindex` work on the local vault; `search` can use a local index or a hosted MCP endpoint. Local commands need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index or embeddings path keeps them. Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+
+
+### Search a hosted vault
+
+```bash
+markdown-vault-mcp search "release notes" --server https://vault.example/proxy/mcp --json
+```
+
+Pass the complete MCP URL, including its path. `--server` overrides `MARKDOWN_VAULT_MCP_SERVER_URL`, then the client profile's URL. `--local` bypasses that selection and conflicts with explicit `--server`. `--source-dir` requires local mode. Remote search never opens a local vault or resolves its embedding provider. `serve`, `index` and `reindex` remain local commands and reject `--server`.
+
+The optional profile is `$XDG_CONFIG_HOME/markdown-vault-mcp/client.toml`, defaulting to `~/.config/markdown-vault-mcp/client.toml`. `MARKDOWN_VAULT_MCP_CLIENT_CONFIG` selects another file; a missing selected file, malformed TOML or unknown field fails. An absent default file is fine.
+
+```toml
+[remote]
+url = "https://vault.example/proxy/mcp"
+token_env = "VAULT_ACCESS_TOKEN"
+timeout_seconds = 30
+```
+
+Inject the bearer token into the named environment variable before running the command; keep token values out of the profile. A nonempty `MARKDOWN_VAULT_MCP_CLIENT_TOKEN` overrides `token_env`. An empty or unset client-token variable leaves `token_env` in effect; a missing or empty named variable fails. Without a selected credential, unauthenticated servers work. The client never reuses the server's `BEARER_TOKEN` or provider keys. An already obtained OIDC access token works as a bearer token; interactive login and refresh are outside this CLI.
+
+`--timeout` overrides the profile's positive finite deadline, default 30 seconds, including connection initialization. Interrupts close the transport and exit 130. Invalid options exit 2; connection, capability and server failures exit 1. A failed remote read never falls back locally. URLs must use HTTP(S). User information and query strings are refused, as are fragments. Certificate verification stays enabled and credentials stay on the endpoint's origin. See the [security model](../security-model.md).
+
+Search keeps keyword mode and the bare JSON result array by default. Unknown server arguments fail explicitly rather than dropping filters. For property tests, install the `property-tests` extra; CI installs it through `--all-extras`.
+
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -36,7 +61,7 @@ Build the full-text search index.
 
 ## `markdown-vault-mcp search`
 
-Search the vault.
+Search the local vault or a hosted MCP server.
 
 | Argument | Description |
 |---|---|
@@ -49,6 +74,9 @@ Search the vault.
 | `-m` |  | keyword | keyword / semantic / hybrid (default: keyword). |
 | `--folder` |  |  | Restrict to folder. |
 | `--json` |  | False | Output results as JSON. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Use the local vault despite a client profile. |
+| `--timeout` |  |  | Remote operation deadline in seconds (default 30). |
 
 ## `markdown-vault-mcp reindex`
 
