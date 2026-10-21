@@ -226,7 +226,10 @@ class ProjectConfig:
                 "them in files beside the index; 'sqlite' keeps them in one "
                 "SQLite database there (index-db-embeddings.sqlite3), each "
                 "change written durably on its own. Without INDEX_PATH or "
-                "EMBEDDINGS_PATH both keep them in memory."
+                "EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps "
+                "them in a PostgreSQL schema with pgvector "
+                "(EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the "
+                "postgres extra)."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -240,8 +243,10 @@ class ProjectConfig:
                 "default) holds them all in memory, the fastest; 'streamed' "
                 "keeps none in memory and reads them from the store in "
                 "batches for each search, slower as the vault grows. "
-                "'streamed' needs EMBEDDING_STORE=sqlite; vectors kept in "
-                "memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident."
+                "'streamed' needs EMBEDDING_STORE=sqlite or postgres, and "
+                "postgres is always streamed (the default there); vectors kept "
+                "in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always "
+                "resident."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -254,6 +259,55 @@ class ProjectConfig:
                 "With EMBEDDING_SEARCH=streamed, the embeddings one batch of "
                 "a search may hold, in MiB (at least 1). It bounds the "
                 "search's working memory, not the process's."
+            ),
+            "tags": ("indexing",),
+            "wizard": {"group": "Indexing"},
+        },
+    )
+    embedding_postgres_dsn: str | None = field(
+        default=None,
+        repr=False,
+        metadata={
+            "help": (
+                "With EMBEDDING_STORE=postgres, the libpq connection string or "
+                "URI of the database holding the embeddings. A secret: never "
+                "logged or shown. The password may instead come from "
+                "PGPASSWORD or a .pgpass file."
+            ),
+            "tags": ("indexing",),
+            "wizard": {"group": "Indexing", "secret": True},
+        },
+    )
+    embedding_postgres_schema: str | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "With EMBEDDING_STORE=postgres, the schema this vault's "
+                "embeddings live in: one schema per vault, created by the "
+                "operator. The vault creates only its own tables there."
+            ),
+            "tags": ("indexing",),
+            "wizard": {"group": "Indexing"},
+        },
+    )
+    embedding_postgres_pool_size: int = field(
+        default=4,
+        metadata={
+            "help": (
+                "With EMBEDDING_STORE=postgres, the most connections the store "
+                "opens (at least 1)."
+            ),
+            "tags": ("indexing",),
+            "wizard": {"group": "Indexing"},
+        },
+    )
+    embedding_postgres_statement_timeout_s: float = field(
+        default=30.0,
+        metadata={
+            "help": (
+                "With EMBEDDING_STORE=postgres, the longest one query may run, "
+                "in seconds; 0 sets none. The bulk write of a full rebuild "
+                "is never limited."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -1045,6 +1099,12 @@ class ProjectConfig:
             embedding_store=self.embedding_store,
             embedding_search=self.embedding_search,
             embedding_search_workspace_mb=self.embedding_search_workspace_mb,
+            embedding_postgres_dsn=self.embedding_postgres_dsn,
+            embedding_postgres_schema=self.embedding_postgres_schema,
+            embedding_postgres_pool_size=self.embedding_postgres_pool_size,
+            embedding_postgres_statement_timeout_s=(
+                self.embedding_postgres_statement_timeout_s
+            ),
             indexed_frontmatter_fields=self.indexed_fields,
             required_frontmatter=self.required_fields,
             exclude_patterns=self.exclude,
@@ -1132,6 +1192,37 @@ class ProjectConfig:
             okf_verify=self.okf_verify,
         )
 
+    def _check_postgres(self) -> None:
+        """Refuse PostgreSQL store settings that cannot work; never quotes the DSN."""
+        if self.embedding_search != "streamed":
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres searches in the "
+                "database: set MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed, or "
+                "leave it unset."
+            )
+        if not (self.embedding_postgres_dsn or "").strip():
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres needs "
+                "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN, the database to use."
+            )
+        if not (self.embedding_postgres_schema or "").strip():
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres needs "
+                "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA, the schema this "
+                "vault's embeddings live in."
+            )
+        if self.embedding_postgres_pool_size < 1:
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_POOL_SIZE must be at least "
+                f"1; got {self.embedding_postgres_pool_size}."
+            )
+        timeout = self.embedding_postgres_statement_timeout_s
+        if not 0 <= timeout < float("inf"):  # NaN fails both comparisons
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S must be "
+                f"finite and at least 0; got {timeout}."
+            )
+
     # CONFIG-FIELDS-END
 
     def __post_init__(self) -> None:
@@ -1200,7 +1291,7 @@ class ProjectConfig:
         # (not section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
         # alike), so neither needs re-construction here.
-        embedding_stores = ("numpy", "sqlite")
+        embedding_stores = ("numpy", "sqlite", "postgres")
         if self.embedding_store not in embedding_stores:
             raise ConfigurationError(
                 f"MARKDOWN_VAULT_MCP_EMBEDDING_STORE must be one of "
@@ -1217,13 +1308,18 @@ class ProjectConfig:
                 "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB must be at "
                 f"least 1; got {self.embedding_search_workspace_mb}."
             )
-        if self.embedding_search == "streamed" and self.embedding_store != "sqlite":
+        if self.embedding_search == "streamed" and self.embedding_store not in (
+            "sqlite",
+            "postgres",
+        ):
             raise ConfigurationError(
                 "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed needs "
-                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite; the "
+                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite or postgres; the "
                 f"{self.embedding_store!r} store serves its embeddings from memory "
                 "only. Set EMBEDDING_STORE=sqlite, or EMBEDDING_SEARCH=resident."
             )
+        if self.embedding_store == "postgres":
+            self._check_postgres()
         # CONFIG-VALIDATE-END
 
     @classmethod
@@ -1252,14 +1348,32 @@ class ProjectConfig:
             index_path=opt_path(env(_ENV_PREFIX, "INDEX_PATH")),
             state_path=opt_path(env(_ENV_PREFIX, "STATE_PATH")),
             embeddings_path=opt_path(env(_ENV_PREFIX, "EMBEDDINGS_PATH")),
-            embedding_store=(env(_ENV_PREFIX, "EMBEDDING_STORE") or "numpy")
-            .strip()
-            .lower(),
-            embedding_search=(env(_ENV_PREFIX, "EMBEDDING_SEARCH") or "resident")
+            embedding_store=(
+                _store := (env(_ENV_PREFIX, "EMBEDDING_STORE") or "numpy")
+                .strip()
+                .lower()
+            ),
+            # PostgreSQL always searches in the database: streamed by default.
+            embedding_search=(
+                env(_ENV_PREFIX, "EMBEDDING_SEARCH")
+                or ("streamed" if _store == "postgres" else "resident")
+            )
             .strip()
             .lower(),
             embedding_search_workspace_mb=env_int(
                 _ENV_PREFIX, "EMBEDDING_SEARCH_WORKSPACE_MB", 1
+            ),
+            embedding_postgres_dsn=(
+                (env(_ENV_PREFIX, "EMBEDDING_POSTGRES_DSN") or "").strip() or None
+            ),
+            embedding_postgres_schema=(
+                (env(_ENV_PREFIX, "EMBEDDING_POSTGRES_SCHEMA") or "").strip() or None
+            ),
+            embedding_postgres_pool_size=env_int(
+                _ENV_PREFIX, "EMBEDDING_POSTGRES_POOL_SIZE", 4
+            ),
+            embedding_postgres_statement_timeout_s=env_float(
+                _ENV_PREFIX, "EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S", 30.0
             ),
             indexed_fields=(_indexed := opt_list(env(_ENV_PREFIX, "INDEXED_FIELDS"))),
             required_fields=opt_list(env(_ENV_PREFIX, "REQUIRED_FIELDS")),

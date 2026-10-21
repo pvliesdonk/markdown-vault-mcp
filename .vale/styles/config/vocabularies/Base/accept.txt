@@ -305,3 +305,6 @@ indexable
 pathspec
 remoteless
 templated
+# --- PostgreSQL vector store (#1504) ---
+libpq
+pgvector
