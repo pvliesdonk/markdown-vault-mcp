@@ -370,7 +370,7 @@ def _local_search(
     from dataclasses import asdict
     from typing import cast
 
-    mode = arguments["mode"]
+    mode = arguments.get("mode")
     limit = arguments["limit"]
     folder = arguments["folder"]
     from markdown_vault_mcp.exceptions import StoreCorruptError, StoreIncompatibleError
@@ -406,27 +406,26 @@ def _local_search(
             results = built.vault.reader.search(
                 query,
                 limit=limit,
-                mode=cast("Literal['keyword', 'semantic', 'hybrid']", mode),
+                mode=cast("Literal['keyword', 'semantic', 'hybrid'] | None", mode),
                 folder=folder,
+                **{
+                    key: arguments[key]
+                    for key in ("filters", "chunks_per_file", "snippet_words")
+                    if key in arguments
+                },
             )
         except (StoreCorruptError, StoreIncompatibleError) as exc:
             typer.echo(_unusable_vectors_message(exc), err=True)
             raise typer.Exit(code=1) from exc
+        from markdown_vault_mcp._read_payloads import annotate_hits
+        from markdown_vault_mcp.okf import derive_annotation
+
+        return annotate_hits(
+            [asdict(r) for r in results],
+            derive_annotation if built.vault.okf.state().active else None,
+        )
     finally:
         built.close()
-    return [asdict(r) for r in results]
-
-
-def _terminal_text(value: str) -> str:
-    """Preserve printable Unicode while escaping terminal controls."""
-    import unicodedata
-
-    return "".join(
-        char.encode("unicode_escape").decode("ascii")
-        if unicodedata.category(char).startswith("C") or char in "\u2028\u2029"
-        else char
-        for char in value
-    )
 
 
 @app.command()
@@ -440,10 +439,25 @@ def search(
         "keyword",
         "-m",
         "--mode",
-        help="keyword / semantic / hybrid (default: keyword).",
+        help="keyword / semantic / hybrid / auto (default: keyword).",
     ),
     folder: str | None = typer.Option(None, help="Restrict to folder."),
     json_output: bool = typer.Option(False, "--json", help="Output results as JSON."),
+    agent: bool = typer.Option(
+        False, "--agent", help="Output an agent header and escaped JSON records."
+    ),
+    filters: list[str] | None = typer.Option(
+        None, "--filter", help="Repeat KEY=VALUE frontmatter filters (AND)."
+    ),
+    chunks_per_file: int | None = typer.Option(
+        None, min=1, help="Maximum matching sections per note."
+    ),
+    snippet_words: int | None = typer.Option(
+        None, min=0, help="Snippet width in words; 0 returns full indexed sections."
+    ),
+    wait_for_pending_writes: bool = typer.Option(
+        False, help="Wait for the remote server's pending writes."
+    ),
     server: str | None = typer.Option(None, help="Complete hosted MCP endpoint URL."),
     local: bool = typer.Option(
         False, "--local", help="Use the local vault despite a client profile."
@@ -453,44 +467,61 @@ def search(
     ),
 ) -> None:
     """Search the local vault or a hosted MCP server."""
-    import json
-
     from markdown_vault_mcp._cli_client import (
         ClientError,
         ClientOptions,
         resolve_settings,
     )
+    from markdown_vault_mcp._cli_output import render_reply
     from markdown_vault_mcp._cli_read import run_read
     from markdown_vault_mcp._http_logging import quiet_http_loggers
+    from markdown_vault_mcp._read_payloads import (
+        ReadPayloadError,
+        SearchOptions,
+        parse_filters,
+    )
+    from markdown_vault_mcp.exceptions import InvalidRequestError
 
     quiet_http_loggers()
     try:
-        if mode not in {"keyword", "semantic", "hybrid"}:
-            raise ClientError("Mode must be keyword, semantic or hybrid.")
+        if json_output and agent:
+            raise ClientError("--json and --agent cannot be combined.")
+        controls = SearchOptions(
+            mode,
+            parse_filters(filters or []),
+            chunks_per_file,
+            snippet_words,
+            wait_for_pending_writes,
+        )
         options = ClientOptions(server, local, timeout)
-        if source_dir is not None and resolve_settings(options).url is not None:
+        settings = resolve_settings(options)
+        if source_dir is not None and settings.url is not None:
             raise ClientError(
                 "--source-dir conflicts with a remote server; use --local."
             )
-        arguments = {"query": query, "limit": limit, "mode": mode, "folder": folder}
+        arguments = controls.arguments(query, limit, folder)
         reply = run_read(
             "search",
             arguments,
             options,
             lambda: _local_search(query, source_dir, arguments),
+            settings=settings,
+        )
+        reply.meta["requested_mode"] = mode
+        render_reply(
+            "search", reply, "json" if json_output else "agent" if agent else "text"
         )
     except ClientError as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(exc.code) from None
+    except InvalidRequestError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1) from None
+    except ReadPayloadError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(exc.code) from None
     except KeyboardInterrupt:
         raise typer.Exit(130) from None
-    if json_output:
-        typer.echo(json.dumps(reply.data, indent=2))
-    else:
-        for hit in reply.data:
-            typer.echo(f"  {_terminal_text(hit['path'])} ({hit['score']:.4f})")
-            if hit.get("title"):
-                typer.echo(f"    {_terminal_text(hit['title'])}")
 
 
 @app.command()

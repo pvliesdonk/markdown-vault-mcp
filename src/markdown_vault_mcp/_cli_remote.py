@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -46,19 +45,13 @@ def _payload(result: Any, tool: str) -> RemoteReply:
             ) from None
     if isinstance(data, dict) and set(data) == {"result"}:
         data = data["result"]
-    if tool == "search" and (
-        not isinstance(data, list)
-        or any(
-            not isinstance(hit, dict)
-            or not isinstance(hit.get("path"), str)
-            or not isinstance(hit.get("title"), (str, type(None)))
-            or not isinstance(hit.get("score"), (float, int))
-            or isinstance(hit.get("score"), bool)
-            or not math.isfinite(hit["score"])
-            for hit in data
-        )
-    ):
-        raise ClientError("Server returned an invalid search payload.", 1)
+    if tool == "search":
+        from markdown_vault_mcp._read_payloads import ReadPayloadError, validate_search
+
+        try:
+            validate_search(data)
+        except ReadPayloadError as exc:
+            raise ClientError(str(exc), 1) from None
     return RemoteReply(data, result.meta or {})
 
 
@@ -141,6 +134,8 @@ def run_read(
     arguments: dict[str, Any],
     options: ClientOptions,
     local_call: Callable[[], Any],
+    *,
+    settings: ClientSettings | None = None,
 ) -> RemoteReply:
     """Route a read without initializing local dependencies in remote mode.
 
@@ -149,11 +144,12 @@ def run_read(
         arguments: Validated arguments shared by both backends.
         options: Connection selection, independent of server configuration.
         local_call: Lazy local facet adapter returning JSON-compatible data.
+        settings: Already resolved selection, when a command checks local-only options.
 
     Returns:
         Read payload and available freshness metadata.
     """
-    settings = resolve_settings(options)
+    settings = settings if settings is not None else resolve_settings(options)
     if settings.url is not None:
         return call_read(settings, tool, arguments)
     return RemoteReply(local_call())
