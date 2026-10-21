@@ -15,7 +15,8 @@ The managers depend on these concepts:
   — the vector store contract (#1767): vectors in, nearest rows out, with
   no embedding provider inside the store; :class:`ReportsResources` is the
   optional part a store implements to report its search mode and sizes
-  (#1377).
+  (#1377), and :class:`DescribesStore` the optional part a store
+  implements to say where it lives (#1504).
 
 ``FTSIndex`` implements the first two over one SQLite database and
 ``NumpySidecarStore`` the vector contract over numpy; both satisfy these
@@ -61,6 +62,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "DescribesStore",
     "EmbeddingStore",
     "GraphStore",
     "KeywordGraphIndex",
@@ -493,6 +495,21 @@ class VectorReader(Protocol):
 
     def tokens(self) -> dict[str, RevisionToken | None]:
         """Return each stored document's token; ``None`` when unknown."""
+        ...
+
+
+@runtime_checkable
+class DescribesStore(Protocol):
+    """A store that says where it lives, for ``embeddings_status`` (#1504); optional."""
+
+    def describe(self) -> dict[str, Any]:
+        """Return details of where the store lives, never a credential.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreOpenError: If a live detail cannot be read (*unavailable*),
+                or the store's location is gone (*not configured*).
+        """
         ...
 
 

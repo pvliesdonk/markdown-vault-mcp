@@ -4074,8 +4074,10 @@ resident: its rows are in memory anyway, and its shared-cache connections
 would let a read transaction block a writer. The numpy store is resident
 only. `embeddings_status` reports the mode the store runs in, the
 configured workspace and two measured sizes, its files and its resident
-matrix, through the optional `ReportsResources` protocol. It estimates
-nothing, so the text a resident store also holds is not in it; and a
+matrix, through the optional `ReportsResources` protocol, and, under
+`store_details`, where a store lives, through the optional
+`DescribesStore` protocol (`null` for a store that does not say). It
+estimates nothing, so the text a resident store also holds is not in it; and a
 streamed store it cannot read makes the call fail rather than report a
 partial status (#1625).
 
@@ -4224,9 +4226,18 @@ process. `similar_to_document` returns `[]` for a path with no rows;
 otherwise it averages the source rows with `avg` in the same transaction
 and normalises the mean in the vault process. Search is exact and needs
 no index. The store reports `search_mode="streamed"` with no workspace,
-its tables' `pg_total_relation_size` and no resident bytes, and its
-description names host, database, schema, versions and the lease, never
-credentials. What the store relies on in PostgreSQL, pgvector and psycopg
+its tables' `pg_total_relation_size` (what the schema holds now, a fresh
+store's old tables included) and no resident bytes. Its `describe()`
+fills `store_details` with host, port, database, schema, the PostgreSQL
+and pgvector versions, whether it is a writer and whether it holds the
+lease, never credentials: host, port and database are libpq's resolved
+values from the open, never the DSN, and the lease is checked live
+without being taken back, which only a write does, and outside the
+lease's lock, so a status read never holds up a write. A schema dropped
+under an open store is *not configured* for its reads and its status
+alike: PostgreSQL reports a missing schema and missing tables the same
+way, so a read that finds no meta row looks the schema up. What the store
+relies on in PostgreSQL, pgvector and psycopg
 is in `docs/design/reference/postgresql-pgvector.md`.
 
 **The vault's slot (#1777).** `Vault` holds its vector store in a

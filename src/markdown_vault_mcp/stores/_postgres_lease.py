@@ -38,6 +38,7 @@ from markdown_vault_mcp.stores._postgres import (
 logger = logging.getLogger(__name__)
 
 LEASE_CLASS = 0x4D564D31  # "MVM1"
+_RELEASED = "The writer lease was released."
 
 _DEFAULT_STATEMENT_TIMEOUT_MS = 30_000
 _LOCK_TIMEOUT_MS = 10_000
@@ -171,10 +172,14 @@ class Lease:
     def _refuse_released(self) -> None:
         """Raise when the lease has been released."""
         if self._released:
-            raise RuntimeError("The writer lease was released.")
+            raise RuntimeError(_RELEASED)
 
     def _still_held(self) -> bool:
-        """Whether this lease's connection is alive and still holds the key.
+        """Whether this lease's connection is alive and still holds the key (see :meth:`_holds`)."""
+        return self._holds(self._conn, action="written")
+
+    def _holds(self, conn: psycopg.Connection[Any], *, action: str) -> bool:
+        """Whether *conn* is alive and still holds the key.
 
         A failure on a connection that is still alive (a timeout, a refused
         privilege, too many connections) is reported, not taken as a lost
@@ -185,16 +190,14 @@ class Lease:
                 before any reconnect, so it is never logged as a lost lease).
             StoreUnavailableError: If the check fails on a live connection.
         """
-        if self._conn.closed or self._conn.broken:
+        if conn.closed or conn.broken:
             return False
         try:
-            row = self._conn.execute(_HELD, (LEASE_CLASS, self._schema)).fetchone()
+            row = conn.execute(_HELD, (LEASE_CLASS, self._schema)).fetchone()
         except psycopg.Error as exc:
-            if self._conn.closed or self._conn.broken:
+            if conn.closed or conn.broken:
                 return False
-            failure: Exception = classify_error(
-                exc, schema=self._schema, action="written"
-            )
+            failure: Exception = classify_error(exc, schema=self._schema, action=action)
         else:
             if row is not None and row[0]:
                 return bool(row[1])
@@ -202,6 +205,22 @@ class Lease:
                 f"Schema {self._schema} does not exist.", schema=self._schema
             )
         raise failure from None
+
+    def held(self) -> bool:
+        """Whether this lease's connection still holds the key; never reconnects.
+
+        Raises:
+            RuntimeError: If the lease was released.
+            StoreUnavailableError: If the check fails on a live connection.
+            StoreNotConfiguredError: If the schema no longer exists.
+        """
+        with self._mutex:
+            self._refuse_released()
+            conn = self._conn
+        # Outside the mutex, so a status read never holds up a write's
+        # ensure() or a release; a release racing it closes the connection,
+        # which then reads as not held.
+        return self._holds(conn, action="read")
 
     def release(self) -> None:
         """Release the lease by closing its connection. Idempotent."""
@@ -233,8 +252,14 @@ class LeaseHandle:
     def ensure(self) -> None:
         """See :meth:`Lease.ensure`; a released handle raises ``RuntimeError``."""
         if self._released:
-            raise RuntimeError("The writer lease was released.")
+            raise RuntimeError(_RELEASED)
         self._lease.ensure()
+
+    def held(self) -> bool:
+        """See :meth:`Lease.held`; a released handle raises ``RuntimeError``."""
+        if self._released:
+            raise RuntimeError(_RELEASED)
+        return self._lease.held()
 
     def release(self) -> None:
         """Give this store's share back; the last one releases the lease. Idempotent."""

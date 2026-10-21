@@ -52,7 +52,11 @@ except ImportError as exc:  # pragma: no cover - exercised in a subprocess
         "pip install 'markdown-vault-mcp[postgres]'"
     ) from exc
 
-from markdown_vault_mcp.exceptions import ReadOnlyError, StoreIncompatibleError
+from markdown_vault_mcp.exceptions import (
+    ReadOnlyError,
+    StoreIncompatibleError,
+    StoreUnavailableError,
+)
 from markdown_vault_mcp.stores._identity import served_identity
 from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
 from markdown_vault_mcp.stores._postgres_rows import (
@@ -73,6 +77,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     make_durable,
     read_meta,
     reset_tables,
+    stored_bytes,
     stored_count,
     stored_rows,
     stored_tokens,
@@ -81,7 +86,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     write_document,
 )
 from markdown_vault_mcp.stores.registry import register_backend
-from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
+from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily, StoreResources
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -113,12 +118,39 @@ class _Connection(NamedTuple):
         conninfo: The prepared connection string (hides itself in a ``repr``).
         extension: Where the ``vector`` extension lives.
         lease: A writer's lease on the schema; ``None`` for a reader.
+        server: Where the open found PostgreSQL.
     """
 
     pool: ConnectionPool[psycopg.Connection[tuple[Any, ...]]]
     conninfo: Conninfo
     extension: Extension
     lease: LeaseHandle | None
+    server: _Server
+
+
+class _Server(NamedTuple):
+    """Where an open found PostgreSQL: libpq's resolved values, never the DSN.
+
+    Attributes:
+        host: The host or socket directory connected to.
+        port: The port.
+        database: The database.
+        version: PostgreSQL's version, ``major.minor``.
+    """
+
+    host: str
+    port: int
+    database: str
+    version: str
+
+
+def _server(conn: psycopg.Connection[Any]) -> _Server:
+    """Read where *conn* reached PostgreSQL from libpq, not from the DSN."""
+    info = conn.info
+    number = info.server_version
+    return _Server(
+        info.host, int(info.port), info.dbname, f"{number // 10000}.{number % 10000}"
+    )
 
 
 class PostgresVectorStore:
@@ -267,6 +299,80 @@ class PostgresVectorStore:
 
         return self._reading(read, [])
 
+    def resources(self) -> StoreResources:
+        """Report the store's costs for ``embeddings_status``.
+
+        PostgreSQL scores every search, so no vector batch passes through
+        this process and no vector is held in it. ``stored_bytes`` measures
+        the store's tables as the schema holds them now, a fresh store's
+        old tables included until its first write replaces them.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreNotConfiguredError: If the schema no longer exists.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        self._check_open()
+        measured = self._on_connection(
+            lambda conn: stored_bytes(conn, schema=self._schema)
+        )
+        return StoreResources("streamed", None, measured, 0)
+
+    def describe(self) -> dict[str, Any]:
+        """Name where the store lives, for ``embeddings_status``; never a credential.
+
+        Host, port and database are libpq's resolved values from the open,
+        never the DSN. The schema is looked up now, for a reader too, so a
+        store whose schema is gone never describes itself as if it were
+        there. ``lease_held`` is checked now, and a lost lease is reported,
+        not taken back: the next write does that.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreUnavailableError: If PostgreSQL cannot be read, or the lease
+                check fails on a live connection.
+            StoreNotConfiguredError: If the schema no longer exists.
+        """
+        self._check_open()
+        self._on_connection(lambda _conn: None)  # the schema is still there
+        server = self._conn.server
+        lease = self._conn.lease
+        return {
+            "host": server.host,
+            "port": server.port,
+            "database": server.database,
+            "schema": self._schema,
+            "postgresql_version": server.version,
+            "pgvector_version": ".".join(map(str, self._conn.extension.version)),
+            "writer": lease is not None,
+            "lease_held": lease is not None and lease.held(),
+        }
+
+    def _on_connection(self, use: Callable[[psycopg.Connection[Any]], _T]) -> _T:
+        """Look the schema up on a pool connection, then run *use* on it.
+
+        Raises:
+            StoreNotConfiguredError: If the schema no longer exists.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        try:
+            with self._conn.pool.connection() as conn:
+                check_schema(conn, schema=self._schema, action="read")
+                return use(conn)
+        except PoolTimeout:
+            failure = self._pool_unavailable()
+        except psycopg.Error as exc:
+            failure = classify_error(exc, schema=self._schema, action="read")
+        raise failure from None
+
+    def _pool_unavailable(self) -> StoreUnavailableError:
+        """The outcome of finding no free pool connection in time."""
+        return unavailable(
+            f"No PostgreSQL connection for schema {self._schema} was free in time.",
+            reason="pool",
+            schema=self._schema,
+        )
+
     def _check_open(self) -> None:
         """Refuse use after close.
 
@@ -310,11 +416,7 @@ class PostgresVectorStore:
                 )
             return self._read_once(read, empty)
         except PoolTimeout:
-            failure = unavailable(
-                f"No PostgreSQL connection for schema {self._schema} was free in time.",
-                reason="pool",
-                schema=self._schema,
-            )
+            failure = self._pool_unavailable()
         except psycopg.Error as exc:
             failure = classify_error(exc, schema=self._schema, action="read")
         raise failure from None
@@ -322,11 +424,20 @@ class PostgresVectorStore:
     def _read_once(
         self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
     ) -> _T:
-        """One attempt at :meth:`_reading`'s transaction; psycopg's errors pass through."""
-        with self._conn.pool.connection() as conn, conn.transaction():
-            conn.execute(_READ_TRANSACTION)
-            meta = read_meta(conn, schema=self._schema, action="read")
-            return empty if meta is None else self._read_checked(conn, meta, read)
+        """One attempt at :meth:`_reading`'s transaction; psycopg's errors pass through.
+
+        No meta row reads as an empty store, unless the schema itself is
+        gone: PostgreSQL reports both as an undefined table, so the schema
+        is looked up then, after the transaction.
+        """
+        with self._conn.pool.connection() as conn:
+            with conn.transaction():
+                conn.execute(_READ_TRANSACTION)
+                meta = read_meta(conn, schema=self._schema, action="read")
+                if meta is not None:
+                    return self._read_checked(conn, meta, read)
+            check_schema(conn, schema=self._schema, action="read")
+            return empty
 
     def _read_checked(
         self,
@@ -497,11 +608,7 @@ class PostgresVectorStore:
                     raise psycopg.Rollback
                 progress.committing = True
         except PoolTimeout:
-            failure: Exception = unavailable(
-                f"No PostgreSQL connection for schema {self._schema} was free in time.",
-                reason="pool",
-                schema=self._schema,
-            )
+            failure: Exception = self._pool_unavailable()
         except psycopg.Error as exc:
             failure = self._write_failure(exc, progress)
         else:
@@ -786,7 +893,7 @@ class PostgresVectorBackend:
             schema=schema,
             identity=state.identity,
             read_only=request.read_only,
-            connection=_Connection(pool, conninfo, extension, lease),
+            connection=_Connection(pool, conninfo, extension, lease, _server(conn)),
             state=_WriteState(
                 reset_pending=request.fresh, tables_ready=state.layout == "present"
             ),

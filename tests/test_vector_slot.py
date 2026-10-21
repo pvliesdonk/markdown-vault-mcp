@@ -145,6 +145,7 @@ class TestLifecycleAndDescription:
             "search_workspace_bytes": None,
             "stored_bytes": None,
             "resident_vector_bytes": None,
+            "store_details": None,
         }
         slot.writable(rebuild=None)
         assert slot.describe() == {
@@ -161,7 +162,28 @@ class TestLifecycleAndDescription:
             "search_workspace_bytes": None,
             "stored_bytes": 0,
             "resident_vector_bytes": 0,
+            "store_details": None,
         }
+
+    def test_describe_includes_store_details_only_from_a_store_that_gives_them(
+        self,
+    ) -> None:
+        injected = NumpySidecarBackend().open(None, IDENTITY)
+
+        class _Describing:
+            def __getattr__(self, name: str) -> Any:
+                return getattr(injected, name)
+
+            def describe(self) -> dict[str, Any]:
+                return {"host": "db", "schema": "vault_a"}
+
+        slot = _slot(None, store=_Describing())
+        slot.get(rebuild=None)
+        assert slot.describe()["store_details"] == {"host": "db", "schema": "vault_a"}
+        plain = _slot(None, store=injected)
+        plain.get(rebuild=None)
+        assert plain.describe()["store_details"] is None
+        injected.close()
 
     def test_describe_raises_when_a_streamed_store_cannot_be_read(
         self, tmp_path: Path

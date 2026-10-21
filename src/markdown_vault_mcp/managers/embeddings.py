@@ -400,10 +400,14 @@ class EmbeddingsManager:
             keys (#1377), ``None`` until the store is opened or when it
             does not report them: ``search_mode`` (``"resident"`` or
             ``"streamed"``, as the store runs), ``search_workspace_bytes``
-            (configured; ``None`` when resident), ``stored_bytes``
-            (measured size of its files; ``None`` in memory) and
+            (configured; ``None`` when no vector batch passes through the
+            vault process: resident, or scored by the database),
+            ``stored_bytes`` (measured size of its files or tables;
+            ``None`` in memory) and
             ``resident_vector_bytes`` (measured bytes of its resident
-            matrix; ``0`` when streamed).
+            matrix; ``0`` when streamed). ``store_details`` names where a
+            store that describes itself lives (a PostgreSQL store's host,
+            database, schema, versions and lease); ``None`` otherwise.
 
         Raises:
             OSError: If a sidecar file cannot be statted (#1625).
@@ -417,6 +421,7 @@ class EmbeddingsManager:
             "identity": None,
             "generation": None,
             **NO_RESOURCES,
+            "store_details": None,
         }
         if self._embedding_provider is None:
             # No provider, no store: nothing to describe.
