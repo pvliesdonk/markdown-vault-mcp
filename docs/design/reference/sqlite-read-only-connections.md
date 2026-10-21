@@ -25,6 +25,19 @@ sources:
     title: SQLite FTS5 Extension
     resource: https://sqlite.org/fts5.html
     accessed: 2026-10-07
+  - id: transaction-docs
+    title: SQLite transactions
+    resource: https://sqlite.org/lang_transaction.html
+    accessed: 2026-10-21
+  - id: savepoint-docs
+    title: SQLite savepoints
+    resource: https://sqlite.org/lang_savepoint.html
+    accessed: 2026-10-21
+  - id: date-docs
+    title: SQLite date and time functions
+    resource: https://sqlite.org/lang_datefunc.html
+    accessed: 2026-10-21
+
 ---
 
 # SQLite read-only connections, WAL and FTS5's persisted rank
@@ -127,3 +140,19 @@ sources:
 - How long a `mode=ro` reader waits, or whether it fails, while a writer
   holds a long transaction or checkpoints; not probed.
 - Windows paths through `Path.as_uri()`; not probed.
+
+## Exact query read views and UTC months (2026-10-21)
+
+- An active read transaction retains its database view across statements,
+  including a different connection's later commit. [source: transaction-docs]
+  [pins: tests/test_structured_queries.py::test_read_only_page_total_share_view]
+- Savepoints can nest inside caller transactions. Rolling back to or releasing
+  an inner savepoint preserves the outer transaction. Query projections use
+  this boundary rather than a connection context manager that could commit
+  caller work. [source: savepoint-docs]
+  [pins: tests/test_structured_queries.py::test_failure_preserves_outer_transaction_and_backend_errors]
+- The `unixepoch` modifier interprets seconds since 1970; `%Y-%m` formats a
+  month. [source: date-docs] Fractional instants immediately before a month
+  boundary can round into the next month in SQLite 3.46.1. Floor whole seconds
+  before formatting, including negative timestamps. [observed: Python 3.13.5]
+  [pins: tests/test_structured_queries.py::test_time_and_fractional_month]
