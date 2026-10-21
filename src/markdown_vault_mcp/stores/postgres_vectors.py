@@ -114,12 +114,39 @@ class _Connection(NamedTuple):
         conninfo: The prepared connection string (hides itself in a ``repr``).
         extension: Where the ``vector`` extension lives.
         lease: A writer's lease on the schema; ``None`` for a reader.
+        server: Where the open found PostgreSQL.
     """
 
     pool: ConnectionPool[psycopg.Connection[tuple[Any, ...]]]
     conninfo: Conninfo
     extension: Extension
     lease: LeaseHandle | None
+    server: _Server
+
+
+class _Server(NamedTuple):
+    """Where an open found PostgreSQL: libpq's resolved values, never the DSN.
+
+    Attributes:
+        host: The host or socket directory connected to.
+        port: The port.
+        database: The database.
+        version: PostgreSQL's version, ``major.minor``.
+    """
+
+    host: str
+    port: int
+    database: str
+    version: str
+
+
+def _server(conn: psycopg.Connection[Any]) -> _Server:
+    """Read where *conn* reached PostgreSQL from libpq, not from the DSN."""
+    info = conn.info
+    number = info.server_version
+    return _Server(
+        info.host, int(info.port), info.dbname, f"{number // 10000}.{number % 10000}"
+    )
 
 
 class PostgresVectorStore:
@@ -291,6 +318,32 @@ class PostgresVectorStore:
         else:
             return StoreResources("streamed", None, measured, 0)
         raise failure from None
+
+    def describe(self) -> dict[str, Any]:
+        """Name where the store lives, for ``embeddings_status``; never a credential.
+
+        Host, port and database are libpq's resolved values from the open,
+        never the DSN. ``lease_held`` is checked now, and a lost lease is
+        reported, not taken back: the next write does that.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreUnavailableError: If the lease check fails on a live connection.
+            StoreNotConfiguredError: If the schema no longer exists.
+        """
+        self._check_open()
+        server = self._conn.server
+        lease = self._conn.lease
+        return {
+            "host": server.host,
+            "port": server.port,
+            "database": server.database,
+            "schema": self._schema,
+            "postgresql_version": server.version,
+            "pgvector_version": ".".join(map(str, self._conn.extension.version)),
+            "writer": lease is not None,
+            "lease_held": lease is not None and lease.held(),
+        }
 
     def _pool_unavailable(self) -> Exception:
         """The outcome of finding no free pool connection in time."""
@@ -811,7 +864,7 @@ class PostgresVectorBackend:
             schema=schema,
             identity=state.identity,
             read_only=request.read_only,
-            connection=_Connection(pool, conninfo, extension, lease),
+            connection=_Connection(pool, conninfo, extension, lease, _server(conn)),
             state=_WriteState(
                 reset_pending=request.fresh, tables_ready=state.layout == "present"
             ),

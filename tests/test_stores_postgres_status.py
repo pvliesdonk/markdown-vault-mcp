@@ -116,3 +116,87 @@ def test_status_of_an_unreachable_store_raises(store: Any) -> None:
             store.resources()
     finally:
         store._conn = real
+
+
+def test_describe_names_where_the_store_lives(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    from psycopg.conninfo import conninfo_to_dict
+
+    from markdown_vault_mcp.interfaces import DescribesStore
+
+    assert isinstance(store, DescribesStore)
+    described = store.describe()
+    expected = conninfo_to_dict(postgres_schema.dsn)
+    assert described["database"] == expected.get("dbname", described["database"])
+    assert described["port"] == int(expected.get("port", 5432))
+    assert described["schema"] == postgres_schema.name
+    assert described["postgresql_version"].split(".")[0].isdigit()
+    assert described["pgvector_version"].count(".") == 2
+    assert (described["writer"], described["lease_held"]) == (True, True)
+    assert set(described) == {
+        "host",
+        "port",
+        "database",
+        "schema",
+        "postgresql_version",
+        "pgvector_version",
+        "writer",
+        "lease_held",
+    }
+
+
+def test_a_reader_holds_no_lease(backend: Any, postgres_schema: PostgresSchema) -> None:
+    reader = backend.open(postgres_schema.name, IDENT, owns_files=False)
+    try:
+        described = reader.describe()
+    finally:
+        reader.close()
+    assert (described["writer"], described["lease_held"]) == (False, False)
+
+
+def test_describe_reports_a_lost_lease_without_retaking_it(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    pid = store._conn.lease.pid
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        admin.execute("SELECT pg_terminate_backend(%s, 5000)", (pid,))
+    assert store.describe()["lease_held"] is False
+    assert store._conn.lease.pid == pid  # a status read does not take it back
+    store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    assert store.describe()["lease_held"] is True  # a write did
+
+
+def test_describe_shows_no_secret(postgres_schema: PostgresSchema) -> None:
+    import json
+
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    params = conninfo_to_dict(postgres_schema.dsn)
+    params.setdefault("password", "pw-not-needed")
+    params.update(sslcert="/secret/cert.pem", sslkey="/secret/key.pem")
+    params["sslmode"] = "disable"
+    store = PostgresVectorBackend(make_conninfo("", **params)).open(
+        postgres_schema.name, IDENT
+    )
+    try:
+        shown = json.dumps(store.describe()) + repr(store)
+    finally:
+        store.close()
+    for secret in (
+        str(params["password"]),
+        "/secret/",
+        "sslkey",
+        "sslcert",
+        "password",
+    ):
+        assert secret not in shown
+
+
+def test_describe_after_close_raises(
+    backend: Any, postgres_schema: PostgresSchema
+) -> None:
+    closed = backend.open(postgres_schema.name, IDENT)
+    closed.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        closed.describe()

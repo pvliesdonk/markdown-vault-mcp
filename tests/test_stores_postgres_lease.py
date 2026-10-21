@@ -496,3 +496,25 @@ def test_a_release_to_zero_finishes_before_the_next_acquire(
         handle = registry.acquire(conninfo, schema=postgres_schema.name)
         handle.release()
     assert _free(postgres_schema)
+
+
+def test_held_checks_without_reconnecting(postgres_schema: PostgresSchema) -> None:
+    lease = Lease.acquire(_conninfo(postgres_schema), schema=postgres_schema.name)
+    try:
+        assert lease.held()
+        lease._conn.close()
+        assert not lease.held()
+        assert lease._conn.closed  # not replaced: only ensure() reconnects
+    finally:
+        lease.release()
+    with pytest.raises(RuntimeError, match="released"):
+        lease.held()
+
+
+def test_a_handle_after_release_refuses_held(postgres_schema: PostgresSchema) -> None:
+    handle = LeaseRegistry().acquire(
+        _conninfo(postgres_schema), schema=postgres_schema.name
+    )
+    handle.release()
+    with pytest.raises(RuntimeError, match="released"):
+        handle.held()

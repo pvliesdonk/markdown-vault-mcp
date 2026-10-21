@@ -26,7 +26,7 @@ from markdown_vault_mcp.exceptions import (
     StoreCorruptError,
     StoreIncompatibleError,
 )
-from markdown_vault_mcp.interfaces import ReportsResources
+from markdown_vault_mcp.interfaces import DescribesStore, ReportsResources
 from markdown_vault_mcp.types import EmbeddingIdentity
 
 if TYPE_CHECKING:
@@ -334,7 +334,10 @@ class VectorStoreSlot:
 
         The search mode and sizes come from the open store when it reports
         them (:class:`~markdown_vault_mcp.interfaces.ReportsResources`, #1377);
-        ``None`` before it opens or when it does not.
+        ``None`` before it opens or when it does not. ``store_details`` comes
+        from a store that says where it lives
+        (:class:`~markdown_vault_mcp.interfaces.DescribesStore`, #1504);
+        ``None`` otherwise.
 
         Raises:
             StoreOpenError: If a streamed store cannot be read: its
@@ -352,6 +355,9 @@ class VectorStoreSlot:
         }
         if isinstance(store, ReportsResources):
             described.update(dataclasses.asdict(store.resources()))
+        described["store_details"] = (
+            store.describe() if isinstance(store, DescribesStore) else None
+        )
         return described
 
     def close(self) -> None:

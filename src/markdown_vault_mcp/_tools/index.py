@@ -81,6 +81,12 @@ def register(mcp: FastMCP) -> None:
 
             The four fields above are null until the store is first opened,
             and when the store does not report them.
+
+            - store_details (dict | None): Where a database-backed store
+              lives: host, port, database, schema, server and extension
+              versions, and whether this server holds the writer lease.
+              Null for a file or in-memory store, and until the store is
+              first opened. It never shows credentials.
         """
         return await asyncio.to_thread(vault.index.embeddings_status)
 

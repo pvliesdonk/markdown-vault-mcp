@@ -203,6 +203,18 @@ class Lease:
             )
         raise failure from None
 
+    def held(self) -> bool:
+        """Whether this lease's connection still holds the key; never reconnects.
+
+        Raises:
+            RuntimeError: If the lease was released.
+            StoreUnavailableError: If the check fails on a live connection.
+            StoreNotConfiguredError: If the schema no longer exists.
+        """
+        with self._mutex:
+            self._refuse_released()
+            return self._still_held()
+
     def release(self) -> None:
         """Release the lease by closing its connection. Idempotent."""
         with self._mutex:
@@ -235,6 +247,12 @@ class LeaseHandle:
         if self._released:
             raise RuntimeError("The writer lease was released.")
         self._lease.ensure()
+
+    def held(self) -> bool:
+        """See :meth:`Lease.held`; a released handle raises ``RuntimeError``."""
+        if self._released:
+            raise RuntimeError("The writer lease was released.")
+        return self._lease.held()
 
     def release(self) -> None:
         """Give this store's share back; the last one releases the lease. Idempotent."""
