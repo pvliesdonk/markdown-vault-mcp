@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -86,11 +87,16 @@ async def test_the_server_searches_postgres_across_a_restart(
         "streamed",
     )
     assert status["store_details"]["schema"] == postgres_schema.name
-    assert postgres_schema.dsn not in json.dumps(status)
+    from psycopg.conninfo import conninfo_to_dict
+
+    shown = json.dumps(status)
+    assert postgres_schema.dsn not in shown
+    password = conninfo_to_dict(postgres_schema.dsn).get("password")
+    assert not password or str(password) not in shown
 
 
 async def test_a_search_while_postgres_is_unreachable_is_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     _env(monkeypatch, tmp_path, "host=127.0.0.1 port=1 connect_timeout=2", "vault_a")
     with patch(
@@ -99,8 +105,18 @@ async def test_a_search_while_postgres_is_unreachable_is_an_error(
     ):
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError, match="Retry later"):  # a fault, not []
+            with (
+                caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.stores"),
+                pytest.raises(ToolError, match="Retry later"),  # a fault, not []
+            ):
                 await client.call_tool("search", {"query": "pears", "mode": "semantic"})
+    # ... and it is the store that could not reach PostgreSQL, not another fault.
+    reasons = [
+        r.args[1]
+        for r in caplog.records
+        if r.msg.startswith("postgres_vector_store_unavailable ")
+    ]
+    assert "connect" in reasons
 
 
 def test_the_docker_image_installs_the_postgres_extra() -> None:
@@ -116,6 +132,9 @@ def test_the_docker_image_installs_the_postgres_extra() -> None:
     }
     assert {"psycopg", "psycopg-pool", "pgvector"} <= packages
     dockerfile = (root / "Dockerfile").read_text()
-    assert (
-        dockerfile.count("--extra all") >= 2
-    )  # the dependency layer and the project install
+    block = dockerfile.split("# DOCKERFILE-UV-EXTRAS-START", 1)[1].split(
+        "# DOCKERFILE-UV-EXTRAS-END", 1
+    )[0]
+    syncs = [line for line in block.splitlines() if line.strip().startswith("uv sync")]
+    assert len(syncs) == 2  # the dependency layer and the project install
+    assert all("--extra all" in line for line in syncs)
