@@ -172,10 +172,11 @@ async def attach_okf_to_results(
     Returns:
         *results*, each with an ``okf`` key when active.
     """
-    if await okf_active(vault):
-        for hit in results:
-            hit["okf"] = derive_annotation(hit.get("frontmatter") or {})
-    return results
+    from markdown_vault_mcp._read_payloads import annotate_hits
+
+    return annotate_hits(
+        results, derive_annotation if await okf_active(vault) else None
+    )
 
 
 def _resolve_drain_timeout() -> float:

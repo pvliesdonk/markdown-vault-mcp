@@ -5838,6 +5838,12 @@ The CLI selects its backend before evaluating server configuration. A nonsecret 
 
 Remote search uses the installed native MCP client with function-local imports, tool/schema discovery once per invocation, the original search array and out-of-band freshness metadata. One deadline bounds initialization and the read. Errors never trigger local execution or disclose transport exception text. `_cli_read` is the stable import seam for lazy read dispatch, currently implemented beside the transport. Local disk-index freshness is unknown. The [SDK reference](reference/fastmcp-4.md#http-read-client) records the external APIs this depends on. Client environment fields are declared in the presentation contract because they are independent of ProjectConfig.
 
+Search retains its keyword default. Explicit `auto` omits mode at either boundary; selected filters, section caps, snippet widths and remote drain requests retain native semantics. Optional controls are omitted when unset, so an older server need not advertise them for an ordinary search. Connection selection is resolved once before local-only option checks and dispatch. The shared runner also accepts that resolved snapshot without rereading the profile or credentials.
+
+`_read_payloads` contains SDK-independent controls and shape validation. Local and MCP search adapters inject the native OKF annotation function after one bundle observation; the helper does no I/O and preserves result order, sections, frontmatter and scores. Existing computed OKF filter/ranking semantics remain unchanged. Note and attachment reads retain their existing boundary policies.
+
+`_cli_output.render_reply` preserves bare-array search JSON and emits stale warnings only on stderr. Agent output uses one fixed header and JSON records, with JSON-compatible escapes for all control code points, including supplementary Unicode. Freshness accepts only observed Boolean values; absent or malformed observations remain unknown. Requested mode comes from validated options; actual mode comes from hits and is unknown for an empty result. Broken output pipes close cleanly, including the final interpreter flush. Invalid CLI controls fail before backend construction, and malformed remote payloads fail before output.
+
 ## Configuration
 
 ### The config import floor (#1259)

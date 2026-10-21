@@ -17,6 +17,18 @@ kind: reference
 markdown-vault-mcp search "release notes" --server https://vault.example/proxy/mcp --json
 ```
 
+Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values can contain equals signs; duplicate keys fail. Filters use the vault's existing indexed-field and OKF rules.
+
+```bash
+markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-file 2 --snippet-words 40 --agent
+```
+
+`--chunks-per-file` requires at least one section; `--snippet-words` accepts zero for full indexed sections. Unset values use the vault's defaults. `--wait-for-pending-writes` asks a remote server to drain its writer within the client deadline. Local reads have no server writer to wait for and do not claim a fresh shared index.
+
+`--json` keeps the grouped-result array, including sections, frontmatter and optional OKF annotations. A stale remote result adds a warning on stderr. `--agent` conflicts with `--json` and emits one `OK search` header followed by one escaped JSON record per note. The header includes count, requested mode, actual modes observed in hits, and `index_stale=true`, `false` or `unknown`. Empty results cannot establish an actual mode; local index freshness is unknown. Printable Unicode remains readable and control characters cannot inject terminal commands or extra records. Human output keeps the existing path, score and title layout.
+
+Older servers can still accept the original search arguments. Requesting an option their tool schema lacks fails explicitly; the client never drops it or retries locally.
+
 Pass the complete MCP URL, including its path. `--server` overrides `MARKDOWN_VAULT_MCP_SERVER_URL`, then the client profile's URL. `--local` bypasses that selection and conflicts with explicit `--server`. `--source-dir` requires local mode. Remote search never opens a local vault or resolves its embedding provider. `serve`, `index` and `reindex` remain local commands and reject `--server`.
 
 The optional profile is `$XDG_CONFIG_HOME/markdown-vault-mcp/client.toml`, defaulting to `~/.config/markdown-vault-mcp/client.toml`. `MARKDOWN_VAULT_MCP_CLIENT_CONFIG` selects another file; a missing selected file, malformed TOML or unknown field fails. An absent default file is fine.
@@ -71,9 +83,14 @@ Search the local vault or a hosted MCP server.
 |---|---|---|---|
 | `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
 | `-n` |  | 10 | Max results (default: 10). |
-| `-m` |  | keyword | keyword / semantic / hybrid (default: keyword). |
+| `-m` |  | keyword | keyword / semantic / hybrid / auto (default: keyword). |
 | `--folder` |  |  | Restrict to folder. |
 | `--json` |  | False | Output results as JSON. |
+| `--agent` |  | False | Output an agent header and escaped JSON records. |
+| `--filter` |  |  | Repeat KEY=VALUE frontmatter filters (AND). |
+| `--chunks-per-file` |  |  | Maximum matching sections per note. |
+| `--snippet-words` |  |  | Snippet width in words; 0 returns full indexed sections. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 | `--server` |  |  | Complete hosted MCP endpoint URL. |
 | `--local` |  | False | Use the local vault despite a client profile. |
 | `--timeout` |  |  | Remote operation deadline in seconds (default 30). |
