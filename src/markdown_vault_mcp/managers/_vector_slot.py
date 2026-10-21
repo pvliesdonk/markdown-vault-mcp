@@ -402,7 +402,9 @@ class VectorStoreSlot:
 
         The search mode and sizes come from the open store when it reports
         them (:class:`~markdown_vault_mcp.interfaces.ReportsResources`, #1377);
-        ``None`` before it opens or when it does not. ``store_details`` comes
+        ``None`` before it opens or when it does not. Before the first build
+        they come from the provisional store a read opened, which has no
+        identity or generation to report yet. ``store_details`` comes
         from a store that says where it lives
         (:class:`~markdown_vault_mcp.interfaces.DescribesStore`, #1504);
         ``None`` otherwise.
@@ -421,12 +423,15 @@ class VectorStoreSlot:
             "generation": store.generation if store is not None else None,
             **NO_RESOURCES,
         }
-        if isinstance(store, ReportsResources):
-            described.update(dataclasses.asdict(store.resources()))
+        # Before the first build only the provisional store is open: it has
+        # no identity to report, but it says what it costs and where it is.
+        reporting = store if store is not None else self._provisional
+        if isinstance(reporting, ReportsResources):
+            described.update(dataclasses.asdict(reporting.resources()))
         # The store's own reads (generation, resources) come first: a store
         # that cannot be read fails the status there, before its details.
         described["store_details"] = (
-            store.describe() if isinstance(store, DescribesStore) else None
+            reporting.describe() if isinstance(reporting, DescribesStore) else None
         )
         return described
 

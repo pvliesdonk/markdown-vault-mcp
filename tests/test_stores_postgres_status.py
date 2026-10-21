@@ -286,3 +286,26 @@ def test_a_postgres_slot_keeps_one_provisional_store_and_closes_it(
     slot.close()
     assert sessions() == 0
     assert lease_is_free(postgres_schema.dsn, postgres_schema.name)
+
+
+def test_an_empty_schema_still_says_where_it_lives(
+    postgres_schema: PostgresSchema,
+) -> None:
+    """Status on a fresh deployment, before the first build (#1504 8c's review)."""
+    from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
+    from tests.conftest import MockEmbeddingProvider
+
+    slot = VectorStoreSlot(
+        backend=PostgresVectorBackend(postgres_schema.dsn),
+        location=postgres_schema.name,
+        provider=MockEmbeddingProvider(dim=3),
+        text_format="v1",
+    )
+    try:
+        slot.get(rebuild=None)  # provisional: nothing stored, dimension unknown
+        described = slot.describe()
+    finally:
+        slot.close()
+    assert described["identity"] is None  # nothing stored yet
+    assert described["store_details"]["schema"] == postgres_schema.name
+    assert described["search_mode"] == "streamed"
