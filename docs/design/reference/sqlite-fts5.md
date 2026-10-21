@@ -86,3 +86,24 @@ where they bear on delete cost.
   stated by the documentation and was not independently benchmarked here;
   the claim this reference and the fix rely on is only "not a full scan,"
   which the query-plan test pins directly. [unverified]
+
+## Scoped exhaustive queries (2026-10-21)
+
+- Nested FTS5 column filters narrow an existing column set; they cannot
+  restore excluded columns (§3.6). Group the complete expression before
+  applying the outer scope. [source: fts5-docs]
+  [pins: tests/test_structured_queries.py::test_scope_cannot_be_widened]
+- FTS5 quoted strings escape an embedded double quote by doubling it
+  (§3.1). Validate raw syntax before adding scope parentheses: an invalid
+  expression can otherwise balance those parentheses and widen the match.
+  [source: fts5-docs] [observed: SQLite 3.46.1, Python 3.13.5]
+  [pins: tests/test_structured_queries.py::test_scope_cannot_be_widened]
+- `snippet()` bounds tokens to 1-64 (§5.1.3), not arbitrary word counts.
+  The exhaustive query surface uses the existing Python word-window helper
+  to enforce its 200-word default independently. [source: fts5-docs]
+  [pins: tests/test_structured_queries.py::test_sections_snapshot_and_huge_offset]
+- The parser rejects leading wildcard-only queries as unknown special
+  queries. Literal fallback covers them; NUL is explicitly invalid because
+  quoting it still fails parsing. [observed: SQLite 3.46.1, Python 3.13.5]
+  [pins: tests/test_structured_queries.py::test_malformed_special_query_uses_literal_fallback]
+  [pins: tests/test_structured_queries.py::test_nul_query_is_explicitly_invalid]

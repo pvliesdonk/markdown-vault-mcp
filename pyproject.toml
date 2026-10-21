@@ -170,6 +170,7 @@ dependencies = [
 [project.optional-dependencies]
 # PROJECT-EXTRAS-START — add domain-specific optional-dependency groups below; kept across copier update
 mcp = ["fastmcp>=4,<5"]
+property-tests = ["hypothesis>=6"]
 # numpy carries no bound here on purpose: the <2.5 ceiling lives in
 # [tool.uv] constraint-dependencies below (single bound per package, per
 # scripts/check_pins.py), where Renovate's range rewriting cannot reach it
