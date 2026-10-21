@@ -1,16 +1,16 @@
 ---
 type: Reference
 title: PostgreSQL and pgvector behaviour behind the vector store
-description: What the PostgreSQL vector store relies on in PostgreSQL 17, pgvector 0.8 and psycopg 3 — extension privileges, zero-vector scoring, schemas and search_path, snapshots, DELETE against TRUNCATE, advisory locks, durability settings, error codes and connect-time failures, cursors, COPY, pooling, connection parameters and schema backups.
+description: What the PostgreSQL vector store relies on in PostgreSQL 17, pgvector 0.8 and psycopg 3 — extension privileges, zero-vector scoring, schemas and search_path, snapshots, DELETE against TRUNCATE, advisory locks, durability settings, error codes and connect-time failures, cursors, COPY, pooling, connection poolers, connection parameters, schema backups and vacuuming.
 subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changelog to 0.8.7; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1"
 valid_for: "PostgreSQL 15–18, pgvector 0.8.x, psycopg 3.3.x"
 generated:
   by: process:researching-references
-  at: 2026-10-18T10:01:06+02:00
-stale_after: 2027-04-18T10:01:06+02:00
+  at: 2026-10-21T22:10:00+02:00
+stale_after: 2027-04-21T22:10:00+02:00
 verified:
   - by: process:researching-references
-    at: 2026-10-18T10:01:06+02:00
+    at: 2026-10-21T22:10:00+02:00
 status: stable
 sources:
   - id: pgvector-readme
@@ -133,6 +133,22 @@ sources:
     title: pgvector-python README
     resource: https://github.com/pgvector/pgvector-python/blob/master/README.md
     accessed: 2026-10-18
+  - id: pgbouncer-features
+    title: PgBouncer features (pooling modes and SQL feature map)
+    resource: https://www.pgbouncer.org/features.html
+    accessed: 2026-10-21
+  - id: pgbouncer-changelog
+    title: PgBouncer changelog
+    resource: https://www.pgbouncer.org/changelog.html
+    accessed: 2026-10-21
+  - id: pg-routine-vacuuming
+    title: Routine Vacuuming (PostgreSQL 17)
+    resource: https://www.postgresql.org/docs/17/routine-vacuuming.html
+    accessed: 2026-10-21
+  - id: pg-autovacuum-config
+    title: Automatic Vacuuming settings (PostgreSQL 17)
+    resource: https://www.postgresql.org/docs/17/runtime-config-autovacuum.html
+    accessed: 2026-10-21
 ---
 
 # PostgreSQL and pgvector behaviour behind the vector store
@@ -155,13 +171,17 @@ named in the frontmatter with the probe scripts listed under "Probes".
   locks; `synchronous_commit` and `fsync`; SQLSTATEs and how psycopg reports
   connect-time failures; server-side cursors, binary `COPY`, the connection
   pool and connection-string parsing; libpq connection parameters and
-  password sources; `pg_dump` of one schema; relation sizes.
+  password sources; PgBouncer's pooling modes; `pg_dump` of one schema;
+  relation sizes; vacuuming after `DELETE`.
 - Does not cover: ANN indexes (`hnsw`, `ivfflat`) and their recall;
   `halfvec`/`sparsevec`/`bit`; streaming replication and replica
   read-after-write; crash and power-loss recovery; the async psycopg API.
-- Depended on by: `src/markdown_vault_mcp/stores/postgres_vectors.py`
-  (arrives in #1504's third child), `docs/design/design.md` § "The storage
-  contract (#1766, #1503)" (the PostgreSQL store paragraphs and decision 34).
+- Depended on by: `src/markdown_vault_mcp/stores/postgres_vectors.py`,
+  `_postgres.py`, `_postgres_lease.py`, `_postgres_tables.py`,
+  `_postgres_rows.py` and `_postgres_search.py` in the same package;
+  `docs/design/design.md` § "The storage contract (#1766, #1503)" (the
+  PostgreSQL store paragraphs and decision 34); and the operator guide,
+  `docs/deploy/postgresql.md`.
 
 ## Claims
 
@@ -271,6 +291,13 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - The pool's default `open=True` may change, so it should be opened explicitly. [source: psycopg-pool]
 - `conninfo_to_dict` parses a URI or key/value string into parameters and raises `ProgrammingError` for an invalid one. [source: psycopg-conninfo] [unverified] That it never connects is not stated on the page; the function's name and examples suggest it, and a test that parses a DSN for an unreachable host would settle it.
 
+### Connection poolers
+
+- PgBouncer's session pooling assigns a server connection to a client for as long as the client stays connected; transaction pooling assigns one only for the duration of a transaction; statement pooling is transaction pooling that disallows multi-statement transactions. [source: pgbouncer-features] (§ Pooling modes)
+- Under transaction pooling, `SET`/`RESET`, session-level advisory locks, `LISTEN`, `WITH HOLD` cursors and SQL `PREPARE`/`DEALLOCATE` are "Never" supported; session pooling supports all of them. Protocol-level prepared plans work under transaction pooling only once `max_prepared_statements` is set above zero. [source: pgbouncer-features] (§ SQL feature map for pooling modes)
+- Support for protocol-level named prepared statements arrived in PgBouncer 1.21.0, released 2023-10-16. [source: pgbouncer-changelog] (1.21.x)
+- So only session pooling serves this store: the writer lease is a session-level advisory lock held across transactions, each pool connection sets `search_path` and `statement_timeout` with a session `SET` once, when it opens, and the lease connection sets `idle_session_timeout`, `statement_timeout` and `lock_timeout` the same way. Under transaction pooling a later transaction could run on a server connection that has neither the lock nor the settings. Decided in `docs/design/design.md` § "The storage contract (#1766, #1503)". [pins: tests/test_stores_postgres_lease.py::test_acquire_holds_the_key_until_release]
+
 ### Connections and passwords
 
 - `connect_timeout` absent, zero or negative waits indefinitely, and applies per host. [source: libpq-connect]
@@ -284,6 +311,10 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 - `pg_dump` makes a consistent backup without blocking readers or writers. [source: pg-dump]
 - `pg_dump -n` dumps the selected schemas and their objects but "makes no attempt to dump any other database objects that the selected schema(s) might depend upon", so such a dump may not restore into a clean database on its own; extensions are selected with `-e`. [source: pg-dump]
+- An `UPDATE` or `DELETE` does not remove the old row version at once; `VACUUM` reclaims the space of row versions no transaction still needs. [source: pg-routine-vacuuming] (§ 24.1.2 Recovering Disk Space)
+- Plain `VACUUM` marks that space reusable by new rows but does not return it to the operating system, "except in the special case where one or more pages at the end of a table become entirely free and an exclusive table lock can be easily obtained". [source: pg-routine-vacuuming] (§ 24.1.2)
+- `VACUUM FULL` writes a new copy of the table without dead space, needs extra disk for that copy until it finishes, and takes `ACCESS EXCLUSIVE` on the table, so it cannot run alongside other use of it. [source: pg-routine-vacuuming] (§ 24.1.1, § 24.1.2)
+- The autovacuum daemon vacuums a table once its updated or deleted tuples pass `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor * reltuples`. [source: pg-routine-vacuuming] (§ 24.1.6 The Autovacuum Daemon) `autovacuum` is on by default; the threshold defaults to 50 tuples and the scale factor to 0.2, both overridable per table with storage parameters; `autovacuum_naptime` defaults to one minute. [source: pg-autovacuum-config]
 - `pg_total_relation_size` is a table's disk space including its indexes and TOAST data. [source: pg-admin-functions] [observed: probe 12, 16384 bytes for a two-row table]
 - `starts_with(string, prefix)` and the `^@` operator test a prefix. [source: pg-string-functions] [observed: probe 7, `starts_with('a/b','a/')` true, `starts_with('ab/c','a/')` false, `starts_with('A/b','a/')` false] It is a plain prefix test: `_` and `%` match only themselves. [observed: #1504 child 6] [pins: tests/test_stores_postgres_search.py::test_folder_scopes_are_exact_prefixes]
 
@@ -353,9 +384,9 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
 
 ## Not covered
 
-- Pins: one claim is pinned by the test harness (#1504 child 2); the
-  store's children of #1504 (open, lease, publishing, searching) add the
-  rest as their tests land.
+- Pins: the claims the store depends on are pinned by its tests; the
+  documentation-only claims (TLS, password sources, `pg_dump`, vacuuming)
+  carry none.
 - Which query shape raised the `avg` error fixed in pgvector 0.8.7.
 - A lost reply to `COMMIT`: not probed here; #1504 child 5's test settles
   what the store sees.
