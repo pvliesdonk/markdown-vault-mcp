@@ -46,6 +46,17 @@ repos:
         stages: [pre-push]
       # <<< template-tracking: conformance hook
 
+      # Self-review: fails a push whose commit has no review recorded by the
+      # self-reviewing skill (scripts/check_self_review.py --record).  A
+      # person pushing without an agent: SKIP=self-review git push.
+      - id: self-review
+        name: self-review recorded for the pushed commit
+        entry: python3 scripts/check_self_review.py --hook
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
 
       # Structural-health gate: strict ruff structural rules on CHANGED LINES
       # ONLY, sharing scripts/structural_gate.sh with the CI `structure` job so

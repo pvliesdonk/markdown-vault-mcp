@@ -7,7 +7,7 @@
   "rangeStrategy": "update-lockfile",
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 4am on monday"],
+    "schedule": ["* * * * 1"],
     "automerge": true
   },
   "packageRules": [

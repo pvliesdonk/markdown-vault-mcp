@@ -27,7 +27,7 @@ echo "=== markdown-vault-mcp .deb install test ==="
 
 # Find the .deb
 DEB=$(find dist/ -name 'markdown-vault-mcp*.deb' -print -quit 2>/dev/null || true)
-if [ -z "$DEB" ]; then
+if [[ -z "$DEB" ]]; then
     echo "ERROR: No .deb found in dist/. Build one first:"
     echo "  VERSION=0.0.0-test nfpm package --packager deb --target dist/"
     exit 1
@@ -60,12 +60,12 @@ else
 fi
 
 # 3. State directory exists with correct ownership and permissions
-if [ -d /var/lib/markdown-vault-mcp ]; then
+if [[ -d /var/lib/markdown-vault-mcp ]]; then
     OWNER=$(stat -c '%U:%G' /var/lib/markdown-vault-mcp)
     MODE=$(stat -c '%a' /var/lib/markdown-vault-mcp)
-    if [ "$OWNER" = "markdown-vault-mcp:markdown-vault-mcp" ] && [ "$MODE" = "750" ]; then
+    if [[ "$OWNER" = "markdown-vault-mcp:markdown-vault-mcp" ]] && [[ "$MODE" = "750" ]]; then
         pass "State directory owned by markdown-vault-mcp with mode 0750"
-    elif [ "$OWNER" != "markdown-vault-mcp:markdown-vault-mcp" ]; then
+    elif [[ "$OWNER" != "markdown-vault-mcp:markdown-vault-mcp" ]]; then
         fail "State directory owned by $OWNER (expected markdown-vault-mcp:markdown-vault-mcp)"
     else
         fail "State directory mode $MODE (expected 750)"
@@ -75,21 +75,21 @@ else
 fi
 
 # 4. Install directory exists
-if [ -d /opt/markdown-vault-mcp ]; then
+if [[ -d /opt/markdown-vault-mcp ]]; then
     pass "Install directory /opt/markdown-vault-mcp exists"
 else
     fail "Install directory /opt/markdown-vault-mcp does not exist"
 fi
 
 # 4b. Venv installed by postinstall
-if [ -x /opt/markdown-vault-mcp/venv/bin/python3 ]; then
+if [[ -x /opt/markdown-vault-mcp/venv/bin/python3 ]]; then
     pass "venv installed at /opt/markdown-vault-mcp/venv"
 else
     fail "venv not found at /opt/markdown-vault-mcp/venv (postinstall may have failed)"
 fi
 
 # 5. Unit file exists
-if [ -f /usr/lib/systemd/system/markdown-vault-mcp.service ]; then
+if [[ -f /usr/lib/systemd/system/markdown-vault-mcp.service ]]; then
     pass "systemd unit file installed"
 else
     fail "systemd unit file not found"
@@ -109,7 +109,7 @@ else
 fi
 
 # 7. Environment example exists
-if [ -f /etc/markdown-vault-mcp/env.example ]; then
+if [[ -f /etc/markdown-vault-mcp/env.example ]]; then
     pass "Environment example file installed"
 else
     fail "Environment example file not found"
@@ -121,14 +121,14 @@ echo "--- Removing package ---"
 dpkg -r markdown-vault-mcp
 
 # 8. Install directory removed
-if [ ! -d /opt/markdown-vault-mcp ]; then
+if [[ ! -d /opt/markdown-vault-mcp ]]; then
     pass "Install directory removed after uninstall"
 else
     fail "Install directory still exists after uninstall"
 fi
 
 # 9. State directory preserved (intentional)
-if [ -d /var/lib/markdown-vault-mcp ]; then
+if [[ -d /var/lib/markdown-vault-mcp ]]; then
     pass "State directory preserved after uninstall (expected)"
 else
     fail "State directory removed after uninstall (should be preserved)"
@@ -163,6 +163,6 @@ fi
 # --- Summary ---
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
-if [ "$FAIL" -gt 0 ]; then
+if [[ "$FAIL" -gt 0 ]]; then
     exit 1
 fi
