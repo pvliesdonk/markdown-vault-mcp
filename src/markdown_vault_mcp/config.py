@@ -1300,6 +1300,12 @@ class ProjectConfig:
                 f"MARKDOWN_VAULT_MCP_EMBEDDING_STORE must be one of "
                 f"{', '.join(embedding_stores)}; got {self.embedding_store!r}."
             )
+        if not self.embedding_search:  # unset: the store's default
+            object.__setattr__(
+                self,
+                "embedding_search",
+                "streamed" if self.embedding_store == "postgres" else "resident",
+            )
         embedding_searches = ("resident", "streamed")
         if self.embedding_search not in embedding_searches:
             raise ConfigurationError(
@@ -1351,16 +1357,12 @@ class ProjectConfig:
             index_path=opt_path(env(_ENV_PREFIX, "INDEX_PATH")),
             state_path=opt_path(env(_ENV_PREFIX, "STATE_PATH")),
             embeddings_path=opt_path(env(_ENV_PREFIX, "EMBEDDINGS_PATH")),
-            embedding_store=(
-                _store := (env(_ENV_PREFIX, "EMBEDDING_STORE") or "numpy")
-                .strip()
-                .lower()
-            ),
-            # PostgreSQL always searches in the database: streamed by default.
-            embedding_search=(
-                env(_ENV_PREFIX, "EMBEDDING_SEARCH")
-                or ("streamed" if _store == "postgres" else "resident")
-            )
+            embedding_store=(env(_ENV_PREFIX, "EMBEDDING_STORE") or "numpy")
+            .strip()
+            .lower(),
+            # Unset is "the store's default", resolved in __post_init__:
+            # streamed for postgres, resident otherwise.
+            embedding_search=(env(_ENV_PREFIX, "EMBEDDING_SEARCH") or "")
             .strip()
             .lower(),
             embedding_search_workspace_mb=env_int(

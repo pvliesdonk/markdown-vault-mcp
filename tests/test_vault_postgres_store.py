@@ -84,12 +84,9 @@ def test_resident_search_on_postgres_is_refused(
     tmp_path: Path, postgres_schema: PostgresSchema
 ) -> None:
     settings = _settings(tmp_path, postgres_schema, embedding_search="resident")
+    root, provider = _root(tmp_path), MockEmbeddingProvider(dim=16)
     with pytest.raises(ConfigurationError, match="streamed"):
-        Vault(
-            source_dir=_root(tmp_path),
-            settings=settings,
-            embedding_provider=MockEmbeddingProvider(dim=16),
-        )
+        Vault(source_dir=root, settings=settings, embedding_provider=provider)
 
 
 @pytest.mark.parametrize(
@@ -113,12 +110,9 @@ def test_postgres_without_a_dsn_or_schema_is_refused(
     import dataclasses
 
     settings = dataclasses.replace(settings, **{missing: None})
+    root, provider = _root(tmp_path), MockEmbeddingProvider(dim=16)
     with pytest.raises(ConfigurationError, match=named):
-        Vault(
-            source_dir=_root(tmp_path),
-            settings=settings,
-            embedding_provider=MockEmbeddingProvider(dim=16),
-        )
+        Vault(source_dir=root, settings=settings, embedding_provider=provider)
 
 
 def test_postgres_without_the_extra_is_a_configuration_error(
@@ -133,12 +127,9 @@ def test_postgres_without_the_extra_is_a_configuration_error(
         embedding_postgres_dsn="host=db",
         embedding_postgres_schema="vault_a",
     )
+    root, provider = _root(tmp_path), MockEmbeddingProvider(dim=16)
     with pytest.raises(ConfigurationError, match=r"postgres\]"):
-        Vault(
-            source_dir=_root(tmp_path),
-            settings=settings,
-            embedding_provider=MockEmbeddingProvider(dim=16),
-        )
+        Vault(source_dir=root, settings=settings, embedding_provider=provider)
 
 
 def test_the_dsn_never_shows(
@@ -184,12 +175,9 @@ def test_postgres_pool_settings_out_of_range_are_refused(
         embedding_postgres_schema="vault_a",
         **pool,  # type: ignore[arg-type]
     )
+    root, provider = _root(tmp_path), MockEmbeddingProvider(dim=16)
     with pytest.raises(ConfigurationError, match="pool settings refused"):
-        Vault(
-            source_dir=_root(tmp_path),
-            settings=settings,
-            embedding_provider=MockEmbeddingProvider(dim=16),
-        )
+        Vault(source_dir=root, settings=settings, embedding_provider=provider)
 
 
 def test_a_schema_with_surrounding_space_is_used_stripped(
@@ -221,12 +209,9 @@ def test_pool_settings_refused_name_their_variables(tmp_path: Path) -> None:
         embedding_postgres_schema="vault_a",
         embedding_postgres_pool_size=0,
     )
+    root, provider = _root(tmp_path), MockEmbeddingProvider(dim=16)
     with pytest.raises(ConfigurationError, match="EMBEDDING_POSTGRES_POOL_SIZE"):
-        Vault(
-            source_dir=_root(tmp_path),
-            settings=settings,
-            embedding_provider=MockEmbeddingProvider(dim=16),
-        )
+        Vault(source_dir=root, settings=settings, embedding_provider=provider)
 
 
 def test_a_broken_postgres_install_says_why(
@@ -241,12 +226,9 @@ def test_a_broken_postgres_install_says_why(
         embedding_postgres_dsn="host=db",
         embedding_postgres_schema="vault_a",
     )
+    root, provider = _root(tmp_path), MockEmbeddingProvider(dim=16)
     with pytest.raises(
         ConfigurationError,
         match=r"postgres\].*import of markdown_vault_mcp\.stores\.postgres_vectors",
     ):
-        Vault(
-            source_dir=_root(tmp_path),
-            settings=settings,
-            embedding_provider=MockEmbeddingProvider(dim=16),
-        )
+        Vault(source_dir=root, settings=settings, embedding_provider=provider)
