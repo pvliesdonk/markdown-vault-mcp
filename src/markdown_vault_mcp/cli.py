@@ -260,10 +260,11 @@ def _vectors_kept(config: ProjectConfig, index_path: str | None) -> bool:
         index_path: The ``--index-path`` override, if given.
 
     Returns:
-        ``True`` when ``EMBEDDINGS_PATH`` is set or the index is on disk,
-        where the vectors default beside it (#1708).
+        ``True`` when ``EMBEDDINGS_PATH`` or a PostgreSQL store is
+        configured (#1504), or the index is on disk, where the vectors
+        default beside it (#1708).
     """
-    if config.indexing.embeddings_path is not None:
+    if config.indexing.vector_storage_configured:
         return True
     index = index_path or config.indexing.index_path
     return index is not None and str(index) != ":memory:"

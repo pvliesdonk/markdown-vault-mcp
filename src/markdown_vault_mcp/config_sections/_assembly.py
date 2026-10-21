@@ -266,10 +266,11 @@ def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | No
             load while ``EMBEDDINGS_PATH`` is set.
     """
     explicit_provider = (config.embeddings.provider or "").strip()
-    if config.indexing.embeddings_path is None:
+    if not config.indexing.vector_storage_configured:
         # An explicit provider turns semantic search on by itself (#1708);
-        # auto-detection still waits for a storage path, so an install that
-        # merely has a backend importable never starts embedding at startup.
+        # auto-detection still waits for configured storage (EMBEDDINGS_PATH,
+        # or a PostgreSQL store, #1504), so an install that merely has a
+        # backend importable never starts embedding at startup.
         if not explicit_provider:
             return None
         return _load_provider_or_keyword_only(config, explicit_provider)

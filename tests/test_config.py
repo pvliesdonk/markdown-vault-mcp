@@ -580,6 +580,44 @@ class TestVaultInstancesProvider:
         )
         assert to_vault_instances(config).embedding_provider is None
 
+    def test_autodetect_runs_for_a_postgres_store(self, monkeypatch, tmp_path) -> None:
+        """A database keeps the vectors as well as a file does (#1504)."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        class _Fake:
+            context_length = 512
+
+        monkeypatch.setattr(
+            providers_mod, "get_embedding_provider", lambda _config: _Fake()
+        )
+        config = ProjectConfig(
+            source_dir=tmp_path,
+            embedding_provider=None,
+            embeddings_path=None,
+            embedding_store="postgres",
+            embedding_search="streamed",
+            embedding_postgres_dsn="host=db",
+            embedding_postgres_schema="vault_a",
+        )
+        assert config.indexing.vector_storage_configured
+        assert isinstance(to_vault_instances(config).embedding_provider, _Fake)
+
+    def test_postgres_has_no_embeddings_file(self, tmp_path) -> None:
+        from markdown_vault_mcp.config_sections import VaultSettings
+
+        settings = VaultSettings(
+            index_path=tmp_path / "index.db",
+            embedding_store="postgres",
+            embedding_search="streamed",
+            embedding_postgres_dsn="host=db",
+            embedding_postgres_schema="vault_a",
+        )
+        assert settings.effective_embeddings_path() is None
+        assert (
+            VaultSettings(index_path=tmp_path / "index.db").effective_embeddings_path()
+            is not None
+        )
+
     def test_provider_loads_sets_instance(self, monkeypatch, tmp_path) -> None:
         """A successfully resolved provider is threaded into the instances."""
         import markdown_vault_mcp.providers as providers_mod

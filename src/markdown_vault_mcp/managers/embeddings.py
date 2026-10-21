@@ -411,7 +411,8 @@ class EmbeddingsManager:
 
         Raises:
             OSError: If a sidecar file cannot be statted (#1625).
-            StoreOpenError: If a streamed store cannot be read: a status
+            StoreOpenError: If a streamed or database store cannot be read
+                (an unopened PostgreSQL store is opened to count it): a status
                 this method cannot determine is not reported (#1625).
         """
         from markdown_vault_mcp.managers._vector_slot import NO_RESOURCES
@@ -439,6 +440,10 @@ class EmbeddingsManager:
             count = vectors.count
         elif self._embeddings_path is not None:
             count = self._unopened_count(self._embeddings_path)
+        elif self._slot is not None and self._slot.location is not None:
+            # A database store keeps no files to count: open it, as a search
+            # would; one that cannot be read fails the status (#1504, #1625).
+            count = self._slot.get(rebuild=None).count
 
         return {
             "available": True,

@@ -4088,7 +4088,12 @@ The backend carries the connection settings; the location is the schema
 name, and there is no in-memory form. The DSN is a secret: it is left out
 of every `repr` (`ProjectConfig`, `IndexingConfig`, `VaultSettings`), is
 marked secret in the generated configuration surfaces, and no message
-quotes it. The schema is the namespace and the
+quotes it. Provider auto-detection, the CLI's batch commands and the startup log
+treat a PostgreSQL store as keeping the vectors, as they do
+`EMBEDDINGS_PATH` (`IndexingConfig.vector_storage_configured`); it has no
+sidecar, so `effective_embeddings_path()` is `None` and `embeddings_status`
+reports `path: null`, counting an unopened store by opening it as a search
+would, so a store that cannot be read fails the status. The schema is the namespace and the
 ownership boundary: one vault per schema, one role per vault owning only
 its schema. That does not stop a second vault, pointed at another vault's
 schema by a copied configuration while that vault is down, from removing

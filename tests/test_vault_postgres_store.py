@@ -232,3 +232,59 @@ def test_a_broken_postgres_install_says_why(
         match=r"postgres\].*import of markdown_vault_mcp\.stores\.postgres_vectors",
     ):
         Vault(source_dir=root, settings=settings, embedding_provider=provider)
+
+
+def test_status_counts_an_unopened_postgres_store(
+    tmp_path: Path, postgres_schema: PostgresSchema
+) -> None:
+    root = _root(tmp_path)
+
+    def vault() -> Vault:
+        return Vault(
+            source_dir=root,
+            settings=_settings(tmp_path, postgres_schema),
+            embedding_provider=MockEmbeddingProvider(dim=16),
+        )
+
+    first = vault()
+    try:
+        first.index.build_index()
+        first.index.build_embeddings()
+        built = first.index.embeddings_status()["chunk_count"]
+    finally:
+        first.close()
+    second = vault()
+    try:
+        status = second.index.embeddings_status()  # nothing opened the store yet
+    finally:
+        second.close()
+    assert built > 0
+    assert (status["chunk_count"], status["path"], status["backend"]) == (
+        built,
+        None,
+        "postgres",
+    )
+    assert status["store_details"]["schema"] == postgres_schema.name
+
+
+def test_status_of_an_unreachable_postgres_store_raises(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    settings = VaultSettings(
+        index_path=tmp_path / "index.db",
+        read_only=False,
+        embedding_store="postgres",
+        embedding_search="streamed",
+        embedding_postgres_dsn="host=127.0.0.1 port=1 connect_timeout=2",
+        embedding_postgres_schema="vault_a",
+    )
+    vault = Vault(
+        source_dir=_root(tmp_path),
+        settings=settings,
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+    try:
+        with pytest.raises(StoreUnavailableError):
+            vault.index.embeddings_status()
+    finally:
+        vault.close()

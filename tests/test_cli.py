@@ -1473,3 +1473,18 @@ def test_unusable_vectors_message_names_the_remedy_for_each_fault() -> None:
     assert "Search with the embedding settings" in _unusable_vectors_message(mismatch)
     assert "To rebuild them" in _unusable_vectors_message(damage)
     assert "bad json. The vectors" in _unusable_vectors_message(damage)
+
+
+def test_postgres_keeps_the_vectors_for_the_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.cli import _vectors_kept
+    from markdown_vault_mcp.config import ProjectConfig
+
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv(f"{_ENV_PREFIX}_INDEX_PATH", raising=False)
+    monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_STORE", "postgres")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_POSTGRES_DSN", "host=db")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_POSTGRES_SCHEMA", "vault_a")
+    assert _vectors_kept(ProjectConfig.from_env(), None)
