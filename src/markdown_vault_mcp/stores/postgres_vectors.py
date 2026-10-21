@@ -9,7 +9,7 @@ read-only transactions that start from the live meta row, as the streamed
 SQLite store does; nothing per chunk is held in the vault process. Every
 write is one durable transaction under the meta-row lock; a store from
 ``open_fresh`` replaces what the schema holds on its first write.
-Searching arrives with #1504 child 6. What this relies on in
+PostgreSQL scores and sorts each search (``_postgres_search``). What this relies on in
 PostgreSQL, pgvector and psycopg is in
 ``docs/design/reference/postgresql-pgvector.md``.
 """
@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 try:
     import psycopg
     from psycopg import sql
-    from psycopg_pool import PoolTimeout
+    from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
     from markdown_vault_mcp.stores._postgres import (
         BACKEND_NAME,
@@ -39,6 +39,12 @@ try:
         prepare_conninfo,
         statement_timeout_ms,
         unavailable,
+    )
+    from markdown_vault_mcp.stores._postgres_search import (
+        SearchRequest,
+        document_mean,
+        query_unit,
+        scored_rows,
     )
 except ImportError as exc:  # pragma: no cover - exercised in a subprocess
     raise ImportError(
@@ -78,7 +84,7 @@ from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
     from psycopg_pool import ConnectionPool
@@ -191,14 +197,55 @@ class PostgresVectorStore:
             lambda conn, _meta: stored_rows(conn, schema=self._schema, path=path), []
         )
 
-    def _reading(
-        self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
-    ) -> _T:
-        """Run *read* in one read-only ``REPEATABLE READ`` transaction.
+    def search(
+        self,
+        vector: Sequence[float],
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+        folder: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the rows nearest *vector*; see :class:`~markdown_vault_mcp.interfaces.VectorReader`.
 
-        *read* gets the meta row the transaction sees. A fresh store whose
-        first write has not landed, and a schema without the tables, read as
-        *empty*.
+        PostgreSQL scores and sorts; only metadata reaches this process. A
+        *predicate* gets each candidate's metadata in order and must neither
+        change it nor count on seeing a row once: a read retried after a lost
+        connection shows it the same rows again.
+
+        Raises:
+            ValueError: If *vector* is not of the stored dimension, or not finite.
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If another process has since published
+                another identity.
+            StoreCorruptError: If the meta row is malformed.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        self._check_open()
+        if limit <= 0:
+            return []
+        request = SearchRequest(limit, folder=folder, predicate=predicate)
+        return self._reading(
+            lambda conn, meta: scored_rows(
+                conn,
+                schema=self._schema,
+                query=query_unit(vector, meta.identity.dimension),
+                request=request,
+            ),
+            [],
+        )
+
+    def similar_to_document(
+        self,
+        path: str,
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+        folder: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the rows nearest the mean of *path*'s rows, excluding *path*.
+
+        The mean is taken in the same transaction (``avg``) and normalised
+        here; a path with no rows returns ``[]``.
 
         Raises:
             RuntimeError: If the store is closed.
@@ -207,15 +254,61 @@ class PostgresVectorStore:
             StoreCorruptError: If the meta row is malformed.
             StoreUnavailableError: If PostgreSQL cannot be read.
         """
+        self._check_open()
+        if limit <= 0:
+            return []
+        request = SearchRequest(limit, folder=folder, exclude=path, predicate=predicate)
+
+        def read(conn: psycopg.Connection[Any], _meta: Meta) -> list[dict[str, Any]]:
+            mean = document_mean(conn, schema=self._schema, path=path)
+            if mean is None:
+                return []
+            return scored_rows(conn, schema=self._schema, query=mean, request=request)
+
+        return self._reading(read, [])
+
+    def _check_open(self) -> None:
+        """Refuse use after close.
+
+        Raises:
+            RuntimeError: If the store is closed.
+        """
         if self._closed:
             raise RuntimeError("The vector store is closed.")
+
+    def _reading(
+        self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
+    ) -> _T:
+        """Run *read* in one read-only ``REPEATABLE READ`` transaction.
+
+        *read* gets the meta row the transaction sees. A fresh store whose
+        first write has not landed, and a schema without the tables, read as
+        *empty*. A read whose connection is lost is retried once on a fresh
+        connection: reads are idempotent, and nothing is returned until one
+        completes.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If another process has since published
+                another identity.
+            StoreCorruptError: If the meta row is malformed.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        self._check_open()
         if self._state.reset_pending:
             return empty
         try:
-            with self._conn.pool.connection() as conn, conn.transaction():
-                conn.execute(_READ_TRANSACTION)
-                meta = read_meta(conn, schema=self._schema, action="read")
-                return empty if meta is None else self._read_checked(conn, meta, read)
+            try:
+                return self._read_once(read, empty)
+            except psycopg.Error as exc:
+                if not _connection_lost(exc):
+                    raise
+                logger.warning(
+                    "postgres_vector_store_read_retried schema=%s sqlstate=%s",
+                    self._schema,
+                    exc.sqlstate,
+                )
+            return self._read_once(read, empty)
         except PoolTimeout:
             failure = unavailable(
                 f"No PostgreSQL connection for schema {self._schema} was free in time.",
@@ -225,6 +318,15 @@ class PostgresVectorStore:
         except psycopg.Error as exc:
             failure = classify_error(exc, schema=self._schema, action="read")
         raise failure from None
+
+    def _read_once(
+        self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
+    ) -> _T:
+        """One attempt at :meth:`_reading`'s transaction; psycopg's errors pass through."""
+        with self._conn.pool.connection() as conn, conn.transaction():
+            conn.execute(_READ_TRANSACTION)
+            meta = read_meta(conn, schema=self._schema, action="read")
+            return empty if meta is None else self._read_checked(conn, meta, read)
 
     def _read_checked(
         self,
@@ -263,8 +365,7 @@ class PostgresVectorStore:
             ReadOnlyError: If the store was opened read-only.
             StoreUnavailableError: ``reason=lease`` if another writer took it.
         """
-        if self._closed:
-            raise RuntimeError("The vector store is closed.")
+        self._check_open()
         lease = self._conn.lease
         if lease is None:
             raise ReadOnlyError(
@@ -690,6 +791,23 @@ class PostgresVectorBackend:
                 reset_pending=request.fresh, tables_ready=state.layout == "present"
             ),
         )
+
+
+def _connection_lost(exc: psycopg.Error) -> bool:
+    """Whether *exc* says the connection itself was lost, so a fresh one may serve.
+
+    No SQLSTATE (the line dropped), class ``08``, or ``57P01`` (the backend
+    was terminated); only an ``OperationalError``, so a client-side error
+    is never taken for one. The pool's own errors are each an ``OperationalError``
+    without a SQLSTATE too, but say the pool is busy or closed, which a
+    second attempt would only wait on again.
+    """
+    if not isinstance(exc, psycopg.OperationalError) or isinstance(
+        exc, (PoolTimeout, PoolClosed, TooManyRequests)
+    ):
+        return False
+    state = exc.sqlstate
+    return state is None or state.startswith("08") or state == "57P01"
 
 
 class _Request(NamedTuple):

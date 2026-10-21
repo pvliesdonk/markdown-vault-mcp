@@ -183,7 +183,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - With a zero vector on either side, `<#>` returns `-0` and `<=>` returns `NaN`; negating `<#>` gives `0`. [observed: probe 1, `-0|-0|NaN|0` on both images] [pins: tests/test_postgres_harness.py::test_inner_product_with_a_zero_vector_is_minus_zero_not_nan]
 - Without an index, pgvector performs exact nearest-neighbour search with perfect recall; the 2,000-dimension limit applies only to `hnsw` and `ivfflat` indexes on `vector`. [source: pgvector-readme] (§ Indexing)
 - `avg(vector)` exists since 0.4.0. [source: pgvector-changelog] (0.4.0) The mean of `[1,0]` and `[-1,0]` is `[0,0]`. [observed: probe 2]
-- `avg` over no rows returns `NULL` on 0.8.0 and 0.8.1. [observed: probe 13] The 0.8.7 changelog entry "Fixed error with `avg` aggregate when no matching rows" names a case these probes did not hit. [source: pgvector-changelog] (0.8.7) [unverified] Which query shape raised that error is not established; the pgvector commit or issue behind the 0.8.7 entry would settle it. A store that returns `[]` for a path with no rows before calling `avg` does not depend on it.
+- `avg` over no rows returns `NULL` on 0.8.0 and 0.8.1. [observed: probe 13] [pins: tests/test_stores_postgres_search.py::test_similar_to_a_document_without_rows_is_empty] The 0.8.7 changelog entry "Fixed error with `avg` aggregate when no matching rows" names a case these probes did not hit. [source: pgvector-changelog] (0.8.7) [unverified] Which query shape raised that error is not established; the pgvector commit or issue behind the 0.8.7 entry would settle it. A store that returns `[]` for a path with no rows before calling `avg` does not depend on it.
 - pgvector 0.8.0 dropped Postgres 12 and the README states support for Postgres 13+. [source: pgvector-changelog] (0.8.0) [source: pgvector-readme] (§ Installation)
 - `l2_normalize` exists only from 0.7.0. [source: pgvector-changelog] (0.7.0)
 
@@ -245,6 +245,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 - Class `08` is connection exception (`08000`, `08003`, `08006`, `08001`, `08004`, `08007 transaction_resolution_unknown`, `08P01`); class `28` invalid authorization (`28000`, `28P01`); class `53` insufficient resources; class `57` operator intervention (including `57014 query_canceled`, `57P01 admin_shutdown`); class `40` transaction rollback (including `40003 statement_completion_unknown`); `42501` insufficient privilege; `42P01` undefined table; `3F000` invalid schema name; `25006` read-only transaction; `55P03` lock not available. [source: pg-errcodes]
 - The first two characters of a SQLSTATE are its class, and an application that does not know a code "might still be able to infer what to do from the error class". [source: pg-errcodes]
+- `pg_terminate_backend` on a session idle in a transaction makes that session's next statement fail as `57P01 admin_shutdown` (or, when the line drops first, with no SQLSTATE); `pg_terminate_backend(pid, timeout)` waits for the backend to exit. [source: pg-admin-functions] [observed: #1504 child 6, a named cursor's next fetch] [pins: tests/test_stores_postgres_search.py::test_a_search_whose_connection_dies_midway_is_retried_once]
 - A query on a schema without `USAGE` fails with `42501: permission denied for schema`. [observed: probe 10]
 - psycopg exposes `sqlstate` only for errors received from PostgreSQL; client-side failures such as a failed connection usually have none. [source: psycopg-errors]
 - Every connect-time failure probed raised `psycopg.OperationalError` with `sqlstate=None`: wrong password, unknown role, missing database, no `CONNECT` privilege, no password supplied, refused port. [observed: probe 10e, both images, `scram-sha-256` and `trust`] An unresolvable host raised `OperationalError` and a connect timeout its subclass `ConnectionTimeout`, both with `sqlstate=None` and `pgconn=None`. [observed: probe 10d, one run against the PostgreSQL 17.4 image; neither case reaches PostgreSQL]
@@ -258,7 +259,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 ### Client: cursors, COPY, pool, connection strings
 
 - `DECLARE` without `WITH HOLD` is usable only inside a transaction block, and every PostgreSQL cursor is insensitive. [source: pg-declare]
-- A psycopg named (server-side) cursor iterates in batches of `itersize`, default 100. [source: psycopg-cursors-api]
+- A psycopg named (server-side) cursor iterates in batches of `itersize`, default 100. [source: psycopg-cursors-api] [pins: tests/test_stores_postgres_search.py::test_a_selective_predicate_reads_past_the_first_batch]
 - On a non-autocommit connection a named cursor runs inside the implicit transaction; on an autocommit connection it fails with `NoActiveSqlTransaction: DECLARE CURSOR can only be used in transaction blocks`. [observed: probe 13]
 - Ordered rows (`ORDER BY e <#> q, path`) stream through a named cursor inside a `REPEATABLE READ`, read-only transaction. [observed: probe 13]
 - Binary `COPY … FROM STDIN` with `write_row()` needs a binary dumper for every type and applies no casts; `Copy.set_types()` names the types. [source: psycopg-copy]
@@ -284,7 +285,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - `pg_dump` makes a consistent backup without blocking readers or writers. [source: pg-dump]
 - `pg_dump -n` dumps the selected schemas and their objects but "makes no attempt to dump any other database objects that the selected schema(s) might depend upon", so such a dump may not restore into a clean database on its own; extensions are selected with `-e`. [source: pg-dump]
 - `pg_total_relation_size` is a table's disk space including its indexes and TOAST data. [source: pg-admin-functions] [observed: probe 12, 16384 bytes for a two-row table]
-- `starts_with(string, prefix)` and the `^@` operator test a prefix. [source: pg-string-functions] [observed: probe 7, `starts_with('a/b','a/')` true, `starts_with('ab/c','a/')` false, `starts_with('A/b','a/')` false]
+- `starts_with(string, prefix)` and the `^@` operator test a prefix. [source: pg-string-functions] [observed: probe 7, `starts_with('a/b','a/')` true, `starts_with('ab/c','a/')` false, `starts_with('A/b','a/')` false] It is a plain prefix test: `_` and `%` match only themselves. [observed: #1504 child 6] [pins: tests/test_stores_postgres_search.py::test_folder_scopes_are_exact_prefixes]
 
 ## Probes
 
