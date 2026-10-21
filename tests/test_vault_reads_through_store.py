@@ -274,3 +274,40 @@ class TestASearchBeforeTheFirstBuild:
             assert vault.index.embeddings_status()["identity"]["dimension"] == 32
         finally:
             vault.close()
+
+
+def test_a_search_that_loses_its_store_to_the_first_build_reads_the_new_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A first build closes the store a search took before any vectors existed (#1504)."""
+    from markdown_vault_mcp.config_sections import VaultSettings
+    from markdown_vault_mcp.managers.search import SearchManager
+    from markdown_vault_mcp.vault import Vault
+    from tests.conftest import MockEmbeddingProvider
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "alpha.md").write_text("# Alpha\n\nApples and pears.\n")
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+    try:
+        vault.index.build_index()
+        real = SearchManager._load_vectors
+        raced: list[bool] = []
+
+        def load_then_build(self: SearchManager) -> object:
+            store = real(self)
+            if not raced:  # the first build lands between the load and the read
+                raced.append(True)
+                vault._vector_slot.writable(rebuild=None)
+            return store
+
+        monkeypatch.setattr(SearchManager, "_load_vectors", load_then_build)
+        for mode in ("semantic", "hybrid"):
+            raced.clear()
+            assert isinstance(vault.reader.search("pears", mode=mode), list)
+    finally:
+        vault.close()

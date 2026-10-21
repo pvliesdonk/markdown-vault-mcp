@@ -91,6 +91,7 @@ class VectorStoreSlot:
         self._provisional: EmbeddingStore | None = None
         # Guards opening, swapping and closing; never held across a rebuild.
         self._lock = threading.Lock()
+        self._closed = False
 
     @property
     def location(self) -> Path | str | None:
@@ -182,6 +183,7 @@ class VectorStoreSlot:
         if self._store is not None:
             return self._store
         with self._lock:
+            self._refuse_closed()
             if self._store is not None:
                 return self._store
             if self._provisional is not None:
@@ -221,6 +223,15 @@ class VectorStoreSlot:
                 "Failed to rebuild the vector store after it would not open."
             ) from exc
         return self._store
+
+    def _refuse_closed(self) -> None:
+        """Refuse to open behind a closed slot; called under the lock.
+
+        Raises:
+            RuntimeError: If the slot is closed.
+        """
+        if self._closed:
+            raise RuntimeError("The vector store slot is closed.")
 
     def _discard(self, store: EmbeddingStore | None) -> None:
         """Close a store the slot stops using; a failure is logged, not raised."""
@@ -262,6 +273,7 @@ class VectorStoreSlot:
             self._store.publish_generation(self.identity, [])
             return self._store
         with self._lock:
+            self._refuse_closed()
             old, self._store = self._store, None
             provisional, self._provisional = self._provisional, None
             # Closed before the fresh store opens, never after: a numpy store
@@ -420,8 +432,11 @@ class VectorStoreSlot:
 
     def close(self) -> None:
         """Close the store if the slot opened it, and a provisional one; an injected store is left open."""
-        if self._store is not None and not self._injected:
-            self._store.close()
         with self._lock:
+            self._closed = True
+            store, self._store = self._store, None
             provisional, self._provisional = self._provisional, None
         self._discard(provisional)
+        if store is not None and not self._injected:
+            # Raised, not discarded: a failed final persist loses rows.
+            store.close()

@@ -742,3 +742,70 @@ class TestTheSlotUnderContention:
         assert backend.recorder.events == ["open1", "close open1"]
         assert slot.current() is other
         other.close()
+
+
+class TestTheSlotAfterReview:
+    def test_a_closed_slot_opens_nothing_more(self, tmp_path: Path) -> None:
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        slot.get(rebuild=None)
+        slot.close()
+        with pytest.raises(RuntimeError, match="closed"):
+            slot.get(rebuild=None)
+        with pytest.raises(RuntimeError, match="closed"):
+            slot.fresh()
+        assert backend.opens == 1  # nothing reopened behind the closed slot
+
+    def test_closing_the_slot_lets_go_of_the_installed_store(
+        self, tmp_path: Path
+    ) -> None:
+        slot = _recording_slot(tmp_path, _RecordingBackend())
+        slot.writable(rebuild=None)
+        slot.close()
+        assert slot.current() is None
+
+    def test_a_failing_close_of_the_replaced_store_is_logged_and_dropped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        backend = _RecordingBackend(fail_close=True)
+        slot = _recording_slot(tmp_path, backend)
+        old = slot.writable(rebuild=None)  # installed through fresh()
+        installed = slot.current()
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers._vector_slot"
+        ):
+            rebuilt = slot.fresh()
+        assert rebuilt is not old and slot.current() is rebuilt is not installed
+        assert [
+            r for r in caplog.records if r.msg.startswith("vector_store_close_failed ")
+        ]
+
+    @pytest.mark.parametrize("search", ["resident", "streamed"])
+    def test_a_sqlite_store_closed_before_its_fresh_reset_loses_nothing_it_should_keep(
+        self, tmp_path: Path, search: str
+    ) -> None:
+        from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
+
+        def slot() -> VectorStoreSlot:
+            return VectorStoreSlot(
+                backend=SqliteVectorBackend(search=search),
+                location=tmp_path / "vec",
+                provider=PROVIDER,
+                text_format="v1",
+            )
+
+        first = slot()
+        first.writable(rebuild=None).replace_document(
+            doc("old.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+        )
+        first.close()
+        second = slot()
+        second.writable(rebuild=None)  # the sized store, installed
+        rebuilt = second.fresh()  # closes it before the fresh reset
+        rebuilt.publish_generation(IDENTITY, [doc("new.md", [[0, 1, 0]])])
+        second.close()
+        reopened = SqliteVectorBackend(search=search).open(tmp_path / "vec", IDENTITY)
+        try:
+            assert set(reopened.tokens()) == {"new.md"}
+        finally:
+            reopened.close()

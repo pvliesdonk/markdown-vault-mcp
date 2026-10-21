@@ -4259,7 +4259,12 @@ likewise closes the store it replaces, and does so before opening the
 fresh one, so a numpy store's pending rows land before the rebuild's
 first persist, never over it. The slot closes every store it opens and
 stops using, because a database-backed store holds a pool (#1504), and
-its location may be a directory base or a schema name. On an owned store, corrupt or
+its location may be a directory base or a schema name. The swap holds the
+slot's lock through the old store's close and the fresh open, so a read
+meanwhile waits, and `embeddings_status` may see no store for that moment.
+A search that took a store a first build then closes reads the store the
+build installed instead of failing (`SearchManager._vector_rows`). A
+closed slot opens nothing more. On an owned store, corrupt or
 another identity rebuilds through `VectorBackend.open_fresh`; without
 ownership the store's `StoreCorruptError` or `StoreIncompatibleError`
 propagates, and such a process never creates or replaces the files (a
