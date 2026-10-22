@@ -6,11 +6,11 @@ subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changel
 valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x (0.7.4 or later on 17, 0.8.7 or later on 18), psycopg 3.3.x"
 generated:
   by: process:researching-references
-  at: 2026-10-22T10:30:00+02:00
-stale_after: 2027-04-22T10:30:00+02:00
+  at: 2026-10-22T15:00:00+02:00
+stale_after: 2027-04-22T15:00:00+02:00
 verified:
   - by: process:researching-references
-    at: 2026-10-22T10:30:00+02:00
+    at: 2026-10-22T15:00:00+02:00
 status: stable
 sources:
   - id: pgvector-readme
@@ -273,9 +273,10 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - After a failed connection, `Error.pgconn` is a closed connection; its `needs_password`, `used_password`, `server_version`, `status` and `error_message` can be read, `parameter_status()` raises `the connection is closed`, and `server_version` reads `0` whether or not PostgreSQL answered. [source: psycopg-errors] [observed: probe 10e, both images]
 - `PQconnectionNeedsPassword` is true when "the connection authentication method required a password, but none was available"; `PQconnectionUsedPassword` is true when "the connection authentication method used a password", which detects "whether the server demanded a password". [source: libpq-status]
 - Under `scram-sha-256`: a wrong password, an unknown role, a missing database and a missing `CONNECT` privilege give `needs_password=False`, `used_password=True`; no password supplied gives `needs_password=True` and also `used_password=True`; a refused port gives both `False`. [observed: probe 10e, both images] So `used_password` alone does not mean a password was sent: `needs_password` must be tested first. [pins: tests/test_stores_postgres_connection.py::test_connect_reports_a_wrong_password_as_refused, tests/test_stores_postgres_connection.py::test_connect_reports_a_missing_database_as_refused, tests/test_stores_postgres_connection.py::test_connect_reports_no_password_as_no_password, tests/test_stores_postgres_connection.py::test_needs_password_is_tested_before_used_password]
+- With every slot under `max_connections` taken, a new connection fails with `sorry, too many clients already`, before authentication: `needs_password` and `used_password` are both false, so the store tags it `connect`. With only reserved slots left (`reserved_connections`, `superuser_reserved_connections`), a role without them fails after authentication with `remaining connection slots are reserved for roles with privileges of …`: `used_password` is true, so the store tags it `refused`. [observed: a throwaway `pgvector/pgvector:0.8.7-pg17` with `max_connections=4` and no reserved slots, then `max_connections=5` with one of each reserved, psycopg 3.3.6 through `classify_connect_failure`, 2026-10-22]
 - Under `trust`: a wrong password and no password both connect; an unknown role, a missing database, a missing `CONNECT` privilege and a refused port all give both flags `False`. [observed: probe 10e, both images]
 - PostgreSQL displays its messages in the language `lc_messages` selects, falling back to English where no translation exists. [source: pg-client-config] A message's wording is therefore not a stable value to match on.
-- What a client should conclude when the connection drops after `COMMIT` was sent is not documented by the transaction-isolation page or by psycopg. [source: pg-isolation] [source: psycopg-transactions] [unverified] That the commit may or may not have landed follows from PostgreSQL naming the condition (`08007 transaction_resolution_unknown`); the store's test of a lost commit reply (#1504 child 5) would pin the behaviour the store relies on.
+- What a client should conclude when the connection drops after `COMMIT` was sent is not documented by the transaction-isolation page or by psycopg. [source: pg-isolation] [source: psycopg-transactions] [unverified] That the commit may or may not have landed follows from PostgreSQL naming the condition (`08007 transaction_resolution_unknown`); the store therefore reports such a write as `commit_unknown` and lets its next read show whether it landed. [pins: tests/test_stores_postgres_writes.py::test_a_commit_whose_reply_is_lost_is_commit_unknown_and_landed]
 
 ### Client: cursors, COPY, pool, connection strings
 
@@ -392,8 +393,9 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   documentation-only claims (TLS, password sources, `pg_dump`, vacuuming)
   carry none.
 - Which query shape raised the `avg` error fixed in pgvector 0.8.7.
-- A lost reply to `COMMIT`: not probed here; #1504 child 5's test settles
-  what the store sees.
+- A lost reply to `COMMIT` on a real connection: the store's test simulates
+  it with a pool that drops the reply after committing, and does not provoke
+  it on PostgreSQL.
 - Crash and power-loss behaviour, replication and replica read-after-write:
   not probed; the store assumes one primary.
 - pgvector before 0.7.0: refused by the store (`MIN_PGVECTOR`), not run.

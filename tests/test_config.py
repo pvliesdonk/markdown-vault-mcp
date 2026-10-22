@@ -2558,6 +2558,23 @@ class TestEmbeddingPostgres:
         self._env(monkeypatch)
         assert ProjectConfig.from_env().embedding_search == "streamed"
 
+    @pytest.mark.parametrize(
+        ("store", "search"),
+        [("postgres", "streamed"), ("numpy", "resident"), ("sqlite", "resident")],
+    )
+    def test_a_config_built_directly_takes_the_stores_search_default(
+        self, store: str, search: str
+    ) -> None:
+        postgres = (
+            {"embedding_postgres_dsn": _DSN, "embedding_postgres_schema": "vault_a"}
+            if store == "postgres"
+            else {}
+        )
+        config = ProjectConfig(
+            source_dir=Path("/tmp/vault"), embedding_store=store, **postgres
+        )
+        assert config.embedding_search == search
+
     def test_resident_search_on_postgres_names_streamed(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -2631,15 +2648,16 @@ class TestEmbeddingPostgres:
         assert "s3cret-pw" not in str(refused.value)
 
 
-def test_the_resident_refusal_names_streamed_without_promising_a_default(
+def test_the_resident_refusal_names_streamed_and_the_default(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(ConfigurationError) as refused:
         ProjectConfig(
             source_dir=tmp_path,
             embedding_store="postgres",
+            embedding_search="resident",
             embedding_postgres_dsn="host=db",
             embedding_postgres_schema="vault_a",
-        )  # embedding_search keeps its own default, resident
+        )
     assert "EMBEDDING_SEARCH=streamed" in str(refused.value)
-    assert "leave it unset" not in str(refused.value)
+    assert "leave it unset" in str(refused.value)

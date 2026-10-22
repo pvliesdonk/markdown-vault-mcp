@@ -73,7 +73,7 @@ docker run --rm -p 8000:8000 --env-file .env ghcr.io/pvliesdonk/markdown-vault-m
 A `compose.yml` ships at the repository root and runs as-is: copy `.env.example` to `.env`, then `docker compose up -d`. [Deploy](docs/deploy/index.md) covers authentication, OIDC, a reverse proxy and system packages (`.deb`/`.rpm` on the releases page). The server answers `/health` and `/health/ready` outside the MCP mount, and its `get_server_info` tool reports the running version.
 
 <!-- DOMAIN-README-EXTRAS-START -->
-The plain package covers keyword search, the write tools and git. Search by meaning, the file watcher and the `summarize` tool need extras; `[all]` installs every one:
+The plain package covers keyword search, the write tools and git. Search by meaning, the file watcher, the `summarize` tool and keeping embeddings in PostgreSQL need extras; `[all]` installs every one:
 
 ```bash
 uv tool install "markdown-vault-mcp[all]"

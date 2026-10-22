@@ -236,17 +236,18 @@ class ProjectConfig:
         },
     )
     embedding_search: str = field(
-        default="resident",
+        default="",
         metadata={
             "help": (
-                "How semantic search reads the embeddings. 'resident' (the "
-                "default) holds them all in memory, the fastest; 'streamed' "
+                "How semantic search reads the embeddings. 'resident' "
+                "holds them all in memory, the fastest; 'streamed' "
                 "keeps none in memory and reads them from the store in "
                 "batches for each search, slower as the vault grows. "
                 "'streamed' needs EMBEDDING_STORE=sqlite or postgres, and "
-                "postgres is always streamed (the default there); vectors kept "
-                "in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always "
-                "resident."
+                "postgres is always streamed; vectors kept in memory (no "
+                "INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it "
+                "is the store's default: 'streamed' with postgres, 'resident' "
+                "otherwise."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -1236,8 +1237,8 @@ class ProjectConfig:
         if self.embedding_search != "streamed":
             raise ConfigurationError(
                 "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres searches in the "
-                "database: set MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed (read "
-                "from the environment, it defaults to streamed with postgres)."
+                "database: set MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed, or "
+                "leave it unset, which defaults to streamed with postgres."
             )
         if not (self.embedding_postgres_dsn or "").strip():
             raise ConfigurationError(

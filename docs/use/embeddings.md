@@ -371,7 +371,7 @@ provider.
     quietly. Force the rebuild yourself by deleting the embeddings files
     (the `.json` file, the `.m<N>.npy` matrix it names, and a plain `.npy`
     file of the same name that a vault upgraded from 5.x may still hold, at
-    `EMBEDDINGS_PATH` or beside the index) and restarting.
+    `EMBEDDINGS_PATH` or beside the index, or the SQLite store's `.sqlite3` file) and restarting; with the PostgreSQL store, recreate its empty schema instead ([Backup and restore](postgresql.md#backup-and-restore)).
 
 !!! note "Unknown context length falls back to a 1500-character chunk cap"
     The chunk cap derives from the model's context length. That is known only
@@ -442,7 +442,7 @@ MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN='postgresql://vault_a@db.example:5432/
 MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA=vault_a
 ```
 
-Outside Docker the store needs the extra: `pip install "markdown-vault-mcp[postgres]"`. The Docker image, the Claude Desktop bundle and the Claude Code plugin already install it, but the bundle's and the plugin's install screens do not offer these settings: set them in the server's environment. Semantic search is always `streamed` with this store, and `embeddings_status` reports `"backend": "postgres"` with where the store lives under `store_details`.
+A pip or uv install needs the `postgres` extra (`pip install "markdown-vault-mcp[postgres]"`); without it the server refuses to start and names the install command. The Docker image, the Claude Desktop bundle and the Claude Code plugin install `[all]`, which includes it. The bundle's and the plugin's install screens do not offer these settings: set them in the server's environment. Semantic search is always `streamed` with this store, and `embeddings_status` reports `"backend": "postgres"` with where the store lives under `store_details`.
 
 [PostgreSQL embedding store](postgresql.md) covers provisioning with a least-privilege role, TLS and the password file, connection poolers, timeouts, disk space, backup and restore, and the store's status and log events.
 

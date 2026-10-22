@@ -103,6 +103,7 @@ The plain package runs the server with keyword search, the write tools and git i
 | `embeddings-api` | the clients for Ollama, Voyage and OpenAI-compatible embedding services |
 | `file-watcher` | watchdog, so edits made outside the server reach the index without a reindex |
 | `summarize` | the OpenAI SDK the `summarize` tool calls a language model with |
+| `postgres` | the PostgreSQL driver (`psycopg`), its connection pool and pgvector's adapter, for [keeping the embeddings in PostgreSQL](../use/postgresql.md) |
 | `all` | every extra above |
 | `debug` | debugpy, for attaching a debugger |
 

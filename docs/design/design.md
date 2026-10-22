@@ -4197,7 +4197,7 @@ serialised by the database and the lease is policy: #1812 holds what more
 writers would need. A publish is one transaction that raises
 `synchronous_commit` to `on` from any weaker value (`off`, `local`,
 `remote_write`) and leaves `on` and `remote_apply` alone, since
-`SET LOCAL … = on` would lower `remote_apply`. A writer whose server runs
+`SET LOCAL … = on` would lower `remote_apply`. A writer whose PostgreSQL runs
 with `fsync = off` logs `postgres_vector_store_not_durable` at open; the
 vault cannot fix that. `publish_generation` is one transaction: lock the
 meta row, `DELETE` every document and chunk (not `TRUNCATE`, which would
