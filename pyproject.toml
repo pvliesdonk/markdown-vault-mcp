@@ -295,7 +295,7 @@ constraint-dependencies = [
 # Pillow, but only its image models call it, and this server uses text
 # embeddings alone.  Drop it once a fastembed release allows 13.
 override-dependencies = [
-  "pillow>=13", # until: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1824
+  "pillow>=13", # until: https://github.com/qdrant/fastembed/pull/830
 ]
 # PROJECT-UV-END
 
