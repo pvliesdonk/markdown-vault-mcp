@@ -4018,18 +4018,23 @@ store never holds a provider. `VectorPublisher.replace_document` takes a
 skips the comparison, `None` expects no token. `EmbeddingStore` combines
 both with `StoreLifecycle`. The numpy backend (`stores/numpy_sidecar.py`)
 holds one immutable snapshot that writers replace in one assignment, so a
-reader never sees a matrix and a row list that disagree. On disk the JSON
-is the commit point and names a matrix written under a new name per
-persist; in this backend `replace_document` publishes in memory and
+reader never sees a matrix and a row list that disagree. On disk
+`{base}.v2.json` is the commit point and names a matrix,
+`{base}.v2.m<N>.npy`, written under a new name per persist; the sweep
+removes only this store's own `.v2.m*.npy` matrices; in this backend `replace_document` publishes in memory and
 becomes durable at `checkpoint()`, while `publish_generation` is durable
 before it returns.
 One process writes a base path at a time, as with the released sidecar:
 two writers would pick the same next matrix name. Another
 process opens it with `owns_files=False`, read-only. A sidecar the
-released `VectorIndex.save` wrote opens unchanged, its rows without tokens;
-after this store's first persist a 5.1 binary finds no `{base}.npy`
-and re-embeds once (until #1505 child 2 moves this store to `{base}.v2.*`
-and leaves the released files alone; § Embedding transitions and recovery).
+released `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an
+edge build's format-2 `{base}.json` naming `{base}.m<N>.npy`, opens in
+place, its released rows without tokens, until the first persist commits
+`{base}.v2.json`; this store never writes, renames or deletes those files,
+so a 5.1 binary still finds them after an upgrade (#1505 child 2;
+§ Embedding transitions and recovery). `committed_json(base)` is the one
+place the order is decided, and `embeddings_status` counts an unopened
+store through it.
 
 The SQLite backend (`stores/sqlite_vectors.py`, #1497) keeps its rows in
 its own database, `{base}.sqlite3`: `meta` (format version, identity,
@@ -4432,12 +4437,13 @@ model, provider variant, dimension, embed text format; no
 `format_version`) and `{base}.npy`; the oldest layout is a bare JSON list
 with no identity. v5.1.0 defaults `{base}` to `{index name}-embeddings` beside
 `INDEX_PATH` (`index-db-embeddings` for `index.db`; Constructor defaults,
-above); v5.0.0 persists only with `EMBEDDINGS_PATH`. Child 2 moves the
-numpy store to `{base}.v2.json` and `{base}.v2.m<N>.npy` and narrows its
-sweep (`stores/numpy_sidecar.py:_sweep`, which today also deletes
-`{base}.npy`) to its own `.v2.m*.npy` matrices; the SQLite store keeps
-`{base}.sqlite3`. From child 2 on no code writes, renames or deletes
-`{base}.json`, `{base}.npy` or an edge build's `{base}.m<N>.npy`. At start,
+above); v5.0.0 persists only with `EMBEDDINGS_PATH`. The numpy store
+writes `{base}.v2.json` and `{base}.v2.m<N>.npy`, and its sweep
+(`stores/numpy_sidecar.py:_sweep`) removes only its own `.v2.m*.npy`
+matrices; the SQLite store keeps `{base}.sqlite3`. No code writes, renames
+or deletes `{base}.json`, `{base}.npy` or an edge build's
+`{base}.m<N>.npy` (child 2). Until child 5, a numpy store with no
+`{base}.v2.json` opens such a sidecar in place (§ the numpy backend). At start,
 when the configured built-in store is absent at `{base}` and `{base}.json`
 is a released sidecar or an edge build's numpy-v2 file
 (`format_version: 2`), it is opened as a donor for the full build, logged
@@ -4450,7 +4456,8 @@ re-embeds only the notes changed since (downgrade after activation: the
 expected outcome, not a guarantee). Each start that finds the configured
 store active and `{base}.json` or `{base}.npy` present logs at INFO
 `embeddings_legacy_sidecar_unused path=%s bytes=%d`, `bytes` counting
-`{base}.json`, `{base}.npy` and any edge-build `{base}.m<N>.npy` (child 2); the user docs say
+`{base}.json`, `{base}.npy` and any edge-build `{base}.m<N>.npy`, from a
+writer's open only (`stores/numpy_sidecar.py:_report_unused_sidecar`); the user docs say
 when deleting them is safe. Until then the vectors exist twice, about
 `4 × chunks × dimensions` bytes each.
 
