@@ -16,6 +16,7 @@ import mimetypes
 import sqlite3
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
+from markdown_vault_mcp._path_search import search_paths
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import (
     ConfigurationError,
@@ -94,6 +95,15 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.link import LinkManager
     from markdown_vault_mcp.okf import OkfDetector
     from markdown_vault_mcp.providers import EmbeddingProvider
+    from markdown_vault_mcp.query_types import (
+        NoteAggregate,
+        NoteCount,
+        NoteGrouping,
+        NoteQuery,
+        NoteQueryPage,
+        PathQuery,
+        PathSearchResult,
+    )
     from markdown_vault_mcp.types import FTSResult
 
 logger = logging.getLogger(__name__)
@@ -695,6 +705,62 @@ class SearchManager:
     # ------------------------------------------------------------------
     # Search
     # ------------------------------------------------------------------
+
+    def search_paths(self, request: PathQuery) -> PathSearchResult:
+        """Discover indexed paths with bounded optional typo matching.
+
+        Args:
+            request: Literal query, population predicates and output cap.
+
+        Returns:
+            Metadata matches with separate approximate coverage and truncation.
+        """
+        return search_paths(self._fts, request)
+
+    def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
+        """Return a bounded page of the exhaustive indexed population.
+
+        Args:
+            spec: Validated predicates and page presentation.
+
+        Returns:
+            Exact total and bounded note items from one read view.
+
+        Raises:
+            InvalidRequestError: An equality field is not an indexed exact field.
+        """
+        return self._fts.query_documents(spec)
+
+    def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
+        """Count the exhaustive indexed population without reading snippets.
+
+        Args:
+            spec: Validated indexed predicates.
+
+        Returns:
+            Exact number of matching notes.
+
+        Raises:
+            InvalidRequestError: An equality field is not an indexed exact field.
+        """
+        return self._fts.count_documents_matching(spec)
+
+    def aggregate_documents(
+        self, spec: NoteQuery, grouping: NoteGrouping
+    ) -> NoteAggregate:
+        """Group the exhaustive indexed population into bounded buckets.
+
+        Args:
+            spec: Validated indexed predicates.
+            grouping: Folder, tag or UTC-month grouping and bucket limit.
+
+        Returns:
+            Exact population total and bounded bucket counts.
+
+        Raises:
+            InvalidRequestError: A predicate or grouping field is not indexed.
+        """
+        return self._fts.aggregate_documents(spec, grouping)
 
     def search(
         self,

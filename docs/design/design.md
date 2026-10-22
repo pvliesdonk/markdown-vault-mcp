@@ -284,6 +284,79 @@ Four properties hold the resolution together:
   verbatim, and `search`'s dispatch — keyword, then semantic, then hybrid as
   the fallthrough — ran hybrid under a name nobody had asked for.
 
+### Exhaustive keyword queries
+
+`query_types.NoteQuery` describes a distinct live-note population. The concrete
+keyword index exposes `query_documents`, `count_documents_matching` and
+`aggregate_documents`; SQL remains in `_fts_queries.py`. These library methods
+are also available through the reader facet. MCP exposes `query_documents`,
+`count_documents` and `aggregate_documents` using the same indexed predicates;
+internal order/pattern-mode switches remain library-only. None changes ranked
+search or its computed OKF behavior. Exact queries reject
+computed `status`, `stale` and `trust_tier` filters and unindexed field names.
+
+Scopes are `metadata` (path/title/heading/configured searchable summary), `body`
+(content), and `all`. FTS operators apply within one section row; duplicate
+sections never inflate totals. Malformed syntax becomes quoted literal terms
+before applying scope; lexical NUL input is rejected. Filters intersect exact
+case-sensitive path, normalized folder boundary, path pattern, indexed scalar
+or list values, and inclusive-lower/exclusive-upper RFC3339 modification bounds.
+Bounds use the index's Unix float timestamp precision.
+
+Pages default to 20 notes (maximum 1000); count and bucket projections ignore
+page controls. Each page and total share one nested-safe read view, including
+read-only connections. Later offset pages are live views, so indexing between
+calls can shift them. Metadata items omit sections; other scopes return at most
+2 sections and 200 words per section by default (0 words requests whole sections).
+Text ordering is score descending/path ascending; blank ordering is modified
+time descending/path ascending. Internal `order=path|folded_path` and literal
+casefolded `pattern_mode=prefix|substring` support bounded path discovery without
+adding SQL outside the backend. Raw path order serves candidate scans; folded
+path/raw path order serves bounded direct-match selection.
+
+All three MCP projections use the shared queryability gate and optional writer
+drain. They answer with one freshness observation in payload `index_stale`,
+text content and `_meta.index_stale`. Existing read payloads keep their shapes.
+Query items retain OKF annotations on active bundles without changing the exact
+population. Unindexed or computed fields raise deliberate request outcomes;
+malformed stored JSON and unexpected database errors remain server faults.
+
+Aggregates group the full population by folder, UTC modified month or distinct
+indexed tag values. Missing tags have a null bucket and exact `missing` count;
+bucket limits never narrow input. Values retain their case-sensitive identity,
+ordered by count descending, casefolded key then raw key. Multi-value bucket
+sums can exceed the note total. No stored derivation or index migration changes.
+
+### Bounded path discovery
+
+`PathQuery` and `ReaderFacet.search_paths` expose indexed metadata discovery;
+MCP `search_paths` uses the same implementation and freshness/OKF envelope.
+No filesystem walk, body retrieval or index migration is involved. Folder
+and indexed equality filters apply to every tier; computed OKF fields remain
+unsupported here. Database and stored JSON faults remain server failures.
+
+Queries contain 1-256 Unicode codepoints before trimming surrounding whitespace;
+blank and NUL queries are rejected. Exact case-sensitive paths rank first,
+then literal casefolded prefixes, substrings and optional approximate matches.
+Each tier sorts by `path.casefold()`, then raw path. Wildcards are literal.
+Direct lookups cover the whole eligible index before approximate candidate caps.
+
+Approximation is opt-in, with a 200ms monotonic work budget including candidate
+retrieval and at most 10,000 candidates in raw path order. It splits query and
+path on slash, whitespace, underscore, hyphen and dot; ASCII alphanumeric tokens
+of length 3-64 are eligible. Every eligible query token must match some path
+token at Levenshtein distance at most one; transposition is two edits. A query
+containing non-ASCII text or no eligible token skips approximation. Unicode
+still receives literal casefolded direct matching; no transliteration is used.
+
+Results contain metadata `items`, `coverage`, `reasons` and `truncated`. Coverage
+is `complete` only when the approximate population finishes, `limited` for
+`candidate_limit` or `time_limit`, and `not_run` for `fuzzy_disabled` or
+`ineligible_query`. Output defaults to 100 items (maximum 1000); truncation
+records known matches omitted by this cap independently of approximate coverage.
+A limited empty result cannot prove absence. Reads across tiers/pages are live;
+concurrent writes can shift candidates, with MCP freshness indicating that race.
+
 ### Search Ranking and Snippet Truncation
 
 Four complementary mechanisms improve result diversity and bound LLM context cost:
@@ -3928,6 +4001,15 @@ unchanged; the class, its `VectorStore` protocol, the sidecar loader
 gone.
 
 ### `interfaces.py`: Storage Protocols (#1230)
+
+The exact query reader requires `KeywordIndex.query_documents`,
+`count_documents_matching` and `aggregate_documents`. Custom keyword backends
+must add these three methods returning the dedicated query result dataclasses;
+`FTSIndex` implements them. This expands the structural protocol shipped in
+v5.1.0 and is a library interface migration. Query types are imported only for
+type checking in `interfaces.py`; the protocol retains its typing-only runtime
+import boundary.
+
 
 Two concepts, three protocols, mirroring the move already
 made for `EmbeddingProvider` and applying it to the storage that provider
