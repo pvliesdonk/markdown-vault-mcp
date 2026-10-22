@@ -59,8 +59,8 @@ class VaultSettings:
         index_path: Path to the SQLite index file.  ``None`` (default) uses
             an in-memory database that is discarded when the object is
             collected.
-        embeddings_path: Base path for the ``{path}.npy`` and
-            ``{path}.json`` sidecar files.  ``None`` (default) puts them
+        embeddings_path: Base path of the embedding store's files (the
+            numpy store's ``{path}.v2.json`` and ``{path}.v2.m<N>.npy``).  ``None`` (default) puts them
             beside ``index_path`` as ``{index name}-embeddings`` (dots made
             dashes: ``index-db-embeddings``), or keeps
             the vectors in memory without an index path (#1708). Semantic

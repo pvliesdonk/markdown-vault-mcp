@@ -947,3 +947,67 @@ class TestV2Layout:
             for r in caplog.records
             if r.msg.startswith("embeddings_legacy_sidecar_unused ")
         ]
+
+
+class TestV2LayoutEdges:
+    """Review findings on #1505 child 2."""
+
+    def _released(self, tmp_path: Path) -> tuple[Path, EmbeddingIdentity]:
+        return TestV2Layout()._released(tmp_path)
+
+    def test_a_corrupt_v2_commit_is_corrupt_beside_a_valid_released_sidecar(
+        self, tmp_path: Path
+    ) -> None:
+        base, identity = self._released(tmp_path)
+        base.with_suffix(".v2.json").write_text("{not json")
+        backend = NumpySidecarBackend()
+        with pytest.raises(StoreCorruptError, match=r"\.v2\.json"):
+            backend.open(base, identity)
+
+    def test_a_released_matrix_without_its_json_names_the_released_json(
+        self, tmp_path: Path
+    ) -> None:
+        base, identity = self._released(tmp_path)
+        base.with_suffix(".json").unlink()
+        backend = NumpySidecarBackend()
+        with pytest.raises(StoreCorruptError) as refused:
+            backend.open(base, identity)
+        assert f"no {base.with_suffix('.json').name}" in str(refused.value)
+
+    def test_a_reader_measures_the_files_it_opened(self, tmp_path: Path) -> None:
+        base, identity = self._released(tmp_path)
+        backend = NumpySidecarBackend()
+        reader = backend.open(base, identity, owns_files=False)
+        writer = backend.open(base, identity)
+        writer.replace_document(doc("c.md", [[0, 0, 1]]), expected_token=ANY_TOKEN)
+        writer.checkpoint()
+        released = sum(
+            p.stat().st_size
+            for p in (base.with_suffix(".json"), base.with_suffix(".npy"))
+        )
+        assert reader.resources().stored_bytes == released
+        for store in (writer, reader):
+            store.close()
+
+    def test_an_incompatible_open_logs_no_unused_sidecar(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        base, identity = self._released(tmp_path)
+        store = NumpySidecarBackend().open(base, identity)
+        store.replace_document(doc("c.md", [[0, 0, 1]]), expected_token=ANY_TOKEN)
+        store.close()
+        other = EmbeddingIdentity(identity.provider, "other", "", "v1", 3)
+        with (
+            caplog.at_level(
+                logging.INFO, logger="markdown_vault_mcp.stores.numpy_sidecar"
+            ),
+            pytest.raises(StoreIncompatibleError),
+        ):
+            NumpySidecarBackend().open(base, other)
+        assert not [
+            r
+            for r in caplog.records
+            if r.msg.startswith("embeddings_legacy_sidecar_unused ")
+        ]

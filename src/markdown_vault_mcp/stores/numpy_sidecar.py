@@ -96,8 +96,9 @@ def commit_path(base: Path) -> Path:
 def legacy_paths(base: Path) -> tuple[Path, ...]:
     """Return the released and edge-build sidecar files beside *base*.
 
-    ``{base}.json``, ``{base}.npy`` and every ``{base}.m{seq}.npy``, whether
-    or not they exist; the store never writes, renames or deletes them.
+    ``{base}.json`` and ``{base}.npy``, whether or not they exist, and every
+    ``{base}.m{seq}.npy`` that exists; the store never writes, renames or
+    deletes them.
     """
     return (
         base.with_suffix(_LEGACY_JSON_SUFFIX),
@@ -215,11 +216,15 @@ class NumpySidecarStore(ResidentStore):
         read_only: bool,
         seq: int,
         matrix_path: Path | None,
+        json_path: Path | None = None,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
         self._base = base
         self._seq = seq
         self._matrix_path = matrix_path
+        # The commit file the snapshot came from: a sidecar opened in place
+        # until this store's first persist commits ``{base}.v2.json``.
+        self._json_path = json_path
         self._dirty = False
 
     # -- publishing ----------------------------------------------------------
@@ -297,7 +302,9 @@ class NumpySidecarStore(ResidentStore):
             # name and stating it; then the files are measured once more.
             for _attempt in range(2):
                 matrix = self._matrix_path
-                stored = self._stored_bytes(self._base, matrix)
+                stored = self._stored_bytes(
+                    self._json_path or commit_path(self._base), matrix
+                )
                 if self._matrix_path == matrix:
                     break
         return StoreResources(
@@ -308,17 +315,18 @@ class NumpySidecarStore(ResidentStore):
         )
 
     @staticmethod
-    def _stored_bytes(base: Path, matrix: Path | None) -> int:
-        """Return the size of the JSON the store reads and *matrix*, a missing one 0.
+    def _stored_bytes(json_path: Path, matrix: Path | None) -> int:
+        """Return the size of *json_path* and *matrix*, a missing one 0.
 
-        That JSON is ``{base}.v2.json`` once committed, or the sidecar the
-        store opened in place before that.
+        *json_path* is the commit file this store's snapshot came from, so a
+        reader that opened a sidecar in place keeps measuring that sidecar
+        after a writer commits ``{base}.v2.json``.
 
         Raises:
             OSError: If a stat is refused (#1625).
         """
         files = [
-            committed_json(base) or commit_path(base),
+            json_path,
             *([matrix] if matrix is not None else []),
         ]
         return sum(file_bytes(p) for p in files)
@@ -342,6 +350,7 @@ class NumpySidecarStore(ResidentStore):
         )
         _commit_file(commit_path(self._base), data)
         self._seq, self._matrix_path = seq, matrix_path
+        self._json_path = commit_path(self._base)
         _sweep(self._base, matrix_path)
         logger.debug(
             "numpy_store_checkpointed path=%s rows=%d generation=%d",
@@ -640,7 +649,8 @@ def _open_file(
         if has_legacy:
             raise _outcome(
                 StoreCorruptError,
-                f"Vector store at {where} has {legacy.name} but no {json_path.name}.",
+                f"Vector store at {where} has {legacy.name} but no "
+                f"{base.with_suffix(_LEGACY_JSON_SUFFIX).name}.",
                 where,
             )
         return NumpySidecarStore(
@@ -651,9 +661,9 @@ def _open_file(
             matrix_path=None,
         )
     stored, matrix = _load_committed(json_path, base, where)
+    _check_identity(stored, matrix, identity, where)
     if json_path == v2_json and not read_only:
         _report_unused_sidecar(base)
-    _check_identity(stored, matrix, identity, where)
     snap = _snapshot_from(stored, matrix, identity, where)
     logger.info(
         "numpy_store_opened path=%s rows=%d generation=%d format_version=%d",
@@ -671,6 +681,7 @@ def _open_file(
         read_only=read_only,
         seq=_highest_seq(base) if in_place else stored.seq,
         matrix_path=stored.matrix_path,
+        json_path=json_path,
     )
 
 

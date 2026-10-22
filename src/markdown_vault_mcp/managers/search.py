@@ -157,7 +157,7 @@ class SearchManager:
     Args:
         fts: The FTS index to query.
         source_dir: Absolute path to the vault root directory.
-        embeddings_path: Base path for ``.npy`` / ``.json`` sidecar files.
+        embeddings_path: Base path of the embedding store's files.
             ``None`` keeps the vectors in memory; semantic search follows
             *embedding_provider* alone (#1708).
         embedding_provider: Provider used to generate embeddings.

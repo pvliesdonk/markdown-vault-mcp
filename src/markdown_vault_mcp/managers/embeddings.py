@@ -68,7 +68,7 @@ class EmbeddingsManager:
     Args:
         fts: The FTS index queried as the source of truth for what to embed.
         source_dir: Absolute path to the vault root directory.
-        embeddings_path: Base path for ``.npy`` / ``.json`` sidecar files.
+        embeddings_path: Base path of the embedding store's files.
             ``None`` keeps the vectors in memory (#1708).
         embedding_provider: Provider used to generate embeddings.
         embed_text_builder: Shared

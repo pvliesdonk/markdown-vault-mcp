@@ -3457,7 +3457,7 @@ kwargs):
 - `index_path=None`: index is created in-memory (`:memory:` SQLite). If
   provided, persisted to disk.
 - `embeddings_path=None`: the sidecars default to `{index name}-embeddings`,
-  the name's dots made dashes (`index-db-embeddings.npy` beside `index.db`)
+  the name's dots made dashes (`index-db-embeddings.v2.json` beside `index.db`)
   so `Path.with_suffix` cannot cut it at a dot (#819),
   or the vectors are held in memory without one. Semantic search follows the
   embedding provider alone (#1708). On the server, an explicit
