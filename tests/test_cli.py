@@ -688,10 +688,18 @@ def test_index_surfaces_internal_valueerror_from_embeddings() -> None:
 
 def test_search_text_output() -> None:
     """``search`` prints path, score, and title in plain mode."""
-    mock_result = MagicMock()
-    mock_result.path = "notes/test.md"
-    mock_result.title = "Test Note"
-    mock_result.score = 0.9876
+    from markdown_vault_mcp.types import SearchResult
+
+    mock_result = SearchResult(
+        path="notes/test.md",
+        title="Test Note",
+        folder="notes",
+        heading=None,
+        content="test",
+        score=0.9876,
+        search_type="keyword",
+        frontmatter={},
+    )
 
     mock_vault = MagicMock()
     mock_vault.reader.search.return_value = [mock_result]

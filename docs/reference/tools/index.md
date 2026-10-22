@@ -31,6 +31,10 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Reader | [`get_context`](reader.md#get_context) | Note Context | Return a note's metadata, backlinks, outlinks, similar notes, folder neighbours, indexed tags and applicable conventions in one call. |
 | Reader | [`get_conventions`](reader.md#get_conventions) | Folder Conventions | Return the vault owner's authoring conventions for a note or folder, vault root first and the most specific last. |
 | Reader | [`okf_validate`](reader.md#okf_validate) | Validate OKF Bundle | Audit how far the vault conforms to the Open Knowledge Format, with example paths per rule; works on a vault not yet declared as a bundle. |
+| Reader | [`query_documents`](reader.md#query_documents) | Query Notes | Page through all matching indexed notes with an exact total. |
+| Reader | [`count_documents`](reader.md#count_documents) | Count Notes | Count every matching indexed note without fetching content. |
+| Reader | [`aggregate_documents`](reader.md#aggregate_documents) | Aggregate Notes | Group every matching indexed note into bounded frequency buckets. |
+| Reader | [`search_paths`](reader.md#search_paths) | Discover Note Paths | Discover note paths with direct matches before optional typo matches. |
 | Graph | [`get_backlinks`](graph.md#get_backlinks) | Backlinks | List the notes that link to a note. |
 | Graph | [`get_outlinks`](graph.md#get_outlinks) | Outlinks | List the links in a note, each with an exists flag that is false when the target is missing. |
 | Graph | [`get_broken_links`](graph.md#get_broken_links) | Broken Links | List the links whose target is missing from the vault, each with the note that holds it. |

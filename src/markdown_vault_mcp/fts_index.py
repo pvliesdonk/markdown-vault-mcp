@@ -32,6 +32,7 @@ import datetime
 import json
 import logging
 import sqlite3
+import threading
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -45,6 +46,7 @@ from markdown_vault_mcp._fts_connection import (
 from markdown_vault_mcp._fts_connection import (
     retry_on_sqlite_locked as _retry_on_sqlite_locked,
 )
+from markdown_vault_mcp._fts_queries import QueryExecutor, register_functions
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
@@ -60,6 +62,14 @@ from markdown_vault_mcp.types import (
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable
+
+    from markdown_vault_mcp.query_types import (
+        NoteAggregate,
+        NoteCount,
+        NoteGrouping,
+        NoteQuery,
+        NoteQueryPage,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -685,6 +695,7 @@ class FTSIndex:
         # close registry, and the BaseException-hardened bootstrap live in
         # the extracted SqliteConnectionRegistry (#760). Schema DDL and the
         # shared-cache probe stay FTSIndex-owned and run via callbacks.
+        self._query_tls = threading.local()
         self._registry = SqliteConnectionRegistry(db_path, read_only=read_only)
         self._registry.open_primary(
             self._check_schema_version if read_only else self._init_schema,
@@ -1032,7 +1043,52 @@ class FTSIndex:
         Raises:
             sqlite3.ProgrammingError: If ``close()`` has been called.
         """
-        return self._registry.conn()
+        conn = self._registry.conn()
+        if not getattr(self._query_tls, "registered", False):
+            register_functions(conn)
+            self._query_tls.registered = True
+        return conn
+
+    @_retry_on_locked
+    def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
+        """Read distinct notes and an exact total from one consistent read view.
+
+        Args:
+            spec: Validated exhaustive population and page request.
+
+        Returns:
+            Bounded typed page; metadata scope omits section content.
+        """
+        return QueryExecutor(self._conn(), self._indexed_fields, spec).page()
+
+    @_retry_on_locked
+    def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
+        """Count all distinct matching live notes without fetching excerpts.
+
+        Args:
+            spec: Validated population; page/excerpt controls are ignored.
+
+        Returns:
+            Exact population size.
+        """
+        return QueryExecutor(self._conn(), self._indexed_fields, spec).count()
+
+    @_retry_on_locked
+    def aggregate_documents(
+        self, spec: NoteQuery, grouping: NoteGrouping
+    ) -> NoteAggregate:
+        """Group all matching notes without limiting the input population.
+
+        Args:
+            spec: Validated population; page/excerpt controls are ignored.
+            grouping: Bucket axis, indexed field and output limit.
+
+        Returns:
+            Exact total, missing count and bounded distinct-note buckets.
+        """
+        return QueryExecutor(self._conn(), self._indexed_fields, spec).aggregate(
+            grouping
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -16,10 +16,14 @@ from fastmcp import Client, FastMCP
 from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.server import make_server
 from markdown_vault_mcp.vault import VaultSettings
+from tests.fixtures.cli_discovery import discovery_source, stored_reader_index  # noqa: F401
+from tests.fixtures.cli_graph import graph_source  # noqa: F401
 
 # Re-export reusable fixtures so they are auto-discovered by pytest in any
 # test module without requiring a per-file import (which would trip ruff's
 # F811 redefinition check on the parameter shadowing).
+from tests.fixtures.cli_http import cli_client_profile  # noqa: F401
+from tests.fixtures.cli_paths import path_source  # noqa: F401
 from tests.fixtures.git import git_repo_pair  # noqa: F401
 
 
