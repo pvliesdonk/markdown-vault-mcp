@@ -3,14 +3,14 @@ type: Reference
 title: PostgreSQL and pgvector behaviour behind the vector store
 description: What the PostgreSQL vector store relies on in PostgreSQL 17, pgvector 0.8 and psycopg 3 — extension privileges, zero-vector scoring, schemas and search_path, snapshots, DELETE against TRUNCATE, advisory locks, durability settings, error codes and connect-time failures, cursors, COPY, pooling, connection poolers, connection parameters, schema backups and vacuuming.
 subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changelog to 0.8.7; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1"
-valid_for: "PostgreSQL 15–18, pgvector 0.8.x, psycopg 3.3.x"
+valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x, psycopg 3.3.x"
 generated:
   by: process:researching-references
-  at: 2026-10-21T22:10:00+02:00
-stale_after: 2027-04-21T22:10:00+02:00
+  at: 2026-10-22T10:30:00+02:00
+stale_after: 2027-04-22T10:30:00+02:00
 verified:
   - by: process:researching-references
-    at: 2026-10-21T22:10:00+02:00
+    at: 2026-10-22T10:30:00+02:00
 status: stable
 sources:
   - id: pgvector-readme
@@ -190,6 +190,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - `CREATE EXTENSION` needs the privileges to create the extension's objects, usually a superuser; only an extension marked `trusted` in its control file can be installed by a role with `CREATE` on the database. [source: pg-create-extension]
 - pgvector's control file carries no `trusted = true` (it reads `comment`, `default_version`, `module_pathname`, `relocatable = true`), so installing it needs a superuser. [observed: probe "control" on pgvector 0.8.0 and 0.8.1] [pins: tests/test_stores_postgres_connection.py::test_a_database_without_the_extension_is_not_configured]
 - An extension is loaded into the current database, its name is unique database-wide, and its objects live in a schema chosen at creation (`SCHEMA`, or the current creation schema). [source: pg-create-extension]
+- The store's whole PostgreSQL suite passes on PostgreSQL 15 to 18 with pgvector 0.7.0 to 0.8.7 (pgvector 0.7 is not built for PostgreSQL 18), and on `tensorchord/vchord-suite:pg17-20260501`: the images the range workflow pins. [observed: `.github/workflows/postgres-range.yml`, and a local run of each of its eight images on 2026-10-22, 376 passed on each] [pins: tests/test_postgres_range_workflow.py::test_the_lowest_pgvector_tested_is_the_minimum_the_store_accepts, tests/test_postgres_range_workflow.py::test_the_guide_states_the_postgresql_majors_the_workflow_runs]
 - `CREATE EXTENSION IF NOT EXISTS` checks only the name: "there is no guarantee that the existing extension is anything like the one that would have been created". [source: pg-create-extension]
 - The installed version and schema are in `pg_extension.extversion` and `pg_extension.extnamespace`. [observed: probe "versions", `select extversion from pg_extension where extname='vector'` → `0.8.0` / `0.8.1`]
 
@@ -350,6 +351,9 @@ probe 10d ran once, on the PostgreSQL 17.4 image.
   transaction and on an autocommit connection.
 - Probe 14: two `psql` sessions taking advisory key 42, in the same database
   and in another one.
+- The range workflow, `.github/workflows/postgres-range.yml`: the store's
+  PostgreSQL tests on each pinned image, through the test harness's
+  `MVM_TEST_POSTGRES_IMAGE`; first run locally on 2026-10-22.
 
 ## Where this project departs from the subject
 
@@ -392,6 +396,7 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   what the store sees.
 - Crash and power-loss behaviour, replication and replica read-after-write:
   not probed; the store assumes one primary.
-- PostgreSQL 15 and 18, and pgvector 0.7: not probed; the range workflow of
-  #1504 child 10 decides the supported range.
+- pgvector before 0.7.0: refused by the store (`MIN_PGVECTOR`), not run.
+- The probes above ran on PostgreSQL 16 and 17 only; on 15 and 18 the store's
+  tests, run by the range workflow, are the evidence.
 - Whether `conninfo_to_dict` ever connects (see its claim).

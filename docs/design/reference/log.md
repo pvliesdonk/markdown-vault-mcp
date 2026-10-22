@@ -1,5 +1,14 @@
 # Reference research log
 
+## 2026-10-22
+
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
+  with the supported range #1504's range workflow runs: PostgreSQL 15 to 18
+  with pgvector 0.7.0 to 0.8.7, and `tensorchord/vchord-suite:pg17-20260501`.
+  Image tags were read from Docker Hub; every image passed the store's 376
+  PostgreSQL tests. `valid_for` now includes pgvector 0.7. Next review:
+  2027-04-22.
+
 ## 2026-10-21
 
 - Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
