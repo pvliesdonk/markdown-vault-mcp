@@ -45,6 +45,12 @@ that later curation relies on can be trusted. Git reliability supports both;
 an alternate backend is one possible improvement, not a prerequisite for OKF.
 These are preferences for selecting work, not a total order over all issues.
 
+### Hosted terminal discovery proposal
+
+`evidenced` — [Proposal #1829](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1829) records the missing hosted CLI workflow: main's search constructs a local vault even when the data already lives behind MCP. This is a contribution proposal, with no maintainer priority or release assignment implied.
+
+`derived` — Nine incremental slices follow the dependencies: hosted search, existing search controls, note retrieval, graph traversal, structured keyword storage, reader/MCP query exposure, population CLI queries, bounded approximate paths, and path CLI. Hosted search and structured storage queries are independent main-based proposals. The reader/MCP query slice follows storage; CLI controls and discovery follow hosted search. Population and path CLI commands wait for both of their real upstream prerequisites. Prepared fork branches do not count as upstream submissions. The refinement and feature issues currently use ordinary cross-links because this contributor cannot create native sub-issue relationships.
+
 ### Sustainable embedding storage and search
 
 `evidenced` — [Epic #1499][1499] freezes the outcome: "An operator can sustain

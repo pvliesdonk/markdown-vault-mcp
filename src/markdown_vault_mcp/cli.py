@@ -141,7 +141,7 @@ def serve(
 # surface template-owned. Module-level ``TYPE_CHECKING`` guards are fine — they
 # are erased at runtime.
 
-from typing import TYPE_CHECKING, NamedTuple  # noqa: E402
+from typing import TYPE_CHECKING, Any, NamedTuple  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -365,31 +365,18 @@ def _require_index_file(index_path: Path) -> None:
         raise typer.Exit(code=1)
 
 
-@app.command()
-def search(
-    query: str = typer.Argument(..., help="Search query."),
-    source_dir: str | None = typer.Option(
-        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
-    ),
-    limit: int = typer.Option(10, "-n", "--limit", help="Max results (default: 10)."),
-    mode: str = typer.Option(
-        "keyword",
-        "-m",
-        "--mode",
-        help="keyword / semantic / hybrid (default: keyword).",
-    ),
-    folder: str | None = typer.Option(None, help="Restrict to folder."),
-    json_output: bool = typer.Option(False, "--json", help="Output results as JSON."),
-) -> None:
-    """Search the vault."""
-    import json
+def _local_search(
+    query: str, source_dir: str | None, arguments: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Search a local index without changing files a server may own."""
     from dataclasses import asdict
     from typing import cast
 
-    from markdown_vault_mcp._http_logging import quiet_http_loggers
+    mode = arguments["mode"]
+    limit = arguments["limit"]
+    folder = arguments["folder"]
     from markdown_vault_mcp.exceptions import StoreCorruptError, StoreIncompatibleError
 
-    quiet_http_loggers()
     # An in-memory index is empty until built, so build it, keeping its state
     # in memory too: STATE_PATH may be a running server's (#1691). An on-disk
     # index is only read: build_index() would rebuild a server's index
@@ -432,13 +419,83 @@ def search(
             raise typer.Exit(code=1) from exc
     finally:
         built.close()
+    return [asdict(r) for r in results]
+
+
+def _terminal_text(value: str) -> str:
+    """Preserve printable Unicode while escaping terminal controls."""
+    import unicodedata
+
+    return "".join(
+        char.encode("unicode_escape").decode("ascii")
+        if unicodedata.category(char).startswith("C") or char in "\u2028\u2029"
+        else char
+        for char in value
+    )
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Search query."),
+    source_dir: str | None = typer.Option(
+        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
+    ),
+    limit: int = typer.Option(10, "-n", "--limit", help="Max results (default: 10)."),
+    mode: str = typer.Option(
+        "keyword",
+        "-m",
+        "--mode",
+        help="keyword / semantic / hybrid (default: keyword).",
+    ),
+    folder: str | None = typer.Option(None, help="Restrict to folder."),
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON."),
+    server: str | None = typer.Option(None, help="Complete hosted MCP endpoint URL."),
+    local: bool = typer.Option(
+        False, "--local", help="Use the local vault despite a client profile."
+    ),
+    timeout: float | None = typer.Option(
+        None, help="Remote operation deadline in seconds (default 30)."
+    ),
+) -> None:
+    """Search the local vault or a hosted MCP server."""
+    import json
+
+    from markdown_vault_mcp._cli_client import (
+        ClientError,
+        ClientOptions,
+        resolve_settings,
+    )
+    from markdown_vault_mcp._cli_read import run_read
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
+
+    quiet_http_loggers()
+    try:
+        if mode not in {"keyword", "semantic", "hybrid"}:
+            raise ClientError("Mode must be keyword, semantic or hybrid.")
+        options = ClientOptions(server, local, timeout)
+        if source_dir is not None and resolve_settings(options).url is not None:
+            raise ClientError(
+                "--source-dir conflicts with a remote server; use --local."
+            )
+        arguments = {"query": query, "limit": limit, "mode": mode, "folder": folder}
+        reply = run_read(
+            "search",
+            arguments,
+            options,
+            lambda: _local_search(query, source_dir, arguments),
+        )
+    except ClientError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(exc.code) from None
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
     if json_output:
-        typer.echo(json.dumps([asdict(r) for r in results], indent=2))
+        typer.echo(json.dumps(reply.data, indent=2))
     else:
-        for r in results:
-            typer.echo(f"  {r.path} ({r.score:.4f})")
-            if r.title:
-                typer.echo(f"    {r.title}")
+        for hit in reply.data:
+            typer.echo(f"  {_terminal_text(hit['path'])} ({hit['score']:.4f})")
+            if hit.get("title"):
+                typer.echo(f"    {_terminal_text(hit['title'])}")
 
 
 @app.command()

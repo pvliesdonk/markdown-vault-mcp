@@ -23,6 +23,9 @@
   what plain `VACUUM` and `VACUUM FULL` reclaim and lock, and when autovacuum
   runs, with its defaults. Fixed the page's stale scope line, which still said
   the store module was yet to arrive. Next review: 2027-04-21.
+
+- Extended [FastMCP 4](fastmcp-4.md#http-read-client) with the hosted CLI client APIs, checked against installed FastMCP 4.1.3/MCP SDK 2.2.0 and vendor documentation; real HTTP tests pin paths, payloads, auth, redirect confinement and cleanup.
+
 - Revised how [Pull request size and review effectiveness](pull-request-size.md)
   is used: the file cap rises from three to five, and the line backstop
   counts only the files the cap counts, asks for a justification past 400
