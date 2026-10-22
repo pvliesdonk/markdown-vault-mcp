@@ -576,6 +576,12 @@ from markdown_vault_mcp._cli_discovery import (  # noqa: E402 -- retained domain
 
 _register_discovery(app)
 
+from markdown_vault_mcp._cli_graph import (  # noqa: E402
+    register as _register_graph,
+)
+
+_register_graph(app)
+
 # DOMAIN-COMMANDS-END
 
 

@@ -18,7 +18,7 @@ Generic markdown vault MCP with hybrid search
 Give Claude, or any MCP client, a folder of Markdown notes to search, read and write. An Obsidian vault works as it is.
 
 - **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/use/embeddings.md).
-- **Hosted CLI reads.** Search a running vault with `markdown-vault-mcp search "term" --server https://vault.example/mcp`; read notes, list metadata and collect context with the same connection options. Use `--json` for native payloads or `--agent` for escaped records. See the [CLI reference](docs/reference/cli.md).
+- **Hosted CLI reads.** Search a running vault with `markdown-vault-mcp search "term" --server https://vault.example/mcp`; read notes, list metadata, collect context and traverse note links with the same connection options. Use `--json` for native payloads or `--agent` for escaped records. See the [CLI reference](docs/reference/cli.md).
 - **Frontmatter as data.** YAML frontmatter fields become search filters, and long notes are split at their headings.
 - **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes.
 - **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/use/git-integration.md).

@@ -68,6 +68,20 @@ markdown-vault-mcp context Journal/today.md --similar-limit 0 --json
 
 `list` supports `--pattern`, repeated frontmatter filters and `--include-attachments`. Empty `--folder ""` selects root notes; other folder values select a subtree. `toc` reports subtree truncation. `similar` requires stored vectors and never builds embeddings. Local indexed reads use an existing disk index without changing it, or build a temporary in-memory keyword index when no index path is configured. Local reads use the existing checkout without cloning or synchronizing a managed Git source. Indexed reader commands accept `--wait-for-pending-writes` for the remote server; local freshness remains unknown.
 
+
+Graph commands use the same connection and output options:
+
+```bash
+markdown-vault-mcp backlinks Journal/today.md --server https://vault.example/mcp
+markdown-vault-mcp outlinks Journal/today.md --limit 10 --json
+markdown-vault-mcp broken-links --folder Journal --json
+markdown-vault-mcp orphans --agent
+markdown-vault-mcp hubs --limit 10 --json
+markdown-vault-mcp connection Journal/today.md Ideas/topic.md --max-depth 3 --json
+```
+
+Paths are exact and case-sensitive. Backlinks and outlinks return all links unless limited; hubs default to 10 notes. Broken-link folders select a subtree, while `--folder ""` selects root notes. Connection paths follow links in either direction, with depth clamped to 1 through 10. Disconnected notes return a successful object with `found: false`, an empty `path` and `hops: -1`; missing endpoints fail. All six commands accept `--wait-for-pending-writes` for remote reads.
+
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -282,5 +296,107 @@ Collect note links, neighbors, folder peers and conventions.
 | `--local` |  | False | Override a configured remote endpoint. |
 | `--timeout` |  |  | Remote deadline in seconds. |
 | `--json` |  | False | Return the structured context dossier. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp backlinks`
+
+List notes linking to an exact note path.
+
+| Argument | Description |
+|---|---|
+| `PATH` | Exact case-sensitive note path. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--limit` |  |  | Maximum links; omit for all. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return native structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp outlinks`
+
+List a note's links, including missing targets.
+
+| Argument | Description |
+|---|---|
+| `PATH` | Exact case-sensitive note path. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--limit` |  |  | Maximum links; omit for all. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return native structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp broken-links`
+
+List links whose note targets are missing.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--folder` |  |  | Source folder subtree; empty means root notes. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return native structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp orphans`
+
+List all notes without inbound or outbound links.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return native structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp hubs`
+
+List the notes with the most inbound links.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--limit` |  | 10 | Maximum notes, ranked by backlink count. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return native structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp connection`
+
+Find the shortest undirected link path between two notes.
+
+| Argument | Description |
+|---|---|
+| `SOURCE` | Exact case-sensitive starting note path. |
+| `TARGET` | Exact case-sensitive destination note path. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--max-depth` |  | 10 | Maximum hops; native traversal clamps to 1-10. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return native structured values. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
