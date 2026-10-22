@@ -34,6 +34,18 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
     from markdown_vault_mcp.config import ProjectConfig
 
     config = ProjectConfig.from_env()
+    if tool in {"query_documents", "count_documents", "aggregate_documents"}:
+        from dataclasses import replace
+
+        # Exact keyword populations need neither model clients nor stored vectors.
+        config = replace(
+            config,
+            embedding_provider=None,
+            embeddings_path=None,
+            summarize_provider=None,
+            summarize_openai_api_key=None,
+            summarize_openai_base_url=None,
+        )
     configured = config.indexing.index_path
     in_memory = configured is None or str(configured) == ":memory:"
     if configured is not None and not in_memory:
@@ -120,6 +132,8 @@ def _reader_payload(vault: Vault, tool: str, arguments: dict[str, Any]) -> Any:
 
     if tool == "read":
         return read_payload(vault, **arguments)
+    if tool in {"query_documents", "count_documents", "aggregate_documents"}:
+        return _query_payload(vault, tool, arguments)
     result = getattr(vault.reader, tool)(**arguments)
     if tool == "get_toc":
         return toc_payload(result)
@@ -209,3 +223,21 @@ def _attachment_payload(vault: Vault, path: str) -> dict[str, Any]:
                 "it with create_download_link if that tool is available."
             )
     return asdict(vault.reader.read_attachment(path))
+
+
+def _query_payload(
+    vault: Vault, tool: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    from markdown_vault_mcp._read_payloads import annotate_hits, query_request
+    from markdown_vault_mcp.okf import derive_annotation
+
+    query, grouping = query_request(tool, arguments)
+    if tool == "count_documents":
+        return asdict(vault.reader.count_documents_matching(query))
+    if grouping is not None:
+        return asdict(vault.reader.aggregate_documents(query, grouping))
+    data = asdict(vault.reader.query_documents(query))
+    annotate_hits(
+        data["items"], derive_annotation if vault.okf.state().active else None
+    )
+    return data

@@ -68,6 +68,28 @@ markdown-vault-mcp context Journal/today.md --similar-limit 0 --json
 
 `list` supports `--pattern`, repeated frontmatter filters and `--include-attachments`. Empty `--folder ""` selects root notes; other folder values select a subtree. `toc` reports subtree truncation. `similar` requires stored vectors and never builds embeddings. Local indexed reads use an existing disk index without changing it, or build a temporary in-memory keyword index when no index path is configured. Local reads resolve relative or symlinked source directories before opening the existing checkout, without cloning or synchronizing a managed Git source. Indexed reader commands accept `--wait-for-pending-writes` for the remote server; local freshness remains unknown.
 
+### Query exact note populations
+
+```bash
+markdown-vault-mcp search-metadata "release" --server https://vault.example/mcp --limit 20 --offset 20 --json
+markdown-vault-mcp search-body "release" --chunks-per-file 2 --snippet-words 40 --agent
+markdown-vault-mcp search-in Journal/today.md "release" --snippet-words 0 --json
+markdown-vault-mcp count "release" --scope body --filter tags=release --json
+markdown-vault-mcp aggregate "release" --scope body --by tag --field tags --limit 10 --json
+```
+
+These commands share the connection, authentication and output options above. They require a server exposing `query_documents`, `count_documents` and `aggregate_documents`. An older server fails explicitly; no remote failure retries against local files.
+
+`search-metadata` matches indexed paths, titles, headings and configured summaries, without body excerpts. Its query can be blank to enumerate notes. `search-body` requires a keyword expression and returns bounded matching sections. `search-in` requires an exact case-sensitive note path and a body expression; it has no document offset or limit. Section limits default to 2, excerpt limits to 200 words; zero words returns the full indexed section. Metadata and body pages default to 20 notes (range 1-1000). Their offset must be nonnegative.
+
+Page envelopes retain `items`, `total`, `offset`, `limit` and `truncated`. Total counts distinct matching notes before pagination, even when several sections match. Pages are live views: concurrent writes can move notes between offsets. Use `read` for the complete note.
+
+`count` and `aggregate` accept a blank query and `--scope all`, `metadata` or `body` (default `all`). Both require keyword mode; semantic and hybrid populations are refused. Their totals cover all matches, independently of output limits. Aggregate `--by folder`, `tag` or `month` groups by folder, indexed field value or UTC modification month. Its limit defaults to 50 buckets and never limits input notes. Tag grouping reports missing values separately and may return a null bucket; multi-value bucket counts can sum above total.
+
+All five accept `--folder`, `--pattern`, repeated `--filter KEY=VALUE`, and RFC3339 `--modified-after` / `--modified-before` bounds with timezones. The lower bound is inclusive, the upper exclusive. Empty folder selects root notes; patterns use case-sensitive glob wildcards. Page, count and aggregate commands also accept exact `--path`; `search-in` takes its path positionally. Filters require configured indexed fields. Computed OKF fields (`status`, `stale`, `trust_tier`) are refused here; existing ranked `search` keeps its OKF filter behavior.
+
+JSON keeps the original native envelope, including optional OKF page annotations. Text shows escaped JSON. Agent output has one object record and header `count=1`, including when total is zero; matching population remains in that object's `total`. Remote freshness comes from one server observation in both payload and header. Local freshness is unknown and no false freshness value is inserted into the payload. Local queries adopt a configured completed disk index without rebuilding it; with no index path, they build a temporary in-memory keyword index. Exact local queries do not initialize embedding or summarization providers, including when provider settings are present.
+
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -282,5 +304,140 @@ Collect note links, neighbors, folder peers and conventions.
 | `--local` |  | False | Override a configured remote endpoint. |
 | `--timeout` |  |  | Remote deadline in seconds. |
 | `--json` |  | False | Return the structured context dossier. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp search-metadata`
+
+Query indexed note metadata without body excerpts.
+
+| Argument | Description |
+|---|---|
+| `QUERY` | Metadata keyword expression; blank enumerates notes. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--path` |  |  | Case-sensitive exact note path. |
+| `--offset` |  | 0 | Live-view note offset. |
+| `--limit` |  | 20 | Maximum returned notes. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
+| `--pattern` |  |  | Case-sensitive path glob. |
+| `--filter` |  |  | Repeat unique KEY=VALUE predicates (AND). |
+| `--modified-after` |  |  | Inclusive modification bound, RFC3339 with timezone. |
+| `--modified-before` |  |  | Exclusive modification bound, RFC3339 with timezone. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the original structured payload. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp search-body`
+
+Query note bodies with bounded matching sections.
+
+| Argument | Description |
+|---|---|
+| `QUERY` | Body keyword expression. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--path` |  |  | Case-sensitive exact note path. |
+| `--offset` |  | 0 | Live-view note offset. |
+| `--limit` |  | 20 | Maximum returned notes. |
+| `--chunks-per-file` |  | 2 | Maximum matching sections per note. |
+| `--snippet-words` |  | 200 | Excerpt words; zero returns the full section. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
+| `--pattern` |  |  | Case-sensitive path glob. |
+| `--filter` |  |  | Repeat unique KEY=VALUE predicates (AND). |
+| `--modified-after` |  |  | Inclusive modification bound, RFC3339 with timezone. |
+| `--modified-before` |  |  | Exclusive modification bound, RFC3339 with timezone. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the original structured payload. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp search-in`
+
+Query body sections within exactly one note.
+
+| Argument | Description |
+|---|---|
+| `PATH` | Case-sensitive exact note path. |
+| `QUERY` | Body keyword expression. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--chunks-per-file` |  | 2 | Maximum matching sections per note. |
+| `--snippet-words` |  | 200 | Excerpt words; zero returns the full section. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
+| `--pattern` |  |  | Case-sensitive path glob. |
+| `--filter` |  |  | Repeat unique KEY=VALUE predicates (AND). |
+| `--modified-after` |  |  | Inclusive modification bound, RFC3339 with timezone. |
+| `--modified-before` |  |  | Exclusive modification bound, RFC3339 with timezone. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the original structured payload. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp count`
+
+Count distinct notes across the complete matching population.
+
+| Argument | Description |
+|---|---|
+| `QUERY` | Keyword expression; blank counts all matching notes. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--scope` |  | all | Lexical population: all, metadata or body. |
+| `--mode` |  | keyword | Exact populations support keyword mode only. |
+| `--path` |  |  | Case-sensitive exact note path. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
+| `--pattern` |  |  | Case-sensitive path glob. |
+| `--filter` |  |  | Repeat unique KEY=VALUE predicates (AND). |
+| `--modified-after` |  |  | Inclusive modification bound, RFC3339 with timezone. |
+| `--modified-before` |  |  | Exclusive modification bound, RFC3339 with timezone. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the original structured payload. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp aggregate`
+
+Group the complete matching note population into bounded buckets.
+
+| Argument | Description |
+|---|---|
+| `QUERY` | Keyword expression; blank includes all matching notes. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--by` |  |  | Group by folder, tag or month. |
+| `--field` |  | tags | Indexed field for tag grouping. |
+| `--limit` |  | 50 | Maximum output buckets; never caps matching notes. |
+| `--scope` |  | all | Lexical population: all, metadata or body. |
+| `--mode` |  | keyword | Exact populations support keyword mode only. |
+| `--path` |  |  | Case-sensitive exact note path. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
+| `--pattern` |  |  | Case-sensitive path glob. |
+| `--filter` |  |  | Repeat unique KEY=VALUE predicates (AND). |
+| `--modified-after` |  |  | Inclusive modification bound, RFC3339 with timezone. |
+| `--modified-before` |  |  | Exclusive modification bound, RFC3339 with timezone. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the original structured payload. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |

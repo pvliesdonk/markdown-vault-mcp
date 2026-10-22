@@ -144,6 +144,7 @@ src/markdown_vault_mcp/
   _cli_remote.py       -- lazy native MCP HTTP read transport, capability checks and read dispatch
   _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies
   _cli_discovery.py    -- note, attachment, metadata and context CLI commands
+  _cli_query.py        -- exact-population query, count and aggregate CLI commands
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point

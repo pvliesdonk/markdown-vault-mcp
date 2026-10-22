@@ -576,6 +576,12 @@ from markdown_vault_mcp._cli_discovery import (  # noqa: E402 -- retained domain
 
 _register_discovery(app)
 
+from markdown_vault_mcp._cli_query import (  # noqa: E402 -- retained domain command block
+    register as _register_queries,
+)
+
+_register_queries(app)
+
 # DOMAIN-COMMANDS-END
 
 
