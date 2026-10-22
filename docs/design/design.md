@@ -4111,7 +4111,7 @@ superuser; the vault creates and migrates only its own three tables,
 folder, a `vector` of any dimension, metadata as `jsonb`), lazily inside
 its first write's transaction, so an open changes nothing. The supported
 range is PostgreSQL 15 to 18 with pgvector 0.7.0 (`MIN_PGVECTOR`) or later,
-18 with 0.8: `.github/workflows/postgres-range.yml` runs the PostgreSQL
+17 with 0.7.4 and 18 with 0.8.7, the lowest built for them: `.github/workflows/postgres-range.yml` runs the PostgreSQL
 tests on one pinned image per combination, and the minimum is the lowest
 pgvector that workflow passes, so the docs state only what it runs. It finds the
 extension's schema in `pg_extension`, sets `search_path` to the vault

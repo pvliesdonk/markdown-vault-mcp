@@ -12,6 +12,7 @@ from markdown_vault_mcp.stores._postgres import MIN_PGVECTOR
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "postgres-range.yml"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 GUIDE = ROOT / "docs" / "use" / "postgresql.md"
 _PGVECTOR = re.compile(r"^pgvector/pgvector:(\d+)\.(\d+)\.(\d+)-pg(\d+)$")
 _VCHORD = re.compile(r"^tensorchord/vchord-suite:pg(\d+)-\d{8}$")
@@ -53,6 +54,22 @@ def test_the_guide_states_the_postgresql_majors_the_workflow_runs() -> None:
     assert sentence in GUIDE.read_text(encoding="utf-8")
 
 
+def test_the_guide_names_each_major_whose_lowest_pgvector_is_higher() -> None:
+    lowest: dict[int, tuple[int, int, int]] = {}
+    for match in filter(None, map(_PGVECTOR.match, _images())):
+        version = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        major = int(match.group(4))
+        lowest[major] = min(lowest.get(major, version), version)
+    guide = GUIDE.read_text(encoding="utf-8")
+    missing = [
+        f"{major} with pgvector {'.'.join(map(str, floor))} or later"
+        for major, floor in sorted(lowest.items())
+        if floor > MIN_PGVECTOR
+        and f"{major} with pgvector {'.'.join(map(str, floor))} or later" not in guide
+    ]
+    assert missing == []
+
+
 def test_the_tested_majors_have_no_gap() -> None:
     majors = sorted({_major(i) for i in _images()})
     assert majors == list(range(majors[0], majors[-1] + 1))
@@ -72,6 +89,7 @@ def test_the_workflow_runs_when_the_store_or_its_tests_change() -> None:
     wanted = {
         "src/markdown_vault_mcp/stores/**",
         "tests/fixtures/postgres.py",
+        "tests/conftest.py",
         "tests/*postgres*.py",
         "pyproject.toml",
         "uv.lock",
@@ -80,3 +98,15 @@ def test_the_workflow_runs_when_the_store_or_its_tests_change() -> None:
     assert wanted <= set(on["pull_request"]["paths"])
     assert wanted <= set(on["push"]["paths"])
     assert {"schedule", "workflow_dispatch"} <= set(on)
+
+
+def test_runs_of_different_events_do_not_cancel_each_other() -> None:
+    group = _workflow()["concurrency"]["group"]
+    assert "github.event_name" in group
+
+
+def test_checkout_is_pinned_as_ci_pins_it() -> None:
+    pin = re.compile(r"uses: actions/checkout@[0-9a-f]{40}  # v\d+")
+    ours = set(pin.findall(WORKFLOW.read_text(encoding="utf-8")))
+    assert ours
+    assert ours <= set(pin.findall(CI_WORKFLOW.read_text(encoding="utf-8")))

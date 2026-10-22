@@ -10,6 +10,7 @@ on:
     paths:
       - "src/markdown_vault_mcp/stores/**"
       - "tests/fixtures/postgres.py"
+      - "tests/conftest.py"
       - "tests/*postgres*.py"
       - "pyproject.toml"
       - "uv.lock"
@@ -19,6 +20,7 @@ on:
     paths:
       - "src/markdown_vault_mcp/stores/**"
       - "tests/fixtures/postgres.py"
+      - "tests/conftest.py"
       - "tests/*postgres*.py"
       - "pyproject.toml"
       - "uv.lock"
@@ -31,7 +33,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: postgres-range-${{ github.ref }}
+  # Per event, so a scheduled run and a push to main do not cancel each other.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:

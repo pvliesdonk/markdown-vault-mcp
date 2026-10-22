@@ -2,8 +2,8 @@
 type: Reference
 title: PostgreSQL and pgvector behaviour behind the vector store
 description: What the PostgreSQL vector store relies on in PostgreSQL 17, pgvector 0.8 and psycopg 3 — extension privileges, zero-vector scoring, schemas and search_path, snapshots, DELETE against TRUNCATE, advisory locks, durability settings, error codes and connect-time failures, cursors, COPY, pooling, connection poolers, connection parameters, schema backups and vacuuming.
-subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changelog to 0.8.7; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1"
-valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x, psycopg 3.3.x"
+subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changelog to 0.8.7; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1; the range workflow's eight images (2026-10-22)"
+valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x (0.7.4 or later on 17, 0.8.7 or later on 18), psycopg 3.3.x"
 generated:
   by: process:researching-references
   at: 2026-10-22T10:30:00+02:00
@@ -190,7 +190,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - `CREATE EXTENSION` needs the privileges to create the extension's objects, usually a superuser; only an extension marked `trusted` in its control file can be installed by a role with `CREATE` on the database. [source: pg-create-extension]
 - pgvector's control file carries no `trusted = true` (it reads `comment`, `default_version`, `module_pathname`, `relocatable = true`), so installing it needs a superuser. [observed: probe "control" on pgvector 0.8.0 and 0.8.1] [pins: tests/test_stores_postgres_connection.py::test_a_database_without_the_extension_is_not_configured]
 - An extension is loaded into the current database, its name is unique database-wide, and its objects live in a schema chosen at creation (`SCHEMA`, or the current creation schema). [source: pg-create-extension]
-- The store's whole PostgreSQL suite passes on PostgreSQL 15 to 18 with pgvector 0.7.0 to 0.8.7 (pgvector 0.7 is not built for PostgreSQL 18), and on `tensorchord/vchord-suite:pg17-20260501`: the images the range workflow pins. [observed: `.github/workflows/postgres-range.yml`, and a local run of each of its eight images on 2026-10-22, 376 passed on each] [pins: tests/test_postgres_range_workflow.py::test_the_lowest_pgvector_tested_is_the_minimum_the_store_accepts, tests/test_postgres_range_workflow.py::test_the_guide_states_the_postgresql_majors_the_workflow_runs]
+- The store's whole PostgreSQL suite passes on PostgreSQL 15 to 18 with pgvector 0.7.0 to 0.8.7 (on 17 from 0.7.4, the first 0.7 built for it; on 18 only 0.8.7, since 0.7 is not built for it), and on `tensorchord/vchord-suite:pg17-20260501`: the images the range workflow pins. [observed: `.github/workflows/postgres-range.yml`, and a local run of each of its eight images on 2026-10-22, the store's 376 PostgreSQL tests passing on each] [pins: tests/test_postgres_range_workflow.py::test_the_lowest_pgvector_tested_is_the_minimum_the_store_accepts, tests/test_postgres_range_workflow.py::test_the_guide_states_the_postgresql_majors_the_workflow_runs]
 - `CREATE EXTENSION IF NOT EXISTS` checks only the name: "there is no guarantee that the existing extension is anything like the one that would have been created". [source: pg-create-extension]
 - The installed version and schema are in `pg_extension.extversion` and `pg_extension.extnamespace`. [observed: probe "versions", `select extversion from pg_extension where extname='vector'` → `0.8.0` / `0.8.1`]
 
