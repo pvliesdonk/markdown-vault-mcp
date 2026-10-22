@@ -181,7 +181,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
   `_postgres_rows.py` and `_postgres_search.py` in the same package;
   `docs/design/design.md` § "The storage contract (#1766, #1503)" (the
   PostgreSQL store paragraphs and decision 34); and the operator guide,
-  `docs/deploy/postgresql.md`.
+  `docs/use/postgresql.md`.
 
 ## Claims
 

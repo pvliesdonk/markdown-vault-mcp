@@ -438,7 +438,7 @@ Setting it up takes a superuser once, to install the extension and create one ro
 
 ```bash
 MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres
-MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN='postgresql://vault_a@db.example:5432/vectors?sslmode=verify-full'
+MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN='postgresql://vault_a@db.example:5432/vectors?sslmode=verify-full&sslrootcert=/etc/markdown-vault-mcp/db-ca.pem'
 MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA=vault_a
 ```
 

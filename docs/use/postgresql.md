@@ -24,23 +24,23 @@ Then give the role its password with `\password vault_a` in `psql`, so the passw
 
 The server never creates the extension: pgvector is not a trusted extension, so only a superuser can install it. The server creates its three tables (`vector_meta`, `vector_documents`, `vector_chunks`) in the schema on its first write, and touches nothing else. Each vector is stored with its chunk's text, title and path, so the schema, and every dump of it, holds a copy of the vault's embedded notes: protect it as you protect the vault.
 
-If `vector` was installed earlier in another schema (`\dx vector` shows which), the role also needs `USAGE` on that schema, here `public`:
+The role must also be able to use the schema the extension lives in (`\dx vector` shows which). For `public` it can, unless `USAGE` was revoked from `PUBLIC` there. For any other schema, grant it:
 
 ```sql
-GRANT USAGE ON SCHEMA public TO vault_a;
+GRANT USAGE ON SCHEMA extensions TO vault_a;
 ```
 
 Without it the server refuses to open the store and its log names the `GRANT` to run.
 
-**One role and one schema per vault, never shared.** The schema is the vault's ownership boundary. The server's writer lease stops two running servers from writing one schema at once, and the stored embedding model stops a server with another model from mixing its vectors in. What they miss is a copied configuration: a second vault pointed at the first one's schema while the first is stopped. Its reconciliation finds none of the first vault's notes in its own folder and deletes their rows. A role that owns only its own vault's schema cannot be pointed at another one.
+**One role and one schema per vault, never shared.** The schema is the vault's ownership boundary. The server's writer lease stops two running servers from writing one schema at once, and the stored embedding model stops a server with another model from mixing its vectors in. What they miss is a copied configuration: a second vault pointed at the first one's schema while the first is stopped. Its reconciliation finds none of the first vault's notes in its own folder and deletes their rows. A role that owns only its own vault's schema cannot be pointed at another one, as long as each vault keeps its own credentials: copying a whole connection string copies its access too.
 
-The role needs exactly what the SQL above grants: `CONNECT` on the database, ownership of its schema, and `USAGE` on the extension's schema when that is another one. Give it nothing more:
+The role needs `CONNECT` on the database, ownership of its schema, and `USAGE` on the extension's schema. Give it nothing more:
 
 - no superuser, `CREATEDB` or `CREATEROLE` attribute;
 - no `CREATE` on the database, so it cannot add schemas;
 - no ownership of, or privileges on, another vault's schema.
 
-Ownership already lets the role create and drop its tables, and it needs no `GRANT` on them.
+Ownership already lets the role create and drop its tables, and it needs no `GRANT` on them. Two defaults reach every role through `PUBLIC`: `CONNECT` on every database in the cluster and `TEMPORARY` on each. Where other databases share the cluster, revoke the first on them (`REVOKE CONNECT ON DATABASE other_db FROM PUBLIC;`), granting it back to the roles that need it.
 
 ## Connect securely
 
@@ -100,7 +100,7 @@ The store deletes rows rather than truncating tables: a rebuild deletes the whol
 VACUUM FULL vault_a.vector_chunks;
 ```
 
-`VACUUM FULL` writes a compacted copy of the table, so it needs room for that copy until it finishes. It also locks the table against every reader while it runs: searches wait, and fail once the statement timeout passes.
+`VACUUM FULL` writes a compacted copy of the table, so it needs room for that copy until it finishes. It also locks the table against every reader while it runs. A search waits behind it until the statement timeout passes and then fails; with the timeout at 0 it waits as long as the vacuum takes.
 
 ## Backup and restore
 
@@ -158,10 +158,10 @@ The `reason` of `postgres_vector_store_unavailable`:
 
 | `reason` | What to check |
 | --- | --- |
-| `connect` | The host, the port, the network, or whether PostgreSQL is running; also a connection that dropped. |
+| `connect` | The host, the port, the network, or whether PostgreSQL is running; also a connection that dropped. PostgreSQL out of resources (a full disk, no memory) or shutting down is reported here too, and the `detail` carries its message. |
 | `timeout` | The connect timeout, a query that passed the statement timeout, or a write waiting longer than 10 seconds for a lock. |
 | `no_password` | PostgreSQL asked for a password and none was found. Check the password file and its `0600` mode. |
-| `refused` | PostgreSQL turned the login down. Check the password and the role name, then that the database exists and the role has `CONNECT` on it. |
+| `refused` | PostgreSQL turned the connection down. Check the password and the role name, then that the database exists and the role has `CONNECT` on it. PostgreSQL also refuses a connection when no slot is left under `max_connections`; the message says which. |
 | `privilege` | The role lacks a privilege. For the extension's schema, the message names the `GRANT` to run. |
 | `pool` | No pool connection became free in time, or the pool could not connect. |
 | `lease` | Another server writes this schema; the message names its `application_name` and session. |
