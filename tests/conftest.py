@@ -17,6 +17,7 @@ from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.server import make_server
 from markdown_vault_mcp.vault import VaultSettings
 from tests.fixtures.cli_discovery import discovery_source, stored_reader_index  # noqa: F401
+from tests.fixtures.cli_graph import graph_source  # noqa: F401
 
 # Re-export reusable fixtures so they are auto-discovered by pytest in any
 # test module without requiring a per-file import (which would trip ruff's
