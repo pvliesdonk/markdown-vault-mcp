@@ -137,5 +137,12 @@ src/markdown_vault_mcp/
   _http_logging.py     -- quiet_http_loggers: pin httpx/httpcore to WARNING unless root level is DEBUG (#792)
   _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
+  _cli_client.py       -- nonsecret client TOML/environment selection and credential/URL/timeout validation
+  _cli_remote.py       -- lazy native MCP HTTP read transport, capability checks and read dispatch
+  _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies
+  _cli_discovery.py    -- note, attachment, metadata and context CLI commands
+  _cli_graph.py        -- backlinks/outlinks/broken-links/orphans/hubs/connection CLI registration; native graph payloads through the shared read runner
+  _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
+  _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
 ```
