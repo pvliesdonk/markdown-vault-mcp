@@ -1,0 +1,73 @@
+name: PostgreSQL range
+
+# The supported PostgreSQL and pgvector range of the PostgreSQL vector store
+# (#1504, spec §8.4): the PostgreSQL tests against every image below. The docs
+# state exactly this range, and tests/test_postgres_range_workflow.py keeps
+# them in step, along with MIN_PGVECTOR in stores/_postgres.py.
+on:
+  pull_request:
+    branches: [main, "release/**", "integration/**"]
+    paths:
+      - "src/markdown_vault_mcp/stores/**"
+      - "tests/fixtures/postgres.py"
+      - "tests/*postgres*.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/postgres-range.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/markdown_vault_mcp/stores/**"
+      - "tests/fixtures/postgres.py"
+      - "tests/*postgres*.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/postgres-range.yml"
+  schedule:
+    - cron: "17 4 * * 1"  # weekly, Monday 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgres-range-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  range:
+    name: PostgreSQL range (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          # pgvector 0.7.0 is MIN_PGVECTOR; 0.7.4 is the lowest 0.7 built for 17.
+          - pgvector/pgvector:0.7.0-pg15
+          - pgvector/pgvector:0.7.0-pg16
+          - pgvector/pgvector:0.7.4-pg17
+          # The current 0.8; 18 has no 0.7 image.
+          - pgvector/pgvector:0.8.7-pg15
+          - pgvector/pgvector:0.8.7-pg16
+          - pgvector/pgvector:0.8.7-pg17
+          - pgvector/pgvector:0.8.7-pg18
+          # The owner's deployment family, pinned to a dated tag.
+          - tensorchord/vchord-suite:pg17-20260501
+    env:
+      # CI=true makes the harness fail, not skip, when the container cannot start.
+      CI: "true"
+      MVM_TEST_POSTGRES_IMAGE: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
+        with:
+          python-version: "3.14"
+
+      - name: Pull the image
+        run: docker pull --quiet "$MVM_TEST_POSTGRES_IMAGE"
+
+      - name: Run the PostgreSQL tests
+        run: uv run --no-sync --no-build pytest tests/*postgres*.py -q --durations=10
