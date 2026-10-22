@@ -141,7 +141,7 @@ def serve(
 # surface template-owned. Module-level ``TYPE_CHECKING`` guards are fine — they
 # are erased at runtime.
 
-from typing import TYPE_CHECKING, NamedTuple  # noqa: E402
+from typing import TYPE_CHECKING, Any, NamedTuple  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -363,31 +363,18 @@ def _require_index_file(index_path: Path) -> None:
         raise typer.Exit(code=1)
 
 
-@app.command()
-def search(
-    query: str = typer.Argument(..., help="Search query."),
-    source_dir: str | None = typer.Option(
-        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
-    ),
-    limit: int = typer.Option(10, "-n", "--limit", help="Max results (default: 10)."),
-    mode: str = typer.Option(
-        "keyword",
-        "-m",
-        "--mode",
-        help="keyword / semantic / hybrid (default: keyword).",
-    ),
-    folder: str | None = typer.Option(None, help="Restrict to folder."),
-    json_output: bool = typer.Option(False, "--json", help="Output results as JSON."),
-) -> None:
-    """Search the vault."""
-    import json
+def _local_search(
+    query: str, source_dir: str | None, arguments: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Search a local index without changing files a server may own."""
     from dataclasses import asdict
     from typing import cast
 
-    from markdown_vault_mcp._http_logging import quiet_http_loggers
+    mode = arguments.get("mode")
+    limit = arguments["limit"]
+    folder = arguments["folder"]
     from markdown_vault_mcp.exceptions import StoreCorruptError, StoreIncompatibleError
 
-    quiet_http_loggers()
     # An in-memory index is empty until built, so build it, keeping its state
     # in memory too: STATE_PATH may be a running server's (#1691). An on-disk
     # index is only read: build_index() would rebuild a server's index
@@ -419,21 +406,122 @@ def search(
             results = built.vault.reader.search(
                 query,
                 limit=limit,
-                mode=cast("Literal['keyword', 'semantic', 'hybrid']", mode),
+                mode=cast("Literal['keyword', 'semantic', 'hybrid'] | None", mode),
                 folder=folder,
+                **{
+                    key: arguments[key]
+                    for key in ("filters", "chunks_per_file", "snippet_words")
+                    if key in arguments
+                },
             )
         except (StoreCorruptError, StoreIncompatibleError) as exc:
             typer.echo(_unusable_vectors_message(exc), err=True)
             raise typer.Exit(code=1) from exc
+        from markdown_vault_mcp._read_payloads import annotate_hits
+        from markdown_vault_mcp.okf import derive_annotation
+
+        return annotate_hits(
+            [asdict(r) for r in results],
+            derive_annotation if built.vault.okf.state().active else None,
+        )
     finally:
         built.close()
-    if json_output:
-        typer.echo(json.dumps([asdict(r) for r in results], indent=2))
-    else:
-        for r in results:
-            typer.echo(f"  {r.path} ({r.score:.4f})")
-            if r.title:
-                typer.echo(f"    {r.title}")
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Search query."),
+    source_dir: str | None = typer.Option(
+        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
+    ),
+    limit: int = typer.Option(10, "-n", "--limit", help="Max results (default: 10)."),
+    mode: str = typer.Option(
+        "keyword",
+        "-m",
+        "--mode",
+        help="keyword / semantic / hybrid / auto (default: keyword).",
+    ),
+    folder: str | None = typer.Option(None, help="Restrict to folder."),
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON."),
+    agent: bool = typer.Option(
+        False, "--agent", help="Output an agent header and escaped JSON records."
+    ),
+    filters: list[str] | None = typer.Option(
+        None, "--filter", help="Repeat KEY=VALUE frontmatter filters (AND)."
+    ),
+    chunks_per_file: int | None = typer.Option(
+        None, min=1, help="Maximum matching sections per note."
+    ),
+    snippet_words: int | None = typer.Option(
+        None, min=0, help="Snippet width in words; 0 returns full indexed sections."
+    ),
+    wait_for_pending_writes: bool = typer.Option(
+        False, help="Wait for the remote server's pending writes."
+    ),
+    server: str | None = typer.Option(None, help="Complete hosted MCP endpoint URL."),
+    local: bool = typer.Option(
+        False, "--local", help="Use the local vault despite a client profile."
+    ),
+    timeout: float | None = typer.Option(
+        None, help="Remote operation deadline in seconds (default 30)."
+    ),
+) -> None:
+    """Search the local vault or a hosted MCP server."""
+    from markdown_vault_mcp._cli_client import (
+        ClientError,
+        ClientOptions,
+        resolve_settings,
+    )
+    from markdown_vault_mcp._cli_output import render_reply
+    from markdown_vault_mcp._cli_read import run_read
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
+    from markdown_vault_mcp._read_payloads import (
+        ReadPayloadError,
+        SearchOptions,
+        parse_filters,
+    )
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    quiet_http_loggers()
+    try:
+        if json_output and agent:
+            raise ClientError("--json and --agent cannot be combined.")
+        controls = SearchOptions(
+            mode,
+            parse_filters(filters or []),
+            chunks_per_file,
+            snippet_words,
+            wait_for_pending_writes,
+        )
+        options = ClientOptions(server, local, timeout)
+        settings = resolve_settings(options)
+        if source_dir is not None and settings.url is not None:
+            raise ClientError(
+                "--source-dir conflicts with a remote server; use --local."
+            )
+        arguments = controls.arguments(query, limit, folder)
+        reply = run_read(
+            "search",
+            arguments,
+            options,
+            lambda: _local_search(query, source_dir, arguments),
+            settings=settings,
+        )
+        reply.meta["requested_mode"] = mode
+        render_reply(
+            "search", reply, "json" if json_output else "agent" if agent else "text"
+        )
+    except ClientError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(exc.code) from None
+    except InvalidRequestError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1) from None
+    except ReadPayloadError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(exc.code) from None
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
 
 
 @app.command()
@@ -481,6 +569,12 @@ def reindex(
     finally:
         built.close()
 
+
+from markdown_vault_mcp._cli_discovery import (  # noqa: E402 -- retained domain command block
+    register as _register_discovery,
+)
+
+_register_discovery(app)
 
 # DOMAIN-COMMANDS-END
 

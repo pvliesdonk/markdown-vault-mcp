@@ -8,9 +8,8 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp_pvl_core import tool_boundary
 
+from markdown_vault_mcp._cli_read import read_payload
 from markdown_vault_mcp._tools._outcomes import library_outcomes
-from markdown_vault_mcp.exceptions import DocumentNotFoundError, InvalidRequestError
-from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
@@ -221,34 +220,9 @@ def register(mcp: FastMCP) -> None:
                 frontmatter does not parse, or git stores it in LFS at that
                 revision.
         """
-        if revision is not None:
-            return asdict(
-                await asyncio.to_thread(
-                    vault.reader.read_revision, path, revision, section=section
-                )
-            )
-        if not is_note(path):
-            cap_mb = vault.max_attachment_size_mb
-            if cap_mb > 0:
-                size = await asyncio.to_thread(vault.reader.attachment_size, path)
-                limit = int(cap_mb * 1024 * 1024)
-                if size > limit:
-                    raise InvalidRequestError(
-                        f"Attachment {path!r} is {size:,} bytes, over the "
-                        f"{limit:,}-byte limit this server returns in a read. Fetch "
-                        "it with create_download_link if that tool is available."
-                    )
-            attachment = await asyncio.to_thread(vault.reader.read_attachment, path)
-            return asdict(attachment)
-        note = await asyncio.to_thread(vault.reader.read, path, section=section)
-        if note is None:
-            raise DocumentNotFoundError.note(path)
-        data = asdict(note)
-        if section is None:
-            # Section reads carry no frontmatter (see the docstring caveat),
-            # so an annotation would be derived from defaults and mislead.
-            data = await attach_okf(vault, data, note.frontmatter, include_sources=True)
-        return data
+        return await asyncio.to_thread(
+            read_payload, vault, path, section=section, revision=revision
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
