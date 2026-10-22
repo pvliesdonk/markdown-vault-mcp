@@ -6,7 +6,9 @@ document's chunks become embedding inputs, tagged with the document's
 inputs and that token with what the store holds and decides: nothing,
 re-token (the input is unchanged and only the token moved, or a legacy row
 carries no token: the stored vectors are republished, no provider call),
-embed, or remove. It embeds outside any store call and publishes with the
+embed, or remove. An embed sends the provider only the chunks whose input
+the store holds no vector for; every other chunk keeps its stored vector.
+It embeds outside any store call and publishes with the
 token it observed, so a write that crosses another writer's comes back as
 a conflict, which the caller re-queues. A path the store holds and the
 keyword index has no rows for loses its vectors only on a tombstone, an
@@ -57,6 +59,8 @@ class ReconcileResult:
 
     Attributes:
         embedded: Chunks embedded and published.
+        reused: Chunks of a changed document published with their stored
+            vector, because their embedding input is unchanged.
         removed: Rows removed.
         retokened: Documents republished under a new token without embedding.
         kept: Chunks left as they were: the provider failed, the store
@@ -69,6 +73,7 @@ class ReconcileResult:
     """
 
     embedded: int = 0
+    reused: int = 0
     removed: int = 0
     retokened: int = 0
     kept: int = 0
@@ -101,9 +106,9 @@ def _signature(rows: Collection[dict[str, Any]]) -> Counter[tuple[Any, ...]]:
     """The chunk identity two row sets are compared by (#665, #1087).
 
     ``start_line`` participates so that line-shift-only edits (content
-    identical, positions moved) still refresh vector metadata; the cost is
-    re-embedding that one doc's chunks, and embeddings are deterministic for
-    identical content. The preamble participates so an offline summary-only
+    identical, positions moved) still refresh vector metadata; the chunks'
+    inputs are unchanged, so their stored vectors are republished without a
+    provider call. The preamble participates so an offline summary-only
     edit (content identical, searchable frontmatter changed) still
     re-embeds; ``or ""`` normalisation keeps legacy vector rows without the
     key equal to fresh rows under default (v1) config.
@@ -283,7 +288,8 @@ class EmbeddingReconciler:
         A re-token is returned rather than written, so the pass can write
         them together (:meth:`_retoken`).
         """
-        current = [dict(r.metadata) for r in state.store.rows_for(doc.path)]
+        stored = state.store.rows_for(doc.path)
+        current = [dict(r.metadata) for r in stored]
         if not doc.texts:
             if current:
                 self._remove(state, doc.path)
@@ -293,13 +299,23 @@ class EmbeddingReconciler:
                 state.result.up_to_date += len(doc.texts)
                 return False
             return True
-        self._embed_and_publish(state, doc)
+        self._embed_and_publish(state, doc, stored)
         return False
 
-    def _embed_and_publish(self, state: _Pass, doc: _Document) -> None:
-        """Embed *doc* and replace its rows, keeping them on any failure."""
+    def _embed_and_publish(
+        self, state: _Pass, doc: _Document, stored: list[VectorRow]
+    ) -> None:
+        """Embed *doc*'s changed chunks and replace its rows, keeping them on any failure.
+
+        A chunk whose embedding input one of *stored* was embedded from keeps
+        that row's vector: the store's identity fixes the provider, model and
+        text format, so the same input embeds to the same vector. Only the
+        other inputs go to the provider, each once.
+        """
+        known = self._stored_inputs(stored)
+        misses = [text for text in dict.fromkeys(doc.texts) if text not in known]
         try:
-            vectors = self._embed(doc)
+            fresh = self._embed(misses)
         except Exception as exc:
             # Broad by design: providers raise heterogeneous types for a
             # timeout, an oversized batch or an outage. The rows stay.
@@ -315,9 +331,10 @@ class EmbeddingReconciler:
             )
             return
         try:
+            known.update(zip(misses, fresh, strict=True))
             rows = [
-                VectorRow(v, dict(m))
-                for v, m in zip(vectors, doc.metadata, strict=True)
+                VectorRow(known[text], dict(m))
+                for text, m in zip(doc.texts, doc.metadata, strict=True)
             ]
             outcome = state.store.replace_document(
                 DocumentRows(doc.path, doc.token, rows),
@@ -343,14 +360,52 @@ class EmbeddingReconciler:
         if outcome == "conflict":
             self._conflict(state, doc.path)
             return
-        state.result.embedded += len(doc.texts)
+        missed = set(misses)
+        embedded = sum(1 for text in doc.texts if text in missed)
+        reused = len(doc.texts) - embedded
+        state.result.embedded += embedded
+        state.result.reused += reused
+        if reused:
+            logger.info(
+                "embedding_reconcile_reused site=%s path=%s embedded=%d reused=%d",
+                state.site,
+                doc.path,
+                embedded,
+                reused,
+            )
 
-    def _embed(self, doc: _Document) -> list[list[float]]:
-        """Embed *doc*'s texts in batches of at most ``batch_size``."""
+    def _stored_inputs(self, rows: list[VectorRow]) -> dict[str, Any]:
+        """Map the embedding input each of *rows* was embedded from to its vector.
+
+        The input is rebuilt from the row's metadata the way :meth:`documents`
+        builds it from the keyword index; a preamble is only ever non-empty
+        on a document's first chunk. A row whose metadata lacks a title or
+        content is left out, so its vector is not reused.
+        """
+        known: dict[str, Any] = {}
+        for row in rows:
+            title = row.metadata.get("title")
+            content = row.metadata.get("content")
+            if not isinstance(title, str) or not isinstance(content, str):
+                continue
+            preamble = row.metadata.get("preamble") or ""
+            text = self._builder.build(
+                title=title,
+                heading=row.metadata.get("heading"),
+                content=content,
+                fields_text=preamble,
+                is_first_chunk=bool(preamble),
+            )
+            known[text] = row.vector
+        return known
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed *texts* in batches of at most ``batch_size``."""
         vectors: list[list[float]] = []
-        for start in range(0, len(doc.texts), self._batch_size):
-            batch = list(doc.texts[start : start + self._batch_size])
-            vectors.extend(self._provider.embed(batch))
+        for start in range(0, len(texts), self._batch_size):
+            vectors.extend(
+                self._provider.embed(texts[start : start + self._batch_size])
+            )
         return vectors
 
     def _retoken(self, state: _Pass, docs: list[_Document]) -> None:

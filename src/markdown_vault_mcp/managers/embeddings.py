@@ -306,10 +306,11 @@ class EmbeddingsManager:
         Every document goes through the reconciler: one whose keyword rows
         and token match the store costs nothing, one whose input is
         unchanged but whose token moved (or a legacy row with no token) is
-        re-tokened without a provider call, one whose input changed is
-        re-embedded in full, and one the keyword index holds no rows for
-        loses its vectors only on a tombstone, an exclusion or a source
-        probe answering *absent* (#1130, #1785).
+        re-tokened without a provider call, one whose input changed has its
+        changed chunks embedded while the rest keep their stored vectors,
+        and one the keyword index holds no rows for loses its vectors only
+        on a tombstone, an exclusion or a source probe answering *absent*
+        (#1130, #1785).
         A provider failure or a refused vector skips that document with its
         vectors kept, and the next run retries it (#649, #935). The store is
         checkpointed only when something changed.
@@ -331,7 +332,7 @@ class EmbeddingsManager:
         result = self._reconciler.reconcile(vectors, site="converge")
         self._conflicts |= result.conflicts
         self._retries |= result.retry
-        if result.embedded or result.removed or result.retokened:
+        if result.embedded or result.reused or result.removed or result.retokened:
             vectors.checkpoint()
         if result.kept:
             logger.warning(
@@ -339,8 +340,10 @@ class EmbeddingsManager:
                 result.kept,
             )
         logger.info(
-            "build_embeddings_converged added=%d removed=%d retokened=%d up_to_date=%d",
+            "build_embeddings_converged added=%d reused=%d removed=%d "
+            "retokened=%d up_to_date=%d",
             result.embedded,
+            result.reused,
             result.removed,
             result.retokened,
             result.up_to_date,

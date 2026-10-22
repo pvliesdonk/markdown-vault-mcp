@@ -949,9 +949,15 @@ tokens (the store's `tokens()` and `rows_for()`) and reconciles:
 - Documents missing from the vector index are embedded and added.
 - Documents whose per-path `(title, heading, content, start_line,
   preamble)` chunk multiset differs in any way (modified content, changed
-  title, re-chunked boundaries) are re-embedded in full. The multiset is
+  title, re-chunked boundaries) have their rows replaced. The multiset is
   the chunk identity (the store has no per-chunk keys, only rows replaced
-  per document).
+  per document). Only the chunks whose embedding input (the text
+  `EmbedTextBuilder` builds) differs from every stored row's are sent to
+  the provider; a chunk whose input a stored row was embedded from keeps
+  that row's vector, so a one-line edit to a long note embeds the chunks
+  around the edit and a line-shift-only edit embeds nothing. The store's
+  identity fixes provider, model and text format, so equal input means an
+  equal vector.
 - Documents whose multiset is equal but whose token moved (a
   frontmatter-only edit outside the embedding input), or whose stored rows
   carry no token (written before #1768), are **re-tokened**: the stored
@@ -1366,8 +1372,9 @@ starving healthy notes of vector updates. The deferred flush reads the refreshed
 keyword rows (#1768; it reads no file) and compares their token and chunk
 signature with the store's before calling the provider, so repeated FTS/graph
 retries reuse completed embeddings. Changed content, chunk boundaries/positions,
-titles, headings, or configured frontmatter preambles re-embed; an unchanged
-input under a new token is re-tokened without a provider call. A provider
+titles, headings, or configured frontmatter preambles replace the note's rows,
+embedding only the chunks whose input changed (the others keep their stored
+vectors); an unchanged input under a new token is re-tokened without a provider call. A provider
 failure keeps the note's rows and holds its path for the next flush, without
 queueing one and without counting as pending work, so a note the provider keeps
 rejecting never leaves the writer undrained; a conflicting write is re-queued

@@ -239,7 +239,8 @@ class TestBootEmbeddingConvergence:
         self, tmp_path: Path
     ) -> None:
         """An edit that only shifts line numbers (identical chunk content)
-        still refreshes start_line in vector metadata (#668 review)."""
+        still refreshes start_line in vector metadata (#668 review), and
+        persists it without a provider call."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
         v1 = _boot(vault_dir, tmp_path, provider)
@@ -249,12 +250,15 @@ class TestBootEmbeddingConvergence:
         original = (vault_dir / "note_1.md").read_text(encoding="utf-8")
         (vault_dir / "note_1.md").write_text("\n\n" + original, encoding="utf-8")
 
+        calls = _track_embeds(provider)
         v2 = _boot(vault_dir, tmp_path, provider)
+        assert calls == []
         fts_lines = {
             (r["content"], r["start_line"])
             for r in v2._fts.list_chunks()
             if r["path"] == "note_1.md"
         }
+
         v2.close()
 
         persisted = _stored(tmp_path, provider)
@@ -262,6 +266,49 @@ class TestBootEmbeddingConvergence:
             (r["content"], r["start_line"])
             for r in metadata_by_path(persisted)["note_1.md"]
         }
+        assert vec_lines == fts_lines
+
+    def test_boot_persists_reused_vectors_for_moved_sections(
+        self, tmp_path: Path
+    ) -> None:
+        """Swapping two sections of a long note embeds nothing, and the
+        convergence checkpoints the moved rows before the vault closes."""
+
+        def section(name: str) -> str:
+            body = "\n".join(f"{name} line {i}." for i in range(20))
+            return f"## {name}\n\n{body}\n\n"
+
+        provider = MockEmbeddingProvider()
+        vault_dir = _make_vault_dir(tmp_path)
+        note = vault_dir / "long.md"
+        note.write_text(
+            "# Long\n\n" + section("One") + section("Two") + section("End"),
+            encoding="utf-8",
+        )
+        v1 = _boot(vault_dir, tmp_path, provider)
+        v1.close()
+
+        note.write_text(
+            "# Long\n\n" + section("Two") + section("One") + section("End"),
+            encoding="utf-8",
+        )
+        calls = _track_embeds(provider)
+        v2 = _boot(vault_dir, tmp_path, provider)
+        assert calls == []
+        fts_lines = {
+            (r["content"], r["start_line"])
+            for r in v2._fts.list_chunks()
+            if r["path"] == "long.md"
+        }
+
+        # Read back from disk while v2 is open: close() would persist anyway.
+        persisted = _stored(tmp_path, provider)
+        vec_lines = {
+            (r["content"], r["start_line"])
+            for r in metadata_by_path(persisted)["long.md"]
+        }
+        v2.close()
+        assert len(fts_lines) > 1
         assert vec_lines == fts_lines
 
     def test_boot_converges_legacy_drifted_vector_index(self, tmp_path: Path) -> None:
