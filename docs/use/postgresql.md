@@ -7,7 +7,7 @@ kind: how-to
 
 With `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres`, a vault keeps its embeddings in a PostgreSQL schema and the [pgvector](https://github.com/pgvector/pgvector) extension scores them. [Embeddings](embeddings.md#keeping-the-embeddings-in-postgresql) says what the store is and when to choose it. This page is for the operator who runs it, from the first `CREATE SCHEMA` to the log line that says something went wrong.
 
-The store supports PostgreSQL 15 to 18 with pgvector 0.7.0 or later (17 with pgvector 0.7.4 or later and 18 with pgvector 0.8.7 or later, the lowest versions built for them), the range a CI workflow tests on every change to the store. It needs the `postgres` extra (`pip install "markdown-vault-mcp[postgres]"`; the Docker image already has it).
+The store supports PostgreSQL 15 to 18 with pgvector 0.7.0 or later (17 with pgvector 0.7.4 or later and 18 with pgvector 0.8.7 or later, the lowest versions built for them), the range a CI workflow tests on every change to the store. A pip or uv install needs the `postgres` extra (`pip install "markdown-vault-mcp[postgres]"`); without it the server refuses to start and names the install command. The Docker image, the Claude Desktop bundle and the Claude Code plugin install `[all]`, which includes it.
 
 ## Provision the database
 
@@ -71,7 +71,7 @@ A pooler such as PgBouncer can sit in front of PostgreSQL only in **session pool
 - the writer lease is a session-level advisory lock, held for as long as the server runs;
 - each connection sets its `search_path` and timeouts once, with `SET`, when it opens.
 
-Under transaction pooling a later transaction may run on a server connection that holds neither the lock nor the settings, and PgBouncer lists both session-level advisory locks and `SET` as never supported in that mode. The store's own pool already keeps its connections open, so a pooler in front of it adds little beyond a cap on the database's total connections.
+Under transaction pooling a later transaction may run on a PostgreSQL connection that holds neither the lock nor the settings, and PgBouncer lists both session-level advisory locks and `SET` as never supported in that mode. The store's own pool already keeps its connections open, so a pooler in front of it adds little beyond a cap on the database's total connections.
 
 ## Connections and timeouts
 
@@ -82,6 +82,7 @@ The store bounds how long it waits:
 | Wait | Limit |
 | --- | --- |
 | Connecting | 10 seconds, unless the connection string or `PGCONNECT_TIMEOUT` sets `connect_timeout` |
+| Waiting for a free pool connection | 30 seconds |
 | One query | `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S` |
 | A write waiting for the lock another write holds | 10 seconds |
 | The bulk write of a full rebuild | none |
@@ -158,12 +159,12 @@ The `reason` of `postgres_vector_store_unavailable`:
 
 | `reason` | What to check |
 | --- | --- |
-| `connect` | The host, the port, the network, or whether PostgreSQL is running; also a connection that dropped. PostgreSQL out of resources (a full disk, no memory) or shutting down is reported here too, and the `detail` carries its message. |
+| `connect` | The host, the port, the network, or whether PostgreSQL is running; also a connection that dropped. PostgreSQL out of resources (a full disk, no memory), shutting down, or with every slot under `max_connections` taken (`too many clients already`) is reported here too, and the `detail` carries its message. |
 | `timeout` | The connect timeout, a query that passed the statement timeout, or a write waiting longer than 10 seconds for a lock. |
 | `no_password` | PostgreSQL asked for a password and none was found. Check the password file and its `0600` mode. |
-| `refused` | PostgreSQL turned the connection down. Check the password and the role name, then that the database exists and the role has `CONNECT` on it. PostgreSQL also refuses a connection when no slot is left under `max_connections`; the message says which. |
+| `refused` | PostgreSQL turned the connection down. Check the password and the role name, then that the database exists and the role has `CONNECT` on it. PostgreSQL also refuses a connection when the only slots left are reserved for other roles (`remaining connection slots are reserved`); the message says which. |
 | `privilege` | The role lacks a privilege. For the extension's schema, the message names the `GRANT` to run. |
-| `pool` | No pool connection became free in time, or the pool could not connect. |
+| `pool` | No pool connection became free within 30 seconds, or the pool could not connect. |
 | `lease` | Another server writes this schema; the message names its `application_name` and session. |
 | `commit_unknown` | The connection dropped while a write was committing, so it may or may not have landed; the next reconciliation brings the store in line with the notes either way. |
 | `error` | Any other PostgreSQL error; the message carries its SQLSTATE. |

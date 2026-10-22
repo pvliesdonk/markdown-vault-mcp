@@ -3,6 +3,11 @@
 ## 2026-10-22
 
 - Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
+  with how a full server refuses a connection: `too many clients already`
+  comes before authentication and reads as `connect`; a refusal for reserved
+  slots comes after it and reads as `refused`. Observed on a throwaway
+  PostgreSQL 17 container. Next review: 2027-04-22.
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
   with the supported range #1504's range workflow runs: PostgreSQL 15 to 18
   with pgvector 0.7.0 to 0.8.7, and `tensorchord/vchord-suite:pg17-20260501`.
   Image tags were read from Docker Hub; every image passed the store's 376

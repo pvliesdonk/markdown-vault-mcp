@@ -573,7 +573,7 @@
       "label": "Embedding Search",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH",
-      "help": "How semantic search reads the embeddings. 'resident' (the default) holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed (the default there); vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident.",
+      "help": "How semantic search reads the embeddings. 'resident' holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it is the store's default: 'streamed' with postgres, 'resident' otherwise.",
       "advancedGroup": "Indexing"
     },
     {
