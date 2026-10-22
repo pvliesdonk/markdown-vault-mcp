@@ -757,7 +757,9 @@ class TestToolManifest:
         names = sorted(t.name for t in tools)
 
         assert names == [
+            "aggregate_documents",
             "append",
+            "count_documents",
             "delete",
             "edit",
             "embeddings_status",
@@ -786,6 +788,7 @@ class TestToolManifest:
             "okf_seed_log",
             "okf_validate",
             "okf_verify",
+            "query_documents",
             "read",
             "rename",
             "search",
