@@ -145,6 +145,7 @@ class TestLifecycleAndDescription:
             "search_workspace_bytes": None,
             "stored_bytes": None,
             "resident_vector_bytes": None,
+            "store_details": None,
         }
         slot.writable(rebuild=None)
         assert slot.describe() == {
@@ -161,7 +162,28 @@ class TestLifecycleAndDescription:
             "search_workspace_bytes": None,
             "stored_bytes": 0,
             "resident_vector_bytes": 0,
+            "store_details": None,
         }
+
+    def test_describe_includes_store_details_only_from_a_store_that_gives_them(
+        self,
+    ) -> None:
+        injected = NumpySidecarBackend().open(None, IDENTITY)
+
+        class _Describing:
+            def __getattr__(self, name: str) -> Any:
+                return getattr(injected, name)
+
+            def describe(self) -> dict[str, Any]:
+                return {"host": "db", "schema": "vault_a"}
+
+        slot = _slot(None, store=_Describing())
+        slot.get(rebuild=None)
+        assert slot.describe()["store_details"] == {"host": "db", "schema": "vault_a"}
+        plain = _slot(None, store=injected)
+        plain.get(rebuild=None)
+        assert plain.describe()["store_details"] is None
+        injected.close()
 
     def test_describe_raises_when_a_streamed_store_cannot_be_read(
         self, tmp_path: Path
@@ -464,3 +486,328 @@ class TestLoaderCasesPorted:
         _persist_with(tmp_path / "vec", IDENTITY)
         slot = _slot(tmp_path / "vec.npy")
         assert slot.get(rebuild=None).count == 1
+
+
+class _Recorder:
+    """What a recording backend did, in order."""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+
+class _RecordingStore:
+    """A numpy store whose close is recorded (and can be made to fail)."""
+
+    def __init__(
+        self, inner: Any, name: str, recorder: _Recorder, *, fail_close: bool = False
+    ) -> None:
+        self._inner, self.name, self._recorder, self._fail = (
+            inner,
+            name,
+            recorder,
+            fail_close,
+        )
+
+    def __getattr__(self, attr: str) -> Any:
+        return getattr(self._inner, attr)
+
+    def close(self) -> None:
+        self._recorder.events.append(f"close {self.name}")
+        self._inner.close()
+        if self._fail:
+            raise OSError("No space left on device")
+
+
+class _RecordingBackend:
+    """Opens numpy stores, recording every open, fresh open and close."""
+
+    name = "numpy"
+
+    def __init__(self, *, fail_close: bool = False, fail_fresh: bool = False) -> None:
+        self.recorder = _Recorder()
+        self._real = NumpySidecarBackend()
+        self._fail_close, self._fail_fresh = fail_close, fail_fresh
+        self.opens = 0
+
+    def open(self, location: Any, identity: Any, *, owns_files: bool = True) -> Any:
+        self.opens += 1
+        name = f"open{self.opens}"
+        self.recorder.events.append(name)
+        return _RecordingStore(
+            self._real.open(location, identity, owns_files=owns_files),
+            name,
+            self.recorder,
+            fail_close=self._fail_close,
+        )
+
+    def open_fresh(self, location: Any, identity: Any) -> Any:
+        self.recorder.events.append("fresh")
+        if self._fail_fresh:
+            raise StoreUnavailableError("down", backend="numpy", location=str(location))
+        return _RecordingStore(
+            self._real.open_fresh(location, identity), "fresh", self.recorder
+        )
+
+
+def _recording_slot(tmp_path: Path, backend: _RecordingBackend) -> VectorStoreSlot:
+    return VectorStoreSlot(
+        backend=backend, location=tmp_path / "vec", provider=PROVIDER, text_format="v1"
+    )
+
+
+class TestTheSlotClosesWhatItStopsUsing:
+    def test_reads_before_the_first_build_reuse_one_provisional_store(
+        self, tmp_path: Path
+    ) -> None:
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        first = slot.get(rebuild=None)
+        assert slot.get(rebuild=None) is first  # reused, not reopened
+        assert backend.opens == 1
+        assert (
+            slot.current() is None
+        )  # still not installed: the writer learns the dimension
+
+    def test_the_build_closes_the_provisional_store_it_replaces(
+        self, tmp_path: Path
+    ) -> None:
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        slot.get(rebuild=None)
+        slot.writable(rebuild=None)  # an empty store of dimension 0 → fresh()
+        assert backend.recorder.events == ["open1", "close open1", "fresh"]
+
+    def test_closing_the_slot_closes_a_provisional_store(self, tmp_path: Path) -> None:
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        slot.get(rebuild=None)
+        slot.close()
+        assert backend.recorder.events == ["open1", "close open1"]
+
+    def test_fresh_closes_the_old_store_before_the_rebuild_persists(
+        self, tmp_path: Path
+    ) -> None:
+        seeded = _slot(tmp_path / "vec")
+        seeded.writable(rebuild=None).replace_document(
+            doc("old.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+        )
+        seeded.close()
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        old = slot.writable(rebuild=None)  # sized and installed
+        old.replace_document(
+            doc("pending.md", [[0, 1, 0]]), expected_token=ANY_TOKEN
+        )  # not yet persisted
+        rebuilt = slot.fresh()
+        assert backend.recorder.events == ["open1", "close open1", "fresh"]
+        rebuilt.publish_generation(IDENTITY, [doc("new.md", [[0, 0, 1]])])
+        rebuilt.checkpoint()
+        slot.close()
+        reopened = NumpySidecarBackend().open(tmp_path / "vec", IDENTITY)
+        assert set(reopened.tokens()) == {"new.md"}  # the rebuild wins
+        reopened.close()
+
+    def test_a_rebuild_that_persists_nothing_keeps_the_previous_rows(
+        self, tmp_path: Path
+    ) -> None:
+        seeded = _slot(tmp_path / "vec")
+        seeded.writable(rebuild=None).replace_document(
+            doc("old.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+        )
+        seeded.close()
+        slot = _recording_slot(tmp_path, _RecordingBackend())
+        slot.writable(rebuild=None).replace_document(
+            doc("pending.md", [[0, 1, 0]]), expected_token=ANY_TOKEN
+        )
+        slot.fresh()  # the rebuild then writes nothing
+        slot.close()
+        reopened = NumpySidecarBackend().open(tmp_path / "vec", IDENTITY)
+        assert set(reopened.tokens()) == {"old.md", "pending.md"}  # flushed, not lost
+        reopened.close()
+
+    def test_a_store_that_fails_to_close_is_logged_and_dropped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        backend = _RecordingBackend(fail_close=True)
+        slot = _recording_slot(tmp_path, backend)
+        slot.get(rebuild=None)
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers._vector_slot"
+        ):
+            store = slot.writable(rebuild=None)
+        assert slot.current() is store  # installed anyway
+        (event,) = [
+            r for r in caplog.records if r.msg.startswith("vector_store_close_failed ")
+        ]
+        assert event.exc_info is not None
+
+    def test_a_failed_fresh_open_leaves_the_slot_empty(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+        backend = _RecordingBackend(fail_fresh=True)
+        slot = _recording_slot(tmp_path, backend)
+        slot.get(rebuild=None)
+        with pytest.raises(StoreUnavailableError):
+            slot.fresh()
+        assert slot.current() is None
+        assert slot.get(rebuild=None) is not None  # opens again
+        assert backend.opens == 2
+
+    def test_concurrent_first_reads_open_one_provisional_store(
+        self, tmp_path: Path
+    ) -> None:
+        import threading
+
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        barrier = threading.Barrier(8)
+        got: list[Any] = []
+
+        def read() -> None:
+            barrier.wait()
+            got.append(slot.get(rebuild=None))
+
+        threads = [threading.Thread(target=read) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert backend.opens == 1
+        assert len({id(s) for s in got}) == 1
+
+    def test_an_injected_store_is_never_closed_by_fresh(self) -> None:
+        injected = NumpySidecarBackend().open(None, IDENTITY)
+        slot = _slot(None, store=injected)
+        slot.get(rebuild=None)
+        assert slot.fresh() is injected
+        injected.count  # noqa: B018 - still open
+        injected.close()
+
+    def test_a_schema_name_is_a_location(self) -> None:
+        slot = VectorStoreSlot(
+            backend=NumpySidecarBackend(),
+            location="vault_a",
+            provider=PROVIDER,
+            text_format="v1",
+        )
+        assert slot.location == "vault_a"
+
+
+class _SlowOpeningBackend(_RecordingBackend):
+    """A recording backend whose open waits until it is let go."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        import threading
+
+        self.opening, self.go = threading.Event(), threading.Event()
+
+    def open(self, location: Any, identity: Any, *, owns_files: bool = True) -> Any:
+        self.opening.set()
+        self.go.wait(5)
+        return super().open(location, identity, owns_files=owns_files)
+
+
+class TestTheSlotUnderContention:
+    def test_a_reader_waiting_on_an_open_gets_the_store_it_installed(
+        self, tmp_path: Path
+    ) -> None:
+        import threading
+        import time
+
+        _persist_with(tmp_path / "vec", IDENTITY)  # a sized store: installed on open
+        backend = _SlowOpeningBackend()
+        slot = _recording_slot(tmp_path, backend)
+        got: list[Any] = []
+        first = threading.Thread(target=lambda: got.append(slot.get(rebuild=None)))
+        first.start()
+        assert backend.opening.wait(5)
+        second = threading.Thread(target=lambda: got.append(slot.get(rebuild=None)))
+        second.start()
+        time.sleep(0.1)  # the second reader is now waiting on the slot's lock
+        backend.go.set()
+        first.join(5)
+        second.join(5)
+        assert backend.opens == 1
+        assert len({id(s) for s in got}) == 1
+        assert slot.current() is got[0]
+        slot.close()
+
+    def test_replace_closes_a_provisional_store(self, tmp_path: Path) -> None:
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        slot.get(rebuild=None)
+        other = NumpySidecarBackend().open(None, IDENTITY)
+        slot.replace(other)
+        assert backend.recorder.events == ["open1", "close open1"]
+        assert slot.current() is other
+        other.close()
+
+
+class TestTheSlotAfterReview:
+    def test_a_closed_slot_opens_nothing_more(self, tmp_path: Path) -> None:
+        backend = _RecordingBackend()
+        slot = _recording_slot(tmp_path, backend)
+        slot.get(rebuild=None)
+        slot.close()
+        with pytest.raises(RuntimeError, match="closed"):
+            slot.get(rebuild=None)
+        with pytest.raises(RuntimeError, match="closed"):
+            slot.fresh()
+        assert backend.opens == 1  # nothing reopened behind the closed slot
+
+    def test_closing_the_slot_lets_go_of_the_installed_store(
+        self, tmp_path: Path
+    ) -> None:
+        slot = _recording_slot(tmp_path, _RecordingBackend())
+        slot.writable(rebuild=None)
+        slot.close()
+        assert slot.current() is None
+
+    def test_a_failing_close_of_the_replaced_store_is_logged_and_dropped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        backend = _RecordingBackend(fail_close=True)
+        slot = _recording_slot(tmp_path, backend)
+        old = slot.writable(rebuild=None)  # installed through fresh()
+        installed = slot.current()
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers._vector_slot"
+        ):
+            rebuilt = slot.fresh()
+        assert rebuilt is not old
+        assert slot.current() is rebuilt
+        assert rebuilt is not installed
+        assert [
+            r for r in caplog.records if r.msg.startswith("vector_store_close_failed ")
+        ]
+
+    @pytest.mark.parametrize("search", ["resident", "streamed"])
+    def test_a_sqlite_store_closed_before_its_fresh_reset_loses_nothing_it_should_keep(
+        self, tmp_path: Path, search: str
+    ) -> None:
+        from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
+
+        def slot() -> VectorStoreSlot:
+            return VectorStoreSlot(
+                backend=SqliteVectorBackend(search=search),
+                location=tmp_path / "vec",
+                provider=PROVIDER,
+                text_format="v1",
+            )
+
+        first = slot()
+        first.writable(rebuild=None).replace_document(
+            doc("old.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+        )
+        first.close()
+        second = slot()
+        second.writable(rebuild=None)  # the sized store, installed
+        rebuilt = second.fresh()  # closes it before the fresh reset
+        rebuilt.publish_generation(IDENTITY, [doc("new.md", [[0, 1, 0]])])
+        second.close()
+        reopened = SqliteVectorBackend(search=search).open(tmp_path / "vec", IDENTITY)
+        try:
+            assert set(reopened.tokens()) == {"new.md"}
+        finally:
+            reopened.close()

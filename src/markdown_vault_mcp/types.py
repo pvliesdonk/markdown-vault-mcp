@@ -1205,9 +1205,10 @@ class StoreResources:
         search_mode: ``"resident"`` when the rows are searched in memory,
             ``"streamed"`` when each search reads them in batches.
         search_workspace_bytes: The configured vector bytes per streamed
-            batch; ``None`` when resident.
-        stored_bytes: The measured size of the store's files; ``None`` when
-            it is held in memory.
+            batch; ``None`` when no vector batch passes through the vault
+            process (resident, or scored by the database).
+        stored_bytes: The measured size of the store's files or tables;
+            ``None`` when it is held in memory.
         resident_vector_bytes: The measured bytes of the resident vector
             matrix; ``0`` when streamed.
     """

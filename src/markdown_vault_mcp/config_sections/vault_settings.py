@@ -66,13 +66,24 @@ class VaultSettings:
             search is on whenever ``Vault`` is given an embedding provider.
         embedding_store: The vector backend's registry name; ``"numpy"``
             (the default) keeps the vectors in files at ``embeddings_path``,
-            ``"sqlite"`` in one SQLite database there.
+            ``"sqlite"`` in one SQLite database there, ``"postgres"`` in the
+            PostgreSQL schema ``embedding_postgres_schema`` names (#1504).
         embedding_search: ``"resident"`` (the default) holds the vectors in
             memory; ``"streamed"`` keeps none resident and reads them in
-            batches per search (#1377). Needs ``embedding_store="sqlite"``;
-            a store held in memory is always resident.
+            batches per search (#1377). Needs ``embedding_store="sqlite"``
+            or ``"postgres"``, which must be streamed; a store held in
+            memory is always resident.
         embedding_search_workspace_bytes: The vector bytes one streamed
             batch may hold (default 1 MiB).
+        embedding_postgres_dsn: With ``embedding_store="postgres"``, the
+            libpq connection string of the database; a secret, left out of
+            the ``repr``.
+        embedding_postgres_schema: With ``embedding_store="postgres"``, the
+            schema the vectors live in; the slot's location.
+        embedding_postgres_pool_size: The most connections the PostgreSQL
+            store opens (default 4).
+        embedding_postgres_statement_timeout_s: The longest one PostgreSQL
+            query may run, in seconds (default 30; ``0`` sets none).
         owns_index_files: When ``True`` (default), this vault owns the
             index files on disk: the SQLite index, the vector sidecar and the
             state file. ``False`` is for a process that reads files another
@@ -186,6 +197,10 @@ class VaultSettings:
     embedding_store: str = "numpy"
     embedding_search: str = "resident"
     embedding_search_workspace_bytes: int = 1 << 20
+    embedding_postgres_dsn: str | None = dataclasses.field(default=None, repr=False)
+    embedding_postgres_schema: str | None = None
+    embedding_postgres_pool_size: int = 4
+    embedding_postgres_statement_timeout_s: float = 30.0
     read_only: bool = True
     write_protect_existing: bool = False
     report_unresolved_links: bool = False
@@ -258,6 +273,12 @@ class VaultSettings:
             embedding_search=config.indexing.embedding_search,
             embedding_search_workspace_bytes=(
                 config.indexing.embedding_search_workspace_mb << 20
+            ),
+            embedding_postgres_dsn=config.indexing.embedding_postgres_dsn,
+            embedding_postgres_schema=config.indexing.embedding_postgres_schema,
+            embedding_postgres_pool_size=config.indexing.embedding_postgres_pool_size,
+            embedding_postgres_statement_timeout_s=(
+                config.indexing.embedding_postgres_statement_timeout_s
             ),
             read_only=config.read_only,
             write_protect_existing=config.write_protect_existing,
@@ -372,8 +393,11 @@ class VaultSettings:
             The explicit ``embeddings_path``; else ``{index name}-embeddings``
             with the name's dots made dashes,
             beside an on-disk ``index_path``; else ``None``, meaning the
-            vectors are held in memory and rebuilt at each start.
+            vectors are held in memory and rebuilt at each start. ``None``
+            too for a PostgreSQL store, which keeps no files.
         """
+        if self.embedding_store == "postgres":
+            return None  # a database store keeps no files (#1504)
         if self.embeddings_path is not None:
             return self.embeddings_path
         if self.index_path is not None and str(self.index_path) != ":memory:":

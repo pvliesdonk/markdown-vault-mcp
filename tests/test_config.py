@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastmcp_pvl_core import TransferConfig
@@ -578,6 +579,44 @@ class TestVaultInstancesProvider:
             source_dir=tmp_path, embedding_provider=None, embeddings_path=None
         )
         assert to_vault_instances(config).embedding_provider is None
+
+    def test_autodetect_runs_for_a_postgres_store(self, monkeypatch, tmp_path) -> None:
+        """A database keeps the vectors as well as a file does (#1504)."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        class _Fake:
+            context_length = 512
+
+        monkeypatch.setattr(
+            providers_mod, "get_embedding_provider", lambda _config: _Fake()
+        )
+        config = ProjectConfig(
+            source_dir=tmp_path,
+            embedding_provider=None,
+            embeddings_path=None,
+            embedding_store="postgres",
+            embedding_search="streamed",
+            embedding_postgres_dsn="host=db",
+            embedding_postgres_schema="vault_a",
+        )
+        assert config.indexing.vector_storage_configured
+        assert isinstance(to_vault_instances(config).embedding_provider, _Fake)
+
+    def test_postgres_has_no_embeddings_file(self, tmp_path) -> None:
+        from markdown_vault_mcp.config_sections import VaultSettings
+
+        settings = VaultSettings(
+            index_path=tmp_path / "index.db",
+            embedding_store="postgres",
+            embedding_search="streamed",
+            embedding_postgres_dsn="host=db",
+            embedding_postgres_schema="vault_a",
+        )
+        assert settings.effective_embeddings_path() is None
+        assert (
+            VaultSettings(index_path=tmp_path / "index.db").effective_embeddings_path()
+            is not None
+        )
 
     def test_provider_loads_sets_instance(self, monkeypatch, tmp_path) -> None:
         """A successfully resolved provider is threaded into the instances."""
@@ -2479,3 +2518,146 @@ class TestEmbeddingSearch:
             source_dir=tmp_path, embedding_store="sqlite", embedding_search="streamed"
         )
         assert config.indexing.embedding_search == "streamed"
+
+
+_DSN = "postgresql://vault:s3cret-pw@db.example:5432/vectors"
+
+
+class TestEmbeddingPostgres:
+    def _env(self, monkeypatch: pytest.MonkeyPatch, **extra: str) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_STORE", "postgres")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN", _DSN)
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA", "vault_a")
+        for name, value in extra.items():
+            monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{name}", value)
+
+    def test_read_from_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        self._env(
+            monkeypatch,
+            EMBEDDING_POSTGRES_POOL_SIZE="8",
+            EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S="12.5",
+        )
+        indexing = ProjectConfig.from_env().indexing
+        assert (indexing.embedding_store, indexing.embedding_postgres_schema) == (
+            "postgres",
+            "vault_a",
+        )
+        assert indexing.embedding_postgres_dsn == _DSN
+        assert (
+            indexing.embedding_postgres_pool_size,
+            indexing.embedding_postgres_statement_timeout_s,
+        ) == (8, 12.5)
+
+    def test_postgres_defaults_search_to_streamed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        self._env(monkeypatch)
+        assert ProjectConfig.from_env().embedding_search == "streamed"
+
+    @pytest.mark.parametrize(
+        ("store", "search"),
+        [("postgres", "streamed"), ("numpy", "resident"), ("sqlite", "resident")],
+    )
+    def test_a_config_built_directly_takes_the_stores_search_default(
+        self, store: str, search: str
+    ) -> None:
+        postgres = (
+            {"embedding_postgres_dsn": _DSN, "embedding_postgres_schema": "vault_a"}
+            if store == "postgres"
+            else {}
+        )
+        config = ProjectConfig(
+            source_dir=Path("/tmp/vault"), embedding_store=store, **postgres
+        )
+        assert config.embedding_search == search
+
+    def test_resident_search_on_postgres_names_streamed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        self._env(monkeypatch, EMBEDDING_SEARCH="resident")
+        with pytest.raises(ConfigurationError, match="EMBEDDING_SEARCH=streamed"):
+            ProjectConfig.from_env()
+
+    @pytest.mark.parametrize(
+        ("overrides", "names"),
+        [
+            ({"embedding_postgres_dsn": None}, "EMBEDDING_POSTGRES_DSN"),
+            ({"embedding_postgres_dsn": "  "}, "EMBEDDING_POSTGRES_DSN"),
+            ({"embedding_postgres_schema": None}, "EMBEDDING_POSTGRES_SCHEMA"),
+            ({"embedding_postgres_schema": "  "}, "EMBEDDING_POSTGRES_SCHEMA"),
+            ({"embedding_postgres_pool_size": 0}, "EMBEDDING_POSTGRES_POOL_SIZE"),
+            (
+                {"embedding_postgres_statement_timeout_s": -1.0},
+                "EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S",
+            ),
+            (
+                {"embedding_postgres_statement_timeout_s": float("inf")},
+                "EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S",
+            ),
+            (  # above PostgreSQL's int milliseconds: refused here, not at first open
+                {"embedding_postgres_statement_timeout_s": 1e9},
+                "EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S",
+            ),
+        ],
+    )
+    def test_postgres_settings_are_checked(
+        self, tmp_path: Path, overrides: dict[str, Any], names: str
+    ) -> None:
+        settings: dict[str, Any] = {
+            "source_dir": tmp_path,
+            "embedding_store": "postgres",
+            "embedding_search": "streamed",
+            "embedding_postgres_dsn": _DSN,
+            "embedding_postgres_schema": "vault_a",
+            **overrides,
+        }
+        with pytest.raises(ConfigurationError, match=names):
+            ProjectConfig(**settings)
+
+    def test_postgres_settings_are_ignored_for_another_store(
+        self, tmp_path: Path
+    ) -> None:
+        config = ProjectConfig(source_dir=tmp_path, embedding_postgres_pool_size=0)
+        assert (
+            config.embedding_store == "numpy"
+        )  # not checked unless postgres is chosen
+
+    def test_the_dsn_never_shows(self, tmp_path: Path) -> None:
+        config = ProjectConfig(
+            source_dir=tmp_path,
+            embedding_store="postgres",
+            embedding_search="streamed",
+            embedding_postgres_dsn=_DSN,
+            embedding_postgres_schema="vault_a",
+        )
+        assert "s3cret-pw" not in repr(config)
+        assert "s3cret-pw" not in repr(config.indexing)
+        with pytest.raises(ConfigurationError) as refused:
+            ProjectConfig(
+                source_dir=tmp_path,
+                embedding_store="postgres",
+                embedding_search="resident",
+                embedding_postgres_dsn=_DSN,
+                embedding_postgres_schema="vault_a",
+            )
+        assert "s3cret-pw" not in str(refused.value)
+
+
+def test_the_resident_refusal_names_streamed_and_the_default(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ConfigurationError) as refused:
+        ProjectConfig(
+            source_dir=tmp_path,
+            embedding_store="postgres",
+            embedding_search="resident",
+            embedding_postgres_dsn="host=db",
+            embedding_postgres_schema="vault_a",
+        )
+    assert "EMBEDDING_SEARCH=streamed" in str(refused.value)
+    assert "leave it unset" in str(refused.value)

@@ -3451,13 +3451,14 @@ kwargs):
   or the vectors are held in memory without one. Semantic search follows the
   embedding provider alone (#1708). On the server, an explicit
   `EMBEDDING_PROVIDER` is resolved without a path, while auto-detection
-  still waits for `EMBEDDINGS_PATH`, so an install that merely has a backend
+  still waits for configured storage (`EMBEDDINGS_PATH`, or
+  `EMBEDDING_STORE=postgres`, #1504), so an install that merely has a backend
   importable or an API key set never starts embedding, and paying, at every
   start. Such a provider was never loaded before #1708, so if it fails to
   load the server logs `embedding_provider_load_failed` at WARNING and runs
   keyword-only rather than stop a deployment that started before; with
-  `EMBEDDINGS_PATH` set, a failed explicit provider still raises
-  `ConfigurationError`.
+  storage configured (`EMBEDDINGS_PATH`, or a PostgreSQL store), a failed
+  explicit provider still raises `ConfigurationError`.
 - `state_path=None`: defaults to `{index file name}.state.json` beside `index_path`,
   or to memory without one (#1693).
 
@@ -4074,24 +4075,218 @@ resident: its rows are in memory anyway, and its shared-cache connections
 would let a read transaction block a writer. The numpy store is resident
 only. `embeddings_status` reports the mode the store runs in, the
 configured workspace and two measured sizes, its files and its resident
-matrix, through the optional `ReportsResources` protocol. It estimates
-nothing, so the text a resident store also holds is not in it; and a
+matrix, through the optional `ReportsResources` protocol, and, under
+`store_details`, where a store lives, through the optional
+`DescribesStore` protocol (`null` for a store that does not say). It
+estimates nothing, so the text a resident store also holds is not in it; and a
 streamed store it cannot read makes the call fail rather than report a
 partial status (#1625).
+
+**The PostgreSQL store (#1504).** `stores/postgres_vectors.py` keeps a
+vault's rows in a PostgreSQL schema the operator names, through the
+optional `postgres` extra (psycopg 3, its pool, and pgvector's adapter).
+The backend carries the connection settings; the location is the schema
+name, and there is no in-memory form. The DSN is a secret: it is left out
+of every `repr` (`ProjectConfig`, `IndexingConfig`, `VaultSettings`), is
+marked secret in the generated configuration surfaces, and no message
+quotes it. Provider auto-detection, the CLI's batch commands and the startup log
+treat a PostgreSQL store as keeping the vectors, as they do
+`EMBEDDINGS_PATH` (`IndexingConfig.vector_storage_configured`); it has no
+sidecar, so `effective_embeddings_path()` is `None` and `embeddings_status`
+reports `path: null`, counting an unopened store by opening it as a search
+would: a store that cannot be read fails the status, and one of another
+model or damaged counts 0, logged, until a rebuild replaces it, as a numpy
+or SQLite store that will not serve. The CLI's `search` only reads a
+PostgreSQL store and never embeds into it. The schema is the namespace and the
+ownership boundary: one vault per schema, one role per vault owning only
+its schema. That does not stop a second vault, pointed at another vault's
+schema by a copied configuration while that vault is down, from removing
+the first vault's rows; the embedding identity is still checked on every
+open and read.
+The operator creates the role, the schema (`AUTHORIZATION` the role) and
+the `vector` extension, which is not a trusted extension and needs a
+superuser; the vault creates and migrates only its own three tables,
+`vector_meta` (one row: format version, identity, generation),
+`vector_documents` (path, token) and `vector_chunks` (path, ordinal,
+folder, a `vector` of any dimension, metadata as `jsonb`), lazily inside
+its first write's transaction, so an open changes nothing. The supported
+range is PostgreSQL 15 to 18 with pgvector 0.7.0 (`MIN_PGVECTOR`) or later,
+17 with 0.7.4 and 18 with 0.8.7, the lowest built for them: `.github/workflows/postgres-range.yml` runs the PostgreSQL
+tests on one pinned image per combination, and the minimum is the lowest
+pgvector that workflow passes, so the docs state only what it runs. It finds the
+extension's schema in `pg_extension`, sets `search_path` to the vault
+schema and that one itself, and checks the vault schema exists in
+`pg_namespace`, because PostgreSQL silently skips a missing schema in the
+path. The layout check reads `pg_catalog`, not `information_schema`, so
+tables the role may not select still count: none of the three is an empty
+store, all three with their exact columns is a store, anything between is
+*corrupt*. A read finds its tables through the meta row, and a missing one
+reads as empty, since another process may create the tables after open.
+The open's own connection carries the pool's statement timeout and a
+10-second lock timeout, so a lock held elsewhere is *unavailable*
+(`reason=timeout`), never a hang. A writer opening a schema without the
+tables needs `CREATE` on it, or is refused (`reason=privilege`); a reader
+is not checked. `open_fresh` checks the connection, the extension, the
+schema and that right, and reads none of the store's tables; its first
+write, of any kind, replaces them in that write's transaction. An intact
+store of this format is emptied with `DELETE`, so readers keep its rows
+until commit and nothing waits for `ACCESS EXCLUSIVE` behind them; our
+tables in any other state are dropped, never with `CASCADE`, and created
+again, and an object of ours that cannot be dropped (a view under one of
+our names, `42809`; another object depending on our tables, `2BP01`) is
+*unavailable* with the old rows kept. A newer format is refused, never
+reset: every format keeps `vector_meta.format_version` as an integer
+column, and the layout check reads it before judging the columns, so a
+newer release's store is *unsupported* rather than *corrupt*, which an
+owner would rebuild over. What an operator adds to our tables (an index,
+a dimension typmod such as `vector(768)`) is outside the layout check, so
+an open never calls a tuned store corrupt; an intact store keeps those
+additions through a reset, and a typmod then refuses a rebuild at another
+dimension (`22000`, *unavailable*) until the operator removes it. `identity`
+is fixed at open and changed only by the store's own publishes, as in the
+streamed SQLite store; a read checks the meta row's identity, and takes
+the dimension from it. A schema on the path is trusted with every role that may create in
+it, so the extension's schema must not be writable by untrusted roles.
+PostgreSQL 15 and later create new databases without `CREATE` for
+`PUBLIC` on `public`, but an upgraded cluster or a restored dump keeps the
+old grant, so an operator checks it rather than assuming it.
+
+Opening sorts every failure of the connection or of PostgreSQL into *not
+configured* (no schema, no or too old an extension) or *unavailable*
+(connection, authentication, privilege, resources, a held lease), the
+latter with a `reason`; *unsupported* (a newer format version), *corrupt*
+and *incompatible* come from the store's own checks. After connecting, the
+SQLSTATE class decides; a failed connection carries no SQLSTATE in
+psycopg, so its reason comes only from psycopg's documented attributes,
+tested in this order: `timeout` (`ConnectionTimeout`), `no_password`
+(`needs_password`: the authentication method wanted a password and none
+was available), `refused` (`used_password`: it used a password and the
+session was refused, whether for the password, the role, the database or
+its `CONNECT` privilege; `used_password` is true without a password too,
+hence the order), else `connect`, which is also every refusal under
+`trust` or certificate authentication. A statement or lock timeout
+(`57014`, `55P03`) is `timeout`. libpq's own message is in the error and
+the log line's `detail` and is the authoritative account, but redacted:
+libpq quotes what it fails on, which can be a piece of a mistyped
+password, so every quoted token that is not exactly the parsed host,
+port, database, user or a connection option name is hidden, a DSN that
+does not parse is refused without libpq's text, and a host holding `@`
+or whitespace (an unencoded password character) is refused as *not
+configured*. The store never parses the message. *Corrupt* and *incompatible*, the only outcomes the
+slot rebuilds on, come only from the store's own checks of rows it read.
+A writer holds a session advisory lock for its life on a dedicated
+connection, keyed by one `bigint` (a project constant and the schema's
+OID); a second writer is refused naming the holder's `application_name`
+and pid, and a lost lease is re-taken or the write refused, checked in
+`pg_locks` before every write. A writer's open takes the lease after the
+environment checks and releases it if any later step fails; `close`
+releases it; a reader takes none. The lease is per process: the stores
+one backend opens on a schema share it (reference-counted), so the vault
+slot's opening a fresh store before closing the provisional one never
+conflicts with itself, while a second backend, as another process has, is
+refused. The lease connection sets `idle_session_timeout` to 0 (it idles
+between writes by design) and carries the store's statement and lock
+timeouts; a failure on a live lease connection is reported, never taken
+for a lost lease, and a dropped schema is *not configured*, never logged
+as a lost lease. Concurrent `ensure` calls share one reconnect, so a
+writer never refuses itself after a blip, and each schema's acquire and
+release hold only that schema's lock. Every write also
+locks the `vector_meta` row `FOR UPDATE`, and `replace_document` and
+`remove_document` compare the document's stored token, so writers are
+serialised by the database and the lease is policy: #1812 holds what more
+writers would need. A publish is one transaction that raises
+`synchronous_commit` to `on` from any weaker value (`off`, `local`,
+`remote_write`) and leaves `on` and `remote_apply` alone, since
+`SET LOCAL … = on` would lower `remote_apply`. A writer whose PostgreSQL runs
+with `fsync = off` logs `postgres_vector_store_not_durable` at open; the
+vault cannot fix that. `publish_generation` is one transaction: lock the
+meta row, `DELETE` every document and chunk (not `TRUNCATE`, which would
+block readers), binary `COPY` of the new rows, then the new identity and
+`generation + 1`, so readers keep the previous generation until it
+commits. It and a fresh store's reset run without a statement timeout,
+since a cold build's `COPY` or emptying a large store may take minutes;
+the lock timeout stays. Rows are checked before any transaction
+(`stores/_postgres_rows.py`), as they will actually be sent: an unknown
+store dimension, another dimension, a non-finite value, metadata that is
+not JSON (`NaN` and infinity included), a `NUL` character or lone
+surrogate in any string, or a path or folder too long to index raise
+`ValueError` and change nothing, so the reconciler keeps the old rows
+(SQLite would store some of these). The store's tables are taken as
+existing only after a write publishes, so a conflict that rolled back the
+first write's `CREATE` leaves the next write to create them again. A connection lost
+during `COMMIT` (no reply, or class `08`) raises *unavailable* with
+`reason=commit_unknown`, never a result, and the store then reads the
+database as it is: a fresh store's pending reset is dropped, so a first
+write that landed is never reset again, and a generation of another
+identity is adopted once the meta row shows it landed. An error PostgreSQL reports at
+`COMMIT` rolled the write back and is classified as usual; the store retries no write, and the reconciler's next pass reads
+the tokens and finds the commit landed or embeds again. `checkpoint()`
+does nothing.
+
+Reads are one `REPEATABLE READ`, read-only transaction each, starting from
+the meta row, as streamed SQLite reads do; the query's dimension is the
+one that meta row records, and a query of another dimension or not finite
+is a `ValueError`. PostgreSQL computes `embedding <#> q` once and sorts by
+it, then `path`, then `ordinal`; the vault process negates it as the
+score, over normalised rows, so a zero vector scores `0.0` (cosine
+distance, `<=>`, gives `NaN` there and is not used). A read whose
+connection is lost (no SQLSTATE, class `08`, or `57P01` for a terminated
+backend) is retried once on a fresh connection, since nothing is returned
+until a read completes; writes never are, and neither is a pool with no
+free connection (`PoolTimeout` is an `OperationalError` without a SQLSTATE
+too). A predicate must not change the metadata it is given or count on
+seeing a row once, since a retried read shows it the same rows again. The folder is a
+`starts_with` condition; a predicate reads an ordered server-side cursor
+in batches until *limit* rows pass, and only metadata reaches the vault
+process. `similar_to_document` returns `[]` for a path with no rows;
+otherwise it averages the source rows with `avg` in the same transaction
+and normalises the mean in the vault process. Search is exact and needs
+no index. The store reports `search_mode="streamed"` with no workspace,
+its tables' `pg_total_relation_size` (what the schema holds now, a fresh
+store's old tables included) and no resident bytes. Its `describe()`
+fills `store_details` with host, port, database, schema, the PostgreSQL
+and pgvector versions, whether it is a writer and whether it holds the
+lease, never credentials: host, port and database are libpq's resolved
+values from the open, never the DSN, and the lease is checked live
+without being taken back, which only a write does, and outside the
+lease's lock, so a status read never holds up a write. A schema dropped
+under an open store is *not configured* for its reads and its status
+alike: PostgreSQL reports a missing schema and missing tables the same
+way, so a read that finds no meta row looks the schema up. What the store
+relies on in PostgreSQL, pgvector and psycopg
+is in `docs/design/reference/postgresql-pgvector.md`.
 
 **The vault's slot (#1777).** `Vault` holds its vector store in a
 `VectorStoreSlot` that opens it on first use through the backend
 `EMBEDDING_STORE` names (or an injected `vector_backend`), or uses an
 injected `vector_store`, which stays the caller's. With
 `EMBEDDING_SEARCH=streamed` (and `EMBEDDING_SEARCH_WORKSPACE_MB`) it
-constructs the SQLite backend in streamed mode; any other store refuses
-`streamed` (Search memory, above). It opens with the
+constructs the SQLite backend in streamed mode; the numpy store refuses
+`streamed` (Search memory, above). `EMBEDDING_STORE=postgres` builds the
+PostgreSQL backend from `EMBEDDING_POSTGRES_DSN`, `_SCHEMA`, `_POOL_SIZE`
+and `_STATEMENT_TIMEOUT_S`, and hands the slot the schema as its location;
+the module is imported only then, so a missing `postgres` extra is a
+`ConfigurationError` at startup, and the store searches only `streamed`
+(the default when the store is postgres; an explicit `resident` is
+refused, naming `streamed`). It opens with the
 provider, model, variant and text format from configuration and takes
 the dimension from the stored files, because `provider.dimension` is a
 network probe for several providers: stored vectors stay readable with
 the provider down. The writer path, which needs the provider anyway,
 checks the dimension before writing; a read that finds nothing stored
-installs nothing, so the writer always sets the dimension. On an owned store, corrupt or
+installs nothing, so the writer always sets the dimension. That read's
+store is kept as provisional and reused by later reads, and the slot
+closes it when a sized store replaces it or the slot closes; `fresh()`
+likewise closes the store it replaces, and does so before opening the
+fresh one, so a numpy store's pending rows land before the rebuild's
+first persist, never over it. The slot closes every store it opens and
+stops using, because a database-backed store holds a pool (#1504), and
+its location may be a directory base or a schema name. The swap holds the
+slot's lock through the old store's close and the fresh open, so a read
+meanwhile waits, and `embeddings_status` may see no store for that moment.
+A search that took a store a first build then closes reads the store the
+build installed instead of failing (`SearchManager._vector_rows`). A
+closed slot opens nothing more. On an owned store, corrupt or
 another identity rebuilds through `VectorBackend.open_fresh`; without
 ownership the store's `StoreCorruptError` or `StoreIncompatibleError`
 propagates, and such a process never creates or replaces the files (a
@@ -4139,8 +4334,9 @@ failed for (a full disk, a lock timeout) for the next one,
 outside the pending work that drain status counts. At or above `_BULK_RETOKEN` (64) re-tokens in one pass, one
 `publish_generation` replaces the per-document replaces (each copies the
 whole matrix), holding every row as float32; that publish has no
-per-document token check, which the numpy store's one writer per location
-makes safe and #1504's pgvector backend must revisit. If it fails, every
+per-document token check, which one writer per store makes safe: the numpy
+store's one writer per location, the PostgreSQL store's lease and row lock;
+#1812 holds what more writers would need. If it fails, every
 document in it keeps its rows and joins the retry set, as a failed
 per-document write does. The cold build
 (`rebuild`) embeds every document in batches across documents and
@@ -4157,8 +4353,12 @@ whether that revision landed during its provider call or between its token
 and keyword-index reads, and its retry lands nothing; a stale publish carries its own token, so
 the next pass replaces it; a removal that races a recreate conflicts
 instead of removing the new rows. Both writers read one keyword index, as
-two processes over one vault's database do; a writer whose keyword index
-lags the store is #1504's.
+two processes over one vault's database do. A writer whose keyword index
+lags the store can publish an older revision over a newer one. The
+PostgreSQL store admits one writer per schema (#1504), which keeps two
+writers from racing but not a writer that takes over the lease while its
+keyword index lags what the previous holder published; #1812 holds the
+many-writer case.
 
 Bounds: an empty mount-point directory reads as an available, empty
 source, so its vectors go as they always did (a spec gap, #1791: "an
@@ -6091,3 +6291,4 @@ Later decisions (2026-10-08, #1503):
 | 31 | Store open outcomes | Five typed outcomes under `StoreOpenError`; none reads as empty. On a store the vault owns, corrupt or another identity rebuilds into a fresh generation (a model change re-embeds, as documented); a process that does not own the files refuses with the store's own outcome and never creates or replaces them (#1766, #1777, #1778). | An unreachable or unknown store rebuilt as empty is how a server overwrites another process's index; the type says what the operator can do about it. |
 | 32 | Numpy store persistence | JSON commit point naming a per-persist matrix; in-memory publish with durability at checkpoint; `publish_generation` durable at once (#1767). | Crash-safe two-file commit without rewriting the whole matrix per document; write amplification is #1497's. |
 | 33 | Vector search memory | The SQLite store's search is resident or streamed, chosen by the operator; streamed keeps nothing per chunk resident, scans in bounded batches with an exact running top-*limit*, and pushes the folder scope into SQL (#1377). | Every vault keeps the fast path, a growing one gets a bound. Rejected: streamed only (every vault pays the scan's latency); switching by a memory budget (an estimate silently changes behaviour, and reads as a process limit); light metadata resident (grows with chunks, so the batch no longer bounds memory); memory-mapping the `.npy` (a full scan's hot set is still the whole matrix); float16 or int8 (recall loss; 015 has no recall allowance). |
+| 34 | PostgreSQL vector store | One schema per vault is the namespace and the ownership boundary; the vault creates and migrates only its own tables, never extensions; one writer per schema by advisory lease, with every write also row-locked and each per-document write token-conditional; `synchronous_commit` raised to `on` from anything weaker; scored and sorted in PostgreSQL with `<#>` over normalised rows, exact, nothing per chunk in the vault process; connect-time failures tagged only from psycopg's documented attributes, libpq's message kept but redacted; sync psycopg 3 (#1504). | The owner chose schema per vault and "schema is ownership" over a claim id; pgvector is not a trusted extension, so a least-privilege role could never create it, while table rights are needed for upgrades anyway; single writer now, "but be prepared" for strict many-writer (#1812), which the row lock makes a policy change rather than a redesign; `<=>` returns `NaN` for a zero vector, `<#>` returns `-0`; pulling vectors into the vault process would cost the corpus per query; psycopg gives no SQLSTATE for a failed connection and libpq's message is localised, so the owner chose coarse reasons over parsing text; `on` is stronger than `remote_write`, so the owner chose to raise from it too; the library is sync today (#1811). **Rejected:** a vault claim id; shared tables with a namespace column; a resident copy in the vault process; `TRUNCATE` for a generation, or dropping an intact store on a fresh store's first write (both block readers); parsing libpq's message for an authentication reason. |

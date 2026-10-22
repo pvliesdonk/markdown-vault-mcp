@@ -58,8 +58,9 @@ def register(mcp: FastMCP) -> None:
             - provider (str | None): Provider class name when configured
               (such as `"OllamaProvider"`), or null if not configured.
             - chunk_count (int): Number of chunks currently in the vector index.
-            - path (str | None): Vector index file path when persisted, or
-              null when the vectors are held in memory or not configured.
+            - path (str | None): Vector index file path when persisted in
+              files, or null when the vectors are held in memory, kept in a
+              database (see backend and store_details), or not configured.
             - backend (str | None): Name of the store holding the vectors
               (such as `"numpy"`), or null if no provider is configured.
             - identity (dict | None): The provider, model, variant, text
@@ -71,15 +72,23 @@ def register(mcp: FastMCP) -> None:
               the vectors in memory, "streamed" when each search reads them
               in batches.
             - search_workspace_bytes (int | None): Configured vector bytes
-              one streamed batch may hold; null when resident.
-            - stored_bytes (int | None): Measured size of the store's files;
-              null when the vectors are held in memory.
+              one streamed batch may hold; null when resident or when the
+              database scores the vectors itself.
+            - stored_bytes (int | None): Measured size of the store's files
+              or database tables; null when the vectors are held in memory.
             - resident_vector_bytes (int | None): Measured bytes of the
               vectors held in memory; 0 when streamed. Other memory the
               server uses is not counted.
 
             The four fields above are null until the store is first opened,
             and when the store does not report them.
+
+            - store_details (dict | None): Where a database-backed store
+              lives, with the keys `host`, `port`, `database`, `schema`,
+              `postgresql_version`, `pgvector_version`, `writer` (this
+              server may write) and `lease_held` (it holds the writer lease
+              now). Null for a file or in-memory store, and until the store
+              is first opened. It never shows credentials.
         """
         return await asyncio.to_thread(vault.index.embeddings_status)
 

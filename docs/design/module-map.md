@@ -44,8 +44,15 @@ src/markdown_vault_mcp/
   stores/
     __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
     _resident.py       -- Snapshot and ResidentStore: the resident float32 matrix, rows and tokens the numpy store and a resident-mode SQLite store read from, and the next-snapshot builders (#1497, #1377)
+    _postgres_lease.py -- the PostgreSQL writer lease: a session advisory lock keyed by schema OID on its own connection; ensure() takes a lost lease back or refuses, naming the holder (#1504)
+    _postgres_rows.py  -- what the PostgreSQL store can store, checked before any write: dimension known, finite vectors, metadata as jsonb would send it (no NaN), no NUL or lone surrogate, paths and folders short enough to index (#1504)
+    _postgres_search.py -- searching the PostgreSQL store: <#> computed and sorted in PostgreSQL, folder by starts_with, a server-side cursor for a predicate, the document mean by avg; only metadata crosses the wire (#1504)
+    _postgres_tables.py -- the PostgreSQL store's three tables: schema-qualified DDL, the pg_catalog layout check (none = empty, some = corrupt), the meta row (#1504)
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
+    _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
+    _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
+    postgres_vectors.py -- PostgresVectorBackend/PostgresVectorStore: a vault's vectors in a PostgreSQL schema; open sorts every failure into the five outcomes, reads are REPEATABLE READ from the live meta row (#1504)
     registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)
     sqlite_keyword.py  -- SqliteKeywordBackend: opens FTSIndex, classifies SQLite failures as unavailable or corrupt (#1766)
     sqlite_vectors.py  -- SqliteVectorBackend/SqliteVectorStore: vectors as SQLite rows in their own database, one BEGIN IMMEDIATE + synchronous=FULL commit per write, served from a resident snapshot (#1497)
@@ -76,7 +83,7 @@ src/markdown_vault_mcp/
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377)
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
   embed_text.py        -- EmbedTextBuilder: single shared builder for (context-enriched) embedding input text

@@ -45,10 +45,14 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 from markdown_vault_mcp._fts_connection import SqliteConnectionRegistry
 from markdown_vault_mcp.exceptions import (
     StoreCorruptError,
-    StoreIncompatibleError,
     StoreOpenError,
     StoreUnavailableError,
     StoreUnsupportedSchemaError,
+)
+from markdown_vault_mcp.stores._identity import (
+    identity_from_mapping,
+    identity_mapping,
+    served_identity,
 )
 from markdown_vault_mcp.stores._resident import (
     NUMPY_AVAILABLE,
@@ -309,15 +313,7 @@ def _format_meta(conn: sqlite3.Connection, where: str) -> dict[str, str] | None:
 
 
 def _identity_json(identity: EmbeddingIdentity) -> str:
-    return json.dumps(
-        {
-            "provider": identity.provider,
-            "model": identity.model,
-            "variant": identity.variant,
-            "text_format": identity.text_format,
-            "dimension": identity.dimension,
-        }
-    )
+    return json.dumps(identity_mapping(identity))
 
 
 def _stored_identity(raw: str | None, where: str) -> EmbeddingIdentity | None:
@@ -325,50 +321,20 @@ def _stored_identity(raw: str | None, where: str) -> EmbeddingIdentity | None:
         return None
     try:
         data = json.loads(raw)
-        return EmbeddingIdentity(
-            provider=str(data["provider"]),
-            model=str(data["model"]),
-            variant=str(data["variant"]),
-            text_format=str(data["text_format"]),
-            dimension=int(data["dimension"]),
-        )
-    except (ValueError, TypeError, KeyError) as exc:
+    except ValueError as exc:
         raise _outcome(
             StoreCorruptError,
             f"Vector store at {where} has a malformed identity: {exc}",
             where,
         ) from exc
+    return identity_from_mapping(data, backend=_BACKEND_NAME, where=where)
 
 
 def _served_identity(
     stored: EmbeddingIdentity, wanted: EmbeddingIdentity, where: str
 ) -> EmbeddingIdentity:
-    """Return the identity to serve, refusing another embedding space.
-
-    A *wanted* dimension of 0 does not know it yet: the stored one stands.
-    """
-    held = (stored.provider, stored.model, stored.variant, stored.text_format)
-    asked = (wanted.provider, wanted.model, wanted.variant, wanted.text_format)
-    if held != asked:
-        raise _outcome(
-            StoreIncompatibleError,
-            f"Vector store at {where} holds {held}, not {asked}.",
-            where,
-        )
-    if stored.dimension and wanted.dimension and stored.dimension != wanted.dimension:
-        raise _outcome(
-            StoreIncompatibleError,
-            f"Vector store at {where} holds dimension {stored.dimension}, "
-            f"not {wanted.dimension}.",
-            where,
-        )
-    return EmbeddingIdentity(
-        provider=wanted.provider,
-        model=wanted.model,
-        variant=wanted.variant,
-        text_format=wanted.text_format,
-        dimension=stored.dimension or wanted.dimension,
-    )
+    """Return the identity to serve, refusing another embedding space (``_identity``)."""
+    return served_identity(stored, wanted, backend=_BACKEND_NAME, where=where)
 
 
 def _metadata_object(raw: object, where: str) -> dict[str, Any]:

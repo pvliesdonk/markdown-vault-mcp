@@ -5,7 +5,7 @@ from __future__ import annotations
 # Imported at runtime (not under TYPE_CHECKING) so the frozen dataclass's field
 # annotations stay resolvable if anything introspects them via get_type_hints.
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from markdown_vault_mcp.exceptions import ConfigurationError
@@ -28,11 +28,25 @@ class IndexingConfig:
     embedding_store: str = "numpy"
     embedding_search: str = "resident"
     embedding_search_workspace_mb: int = 1
+    embedding_postgres_dsn: str | None = field(default=None, repr=False)
+    embedding_postgres_schema: str | None = None
+    embedding_postgres_pool_size: int = 4
+    embedding_postgres_statement_timeout_s: float = 30.0
     indexed_frontmatter_fields: Sequence[str] | None = None
     required_frontmatter: Sequence[str] | None = None
     exclude_patterns: Sequence[str] | None = None
     title_field: str = "title"
     searchable_frontmatter: Sequence[str] | None = None
+
+    @property
+    def vector_storage_configured(self) -> bool:
+        """Whether configuration names somewhere to keep the vectors.
+
+        ``EMBEDDINGS_PATH`` names files; ``EMBEDDING_STORE=postgres`` names a
+        database (#1504). Without either, an on-disk index may still keep
+        them beside itself, which callers that know the index path check.
+        """
+        return self.embeddings_path is not None or self.embedding_store == "postgres"
 
     def __post_init__(self) -> None:
         """Freeze the sequence fields into tuples for deep immutability (#639).

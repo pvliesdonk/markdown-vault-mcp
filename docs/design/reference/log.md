@@ -1,13 +1,57 @@
 # Reference research log
 
+## 2026-10-22
+
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
+  with how a full server refuses a connection: `too many clients already`
+  comes before authentication and reads as `connect`; a refusal for reserved
+  slots comes after it and reads as `refused`. Observed on a throwaway
+  PostgreSQL 17 container. Next review: 2027-04-22.
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
+  with the supported range #1504's range workflow runs: PostgreSQL 15 to 18
+  with pgvector 0.7.0 to 0.8.7, and `tensorchord/vchord-suite:pg17-20260501`.
+  Image tags were read from Docker Hub; every image passed the store's 376
+  PostgreSQL tests. `valid_for` now includes pgvector 0.7. Next review:
+  2027-04-22.
+
 ## 2026-10-21
 
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
+  for #1504's operator guide: PgBouncer's pooling modes and what transaction
+  pooling never supports (session `SET`, session-level advisory locks), so
+  only session pooling serves the store; and what `DELETE` leaves behind,
+  what plain `VACUUM` and `VACUUM FULL` reclaim and lock, and when autovacuum
+  runs, with its defaults. Fixed the page's stale scope line, which still said
+  the store module was yet to arrive. Next review: 2027-04-21.
 - Revised how [Pull request size and review effectiveness](pull-request-size.md)
   is used: the file cap rises from three to five, and the line backstop
   counts only the files the cap counts, asks for a justification past 400
   lines and forces a re-plan past 1,000. Recorded the departure from
   SWE-Bench Pro's three-file cliff and the project history behind the
   change. No claim changed. Next review unchanged: 2027-04-17.
+
+## 2026-10-18
+
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md) for #1504's writer lease: how a single-`bigint` advisory key appears in `pg_locks` (`classid`, `objid`, `objsubid = 1`), and what an ordinary role sees of other sessions in `pg_stat_activity` (PostgreSQL 17 statistics docs, plus an observation that `application_name` stays visible while `state` is null). Pinned the advisory-lock claims to the lease tests.
+- Added [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md),
+  checked against the PostgreSQL 17 documentation (extensions, locking,
+  isolation, WAL and client settings, schemas, privileges, error codes,
+  `DECLARE`, `pg_dump`, libpq), the PostgreSQL 15 release notes, pgvector's
+  README (v0.8.0) and changelog, and the psycopg 3 and pgvector-python docs,
+  with probes on PostgreSQL 17.4 + pgvector 0.8.0 and 16.10 + 0.8.1 and on
+  psycopg 3.3.6. Found:
+  - `<#>` returns `-0` for a zero vector and `<=>` returns `NaN`;
+  - a missing schema in `search_path` is silently ignored;
+  - `SET LOCAL synchronous_commit = on` lowers a configured `remote_apply`;
+  - psycopg reported every probed connect-time failure without a SQLSTATE,
+    and only `ConnectionTimeout` and `Error.pgconn.needs_password` /
+    `used_password` tell them apart, `needs_password` first, since
+    `used_password` is also true when no password was supplied;
+  - pgvector is not a trusted extension, so installing it needs a superuser.
+
+  Not covered: pins (they arrive with #1504's store children), a lost
+  `COMMIT` reply, crash behaviour, PostgreSQL 15 and 18. Next review:
+  2027-04-18.
 
 ## 2026-10-17
 
