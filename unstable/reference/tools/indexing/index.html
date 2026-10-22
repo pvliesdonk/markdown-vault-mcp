@@ -1117,6 +1117,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../use/postgresql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PostgreSQL embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../use/git-integration/" class="md-nav__link">
         
   
@@ -2727,8 +2755,9 @@
 <li>provider (str | None): Provider class name when configured
   (such as <code>"OllamaProvider"</code>), or null if not configured.</li>
 <li><code>chunk_count</code> (int): Number of chunks currently in the vector index.</li>
-<li>path (str | None): Vector index file path when persisted, or
-  null when the vectors are held in memory or not configured.</li>
+<li>path (str | None): Vector index file path when persisted in
+  files, or null when the vectors are held in memory, kept in a
+  database (see backend and <code>store_details</code>), or not configured.</li>
 <li>backend (str | None): Name of the store holding the vectors
   (such as <code>"numpy"</code>), or null if no provider is configured.</li>
 <li>identity (dict | None): The provider, model, variant, text
@@ -2740,15 +2769,24 @@
   the vectors in memory, "streamed" when each search reads them
   in batches.</li>
 <li><code>search_workspace_bytes</code> (int | None): Configured vector bytes
-  one streamed batch may hold; null when resident.</li>
-<li><code>stored_bytes</code> (int | None): Measured size of the store's files;
-  null when the vectors are held in memory.</li>
+  one streamed batch may hold; null when resident or when the
+  database scores the vectors itself.</li>
+<li><code>stored_bytes</code> (int | None): Measured size of the store's files
+  or database tables; null when the vectors are held in memory.</li>
 <li><code>resident_vector_bytes</code> (int | None): Measured bytes of the
   vectors held in memory; 0 when streamed. Other memory the
   server uses is not counted.</li>
 </ul>
 <p>The four fields above are null until the store is first opened,
 and when the store does not report them.</p>
+<ul>
+<li><code>store_details</code> (dict | None): Where a database-backed store
+  lives, with the keys <code>host</code>, <code>port</code>, <code>database</code>, <code>schema</code>,
+  <code>postgresql_version</code>, <code>pgvector_version</code>, <code>writer</code> (this
+  server may write) and <code>lease_held</code> (it holds the writer lease
+  now). Null for a file or in-memory store, and until the store
+  is first opened. It never shows credentials.</li>
+</ul>
 <!-- DOMAIN-EXAMPLE-embeddings_status-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-embeddings_status-END -->

@@ -17,16 +17,18 @@ Dict with the following fields:
 - available (bool): True when an embedding provider is configured, even before the first build finishes. It does not say the embeddings are complete; `get_index_status` does.
 - provider (str | None): Provider class name when configured (such as `"OllamaProvider"`), or null if not configured.
 - `chunk_count` (int): Number of chunks currently in the vector index.
-- path (str | None): Vector index file path when persisted, or null when the vectors are held in memory or not configured.
+- path (str | None): Vector index file path when persisted in files, or null when the vectors are held in memory, kept in a database (see backend and `store_details`), or not configured.
 - backend (str | None): Name of the store holding the vectors (such as `"numpy"`), or null if no provider is configured.
 - identity (dict | None): The provider, model, variant, text format and dimension the stored vectors were embedded with, or null until the store is first opened.
 - generation (int | None): Count of full rebuilds the store has published, or null until the store is first opened.
 - `search_mode` (str | None): "resident" when semantic search holds the vectors in memory, "streamed" when each search reads them in batches.
-- `search_workspace_bytes` (int | None): Configured vector bytes one streamed batch may hold; null when resident.
-- `stored_bytes` (int | None): Measured size of the store's files; null when the vectors are held in memory.
+- `search_workspace_bytes` (int | None): Configured vector bytes one streamed batch may hold; null when resident or when the database scores the vectors itself.
+- `stored_bytes` (int | None): Measured size of the store's files or database tables; null when the vectors are held in memory.
 - `resident_vector_bytes` (int | None): Measured bytes of the vectors held in memory; 0 when streamed. Other memory the server uses is not counted.
 
 The four fields above are null until the store is first opened, and when the store does not report them.
+
+- `store_details` (dict | None): Where a database-backed store lives, with the keys `host`, `port`, `database`, `schema`, `postgresql_version`, `pgvector_version`, `writer` (this server may write) and `lease_held` (it holds the writer lease now). Null for a file or in-memory store, and until the store is first opened. It never shows credentials.
 
 ## `get_index_status`
 

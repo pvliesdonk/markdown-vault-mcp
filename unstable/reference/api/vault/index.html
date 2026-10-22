@@ -1117,6 +1117,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../use/postgresql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PostgreSQL embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../use/git-integration/" class="md-nav__link">
         
   
@@ -3474,7 +3502,7 @@
 
 
 <h2 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">VaultSettings</span><span class="p">(</span><span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_store</span><span class="o">=</span><span class="s1">'numpy'</span><span class="p">,</span> <span class="n">embedding_search</span><span class="o">=</span><span class="s1">'resident'</span><span class="p">,</span> <span class="n">embedding_search_workspace_bytes</span><span class="o">=</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">20</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">report_unresolved_links</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">owns_index_files</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">VaultSettings</span><span class="p">(</span><span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_store</span><span class="o">=</span><span class="s1">'numpy'</span><span class="p">,</span> <span class="n">embedding_search</span><span class="o">=</span><span class="s1">'resident'</span><span class="p">,</span> <span class="n">embedding_search_workspace_bytes</span><span class="o">=</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">20</span><span class="p">,</span> <span class="n">embedding_postgres_dsn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_postgres_schema</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_postgres_pool_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">embedding_postgres_statement_timeout_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">report_unresolved_links</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">owns_index_files</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -3544,7 +3572,8 @@ search is on whenever <code>Vault</code> is given an embedding provider.</p>
               <div class="doc-md-description">
                 <p>The vector backend's registry name; <code>"numpy"</code>
 (the default) keeps the vectors in files at <code>embeddings_path</code>,
-<code>"sqlite"</code> in one SQLite database there.</p>
+<code>"sqlite"</code> in one SQLite database there, <code>"postgres"</code> in the
+PostgreSQL schema <code>embedding_postgres_schema</code> names (#1504).</p>
               </div>
             </td>
           </tr>
@@ -3557,8 +3586,9 @@ search is on whenever <code>Vault</code> is given an embedding provider.</p>
               <div class="doc-md-description">
                 <p><code>"resident"</code> (the default) holds the vectors in
 memory; <code>"streamed"</code> keeps none resident and reads them in
-batches per search (#1377). Needs <code>embedding_store="sqlite"</code>;
-a store held in memory is always resident.</p>
+batches per search (#1377). Needs <code>embedding_store="sqlite"</code>
+or <code>"postgres"</code>, which must be streamed; a store held in
+memory is always resident.</p>
               </div>
             </td>
           </tr>
@@ -3571,6 +3601,55 @@ a store held in memory is always resident.</p>
               <div class="doc-md-description">
                 <p>The vector bytes one streamed
 batch may hold (default 1 MiB).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.embedding_postgres_dsn">embedding_postgres_dsn</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>With <code>embedding_store="postgres"</code>, the
+libpq connection string of the database; a secret, left out of
+the <code>repr</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.embedding_postgres_schema">embedding_postgres_schema</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>With <code>embedding_store="postgres"</code>, the
+schema the vectors live in; the slot's location.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.embedding_postgres_pool_size">embedding_postgres_pool_size</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The most connections the PostgreSQL
+store opens (default 4).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.embedding_postgres_statement_timeout_s">embedding_postgres_statement_timeout_s</span></code></td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The longest one PostgreSQL
+query may run, in seconds (default 30; <code>0</code> sets none).</p>
               </div>
             </td>
           </tr>
@@ -4053,7 +4132,7 @@ only when a remote is configured (repo URL or token), else <code>0</code>.</p>
                 <code>config</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, report_unresolved_links=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, embedding_store='numpy', embedding_search='resident', embedding_search_workspace_mb=1, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())
+                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, report_unresolved_links=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, embedding_store='numpy', embedding_search='', embedding_search_workspace_mb=1, embedding_postgres_dsn=None, embedding_postgres_schema=None, embedding_postgres_pool_size=4, embedding_postgres_statement_timeout_s=30.0, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())
 
   
       dataclass
@@ -4104,7 +4183,7 @@ which resolves the provider and threads this automatically.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, embedding_store='numpy', embedding_search='resident', embedding_search_workspace_bytes=1 << 20, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, owns_index_files=True)
+                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, embedding_store='numpy', embedding_search='resident', embedding_search_workspace_bytes=1 << 20, embedding_postgres_dsn=None, embedding_postgres_schema=None, embedding_postgres_pool_size=4, embedding_postgres_statement_timeout_s=30.0, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, owns_index_files=True)
 
   
       dataclass
@@ -4339,7 +4418,17 @@ metacharacters (which would invert the exclusion).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>vectors are held in memory and rebuilt at each start.</p>
+                <p>vectors are held in memory and rebuilt at each start. <code>None</code></p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>too for a PostgreSQL store, which keeps no files.</p>
               </div>
             </td>
           </tr>
@@ -4564,7 +4653,7 @@ defaults remain independent of the server's operator defaults.</p>
                 <code>settings</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, embedding_store='numpy', embedding_search='resident', embedding_search_workspace_bytes=1 << 20, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, owns_index_files=True)
+                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, embedding_store='numpy', embedding_search='resident', embedding_search_workspace_bytes=1 << 20, embedding_postgres_dsn=None, embedding_postgres_schema=None, embedding_postgres_pool_size=4, embedding_postgres_statement_timeout_s=30.0, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, owns_index_files=True)
 
   
       dataclass
@@ -4590,8 +4679,10 @@ defaults remain independent of the server's operator defaults.</p>
               <div class="doc-md-description">
                 <p>Provider used to generate embeddings; semantic
 search is on whenever one is given. Its vectors persist beside
-the index, or at <code>settings.embeddings_path</code>, and stay in
-memory without either.</p>
+the index, or at <code>settings.embeddings_path</code>, or in the
+PostgreSQL schema <code>settings.embedding_postgres_schema</code> names
+(<code>embedding_store="postgres"</code>), and stay in memory without
+any of them.</p>
               </div>
             </td>
             <td>

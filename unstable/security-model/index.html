@@ -1263,6 +1263,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../use/postgresql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PostgreSQL embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../use/git-integration/" class="md-nav__link">
         
   
@@ -2831,9 +2859,10 @@
 <li><strong><code>fetch</code></strong> downloads an <code>http</code> or <code>https</code> URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.</li>
 <li><strong>Embeddings.</strong> With a remote embedding provider (OpenAI-compatible, Voyage, or Ollama on another host), indexing sends note text to that provider, and <code>search</code> sends the query text. The local fastembed provider sends nothing.</li>
 <li><strong><code>summarize</code></strong> sends the notes it summarizes to the OpenAI-compatible endpoint set in <code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL</code>. Without a configured endpoint the tool is hidden.</li>
+<li><strong>PostgreSQL.</strong> With <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres</code>, the server connects to the database in <code>MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN</code> and keeps the vault's embeddings in one schema there, creating and changing only its own tables in it. Each embedding is stored with its chunk's text, title and path, so the database and its backups hold a copy of every embedded note, and that text crosses the network to the database, guaranteed encrypted only when the connection string <a href="../use/postgresql/#connect-securely">requires verified TLS</a> (<code>sslmode=verify-full</code>); libpq's default tries TLS and falls back to plain text. What the database role may do is the server's whole reach there: give it <a href="../use/postgresql/#provision-the-database">only its own schema</a>.</li>
 <li><strong>Git.</strong> With a remote configured, the server pushes to it after writes and pulls from it on a timer, and <code>git_sync</code> lets a caller start either direction.</li>
 </ul>
-<p>Callers never pass credentials to these tools. The server uses its own: <code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code> for an HTTPS remote, or the host's SSH setup for an SSH remote, and the API keys of the embedding provider and the summarize endpoint.</p>
+<p>Callers never pass credentials to these tools. The server uses its own: <code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code> for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.</p>
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
 
 <h2 id="what-answers-without-a-credential">What answers without a credential<a class="headerlink" href="#what-answers-without-a-credential" title="Permanent link">&para;</a></h2>
