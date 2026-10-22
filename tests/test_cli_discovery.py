@@ -147,6 +147,72 @@ def test_note_json_round_trip_preserves_unicode(body: str) -> None:
         ).replace("\r", "\n")
 
 
+@pytest.mark.parametrize("selection", ["option", "environment"])
+@pytest.mark.parametrize("spelling", ["symlink", "relative"])
+@pytest.mark.parametrize(
+    "arguments",
+    [["read", "note.md"], ["read", "note.md", "--section", "Detail"], ["list"]],
+)
+def test_local_reader_accepts_equivalent_source_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selection: str,
+    spelling: str,
+    arguments: list[str],
+) -> None:
+    """An aliased source root must retain valid note identities for native reads."""
+    source = tmp_path / "actual"
+    source.mkdir()
+    (source / "note.md").write_text("# Note\n\n## Detail\n\nAlias-safe.\n")
+    alias = tmp_path / "alias"
+    alias.symlink_to(source, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    root = str(alias) if spelling == "symlink" else "actual"
+    connection = ["--source-dir", root] if selection == "option" else []
+    if selection == "environment":
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", root)
+    else:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path / "absent"))
+    result = CliRunner().invoke(app, [*arguments, *connection, "--local", "--json"])
+    assert result.exit_code == 0, (result.output, result.exception)
+    data = json.loads(result.stdout)
+    if arguments[0] == "list":
+        assert [note["path"] for note in data] == ["note.md"]
+    else:
+        assert data["path"] == "note.md"
+        assert "Alias-safe." in data["content"]
+
+
+@pytest.mark.parametrize("path", ["../outside.md", "linked.md"])
+def test_aliased_local_source_still_refuses_escape(tmp_path: Path, path: str) -> None:
+    """Canonicalizing the source root must not admit notes outside its tree."""
+    source = tmp_path / "actual"
+    source.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("private fixture content")
+    (source / "linked.md").symlink_to(outside)
+    alias = tmp_path / "alias"
+    alias.symlink_to(source, target_is_directory=True)
+    result = CliRunner().invoke(
+        app, ["read", path, "--source-dir", str(alias), "--local", "--json"]
+    )
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "private fixture content" not in result.output
+
+
+def test_looped_local_source_retains_configuration_error(tmp_path: Path) -> None:
+    """A root symlink loop remains a configuration refusal on every Python lane."""
+    source = tmp_path / "loop"
+    source.symlink_to("loop", target_is_directory=True)
+    result = CliRunner().invoke(
+        app, ["read", "note.md", "--source-dir", str(source), "--local", "--json"]
+    )
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "does not exist" in result.stderr
+
+
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
 @pytest.mark.parametrize("extra_bytes", [0, 1])
 def test_attachment_cap_boundary(
