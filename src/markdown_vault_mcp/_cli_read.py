@@ -14,12 +14,23 @@ if TYPE_CHECKING:
 
 __all__ = ["RemoteReply", "run_read"]
 
+_GRAPH_TOOLS = frozenset(
+    {
+        "get_backlinks",
+        "get_outlinks",
+        "get_broken_links",
+        "get_orphan_notes",
+        "get_most_linked",
+        "get_connection_path",
+    }
+)
+
 
 def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> Any:
     """Read local facets without rebuilding shared indexes or embedding notes.
 
     Args:
-        tool: Native reader operation selected by a command.
+        tool: Native reader or graph operation selected by a command.
         arguments: Native operation arguments, without the remote drain flag.
         source_dir: Optional local source override.
 
@@ -34,6 +45,11 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
     from markdown_vault_mcp.config import ProjectConfig
 
     config = ProjectConfig.from_env()
+    if tool in _GRAPH_TOOLS:
+        from dataclasses import replace
+
+        # Link queries never need vector identity or a model, even with a sidecar.
+        config = replace(config, embedding_provider=None, embeddings_path=None)
     configured = config.indexing.index_path
     in_memory = configured is None or str(configured) == ":memory:"
     if configured is not None and not in_memory:
@@ -118,7 +134,14 @@ def _reader_payload(vault: Vault, tool: str, arguments: dict[str, Any]) -> Any:
 
     if tool == "read":
         return read_payload(vault, **arguments)
-    result = getattr(vault.reader, tool)(**arguments)
+    facet = vault.graph if tool in _GRAPH_TOOLS else vault.reader
+    result = getattr(facet, tool)(**arguments)
+    if tool == "get_connection_path":
+        return {
+            "found": result is not None,
+            "path": result if result is not None else [],
+            "hops": len(result) - 1 if result is not None else -1,
+        }
     if tool == "get_toc":
         return toc_payload(result)
     if isinstance(result, list):
