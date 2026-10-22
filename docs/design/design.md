@@ -4367,12 +4367,118 @@ writers from racing but not a writer that takes over the lease while its
 keyword index lags what the previous holder published; #1812 holds the
 many-writer case.
 
-Bounds: an empty mount-point directory reads as an available, empty
-source, so its vectors go as they always did (a spec gap, #1791: "an
-unmounted volume removes nothing" holds only when the mount point itself
-is missing or unreadable); `embeddings_status` reports the store's
+Bounds: an empty vault folder refuses removals (§ Embedding transitions
+and recovery, #1505 child 8); `embeddings_status` reports the store's
 search mode and measured sizes (Search memory, above); how often the full matrix is
 rewritten is #1497's.
+
+### Embedding transitions and recovery (#1505)
+
+Decision (decision 35): an operator who upgrades, switches embedding store
+or restores from a backup pays the embedding provider only for text that
+changed. The server never invents an identity it cannot read, never
+destroys state to heal itself, and logs what it reused, refused and why.
+This section is the target #1505's children implement on
+`integration/1505-embedding-transitions`; each paragraph names the child
+that builds it, and the markers go once every child has merged.
+
+**The donor (#1505 child 3).** A donor is an existing vector store opened
+read-only (`owns_files=False`) and wrapped in `Donor`; it is never
+written, leased, renamed or deleted. It is eligible only when its
+recorded identity (provider, model, variant, text format, dimension)
+equals the configured one under `stores/_identity.py`'s rules, except that
+a missing identity never matches. A bare-list sidecar, a store of another
+identity, a corrupt store and an unavailable one are refused once, logged
+`embeddings_donor_refused source=%s reason=%s` (`identity_unknown`,
+`identity_differs`, `corrupt`, `unavailable`, `unsupported`), and the
+build proceeds without them. Matching is per chunk and by path: the key
+is the embedding input rebuilt from the donor row's metadata exactly as
+`EmbeddingReconciler._stored_inputs`
+(`indexing/embedding_reconciler.py`) rebuilds a store's own rows for
+#1795's reuse, so a donor hit and an own-store hit are one rule, and a row
+#1795 would not reuse is not donated. A donor vector is copied only when
+its dimension matches, every element is finite and its norm is non-zero;
+otherwise it is a miss, counted as a refused row.
+
+**A full build with a donor (#1505 child 4).** Only the path that
+publishes a whole generation consults a donor: a cold build, the rebuild
+after a model change, an import. Hits are copied, misses go to the
+provider, and the generation is published only when complete, so an
+interrupted build publishes nothing and repeating it is safe. Incremental
+per-document writes are unchanged. One line reports it:
+`embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d`.
+
+**The released-sidecar upgrade (#1505 children 2 and 5).** v5.0.0 and
+v5.1.0 write `{base}.json` (`rows` plus `index_metadata`: provider,
+model, provider variant, dimension, embed text format; no
+`format_version`) and `{base}.npy`; the oldest layout is a bare JSON list
+with no identity. v5.1.0 defaults `{base}` to `index-db-embeddings`
+beside `INDEX_PATH`; v5.0.0 persists only with `EMBEDDINGS_PATH`. The
+numpy store moves to `{base}.v2.json` and `{base}.v2.m<N>.npy`, and its
+sweep (`stores/numpy_sidecar.py:_sweep`) deletes only its own
+`.v2.m*.npy` matrices; the SQLite store keeps `{base}.sqlite3`. No code
+writes, renames or deletes `{base}.json` or `{base}.npy` again. At start,
+when the configured built-in store is absent at `{base}` and `{base}.json`
+is a released sidecar or an edge build's numpy-v2 file
+(`format_version: 2`), it is opened as a donor for the full build, logged
+`embeddings_upgrade_started donor=%s store=%s`; a bare list is refused as
+`identity_unknown`. Until that build publishes the new store does not
+exist, so stopping, crashing or rolling back to 5.1 leaves the sidecar as
+5.1 wrote it, and the next start retries (rollback before activation).
+After activation, 5.1 reads its untouched, now stale sidecar and
+re-embeds only the notes changed since (downgrade after activation: the
+expected outcome, not a guarantee). Each start that finds the configured
+store active and the released files present logs at INFO
+`embeddings_legacy_sidecar_unused path=%s bytes=%d`; the user docs say
+when deleting them is safe. Until then the vectors exist twice, about
+`4 × chunks × dimensions` bytes each.
+
+**The explicit import (#1505 child 6).** `markdown-vault-mcp embeddings
+import --from numpy|sqlite|postgres [--from-path BASE] [--from-schema
+SCHEMA] [--from-dsn-env VAR] [--dry-run]` imports into the configured
+store from another one. A PostgreSQL source's DSN comes only from the
+environment variable `--from-dsn-env` names (default: the configured
+DSN), never from the command line. The command brings the keyword index
+up to date, opens the source as a donor, runs the full build into the
+destination and publishes one generation, which replaces a populated
+destination atomically, so a repeated or half-finished import is
+harmless. `--dry-run` reports the chunks it would reuse and embed, writing
+nothing and calling no provider. It refuses, naming the remedy and
+exiting non-zero, when a running server holds the destination (the
+PostgreSQL writer lease; for a built-in store its single-writer guard per
+base path, which child 6 confirms is detectable from another process or
+adds as an advisory lock file), when source and destination are the same
+store, when the donor's identity is missing or differs, when the
+destination keeps vectors only in memory, and when the source is
+unavailable or corrupt.
+
+**Recovery (#1505 children 7 to 10).**
+- An unparseable note (a YAML error, missing required frontmatter) keeps
+  its rows when it is tombstoned, and convergence finds them current once
+  it is fixed; deletion and exclusion still remove them (child 7). Kept
+  rows must not reach search results; whether semantic and hybrid search
+  already drop rows of a note absent from the keyword index is
+  unverified, and child 7 checks it and adds the filter if not.
+- A vault root that exists but holds no candidate notes while the keyword
+  index holds some is *unavailable* for that pass: nothing is removed,
+  logged WARNING `vault_root_empty_removals_refused indexed=%d`.
+  Removals resume when notes reappear or after an explicit forced
+  rebuild, the deliberate "I emptied it" (child 8, #1791).
+- An owned corrupt numpy or SQLite store is renamed with the suffix
+  `.corrupt-<UTC timestamp>`, every file including `-wal` and `-shm`,
+  logged WARNING with the paths, before its rebuild, which a compatible
+  released sidecar can serve as donor (child 9). A PostgreSQL store keeps
+  dropping and recreating its own damaged tables without `CASCADE`.
+- Permission errors, a full disk and an unavailable PostgreSQL stay typed
+  *unavailable* outcomes: no rebuild, removal or rename.
+- `Vault.close` checkpoints `index.db`'s WAL with `TRUNCATE`, so a
+  stopped server's keyword index is self-contained (child 10).
+
+Out of scope: reusing vectors for a renamed note (matching is by path);
+changing the default built-in store (#1506); quarantining damaged
+PostgreSQL tables; #1476's content-history recovery; a memory bound on
+publishing a whole generation, which a full build already holds in memory
+today and #1506's envelope measures.
 
 ### `providers.py`: Embedding Providers
 
@@ -6299,3 +6405,9 @@ Later decisions (2026-10-08, #1503):
 | 32 | Numpy store persistence | JSON commit point naming a per-persist matrix; in-memory publish with durability at checkpoint; `publish_generation` durable at once (#1767). | Crash-safe two-file commit without rewriting the whole matrix per document; write amplification is #1497's. |
 | 33 | Vector search memory | The SQLite store's search is resident or streamed, chosen by the operator; streamed keeps nothing per chunk resident, scans in bounded batches with an exact running top-*limit*, and pushes the folder scope into SQL (#1377). | Every vault keeps the fast path, a growing one gets a bound. Rejected: streamed only (every vault pays the scan's latency); switching by a memory budget (an estimate silently changes behaviour, and reads as a process limit); light metadata resident (grows with chunks, so the batch no longer bounds memory); memory-mapping the `.npy` (a full scan's hot set is still the whole matrix); float16 or int8 (recall loss; 015 has no recall allowance). |
 | 34 | PostgreSQL vector store | One schema per vault is the namespace and the ownership boundary; the vault creates and migrates only its own tables, never extensions; one writer per schema by advisory lease, with every write also row-locked and each per-document write token-conditional; `synchronous_commit` raised to `on` from anything weaker; scored and sorted in PostgreSQL with `<#>` over normalised rows, exact, nothing per chunk in the vault process; connect-time failures tagged only from psycopg's documented attributes, libpq's message kept but redacted; sync psycopg 3 (#1504). | The owner chose schema per vault and "schema is ownership" over a claim id; pgvector is not a trusted extension, so a least-privilege role could never create it, while table rights are needed for upgrades anyway; single writer now, "but be prepared" for strict many-writer (#1812), which the row lock makes a policy change rather than a redesign; `<=>` returns `NaN` for a zero vector, `<#>` returns `-0`; pulling vectors into the vault process would cost the corpus per query; psycopg gives no SQLSTATE for a failed connection and libpq's message is localised, so the owner chose coarse reasons over parsing text; `on` is stronger than `remote_write`, so the owner chose to raise from it too; the library is sync today (#1811). **Rejected:** a vault claim id; shared tables with a namespace column; a resident copy in the vault process; `TRUNCATE` for a generation, or dropping an intact store on a fresh store's first write (both block readers); parsing libpq's message for an authentication reason. |
+
+Later decisions (2026-10-22, #1505):
+
+| # | Topic | Decision | Rationale |
+|-|-|-|-|
+| 35 | Embedding transitions | A full build may consult a read-only donor store and copy a vector whose rebuilt embedding input matches the chunk's, under an equal and known identity, publishing one generation; the released v5.x sidecar upgrades into the configured built-in store automatically, every other switch goes through an explicit `embeddings import`; the released sidecar is never written again and is reported while unused; a missing identity never matches; permission, disk and availability failures never trigger a rebuild, removal or rename (#1505). | The owner chose automatic only for the built-in upgrade and explicit otherwise (C), keeping the released sidecar (A), and the donor mechanism, on 2026-10-22. Only vectors matching current text are copied, so no stale or deleted note is imported; one mechanism serves the upgrade, a store switch and a restore; #1795's input rebuild is the matching rule already trusted for a store's own rows; the minor release needs the upgrade automatic. **Rejected:** a bulk copy of every row through the contract; converters per pair of stores; an automatic import on every store switch; deleting the released sidecar after the upgrade. |
