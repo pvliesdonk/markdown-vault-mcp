@@ -88,6 +88,8 @@ def _build_reader_vault(
     problem = source_dir_problem(config)
     if problem is not None:
         raise ConfigurationError(problem[1])
+    # Native reads resolve note paths, so their root must use the same identity.
+    config = replace(config, source_dir=config.source_dir.resolve())
     if not _vectors_kept(config, None):
         config = replace(config, embedding_provider=None)
     instances = to_vault_instances(config)

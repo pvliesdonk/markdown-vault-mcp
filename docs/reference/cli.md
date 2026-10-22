@@ -66,7 +66,7 @@ markdown-vault-mcp context Journal/today.md --similar-limit 0 --json
 
 `read` accepts `--revision` for historical notes. Whole-note and attachment reads retain the server's size limits; use `--section` to read part of a large note. Only `read --json` returns attachment base64. Human and agent attachment reads show metadata, with no binary content. Whole-note OKF reads include sources, and context includes applicable conventions.
 
-`list` supports `--pattern`, repeated frontmatter filters and `--include-attachments`. Empty `--folder ""` selects root notes; other folder values select a subtree. `toc` reports subtree truncation. `similar` requires stored vectors and never builds embeddings. Local indexed reads use an existing disk index without changing it, or build a temporary in-memory keyword index when no index path is configured. Local reads use the existing checkout without cloning or synchronizing a managed Git source. Indexed reader commands accept `--wait-for-pending-writes` for the remote server; local freshness remains unknown.
+`list` supports `--pattern`, repeated frontmatter filters and `--include-attachments`. Empty `--folder ""` selects root notes; other folder values select a subtree. `toc` reports subtree truncation. `similar` requires stored vectors and never builds embeddings. Local indexed reads use an existing disk index without changing it, or build a temporary in-memory keyword index when no index path is configured. Local reads resolve relative or symlinked source directories before opening the existing checkout, without cloning or synchronizing a managed Git source. Indexed reader commands accept `--wait-for-pending-writes` for the remote server; local freshness remains unknown.
 
 <!-- DOMAIN-INTRO-END -->
 
