@@ -434,30 +434,17 @@ Regardless of which provider you choose:
 
 `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres` keeps a vault's embeddings in a PostgreSQL schema, with the [pgvector](https://github.com/pgvector/pgvector) extension doing the scoring. Use it when the vectors should live with your other data rather than in files beside the index.
 
-1. **Prepare the database once, as a superuser.** The server never creates extensions: pgvector is not a trusted extension, so a least-privilege role could not. Create one schema and one role per vault, the role owning only that schema; the schema is the vault's ownership boundary, so never point two vaults at one. Run this in the database the connection string below names (`psql -d vectors`), which must already exist (`CREATE DATABASE vectors;`):
+Setting it up takes a superuser once, to install the extension and create one role and one schema per vault, then three settings:
 
-    ```sql
-    CREATE EXTENSION IF NOT EXISTS vector;
-    CREATE ROLE vault_a LOGIN;
-    GRANT CONNECT ON DATABASE vectors TO vault_a;
-    CREATE SCHEMA vault_a AUTHORIZATION vault_a;
-    ```
+```bash
+MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres
+MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN='postgresql://vault_a@db.example:5432/vectors?sslmode=verify-full&sslrootcert=/etc/markdown-vault-mcp/db-ca.pem'
+MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA=vault_a
+```
 
-    Give the role its password with `\password vault_a` rather than in the script. pgvector 0.7.0 or later is needed. If `vector` was already installed in another schema (`\dx vector` shows which), also grant the role `USAGE` on that schema; without it the server refuses to open the store and says which `GRANT` to run.
+Outside Docker the store needs the extra: `pip install "markdown-vault-mcp[postgres]"`. The Docker image, the Claude Desktop bundle and the Claude Code plugin already install it, but the bundle's and the plugin's install screens do not offer these settings: set them in the server's environment. Semantic search is always `streamed` with this store, and `embeddings_status` reports `"backend": "postgres"` with where the store lives under `store_details`.
 
-2. **Install the extra.** Outside Docker, run `pip install "markdown-vault-mcp[postgres]"`. The Docker image, the Claude Desktop bundle and the Claude Code plugin already install it, but the bundle's and the plugin's install screens do not offer the PostgreSQL settings: set them in the server's environment.
-
-3. **Configure the store.** Set the store, the connection string and the schema:
-
-    ```bash
-    MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres
-    MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN=postgresql://vault_a@db.example:5432/vectors
-    MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA=vault_a
-    ```
-
-    The connection string is a secret, never logged or shown; the password can stay out of it, in `PGPASSWORD` or a `.pgpass` file. The pool size and statement timeout have defaults; see the [configuration reference](../reference/configuration.md). Semantic search is always `streamed` with this store.
-
-4. **Check it.** `embeddings_status` reports `"backend": "postgres"` and, under `store_details`, the host, database, schema, the PostgreSQL and pgvector versions and `"lease_held": true`; it never shows credentials.
+[PostgreSQL embedding store](postgresql.md) covers provisioning with a least-privilege role, TLS and the password file, connection poolers, timeouts, disk space, backup and restore, and the store's status and log events.
 
 What to expect:
 
@@ -465,8 +452,6 @@ What to expect:
 - **Switching to `postgres` starts with an empty store**, so every note is embedded again, which a paid provider bills. Importing existing vectors is [#1505](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1505).
 - **A database that is down makes semantic and hybrid search fail** rather than answer with nothing; `mode="keyword"` keeps working.
 - **A full rebuild writes the new generation in one transaction**, so searches keep answering from the previous one until it commits.
-
-A guide to running the store in production (connection pooling, backups, TLS and least-privilege roles) follows with #1504's last children.
 
 !!! note "A provider without EMBEDDINGS_PATH starts embedding on upgrade"
     Before this behavior, a provider set without `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` was ignored and the server searched by keyword only. After the upgrade such a deployment embeds the whole vault once, which a paid provider bills, and rebuilds its keyword index once in the background, as it does after any model change. If that provider fails to load, the server logs `embedding_provider_load_failed` and keeps searching by keyword only.
