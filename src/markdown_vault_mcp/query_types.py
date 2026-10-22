@@ -181,3 +181,54 @@ class NoteAggregate:
     buckets: list[NoteBucket]
     missing: int
     truncated: bool
+
+
+@dataclass(frozen=True)
+class PathQuery:
+    """Indexed path discovery with optional bounded ASCII approximation.
+
+    Attributes:
+        query: Nonblank literal path text, at most 256 Unicode codepoints.
+        folder: Subtree restriction; empty selects root notes only.
+        filters: AND equality over configured indexed frontmatter fields.
+        fuzzy: Evaluate eligible ASCII tokens at Levenshtein distance <=1.
+        limit: Maximum returned metadata items, 1-1000.
+    """
+
+    query: str
+    folder: str | None = None
+    filters: Mapping[str, str] = field(default_factory=dict)
+    fuzzy: bool = False
+    limit: int = 100
+
+    def __post_init__(self) -> None:
+        if not self.query.strip() or len(self.query) > 256 or "\x00" in self.query:
+            raise ValueError(
+                "query must contain 1-256 codepoints of nonblank path text without NUL"
+            )
+        _bounded("limit", self.limit, 1, 1000)
+        validated = NoteQuery(filters=self.filters)
+        object.__setattr__(self, "filters", validated.filters)
+
+
+PathCoverage = Literal["complete", "limited", "not_run"]
+PathReason = Literal[
+    "candidate_limit", "time_limit", "fuzzy_disabled", "ineligible_query"
+]
+
+
+@dataclass(frozen=True)
+class PathSearchResult:
+    """Metadata matches; approximate coverage is independent of output truncation.
+
+    Attributes:
+        items: Exact, folded prefix, folded substring, then approximate matches.
+        coverage: Whether the optional approximate population was evaluated.
+        reasons: Stable reasons for limited or not-run coverage.
+        truncated: More known matches exist than fit the output limit.
+    """
+
+    items: list[NoteQueryItem]
+    coverage: PathCoverage
+    reasons: list[PathReason]
+    truncated: bool

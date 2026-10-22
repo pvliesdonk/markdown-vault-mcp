@@ -94,7 +94,8 @@ src/markdown_vault_mcp/
   interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_queries.py      -- exact distinct-note predicates, scoped FTS, consistent pages/counts/buckets and internal Unicode path lookup
-  query_types.py       -- validated NoteQuery/NoteGrouping requests and typed exact population results
+  query_types.py       -- validated note/path requests and typed population/discovery results
+  _path_search.py      -- exact/prefix/substring path tiers and bounded ASCII edit matching over indexed metadata
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
   embed_text.py        -- EmbedTextBuilder: single shared builder for (context-enriched) embedding input text
   providers.py         -- embedding provider ABC + implementations

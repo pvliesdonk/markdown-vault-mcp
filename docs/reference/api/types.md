@@ -130,3 +130,11 @@ Arguments received by the callback:
 
 ::: markdown_vault_mcp.query_types.NoteBucket
 <!-- vale on -->
+
+## Path discovery types
+
+<!-- vale off -->
+::: markdown_vault_mcp.query_types.PathQuery
+
+::: markdown_vault_mcp.query_types.PathSearchResult
+<!-- vale on -->
