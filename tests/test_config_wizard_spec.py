@@ -318,6 +318,10 @@ def spec_emitted_vars(spec: dict) -> set[str]:
 # Canonical inventory vars deliberately NOT surfaced as wizard questions.
 # Each entry MUST stay a real inventory var (a test asserts no stale entries).
 NOT_IN_WIZARD = {
+    # Outbound CLI client settings do not configure the deployed server.
+    f"{PREFIX}_SERVER_URL": "outbound CLI endpoint, not the server's listening address",
+    f"{PREFIX}_CLIENT_CONFIG": "local CLI profile location, not a deployment setting",
+    f"{PREFIX}_CLIENT_TOKEN": "outbound CLI credential, separate from server authentication",
     # Transport/host/port are implied by the deployment target and the Docker
     # image CMD; the wizard never emits them as env vars.
     f"{PREFIX}_TRANSPORT": "implied by deployment target / image CMD",
