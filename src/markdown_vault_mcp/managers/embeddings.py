@@ -29,7 +29,6 @@ from markdown_vault_mcp.indexing.embedding_reconciler import (
     ReconcileResult,
 )
 from markdown_vault_mcp.source_probe import FileSourceProbe
-from markdown_vault_mcp.utils.fs import path_exists
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection
@@ -395,16 +394,17 @@ class EmbeddingsManager:
                 )
                 return 0
         count = 0
-        # Derive sidecar paths the way the store does (Path.with_suffix),
-        # so an EMBEDDINGS_PATH that carries an
-        # extension resolves to the real files instead of {path}.npy.npy
-        # and misreporting chunk_count=0 (#819).
-        # Both layouts keep the rows in the JSON: the legacy pair beside
-        # {base}.npy and the store's commit file naming {base}.m<N>.npy.
-        json_path = base.with_suffix(".json")
+        # The store's own derivation picks the JSON a reader opens: its
+        # {base}.v2.json once committed, else a released or edge-build
+        # {base}.json (#1505). It uses Path.with_suffix, so an
+        # EMBEDDINGS_PATH that carries an extension resolves to the real
+        # files (#819). Every layout keeps the rows in the JSON.
         # A refused stat raises: a status of "no vectors" for a store the
         # server cannot read would be wrong (#1625).
-        if path_exists(json_path):
+        from markdown_vault_mcp.stores.numpy_sidecar import committed_json
+
+        json_path = committed_json(base)
+        if json_path is not None:
             try:
                 with json_path.open(encoding="utf-8") as fh:
                     loaded_meta = json.load(fh)

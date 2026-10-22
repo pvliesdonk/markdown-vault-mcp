@@ -36,8 +36,9 @@ _DEFAULT_STATE_FILENAME = "state.json"
 _DEFAULT_STATE_SUFFIX = ".state.json"
 #: Suffix of the default embeddings base beside the index. The base is the
 #: index file name with its dots made dashes: ``index.db`` gives
-#: ``index-db-embeddings``, whose sidecars are ``index-db-embeddings.npy`` and
-#: ``.json``. Dot-free, so ``Path.with_suffix`` adds to the whole name instead
+#: ``index-db-embeddings``, whose numpy store is ``index-db-embeddings.v2.json``
+#: and its ``.v2.m<N>.npy`` matrix (a release's ``.json``/``.npy`` pair beside
+#: it is left alone, #1505). Dot-free, so ``Path.with_suffix`` adds to the whole name instead
 #: of cutting it at a dot (#819), and built from the whole name, so
 #: ``notes.db`` and ``notes.sqlite`` never share vectors.
 _DEFAULT_EMBEDDINGS_SUFFIX = "-embeddings"
