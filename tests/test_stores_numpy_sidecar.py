@@ -999,13 +999,14 @@ class TestV2LayoutEdges:
         store.replace_document(doc("c.md", [[0, 0, 1]]), expected_token=ANY_TOKEN)
         store.close()
         other = EmbeddingIdentity(identity.provider, "other", "", "v1", 3)
+        backend = NumpySidecarBackend()
         with (
             caplog.at_level(
                 logging.INFO, logger="markdown_vault_mcp.stores.numpy_sidecar"
             ),
             pytest.raises(StoreIncompatibleError),
         ):
-            NumpySidecarBackend().open(base, other)
+            backend.open(base, other)
         assert not [
             r
             for r in caplog.records
