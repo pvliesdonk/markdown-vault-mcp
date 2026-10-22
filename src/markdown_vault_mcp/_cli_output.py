@@ -134,9 +134,13 @@ def _agent_records(
         }
     )
     requested = terminal_text(str(reply.meta.get("requested_mode", "unknown")))
-    typer.echo(
-        f"OK {command} count={len(items)} requested_mode={requested} actual_mode={','.join(actual) or 'unknown'} index_stale={str(stale).lower()}"
-    )
+    header = f"OK {command} count={len(items)} requested_mode={requested} actual_mode={','.join(actual) or 'unknown'} index_stale={str(stale).lower()}"
+    if command == "search-path" and isinstance(reply.data, dict):
+        for key, kind in (("coverage", str), ("truncated", bool)):
+            value = reply.data.get(key)
+            if isinstance(value, kind):
+                header += f" {key}={_json_record(value)}"
+    typer.echo(header)
     for item in items:
         typer.echo(_json_record(item))
 
