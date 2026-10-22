@@ -1441,8 +1441,8 @@ class TestOpenStoreSelfHeal:
         assert slot is not None
         slot.replace(None)
 
-        json_path = embeddings_path.with_suffix(".json")
-        (matrix_path,) = state_dir.glob("embeddings.m*.npy")
+        json_path = embeddings_path.with_suffix(".v2.json")
+        (matrix_path,) = state_dir.glob("embeddings.v2.m*.npy")
         assert json_path.exists()
         return mgr, holder, matrix_path, json_path
 

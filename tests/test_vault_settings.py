@@ -375,8 +375,8 @@ class TestStateLocation:
             vault.index.build_embeddings()
         finally:
             vault.close()
-        assert (tmp_path / "state" / "index-db-embeddings.json").is_file()
-        assert list((tmp_path / "state").glob("index-db-embeddings.m*.npy"))
+        assert (tmp_path / "state" / "index-db-embeddings.v2.json").is_file()
+        assert list((tmp_path / "state").glob("index-db-embeddings.v2.m*.npy"))
         assert sorted(p.name for p in root.rglob("*")) == ["a.md"]
 
     def test_legacy_location_chosen_explicitly_is_not_reported(

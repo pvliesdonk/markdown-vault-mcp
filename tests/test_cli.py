@@ -1139,7 +1139,7 @@ def test_batch_commands_embed_into_a_configured_embeddings_path(
 
     assert result.exit_code == 0, result.output
     assert counting.calls > 0
-    assert shared.with_suffix(".json").is_file()
+    assert shared.with_suffix(".v2.json").is_file()
 
 
 @pytest.mark.parametrize("embeddings_path", [True, False], ids=["set", "default"])

@@ -50,8 +50,8 @@ class TestTheVaultUsesTheNumpyStore:
         finally:
             vault.close()
         names = sorted(p.name for p in tmp_path.iterdir())
-        assert "index-db-embeddings.json" in names
-        assert any(n.startswith("index-db-embeddings.m") for n in names)
+        assert "index-db-embeddings.v2.json" in names
+        assert any(n.startswith("index-db-embeddings.v2.m") for n in names)
         assert "index-db-embeddings.npy" not in names
 
     def test_status_reports_backend_identity_and_generation(

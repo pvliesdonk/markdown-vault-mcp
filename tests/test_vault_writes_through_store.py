@@ -213,10 +213,11 @@ class TestUpgradingFromALegacySidecar:
             assert None not in vault._vectors.tokens().values()  # type: ignore[union-attr]
         finally:
             vault.close()
-        # ... which is a change: the checkpoint moved the store to the new layout.
+        # ... which is a change: the checkpoint wrote the store's own layout and
+        # left the released sidecar for a downgrade (#1505).
         names = sorted(p.name for p in tmp_path.glob("index-db-embeddings*"))
-        assert "index-db-embeddings.json" in names
-        assert not legacy_matrix.exists()
+        assert "index-db-embeddings.v2.json" in names
+        assert legacy_matrix.exists()
 
 
 class TestPurges:
