@@ -23,6 +23,7 @@ from tests.fixtures.cli_graph import graph_source  # noqa: F401
 # test module without requiring a per-file import (which would trip ruff's
 # F811 redefinition check on the parameter shadowing).
 from tests.fixtures.cli_http import cli_client_profile  # noqa: F401
+from tests.fixtures.cli_paths import path_source  # noqa: F401
 from tests.fixtures.git import git_repo_pair  # noqa: F401
 
 

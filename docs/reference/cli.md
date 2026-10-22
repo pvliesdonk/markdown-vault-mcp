@@ -82,6 +82,28 @@ markdown-vault-mcp connection Journal/today.md Ideas/topic.md --max-depth 3 --js
 
 Paths are exact and case-sensitive. Backlinks and outlinks return all links unless limited; hubs default to 10 notes. Broken-link folders select a subtree, while `--folder ""` selects root notes. Connection paths follow links in either direction, with depth clamped to 1 through 10. Disconnected notes return a successful object with `found: false`, an empty `path` and `hops: -1`; missing endpoints fail. All six commands accept `--wait-for-pending-writes` for remote reads.
 
+Path discovery uses the same local or hosted connection:
+
+```bash
+markdown-vault-mcp search-path "research/incentves" --fuzzy --server https://vault.example/mcp --agent
+markdown-vault-mcp search-path "topic" --folder research --filter tags=reference --limit 20 --json
+```
+
+`search-path` validates the raw query between 1 and 256 Unicode code points.
+Exact paths precede literal prefixes and matches within a path, using Unicode
+case folding, followed by optional bounded ASCII typo matching. `--folder ""` selects root notes; repeated indexed-field filters use AND.
+Computed OKF fields are refused on this exact metadata surface. See
+[`search_paths`](tools/reader.md#search_paths) for matching limits and coverage.
+
+The full result remains one object with `items`, `coverage`, `reasons` and
+`truncated`; remote results also retain observed `index_stale`. Agent output has
+one object record and `count=1`, plus escaped typed coverage/truncation receipts.
+Coverage describes the approximate pass; truncation describes omitted known
+matches. A limited empty result does not establish absence. Local path reads use
+indexed metadata without constructing embedding or summarization providers or
+loading vector sidecars. Follow a returned path with `read`, `read --section`,
+`similar`, `context` or a graph command. Local freshness remains unknown.
+
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -398,5 +420,27 @@ Find the shortest undirected link path between two notes.
 | `--local` |  | False | Override a configured remote endpoint. |
 | `--timeout` |  |  | Remote deadline in seconds. |
 | `--json` |  | False | Return native structured values. |
+| `--agent` |  | False | Return escaped agent records. |
+| `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp search-path`
+
+Discover exact paths before optional bounded typo matches.
+
+| Argument | Description |
+|---|---|
+| `QUERY` | Literal path text, 1-256 code points. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--fuzzy` |  | False | Try bounded ASCII typo matching. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
+| `--filter` |  |  | Indexed frontmatter KEY=VALUE; repeat for AND. |
+| `--limit` |  | 100 | Maximum returned notes, 1-1000 (default 100). |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the full native object. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |

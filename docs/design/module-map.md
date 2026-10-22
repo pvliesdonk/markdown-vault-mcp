@@ -146,6 +146,7 @@ src/markdown_vault_mcp/
   _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies
   _cli_discovery.py    -- note, attachment, metadata and context CLI commands
   _cli_graph.py        -- backlinks/outlinks/broken-links/orphans/hubs/connection CLI registration; native graph payloads through the shared read runner
+  _cli_paths.py        -- bounded native path-discovery CLI registration and common controls
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point

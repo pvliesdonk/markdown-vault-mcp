@@ -45,11 +45,18 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
     from markdown_vault_mcp.config import ProjectConfig
 
     config = ProjectConfig.from_env()
-    if tool in _GRAPH_TOOLS:
+    if tool in _GRAPH_TOOLS or tool == "search_paths":
         from dataclasses import replace
 
-        # Link queries never need vector identity or a model, even with a sidecar.
+        # Graph/path queries need no vector identity or model, even with a sidecar.
         config = replace(config, embedding_provider=None, embeddings_path=None)
+        if tool == "search_paths":
+            config = replace(
+                config,
+                summarize_provider=None,
+                summarize_openai_api_key=None,
+                summarize_openai_base_url=None,
+            )
     configured = config.indexing.index_path
     in_memory = configured is None or str(configured) == ":memory:"
     if configured is not None and not in_memory:
@@ -136,6 +143,8 @@ def _reader_payload(vault: Vault, tool: str, arguments: dict[str, Any]) -> Any:
 
     if tool == "read":
         return read_payload(vault, **arguments)
+    if tool == "search_paths":
+        return _path_payload(vault, arguments)
     facet = vault.graph if tool in _GRAPH_TOOLS else vault.reader
     result = getattr(facet, tool)(**arguments)
     if tool == "get_connection_path":
@@ -162,6 +171,22 @@ def _reader_payload(vault: Vault, tool: str, arguments: dict[str, Any]) -> Any:
             data["okf"] = okf
     if tool == "get_context":
         _context_annotations(vault, data, arguments["path"])
+    return data
+
+
+def _path_payload(vault: Vault, arguments: dict[str, Any]) -> dict[str, Any]:
+    from markdown_vault_mcp._read_payloads import ReadPayloadError, annotate_hits
+    from markdown_vault_mcp.okf import derive_annotation
+    from markdown_vault_mcp.query_types import PathQuery
+
+    try:
+        request = PathQuery(**arguments)
+    except ValueError as exc:
+        raise ReadPayloadError(str(exc)) from exc
+    data = asdict(vault.reader.search_paths(request))
+    annotate_hits(
+        data["items"], derive_annotation if vault.okf.state().active else None
+    )
     return data
 
 

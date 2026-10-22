@@ -582,6 +582,12 @@ from markdown_vault_mcp._cli_graph import (  # noqa: E402
 
 _register_graph(app)
 
+from markdown_vault_mcp._cli_paths import (  # noqa: E402
+    register as _register_paths,
+)
+
+_register_paths(app)
+
 # DOMAIN-COMMANDS-END
 
 
