@@ -29,6 +29,8 @@ if TYPE_CHECKING:
         NoteGrouping,
         NoteQuery,
         NoteQueryPage,
+        PathQuery,
+        PathSearchResult,
     )
     from markdown_vault_mcp.types import (
         AttachmentContent,
@@ -93,6 +95,18 @@ class ReaderFacet:
         if self._okf_audit is None:
             raise RuntimeError("okf_validate requires a wired audit callable")
         return self._okf_audit()
+
+    def search_paths(self, request: PathQuery) -> PathSearchResult:
+        """Discover indexed paths with bounded optional typo matching.
+
+        Args:
+            request: Literal query, population predicates and output cap.
+
+        Returns:
+            Metadata matches with separate approximate coverage and truncation.
+        """
+        self._require_built()
+        return self._search_mgr.search_paths(request)
 
     def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
         """Return a bounded exact query page after index readiness.

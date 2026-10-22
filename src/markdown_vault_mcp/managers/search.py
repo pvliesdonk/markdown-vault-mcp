@@ -16,6 +16,7 @@ import mimetypes
 import sqlite3
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
+from markdown_vault_mcp._path_search import search_paths
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import (
     ConfigurationError,
@@ -100,6 +101,8 @@ if TYPE_CHECKING:
         NoteGrouping,
         NoteQuery,
         NoteQueryPage,
+        PathQuery,
+        PathSearchResult,
     )
     from markdown_vault_mcp.types import FTSResult
 
@@ -702,6 +705,17 @@ class SearchManager:
     # ------------------------------------------------------------------
     # Search
     # ------------------------------------------------------------------
+
+    def search_paths(self, request: PathQuery) -> PathSearchResult:
+        """Discover indexed paths with bounded optional typo matching.
+
+        Args:
+            request: Literal query, population predicates and output cap.
+
+        Returns:
+            Metadata matches with separate approximate coverage and truncation.
+        """
+        return search_paths(self._fts, request)
 
     def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
         """Return a bounded page of the exhaustive indexed population.

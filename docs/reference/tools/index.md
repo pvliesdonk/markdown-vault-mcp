@@ -34,6 +34,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Reader | [`query_documents`](reader.md#query_documents) | Query Notes | Page through all matching indexed notes with an exact total. |
 | Reader | [`count_documents`](reader.md#count_documents) | Count Notes | Count every matching indexed note without fetching content. |
 | Reader | [`aggregate_documents`](reader.md#aggregate_documents) | Aggregate Notes | Group every matching indexed note into bounded frequency buckets. |
+| Reader | [`search_paths`](reader.md#search_paths) | Discover Note Paths | Discover note paths with direct matches before optional typo matches. |
 | Graph | [`get_backlinks`](graph.md#get_backlinks) | Backlinks | List the notes that link to a note. |
 | Graph | [`get_outlinks`](graph.md#get_outlinks) | Outlinks | List the links in a note, each with an exists flag that is false when the target is missing. |
 | Graph | [`get_broken_links`](graph.md#get_broken_links) | Broken Links | List the links whose target is missing from the vault, each with the note that holds it. |

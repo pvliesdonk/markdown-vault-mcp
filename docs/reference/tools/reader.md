@@ -764,3 +764,40 @@ Count the full body-match population by tag, returning at most ten buckets:
 
 The bucket cap limits output, while `total` still describes every matching note.
 <!-- DOMAIN-EXAMPLE-aggregate_documents-END -->
+
+## `search_paths`
+
+**Discover Note Paths.** Read-only. Idempotent.
+
+Discover note paths with direct matches before optional typo matches.
+
+Returns metadata without bodies. Exact paths rank first, then case-insensitive
+literal prefix matches, followed by other literal matches and approximate matches. Coverage describes
+the approximate scan; truncated independently describes omitted results.
+Use read with a returned path to retrieve its content.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `query` | `string` | required | Literal path text, 1-256 Unicode code points; whitespace alone is empty. Surrounding whitespace is ignored; wildcard characters are literal. |
+| `folder` | `string \| null` | `null` | Restrict to this folder and descendants; empty selects root notes. |
+| `filters` | `object \| null` | `null` | AND equality over `indexed_frontmatter_fields` from stats; list fields match a member. Use search for computed OKF filters. |
+| `fuzzy` | `boolean` | `false` | Try ASCII alphanumeric tokens of length 3-64 within one edit; transposition costs two edits. Non-ASCII queries use direct matching. The approximate pass evaluates at most 10,000 candidates in 200 ms. |
+| `limit` | `integer` | `100` | Maximum returned metadata items, 1-1000. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Items, coverage (complete, limited or `not_run`), reasons, truncated and
+`index_stale`, also present in response metadata.
+
+<!-- DOMAIN-EXAMPLE-search_paths-START -->
+```json
+{"query": "releaze", "fuzzy": true, "folder": "projects", "limit": 10}
+```
+
+Read `items[].path` with `read` for content. A `limited` receipt means
+approximation stopped early; inspect `reasons` before concluding no note exists.
+`truncated` only describes known matches omitted from the output.
+<!-- DOMAIN-EXAMPLE-search_paths-END -->

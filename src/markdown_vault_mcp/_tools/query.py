@@ -29,6 +29,10 @@ from markdown_vault_mcp.query_types import (
     NoteGrouping,
     NoteQuery,
     NoteQueryPage,
+    PathCoverage,
+    PathQuery,
+    PathReason,
+    PathSearchResult,
 )
 from markdown_vault_mcp.vault import Vault
 
@@ -58,6 +62,14 @@ class _Item(TypedDict):
     score: float | None
     sections: NotRequired[list[_Section]]
     okf: NotRequired[dict[str, Any]]
+
+
+class _Paths(TypedDict):
+    items: list[_Item]
+    coverage: PathCoverage
+    reasons: list[PathReason]
+    truncated: bool
+    index_stale: bool
 
 
 class _Count(TypedDict):
@@ -95,7 +107,9 @@ def _request(factory: Callable[[], _RequestT]) -> _RequestT:
 
 async def _run(
     vault: Vault,
-    operation: Callable[[], NoteQueryPage | NoteCount | NoteAggregate],
+    operation: Callable[
+        [], NoteQueryPage | NoteCount | NoteAggregate | PathSearchResult
+    ],
     wait: bool,
     tool_name: str,
 ) -> Any:
@@ -118,7 +132,7 @@ async def _run(
 
 
 def register(mcp: FastMCP) -> None:
-    """Register the three bounded projections of an exact note population.
+    """Register exact note queries and bounded path discovery.
 
     Args:
         mcp: Server receiving read-only query tools.
@@ -354,5 +368,70 @@ def register(mcp: FastMCP) -> None:
                 lambda: vault.reader.aggregate_documents(spec, grouping),
                 wait_for_pending_writes,
                 "aggregate_documents",
+            ),
+        )
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["search"],
+        tags={"group:reader"},
+        annotations={
+            "title": "Discover Note Paths",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    @needs_queryable()
+    async def search_paths(
+        query: Annotated[str, Field(min_length=1, max_length=256)],
+        folder: str | None = None,
+        filters: dict[str, str] | None = None,
+        fuzzy: bool = False,
+        limit: _PageSize = 100,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
+        vault: Vault = Depends(get_vault),
+    ) -> _Paths:
+        """Discover note paths with direct matches before optional typo matches.
+
+        Returns metadata without bodies. Exact paths rank first, then case-insensitive
+        literal prefix matches, followed by other literal matches and approximate matches. Coverage describes
+        the approximate scan; truncated independently describes omitted results.
+        Use read with a returned path to retrieve its content.
+
+        Args:
+            query: Literal path text, 1-256 Unicode code points; whitespace alone is empty.
+                Surrounding whitespace is ignored; wildcard characters are literal.
+            folder: Restrict to this folder and descendants; empty selects root notes.
+            filters: AND equality over indexed_frontmatter_fields from stats;
+                list fields match a member. Use search for computed OKF filters.
+            fuzzy: Try ASCII alphanumeric tokens of length 3-64 within one edit;
+                transposition costs two edits. Non-ASCII queries use direct matching.
+                The approximate pass evaluates at most 10,000 candidates in 200 ms.
+            limit: Maximum returned metadata items, 1-1000.
+            wait_for_pending_writes: Wait for recent index writes before answering.
+                On timeout, answer from the current index with index_stale true.
+
+        Returns:
+            Items, coverage (complete, limited or not_run), reasons, truncated and
+            index_stale, also present in response metadata.
+        """
+        request = _request(
+            lambda: PathQuery(
+                query=query,
+                folder=folder,
+                filters=filters or {},
+                fuzzy=fuzzy,
+                limit=limit,
+            )
+        )
+        return cast(
+            "_Paths",
+            await _run(
+                vault,
+                lambda: vault.reader.search_paths(request),
+                wait_for_pending_writes,
+                "search_paths",
             ),
         )
