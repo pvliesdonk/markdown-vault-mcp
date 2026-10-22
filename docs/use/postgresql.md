@@ -7,7 +7,7 @@ kind: how-to
 
 With `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres`, a vault keeps its embeddings in a PostgreSQL schema and the [pgvector](https://github.com/pgvector/pgvector) extension scores them. [Embeddings](embeddings.md#keeping-the-embeddings-in-postgresql) says what the store is and when to choose it. This page is for the operator who runs it, from the first `CREATE SCHEMA` to the log line that says something went wrong.
 
-The store needs the pgvector extension, 0.7.0 or later, and the `postgres` extra (`pip install "markdown-vault-mcp[postgres]"`; the Docker image already has it).
+The store supports PostgreSQL 15 to 18 with pgvector 0.7.0 or later (17 with pgvector 0.7.4 or later and 18 with pgvector 0.8.7 or later, the lowest versions built for them), the range a CI workflow tests on every change to the store. It needs the `postgres` extra (`pip install "markdown-vault-mcp[postgres]"`; the Docker image already has it).
 
 ## Provision the database
 
