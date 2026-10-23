@@ -149,6 +149,7 @@ class TestLayout:
         )
         store.checkpoint()
         assert sorted(p.name for p in base.parent.iterdir()) == [
+            "idx-embeddings.lock",  # the writer's lock (#1505)
             "idx-embeddings.v2.json",
             "idx-embeddings.v2.m1.npy",
         ]
@@ -165,6 +166,7 @@ class TestLayout:
         store.replace_document(doc("b.md", [[0, 1, 0]]), expected_token=ANY_TOKEN)
         store.checkpoint()
         assert sorted(p.name for p in base.parent.iterdir()) == [
+            "idx-embeddings.lock",
             "idx-embeddings.v2.json",
             "idx-embeddings.v2.m2.npy",
         ]
@@ -173,7 +175,8 @@ class TestLayout:
         base = _base(tmp_path)
         store = NumpySidecarBackend().open(base, IDENT)
         store.checkpoint()
-        assert not base.parent.exists()
+        # Only the writer's lock, created at the open (#1505).
+        assert sorted(p.name for p in base.parent.iterdir()) == ["idx-embeddings.lock"]
 
     def test_a_read_only_store_never_writes(self, tmp_path: Path) -> None:
         base = _base(tmp_path)

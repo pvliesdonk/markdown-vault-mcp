@@ -62,7 +62,11 @@ from markdown_vault_mcp.stores._resident import (
     with_document,
     without_document,
 )
-from markdown_vault_mcp.stores._writer_lock import WriterLock, hold_writer_lock
+from markdown_vault_mcp.stores._writer_lock import (
+    WriterLock,
+    hold_writer_lock,
+    release_from_finalizer,
+)
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreResources
 from markdown_vault_mcp.utils.fs import file_bytes, is_directory, path_exists
@@ -210,7 +214,7 @@ class NumpySidecarStore(ResidentStore):
         # when the store is collected unclosed: it can write nothing then.
         self._writer_lock = writer_lock
         if writer_lock is not None:
-            weakref.finalize(self, writer_lock.release)
+            weakref.finalize(self, release_from_finalizer, writer_lock)
         # What the opened files recorded; _OWN_IDENTITY once this store wrote
         # them, or when nothing was read.
         self._recorded = recorded_identity
@@ -806,6 +810,25 @@ class NumpySidecarBackend:
                 lock.release()
             raise
 
+    def hold_writer(self, location: Path | str) -> WriterLock:
+        """Take a writer's share of *location*'s lock without opening a store.
+
+        For a caller that closes one store and opens another on the same
+        location, so the lock is not given up in between (#1505).
+
+        Args:
+            location: The store's base path; ``":memory:"`` locks nothing.
+
+        Returns:
+            The share, to release once the new store is open.
+
+        Raises:
+            StoreBusyError: If another process holds the lock.
+        """
+        if str(location) == ":memory:":
+            return WriterLock(None)
+        return hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity
     ) -> NumpySidecarStore:
@@ -834,19 +857,19 @@ class NumpySidecarBackend:
         lock = hold_writer_lock(base, backend=_BACKEND_NAME)
         try:
             seq = _highest_seq(base) if is_directory(base.parent) else 0
+            # Not dirty: a rebuild that writes nothing (every provider call
+            # failed) must not commit an empty store over the previous one.
+            return NumpySidecarStore(
+                fresh_snapshot(identity),
+                base=base,
+                read_only=False,
+                seq=seq,
+                matrix_path=None,
+                writer_lock=lock,
+            )
         except BaseException:
             lock.release()
             raise
-        # Not dirty: a rebuild that writes nothing (every provider call
-        # failed) must not commit an empty store over the previous one.
-        return NumpySidecarStore(
-            fresh_snapshot(identity),
-            base=base,
-            read_only=False,
-            seq=seq,
-            matrix_path=None,
-            writer_lock=lock,
-        )
 
 
 register_backend("vector", _BACKEND_NAME, NumpySidecarBackend)

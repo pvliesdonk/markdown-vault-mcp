@@ -80,7 +80,11 @@ from markdown_vault_mcp.stores._streamed import (
     rows_per_batch,
     scan,
 )
-from markdown_vault_mcp.stores._writer_lock import WriterLock, hold_writer_lock
+from markdown_vault_mcp.stores._writer_lock import (
+    WriterLock,
+    hold_writer_lock,
+    release_from_finalizer,
+)
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import (
     ANY_TOKEN,
@@ -731,7 +735,7 @@ class SqliteVectorStore(ResidentStore):
         # when the store is collected unclosed: it can write nothing then.
         self._writer_lock = writer_lock
         if writer_lock is not None:
-            weakref.finalize(self, writer_lock.release)
+            weakref.finalize(self, release_from_finalizer, writer_lock)
         self._path = path
         self._registry = registry
         self._reset_pending = reset_pending
@@ -1322,6 +1326,25 @@ class SqliteVectorBackend:
                 lock.release()
             raise
 
+    def hold_writer(self, location: Path | str) -> WriterLock:
+        """Take a writer's share of *location*'s lock without opening a store.
+
+        For a caller that closes one store and opens another on the same
+        location, so the lock is not given up in between (#1505).
+
+        Args:
+            location: The store's base path; ``":memory:"`` locks nothing.
+
+        Returns:
+            The share, to release once the new store is open.
+
+        Raises:
+            StoreBusyError: If another process holds the lock.
+        """
+        if str(location) == ":memory:":
+            return WriterLock(None)
+        return hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity
     ) -> SqliteVectorStore:
@@ -1341,15 +1364,20 @@ class SqliteVectorBackend:
         _require_numpy()
         if location is None or str(location) == _MEMORY:
             return _open_memory(identity)
-        return SqliteVectorStore(
-            fresh_snapshot(identity),
-            path=_db_file(location),
-            read_only=False,
-            registry=None,
-            reset_pending=True,
-            mode=self._mode,
-            writer_lock=hold_writer_lock(Path(location), backend=_BACKEND_NAME),
-        )
+        lock = hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+        try:
+            return SqliteVectorStore(
+                fresh_snapshot(identity),
+                path=_db_file(location),
+                read_only=False,
+                registry=None,
+                reset_pending=True,
+                mode=self._mode,
+                writer_lock=lock,
+            )
+        except BaseException:
+            lock.release()
+            raise
 
 
 register_backend("vector", _BACKEND_NAME, SqliteVectorBackend)

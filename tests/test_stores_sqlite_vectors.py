@@ -464,13 +464,16 @@ class TestRestart:
 
 
 class TestOpenOutcomes:
-    def test_no_file_opens_an_empty_store_and_creates_nothing(
+    def test_no_file_opens_an_empty_store_and_creates_only_its_lock(
         self, tmp_path: Path
     ) -> None:
         store = SqliteVectorBackend().open(_base(tmp_path), IDENT)
         assert store.count == 0
         store.close()
-        assert not _base(tmp_path).parent.exists()
+        # No database before the first write; the writer's lock (#1505).
+        assert [p.name for p in _base(tmp_path).parent.iterdir()] == [
+            "idx-embeddings.lock"
+        ]
 
     def test_a_parent_that_is_a_file_is_unavailable(self, tmp_path: Path) -> None:
         (tmp_path / "vectors").write_text("not a directory")

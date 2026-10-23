@@ -4032,13 +4032,19 @@ releases it, and a writer open in another process is refused with
 `StoreBusyError`, a `StoreUnavailableError` (PostgreSQL's writer lease
 raises the same class), so it is reported as unavailable and never rebuilds.
 The operating system drops the lock when the holder dies, so a killed server
-leaves none; the file is never deleted. Inside one process the writers on a
-base share the lock, counted, so a slot that opens a fresh store before
-closing the old one, or two vaults in one test, never block themselves; a
-store collected unclosed gives its share back. Where no lock can be taken
-(no `fcntl`, as on Windows, or a lock file that cannot be created) the writer
-proceeds as before, logged at DEBUG `embeddings_writer_lock_skipped`; a lock
-over a network or VM file share may not hold. Another
+leaves none; the file is never deleted, and the pid it names is cleared on
+the last release. The store's directory is created at the writer's open, so
+the lock covers a store from its first open. Inside one process the writers
+on a base share the lock, counted, so two vaults in one test never block
+themselves, and `VectorStoreSlot.fresh` holds a share (`hold_writer`) across
+closing the old store and opening the fresh one, so no other process can
+take the lock in between; a store collected unclosed gives its share back
+through a finalizer that never waits for the lock's guard, and a forked
+child holds nothing. Where no lock can be taken (no `fcntl`, as on Windows,
+or a lock file that cannot be created) the writer proceeds as before, logged
+at DEBUG `embeddings_writer_lock_skipped`; a lock file this user cannot
+write is locked read-only; a lock over a network or VM file share may not
+hold. Another
 process opens it with `owns_files=False`, read-only, taking no lock. A store's files are
 its own: the store reads only `{base}.v2.json`. A sidecar the released
 `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge

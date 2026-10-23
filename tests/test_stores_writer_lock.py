@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -21,9 +22,9 @@ from tests.fixtures.vector_store_contract import IDENT, doc
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
 BACKENDS = {"numpy": NumpySidecarBackend, "sqlite": SqliteVectorBackend}
+_ROOT = str(Path(__file__).resolve().parents[1])
 
 _HOLDER = textwrap.dedent(
     """
@@ -41,6 +42,37 @@ _HOLDER = textwrap.dedent(
 )
 
 
+_PROBE = textwrap.dedent(
+    """
+    import sys
+    from pathlib import Path
+    from markdown_vault_mcp.exceptions import StoreBusyError
+    from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+    from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
+    from tests.fixtures.vector_store_contract import IDENT
+    backend = {"numpy": NumpySidecarBackend, "sqlite": SqliteVectorBackend}[sys.argv[1]]
+    try:
+        backend().open(Path(sys.argv[2]), IDENT).close()
+    except StoreBusyError:
+        print("busy")
+    else:
+        print("wrote")
+    """
+)
+
+
+def _another_process_writes(name: str, base: Path) -> bool:
+    """Whether another process may open a writer on *base* now."""
+    out = subprocess.run(
+        [sys.executable, "-c", _PROBE, name, str(base)],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+        check=True,
+    ).stdout.strip()
+    return out == "wrote"
+
+
 class Holder:
     """Another process holding a writer open on a base path."""
 
@@ -50,6 +82,7 @@ class Holder:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
+            cwd=_ROOT,  # so ``tests.fixtures`` is this repository's
         )
         assert self.process.stdout is not None
         assert self.process.stdout.readline().strip() == "held"
@@ -119,9 +152,12 @@ def test_one_process_never_blocks_itself(name: str, base: Path) -> None:
     second = backend.open(base, IDENT)
     fresh = backend.open_fresh(base, IDENT)
     fresh.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
-    for store in (first, second, fresh):
-        store.close()
-    Holder(name, base).stop()  # the lock is free again once all three closed
+    first.close()
+    assert not _another_process_writes(name, base)  # two writers still hold it
+    second.close()
+    assert not _another_process_writes(name, base)
+    fresh.close()
+    assert _another_process_writes(name, base)  # free once the last one closed
 
 
 @pytest.mark.usefixtures("holder")
@@ -233,7 +269,7 @@ def test_a_holder_that_wrote_no_pid_is_named_generically(
         raise BlockingIOError
 
     monkeypatch.setattr(_writer_lock.fcntl, "flock", held)
-    with pytest.raises(StoreBusyError, match=r"written by another process\.$"):
+    with pytest.raises(StoreBusyError, match=r"written by another process; stop"):
         _backend(name).open(base, IDENT)
 
 
@@ -250,3 +286,157 @@ def test_a_fresh_open_that_fails_releases_the_lock(
     with pytest.raises(PermissionError):
         NumpySidecarBackend().open_fresh(base, IDENT)
     assert os.path.realpath(base.with_suffix(".lock")) not in _writer_lock._HELD
+
+
+def test_a_writer_opened_before_its_directory_exists_is_locked(
+    name: str, tmp_path: Path
+) -> None:
+    base = tmp_path / "not" / "yet" / "emb"
+    store = _backend(name).open(base, IDENT)
+    try:
+        assert base.with_suffix(".lock").is_file()
+        assert not _another_process_writes(name, base)
+    finally:
+        store.close()
+
+
+def test_a_slot_keeps_the_lock_while_it_swaps_in_a_fresh_store(
+    name: str, base: Path
+) -> None:
+    from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
+    from tests.conftest import MockEmbeddingProvider
+
+    key = os.path.realpath(base.with_suffix(".lock"))
+    seen: list[bool] = []
+    real = BACKENDS[name]
+
+    class Watching(real):  # type: ignore[valid-type,misc]
+        def open_fresh(self, location: Any, identity: Any) -> Any:
+            seen.append(key in _writer_lock._HELD)  # no gap another process could take
+            return super().open_fresh(location, identity)
+
+    slot = VectorStoreSlot(
+        backend=Watching(),
+        location=base,
+        provider=MockEmbeddingProvider(dim=3),
+        text_format="v1",
+    )
+    try:
+        slot.get(rebuild=None)
+        slot.fresh()
+    finally:
+        slot.close()
+    assert seen == [True]
+
+
+def test_a_stale_pid_is_not_named(name: str, base: Path) -> None:
+    store = _backend(name).open(base, IDENT)
+    store.close()
+    assert base.with_suffix(".lock").read_text() == ""  # cleared on the last release
+
+
+def test_its_own_pid_is_not_named(
+    name: str, base: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base.parent.mkdir(parents=True, exist_ok=True)
+    base.with_suffix(".lock").write_text(f"{os.getpid()}\n")
+
+    def held(_fd: int, _op: int) -> None:
+        raise BlockingIOError
+
+    monkeypatch.setattr(_writer_lock.fcntl, "flock", held)
+    with pytest.raises(StoreBusyError) as failure:
+        _backend(name).open(base, IDENT)
+    assert "(pid " not in str(failure.value)
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores permissions"
+)
+def test_a_lock_file_this_user_cannot_write_still_locks(name: str, base: Path) -> None:
+    base.parent.mkdir(parents=True, exist_ok=True)
+    lock = base.with_suffix(".lock")
+    lock.write_text("")
+    lock.chmod(0o444)  # left by another user, say root through docker exec
+    store = _backend(name).open(base, IDENT)
+    try:
+        assert not _another_process_writes(name, base)
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("holder")
+def test_the_message_names_the_remedy(name: str, base: Path) -> None:
+    with pytest.raises(StoreBusyError, match="stop that process first"):
+        _backend(name).open(base, IDENT)
+
+
+def test_a_close_that_raises_still_releases(
+    base: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = NumpySidecarBackend().open(base, IDENT)
+    store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+
+    def full(*_a: Any, **_k: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "checkpoint", full)
+    with pytest.raises(OSError, match="disk full"):
+        store.close()
+    assert _another_process_writes("numpy", base)
+
+
+def test_a_store_that_fails_to_construct_gives_its_share_back(
+    name: str, base: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.stores import numpy_sidecar, sqlite_vectors
+
+    module = numpy_sidecar if name == "numpy" else sqlite_vectors
+    cls = module.NumpySidecarStore if name == "numpy" else module.SqliteVectorStore
+
+    def broken(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("constructor failed")
+
+    monkeypatch.setattr(module, cls.__name__, broken)
+    with pytest.raises(RuntimeError, match="constructor failed"):
+        _backend(name).open_fresh(base, IDENT)
+    assert os.path.realpath(base.with_suffix(".lock")) not in _writer_lock._HELD
+
+
+def test_a_forked_child_does_not_think_it_holds_the_lock(name: str, base: Path) -> None:
+    store = _backend(name).open(base, IDENT)
+    try:
+        read, write = os.pipe()
+        pid = os.fork()
+        if pid == 0:  # pragma: no cover - the child reports through the pipe
+            os.close(read)
+            os.write(write, str(len(_writer_lock._HELD)).encode())
+            os._exit(0)
+        os.close(write)
+        reported = os.read(read, 16).decode()
+        os.close(read)
+        os.waitpid(pid, 0)
+    finally:
+        store.close()
+    assert reported == "0"
+
+
+def test_a_finalizer_inside_a_lock_operation_does_not_deadlock(
+    name: str, base: Path
+) -> None:
+    store = _backend(name).open(base, IDENT)
+    share = store._writer_lock  # type: ignore[attr-defined]
+    with _writer_lock._GUARD:  # as if cyclic GC ran while this thread held it
+        _writer_lock.release_from_finalizer(share)  # returns: no deadlock
+    _backend(name).open(base.parent / "other", IDENT).close()
+    # The next lock operation returned the share the finalizer left.
+    assert os.path.realpath(base.with_suffix(".lock")) not in _writer_lock._HELD
+    store.close()
+
+
+def test_holding_an_in_memory_store_locks_nothing(
+    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _backend(name).hold_writer(":memory:").release()
+    assert list(tmp_path.iterdir()) == []
