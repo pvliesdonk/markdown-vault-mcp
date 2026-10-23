@@ -93,6 +93,7 @@ FORMAT_VERSION = 2
 _BACKEND_NAME = "numpy"
 _COMMIT_SUFFIX = ".v2.json"
 _LEGACY_JSON_SUFFIX = ".json"
+_MEMORY = ":memory:"
 
 
 def commit_path(base: Path) -> Path:
@@ -787,7 +788,7 @@ class NumpySidecarBackend:
             )
         if not isinstance(identity, EmbeddingIdentity):
             raise ValueError("A vector store opens against an EmbeddingIdentity.")
-        if location is None or str(location) == ":memory:":
+        if location is None or str(location) == _MEMORY:
             return NumpySidecarStore(
                 fresh_snapshot(identity),
                 base=None,
@@ -825,7 +826,7 @@ class NumpySidecarBackend:
         Raises:
             StoreBusyError: If another process holds the lock.
         """
-        if str(location) == ":memory:":
+        if str(location) == _MEMORY:
             return WriterLock(None)
         return hold_writer_lock(Path(location), backend=_BACKEND_NAME)
 
@@ -845,7 +846,7 @@ class NumpySidecarBackend:
                 "NumpySidecarBackend requires 'numpy'. "
                 "Install it with: pip install 'markdown-vault-mcp[embeddings]'"
             )
-        if location is None or str(location) == ":memory:":
+        if location is None or str(location) == _MEMORY:
             return NumpySidecarStore(
                 fresh_snapshot(identity),
                 base=None,

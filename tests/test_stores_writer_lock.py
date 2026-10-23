@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from markdown_vault_mcp.exceptions import StoreBusyError, StoreUnavailableError
+from markdown_vault_mcp.exceptions import (
+    StoreBusyError,
+    StoreCorruptError,
+    StoreUnavailableError,
+)
 from markdown_vault_mcp.stores import _writer_lock
 from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
@@ -127,16 +131,18 @@ def _backend(name: str) -> Any:
 
 
 def test_a_second_process_may_not_write(name: str, base: Path, holder: Holder) -> None:
+    backend = _backend(name)
     with pytest.raises(StoreBusyError) as failure:
-        _backend(name).open(base, IDENT)
+        backend.open(base, IDENT)
     assert isinstance(failure.value, StoreUnavailableError)
     assert f"pid {holder.pid}" in str(failure.value)
 
 
 @pytest.mark.usefixtures("holder")
 def test_a_second_process_may_not_open_fresh(name: str, base: Path) -> None:
+    backend = _backend(name)
     with pytest.raises(StoreBusyError):
-        _backend(name).open_fresh(base, IDENT)
+        backend.open_fresh(base, IDENT)
 
 
 def test_a_killed_writer_leaves_no_lock(name: str, base: Path) -> None:
@@ -170,8 +176,9 @@ def test_a_failed_open_releases_the_lock(name: str, base: Path) -> None:
     base.with_suffix(".v2.json" if name == "numpy" else ".sqlite3").write_text(
         "{not json"
     )
-    with pytest.raises(Exception):  # noqa: B017 - each store's own corrupt error
-        _backend(name).open(base, IDENT)
+    backend = _backend(name)
+    with pytest.raises(StoreCorruptError):
+        backend.open(base, IDENT)
     assert os.path.realpath(base.with_suffix(".lock")) not in _writer_lock._HELD
     fd = os.open(base.with_suffix(".lock"), os.O_RDWR)
     try:  # a fresh open file description takes it, so it was released
@@ -269,8 +276,9 @@ def test_a_holder_that_wrote_no_pid_is_named_generically(
         raise BlockingIOError
 
     monkeypatch.setattr(_writer_lock.fcntl, "flock", held)
+    backend = _backend(name)
     with pytest.raises(StoreBusyError, match=r"written by another process; stop"):
-        _backend(name).open(base, IDENT)
+        backend.open(base, IDENT)
 
 
 def test_a_fresh_open_that_fails_releases_the_lock(
@@ -283,8 +291,9 @@ def test_a_fresh_open_that_fails_releases_the_lock(
 
     monkeypatch.setattr(numpy_sidecar, "_highest_seq", refused)
     base.parent.mkdir(parents=True, exist_ok=True)
+    backend = NumpySidecarBackend()
     with pytest.raises(PermissionError):
-        NumpySidecarBackend().open_fresh(base, IDENT)
+        backend.open_fresh(base, IDENT)
     assert os.path.realpath(base.with_suffix(".lock")) not in _writer_lock._HELD
 
 
@@ -345,8 +354,9 @@ def test_its_own_pid_is_not_named(
         raise BlockingIOError
 
     monkeypatch.setattr(_writer_lock.fcntl, "flock", held)
+    backend = _backend(name)
     with pytest.raises(StoreBusyError) as failure:
-        _backend(name).open(base, IDENT)
+        backend.open(base, IDENT)
     assert "(pid " not in str(failure.value)
 
 
@@ -367,8 +377,9 @@ def test_a_lock_file_this_user_cannot_write_still_locks(name: str, base: Path) -
 
 @pytest.mark.usefixtures("holder")
 def test_the_message_names_the_remedy(name: str, base: Path) -> None:
+    backend = _backend(name)
     with pytest.raises(StoreBusyError, match="stop that process first"):
-        _backend(name).open(base, IDENT)
+        backend.open(base, IDENT)
 
 
 def test_a_close_that_raises_still_releases(
@@ -398,8 +409,9 @@ def test_a_store_that_fails_to_construct_gives_its_share_back(
         raise RuntimeError("constructor failed")
 
     monkeypatch.setattr(module, cls.__name__, broken)
+    backend = _backend(name)
     with pytest.raises(RuntimeError, match="constructor failed"):
-        _backend(name).open_fresh(base, IDENT)
+        backend.open_fresh(base, IDENT)
     assert os.path.realpath(base.with_suffix(".lock")) not in _writer_lock._HELD
 
 
