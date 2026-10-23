@@ -382,13 +382,18 @@ def _postgres_source(settings: VaultSettings, source: ImportSource) -> _Side:
             "no PostgreSQL schema to import from: name it with --from-schema.",
         )
     try:
-        source_settings: VaultSettings = dataclasses.replace(
-            settings,
+        from markdown_vault_mcp.config_sections import VaultSettings
+
+        fields = {
+            f.name: getattr(settings, f.name) for f in dataclasses.fields(settings)
+        }
+        fields.update(
             embedding_store="postgres",
             embedding_search="streamed",
             embedding_postgres_dsn=dsn,
             embedding_postgres_schema=schema,
         )
+        source_settings = VaultSettings(**fields)
         backend = _postgres_backend(source_settings)
     except ConfigurationError as exc:  # its message never quotes the DSN
         raise _refuse("not_configured", f"{exc}") from None
