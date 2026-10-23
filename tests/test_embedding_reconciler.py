@@ -878,8 +878,9 @@ class TestRebuildWithDonor:
         from markdown_vault_mcp.exceptions import StoreUnavailableError
 
         _fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        donor = _FakeDonor({}, fail=True)
         with pytest.raises(StoreUnavailableError):
-            rec.rebuild(store, store.identity, donor=_FakeDonor({}, fail=True))
+            rec.rebuild(store, store.identity, donor=donor)
         assert (store.generation, store.count) == (0, 0)
 
     def test_the_donor_summary_is_logged_once(self, tmp_path, caplog):
