@@ -274,7 +274,8 @@ class EmbeddingsManager:
         identity = self._slot.identity
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError("No reconciler without an embedding provider.")
-        embedded, total = self._reconciler.rebuild(store, identity)
+        outcome = self._reconciler.rebuild(store, identity)
+        embedded, total = outcome.embedded, outcome.attempted
 
         if embedded > 0:
             logger.info("build_embeddings_saved chunks=%d", embedded)
