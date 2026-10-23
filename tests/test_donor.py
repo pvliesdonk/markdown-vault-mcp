@@ -151,14 +151,14 @@ def test_another_model_is_refused_as_identity_differs(
 
 
 def test_the_donor_never_writes(source: Source) -> None:
-    before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.files}
+    expected = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.files}
     names = {p.name for p in source.files}
     donor = Donor.open(source.backend, source.location, _IDENT, builder=_BUILDER)
     assert isinstance(donor, Donor)
     with donor:
         donor.vectors_for("a.md")
     after = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.files}
-    assert after == before
+    assert after == expected
     if source.files:
         parent = source.files[0].parent
         stem = source.files[0].name.split(".")[0]
@@ -425,13 +425,13 @@ class TestReviewFindings:
         _publish(backend, postgres_schema.name)
         reader = backend.open(postgres_schema.name, _IDENT, owns_files=False)
         try:
-            before = (reader.generation, reader.tokens(), reader.count)
+            expected = (reader.generation, reader.tokens(), reader.count)
             outcome = Donor.open(
                 backend, postgres_schema.name, _IDENT, builder=_BUILDER
             )
             assert isinstance(outcome, Donor)
             with outcome:
                 outcome.vectors_for("a.md")
-            assert (reader.generation, reader.tokens(), reader.count) == before
+            assert (reader.generation, reader.tokens(), reader.count) == expected
         finally:
             reader.close()

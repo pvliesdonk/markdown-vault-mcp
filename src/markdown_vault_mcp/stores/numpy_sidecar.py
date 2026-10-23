@@ -723,7 +723,13 @@ def _recorded_identity(
     """
     if stored.meta is None or stored.dimension <= 0:
         return None
-    return replace(identity, dimension=stored.dimension)
+    return EmbeddingIdentity(
+        identity.provider,
+        identity.model,
+        identity.variant,
+        identity.text_format,
+        stored.dimension,
+    )
 
 
 def _report_unused_sidecar(base: Path) -> None:
