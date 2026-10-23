@@ -432,6 +432,7 @@ class TestReviewFindings:
             assert isinstance(outcome, Donor)
             with outcome:
                 outcome.vectors_for("a.md")
-            assert (reader.generation, reader.tokens(), reader.count) == expected
+            actual = (reader.generation, reader.tokens(), reader.count)
+            assert actual == expected
         finally:
             reader.close()
