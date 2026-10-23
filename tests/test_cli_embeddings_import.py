@@ -40,11 +40,11 @@ class _Counting(MockEmbeddingProvider):
 
 
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A vault of the fixture notes, an index path, a counting mock provider."""
     import markdown_vault_mcp.providers as providers_mod
 
-    _Counting.texts = []
+    monkeypatch.setattr(_Counting, "texts", [])
     monkeypatch.setattr(providers_mod, "get_embedding_provider", lambda _c: _Counting())
     root = tmp_path / "vault"
     for name, text in NOTES.items():
@@ -54,7 +54,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
     monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
-    yield tmp_path
+    return tmp_path
 
 
 def _store(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
@@ -78,7 +78,7 @@ def _import(*args: str) -> Result:
 def _built_with(monkeypatch: pytest.MonkeyPatch, store: str) -> None:
     _store(monkeypatch, store)
     assert runner.invoke(app, ["index"]).exit_code == 0
-    _Counting.texts = []
+    monkeypatch.setattr(_Counting, "texts", [])
 
 
 def _chunk_count(monkeypatch: pytest.MonkeyPatch, store: str) -> int:
@@ -520,7 +520,7 @@ def test_a_newly_excluded_note_does_not_open_the_destination_early(
     assert runner.invoke(app, ["index"]).exit_code == 0  # sqlite holds rows too
     (env / "vault" / "alpha.md").write_text(NOTES["alpha.md"] + "\nEdited.\n")
     monkeypatch.setenv(f"{_ENV_PREFIX}_EXCLUDE", "sub/*")
-    _Counting.texts = []
+    monkeypatch.setattr(_Counting, "texts", [])
     empty = env / "empty" / "emb"
     sqlite_file = env / "index-db-embeddings.sqlite3"
     before = hashlib.sha256(sqlite_file.read_bytes()).hexdigest()
@@ -607,7 +607,7 @@ def test_the_destinations_own_rows_are_reused(
     (env / "vault" / "alpha.md").write_text(NOTES["alpha.md"] + "\nEdited.\n")
     _store(monkeypatch, "sqlite")
     assert runner.invoke(app, ["reindex"]).exit_code == 0  # embeds the edit
-    _Counting.texts = []
+    monkeypatch.setattr(_Counting, "texts", [])
     result = _import("--from", "numpy")
     assert result.exit_code == 0, result.output
     assert "0 embedded" in result.stdout  # the edit is the destination's own row

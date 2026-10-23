@@ -382,15 +382,14 @@ def _postgres_source(settings: VaultSettings, source: ImportSource) -> _Side:
             "no PostgreSQL schema to import from: name it with --from-schema.",
         )
     try:
-        backend = _postgres_backend(
-            dataclasses.replace(
-                settings,
-                embedding_store="postgres",
-                embedding_search="streamed",
-                embedding_postgres_dsn=dsn,
-                embedding_postgres_schema=schema,
-            )
+        source_settings: VaultSettings = dataclasses.replace(
+            settings,
+            embedding_store="postgres",
+            embedding_search="streamed",
+            embedding_postgres_dsn=dsn,
+            embedding_postgres_schema=schema,
         )
+        backend = _postgres_backend(source_settings)
     except ConfigurationError as exc:  # its message never quotes the DSN
         raise _refuse("not_configured", f"{exc}") from None
     return _Side(

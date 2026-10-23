@@ -15,7 +15,6 @@ helpers that stayed behind (`_is_path_excluded`,
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import json
 import logging
 import sqlite3
@@ -48,6 +47,8 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import EmbeddingIdentity, ParsedNote
 
 logger = logging.getLogger(__name__)
+
+_NO_RECONCILER = "No reconciler without an embedding provider."
 
 # Maximum chunks per embedding provider call.  Keeps memory bounded during
 # build_embeddings() — FastEmbed/ONNX can allocate pathologically large buffers
@@ -341,7 +342,7 @@ class EmbeddingsManager:
 
         identity = self._slot.identity
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
-            raise RuntimeError("No reconciler without an embedding provider.")
+            raise RuntimeError(_NO_RECONCILER)
         upgrade = None if force or donor is not None else self._upgrade_donor(identity)
         try:
             outcome = self._full_build(
@@ -371,12 +372,18 @@ class EmbeddingsManager:
                 because a provider batch failed (#1505).
         """
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
-            raise RuntimeError("No reconciler without an embedding provider.")
+            raise RuntimeError(_NO_RECONCILER)
         outcome = self._reconciler.rebuild(
             store, identity, donor=donor, reuse_own=reuse_own
         )
         published = self._finish_cold_build(store, identity, outcome)
-        return dataclasses.replace(outcome, published=published)
+        return RebuildOutcome(
+            embedded=outcome.embedded,
+            reused=outcome.reused,
+            attempted=outcome.attempted,
+            published=published,
+            failed_batches=outcome.failed_batches,
+        )
 
     def _finish_cold_build(
         self,
@@ -485,7 +492,7 @@ class EmbeddingsManager:
         """
         self._require_vectors()
         if self._slot is None or self._reconciler is None:  # pragma: no cover
-            raise RuntimeError("No reconciler without an embedding provider.")
+            raise RuntimeError(_NO_RECONCILER)
         identity = self._slot.identity
         try:
             store: EmbeddingStore | None = self._slot.get(rebuild=None)

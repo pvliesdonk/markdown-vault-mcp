@@ -649,19 +649,11 @@ class EmbeddingReconciler:
         for doc in docs:
             mine = stored_inputs(self._builder, own.rows_for(doc.path)) if own else {}
             given = donor.vectors_for(doc.path) if donor is not None else {}
-            wanted: set[str] = set()
-            for index, (text, meta) in enumerate(
-                zip(doc.texts, doc.metadata, strict=True)
-            ):
-                vector = _sized(mine.get(text), dimension)
-                if vector is None:
-                    vector = _sized(given.get(text), dimension)
-                    donated += vector is not None
-                if vector is not None:
-                    found.setdefault(doc.path, {})[index] = vector
-                elif text not in wanted:
-                    wanted.add(text)
-                    misses.append((doc.path, doc.token, text, meta))
+            hits, wanted, from_donor = _split_document(doc, mine, given, dimension)
+            if hits:
+                found[doc.path] = hits
+            misses.extend(wanted)
+            donated += from_donor
         return found, misses, donated
 
     def _embed_batches(
@@ -743,6 +735,37 @@ class EmbeddingReconciler:
         """Record that another writer changed *path* underneath this pass."""
         state.result.conflicts.add(path)
         logger.info("embedding_reconcile_conflict site=%s path=%s", state.site, path)
+
+
+def _split_document(
+    doc: _Document,
+    mine: dict[str, Any],
+    given: dict[str, Any],
+    dimension: int,
+) -> tuple[
+    dict[int, array[float]], list[tuple[str, RevisionToken, str, dict[str, Any]]], int
+]:
+    """Sort one document's chunks: own rows first, then the donor's, else a miss.
+
+    Returns:
+        Chunk index to its found vector; the inputs to embed, each once; and
+        how many found vectors came from the donor.
+    """
+    found: dict[int, array[float]] = {}
+    misses: list[tuple[str, RevisionToken, str, dict[str, Any]]] = []
+    wanted: set[str] = set()
+    donated = 0
+    for index, (text, meta) in enumerate(zip(doc.texts, doc.metadata, strict=True)):
+        vector = _sized(mine.get(text), dimension)
+        if vector is None:
+            vector = _sized(given.get(text), dimension)
+            donated += vector is not None
+        if vector is not None:
+            found[index] = vector
+        elif text not in wanted:
+            wanted.add(text)
+            misses.append((doc.path, doc.token, text, meta))
+    return found, misses, donated
 
 
 def _float32_rows(store: EmbeddingStore, path: str) -> list[VectorRow]:
