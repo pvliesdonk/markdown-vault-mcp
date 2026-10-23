@@ -1012,3 +1012,63 @@ class TestV2LayoutEdges:
             for r in caplog.records
             if r.msg.startswith("embeddings_legacy_sidecar_unused ")
         ]
+
+
+class TestRecordedIdentity:
+    """What the files recorded, which a donor checks (#1505)."""
+
+    def test_a_v2_store_records_its_identity(self, tmp_path: Path) -> None:
+        base = _base(tmp_path)
+        store = NumpySidecarBackend().open(base, IDENT)
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        store.close()
+        again = NumpySidecarBackend().open(base, IDENT, owns_files=False)
+        assert again.recorded_identity == again.identity
+
+    def test_a_released_sidecar_without_a_format_records_v1(
+        self, tmp_path: Path
+    ) -> None:
+        provider = MockEmbeddingProvider(dim=3)
+        base = tmp_path / "legacy-embeddings"
+        write_legacy_sidecar(
+            base,
+            [[1.0, 0.0, 0.0]],
+            [{"path": "a.md", "folder": ""}],
+            provider=provider,
+            text_format=None,
+        )
+        store = NumpySidecarBackend().open(
+            base, EmbeddingIdentity.of(provider, "v1"), owns_files=False
+        )
+        assert store.recorded_identity == EmbeddingIdentity(
+            provider.provider_name,
+            provider.model_name,
+            provider.provider_variant,
+            "v1",
+            3,
+        )
+
+    def test_a_bare_list_sidecar_records_none(self, tmp_path: Path) -> None:
+        base = tmp_path / "legacy-embeddings"
+        base.with_suffix(".json").write_text(json.dumps([{"path": "a.md"}]))
+        np.save(base.with_suffix(".npy"), np.asarray([[1, 0, 0]], dtype=np.float32))
+        store = NumpySidecarBackend().open(base, IDENT, owns_files=False)
+        assert store.recorded_identity is None
+
+    def test_a_sidecar_without_a_dimension_records_none(self, tmp_path: Path) -> None:
+        provider = MockEmbeddingProvider(dim=3)
+        base = tmp_path / "legacy-embeddings"
+        write_legacy_sidecar(
+            base, [[1.0, 0.0, 0.0]], [{"path": "a.md", "folder": ""}], provider=provider
+        )
+        payload = json.loads(base.with_suffix(".json").read_text())
+        payload["index_metadata"]["dimension"] = 0
+        base.with_suffix(".json").write_text(json.dumps(payload))
+        store = NumpySidecarBackend().open(
+            base, EmbeddingIdentity.of(provider, "v1"), owns_files=False
+        )
+        assert store.recorded_identity is None
+
+    def test_an_in_memory_store_records_its_identity(self) -> None:
+        store = NumpySidecarBackend().open(None, IDENT)
+        assert store.recorded_identity == IDENT
