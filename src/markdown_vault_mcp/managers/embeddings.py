@@ -28,6 +28,7 @@ from markdown_vault_mcp.exceptions import (
 )
 from markdown_vault_mcp.indexing.embedding_reconciler import (
     EmbeddingReconciler,
+    RebuildOutcome,
     ReconcileResult,
 )
 from markdown_vault_mcp.source_probe import FileSourceProbe
@@ -301,13 +302,29 @@ class EmbeddingsManager:
         finally:
             if upgrade is not None:
                 upgrade.close()
-        embedded, total = outcome.embedded, outcome.attempted
+        return self._finish_cold_build(store, identity, outcome)
 
+    def _finish_cold_build(
+        self,
+        store: EmbeddingStore,
+        identity: EmbeddingIdentity,
+        outcome: RebuildOutcome,
+    ) -> int:
+        """Report a full build's outcome, publishing an authoritative empty one.
+
+        Returns:
+            The number of chunks the provider embedded.
+
+        Raises:
+            EmbeddingsNotPublishedError: If the build kept a populated store
+                because a provider batch failed (#1505).
+        """
+        embedded, total = outcome.embedded, outcome.attempted
         if outcome.published:
             logger.info(
                 "build_embeddings_saved chunks=%d reused=%d", embedded, outcome.reused
             )
-        elif not outcome.published and (embedded or outcome.reused):
+        elif embedded or outcome.reused:
             # The reconciler logged build_embeddings_not_published: the
             # populated store keeps its rows, and nothing was saved.
             raise EmbeddingsNotPublishedError(failed_batches=outcome.failed_batches)
