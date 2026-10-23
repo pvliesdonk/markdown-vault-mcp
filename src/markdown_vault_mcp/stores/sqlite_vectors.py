@@ -54,6 +54,7 @@ from markdown_vault_mcp.stores._identity import (
     identity_mapping,
     served_identity,
 )
+from markdown_vault_mcp.stores._legacy import report_unused_sidecar
 from markdown_vault_mcp.stores._resident import (
     NUMPY_AVAILABLE,
     ResidentStore,
@@ -1207,6 +1208,8 @@ def _open_file(
         "streamed" if mode.streamed else "resident",
         snap.generation,
     )
+    if not read_only:
+        report_unused_sidecar(path.with_suffix(""))
     return SqliteVectorStore(
         snap, path=path, read_only=read_only, registry=registry, mode=mode
     )

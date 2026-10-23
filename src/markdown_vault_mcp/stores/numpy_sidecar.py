@@ -43,6 +43,10 @@ from markdown_vault_mcp.exceptions import (
     StoreUnavailableError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.stores._legacy import (
+    numbered_files,
+    report_unused_sidecar,
+)
 from markdown_vault_mcp.stores._resident import (
     NUMPY_AVAILABLE,
     ResidentStore,
@@ -93,20 +97,6 @@ def commit_path(base: Path) -> Path:
     return base.with_suffix(_COMMIT_SUFFIX)
 
 
-def legacy_paths(base: Path) -> tuple[Path, ...]:
-    """Return the released and edge-build sidecar files beside *base*.
-
-    ``{base}.json`` and ``{base}.npy``, whether or not they exist, and every
-    ``{base}.m{seq}.npy`` that exists; the store never writes, renames or
-    deletes them.
-    """
-    return (
-        base.with_suffix(_LEGACY_JSON_SUFFIX),
-        base.with_suffix(".npy"),
-        *_numbered_matrices(base, prefix=".m").values(),
-    )
-
-
 def committed_json(base: Path) -> Path | None:
     """Return the JSON a reader of *base* opens, or ``None`` if neither exists.
 
@@ -147,19 +137,9 @@ def _commit_file(path: Path, data: bytes) -> None:
     _write_atomic(path, lambda fh: fh.write(data))
 
 
-def _numbered_matrices(base: Path, *, prefix: str = ".v2.m") -> dict[int, Path]:
-    """Return the ``{base}{prefix}{seq}.npy`` matrices beside *base*, by ``seq``.
-
-    The default prefix names this store's own matrices; ``.m`` names an
-    edge build's.
-    """
-    prefix, suffix = base.with_suffix(prefix).name, ".npy"
-    found: dict[int, Path] = {}
-    for path in base.parent.glob(f"{prefix}*{suffix}"):
-        seq = path.name[len(prefix) : -len(suffix)]
-        if seq.isdigit():
-            found[int(seq)] = path
-    return found
+def _numbered_matrices(base: Path) -> dict[int, Path]:
+    """Return this store's ``{base}.v2.m{seq}.npy`` matrices beside *base*, by ``seq``."""
+    return numbered_files(base, ".v2.m")
 
 
 def _sweep(base: Path, keep: Path) -> None:
@@ -688,7 +668,7 @@ def _open_file(
     stored, matrix = _load_committed(json_path, base, where)
     _check_identity(stored, matrix, identity, where)
     if json_path == v2_json and not read_only:
-        _report_unused_sidecar(base)
+        report_unused_sidecar(base)
     snap = _snapshot_from(stored, matrix, identity, where)
     logger.info(
         "numpy_store_opened path=%s rows=%d generation=%d format_version=%d",
@@ -730,24 +710,6 @@ def _recorded_identity(
         identity.text_format,
         stored.dimension,
     )
-
-
-def _report_unused_sidecar(base: Path) -> None:
-    """Log the released or edge-build files a committed v2 store left behind.
-
-    Informational: a refused stat skips the file rather than failing the open.
-    """
-    present = 0
-    found = False
-    for path in legacy_paths(base):
-        with contextlib.suppress(OSError):
-            if path_exists(path):
-                present += file_bytes(path)
-                found = True
-    if found:
-        logger.info(
-            "embeddings_legacy_sidecar_unused path=%s bytes=%d", str(base), present
-        )
 
 
 class NumpySidecarBackend:

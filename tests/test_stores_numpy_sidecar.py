@@ -916,7 +916,7 @@ class TestV2Layout:
             base.with_suffix(".m3.npy"),
         ]
         size = sum(p.stat().st_size for p in legacy)
-        logger = "markdown_vault_mcp.stores.numpy_sidecar"
+        logger = "markdown_vault_mcp.stores"
         with caplog.at_level(logging.INFO, logger=logger):
             backend.open(base, identity).close()
             backend.open(base, identity, owns_files=False).close()
@@ -938,9 +938,7 @@ class TestV2Layout:
         store = NumpySidecarBackend().open(base, IDENT)
         store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
         store.close()
-        with caplog.at_level(
-            logging.INFO, logger="markdown_vault_mcp.stores.numpy_sidecar"
-        ):
+        with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.stores"):
             NumpySidecarBackend().open(base, IDENT).close()
         assert not [
             r
@@ -1001,9 +999,7 @@ class TestV2LayoutEdges:
         other = EmbeddingIdentity(identity.provider, "other", "", "v1", 3)
         backend = NumpySidecarBackend()
         with (
-            caplog.at_level(
-                logging.INFO, logger="markdown_vault_mcp.stores.numpy_sidecar"
-            ),
+            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.stores"),
             pytest.raises(StoreIncompatibleError),
         ):
             backend.open(base, other)
