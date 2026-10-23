@@ -64,6 +64,7 @@ src/markdown_vault_mcp/
     coordinator.py     -- IndexWriteCoordinator: owns the writer + build/async orchestration (#576)
     head_reconciler.py -- IndexHeadReconciler: reindexes until the index reflects git HEAD, whatever moved it (#1532)
     embedding_reconciler.py -- EmbeddingReconciler: the one writer of embedding rows, built from the keyword index with content_hash tokens; conditional replace, conflicts re-queued (#1768)
+    donor.py           -- Donor: a read-only store whose compatible vectors a full build copies by embedding input, refusing an unknown or other identity (#1505)
   facets/
     __init__.py        -- package aggregator: re-exports the five facets (Reader/Writer/Graph/Index/Summarize)
     reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)

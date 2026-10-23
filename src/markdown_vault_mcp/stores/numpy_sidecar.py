@@ -705,25 +705,23 @@ def _open_file(
         seq=_highest_seq(base) if in_place else stored.seq,
         matrix_path=stored.matrix_path,
         json_path=json_path,
-        recorded_identity=_recorded_identity(stored),
+        recorded_identity=_recorded_identity(stored, identity),
     )
 
 
-def _recorded_identity(stored: _Stored) -> EmbeddingIdentity | None:
-    """Return the identity *stored*'s metadata names, with the released defaults."""
-    meta = stored.meta
-    if meta is None or stored.dimension <= 0:
+def _recorded_identity(
+    stored: _Stored, identity: EmbeddingIdentity
+) -> EmbeddingIdentity | None:
+    """Return the identity *stored*'s metadata recorded, or ``None`` if it recorded none.
+
+    Called after :func:`_check_identity`, which refuses metadata naming
+    another provider, model, variant or text format (missing ones read as
+    the released defaults), so only the dimension can still differ: a
+    request for dimension 0 does not know it yet.
+    """
+    if stored.meta is None or stored.dimension <= 0:
         return None
-    provider, model = meta.get("provider"), meta.get("model")
-    if not isinstance(provider, str) or not isinstance(model, str):
-        return None
-    return EmbeddingIdentity(
-        provider,
-        model,
-        meta.get("provider_variant") or "",
-        meta.get("embed_text_format") or "v1",
-        stored.dimension,
-    )
+    return replace(identity, dimension=stored.dimension)
 
 
 def _report_unused_sidecar(base: Path) -> None:
