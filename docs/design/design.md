@@ -4030,7 +4030,11 @@ SQLite stores alike (`stores/_writer_lock.py`): a writer's open (and
 `open_fresh`) takes an advisory `flock` on `{base}.lock` and its `close()`
 releases it, and a writer open in another process is refused with
 `StoreBusyError`, a `StoreUnavailableError` (PostgreSQL's writer lease
-raises the same class), so it is reported as unavailable and never rebuilds.
+raises the same class), so it is reported as unavailable and never rebuilds;
+an index-writer job that meets an unavailable store (busy, or a PostgreSQL
+that is down) logs `writer_job_unavailable kind=%s err=%s` at WARNING without
+a traceback, since it heals itself, and the async build's own line drops to
+DEBUG, so the failure is logged once.
 The operating system drops the lock when the holder dies, so a killed server
 leaves none; the file is never deleted, and the pid it names is cleared on
 the last release. The store's directory is created at the writer's open, so
