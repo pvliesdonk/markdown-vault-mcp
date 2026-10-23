@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
@@ -30,17 +31,17 @@ from markdown_vault_mcp.indexing.embedding_reconciler import (
     ReconcileResult,
 )
 from markdown_vault_mcp.source_probe import FileSourceProbe
+from markdown_vault_mcp.utils.fs import path_exists
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection
-    from pathlib import Path
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.indexing.donor import Donor
     from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordIndex, SourceProbe
     from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.providers import EmbeddingProvider
-    from markdown_vault_mcp.types import ParsedNote
+    from markdown_vault_mcp.types import EmbeddingIdentity, ParsedNote
 
 logger = logging.getLogger(__name__)
 
@@ -292,9 +293,14 @@ class EmbeddingsManager:
         identity = self._slot.identity
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError("No reconciler without an embedding provider.")
-        outcome = self._reconciler.rebuild(
-            store, identity, donor=donor, reuse_own=reuse_own
-        )
+        upgrade = None if force or donor is not None else self._upgrade_donor(identity)
+        try:
+            outcome = self._reconciler.rebuild(
+                store, identity, donor=donor or upgrade, reuse_own=reuse_own
+            )
+        finally:
+            if upgrade is not None:
+                upgrade.close()
         embedded, total = outcome.embedded, outcome.attempted
 
         if outcome.published:
@@ -325,6 +331,37 @@ class EmbeddingsManager:
             store.publish_generation(identity, [])
             logger.info("build_embeddings_saved_empty_index")
         return embedded
+
+    def _upgrade_donor(self, identity: EmbeddingIdentity) -> Donor | None:
+        """Open the sidecar a 5.x release left beside a new built-in store, as a donor.
+
+        Only for the numpy and SQLite stores, only from ``{base}.json`` (never
+        another store's own files: a switch between stores is an explicit
+        import), and only when it may donate; a refusal is logged by
+        :meth:`Donor.open` and the cold build embeds as before (#1505).
+        """
+        if self._slot is None or self._slot.backend_name not in ("numpy", "sqlite"):
+            return None
+        base = self._slot.location
+        if not isinstance(base, Path) or not path_exists(base.with_suffix(".json")):
+            return None
+        from markdown_vault_mcp.indexing.donor import Donor
+        from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+
+        opened = Donor.open(
+            NumpySidecarBackend(legacy_only=True),
+            base,
+            identity,
+            builder=self._embed_builder,
+        )
+        if not isinstance(opened, Donor):
+            return None
+        logger.info(
+            "embeddings_upgrade_started donor=%s store=%s",
+            opened.source,
+            self._slot.backend_name,
+        )
+        return opened
 
     def _converge_embeddings(self, vectors: EmbeddingStore) -> int:
         """Reconcile a non-empty store with the keyword index (#665, #1768).

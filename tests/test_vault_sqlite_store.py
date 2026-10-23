@@ -204,11 +204,12 @@ class TestStatusBeforeTheStoreOpens:
             if r.msg.startswith("embeddings_status_count_failed")
         ]
 
-    def test_a_legacy_numpy_row_list_is_counted(self, tmp_path: Path) -> None:
+    def test_a_released_sidecar_alone_counts_nothing(self, tmp_path: Path) -> None:
+        # The store holds nothing until the upgrade copies it in (#1505).
         (tmp_path / "index-db-embeddings.json").write_text("[{}, {}]")
         vault = _unbuilt(tmp_path, "numpy")
         try:
-            assert vault.index.embeddings_status()["chunk_count"] == 2
+            assert vault.index.embeddings_status()["chunk_count"] == 0
         finally:
             vault.close()
 
@@ -228,7 +229,7 @@ class TestStatusBeforeTheStoreOpens:
     def test_a_malformed_numpy_commit_file_counts_zero_and_says_so(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        (tmp_path / "index-db-embeddings.json").write_text("{not json")
+        (tmp_path / "index-db-embeddings.v2.json").write_text("{not json")
         vault = _unbuilt(tmp_path, "numpy")
         try:
             with caplog.at_level(logging.WARNING):

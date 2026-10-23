@@ -6,12 +6,13 @@ matrix with a parallel metadata list, replaced whole by each write.
 On disk a store is ``{base}.v2.json``, the commit point, and the matrix it
 names, ``{base}.v2.m{seq}.npy``. A persist writes the matrix under a new name
 and then atomically replaces the JSON, so an interrupted persist leaves the
-previous state whole. Until the first persist, a store with no
-``{base}.v2.json`` opens the sidecar a release wrote (``{base}.json`` beside
-``{base}.npy``, its rows without tokens) or an edge build wrote
-(``{base}.json`` naming ``{base}.m{seq}.npy``) in place; no code writes,
-renames or deletes those files, so a downgrade still finds them (#1505).
-Once ``{base}.v2.json`` exists, a writer's open logs them as unused.
+previous state whole. A store's files are its own: the sidecar a release
+wrote (``{base}.json`` beside ``{base}.npy``, its rows without tokens) or an
+edge build wrote (``{base}.json`` naming ``{base}.m{seq}.npy``) is read only by
+``NumpySidecarBackend(legacy_only=True)``, read-only, which is what an
+upgrade's donor uses; no code writes, renames or deletes those files, so a
+downgrade still finds them (#1505). Once ``{base}.v2.json`` exists, a writer's
+open logs them as unused.
 
 ``replace_document`` and ``remove_document`` publish in memory at once and
 become durable at :meth:`NumpySidecarStore.checkpoint` or ``close()``;
@@ -98,18 +99,17 @@ def commit_path(base: Path) -> Path:
 
 
 def committed_json(base: Path) -> Path | None:
-    """Return the JSON a reader of *base* opens, or ``None`` if neither exists.
+    """Return the store's committed ``{base}.v2.json``, or ``None`` before its first persist.
 
-    The store's own ``{base}.v2.json`` once committed, otherwise a released
-    or edge-build ``{base}.json``.
+    A released or edge-build ``{base}.json`` is not this store: an upgrade
+    reads it through a donor (``NumpySidecarBackend(legacy_only=True)``,
+    #1505).
 
     Raises:
         OSError: If a stat is refused.
     """
-    for path in (commit_path(base), base.with_suffix(_LEGACY_JSON_SUFFIX)):
-        if path_exists(path):
-            return path
-    return None
+    path = commit_path(base)
+    return path if path_exists(path) else None
 
 
 def _matrix_path(base: Path, seq: int) -> Path:
@@ -631,10 +631,16 @@ def _load_committed(json_path: Path, base: Path, where: str) -> tuple[_Stored, A
 
 
 def _open_file(
-    base: Path, identity: EmbeddingIdentity, *, read_only: bool
+    base: Path, identity: EmbeddingIdentity, *, read_only: bool, legacy_only: bool
 ) -> NumpySidecarStore:
+    """Open the store's own ``{base}.v2.json``, or with *legacy_only* the sidecar a release left.
+
+    A writer never reads ``{base}.json`` in place: a released or edge-build
+    sidecar is read only read-only, through a donor (#1505).
+    """
     where = str(base)
     v2_json, legacy = commit_path(base), base.with_suffix(".npy")
+    released = base.with_suffix(_LEGACY_JSON_SUFFIX)
     try:
         if path_exists(base.parent) and not is_directory(base.parent):
             raise _outcome(
@@ -642,8 +648,9 @@ def _open_file(
                 f"Vector store at {where} cannot be opened: {base.parent} is not a directory.",
                 where,
             )
-        json_path = committed_json(base) or v2_json
-        has_json, has_legacy = path_exists(json_path), path_exists(legacy)
+        json_path = released if legacy_only else v2_json
+        has_json = path_exists(json_path)
+        has_legacy = legacy_only and path_exists(legacy)
     except OSError as exc:
         raise _outcome(
             StoreUnavailableError,
@@ -654,8 +661,7 @@ def _open_file(
         if has_legacy:
             raise _outcome(
                 StoreCorruptError,
-                f"Vector store at {where} has {legacy.name} but no "
-                f"{base.with_suffix(_LEGACY_JSON_SUFFIX).name}.",
+                f"Vector store at {where} has {legacy.name} but no {released.name}.",
                 where,
             )
         return NumpySidecarStore(
@@ -667,7 +673,7 @@ def _open_file(
         )
     stored, matrix = _load_committed(json_path, base, where)
     _check_identity(stored, matrix, identity, where)
-    if json_path == v2_json and not read_only:
+    if not read_only:
         report_unused_sidecar(base)
     snap = _snapshot_from(stored, matrix, identity, where)
     logger.info(
@@ -677,14 +683,11 @@ def _open_file(
         snap.generation,
         stored.version,
     )
-    # A sidecar opened in place keeps its own numbering; this store's next
-    # matrix numbers above its own ``.v2.m*`` files only.
-    in_place = json_path != v2_json
     return NumpySidecarStore(
         snap,
         base=base,
         read_only=read_only,
-        seq=_highest_seq(base) if in_place else stored.seq,
+        seq=stored.seq,
         matrix_path=stored.matrix_path,
         json_path=json_path,
         recorded_identity=_recorded_identity(stored, identity),
@@ -717,6 +720,17 @@ class NumpySidecarBackend:
 
     family: StoreFamily = "vector"
     name = _BACKEND_NAME
+
+    def __init__(self, *, legacy_only: bool = False) -> None:
+        """Choose which files at a base path the stores this backend opens are.
+
+        Args:
+            legacy_only: Open the sidecar a release or an edge build left
+                (``{base}.json``) instead of the store's own
+                ``{base}.v2.json``, always read-only: what an upgrade's donor
+                reads (#1505).
+        """
+        self._legacy_only = legacy_only
 
     def open(
         self,
@@ -760,7 +774,12 @@ class NumpySidecarBackend:
                 seq=0,
                 matrix_path=None,
             )
-        return _open_file(Path(location), identity, read_only=not owns_files)
+        return _open_file(
+            Path(location),
+            identity,
+            read_only=self._legacy_only or not owns_files,
+            legacy_only=self._legacy_only,
+        )
 
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity

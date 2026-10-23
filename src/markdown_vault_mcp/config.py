@@ -210,8 +210,8 @@ class ProjectConfig:
             "help": (
                 "Base path for the embeddings files. Defaults beside "
                 "INDEX_PATH (index-db-embeddings.v2.json and the matrix it names "
-                "beside index.db; a sidecar a release wrote there is read until "
-                "the first write and then left alone); without INDEX_PATH the "
+                "beside index.db; the first build copies in the vectors a "
+                "release's sidecar there holds, then leaves it alone); without INDEX_PATH the "
                 "vectors are kept in "
                 "memory and rebuilt at each start. "
                 "Setting it also lets the provider be auto-detected."
