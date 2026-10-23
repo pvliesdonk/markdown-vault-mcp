@@ -4469,16 +4469,20 @@ matrices; the SQLite store keeps `{base}.sqlite3`. No code writes, renames
 or deletes `{base}.json`, `{base}.npy` or an edge build's
 `{base}.m<N>.npy` (child 2). Either built-in store upgrades the same way
 (child 5, `EmbeddingsManager._upgrade_donor`): when a full build is not
-forced, the configured numpy or SQLite store holds no vectors, and
-`{base}.json` exists (a released sidecar or an edge build's
-`format_version: 2` file), it is opened as a donor through
+forced, the configured numpy or SQLite store holds no vectors, the keyword
+index holds chunks, and `{base}.json` exists (a released sidecar or an edge
+build's `format_version: 2` file), it is opened as a donor through
 `NumpySidecarBackend(legacy_only=True)` for that build, logged
 `embeddings_upgrade_started donor=%s store=%s`, so unchanged chunks cost no
 provider call; a bare list is refused as `identity_unknown` and a sidecar
 of another model as `identity_differs`, and the build embeds everything.
 The automatic path reads only `{base}.json`, never a `{base}.v2.json` or a
 `{base}.sqlite3` (choice C: switching between stores is the explicit
-import below), and never under `force`. Until that build publishes, the new
+import below), and never under `force`. The boot reindex never writes into
+a store that was never built: when it purges newly excluded notes, a store
+it opened for that and found empty is not handed to the per-note loop
+(`IndexManager._purge_stale_excluded`), so a note edited offline is left
+to the build and the build stays a cold, upgrading one. Until that build publishes, the new
 store holds nothing, so stopping, crashing or rolling back to 5.1 leaves the
 sidecar as 5.1 wrote it, and the next start retries (rollback before
 activation). The cost is paid once: the donor and the new store are both

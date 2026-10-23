@@ -419,11 +419,17 @@ class IndexManager:
             and self._embeddings.embedding_provider is not None
         ):
             try:
-                vectors = self._embeddings._open_store()
+                opened = self._embeddings._open_store()
             except StoreIncompatibleError as exc:
                 # A store this provider may not write (an injected store of
                 # another model): the keyword purge still runs (#1778).
                 logger.warning("purge_vectors_skipped reason=store_refused err=%s", exc)
+            else:
+                # A store never built has nothing to purge. Handing it back
+                # would let the caller embed changed notes into it, and the
+                # first build would then no longer be a cold build that can
+                # upgrade a released sidecar (#1505).
+                vectors = opened if opened.count else None
 
         for stale_path in stale_paths:
             self._fts.delete_by_path(stale_path)

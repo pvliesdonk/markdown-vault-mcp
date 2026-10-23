@@ -209,8 +209,8 @@ class NumpySidecarStore(ResidentStore):
         self._base = base
         self._seq = seq
         self._matrix_path = matrix_path
-        # The commit file the snapshot came from: a sidecar opened in place
-        # until this store's first persist commits ``{base}.v2.json``.
+        # The commit file the snapshot came from: ``{base}.v2.json``, or the
+        # released ``{base}.json`` a legacy_only reader opened (#1505).
         self._json_path = json_path
         self._dirty = False
 
@@ -323,8 +323,8 @@ class NumpySidecarStore(ResidentStore):
         """Return the size of *json_path* and *matrix*, a missing one 0.
 
         *json_path* is the commit file this store's snapshot came from, so a
-        reader that opened a sidecar in place keeps measuring that sidecar
-        after a writer commits ``{base}.v2.json``.
+        legacy_only reader measures the released sidecar it opened, not the
+        ``{base}.v2.json`` a writer commits beside it.
 
         Raises:
             OSError: If a stat is refused (#1625).

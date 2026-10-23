@@ -337,10 +337,13 @@ class EmbeddingsManager:
 
         Only for the numpy and SQLite stores, only from ``{base}.json`` (never
         another store's own files: a switch between stores is an explicit
-        import), and only when it may donate; a refusal is logged by
+        import), only when the keyword index has chunks to copy vectors for,
+        and only when it may donate; a refusal is logged by
         :meth:`Donor.open` and the cold build embeds as before (#1505).
         """
         if self._slot is None or self._slot.backend_name not in ("numpy", "sqlite"):
+            return None
+        if self._fts.count_chunks() == 0:
             return None
         base = self._slot.location
         if not isinstance(base, Path) or not path_exists(base.with_suffix(".json")):
@@ -458,11 +461,11 @@ class EmbeddingsManager:
                 )
                 return 0
         count = 0
-        # The store's own derivation picks the JSON a reader opens: its
-        # {base}.v2.json once committed, else a released or edge-build
-        # {base}.json (#1505). It uses Path.with_suffix, so an
+        # The store's own derivation names its commit file, {base}.v2.json;
+        # a released or edge-build {base}.json is not this store until an
+        # upgrade copies it in (#1505). It uses Path.with_suffix, so an
         # EMBEDDINGS_PATH that carries an extension resolves to the real
-        # files (#819). Every layout keeps the rows in the JSON.
+        # files (#819). The commit file keeps the rows.
         # A refused stat raises: a status of "no vectors" for a store the
         # server cannot read would be wrong (#1625).
         from markdown_vault_mcp.stores.numpy_sidecar import committed_json
@@ -471,12 +474,8 @@ class EmbeddingsManager:
         if json_path is not None:
             try:
                 with json_path.open(encoding="utf-8") as fh:
-                    loaded_meta = json.load(fh)
-                if isinstance(loaded_meta, list):
-                    count = len(loaded_meta)
-                else:
-                    count = len(loaded_meta.get("rows", []))
-            except (OSError, json.JSONDecodeError) as exc:
+                    count = len(json.load(fh)["rows"])
+            except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
                 logger.warning(
                     "embeddings_status_metadata_read_failed path=%s err=%s",
                     json_path,

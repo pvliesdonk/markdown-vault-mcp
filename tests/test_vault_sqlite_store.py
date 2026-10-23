@@ -226,10 +226,11 @@ class TestStatusBeforeTheStoreOpens:
         finally:
             vault.close()
 
+    @pytest.mark.parametrize("text", ["{not json", "[{}, {}]", '{"format_version": 2}'])
     def test_a_malformed_numpy_commit_file_counts_zero_and_says_so(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, text: str
     ) -> None:
-        (tmp_path / "index-db-embeddings.v2.json").write_text("{not json")
+        (tmp_path / "index-db-embeddings.v2.json").write_text(text)
         vault = _unbuilt(tmp_path, "numpy")
         try:
             with caplog.at_level(logging.WARNING):

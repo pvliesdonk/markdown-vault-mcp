@@ -17,17 +17,24 @@ output; rerun only to change the notes.
 from __future__ import annotations
 
 import importlib.util
+import logging
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT))
 
+logger = logging.getLogger(__name__)
 
-def _v5_1_vector_index():
+
+def _v5_1_vector_index() -> ModuleType:
     source = subprocess.run(
         ["git", "show", "v5.1.0:src/markdown_vault_mcp/vector_index.py"],
         cwd=ROOT,
@@ -35,12 +42,13 @@ def _v5_1_vector_index():
         capture_output=True,
         text=True,
     ).stdout
-    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
-        fh.write(source)
-    spec = importlib.util.spec_from_file_location("vector_index_v5_1", fh.name)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    with tempfile.TemporaryDirectory() as scratch:
+        path = Path(scratch) / "vector_index_v5_1.py"
+        path.write_text(source)
+        spec = importlib.util.spec_from_file_location("vector_index_v5_1", path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
     return module
 
 
@@ -52,12 +60,13 @@ def main() -> None:
     from tests.conftest import MockEmbeddingProvider
     from tests.fixtures.sidecar_v5_1.notes import NOTES
 
-    notes = Path(tempfile.mkdtemp())
     fts = FTSIndex(db_path=":memory:")
-    for name, text in sorted(NOTES.items()):
-        (notes / name).parent.mkdir(parents=True, exist_ok=True)
-        (notes / name).write_text(text)
-        fts.upsert_note(parse_note(notes / name, notes, HeadingChunker()))
+    with tempfile.TemporaryDirectory() as scratch:
+        notes = Path(scratch)
+        for name, text in sorted(NOTES.items()):
+            (notes / name).parent.mkdir(parents=True, exist_ok=True)
+            (notes / name).write_text(text)
+            fts.upsert_note(parse_note(notes / name, notes, HeadingChunker()))
     provider = MockEmbeddingProvider()
     reconciler = EmbeddingReconciler(
         fts=fts,
@@ -76,8 +85,14 @@ def main() -> None:
     index.add(texts, metadata)
     index.save(HERE / "index-db-embeddings")
     fts.close()
-    print(f"wrote {len(texts)} rows for {provider.provider_name}/{provider.model_name}")
+    logger.info(
+        "sidecar_fixture_written rows=%d provider=%s model=%s",
+        len(texts),
+        provider.provider_name,
+        provider.model_name,
+    )
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
