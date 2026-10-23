@@ -425,7 +425,7 @@ Regardless of which provider you choose:
 - **Where the vectors live.** At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index-db-embeddings.v2.json` and the `index-db-embeddings.v2.m<N>.npy` matrix it names, beside `index.db`). `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them. `numpy`, the default, keeps these files and rewrites them whole at each save; `sqlite` keeps them in one database, `index-db-embeddings.sqlite3`, and writes each change on its own, durable once written; `postgres` keeps them in a PostgreSQL schema instead ([below](#keeping-the-embeddings-in-postgresql)). With neither path set, they are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
 - **One process writes them at a time.** While the server writes the `numpy` or `sqlite` store, it holds a lock on `index-db-embeddings.lock` beside the vectors, so `markdown-vault-mcp index` or `reindex` run against the same files fail with "being written by another process" instead of writing them; stop the server first. A command that only reads the vectors, such as `markdown-vault-mcp search`, is never blocked. The reverse holds too: a server started while such a command writes the vectors cannot write them or search by meaning until that command exits. One lock covers both stores at the same location. The lock is released when the server exits, even if it is killed; the `.lock` file stays and is safe to leave. It is not taken on Windows, and a lock across a network share or a virtual machine's shared folder (NFS, Docker Desktop on macOS) may not hold, so stop the server there yourself.
 - **Upgrading from 5.x keeps your vectors.** A 5.0 or 5.1 server left `index-db-embeddings.json` and `.npy` beside `index.db`. On the first start after the upgrade, the configured `numpy` or `sqlite` store copies every vector whose note text is unchanged from those files and embeds only the rest, with no setting changed; the log says `embeddings_upgrade_started`. The files stay untouched, so going back to 5.1 still finds them, and each later start logs them as unused (`embeddings_legacy_sidecar_unused`) until you delete them. Files from another model, or the oldest layout that records no model, are not reused (`embeddings_donor_refused`), and every note is embedded again.
-- **Switching between `numpy` and `sqlite` later starts with an empty store**, so every note is embedded again, which a paid provider bills. Importing one store into another is [#1505](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1505).
+- **Switching between `numpy` and `sqlite` later starts with an empty store**, so every note would be embedded again, which a paid provider bills. Run `markdown-vault-mcp embeddings import` first to copy the vectors across ([Moving vectors between stores](#moving-vectors-between-stores)).
 - **The `sqlite` database does not shrink:** space freed by deleted notes or a model change is reused by later writes.
 - **`MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed` keeps the vectors out of memory.** It needs `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite`; the rest of this item describes that store, since `postgres` is always streamed and scores in the database instead. Each semantic search then reads the vectors from the database in batches of `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB` (1 MiB by default) instead of holding them all, as the default `resident` does. Results are the same, apart from the order of notes with equal scores. Each search is slower, by an amount in proportion to the vault's size. On one test host, a 22,764-chunk vault at 1024 dimensions took about 39 ms per search streamed against 3 ms resident, and a vault ten times that size about 383 ms against 33 ms; resident search added about 106 MB and 950 MB to the server's memory for them ([#1501](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1501), [#1502](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1502)). The workspace bounds one batch of a search, not the server's memory. Vectors kept in memory, with no index path, are always resident. `embeddings_status` reports the mode the store runs in, its workspace, the size of its files (`stored_bytes`) and the bytes of vectors it holds in memory (`resident_vector_bytes`). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.
 - **Back up the `sqlite` database with the server stopped**, or with SQLite's online backup (`sqlite3 index-db-embeddings.sqlite3 ".backup copy.sqlite3"`). Copying the file while the server runs can miss the latest changes, which sit in `index-db-embeddings.sqlite3-wal`.
@@ -452,7 +452,7 @@ A pip or uv install needs the `postgres` extra (`pip install "markdown-vault-mcp
 What to expect:
 
 - **One server writes a schema at a time.** A second server started on the same schema still serves keyword search, but its semantic and hybrid searches and `embeddings_status` fail, and its log names the server holding the schema (`postgres_vector_store_unavailable reason=lease`).
-- **Switching to `postgres` starts with an empty store**, so every note is embedded again, which a paid provider bills. Importing existing vectors is [#1505](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1505).
+- **Switching to `postgres` starts with an empty store**, so every note would be embedded again, which a paid provider bills. Run `markdown-vault-mcp embeddings import` first to copy the vectors across ([Moving vectors between stores](#moving-vectors-between-stores)).
 - **A database that is down makes semantic and hybrid search fail** rather than answer with nothing; `mode="keyword"` keeps working.
 - **A full rebuild writes the new generation in one transaction**, so searches keep answering from the previous one until it commits.
 
@@ -468,6 +468,44 @@ What to expect:
     The ONNX batch size is tuned for the default `BAAI/bge-small-en-v1.5` model (512-token context). ONNX self-attention scales as O(batch × seq_len²) in RAM; long-context models require a much smaller batch size to avoid OOM — see issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306).
 
     For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.
+
+### Moving vectors between stores
+
+`markdown-vault-mcp embeddings import` copies the vectors of another store into the configured one, so a switch between `numpy`, `sqlite` and `postgres`, in any direction, costs a provider call only for the chunks the other store does not hold. Stop the server, set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` and the new store's settings, and run:
+
+```bash
+# See what it would do: nothing is written and no embedding is requested.
+markdown-vault-mcp embeddings import --from numpy --dry-run
+
+# Copy the vectors, embedding only what the source lacks.
+markdown-vault-mcp embeddings import --from numpy
+```
+
+Then start the server. The options:
+
+| Option | What it names |
+|---|---|
+| `--from numpy\|sqlite\|postgres` | The store to copy from. |
+| `--from-path BASE` | A `numpy` or `sqlite` source's base path, such as `/data/index-db-embeddings`. Default: the configured embeddings base, beside `MARKDOWN_VAULT_MCP_INDEX_PATH` or at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`. With a `postgres` store configured there is no such base, so name it. |
+| `--from-schema SCHEMA` | A `postgres` source's schema. Default: `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA`. |
+| `--from-dsn-env VAR` | The environment variable that holds a `postgres` source's connection string. Default: `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`. The command never takes a connection string itself, so it stays out of your shell history, and never prints one. |
+| `--dry-run` | Count the chunks it would copy and embed, then stop. It works while the server runs. |
+
+The import first brings the keyword index up to date. Every chunk whose text is unchanged is then copied, from the configured store's own rows or from the source, and only the rest is embedded; the result replaces the configured store in one step, so running it twice costs nothing the second time. The source is only read: its files or its schema stay exactly as they were, so you can go back to it. A `numpy` source at a base path with no `.v2.json` is the sidecar a 5.x release left there, which this command imports too.
+
+It refuses, changing no vectors, and prints one line saying what to do when:
+
+| Situation | What to do |
+|---|---|
+| A server is writing the configured store | Stop the server first. |
+| The source is the configured store | Name another one with `--from`, `--from-path` or `--from-schema`. |
+| The source holds no vectors | Nothing to import. |
+| The source records no model (the oldest sidecar format) or another model | Configure the model that built it, or let `index` embed with yours. |
+| The source cannot be read, or the connection string variable is not set | Fix the source, or set the variable. |
+| No provider is configured, or the vectors are kept in memory only | Configure a provider and `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`. |
+
+!!! note "Not in the generated CLI reference yet"
+    The [CLI reference](../reference/cli.md) lists `embeddings` but not its `import` options until the reference generator covers command groups ([fastmcp-server-template#823](https://github.com/pvliesdonk/fastmcp-server-template/issues/823)); `markdown-vault-mcp embeddings import --help` shows them.
 
 ### Notes with no body
 

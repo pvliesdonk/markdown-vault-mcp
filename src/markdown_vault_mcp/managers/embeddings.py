@@ -419,9 +419,7 @@ class EmbeddingsManager:
         try:
             store: EmbeddingStore | None = self._slot.get(rebuild=None)
         except (StoreCorruptError, StoreIncompatibleError):
-            store = None
-        if store is not None and store.identity != identity:
-            store = None
+            store = None  # the import would replace it
         return self._reconciler.preview(store, identity, donor=donor, reuse_own=True)
 
     def _upgrade_donor(self, identity: EmbeddingIdentity) -> Donor | None:
