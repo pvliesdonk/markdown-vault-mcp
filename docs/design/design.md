@@ -4393,29 +4393,38 @@ This section is the target #1505's children implement on
 `integration/1505-embedding-transitions`; each paragraph names the child
 that builds it, and the markers go once every child has merged.
 
-**The donor (#1505 child 3).** A donor is an existing vector store opened
-read-only (`owns_files=False`) and wrapped in `Donor`; it is never
-written, leased, renamed or deleted. Each store reads its own recorded
-identity (a released sidecar's `index_metadata` through
-`stores/numpy_sidecar.py:_check_identity`'s reading, which supplies the
-values releases before those fields existed meant: variant `""`, text
-format `v1`), and the donor is eligible only when that identity equals the
-configured one under `stores/_identity.py:served_identity`. An identity is
-*missing*, and never matches, when there is no `index_metadata` at all
-(the bare list) or it names no provider, no model or no dimension above 0;
-a partial v3.x/v4.x `index_metadata` with provider, model and dimension is
-known. A bare-list sidecar, a store of another
-identity, a corrupt store and an unavailable one are refused once, logged
-`embeddings_donor_refused source=%s reason=%s` (`identity_unknown`,
-`identity_differs`, `corrupt`, `unavailable`, `unsupported`), and the
-build proceeds without them. Matching is per chunk and by path: the key
-is the embedding input rebuilt from the donor row's metadata exactly as
-`EmbeddingReconciler._stored_inputs`
-(`indexing/embedding_reconciler.py`) rebuilds a store's own rows for
-#1795's reuse, so a donor hit and an own-store hit are one rule, and a row
-#1795 would not reuse is not donated. A donor vector is copied only when
-its dimension matches, every element is finite and its norm is non-zero;
-otherwise it is a miss, counted as a refused row.
+**The donor (#1505 child 3).** A donor (`indexing/donor.py:Donor`) is an
+existing vector store opened read-only (`owns_files=False`); it is never
+written, leased, renamed or deleted. `Donor.open` returns the donor or a
+`DonorRefused(source, reason, detail)`, `source` being `<backend>:<location>`
+(a base path or a schema name, never a DSN) and `detail` one sentence for a
+person, such as the recorded and the configured identity. A store holding
+no vectors is refused first, as `empty`: a missing location opens as an
+empty store under whatever identity it is asked for, which it never
+recorded. Otherwise each store reports the identity it recorded
+(`NumpySidecarStore.recorded_identity`, reading a released sidecar's
+`index_metadata` with `stores/numpy_sidecar.py:_check_identity`'s defaults
+for fields releases before them lacked: variant `""`, text format `v1`;
+SQLite and PostgreSQL always record one), and the donor is eligible only
+when it equals the configured one under `stores/_identity.py:served_identity`.
+An identity is *missing*, and never matches, when there is no
+`index_metadata` at all (the bare list) or it names no dimension above 0; a
+partial v3.x/v4.x `index_metadata` is known. Metadata naming no provider or
+model is refused as another identity by the store's own check; no release
+wrote it (every one since `index_metadata` appeared names both). Each
+refusal is logged once, `embeddings_donor_refused source=%s reason=%s`
+(`empty`, `identity_unknown`, `identity_differs`, `corrupt`, `unavailable`,
+`unsupported`, `not_configured`), and the build proceeds without it.
+Matching is per chunk and by path: the key is the embedding input rebuilt
+from the donor row's metadata by
+`indexing/embedding_reconciler.py:stored_inputs`, the function a store's
+own rows are reused through (#1795), so a donor hit and an own-store hit
+are one rule, and a row #1795 would not reuse is not donated. A donor
+vector is copied only when its length is the identity's dimension, every
+element is finite and its norm is non-zero; otherwise it is a miss,
+counted as a refused row. A read that fails once the donor is open
+(`StoreUnavailableError` from `vectors_for`) fails the build, which then
+publishes nothing, rather than paying to re-embed the rest.
 
 **A full build with a donor (#1505 child 4).** Only the path that
 publishes a whole generation consults a donor: a cold build, the rebuild
