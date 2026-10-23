@@ -32,7 +32,7 @@ from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable
+    from collections.abc import Callable, Collection, Iterable, Sequence
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.interfaces import (
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 def stored_inputs(
     builder: EmbedTextBuilder, rows: Iterable[VectorRow]
-) -> dict[str, Any]:
+) -> dict[str, Sequence[float]]:
     """Map the embedding input each of *rows* was embedded from to its vector.
 
     The input is rebuilt from the row's metadata the way the reconciler builds
@@ -65,7 +65,7 @@ def stored_inputs(
     Returns:
         Each rebuilt input to the stored vector; a later duplicate input wins.
     """
-    known: dict[str, Any] = {}
+    known: dict[str, Sequence[float]] = {}
     for row in rows:
         title = row.metadata.get("title")
         content = row.metadata.get("content")
