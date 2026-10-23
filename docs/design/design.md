@@ -4024,9 +4024,22 @@ reader never sees a matrix and a row list that disagree. On disk
 removes only this store's own `.v2.m*.npy` matrices; in this backend `replace_document` publishes in memory and
 becomes durable at `checkpoint()`, while `publish_generation` is durable
 before it returns.
-One process writes a base path at a time, as with the released sidecar:
-two writers would pick the same next matrix name. Another
-process opens it with `owns_files=False`, read-only. A store's files are
+One process writes a base path at a time: two writers would pick the same
+next matrix name. Since #1505 child 6a this is enforced, for the numpy and
+SQLite stores alike (`stores/_writer_lock.py`): a writer's open (and
+`open_fresh`) takes an advisory `flock` on `{base}.lock` and its `close()`
+releases it, and a writer open in another process is refused with
+`StoreBusyError`, a `StoreUnavailableError` (PostgreSQL's writer lease
+raises the same class), so it is reported as unavailable and never rebuilds.
+The operating system drops the lock when the holder dies, so a killed server
+leaves none; the file is never deleted. Inside one process the writers on a
+base share the lock, counted, so a slot that opens a fresh store before
+closing the old one, or two vaults in one test, never block themselves; a
+store collected unclosed gives its share back. Where no lock can be taken
+(no `fcntl`, as on Windows, or a lock file that cannot be created) the writer
+proceeds as before, logged at DEBUG `embeddings_writer_lock_skipped`; a lock
+over a network or VM file share may not hold. Another
+process opens it with `owns_files=False`, read-only, taking no lock. A store's files are
 its own: the store reads only `{base}.v2.json`. A sidecar the released
 `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge
 build's format-2 `{base}.json` naming `{base}.m<N>.npy`, is opened only by
@@ -4057,8 +4070,8 @@ while a read transaction is open (a streamed scan, here or in another
 process) it is skipped and logged, and the WAL keeps its size until a
 later truncate, at the next generation or at close. No file exists before the first
 write; a first write that cannot create the database raises *unavailable*,
-logged like any failed write. A writable open takes no write lock on an
-existing store and changes nothing in a database that is not a vector
+logged like any failed write. A writable open holds the `{base}.lock`
+writer lock above but takes no SQLite write lock on an existing store and changes nothing in a database that is not a vector
 store before refusing it. `open_fresh` reads and checks nothing: before its
 first write it removes a file that is not a vector store or whose pages
 `PRAGMA quick_check` finds damaged (refusing a newer format instead), and

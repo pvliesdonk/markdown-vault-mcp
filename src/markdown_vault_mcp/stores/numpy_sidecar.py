@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import tempfile
+import weakref
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -61,6 +62,7 @@ from markdown_vault_mcp.stores._resident import (
     with_document,
     without_document,
 )
+from markdown_vault_mcp.stores._writer_lock import WriterLock, hold_writer_lock
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreResources
 from markdown_vault_mcp.utils.fs import file_bytes, is_directory, path_exists
@@ -201,8 +203,14 @@ class NumpySidecarStore(ResidentStore):
         matrix_path: Path | None,
         json_path: Path | None = None,
         recorded_identity: EmbeddingIdentity | object | None = _OWN_IDENTITY,
+        writer_lock: WriterLock | None = None,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
+        # This writer's share of {base}.lock, released at close (#1505), or
+        # when the store is collected unclosed: it can write nothing then.
+        self._writer_lock = writer_lock
+        if writer_lock is not None:
+            weakref.finalize(self, writer_lock.release)
         # What the opened files recorded; _OWN_IDENTITY once this store wrote
         # them, or when nothing was read.
         self._recorded = recorded_identity
@@ -390,6 +398,8 @@ class NumpySidecarStore(ResidentStore):
             self.checkpoint()
         finally:
             self._closed = True
+            if self._writer_lock is not None:
+                self._writer_lock.release()
 
 
 @dataclass(frozen=True)
@@ -631,7 +641,12 @@ def _load_committed(json_path: Path, base: Path, where: str) -> tuple[_Stored, A
 
 
 def _open_file(
-    base: Path, identity: EmbeddingIdentity, *, read_only: bool, legacy_only: bool
+    base: Path,
+    identity: EmbeddingIdentity,
+    *,
+    read_only: bool,
+    legacy_only: bool,
+    writer_lock: WriterLock | None,
 ) -> NumpySidecarStore:
     """Open the store's own ``{base}.v2.json``, or with *legacy_only* the sidecar a release left.
 
@@ -670,6 +685,7 @@ def _open_file(
             read_only=read_only,
             seq=0,
             matrix_path=None,
+            writer_lock=writer_lock,
         )
     stored, matrix = _load_committed(json_path, base, where)
     _check_identity(stored, matrix, identity, where)
@@ -691,6 +707,7 @@ def _open_file(
         matrix_path=stored.matrix_path,
         json_path=json_path,
         recorded_identity=_recorded_identity(stored, identity),
+        writer_lock=writer_lock,
     )
 
 
@@ -774,12 +791,20 @@ class NumpySidecarBackend:
                 seq=0,
                 matrix_path=None,
             )
-        return _open_file(
-            Path(location),
-            identity,
-            read_only=self._legacy_only or not owns_files,
-            legacy_only=self._legacy_only,
-        )
+        base, read_only = Path(location), self._legacy_only or not owns_files
+        lock = None if read_only else hold_writer_lock(base, backend=_BACKEND_NAME)
+        try:
+            return _open_file(
+                base,
+                identity,
+                read_only=read_only,
+                legacy_only=self._legacy_only,
+                writer_lock=lock,
+            )
+        except BaseException:
+            if lock is not None:
+                lock.release()
+            raise
 
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity
@@ -806,7 +831,12 @@ class NumpySidecarBackend:
                 matrix_path=None,
             )
         base = Path(location)
-        seq = _highest_seq(base) if is_directory(base.parent) else 0
+        lock = hold_writer_lock(base, backend=_BACKEND_NAME)
+        try:
+            seq = _highest_seq(base) if is_directory(base.parent) else 0
+        except BaseException:
+            lock.release()
+            raise
         # Not dirty: a rebuild that writes nothing (every provider call
         # failed) must not commit an empty store over the previous one.
         return NumpySidecarStore(
@@ -815,6 +845,7 @@ class NumpySidecarBackend:
             read_only=False,
             seq=seq,
             matrix_path=None,
+            writer_lock=lock,
         )
 
 
