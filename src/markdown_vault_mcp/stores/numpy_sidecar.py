@@ -303,12 +303,14 @@ class NumpySidecarStore(ResidentStore):
         it is asked for, and for one whose ``index_metadata`` names no
         positive dimension; a released sidecar's missing variant and text
         format read as ``""`` and ``v1``, as :func:`_check_identity` reads
-        them. A store that wrote its own files, or read none, records its
-        :attr:`identity`. A donor never matches a ``None`` (#1505).
+        them. A store that wrote its own files reports its :attr:`identity`;
+        so does one that read none (no files, or in memory), which a donor
+        refuses as empty instead. A donor never matches a ``None`` (#1505).
         """
-        if self._recorded is _OWN_IDENTITY:
-            return self.identity
-        return self._recorded  # type: ignore[return-value]
+        recorded = self._recorded
+        if isinstance(recorded, EmbeddingIdentity) or recorded is None:
+            return recorded
+        return self.identity
 
     def resources(self) -> StoreResources:
         """Return the search mode and measured sizes (#1377): always resident.

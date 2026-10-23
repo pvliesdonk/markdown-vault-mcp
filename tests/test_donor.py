@@ -12,7 +12,7 @@ import pytest
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
 from markdown_vault_mcp.exceptions import StoreCorruptError
-from markdown_vault_mcp.indexing.donor import Donor
+from markdown_vault_mcp.indexing.donor import Donor, DonorRefused
 from markdown_vault_mcp.indexing.embedding_reconciler import stored_inputs
 from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
@@ -102,7 +102,7 @@ def _refusals(caplog: pytest.LogCaptureFixture) -> list[Any]:
 
 def test_a_compatible_store_donates_every_row_by_input(source: Source) -> None:
     donor = Donor.open(source.backend, source.location, _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     with donor:
         apples = _BUILDER.build(
             title="A",
@@ -121,7 +121,7 @@ def test_a_compatible_store_donates_every_row_by_input(source: Source) -> None:
 
 def test_the_donor_key_is_the_reconcilers_key(source: Source) -> None:
     donor = Donor.open(source.backend, source.location, _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     reader = source.backend.open(source.location, _IDENT, owns_files=False)
     try:
         with donor:
@@ -134,7 +134,7 @@ def test_the_donor_key_is_the_reconcilers_key(source: Source) -> None:
 
 def test_an_unknown_path_donates_nothing(source: Source) -> None:
     donor = Donor.open(source.backend, source.location, _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     with donor:
         assert donor.vectors_for("missing.md") == {}
 
@@ -145,7 +145,7 @@ def test_another_model_is_refused_as_identity_differs(
     other = EmbeddingIdentity(_IDENT.provider, "other-model", "", "v1", 3)
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
         donor = Donor.open(source.backend, source.location, other, builder=_BUILDER)
-    assert donor is None
+    assert isinstance(donor, DonorRefused)
     assert [args[1] for args in _refusals(caplog)] == ["identity_differs"]
     assert [r.levelno for r in caplog.records if r.name == _LOGGER] == [logging.WARNING]
 
@@ -154,7 +154,7 @@ def test_the_donor_never_writes(source: Source) -> None:
     before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.files}
     names = {p.name for p in source.files}
     donor = Donor.open(source.backend, source.location, _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     with donor:
         donor.vectors_for("a.md")
     after = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.files}
@@ -177,7 +177,7 @@ def test_a_bare_list_sidecar_is_refused_as_identity_unknown(
     np.save(base.with_suffix(".npy"), np.asarray([[1, 0, 0]], dtype=np.float32))
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
         donor = Donor.open(NumpySidecarBackend(), base, _IDENT, builder=_BUILDER)
-    assert donor is None
+    assert isinstance(donor, DonorRefused)
     assert [args[1] for args in _refusals(caplog)] == ["identity_unknown"]
 
 
@@ -206,7 +206,7 @@ def test_an_unreadable_source_is_refused_with_its_reason(
             commit.write_text(json.dumps(payload))
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
         donor = Donor.open(NumpySidecarBackend(), base, _IDENT, builder=_BUILDER)
-    assert donor is None
+    assert isinstance(donor, DonorRefused)
     assert [args[1] for args in _refusals(caplog)] == [reason]
 
 
@@ -218,7 +218,7 @@ def test_a_missing_postgres_schema_is_refused_as_not_configured(
     backend = PostgresVectorBackend(postgres_schema.dsn)
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
         donor = Donor.open(backend, "no_such_schema", _IDENT, builder=_BUILDER)
-    assert donor is None
+    assert isinstance(donor, DonorRefused)
     assert _refusals(caplog) == [("postgres:no_such_schema", "not_configured")]
 
 
@@ -229,7 +229,7 @@ def test_a_postgres_donor_takes_no_lease(postgres_schema: PostgresSchema) -> Non
     _publish(PostgresVectorBackend(postgres_schema.dsn), postgres_schema.name)
     backend = PostgresVectorBackend(postgres_schema.dsn)
     donor = Donor.open(backend, postgres_schema.name, _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     with donor:
         assert lease_is_free(postgres_schema.dsn, postgres_schema.name)
 
@@ -254,6 +254,7 @@ class _FakeStore:
     def __init__(self, rows: list[VectorRow]) -> None:
         self._rows = rows
         self.identity = _IDENT
+        self.count = max(len(rows), 1)
         self.closed = False
 
     def rows_for(self, path: str) -> list[VectorRow]:
@@ -285,7 +286,7 @@ def test_bad_rows_are_counted_not_donated() -> None:
         VectorRow([1.0, 0.0], {"title": "A", "content": "short"}),
     ]
     donor = Donor.open(_FakeBackend(_FakeStore(rows)), "x", _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     given = donor.vectors_for("a.md")
     key = _BUILDER.build(
         title="A", heading=None, content="good", fields_text="", is_first_chunk=False
@@ -299,7 +300,7 @@ def test_a_donor_opens_read_only_and_closes_its_store() -> None:
     store = _FakeStore([])
     backend = _FakeBackend(store)
     donor = Donor.open(backend, "x", _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     assert backend.calls == [False]
     donor.close()
     donor.close()
@@ -310,7 +311,7 @@ def test_a_store_that_fails_the_identity_check_is_closed() -> None:
     store = _FakeStore([])
     store.identity = EmbeddingIdentity(_IDENT.provider, "other", "", "v1", 3)
     donor = Donor.open(_FakeBackend(store), "x", _IDENT, builder=_BUILDER)
-    assert donor is None
+    assert isinstance(donor, DonorRefused)
     assert store.closed
 
 
@@ -322,14 +323,115 @@ def test_an_untyped_open_outcome_is_refused_as_unavailable(
     error = StoreOpenError("odd", backend="fake", location="x")
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
         donor = Donor.open(_FakeBackend(error=error), "x", _IDENT, builder=_BUILDER)
-    assert donor is None
+    assert isinstance(donor, DonorRefused)
     assert _refusals(caplog) == [("fake:x", "unavailable")]
 
 
 def test_the_source_label_names_the_backend_and_location() -> None:
     error = StoreCorruptError("bad", backend="fake", location="x")
     donor = Donor.open(_FakeBackend(error=error), "x", _IDENT, builder=_BUILDER)
-    assert donor is None
+    assert isinstance(donor, DonorRefused)
     donor = Donor.open(_FakeBackend(_FakeStore([])), "x", _IDENT, builder=_BUILDER)
-    assert donor is not None
+    assert isinstance(donor, Donor)
     assert donor.source == "fake:x"
+
+
+class TestReviewFindings:
+    """#1505 child 3's final review."""
+
+    @pytest.mark.parametrize("kind", ["numpy", "sqlite", "memory"])
+    def test_a_missing_or_empty_source_is_refused_as_empty(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, kind: str
+    ) -> None:
+        backend = SqliteVectorBackend() if kind == "sqlite" else NumpySidecarBackend()
+        location = ":memory:" if kind == "memory" else tmp_path / "typo-embeddings"
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            outcome = Donor.open(backend, location, _IDENT, builder=_BUILDER)
+        assert isinstance(outcome, DonorRefused)
+        assert outcome.reason == "empty"
+        assert [args[1] for args in _refusals(caplog)] == ["empty"]
+        assert not list(tmp_path.iterdir())
+
+    def test_an_empty_postgres_schema_is_refused_as_empty(
+        self, postgres_schema: PostgresSchema
+    ) -> None:
+        from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
+
+        backend = PostgresVectorBackend(postgres_schema.dsn)
+        outcome = Donor.open(backend, postgres_schema.name, _IDENT, builder=_BUILDER)
+        assert isinstance(outcome, DonorRefused)
+        assert outcome.reason == "empty"
+
+    def test_a_refusal_carries_what_was_recorded_and_wanted(
+        self, source: Source
+    ) -> None:
+        other = EmbeddingIdentity(_IDENT.provider, "other-model", "", "v1", 3)
+        outcome = Donor.open(source.backend, source.location, other, builder=_BUILDER)
+        assert isinstance(outcome, DonorRefused)
+        assert outcome.reason == "identity_differs"
+        assert "other-model" in outcome.detail
+        assert _IDENT.model in outcome.detail
+
+    def test_keys_follow_the_builders_format(self, tmp_path: Path) -> None:
+        builder = EmbedTextBuilder(searchable_fields=("summary",))
+        ident = EmbeddingIdentity.of(_PROVIDER, builder.format_token())
+        base = tmp_path / "fmt-embeddings"
+        store = NumpySidecarBackend().open(base, ident)
+        meta = {"path": "a.md", "folder": "", "title": "A", "heading": "One"}
+        store.publish_generation(
+            ident,
+            [
+                DocumentRows(
+                    "a.md",
+                    "t",
+                    (
+                        VectorRow(
+                            [1.0, 0, 0], {**meta, "content": "c1", "preamble": "p"}
+                        ),
+                        VectorRow(
+                            [0, 1.0, 0], {**meta, "heading": "Two", "content": "c2"}
+                        ),
+                    ),
+                )
+            ],
+        )
+        store.close()
+        outcome = Donor.open(NumpySidecarBackend(), base, ident, builder=builder)
+        assert isinstance(outcome, Donor)
+        with outcome:
+            assert set(outcome.vectors_for("a.md")) == {
+                builder.build(
+                    title="A",
+                    heading="One",
+                    content="c1",
+                    fields_text="p",
+                    is_first_chunk=True,
+                ),
+                builder.build(
+                    title="A",
+                    heading="Two",
+                    content="c2",
+                    fields_text="",
+                    is_first_chunk=False,
+                ),
+            }
+
+    def test_a_postgres_donor_changes_no_rows(
+        self, postgres_schema: PostgresSchema
+    ) -> None:
+        from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
+
+        backend = PostgresVectorBackend(postgres_schema.dsn)
+        _publish(backend, postgres_schema.name)
+        reader = backend.open(postgres_schema.name, _IDENT, owns_files=False)
+        try:
+            before = (reader.generation, reader.tokens(), reader.count)
+            outcome = Donor.open(
+                backend, postgres_schema.name, _IDENT, builder=_BUILDER
+            )
+            assert isinstance(outcome, Donor)
+            with outcome:
+                outcome.vectors_for("a.md")
+            assert (reader.generation, reader.tokens(), reader.count) == before
+        finally:
+            reader.close()
