@@ -29,6 +29,7 @@ from markdown_vault_mcp.exceptions import (
 from markdown_vault_mcp.indexing.embedding_reconciler import (
     EmbeddingReconciler,
     RebuildOutcome,
+    RebuildPreview,
     ReconcileResult,
 )
 from markdown_vault_mcp.source_probe import FileSourceProbe
@@ -348,6 +349,80 @@ class EmbeddingsManager:
             store.publish_generation(identity, [])
             logger.info("build_embeddings_saved_empty_index")
         return embedded
+
+    def import_target(self) -> EmbeddingStore:
+        """Open, for writing, the store an import publishes into (#1505).
+
+        Returns:
+            The configured store, or a fresh one over its location when it
+            will not open or holds another identity; the import replaces it.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            StoreBusyError: If another process is writing the store.
+            StoreOpenError: If the store is otherwise unavailable or of an
+                unsupported schema.
+        """
+        self._require_vectors()
+        if self._slot is None:  # pragma: no cover - _require_vectors() ran
+            raise RuntimeError("No vector store slot without an embedding provider.")
+        return self._slot.rebuild_target()
+
+    def import_from(self, donor: Donor) -> RebuildOutcome:
+        """Run a full build into the configured store, copying from *donor* (#1505).
+
+        Per chunk a vector is copied from the store's own rows, then from
+        *donor*; the rest are embedded. One generation replaces the store,
+        so a repeated import embeds nothing.
+
+        Args:
+            donor: The source, opened read-only.
+
+        Returns:
+            What the build did.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            EmbeddingsNotPublishedError: If a provider batch failed while the
+                store held vectors: nothing was published.
+            StoreOpenError: If the store cannot be opened for writing.
+        """
+        store = self.import_target()
+        if self._slot is None or self._reconciler is None:  # pragma: no cover
+            raise RuntimeError("No reconciler without an embedding provider.")
+        identity = self._slot.identity
+        outcome = self._reconciler.rebuild(store, identity, donor=donor, reuse_own=True)
+        self._finish_cold_build(store, identity, outcome)
+        return outcome
+
+    def preview_import(self, donor: Donor) -> RebuildPreview:
+        """Count what :meth:`import_from` would copy and embed, writing nothing.
+
+        The store is read as it is; one that will not open or holds another
+        identity counts as holding nothing to reuse, since the import would
+        replace it.
+
+        Args:
+            donor: The source, opened read-only.
+
+        Returns:
+            The counts.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            StoreOpenError: If the store is unavailable.
+        """
+        self._require_vectors()
+        if self._slot is None or self._reconciler is None:  # pragma: no cover
+            raise RuntimeError("No reconciler without an embedding provider.")
+        identity = self._slot.identity
+        try:
+            store: EmbeddingStore | None = self._slot.get(rebuild=None)
+        except (StoreCorruptError, StoreIncompatibleError):
+            store = None
+        if store is not None and store.identity != identity:
+            store = None
+        return self._reconciler.preview(store, identity, donor=donor, reuse_own=True)
 
     def _upgrade_donor(self, identity: EmbeddingIdentity) -> Donor | None:
         """Open the sidecar a 5.x release left beside a new built-in store, as a donor.

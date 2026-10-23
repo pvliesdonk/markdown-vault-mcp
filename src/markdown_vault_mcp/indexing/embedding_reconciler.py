@@ -122,6 +122,23 @@ class ReconcileResult:
 
 
 @dataclass(frozen=True)
+class RebuildPreview:
+    """What a full build would do, counted without building (:meth:`EmbeddingReconciler.preview`).
+
+    Attributes:
+        chunks: Every chunk the keyword index holds.
+        reusable: Chunks a vector would be copied for, from the store's own
+            rows or a donor (#1505).
+        to_embed: The inputs the build would send the provider, each once
+            per document.
+    """
+
+    chunks: int
+    reusable: int
+    to_embed: int
+
+
+@dataclass(frozen=True)
 class RebuildOutcome:
     """What one full build did (:meth:`EmbeddingReconciler.rebuild`).
 
@@ -573,10 +590,43 @@ class EmbeddingReconciler:
         attempted = sum(len(d.texts) for d in docs)
         return RebuildOutcome(embedded, reused, attempted, published, failed)
 
+    def preview(
+        self,
+        store: EmbeddingStore | None,
+        identity: EmbeddingIdentity,
+        *,
+        donor: Donor | None = None,
+        reuse_own: bool = False,
+    ) -> RebuildPreview:
+        """Count what :meth:`rebuild` would copy and embed, calling no provider.
+
+        Args:
+            store: The store a build would publish into; ``None`` when it
+                holds nothing a build could reuse.
+            identity: The identity the vectors are embedded at.
+            donor: A read-only store a build would copy matching vectors from.
+            reuse_own: Count *store*'s own matching rows as reusable.
+
+        Returns:
+            The counts, matched by the same rule as :meth:`rebuild`.
+
+        Raises:
+            StoreUnavailableError: If *donor* can no longer be read.
+        """
+        docs = [d for d in self.documents().values() if d.texts]
+        found, misses, _ = self._split(
+            docs, store, identity.dimension, donor, reuse_own
+        )
+        return RebuildPreview(
+            chunks=sum(len(d.texts) for d in docs),
+            reusable=sum(len(v) for v in found.values()),
+            to_embed=len(misses),
+        )
+
     def _split(
         self,
         docs: list[_Document],
-        store: EmbeddingStore,
+        store: EmbeddingStore | None,
         dimension: int,
         donor: Donor | None,
         reuse_own: bool,
@@ -593,11 +643,11 @@ class EmbeddingReconciler:
             *donor*.
         """
         donated = 0
-        own = reuse_own and store.count > 0
+        own = store if reuse_own and store is not None and store.count > 0 else None
         found: dict[str, dict[int, array[float]]] = {}
         misses: list[tuple[str, RevisionToken, str, dict[str, Any]]] = []
         for doc in docs:
-            mine = stored_inputs(self._builder, store.rows_for(doc.path)) if own else {}
+            mine = stored_inputs(self._builder, own.rows_for(doc.path)) if own else {}
             given = donor.vectors_for(doc.path) if donor is not None else {}
             wanted: set[str] = set()
             for index, (text, meta) in enumerate(
