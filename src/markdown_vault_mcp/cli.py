@@ -282,7 +282,10 @@ def index(
 ) -> None:
     """Build the full-text search index."""
     from markdown_vault_mcp._http_logging import quiet_http_loggers
-    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+    from markdown_vault_mcp.exceptions import (
+        EmbeddingsNotConfiguredError,
+        EmbeddingsNotPublishedError,
+    )
 
     quiet_http_loggers()
     built = _build_vault(source_dir, index_path)
@@ -297,6 +300,9 @@ def index(
             typer.echo(f"Embedded {n} chunks")
         except EmbeddingsNotConfiguredError:
             pass  # embeddings not configured
+        except EmbeddingsNotPublishedError as exc:
+            typer.echo(f"Error: {exc} Retry when the provider recovers.", err=True)
+            raise typer.Exit(1) from exc
     finally:
         built.close()
 

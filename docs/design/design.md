@@ -4443,11 +4443,16 @@ keeps today's behaviour (#649: skipped, published without, retried later)
 only when the destination holds no rows; a build that would replace a
 populated store publishes nothing unless every batch succeeded, logged
 `build_embeddings_not_published reason=batch_failed failed_batches=%d`,
-so a failed rebuild or import never shrinks a working store. The result is
+so a failed rebuild or import never shrinks a working store;
+`build_embeddings` then raises `EmbeddingsNotPublishedError`, which the
+`build_embeddings` tool reports as a server-side failure at WARNING ("the
+existing embeddings were kept unchanged; retry later") and the `index`
+command as an error with exit status 1, instead of a quiet
+`chunks_embedded: 0`. The result is
 a `RebuildOutcome` (embedded, reused, attempted, published, failed
 batches); `build_embeddings_saved chunks=%d reused=%d` reports a published
 build, and a donor build also logs
-`embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d`,
+`embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d published=%s`,
 `reused` counting donor hits.
 
 **The released-sidecar upgrade (#1505 children 2 and 5).** v5.0.0 and

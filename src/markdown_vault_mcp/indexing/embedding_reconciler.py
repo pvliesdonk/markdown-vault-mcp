@@ -125,9 +125,11 @@ class ReconcileResult:
 class RebuildOutcome:
     """What one full build did (:meth:`EmbeddingReconciler.rebuild`).
 
+    Counts describe the generation the build assembled, published or not.
+
     Attributes:
-        embedded: Chunks the provider embedded and the build kept.
-        reused: Chunks copied from the store's own rows or a donor (#1505).
+        embedded: Chunks the provider embedded for the generation.
+        reused: Chunks copied into it from the store's own rows or a donor (#1505).
         attempted: Every chunk the keyword index holds.
         published: Whether a generation was published.
         failed_batches: Provider batches that failed and were skipped.
@@ -560,11 +562,13 @@ class EmbeddingReconciler:
             published = True
         if donor is not None:
             logger.info(
-                "embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d",
+                "embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d "
+                "published=%s",
                 donor.source,
                 donated,
                 embedded,
                 donor.refused_rows,
+                published,
             )
         attempted = sum(len(d.texts) for d in docs)
         return RebuildOutcome(embedded, reused, attempted, published, failed)
@@ -729,10 +733,18 @@ def _assemble(
 
 
 def _sized(vector: Sequence[float] | None, dimension: int) -> array[float] | None:
-    """Return *vector* as float32 when it fits *dimension* (unknown: 0), else ``None``."""
+    """Return *vector* as float32 when it fits *dimension* (unknown: 0), else ``None``.
+
+    A donor hands numpy float32 arrays; their bytes are copied at once rather
+    than element by element, which costs seconds per hundred thousand chunks.
+    """
     if vector is None:
         return None
-    packed = array("f", vector)
+    if hasattr(vector, "tobytes") and getattr(vector, "dtype", None) == "float32":
+        packed = array("f")
+        packed.frombytes(vector.tobytes())
+    else:
+        packed = array("f", vector)
     if dimension > 0 and len(packed) != dimension:
         return None
     return packed

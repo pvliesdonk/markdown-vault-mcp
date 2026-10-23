@@ -137,6 +137,28 @@ class EmbeddingsNotConfiguredError(InvalidRequestError):
     """
 
 
+class EmbeddingsNotPublishedError(MarkdownMCPError, RuntimeError):
+    """Raised when a full embedding build kept a populated store unchanged.
+
+    A build that would replace a store already holding vectors publishes
+    nothing unless every provider batch succeeded, so a provider that fails
+    part-way never shrinks a working store (#1505). The request was fine:
+    the previous embeddings still serve searches, and a retry once the
+    provider recovers completes the build. A server-side failure, not a
+    request the caller must change.
+
+    Attributes:
+        failed_batches: How many provider batches failed.
+    """
+
+    def __init__(self, *, failed_batches: int) -> None:
+        super().__init__(
+            f"{failed_batches} embedding provider batch(es) failed, so the existing "
+            "embeddings were kept unchanged."
+        )
+        self.failed_batches = failed_batches
+
+
 class SummarizeTimeoutError(InvalidRequestError, RuntimeError):
     """Raised when a summarization request outruns its per-request budget.
 

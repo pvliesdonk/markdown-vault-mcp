@@ -804,17 +804,27 @@ class TestRebuildWithDonor:
             assert np.allclose(row.vector, donor.given[donated][text])
 
     def test_a_changed_chunk_is_embedded_and_the_rest_donated(self, tmp_path):
-        notes = {"a.md": "# A\n\n## One\n\nApples.\n\n## Two\n\nPears.\n"}
-        _fts, provider, store, rec = _setup(tmp_path, notes)
+        body = "## One\n\nApples.\n\n## Two\n\nPears.\n\n## Three\n\nPlums.\n"
+        notes = {"a.md": f"# A\n\n{body}\n## One\n\nApples.\n\n## Four\n\nEnd.\n"}
+        _fts, provider, store, rec = _setup(tmp_path, notes, chunker=SECTIONS)
+        doc = rec.documents()["a.md"]
+        assert len(doc.texts) >= 4
+        assert len(set(doc.texts)) < len(doc.texts)  # a duplicated section
         donor = _donate(rec, ["a.md"])
-        first = rec.documents()["a.md"].texts[0]
-        del donor.given["a.md"][first]
+        missing = doc.texts[1]
+        del donor.given["a.md"][missing]
         outcome = rec.rebuild(store, store.identity, donor=donor)
-        assert provider.texts == [first]
-        assert (outcome.embedded, outcome.reused) == (
-            1,
-            len(rec.documents()["a.md"].texts) - 1,
-        )
+        assert provider.texts == [missing]
+        assert outcome.embedded == doc.texts.count(missing)
+        assert outcome.reused == len(doc.texts) - doc.texts.count(missing)
+        rows = store.rows_for("a.md")
+        layout = [
+            (r.metadata.get("heading"), r.metadata.get("start_line")) for r in rows
+        ]
+        assert layout == [(m.get("heading"), m.get("start_line")) for m in doc.metadata]
+        for row, text in zip(rows, doc.texts, strict=True):
+            if text != missing:
+                assert np.allclose(row.vector, donor.given["a.md"][text])
 
     def test_reuse_own_rows_when_asked(self, tmp_path):
         _fts, provider, store, rec = _setup(tmp_path, NOTES)
@@ -882,7 +892,7 @@ class TestRebuildWithDonor:
         lines = [
             r.args for r in caplog.records if r.msg.startswith("embeddings_donor_used ")
         ]
-        assert lines == [("fake:donor", outcome.reused, outcome.embedded, 2)]
+        assert lines == [("fake:donor", outcome.reused, outcome.embedded, 2, True)]
 
     def test_a_real_donor_store_feeds_the_build(self, tmp_path):
         from markdown_vault_mcp.indexing.donor import Donor

@@ -1249,9 +1249,14 @@ class TestBuildEmbeddings:
         mgr.build_embeddings()
         expected = _stored(embeddings_path, provider).tokens()
         provider.fail, provider.calls = True, 0
-        with caplog.at_level(logging.WARNING):
-            count = mgr.build_embeddings(force=True)
-        assert count == 0
+        from markdown_vault_mcp.exceptions import EmbeddingsNotPublishedError
+
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.raises(EmbeddingsNotPublishedError) as kept,
+        ):
+            mgr.build_embeddings(force=True)
+        assert kept.value.failed_batches == 1
         assert _stored(embeddings_path, provider).tokens() == expected
         assert any(
             r.msg.startswith("build_embeddings_not_published ") for r in caplog.records

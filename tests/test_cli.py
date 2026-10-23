@@ -1529,3 +1529,21 @@ def test_search_by_meaning_reads_a_postgres_store_without_an_index_path(
     assert result.exit_code == 0, result.output
     found = [r["path"] for r in json.loads(result.stdout)]
     assert found == (["a.md"] if seeded else [])  # what the store holds, no more
+
+
+def test_index_reports_an_unpublished_rebuild() -> None:
+    """#1505: a forced rebuild that kept the old embeddings exits non-zero, saying so."""
+    from markdown_vault_mcp.exceptions import EmbeddingsNotPublishedError
+
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 5
+    mock_stats.chunks_indexed = 20
+    mock_vault.index.build_index.return_value = mock_stats
+    mock_vault.index.build_embeddings.side_effect = EmbeddingsNotPublishedError(
+        failed_batches=1
+    )
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
+        result = runner.invoke(app, ["index", "--force"])
+    assert result.exit_code == 1
+    assert "kept" in result.output

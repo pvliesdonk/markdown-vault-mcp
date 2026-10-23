@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
     EmbeddingsNotConfiguredError,
+    EmbeddingsNotPublishedError,
     StoreCorruptError,
     StoreIncompatibleError,
 )
@@ -257,10 +258,8 @@ class EmbeddingsManager:
             provider exception on a batch (a token-context rejection being
             the motivating case, but also transient API/network errors) is
             logged and the batch skipped, so this may be less than the total
-            number of chunks attempted; if every batch is skipped, ``0`` is
-            returned and no vectors are saved. A full build that would
-            replace a populated store saves nothing unless every batch
-            succeeded, and then returns ``0``. A successful build with no embeddable chunks
+            number of chunks attempted; if every batch is skipped and no
+            vector was copied, ``0`` is returned and no vectors are saved. A successful build with no embeddable chunks
             publishes an empty generation so stale vectors cannot survive a
             forced rebuild. On the convergence path this counts only the newly
             embedded chunks — a fully converged index returns ``0``.
@@ -270,6 +269,10 @@ class EmbeddingsManager:
                 configured. A ``ValueError``
                 subclass, so callers may catch either; narrow to it to let
                 genuine internal ``ValueError``s surface (#774).
+            EmbeddingsNotPublishedError: If a full build would have replaced
+                a store that already holds vectors but a provider batch
+                failed: nothing was published and the existing embeddings
+                stay (#1505).
         """
         self._require_vectors()
         if self._embedding_provider is None or self._slot is None:
@@ -298,10 +301,10 @@ class EmbeddingsManager:
             logger.info(
                 "build_embeddings_saved chunks=%d reused=%d", embedded, outcome.reused
             )
-        elif outcome.failed_batches and (embedded or outcome.reused):
+        elif not outcome.published and (embedded or outcome.reused):
             # The reconciler logged build_embeddings_not_published: the
             # populated store keeps its rows, and nothing was saved.
-            return 0
+            raise EmbeddingsNotPublishedError(failed_batches=outcome.failed_batches)
         elif total > 0:
             # Every batch was skipped (e.g. provider down for the whole build,
             # or a dimension mismatch). Surface it loudly rather than as the
