@@ -10,10 +10,12 @@ as ``embeddings_import_refused``.
 
 Refusals that change nothing come first: no provider, a destination kept in
 memory, the source being the destination; then a built-in destination's
-writer lock (a running server). The keyword index is brought up to date with
-no vector store open, so nothing is embedded early; then the source is opened
-(identity, emptiness, damage) and the destination for writing, where a
-PostgreSQL destination's lease refuses.
+writer lock (a running server) and the source (identity, emptiness, damage).
+The keyword index is then brought up to date with vectors deferred, so no
+vector store is opened, embedded into or purged early; a vault that then
+holds no notes is refused, so a missing folder never empties a store. Last
+the destination opens for writing, where a PostgreSQL destination's lease
+refuses.
 
 See ``docs/design/design.md`` § "The explicit import (#1505 child 6)".
 """
@@ -33,8 +35,9 @@ from markdown_vault_mcp.exceptions import (
     EmbeddingsNotConfiguredError,
     MarkdownMCPError,
     StoreBusyError,
+    StoreOpenError,
 )
-from markdown_vault_mcp.indexing.donor import Donor
+from markdown_vault_mcp.indexing.donor import Donor, DonorRefused
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -54,6 +57,7 @@ ImportRefusal = Literal[
     "in_memory",
     "same_store",
     "busy",
+    "vault_empty",
     "source_empty",
     "identity_unknown",
     "identity_differs",
@@ -94,6 +98,8 @@ class ImportReport:
         refused_rows: Source rows skipped for a broken vector.
         dry_run: Whether nothing was written.
         published: Whether a generation was published.
+        failed_batches: Provider batches that failed; into an empty store the
+            build is published without them (#649).
     """
 
     source: str
@@ -104,6 +110,30 @@ class ImportReport:
     refused_rows: int
     dry_run: bool
     published: bool
+    failed_batches: int = 0
+
+
+class _SourceUnreadable(MarkdownMCPError):
+    """The source failed a read during the build; the build published nothing."""
+
+    def __init__(self, exc: StoreOpenError) -> None:
+        super().__init__(str(exc))
+        self.cause = exc
+
+
+class _SourceDonor(Donor):
+    """The source as a donor whose failed read is told apart from the destination's."""
+
+    def vectors_for(self, path: str) -> dict[str, Any]:
+        """Return the source's vectors for *path*; see :meth:`Donor.vectors_for`.
+
+        Raises:
+            _SourceUnreadable: If the source can no longer be read.
+        """
+        try:
+            return super().vectors_for(path)
+        except StoreOpenError as exc:
+            raise _SourceUnreadable(exc) from exc
 
 
 class ImportRefused(MarkdownMCPError):
@@ -178,12 +208,20 @@ def import_embeddings(
     if dry_run:
         return _preview(vault, manager, side, destination)
     try:
-        with _destination_lock(destination):
-            vault.index.build_index()
-            vault.index.reindex()
-            with _donor(manager, side) as donor:
+        with _destination_lock(destination), _donor(manager, side) as donor:
+            with manager.vectors_deferred():
+                vault.index.build_index()
+                vault.index.reindex()
+            _refuse_an_empty_vault(manager)
+            try:
                 outcome = manager.import_from(donor)
-                refused_rows = donor.refused_rows
+            except _SourceUnreadable as exc:
+                raise _refuse(
+                    "source_unavailable",
+                    f"{side.label} cannot be read: {str(exc).rstrip('.')}. "
+                    "Nothing was published.",
+                ) from exc.cause
+            refused_rows = donor.refused_rows
     except StoreBusyError:
         raise _refuse(
             "busy",
@@ -192,12 +230,14 @@ def import_embeddings(
         ) from None
     logger.info(
         "embeddings_import_completed source=%s destination=%s chunks=%d reused=%d "
-        "embedded=%d published=%s",
+        "embedded=%d refused_rows=%d failed_batches=%d published=%s",
         side.label,
         destination.label,
         outcome.attempted,
         outcome.reused,
         outcome.embedded,
+        refused_rows,
+        outcome.failed_batches,
         outcome.published,
     )
     return ImportReport(
@@ -209,15 +249,27 @@ def import_embeddings(
         refused_rows,
         dry_run=False,
         published=outcome.published,
+        failed_batches=outcome.failed_batches,
     )
+
+
+def _refuse_an_empty_vault(manager: EmbeddingsManager) -> None:
+    """Refuse a vault with no notes: its build would empty the destination."""
+    if manager._fts.count_chunks() == 0:
+        raise _refuse(
+            "vault_empty",
+            "the vault holds no notes to import vectors for, so the configured "
+            "store was left as it is. Check MARKDOWN_VAULT_MCP_SOURCE_DIR.",
+        )
 
 
 def _preview(
     vault: Vault, manager: EmbeddingsManager, side: _Side, destination: _Side
 ) -> ImportReport:
     """Count a dry run against *vault*'s scratch keyword index."""
-    vault.index.build_index()
     with _donor(manager, side) as donor:
+        vault.index.build_index()
+        _refuse_an_empty_vault(manager)
         preview = manager.preview_import(donor)
         refused_rows = donor.refused_rows
     logger.info(
@@ -263,7 +315,7 @@ def _destination(manager: EmbeddingsManager, settings: VaultSettings) -> _Side:
         dsn = settings.embedding_postgres_dsn or ""
         key: tuple[str, ...] = ("postgres", *_server(dsn), str(slot.location))
     else:
-        key = (name, os.path.realpath(slot.location))
+        key = (name, _lock_key(slot.location))
     return _Side(None, slot.location, key, f"{name}:{slot.location}")
 
 
@@ -284,7 +336,7 @@ def _source(settings: VaultSettings, source: ImportSource) -> _Side:
         return _Side(
             SqliteVectorBackend(),
             base,
-            ("sqlite", os.path.realpath(base)),
+            ("sqlite", _lock_key(base)),
             f"sqlite:{base}",
         )
     from markdown_vault_mcp.stores.numpy_sidecar import (
@@ -298,13 +350,13 @@ def _source(settings: VaultSettings, source: ImportSource) -> _Side:
         return _Side(
             NumpySidecarBackend(),
             base,
-            ("numpy", os.path.realpath(base)),
+            ("numpy", _lock_key(base)),
             f"numpy:{base}",
         )
     return _Side(
         NumpySidecarBackend(legacy_only=True),
         base,
-        ("numpy-released", os.path.realpath(base)),
+        ("numpy-released", _lock_key(base)),
         f"numpy:{base}",
     )
 
@@ -344,6 +396,15 @@ def _postgres_source(settings: VaultSettings, source: ImportSource) -> _Side:
     return _Side(
         backend, schema, ("postgres", *_server(dsn), schema), f"postgres:{schema}"
     )
+
+
+def _lock_key(base: Path | str) -> str:
+    """Name a built-in store by its writer lock's path.
+
+    The stores name their files with ``Path.with_suffix`` (#819), so ``emb``,
+    ``emb.npy`` and ``emb.sqlite3`` are one base, as they are one lock.
+    """
+    return os.path.realpath(Path(base).with_suffix(".lock"))
 
 
 def _server(dsn: str) -> tuple[str, str, str]:
@@ -388,13 +449,13 @@ def _donor(manager: EmbeddingsManager, side: _Side) -> Iterator[Donor]:
     if manager._slot is None:  # pragma: no cover - _destination() checked
         raise RuntimeError("No vector store slot without an embedding provider.")
     backend: StoreBackend[EmbeddingStore] = side.backend
-    opened = Donor.open(
+    opened = _SourceDonor.open(
         backend,
         side.location,
         manager._slot.identity,
         builder=manager._embed_builder,
     )
-    if not isinstance(opened, Donor):
+    if isinstance(opened, DonorRefused):
         raise _refuse(_DONOR_REFUSALS[opened.reason], _donor_message(side, opened))
     try:
         yield opened
@@ -402,7 +463,7 @@ def _donor(manager: EmbeddingsManager, side: _Side) -> Iterator[Donor]:
         opened.close()
 
 
-def _donor_message(side: _Side, refused: Any) -> str:
+def _donor_message(side: _Side, refused: DonorRefused) -> str:
     """The operator's line for a source that may not donate."""
     reason: DonorRefusal = refused.reason
     if reason == "empty":
@@ -418,7 +479,7 @@ def _donor_message(side: _Side, refused: Any) -> str:
             f"{side.label} holds vectors of another embedding model ({detail}). "
             "Configure that provider to import, or run index to embed with this one."
         )
-    return f"{side.label} cannot be read: {detail}. Nothing was changed."
+    return f"{side.label} cannot be read: {detail}. No vectors were changed."
 
 
 def _refuse(reason: ImportRefusal, message: str) -> ImportRefused:

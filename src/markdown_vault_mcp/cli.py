@@ -154,6 +154,7 @@ if TYPE_CHECKING:
         StoreCorruptError,
         StoreIncompatibleError,
     )
+    from markdown_vault_mcp.managers.embedding_import import ImportReport
     from markdown_vault_mcp.vault import Vault
 
 
@@ -624,17 +625,45 @@ def embeddings_import(
         raise typer.Exit(1) from exc
     finally:
         built.close()
+    _report_import(report)
+
+
+def _report_import(report: ImportReport) -> None:
+    """Print what an import did, or would do; exit 1 when it saved nothing.
+
+    Args:
+        report: The import's report.
+
+    Raises:
+        typer.Exit: With code 1 when the build published nothing.
+    """
+    refused = report.refused_rows
+    rows = f", {refused} source row{'' if refused == 1 else 's'} refused"
+    rows = rows if refused else ""
     if report.dry_run:
         typer.echo(
             f"Would import from {report.source} into {report.destination}: "
             f"{report.chunks} chunks, {report.reused} reusable, {report.embedded} "
-            "to embed. Nothing was written."
+            f"to embed{rows}. Nothing was written."
         )
-    else:
+        return
+    if not report.published:
         typer.echo(
-            f"Imported from {report.source} into {report.destination}: "
-            f"{report.chunks} chunks, {report.reused} reused, {report.embedded} "
-            "embedded."
+            f"ERROR: the provider embedded none of the chunks {report.source} "
+            "lacks, so nothing was published. Retry when the provider recovers.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    typer.echo(
+        f"Imported from {report.source} into {report.destination}: "
+        f"{report.chunks} chunks, {report.reused} reused, {report.embedded} "
+        f"embedded{rows}."
+    )
+    if report.failed_batches:
+        batches = report.failed_batches
+        typer.echo(
+            f"{batches} provider batch{'' if batches == 1 else 'es'} failed; the "
+            "server embeds the chunks still missing at its next start."
         )
 
 

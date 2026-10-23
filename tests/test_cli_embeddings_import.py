@@ -220,10 +220,18 @@ def test_the_released_sidecar_imports_into_numpy(
             FIXTURE / f"index-db-embeddings{suffix}",
             env / f"index-db-embeddings{suffix}",
         )
+    released = {
+        s: hashlib.sha256((env / f"index-db-embeddings{s}").read_bytes()).hexdigest()
+        for s in (".json", ".npy")
+    }
     _store(monkeypatch, "numpy")
     result = _import("--from", "numpy")
     assert result.exit_code == 0, result.output
     assert "0 embedded" in result.stdout
+    assert {
+        s: hashlib.sha256((env / f"index-db-embeddings{s}").read_bytes()).hexdigest()
+        for s in (".json", ".npy")
+    } == released
 
 
 def _released_as(env: Path, payload: Any) -> Path:
@@ -486,3 +494,149 @@ def test_two_dsns_naming_one_server_are_the_same_store() -> None:
 
     assert _server("postgresql://a@db:5432/v") == _server("host=db dbname=v user=b")
     assert _server("not = a = dsn") == ("not = a = dsn", "", "")
+
+
+@pytest.mark.parametrize(
+    ("store", "suffix"), [("sqlite", ".sqlite3"), ("numpy", ".npy")]
+)
+def test_a_source_path_with_an_extension_is_still_the_same_store(
+    env: Path, monkeypatch: pytest.MonkeyPatch, store: str, suffix: str
+) -> None:
+    _built_with(monkeypatch, store)
+    files = _source_files(env, store)
+    result = _import(
+        "--from", store, "--from-path", str(env / f"index-db-embeddings{suffix}")
+    )
+    assert result.exit_code == 1
+    assert "is the configured store" in result.stderr
+    assert _source_files(env, store) == files
+
+
+def test_a_newly_excluded_note_does_not_open_the_destination_early(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _built_with(monkeypatch, "numpy")
+    _store(monkeypatch, "sqlite")
+    assert runner.invoke(app, ["index"]).exit_code == 0  # sqlite holds rows too
+    (env / "vault" / "alpha.md").write_text(NOTES["alpha.md"] + "\nEdited.\n")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EXCLUDE", "sub/*")
+    _Counting.texts = []
+    empty = env / "empty" / "emb"
+    sqlite_file = env / "index-db-embeddings.sqlite3"
+    before = hashlib.sha256(sqlite_file.read_bytes()).hexdigest()
+    result = _import("--from", "numpy", "--from-path", str(empty))
+    assert result.exit_code == 1
+    assert "holds no vectors" in result.stderr
+    # Refused before the keyword update could embed into the destination.
+    assert _Counting.texts == []
+    assert hashlib.sha256(sqlite_file.read_bytes()).hexdigest() == before
+
+
+def test_a_source_that_fails_mid_build_is_named(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+    from markdown_vault_mcp.indexing.donor import Donor
+
+    _built_with(monkeypatch, "numpy")
+    del env
+
+    def lost(_self: Any, _path: str) -> Any:
+        raise StoreUnavailableError(
+            "connection lost (reason=query)", backend="numpy", location="x"
+        )
+
+    monkeypatch.setattr(Donor, "vectors_for", lost)
+    _store(monkeypatch, "sqlite")
+    result = _import("--from", "numpy")
+    assert result.exit_code == 1
+    assert "numpy:" in result.stderr
+    assert "cannot be read: connection lost" in result.stderr
+    assert "configured store" not in result.stderr
+
+
+def _down(_self: Any, _texts: list[str]) -> list[list[float]]:
+    raise RuntimeError("provider down")
+
+
+def test_an_import_that_saved_nothing_fails(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _built_with(monkeypatch, "numpy")
+    for name in NOTES:  # every note moved: the source matches no path
+        (env / "vault" / name).rename(env / "vault" / f"moved-{name.replace('/', '-')}")
+    monkeypatch.setattr(_Counting, "embed", _down)
+    _store(monkeypatch, "sqlite")
+    result = _import("--from", "numpy")
+    assert result.exit_code == 1
+    assert "so nothing was published. Retry when the provider recovers." in (
+        result.stderr
+    )
+
+
+def test_a_partly_failed_import_says_what_is_missing(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _built_with(monkeypatch, "numpy")
+    (env / "vault" / "beta.md").write_text(NOTES["beta.md"] + "\nEdited.\n")
+    monkeypatch.setattr(_Counting, "embed", _down)
+    _store(monkeypatch, "sqlite")
+    result = _import("--from", "numpy")
+    assert result.exit_code == 0, result.output
+    assert "2 reused, 0 embedded" in result.stdout
+    assert "1 provider batch failed" in result.stdout
+
+
+def test_an_empty_vault_is_refused(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _built_with(monkeypatch, "numpy")
+    _store(monkeypatch, "sqlite")
+    assert runner.invoke(app, ["index"]).exit_code == 0
+    for name in NOTES:
+        (env / "vault" / name).unlink()
+    for args in (("--dry-run",), ()):
+        result = _import("--from", "numpy", *args)
+        assert result.exit_code == 1, args
+        assert "holds no notes" in result.stderr
+    assert _chunk_count(monkeypatch, "sqlite") == 3  # left as it was
+
+
+def test_the_destinations_own_rows_are_reused(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _built_with(monkeypatch, "numpy")  # the source: the notes as they were
+    (env / "vault" / "alpha.md").write_text(NOTES["alpha.md"] + "\nEdited.\n")
+    _store(monkeypatch, "sqlite")
+    assert runner.invoke(app, ["reindex"]).exit_code == 0  # embeds the edit
+    _Counting.texts = []
+    result = _import("--from", "numpy")
+    assert result.exit_code == 0, result.output
+    assert "0 embedded" in result.stdout  # the edit is the destination's own row
+    assert _Counting.texts == []
+
+
+def test_refused_source_rows_are_reported(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import numpy as np
+
+    base = env / "released"
+    for suffix in (".json", ".npy"):
+        shutil.copy(FIXTURE / f"index-db-embeddings{suffix}", base.with_suffix(suffix))
+    matrix = np.load(base.with_suffix(".npy"))
+    matrix[0] = np.nan  # one broken vector
+    np.save(base.with_suffix(".npy"), matrix)
+    _store(monkeypatch, "sqlite")
+    result = _import("--from", "numpy", "--from-path", str(base))
+    assert result.exit_code == 0, result.output
+    assert "1 embedded, 1 source row refused" in result.stdout
+
+
+def test_postgres_into_itself_is_refused(
+    env: Path, monkeypatch: pytest.MonkeyPatch, postgres_schema: Any
+) -> None:
+    del env
+    _postgres(monkeypatch, postgres_schema)
+    _built_with(monkeypatch, "postgres")
+    result = _import("--from", "postgres")
+    assert result.exit_code == 1
+    assert "is the configured store" in result.stderr

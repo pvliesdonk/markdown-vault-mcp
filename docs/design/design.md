@@ -4542,19 +4542,26 @@ another one, and is the explicit switch of choice C.
   base); PostgreSQL by the host, port and database of the DSN, and the
   schema.
 - **Order.** Refusals that write nothing come first: no provider, a
-  destination kept in memory, the same store. A built-in destination's
-  writer lock (`stores/_writer_lock.py`, child 6a) is then taken for the
-  whole import, so a running server refuses it before anything is written
-  (building the vault opens `index.db`, as every command does). The keyword
-  index is brought up to date (`build_index`, `reindex`) with no vector
-  store open, so nothing is embedded inline. The source is opened as a
-  donor, then the destination for writing (`EmbeddingsManager.import_from`
-  through `rebuild_target`), where a PostgreSQL destination's lease
-  refuses. One full build copies each chunk from the destination's own
+  destination kept in memory, the same store (built-in stores compared by
+  their writer lock's path, so `emb`, `emb.npy` and `emb.sqlite3` are one
+  base, #819). A built-in destination's writer lock (`stores/_writer_lock.py`,
+  child 6a) is then taken for the whole import, so a running server refuses
+  it before anything is written (building the vault opens `index.db`, as
+  every command does), and the source is opened as a donor, refusing an
+  unknown or other identity, an empty or an unreadable source. The keyword
+  index is brought up to date (`build_index`, `reindex`) inside
+  `EmbeddingsManager.vectors_deferred()`, so no vector store is opened,
+  embedded into or purged (`store_for_purge` returns `None`); a vault that
+  then holds no chunks is refused (`vault_empty`), so a missing folder never
+  empties a store. Last the destination opens for writing
+  (`EmbeddingsManager.import_from` through `rebuild_target`), where a
+  PostgreSQL destination's lease refuses. One full build, shared with the
+  cold build (`_full_build`), copies each chunk from the destination's own
   rows, then the donor (`reuse_own=True`, so a repeat embeds nothing),
   embeds the rest and publishes one generation, which replaces a populated
   destination atomically under the rule above (a failed batch over a
-  populated destination publishes nothing and exits 1).
+  populated destination publishes nothing and exits 1; a source read that
+  fails mid-build is reported as the source's, `source_unavailable`).
 - **Dry run.** `--dry-run` builds a scratch keyword index in memory, opens
   the configured store read-only (its location pinned from the settings)
   and takes no lock, so it runs while a server writes; it counts with
@@ -4564,16 +4571,24 @@ another one, and is the explicit switch of choice C.
   A destination that will not open or holds another identity counts as
   holding nothing to reuse.
 - **Output.** `Imported from S into D: N chunks, R reused, E embedded.` or
-  `Would import … R reusable, E to embed. Nothing was written.`; logged
-  `embeddings_import_started`, `embeddings_import_previewed` or
-  `embeddings_import_completed`, beside child 4's `embeddings_donor_used`.
+  `Would import … R reusable, E to embed. Nothing was written.`, each with
+  `, F source rows refused` when the donor skipped broken vectors, and a
+  line naming failed provider batches when an empty destination was
+  published without them (#649); an import that published nothing (every
+  chunk to embed failed) exits 1. Logged `embeddings_import_started`,
+  `embeddings_import_previewed` or `embeddings_import_completed` (with
+  `refused_rows` and `failed_batches`), beside child 4's
+  `embeddings_donor_used`.
 - **Refusals.** One `ERROR:` line naming the remedy, exit status 1, logged
   once at WARNING `embeddings_import_refused reason=%s`: `not_configured`
   (no provider, an unset DSN variable, no source base or schema, a missing
   extra), `in_memory`, `same_store`, `busy` ("stop the server first"),
+  `vault_empty`,
   `source_empty`, `identity_unknown`, `identity_differs`, `source_corrupt`,
   `source_unavailable`, `source_unsupported`. `index` and `reindex` report a
-  busy store the same way.
+  busy store the same way. Two DSNs are the same server when their host,
+  port and database agree as written: `localhost` and `127.0.0.1` are not
+  recognised as one, and importing a store into itself only republishes it.
 - **Generated reference.** The template's CLI reference generator lists top-level
   commands only, so `docs/use/embeddings.md` documents the options until
   fastmcp-server-template#823.

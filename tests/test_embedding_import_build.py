@@ -159,7 +159,7 @@ def test_a_failed_batch_keeps_a_populated_destination(
         vault.close()
 
 
-def test_preview_of_a_destination_of_another_model_counts_no_own_rows(
+def test_a_preview_over_a_destination_of_another_model_does_not_fail(
     tmp_path: Path, source: Path
 ) -> None:
     other = _vault(tmp_path, "sqlite", MockEmbeddingProvider(dim=8))

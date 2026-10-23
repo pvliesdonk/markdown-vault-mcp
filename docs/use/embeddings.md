@@ -491,7 +491,12 @@ Then start the server. The options:
 | `--from-dsn-env VAR` | The environment variable that holds a `postgres` source's connection string. Default: `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`. The command never takes a connection string itself, so it stays out of your shell history, and never prints one. |
 | `--dry-run` | Count the chunks it would copy and embed, then stop. It works while the server runs. |
 
-The import first brings the keyword index up to date. Every chunk whose text is unchanged is then copied, from the configured store's own rows or from the source, and only the rest is embedded; the result replaces the configured store in one step, so running it twice costs nothing the second time. The source is only read: its files or its schema stay exactly as they were, so you can go back to it. A `numpy` source at a base path with no `.v2.json` is the sidecar a 5.x release left there, which this command imports too.
+The import first brings the keyword index up to date. Every chunk whose text is unchanged is then copied, from the configured store's own rows or from the source, and only the rest is embedded; the result replaces the configured store in one step, so running it twice costs nothing the second time. The source is only read, so you can go back to it: its files or its schema stay exactly as they were.
+
+When the provider fails on chunks the source lacks:
+
+- nothing published: the command exits with an error;
+- an empty store published without them: the output names the failed batches, and the server embeds the missing chunks at its next start. A `numpy` source at a base path with no `.v2.json` is the sidecar a 5.x release left there, which this command imports too.
 
 It refuses, changing no vectors, and prints one line saying what to do when:
 
@@ -502,6 +507,7 @@ It refuses, changing no vectors, and prints one line saying what to do when:
 | The source holds no vectors | Nothing to import. |
 | The source records no model (the oldest sidecar format) or another model | Configure the model that built it, or let `index` embed with yours. |
 | The source cannot be read, or the connection string variable is not set | Fix the source, or set the variable. |
+| The vault holds no notes | Check `MARKDOWN_VAULT_MCP_SOURCE_DIR`; an import never empties a store. |
 | No provider is configured, or the vectors are kept in memory only | Configure a provider and `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`. |
 
 !!! note "Not in the generated CLI reference yet"
