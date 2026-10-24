@@ -974,6 +974,17 @@ class IndexManager:
         """
         return self._embeddings.build_embeddings(force=force)
 
+    def rebuild_embeddings_after_fault(self) -> int:
+        """Rebuild a vector store that would not open (#1505).
+
+        Thin delegation to
+        :meth:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager.rebuild_after_fault`.
+
+        Returns:
+            Number of chunks embedded.
+        """
+        return self._embeddings.rebuild_after_fault()
+
     def skipped_files(self) -> list[SkippedFile]:
         """Return files dropped from the index for a surfaced reason (#775).
 

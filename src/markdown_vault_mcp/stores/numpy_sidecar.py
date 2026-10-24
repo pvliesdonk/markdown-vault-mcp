@@ -49,6 +49,7 @@ from markdown_vault_mcp.stores._legacy import (
     numbered_files,
     report_unused_sidecar,
 )
+from markdown_vault_mcp.stores._quarantine import move_aside
 from markdown_vault_mcp.stores._resident import (
     NUMPY_AVAILABLE,
     ResidentStore,
@@ -76,6 +77,7 @@ with contextlib.suppress(ImportError):  # numpy is the embeddings extra
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+    from datetime import datetime
 
     from markdown_vault_mcp.types import (
         DocumentRows,
@@ -829,6 +831,43 @@ class NumpySidecarBackend:
         if str(location) == _MEMORY:
             return WriterLock(None)
         return hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+
+    def quarantine(
+        self,
+        location: Path | str,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> list[Path]:
+        """Rename this store's own files at *location* aside: it is corrupt (#1505).
+
+        ``{base}.v2.json`` and every ``{base}.v2.m{seq}.npy`` are renamed
+        to ``<name>.corrupt-<UTC time>`` under the writer lock; a released
+        sidecar (``{base}.json``, ``{base}.npy``) and ``{base}.lock`` are
+        left.
+
+        Args:
+            location: The store's base path; ``":memory:"`` moves nothing.
+            clock: Supplies the time the suffix is stamped with.
+
+        Returns:
+            The files' new paths; empty when there were none.
+
+        Raises:
+            StoreBusyError: If another process holds the lock.
+            StoreUnavailableError: If a file cannot be renamed; none is.
+        """
+        if str(location) == _MEMORY:
+            return []
+        base = Path(location)
+        lock = hold_writer_lock(base, backend=_BACKEND_NAME)
+        try:
+            # Listed under the lock: no writer adds a matrix meanwhile.
+            files = [commit_path(base), *sorted(_numbered_matrices(base).values())]
+            return move_aside(
+                files, backend=_BACKEND_NAME, location=str(base), clock=clock
+            )
+        finally:
+            lock.release()
 
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity

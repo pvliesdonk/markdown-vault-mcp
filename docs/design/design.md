@@ -4024,7 +4024,9 @@ holds one immutable snapshot that writers replace in one assignment, so a
 reader never sees a matrix and a row list that disagree. On disk
 `{base}.v2.json` is the commit point and names a matrix,
 `{base}.v2.m<N>.npy`, written under a new name per persist; the sweep
-removes only this store's own `.v2.m*.npy` matrices; in this backend `replace_document` publishes in memory and
+removes only this store's own `.v2.m*.npy` matrices. A corrupt store's
+`.v2.json` and every `.v2.m*.npy` are renamed aside by its `quarantine`
+before a rebuild (child 9, below); in this backend `replace_document` publishes in memory and
 becomes durable at `checkpoint()`, while `publish_generation` is durable
 before it returns.
 One process writes a base path at a time: two writers would pick the same
@@ -4085,9 +4087,13 @@ later truncate, at the next generation or at close. No file exists before the fi
 write; a first write that cannot create the database raises *unavailable*,
 logged like any failed write. A writable open holds the `{base}.lock`
 writer lock above but takes no SQLite write lock on an existing store and changes nothing in a database that is not a vector
-store before refusing it. `open_fresh` reads and checks nothing: before its
+store before refusing it. A store that fails its open as corrupt has its
+`.sqlite3`, `-wal` and `-shm` renamed aside by its `quarantine` before a
+rebuild (child 9, below). `open_fresh` reads and checks nothing: before its
 first write it removes a file that is not a vector store or whose pages
-`PRAGMA quick_check` finds damaged (refusing a newer format instead), and
+`PRAGMA quick_check` finds damaged, a fallback for damage the open did not
+see, since the rename leaves nothing there in the usual case (refusing a
+newer format instead), and
 that write empties a usable database inside its own transaction, so a
 conflict or an interrupt keeps the old rows. `embeddings_status` counts
 the database's rows read-only before the store opens. Vectors keep their
@@ -4331,7 +4337,8 @@ meanwhile waits, and `embeddings_status` may see no store for that moment.
 A search that took a store a first build then closes reads the store the
 build installed instead of failing (`SearchManager._vector_rows`). A
 closed slot opens nothing more. On an owned store, corrupt or
-another identity rebuilds through `VectorBackend.open_fresh`; without
+another identity rebuilds through `VectorBackend.open_fresh`, a corrupt
+built-in store first moved aside through the backend's `quarantine`; without
 ownership the store's `StoreCorruptError` or `StoreIncompatibleError`
 propagates, and such a process never creates or replaces the files (a
 forced rebuild raises `ReadOnlyError` before embedding); unavailable and
@@ -4651,9 +4658,37 @@ another one, and is the explicit switch of choice C.
   until a note is added or `index --force` runs, since an empty root cannot
   tell that deletion from an unmounted volume (child 8, #1791).
 - An owned corrupt numpy or SQLite store is renamed with the suffix
-  `.corrupt-<UTC timestamp>`, every file including `-wal` and `-shm`,
-  logged WARNING with the paths, before its rebuild, which a compatible
-  released sidecar can serve as donor (child 9). A PostgreSQL store keeps
+  `.corrupt-<YYYYMMDDTHHMMSSZ>`, every file including `-wal` and `-shm`,
+  logged WARNING `vector_store_moved_aside location=%s reason=corrupt
+  paths=%s`, before its rebuild (child 9). `VectorStoreSlot` does it, the
+  one place both rebuild routes meet a corrupt store: the automatic rebuild
+  of a store that will not open (`get` with a rebuild) and a full build's
+  `rebuild_target` (`build_embeddings(force=True)`, an import). Each
+  backend's `quarantine` (`stores/_quarantine.py:move_aside`) holds the
+  writer lock and lists the files under it; every file of one store takes
+  the same suffix, with `-2`, `-3` and so on when any name is taken, so
+  two corruptions in one second keep both copies. The released
+  `{base}.json`/`.npy` and the `{base}.lock` are never renamed. A refused
+  rename undoes the renames already made and raises *unavailable*: a
+  corrupt store that cannot be moved is never rebuilt over. A process that
+  does not own the files renames nothing and raises `StoreCorruptError`.
+  Threads of one process meet the same corrupt store at startup (a search
+  and the writer, say), and the writer lock is shared within a process, so
+  the slot takes its own recovery lock and opens the store again under it
+  before renaming: a failure seen before another thread moved the files
+  aside returns the store that thread left, renaming nothing. The lock is
+  never held across the rebuild, which may wait on the writer thread. Every
+  automatic rebuild, the writer's `_open_store` and a search's recovery job
+  (`BuildEmbeddings(after_fault=True)`, on the writer thread), runs
+  `EmbeddingsManager.rebuild_after_fault`, which opens the store again to
+  tell the faults apart: another identity is rebuilt with `force`, and a
+  corrupt store moved aside reopens empty and takes the ordinary cold build,
+  where a compatible released sidecar donates, so unchanged notes cost no
+  provider call. A user's forced rebuild and a store of another identity
+  still re-embed everything, as `force` promises. A store whose damage
+  shows only after it opened (a SQLite page a streamed read meets) is not
+  moved aside (#1881). The server never deletes
+  a `.corrupt-*` file; the operator may. A PostgreSQL store keeps
   dropping and recreating its own damaged tables without `CASCADE`.
 - Permission errors, a full disk and an unavailable PostgreSQL stay typed
   *unavailable* outcomes: no rebuild, removal or rename.

@@ -340,6 +340,10 @@ class _FakeIndexManager:
         self.build_embeddings_calls.append(force)
         return 42
 
+    def rebuild_embeddings_after_fault(self):
+        self.build_embeddings_calls.append("after_fault")
+        return 7
+
     def process_dirty_paths(
         self, paths: set[str], *, on_refreshed: Callable[[str], None]
     ) -> None:
@@ -408,6 +412,20 @@ def test_build_embeddings_job_calls_index_manager():
         result = writer.submit(BuildEmbeddings(force=True)).result(timeout=5)
         assert result == 42
         assert im.build_embeddings_calls == [True]
+    finally:
+        writer.close(timeout=5)
+
+
+def test_an_after_fault_job_rebuilds_through_the_fault_path():
+    # A search that met a store that would not open rebuilds through the
+    # manager, which tells corrupt from another identity (#1505).
+    im = _FakeIndexManager()
+    writer = _make_real_writer(im)
+    writer.start()
+    try:
+        result = writer.submit(BuildEmbeddings(after_fault=True)).result(timeout=5)
+        assert result == 7
+        assert im.build_embeddings_calls == ["after_fault"]
     finally:
         writer.close(timeout=5)
 

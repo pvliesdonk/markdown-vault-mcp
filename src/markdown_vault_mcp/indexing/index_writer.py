@@ -36,10 +36,16 @@ class ReindexAll:
 
 @dataclass(frozen=True)
 class BuildEmbeddings:
-    """Full vector index build."""
+    """Full vector index build.
+
+    ``after_fault`` rebuilds a store that would not open instead: forced for
+    another identity, an ordinary cold build for a corrupt one moved aside
+    (#1505).
+    """
 
     kind: ClassVar[str] = "build_embeddings"
     force: bool = False
+    after_fault: bool = False
 
 
 @dataclass(frozen=True)
@@ -418,6 +424,8 @@ def run_reindex_all(job: ReindexAll, ctx: WriterContext) -> Any:  # noqa: ARG001
 def run_build_embeddings(job: BuildEmbeddings, ctx: WriterContext) -> Any:
     """Execute a full vector index build."""
     try:
+        if job.after_fault:
+            return ctx.index_manager.rebuild_embeddings_after_fault()
         return ctx.index_manager.build_embeddings(force=job.force)
     finally:
         _requeue_conflicts(ctx)
