@@ -14,6 +14,8 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from markdown_vault_mcp.exceptions import StoreUnavailableError
+
 logger = logging.getLogger(__name__)
 
 
@@ -306,7 +308,7 @@ class IndexWriter:
                 # _closed or draining pending Futures, so every
                 # submit().result() hangs.
                 with contextlib.suppress(Exception):
-                    logger.exception("writer_job_failed kind=%s", job.kind)
+                    _log_job_failure(job.kind, exc)
             except BaseException as exc:
                 # KeyboardInterrupt / SystemExit / asyncio.CancelledError —
                 # capture into the Future so waiters unblock, then re-raise
@@ -467,3 +469,16 @@ def run_flush_dirty_embeddings(
         raise
     finally:
         _requeue_conflicts(ctx)
+
+
+def _log_job_failure(kind: str, exc: Exception) -> None:
+    """Log a failed job: a store that is unavailable for now is a WARNING.
+
+    A store that cannot be reached, or that another process is writing
+    (#1505), heals itself once it is back or that process exits; anything
+    else is a fault, logged with its traceback.
+    """
+    if isinstance(exc, StoreUnavailableError):
+        logger.warning("writer_job_unavailable kind=%s err=%s", kind, exc)
+    else:
+        logger.exception("writer_job_failed kind=%s", kind)

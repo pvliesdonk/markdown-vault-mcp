@@ -563,3 +563,34 @@ def test_run_flush_dirty_embeddings_recovers_snapshot_on_failure():
         assert im.flush_paths_calls == [{"x.md", "y.md"}]
     finally:
         writer.close(timeout=5)
+
+
+def test_a_busy_store_is_a_warning_not_a_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from markdown_vault_mcp.exceptions import StoreBusyError
+
+    def busy_runner(job, ctx):  # noqa: ARG001
+        raise StoreBusyError(
+            "Vector store at /v/emb is being written by another process.",
+            backend="numpy",
+            location="/v/emb",
+        )
+
+    writer = IndexWriter(runners={"build_index": busy_runner}, ctx=None)
+    writer.start()
+    try:
+        pending = writer.submit(BuildIndex())
+        with (
+            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.indexing"),
+            pytest.raises(StoreBusyError),
+        ):
+            pending.result(timeout=5)
+    finally:
+        writer.close(timeout=5)
+    # It heals itself once the other process exits: a WARNING, no traceback (#1505).
+    (record,) = [r for r in caplog.records if r.msg.startswith("writer_job_")]
+    assert record.msg.startswith("writer_job_unavailable ")
+    assert (record.levelname, record.exc_info) == ("WARNING", None)
