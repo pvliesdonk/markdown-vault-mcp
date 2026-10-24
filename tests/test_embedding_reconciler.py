@@ -714,3 +714,29 @@ class TestChunkReuse:
         provider.texts.clear()
         result = rec.reconcile(store, ["s.md"], site="test")
         assert (result.embedded, result.reused, len(provider.texts)) == (4, 0, 4)
+
+
+class TestStoredInputs:
+    """One matching rule for own-store reuse and donors (#1505)."""
+
+    def test_stored_inputs_is_the_reconcilers_rule(self) -> None:
+        from markdown_vault_mcp.indexing.embedding_reconciler import stored_inputs
+
+        builder = EmbedTextBuilder(searchable_fields=("summary",))
+        rows = [
+            VectorRow(
+                [1.0, 0.0],
+                {"title": "T", "heading": "H", "content": "c1", "preamble": "p"},
+            ),
+            VectorRow([0.0, 1.0], {"title": "T", "content": "c2"}),
+            VectorRow([1.0, 1.0], {"content": "no title"}),
+        ]
+        known = stored_inputs(builder, rows)
+        first = builder.build(
+            title="T", heading="H", content="c1", fields_text="p", is_first_chunk=True
+        )
+        second = builder.build(
+            title="T", heading=None, content="c2", fields_text="", is_first_chunk=False
+        )
+        assert set(known) == {first, second}
+        assert list(known[first]) == [1.0, 0.0]

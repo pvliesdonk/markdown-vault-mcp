@@ -202,6 +202,9 @@ def _payload(snap: Snapshot, matrix_name: str, seq: int) -> bytes:
     return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
+_OWN_IDENTITY = object()
+
+
 class NumpySidecarStore(ResidentStore):
     """A vector store held in memory, optionally persisted beside a base path.
 
@@ -217,8 +220,12 @@ class NumpySidecarStore(ResidentStore):
         seq: int,
         matrix_path: Path | None,
         json_path: Path | None = None,
+        recorded_identity: EmbeddingIdentity | object | None = _OWN_IDENTITY,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
+        # What the opened files recorded; _OWN_IDENTITY once this store wrote
+        # them, or when nothing was read.
+        self._recorded = recorded_identity
         self._base = base
         self._seq = seq
         self._matrix_path = matrix_path
@@ -288,6 +295,23 @@ class NumpySidecarStore(ResidentStore):
             len(new.rows),
         )
 
+    @property
+    def recorded_identity(self) -> EmbeddingIdentity | None:
+        """The identity the opened files recorded, or ``None`` when they recorded none.
+
+        ``None`` for a bare-list sidecar, which opens under whatever identity
+        it is asked for, and for one whose ``index_metadata`` names no
+        positive dimension; a released sidecar's missing variant and text
+        format read as ``""`` and ``v1``, as :func:`_check_identity` reads
+        them. A store that wrote its own files reports its :attr:`identity`;
+        so does one that read none (no files, or in memory), which a donor
+        refuses as empty instead. A donor never matches a ``None`` (#1505).
+        """
+        recorded = self._recorded
+        if isinstance(recorded, EmbeddingIdentity) or recorded is None:
+            return recorded
+        return self.identity
+
     def resources(self) -> StoreResources:
         """Return the search mode and measured sizes (#1377): always resident.
 
@@ -351,6 +375,7 @@ class NumpySidecarStore(ResidentStore):
         _commit_file(commit_path(self._base), data)
         self._seq, self._matrix_path = seq, matrix_path
         self._json_path = commit_path(self._base)
+        self._recorded = _OWN_IDENTITY
         _sweep(self._base, matrix_path)
         logger.debug(
             "numpy_store_checkpointed path=%s rows=%d generation=%d",
@@ -682,6 +707,28 @@ def _open_file(
         seq=_highest_seq(base) if in_place else stored.seq,
         matrix_path=stored.matrix_path,
         json_path=json_path,
+        recorded_identity=_recorded_identity(stored, identity),
+    )
+
+
+def _recorded_identity(
+    stored: _Stored, identity: EmbeddingIdentity
+) -> EmbeddingIdentity | None:
+    """Return the identity *stored*'s metadata recorded, or ``None`` if it recorded none.
+
+    Called after :func:`_check_identity`, which refuses metadata naming
+    another provider, model, variant or text format (missing ones read as
+    the released defaults), so only the dimension can still differ: a
+    request for dimension 0 does not know it yet.
+    """
+    if stored.meta is None or stored.dimension <= 0:
+        return None
+    return EmbeddingIdentity(
+        identity.provider,
+        identity.model,
+        identity.variant,
+        identity.text_format,
+        stored.dimension,
     )
 
 

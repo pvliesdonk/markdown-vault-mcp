@@ -32,7 +32,7 @@ from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection
+    from collections.abc import Callable, Collection, Iterable, Sequence
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.interfaces import (
@@ -44,6 +44,44 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import EmbeddingIdentity, RevisionToken
 
 logger = logging.getLogger(__name__)
+
+
+def stored_inputs(
+    builder: EmbedTextBuilder, rows: Iterable[VectorRow]
+) -> dict[str, Sequence[float]]:
+    """Map the embedding input each of *rows* was embedded from to its vector.
+
+    The input is rebuilt from the row's metadata the way the reconciler builds
+    it from the keyword index (:meth:`EmbeddingReconciler.documents`); a
+    preamble is only ever non-empty on a document's first chunk. A row whose
+    metadata lacks a string title or content is left out, so its vector is not
+    reused. The one matching rule for a store's own rows (#1795) and for a
+    donor's (#1505).
+
+    Args:
+        builder: The builder the current embedding inputs come from.
+        rows: Stored rows, typically one document's ``rows_for``.
+
+    Returns:
+        Each rebuilt input to the stored vector; a later duplicate input wins.
+    """
+    known: dict[str, Sequence[float]] = {}
+    for row in rows:
+        title = row.metadata.get("title")
+        content = row.metadata.get("content")
+        if not isinstance(title, str) or not isinstance(content, str):
+            continue
+        preamble = row.metadata.get("preamble") or ""
+        text = builder.build(
+            title=title,
+            heading=row.metadata.get("heading"),
+            content=content,
+            fields_text=preamble,
+            is_first_chunk=bool(preamble),
+        )
+        known[text] = row.vector
+    return known
+
 
 #: At or above this many re-tokened documents in one pass, one generation
 #: publish (one matrix copy and one file write) replaces the per-document
@@ -375,29 +413,8 @@ class EmbeddingReconciler:
             )
 
     def _stored_inputs(self, rows: list[VectorRow]) -> dict[str, Any]:
-        """Map the embedding input each of *rows* was embedded from to its vector.
-
-        The input is rebuilt from the row's metadata the way :meth:`documents`
-        builds it from the keyword index; a preamble is only ever non-empty
-        on a document's first chunk. A row whose metadata lacks a title or
-        content is left out, so its vector is not reused.
-        """
-        known: dict[str, Any] = {}
-        for row in rows:
-            title = row.metadata.get("title")
-            content = row.metadata.get("content")
-            if not isinstance(title, str) or not isinstance(content, str):
-                continue
-            preamble = row.metadata.get("preamble") or ""
-            text = self._builder.build(
-                title=title,
-                heading=row.metadata.get("heading"),
-                content=content,
-                fields_text=preamble,
-                is_first_chunk=bool(preamble),
-            )
-            known[text] = row.vector
-        return known
+        """Map the embedding input each of *rows* was embedded from to its vector."""
+        return stored_inputs(self._builder, rows)
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         """Embed *texts* in batches of at most ``batch_size``."""
