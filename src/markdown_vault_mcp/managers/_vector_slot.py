@@ -274,15 +274,27 @@ class VectorStoreSlot:
             return self._store
         with self._lock:
             self._refuse_closed()
-            old, self._store = self._store, None
-            provisional, self._provisional = self._provisional, None
-            # Closed before the fresh store opens, never after: a numpy store
-            # flushes pending rows on close, which must land before the
-            # rebuild's own first persist, never over it.
-            self._discard(old)
-            self._discard(provisional)
-            self._store = self._backend.open_fresh(self._location, self.identity)
-            return self._store
+            # A built-in store's writer lock is held across the swap, so no
+            # other process can take it between the close and the open (#1505).
+            hold = getattr(self._backend, "hold_writer", None)
+            share = (
+                hold(self._location)
+                if hold is not None and self._location is not None
+                else None
+            )
+            try:
+                old, self._store = self._store, None
+                provisional, self._provisional = self._provisional, None
+                # Closed before the fresh store opens, never after: a numpy
+                # store flushes pending rows on close, which must land before
+                # the rebuild's own first persist, never over it.
+                self._discard(old)
+                self._discard(provisional)
+                self._store = self._backend.open_fresh(self._location, self.identity)
+                return self._store
+            finally:
+                if share is not None:
+                    share.release()
 
     def _answers(self, store: EmbeddingStore) -> bool:
         """Whether *store*'s rows answer this provider's queries: the same identity."""

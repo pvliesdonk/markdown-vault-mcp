@@ -315,6 +315,15 @@ class StoreUnavailableError(StoreOpenError):
     """
 
 
+class StoreBusyError(StoreUnavailableError):
+    """Another process is writing the store; stop it first.
+
+    A built-in store's writer lock (``{base}.lock``) or PostgreSQL's writer
+    lease is held elsewhere (#1505). Unavailable for now, never a reason to
+    rebuild.
+    """
+
+
 class StoreIncompatibleError(StoreOpenError):
     """The store holds data for a different identity than the one asked for."""
 

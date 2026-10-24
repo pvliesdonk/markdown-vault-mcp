@@ -37,6 +37,7 @@ import contextlib
 import json
 import logging
 import sqlite3
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -78,6 +79,11 @@ from markdown_vault_mcp.stores._streamed import (
     folder_params,
     rows_per_batch,
     scan,
+)
+from markdown_vault_mcp.stores._writer_lock import (
+    WriterLock,
+    hold_writer_lock,
+    release_from_finalizer,
 )
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import (
@@ -722,8 +728,14 @@ class SqliteVectorStore(ResidentStore):
         registry: SqliteConnectionRegistry | None,
         reset_pending: bool = False,
         mode: _Mode = _RESIDENT,
+        writer_lock: WriterLock | None = None,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
+        # This writer's share of {base}.lock, released at close (#1505), or
+        # when the store is collected unclosed: it can write nothing then.
+        self._writer_lock = writer_lock
+        if writer_lock is not None:
+            weakref.finalize(self, release_from_finalizer, writer_lock)
         self._path = path
         self._registry = registry
         self._reset_pending = reset_pending
@@ -1150,8 +1162,12 @@ class SqliteVectorStore(ResidentStore):
                 self._truncate_wal()
             finally:
                 self._closed = True
-                if self._registry is not None:
-                    self._registry.close()
+                try:
+                    if self._registry is not None:
+                        self._registry.close()
+                finally:
+                    if self._writer_lock is not None:
+                        self._writer_lock.release()
 
 
 def _open_memory(identity: EmbeddingIdentity) -> SqliteVectorStore:
@@ -1163,7 +1179,12 @@ def _open_memory(identity: EmbeddingIdentity) -> SqliteVectorStore:
 
 
 def _open_file(
-    path: Path, identity: EmbeddingIdentity, *, read_only: bool, mode: _Mode
+    path: Path,
+    identity: EmbeddingIdentity,
+    *,
+    read_only: bool,
+    mode: _Mode,
+    writer_lock: WriterLock | None,
 ) -> SqliteVectorStore:
     where = str(path)
     try:
@@ -1188,6 +1209,7 @@ def _open_file(
             read_only=read_only,
             registry=None,
             mode=mode,
+            writer_lock=writer_lock,
         )
     registry = _registry(path, read_only=read_only)
     try:
@@ -1211,7 +1233,12 @@ def _open_file(
     if not read_only:
         report_unused_sidecar(path.with_suffix(""))
     return SqliteVectorStore(
-        snap, path=path, read_only=read_only, registry=registry, mode=mode
+        snap,
+        path=path,
+        read_only=read_only,
+        registry=registry,
+        mode=mode,
+        writer_lock=writer_lock,
     )
 
 
@@ -1281,9 +1308,42 @@ class SqliteVectorBackend:
             raise ValueError("A vector store opens against an EmbeddingIdentity.")
         if location is None or str(location) == _MEMORY:
             return _open_memory(identity)
-        return _open_file(
-            _db_file(location), identity, read_only=not owns_files, mode=self._mode
+        lock = (
+            hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+            if owns_files
+            else None
         )
+        try:
+            return _open_file(
+                _db_file(location),
+                identity,
+                read_only=not owns_files,
+                mode=self._mode,
+                writer_lock=lock,
+            )
+        except BaseException:
+            if lock is not None:
+                lock.release()
+            raise
+
+    def hold_writer(self, location: Path | str) -> WriterLock:
+        """Take a writer's share of *location*'s lock without opening a store.
+
+        For a caller that closes one store and opens another on the same
+        location, so the lock is not given up in between (#1505).
+
+        Args:
+            location: The store's base path; ``":memory:"`` locks nothing.
+
+        Returns:
+            The share, to release once the new store is open.
+
+        Raises:
+            StoreBusyError: If another process holds the lock.
+        """
+        if str(location) == ":memory:":
+            return WriterLock(None)
+        return hold_writer_lock(Path(location), backend=_BACKEND_NAME)
 
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity
@@ -1304,14 +1364,20 @@ class SqliteVectorBackend:
         _require_numpy()
         if location is None or str(location) == _MEMORY:
             return _open_memory(identity)
-        return SqliteVectorStore(
-            fresh_snapshot(identity),
-            path=_db_file(location),
-            read_only=False,
-            registry=None,
-            reset_pending=True,
-            mode=self._mode,
-        )
+        lock = hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+        try:
+            return SqliteVectorStore(
+                fresh_snapshot(identity),
+                path=_db_file(location),
+                read_only=False,
+                registry=None,
+                reset_pending=True,
+                mode=self._mode,
+                writer_lock=lock,
+            )
+        except BaseException:
+            lock.release()
+            raise
 
 
 register_backend("vector", _BACKEND_NAME, SqliteVectorBackend)
