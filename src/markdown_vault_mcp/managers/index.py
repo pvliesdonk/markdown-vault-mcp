@@ -331,7 +331,7 @@ class IndexManager:
             skip, content_hash=content_hash, modified_at=modified_at
         )
 
-    def _sync_tombstones(self) -> None:
+    def _sync_tombstones(self) -> list[str]:
         """Drop tombstone rows whose skip left the tracker registry (#1129).
 
         The tracker's ``skip_reasons`` map stays authoritative for what is
@@ -341,11 +341,18 @@ class IndexManager:
         ``deleted`` event fires — and its tombstone must not linger as a
         phantom candidate. Called after ``update_state`` so the re-read
         registry reflects this pass.
+
+        Returns:
+            The dropped paths: their notes were deleted, renamed away or
+            excluded, so the vectors a tombstone kept go too (#1505).
         """
         reasons = self._tracker.skip_reasons()
+        dropped: list[str] = []
         for row in self._fts.list_tombstones():
             if row["path"] not in reasons:
                 self._fts.delete_by_path(row["path"])
+                dropped.append(row["path"])
+        return dropped
 
     def _state_notes_from_index(self) -> list[ParsedNote]:
         """Build tracker-state notes from the index's current contents.
@@ -721,7 +728,12 @@ class IndexManager:
         self._tracker.update_state(
             state_notes, skipped=newly_skipped, skip_reasons=newly_skip_reasons
         )
-        self._sync_tombstones()
+        dropped = self._sync_tombstones()
+        if vectors is not None and dropped:
+            # A tombstone kept its note's vectors (#1505); with the note gone
+            # they go too, now rather than at the next full converge.
+            self._embeddings.reconcile_paths(vectors, dropped, site="purge")
+            vectors.checkpoint()
 
         return ReindexResult(
             added=indexed_added,

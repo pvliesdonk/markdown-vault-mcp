@@ -397,6 +397,19 @@ class TestRemovalRule:
         assert sorted(metadata_by_path(store)) == ["a.md", "b.md"]
         assert probe.asked == []
 
+    def test_an_excluded_tombstone_is_removed(self, tmp_path):
+        probe = _Probe()
+        fts, store, rec = self._orphan(tmp_path, probe=probe)
+        fts.upsert_tombstone(
+            SkippedFile(path="a.md", category="parse_error", detail="x"),
+            content_hash="h",
+            modified_at=0.0,
+        )
+        rec._is_excluded = lambda path: path == "a.md"  # the exclusion wins
+        rec.reconcile(store, site="test")
+        assert sorted(metadata_by_path(store)) == ["b.md"]
+        assert probe.asked == []
+
     def test_a_keyword_gap_keeps_and_says_so(
         self, tmp_path, caplog: pytest.LogCaptureFixture
     ):

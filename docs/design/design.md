@@ -685,10 +685,10 @@ stay on the live `count_documents()`.
 
 **Embeddings.** Tombstones give the vector convergence a direct answer to
 "is this FTS absence deliberate?" (#1130): a stale sidecar path is
-reclaimable iff it has a tombstone (any category; until #1505 child 7,
-which keeps an unparseable note's rows, § Embedding transitions and
-recovery), is excluded, or its
-source is gone from disk (one `stat`, transient-`OSError`-aware, with an
+reclaimable iff it is excluded or its source is gone from disk, while a
+tombstoned path (any category) keeps its rows, out of search, until it is
+fixed or its tombstone drops with the note (#1505 child 7, § Embedding
+transitions and recovery); a missing source is checked (one `stat`, transient-`OSError`-aware, with an
 unavailable source *root* confirming nothing); and an empty embedding build
 is authoritative iff every candidate absent from FTS has a tombstone. The
 former per-candidate re-parse loops are gone.
@@ -968,9 +968,10 @@ tokens (the store's `tokens()` and `rows_for()`) and reconciles:
   equal vectors, so re-embedding would charge a provider call for every
   frontmatter-only edit (#1768).
 - Vectors for documents no longer in the FTS index are removed — but only
-  when the absence is **authoritative** (#1130, #1785). A tombstone (a
-  deliberate skip, #1129; an unparseable note's rows stay from #1505
-child 7) or an exclusion removes them; otherwise the
+  when the absence is **authoritative** (#1130, #1785). An exclusion
+  removes them; a tombstone (a deliberate skip, #1129) keeps them, out of
+  search, until the note is fixed or its tombstone drops (#1505 child 7);
+  otherwise the
   `SourceProbe` decides (the file-backed `FileSourceProbe`: a `stat`
   classified by errno, with every path component confirmed under its exact
   name in its directory listing, so a case-only rename of a note or a
@@ -1384,9 +1385,9 @@ rejecting never leaves the writer undrained; a conflicting write is re-queued
 with a flush of its own. The store is checkpointed
 on every flush, so a failed checkpoint retries without paying the provider again.
 Store open and rebuild failures propagate, so the writer retains the snapshot.
-A note the refresh tombstoned (unparseable frontmatter, #1129) loses its vectors
-on the flush, as its keyword row already did (until #1505 child 7, which keeps
-them; § Embedding transitions and recovery).
+A note the refresh tombstoned (unparseable frontmatter, #1129) keeps its vectors
+on the flush, out of search, though its keyword row is replaced by the
+tombstone (#1505 child 7; § Embedding transitions and recovery).
 The boundary
 guarantees visibility of prior writes, not isolation from concurrent
 edits. Graph read tools keep their existing optional wait and stale metadata.
@@ -4600,9 +4601,13 @@ another one, and is the explicit switch of choice C.
   tombstone without asking the source (DEBUG `embedding_reconcile_kept
   site=%s path=%s reason=tombstoned`), and otherwise asks the source probe
   as before. Once the note is fixed, convergence re-tokens or partly embeds
-  it, so only chunks whose input changed reach the provider. Deletion drops
-  the tombstone, so the probe answers *absent* and the rows go; an
-  exclusion removes them. A full build (forced, a model change, an import)
+  it, so only chunks whose input changed reach the provider (a changed
+  title changes every chunk's input). A deleted, renamed or newly excluded
+  note leaves the tracker's skip registry without a `deleted` event, so
+  `IndexManager._sync_tombstones` returns the tombstones it drops and
+  `reindex` reconciles them in the open store at once (no tombstone, so the
+  probe answers *absent* or the exclusion removes); a store not yet open
+  drops them at the next full converge. A full build (forced, a model change, an import)
   publishes only the notes the keyword index holds, so a note broken then
   drops out and is embedded again once fixed. Kept rows never reach a
   result: search did not filter them (checked for child 7), and

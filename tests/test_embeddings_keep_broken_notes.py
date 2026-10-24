@@ -183,3 +183,43 @@ def test_a_full_rebuild_drops_a_broken_note(tmp_path: Path, root: Path) -> None:
         assert set(_tokens(vault)) == {"beta.md"}
     finally:
         vault.close()
+
+
+def test_a_broken_note_deleted_while_running_loses_its_vectors(
+    tmp_path: Path, root: Path
+) -> None:
+    vault = _built(tmp_path, _Counting())
+    try:
+        (root / "alpha.md").write_text(BROKEN["parse_error"])
+        _settle(vault)
+        (root / "alpha.md").unlink()
+        vault.index.reindex()  # what the watcher runs; no full converge
+        assert "alpha.md" not in _tokens(vault)
+    finally:
+        vault.close()
+
+
+def test_a_broken_note_renamed_while_running_loses_its_old_vectors(
+    tmp_path: Path, root: Path
+) -> None:
+    vault = _built(tmp_path, _Counting())
+    try:
+        (root / "alpha.md").write_text(BROKEN["parse_error"])
+        _settle(vault)
+        (root / "alpha.md").rename(root / "renamed.md")
+        vault.index.reindex()
+        assert "alpha.md" not in _tokens(vault)
+    finally:
+        vault.close()
+
+
+def test_a_note_that_is_not_utf8_keeps_its_vectors(tmp_path: Path, root: Path) -> None:
+    vault = _built(tmp_path, _Counting())
+    try:
+        (root / "alpha.md").write_bytes(ALPHA.encode() + b"\xff\xfe broken")
+        _settle(vault)
+        skipped = vault.index.get_index_status()["skipped_files"]
+        assert [s["category"] for s in skipped] == ["encoding_error"]
+        assert "alpha.md" in _tokens(vault)
+    finally:
+        vault.close()
