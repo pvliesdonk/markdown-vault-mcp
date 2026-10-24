@@ -543,8 +543,9 @@ class EmbeddingsManager:
         re-tokened without a provider call, one whose input changed has its
         changed chunks embedded while the rest keep their stored vectors,
         and one the keyword index holds no rows for loses its vectors only
-        on a tombstone, an exclusion or a source probe answering *absent*
-        (#1130, #1785).
+        on an exclusion or a source probe answering *absent* (#1130,
+        #1785); a tombstoned note keeps them, out of search, until it is
+        fixed or deleted (#1505).
         A provider failure or a refused vector skips that document with its
         vectors kept, and the next run retries it (#649, #935). The store is
         checkpointed only when something changed.
@@ -727,8 +728,9 @@ class EmbeddingsManager:
         input and token are unchanged costs nothing, so retrying a failed
         batch does not charge again for its already embedded siblings. A
         path the keyword index holds no rows for (deleted, excluded or
-        tombstoned, #1129) loses its vectors on a tombstone, an exclusion or
-        a source probe answering *absent* (#1785). A provider failure
+        tombstoned, #1129) loses its vectors on an exclusion or a source
+        probe answering *absent* (#1785); a tombstoned one keeps them, out of
+        search, until it is fixed or deleted (#1505). A provider failure
         or a refused vector keeps that path's rows and is logged; a
         conflicting write is recorded for re-queueing. Store open and
         rebuild errors propagate to the writer's Future.
@@ -753,8 +755,8 @@ class EmbeddingsManager:
         """Reconcile *paths* in *vectors* with the keyword index (#1785).
 
         Used by the purge loops after they delete keyword rows: a path left
-        with no rows loses its vectors on a tombstone, an exclusion or an
-        absent source, with the token observed.
+        with no rows loses its vectors on an exclusion or an absent source,
+        with the token observed; a tombstoned one keeps them (#1505).
 
         Args:
             vectors: The store to write.

@@ -11,10 +11,11 @@ the store holds no vector for; every other chunk keeps its stored vector.
 It embeds outside any store call and publishes with the
 token it observed, so a write that crosses another writer's comes back as
 a conflict, which the caller re-queues. A path the store holds and the
-keyword index has no rows for loses its vectors only on a tombstone, an
-exclusion, or a source probe answering *absent* (#1785): *unavailable*
-keeps them, logged once per pass, and *present* is a keyword-index gap
-that keeps them too.
+keyword index has no rows for loses its vectors only on an exclusion or a
+source probe answering *absent* (#1785): a tombstoned note (it exists but
+does not parse) keeps them until it is fixed or deleted, out of search
+(#1505); *unavailable* keeps them, logged once per pass, and *present* is a
+keyword-index gap that keeps them too.
 """
 
 from __future__ import annotations
@@ -314,14 +315,23 @@ class EmbeddingReconciler:
     def _remove_unbacked(self, state: _Pass, paths: list[str]) -> None:
         """Remove the vectors of *paths* whose absence is authoritative (#1785).
 
-        A tombstone or an exclusion removes without asking the source; then
-        the source probe decides: *absent* removes, *unavailable* keeps (one
-        WARNING for the pass), *present* is a keyword-index gap and keeps.
+        An exclusion removes without asking the source. A tombstone keeps:
+        the note exists but does not parse, and once fixed its unchanged
+        chunks are reused (#1505). Then the source probe decides: *absent*
+        removes, *unavailable* keeps (one WARNING for the pass), *present* is
+        a keyword-index gap and keeps.
         """
         unavailable = 0
         for path in paths:
-            if self._fts.get_tombstone(path) is not None or self._is_excluded(path):
+            if self._is_excluded(path):
                 self._remove(state, path)
+                continue
+            if self._fts.get_tombstone(path) is not None:
+                logger.debug(
+                    "embedding_reconcile_kept site=%s path=%s reason=tombstoned",
+                    state.site,
+                    path,
+                )
                 continue
             answer = self._source_probe.probe(path).status
             if answer == "absent":

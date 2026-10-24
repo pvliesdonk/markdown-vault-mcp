@@ -849,7 +849,15 @@ def _semantic_mgr_with_ranked_chunks(base: Path) -> SearchManager:
     vi._embeddings = np.vstack(vecs).astype(np.float32)
     vi.save(base)
 
+    # The keyword index holds the three notes, so their vectors may be served
+    # (#1505); their text shares no term with the query "q".
     fts = FTSIndex(db_path=":memory:")
+    notes = base.parent / "notes-src"
+    notes.mkdir(parents=True, exist_ok=True)
+    for name in ("giantA", "giantB", "TARGET"):
+        (notes / f"{name}.md").write_text(f"# {name}\n\nbody text\n")
+    for note in scan_directory(notes):
+        fts.upsert_note(note)
     mgr = SearchManager(
         fts=fts,
         source_dir=base.parent,
@@ -1046,6 +1054,13 @@ def test_folder_scoped_get_similar_keeps_room_for_other_files(
         ]
         return [dict(r) for r in eligible[:limit]]
 
+    # Both notes exist in the keyword index, so their rows may be served (#1505).
+    vault = search_mgr_with_embeddings._source_dir
+    (vault / "notes").mkdir(exist_ok=True)
+    (vault / "notes" / "long.md").write_text("# Long\n\nlong body\n")
+    (vault / "notes" / "other.md").write_text("# Other\n\nother body\n")
+    for note in scan_directory(vault):
+        search_mgr_with_embeddings._fts.upsert_note(note)
     store = search_mgr_with_embeddings._load_vectors()
     monkeypatch.setattr(store, "similar_to_document", fake_similar)
 

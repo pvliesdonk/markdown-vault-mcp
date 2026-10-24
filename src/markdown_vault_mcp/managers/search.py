@@ -839,14 +839,18 @@ class SearchManager:
 
         Chunk counts are batch-fetched from FTS so the length downweight can
         normalize multi-chunk documents.  Shared by the semantic and hybrid
-        channels and :meth:`get_similar`.
+        channels and :meth:`get_similar`, so it is also where a row of a note
+        the keyword index does not hold is dropped: a tombstoned note keeps
+        its vectors until it is fixed, and a keyword-index gap can leave
+        rows behind, but neither reaches a result (#1505).
 
         Args:
             rows: Post-filtered dicts from the store's ``search`` /
                 ``similar_to_document``.
 
         Returns:
-            :class:`_SemanticRow` adapter rows.
+            :class:`_SemanticRow` adapter rows, for indexed notes only, in
+            the order given.
         """
         chunk_counts = self._fts.get_chunk_counts({r["path"] for r in rows})
         return [
@@ -857,11 +861,12 @@ class SearchManager:
                 heading=r.get("heading"),
                 content=r.get("content", ""),
                 score=r.get("score", 0.0),
-                chunk_count=chunk_counts.get(r["path"], 1),
+                chunk_count=chunk_counts[r["path"]],
                 start_line=int(r.get("start_line", 0)),
                 section_id=0,  # vector store has no sections rowid; see dataclass
             )
             for r in rows
+            if r["path"] in chunk_counts
         ]
 
     def _assemble_grouped_results(

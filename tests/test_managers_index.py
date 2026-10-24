@@ -1313,13 +1313,13 @@ class TestConvergeStaleConfirmation:
 
         return set(metadata_by_path(_stored(embeddings_path, provider)))
 
-    def test_unparseable_source_reclaims_via_tombstone(self, tmp_path: Path) -> None:
-        """A parse-failure skip is tombstoned (#1129), so its vectors reclaim.
+    def test_unparseable_source_keeps_its_vectors_until_repaired(
+        self, tmp_path: Path
+    ) -> None:
+        """A parse-failure skip is tombstoned (#1129) and keeps its vectors (#1505).
 
-        The stale-content counterpart of the FTS fix: a file that becomes
-        unparseable stops serving its last-good vectors too — the tombstone
-        records the absence as deliberate, so convergence reclaims instead
-        of conservatively keeping them (the pre-#1129 #1130 behaviour).
+        The file still exists, so its last-good vectors are kept, out of
+        search, and reused for its unchanged chunks once it is repaired.
         """
         vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
 
@@ -1333,7 +1333,7 @@ class TestConvergeStaleConfirmation:
         assert mgr._fts.get_tombstone("bad.md") is not None
 
         mgr.build_embeddings()
-        assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
+        assert self._sidecar_paths(embeddings_path, provider) == {"good.md", "bad.md"}
 
         # Once repaired and re-indexed, the note converges back in.
         (vault / "bad.md").write_text(
@@ -1444,8 +1444,8 @@ class TestConvergeStaleConfirmation:
         mgr2.build_embeddings()
         assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
 
-    def test_missing_frontmatter_skip_still_reclaims(self, tmp_path: Path) -> None:
-        """A deliberate required-frontmatter skip is authoritative."""
+    def test_missing_frontmatter_skip_keeps_its_vectors(self, tmp_path: Path) -> None:
+        """A required-frontmatter skip keeps the note's vectors until fixed (#1505)."""
 
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -1471,7 +1471,10 @@ class TestConvergeStaleConfirmation:
         (vault / "bad.md").write_text("# Bad\n\nBad body.\n", encoding="utf-8")
         mgr.build_index(force=True)
         mgr.build_embeddings()
-        assert set(metadata_by_path(_stored(embeddings_path, provider))) == {"good.md"}
+        assert set(metadata_by_path(_stored(embeddings_path, provider))) == {
+            "good.md",
+            "bad.md",
+        }
 
     def test_note_without_embeddable_text_still_reclaims(self, tmp_path: Path) -> None:
         """A note that parses to no embeddable text loses its vectors (#930/#1087)."""
