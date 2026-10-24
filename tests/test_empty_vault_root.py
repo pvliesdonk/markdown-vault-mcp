@@ -287,3 +287,42 @@ def test_the_reindex_command_fails_over_an_empty_vault_folder(
     assert result.exit_code == 1
     assert "vault folder is empty" in result.stderr
     assert "Reindex:" not in result.stdout
+
+
+def test_no_note_is_written_into_an_empty_vault_folder(
+    tmp_path: Path, built: Path
+) -> None:
+    from markdown_vault_mcp.exceptions import VaultUnavailableError
+
+    aside = tmp_path / "aside"
+    shutil.move(built, aside)
+    built.mkdir()
+    vault = _vault(tmp_path)
+    try:
+        vault.index.build_index()
+        with pytest.raises(VaultUnavailableError, match="writes are refused"):
+            vault.writer.write("journal.md", "# Journal\n")
+        with pytest.raises(VaultUnavailableError):
+            vault.writer.write_attachment("pic.png", b"\x89PNG")
+        assert list(built.iterdir()) == []  # the guard still holds
+    finally:
+        vault.close()
+    built.rmdir()
+    shutil.move(aside, built)
+    again = _vault(tmp_path)
+    try:
+        again.index.build_index()
+        again.writer.write("journal.md", "# Journal\n")  # the volume is back
+    finally:
+        again.close()
+
+
+def test_a_new_empty_vault_takes_its_first_note(tmp_path: Path) -> None:
+    (tmp_path / "vault").mkdir()
+    vault = _vault(tmp_path)
+    try:
+        vault.index.build_index()
+        vault.writer.write("first.md", "# First\n")
+        assert (tmp_path / "vault" / "first.md").is_file()
+    finally:
+        vault.close()

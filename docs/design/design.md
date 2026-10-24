@@ -4631,7 +4631,13 @@ another one, and is the explicit switch of choice C.
   read as unchanged when the volume returns. The refused reindex says so:
   `ReindexResult.vault_root_empty` is set, the `reindex` tool raises a
   WARNING `ToolError` (the request was fine; tell the user), and the
-  `reindex` command exits 1 naming `index --force` as the deliberate path. `FileSourceProbe` answers
+  `reindex` command exits 1 naming `index --force` as the deliberate path.
+  Writes (`DocumentManager` and `ArtifactStore` `_check_writable`, through
+  `source_probe.require_vault_root`) are refused with
+  `VaultUnavailableError`, a WARNING `ToolError` telling the model to tell
+  the user, while the folder is empty and the index holds notes: one note
+  or attachment written there would make the next pass read a vault whose
+  notes were all deleted. A new vault (an empty index) takes its first note. `FileSourceProbe` answers
   *unavailable* under the same root, which covers a lost `index.db` beside
   an empty folder. A folder holding anything (an `.obsidian/`, an excluded
   file) is a vault whose notes are gone, so its removals and an exclusion

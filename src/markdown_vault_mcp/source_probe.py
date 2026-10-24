@@ -18,6 +18,7 @@ import stat as stat_module
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import VaultUnavailableError
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.types import SourceState
 
@@ -111,3 +112,23 @@ def holds_entries(folder: Path) -> bool:
             return next(entries, None) is not None
     except OSError:
         return False
+
+
+def require_vault_root(folder: Path, *, indexed: bool) -> None:
+    """Refuse a write into an empty vault folder while the index holds notes.
+
+    Args:
+        folder: The vault's root directory.
+        indexed: Whether the keyword index holds documents.
+
+    Raises:
+        VaultUnavailableError: If *indexed* and *folder* holds no entries
+            (:func:`holds_entries`): one file written there would end the
+            protection that keeps the index and the embeddings (#1791).
+    """
+    if indexed and not holds_entries(folder):
+        raise VaultUnavailableError(
+            "The vault folder is empty while the index holds notes, as when its "
+            "volume is not mounted, so writes are refused until it is back. The "
+            "request was fine; tell the user to check the vault's storage."
+        )

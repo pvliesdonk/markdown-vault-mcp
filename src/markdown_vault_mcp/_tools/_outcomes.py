@@ -38,6 +38,7 @@ from markdown_vault_mcp.exceptions import (
     IndexUnavailableError,
     InvalidRequestError,
     ReadOnlyError,
+    VaultUnavailableError,
 )
 
 if TYPE_CHECKING:
@@ -80,6 +81,10 @@ def outcome_error(exc: Exception) -> ToolError | None:
         )
     if isinstance(exc, _CHANGE_THE_REQUEST):
         return ToolError(str(exc), log_level=logging.INFO)
+    if isinstance(exc, VaultUnavailableError):
+        # The volume may come back by itself; the message tells the model to
+        # tell the user (#1791).
+        return ToolError(str(exc), log_level=logging.WARNING)
     if isinstance(exc, EmbeddingsNotPublishedError):
         return ToolError(
             "Some embedding requests failed, so the existing embeddings were kept "
