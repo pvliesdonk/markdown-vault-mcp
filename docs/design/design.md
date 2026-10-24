@@ -4619,22 +4619,27 @@ another one, and is the explicit switch of choice C.
   `get_similar` share, now drops every vector row whose path is not in
   `documents_live`, after the candidate cap, which is not widened for it.
   The same filter covers a keyword-index gap (child 7).
-- A vault root that exists but holds no candidate notes while the keyword
-  index holds some (tombstones counted) is *unavailable* for that pass,
-  logged WARNING `vault_root_empty_removals_refused indexed=%d`
-  (`IndexManager._refuse_empty_root`). A `reindex` whose scan finds
-  nothing to index or skip, after exclusions, returns a zero result before
-  its deletion loop, tracker update and tombstone sync. A non-forced
-  `build_index` (also what a settings change runs) returns zero
+- A vault root that exists but holds no entries at all
+  (`source_probe.holds_entries`), while the keyword index holds documents
+  (tombstones counted), is *unavailable* for that pass, logged WARNING
+  `vault_root_empty_removals_refused indexed=%d`
+  (`IndexManager._refuse_empty_root`): an unmounted volume's mount point and
+  a bind mount Docker created empty look like that. A `reindex` returns a
+  zero result before its deletion loop, tracker update and tombstone sync;
+  a non-forced `build_index` (also what a settings change runs) returns zero
   `IndexStats` and leaves the tracker and tombstones alone, so the notes
-  read as unchanged when the volume returns. Removals resume when notes
-  reappear or after an explicit forced rebuild (`index --force`,
-  `reindex --force`, the tools' `force`), the deliberate "I emptied it".
-  For the vectors, `FileSourceProbe` answers *unavailable* under a root
-  with no entries at all, which covers a lost `index.db` beside an empty
-  folder; a folder holding only non-note files (`.obsidian/`) still
-  reads as a vault whose notes are gone there, since finding a candidate
-  note would cost a scan per probe (child 8, #1791).
+  read as unchanged when the volume returns. `FileSourceProbe` answers
+  *unavailable* under the same root, which covers a lost `index.db` beside
+  an empty folder. A folder holding anything (an `.obsidian/`, an excluded
+  file) is a vault whose notes are gone, so its removals and an exclusion
+  covering every note proceed as before. The deliberate "I emptied it" is
+  `index --force`, which wipes the keyword index and rebuilds the
+  embeddings with `force`, publishing the authoritative empty generation;
+  `reindex --force` empties only the keyword index and leaves the vectors
+  to the probe, which keeps them under an empty root. Deleting the last
+  notes through the server leaves their vectors stored, never searched,
+  until a note is added or `index --force` runs, since an empty root cannot
+  tell that deletion from an unmounted volume (child 8, #1791).
 - An owned corrupt numpy or SQLite store is renamed with the suffix
   `.corrupt-<UTC timestamp>`, every file including `-wal` and `-shm`,
   logged WARNING with the paths, before its rebuild, which a compatible

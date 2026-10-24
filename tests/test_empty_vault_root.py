@@ -133,7 +133,7 @@ def test_a_forced_rebuild_empties_an_empty_vault(tmp_path: Path, built: Path) ->
         vault.close()
 
 
-def test_a_folder_of_only_excluded_files_refuses_keyword_removals(
+def test_a_folder_of_only_non_note_files_is_a_vault_whose_notes_are_gone(
     tmp_path: Path, built: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     for name in NOTES:
@@ -145,8 +145,49 @@ def test_a_folder_of_only_excluded_files_refuses_keyword_removals(
         caplog.clear()
         with caplog.at_level(logging.WARNING):
             _boot(vault)
-        assert _refusals(caplog)
-        assert _state(vault)[0] == set(NOTES)
+        # Not an empty mount point: the folder holds something (#1791).
+        assert _refusals(caplog) == []
+        assert _state(vault) == (set(), set())
+    finally:
+        vault.close()
+
+
+@pytest.mark.usefixtures("built")
+def test_an_exclusion_covering_every_note_still_purges_them(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    vault = _vault(tmp_path, exclude_patterns=["*.md"])
+    try:
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            _boot(vault)
+        assert _refusals(caplog) == []
+        assert _state(vault) == (set(), set())
+    finally:
+        vault.close()
+
+
+def test_index_force_is_the_deliberate_way_to_empty_a_vault(
+    tmp_path: Path, built: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    import markdown_vault_mcp.providers as providers_mod
+    from markdown_vault_mcp.cli import _ENV_PREFIX, app
+
+    monkeypatch.setattr(providers_mod, "get_embedding_provider", lambda _c: _Counting())
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(built))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+    for name in NOTES:
+        (built / name).unlink()
+    result = CliRunner().invoke(app, ["index", "--force"])
+    assert result.exit_code == 0, result.output
+    vault = _vault(tmp_path)
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert _state(vault) == (set(), set())
     finally:
         vault.close()
 

@@ -212,7 +212,9 @@ def import_embeddings(
             with manager.vectors_deferred():
                 vault.index.build_index()
                 vault.index.reindex()
-            _refuse_an_empty_vault(manager, vault._index_mgr.vault_root_empty)
+            _refuse_an_empty_vault(
+                manager, root_empty=vault._index_mgr.vault_root_empty
+            )
             try:
                 outcome = manager.import_from(donor)
             except _SourceUnreadable as exc:
@@ -253,7 +255,9 @@ def import_embeddings(
     )
 
 
-def _refuse_an_empty_vault(manager: EmbeddingsManager, root_empty: bool) -> None:
+def _refuse_an_empty_vault(
+    manager: EmbeddingsManager, *, root_empty: bool = False
+) -> None:
     """Refuse a vault with no notes: its build would empty the destination.
 
     A vault folder the keyword update found empty is refused even though the
@@ -274,7 +278,7 @@ def _preview(
     """Count a dry run against *vault*'s scratch keyword index."""
     with _donor(manager, side) as donor:
         vault.index.build_index()
-        _refuse_an_empty_vault(manager, vault._index_mgr.vault_root_empty)
+        _refuse_an_empty_vault(manager)  # a scratch index: no chunks is the test
         preview = manager.preview_import(donor)
         refused_rows = donor.refused_rows
     logger.info(

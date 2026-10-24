@@ -84,16 +84,30 @@ class FileSourceProbe:
         return True
 
     def _root_available(self) -> bool:
-        """Whether the root is a directory that holds anything at all.
+        """Whether the root is a directory that holds anything at all (see :func:`holds_entries`)."""
+        return holds_entries(self._source_dir)
 
-        An empty one is an unmounted volume's mount point as much as a vault
-        whose notes were all deleted, and only the first is common; an
-        explicit forced rebuild empties a vault deliberately (#1791).
-        """
-        try:
-            if not stat_module.S_ISDIR(self._source_dir.stat().st_mode):
-                return False
-            with os.scandir(self._source_dir) as entries:
-                return next(entries, None) is not None
-        except OSError:
+
+def holds_entries(folder: Path) -> bool:
+    """Whether *folder* is a listable directory holding at least one entry.
+
+    An empty one is what an unmounted volume's mount point, or a bind mount
+    Docker created, looks like, as much as a vault whose notes were all
+    deleted, and only the first is common: the keyword index and the vector
+    store remove nothing under it, and an explicit forced rebuild empties a
+    vault deliberately (#1791). A folder holding only non-note files
+    (``.obsidian/``) is a vault whose notes are gone.
+
+    Args:
+        folder: The vault's root directory.
+
+    Returns:
+        ``False`` for a missing, unlistable, non-directory or empty folder.
+    """
+    try:
+        if not stat_module.S_ISDIR(folder.stat().st_mode):
             return False
+        with os.scandir(folder) as entries:
+            return next(entries, None) is not None
+    except OSError:
+        return False

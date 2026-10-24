@@ -33,6 +33,7 @@ from markdown_vault_mcp.scanner import (
     parse_note_categorized,
     scan_directory,
 )
+from markdown_vault_mcp.source_probe import holds_entries
 from markdown_vault_mcp.types import (
     IndexStats,
     ParsedNote,
@@ -335,30 +336,34 @@ class IndexManager:
 
     @property
     def vault_root_empty(self) -> bool:
-        """Whether the last build or reindex was refused for an empty vault folder (#1791)."""
+        """Whether the last non-forced build or reindex was refused for an empty vault folder (#1791).
+
+        A forced build clears it; a warm start, which never reaches this
+        manager, leaves it as it was.
+        """
         return self._vault_root_empty
 
-    def _refuse_empty_root(self, found: int) -> bool:
+    def _refuse_empty_root(self) -> bool:
         """Whether this pass must change nothing because the vault folder is empty.
 
-        A folder that exists but holds no candidate note, while the keyword
-        index holds some, is what an unmounted volume or an empty bind
-        mount looks like: the pass is *unavailable*, so nothing is removed
-        and the tracker keeps its state (#1791, #1505). A forced rebuild,
-        the deliberate "I emptied it", wipes the index first and never asks.
-
-        Args:
-            found: Candidate notes the scan found, to index or to skip.
+        A folder with no entries at all, while the keyword index holds
+        documents (tombstones included), is what an unmounted volume or an
+        empty bind mount looks like: the pass is *unavailable*, so nothing is
+        removed and the tracker keeps its state (#1791, #1505). A forced
+        rebuild, the deliberate "I emptied it", wipes the index first and
+        never asks.
 
         Returns:
             ``True`` when the pass is refused, after one WARNING.
         """
-        self._vault_root_empty = not found and self._fts.has_documents()
+        self._vault_root_empty = self._fts.has_documents() and not holds_entries(
+            self._source_dir
+        )
         if not self._vault_root_empty:
             return False
         logger.warning(
             "vault_root_empty_removals_refused indexed=%d",
-            self._fts.count_documents() + len(self._fts.list_tombstones()),
+            self._fts.count_documents(),
         )
         return True
 
@@ -485,6 +490,7 @@ class IndexManager:
         """
         if force:
             logger.info("build_index_force_rebuild")
+            self._vault_root_empty = False
             for row in self._fts.list_notes():
                 self._fts.delete_by_path(row["path"])
             # list_notes() is live-only, so tombstones need their own wipe;
@@ -520,7 +526,7 @@ class IndexManager:
             logger.warning(
                 "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
             )
-        if not force and self._refuse_empty_root(len(notes) + len(skip_files)):
+        if not force and self._refuse_empty_root():
             return IndexStats(
                 documents_indexed=0,
                 chunks_indexed=0,
@@ -685,13 +691,7 @@ class IndexManager:
             changes.unchanged,
             changes.skipped_unchanged,
         )
-        found = (
-            len(changes.added)
-            + len(changes.modified)
-            + changes.unchanged
-            + changes.skipped_unchanged
-        )
-        if self._refuse_empty_root(found):
+        if self._refuse_empty_root():
             return ReindexResult(added=0, modified=0, deleted=0, unchanged=0)
 
         # Pre-parse notes outside the lock to minimise lock hold time.
