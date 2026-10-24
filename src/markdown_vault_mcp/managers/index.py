@@ -331,6 +331,29 @@ class IndexManager:
             skip, content_hash=content_hash, modified_at=modified_at
         )
 
+    def _refuse_empty_root(self, found: int) -> bool:
+        """Whether this pass must change nothing because the vault folder is empty.
+
+        A folder that exists but holds no candidate note, while the keyword
+        index holds some, is what an unmounted volume or an empty bind
+        mount looks like: the pass is *unavailable*, so nothing is removed
+        and the tracker keeps its state (#1791, #1505). A forced rebuild,
+        the deliberate "I emptied it", wipes the index first and never asks.
+
+        Args:
+            found: Candidate notes the scan found, to index or to skip.
+
+        Returns:
+            ``True`` when the pass is refused, after one WARNING.
+        """
+        if found or not self._fts.has_documents():
+            return False
+        logger.warning(
+            "vault_root_empty_removals_refused indexed=%d",
+            self._fts.count_documents() + len(self._fts.list_tombstones()),
+        )
+        return True
+
     def _sync_tombstones(self) -> list[str]:
         """Drop tombstone rows whose skip left the tracker registry (#1129).
 
@@ -488,6 +511,13 @@ class IndexManager:
             # incomplete, and the build says so instead of claiming a full one.
             logger.warning(
                 "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
+            )
+        if not force and self._refuse_empty_root(len(notes) + len(skip_files)):
+            return IndexStats(
+                documents_indexed=0,
+                chunks_indexed=0,
+                skipped=0,
+                walk_complete=not walk_errors,
             )
 
         total_chunks = 0
@@ -647,6 +677,14 @@ class IndexManager:
             changes.unchanged,
             changes.skipped_unchanged,
         )
+        found = (
+            len(changes.added)
+            + len(changes.modified)
+            + changes.unchanged
+            + changes.skipped_unchanged
+        )
+        if self._refuse_empty_root(found):
+            return ReindexResult(added=0, modified=0, deleted=0, unchanged=0)
 
         # Pre-parse notes outside the lock to minimise lock hold time.
         parsed, newly_skipped, newly_skip_reasons = self._parse_changed_notes(
