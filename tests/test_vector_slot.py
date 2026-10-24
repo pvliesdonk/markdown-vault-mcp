@@ -375,7 +375,10 @@ class TestWritingThroughTheSlot:
         target = slot.rebuild_target()
         assert target.count == 0
         assert slot.current() is target
-        assert (tmp_path / "vec.v2.json").read_text() == "{not json"
+        # Moved aside, not rebuilt over (#1505 child 9).
+        assert not (tmp_path / "vec.v2.json").exists()
+        (copy,) = tmp_path.glob("vec.v2.json.corrupt-*")
+        assert copy.read_text() == "{not json"
 
     def test_a_process_that_does_not_own_the_files_may_not_rebuild(
         self, tmp_path: Path
