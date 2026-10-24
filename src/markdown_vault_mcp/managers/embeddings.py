@@ -223,9 +223,8 @@ class EmbeddingsManager:
     def _open_store(self) -> EmbeddingStore:
         """Open (installing) the store for writing.
 
-        An owned store of another identity is rebuilt through
-        :meth:`build_embeddings` with ``force``; a corrupt one, moved aside
-        by the slot, through :meth:`_rebuild_corrupt`.
+        An owned store that is corrupt or of another identity is rebuilt
+        through :meth:`rebuild_after_fault`.
 
         Returns:
             The writable store.
@@ -235,29 +234,33 @@ class EmbeddingsManager:
         """
         if self._slot is None or self._embedding_provider is None:
             raise RuntimeError("_require_vectors() must be called before _open_store()")
-        rebuild = self._rebuild_after_fault if self._slot.owns_files else None
+        rebuild = self.rebuild_after_fault if self._slot.owns_files else None
         return self._slot.writable(rebuild=rebuild)
 
-    def _rebuild_after_fault(self) -> int:
-        """Rebuild a store that would not open: corrupt, or of another identity."""
-        if self._slot is not None and self._slot.recovering_corrupt:
-            return self._rebuild_corrupt()
-        return self.build_embeddings(force=True)
+    def rebuild_after_fault(self) -> int:
+        """Rebuild the store after it would not open: of another identity, or corrupt.
 
-    def _rebuild_corrupt(self) -> int:
-        """Rebuild a store moved aside as corrupt, copying from a 5.x sidecar (#1505).
+        The store is opened again to tell the two apart. One of another
+        identity is rebuilt with ``force``, re-embedding every chunk. A
+        corrupt one, which the slot moved aside, reopens empty and takes the
+        ordinary cold build, where a compatible 5.x sidecar donates, so
+        unchanged notes cost no provider call (#1505).
 
-        A compatible released sidecar beside the store donates, so unchanged
-        notes cost no provider call; without one every chunk is embedded.
+        Returns:
+            Number of chunks embedded.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            StoreOpenError: If the store still will not open.
         """
-        if self._slot is None:  # pragma: no cover - _open_store() checked
+        self._require_vectors()
+        if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
-        donor = self._upgrade_donor(self._slot.identity)
         try:
-            return self.build_embeddings(force=True, donor=donor)
-        finally:
-            if donor is not None:
-                donor.close()
+            self._slot.get(rebuild=None)
+        except StoreIncompatibleError:
+            return self.build_embeddings(force=True)
+        return self.build_embeddings()
 
     # ------------------------------------------------------------------
     # Inline reindex embedding

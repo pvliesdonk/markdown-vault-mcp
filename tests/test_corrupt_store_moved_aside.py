@@ -240,3 +240,25 @@ def test_another_identity_still_rebuilds_from_scratch(
         vault.close()
     assert len(provider.texts) >= len(NOTES)
     assert _aside(tmp_path) == []
+
+
+@pytest.mark.parametrize("store", ["numpy", "sqlite"])
+def test_a_search_first_corrupt_rebuild_uses_the_released_sidecar(
+    tmp_path: Path, store: str
+) -> None:
+    for suffix in (".json", ".npy"):
+        shutil.copy(
+            FIXTURE / f"index-db-embeddings{suffix}",
+            tmp_path / f"index-db-embeddings{suffix}",
+        )
+    _build(tmp_path, store, RELEASED_NOTES)
+    _corrupt(tmp_path, store)
+    provider = _Counting()
+    vault = _vault(tmp_path, store, provider)
+    try:
+        vault.index.build_index()
+        assert vault.reader.search("tides", mode="semantic")  # recovers the store
+    finally:
+        vault.close()
+    assert [t for t in provider.texts if t != "tides"] == []  # only the query
+    assert _aside(tmp_path)

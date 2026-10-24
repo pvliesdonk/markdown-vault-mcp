@@ -1355,8 +1355,9 @@ class SqliteVectorBackend:
     ) -> list[Path]:
         """Rename this store's own files at *location* aside: it is corrupt (#1505).
 
-        ``{base}.sqlite3`` and its ``-wal`` and ``-shm`` are renamed to ``<name>.corrupt-<UTC time>``
-        under the writer lock; ``{base}.lock`` are left.
+        ``{base}.sqlite3`` and its ``-wal`` and ``-shm`` are renamed to
+        ``<name>.corrupt-<UTC time>`` under the writer lock; ``{base}.lock``
+        is left.
 
         Args:
             location: The store's base path; ``":memory:"`` moves nothing.
