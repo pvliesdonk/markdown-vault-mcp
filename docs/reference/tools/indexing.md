@@ -170,6 +170,7 @@ promotion is reported through `get_job_result` and mirrored in
 - ToolError: If the index is busy or still building; retry shortly.
 - IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 - ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued reindex is cancelled, so fetch pending job results and retry.
+- ToolError: If the vault folder is empty while the index holds notes, as when its volume is not mounted: nothing is reindexed (#1791).
 
 <!-- DOMAIN-EXAMPLE-reindex-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

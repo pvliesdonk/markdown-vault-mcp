@@ -977,8 +977,10 @@ tokens (the store's `tokens()` and `rows_for()`) and reconciles:
   name in its directory listing, so a case-only rename of a note or a
   folder on a case-insensitive file system reads as absent). *Absent*
   removes; *unavailable* — a refused stat or read, or a source root that is
-  not a statable directory (the root check lives in the probe, not the
-  embedding path) — keeps them, logged once per pass
+  not a statable, listable directory holding at least one entry, so an
+  unmounted volume's empty mount point removes nothing (#1791; the root
+  check lives in the probe, not the embedding path) — keeps them, logged
+  once per pass
   (`embedding_reconcile_source_unavailable`); *present* is a keyword-index
   gap and keeps them, logged per path (`embedding_reconcile_kept`). A
   body-less note that still has FTS chunk rows reclaims without asking.
@@ -4553,8 +4555,10 @@ another one, and is the explicit switch of choice C.
   index is brought up to date (`build_index`, `reindex`) inside
   `EmbeddingsManager.vectors_deferred()`, so no vector store is opened,
   embedded into or purged (`store_for_purge` returns `None`); a vault that
-  then holds no chunks is refused (`vault_empty`), so a missing folder never
-  empties a store. Last the destination opens for writing
+  then holds no chunks, or whose folder that update found empty
+  (`IndexManager.vault_root_empty`, child 8: the index kept its notes), is
+  refused (`vault_empty`), so a missing folder never empties a store or
+  imports against notes that are not there. Last the destination opens for writing
   (`EmbeddingsManager.import_from` through `rebuild_target`), where a
   PostgreSQL destination's lease refuses. One full build, shared with the
   cold build (`_full_build`), copies each chunk from the destination's own
@@ -4615,11 +4619,37 @@ another one, and is the explicit switch of choice C.
   `get_similar` share, now drops every vector row whose path is not in
   `documents_live`, after the candidate cap, which is not widened for it.
   The same filter covers a keyword-index gap (child 7).
-- A vault root that exists but holds no candidate notes while the keyword
-  index holds some is *unavailable* for that pass: nothing is removed,
-  logged WARNING `vault_root_empty_removals_refused indexed=%d`.
-  Removals resume when notes reappear or after an explicit forced
-  rebuild, the deliberate "I emptied it" (child 8, #1791).
+- A vault root that exists but holds no entries at all
+  (`source_probe.holds_entries`), while the keyword index holds documents
+  (tombstones counted), is *unavailable* for that pass, logged WARNING
+  `vault_root_empty_removals_refused indexed=%d`
+  (`IndexManager._refuse_empty_root`): an unmounted volume's mount point and
+  a bind mount Docker created empty look like that. A `reindex` returns a
+  zero result before its deletion loop, tracker update and tombstone sync;
+  a non-forced `build_index` (also what a settings change runs) returns zero
+  `IndexStats` and leaves the tracker and tombstones alone, so the notes
+  read as unchanged when the volume returns. The refused reindex says so:
+  `ReindexResult.vault_root_empty` is set, the `reindex` tool raises a
+  WARNING `ToolError` (the request was fine; tell the user), and the
+  `reindex` command exits 1 naming `index --force` as the deliberate path.
+  Writes (`DocumentManager` and `ArtifactStore` `_check_writable`, through
+  `source_probe.require_vault_root`) are refused with
+  `VaultUnavailableError`, a WARNING `ToolError` telling the model to tell
+  the user, while the folder is empty and the index holds notes: one note
+  or attachment written there would make the next pass read a vault whose
+  notes were all deleted, while a new vault (an empty index) still takes its
+  first note. For the vectors, under the same empty root, `FileSourceProbe`
+  answers *unavailable*, which covers a lost `index.db` beside
+  an empty folder. A folder holding anything (an `.obsidian/`, an excluded
+  file) is a vault whose notes are gone, so its removals and an exclusion
+  covering every note proceed as before. The deliberate "I emptied it" is
+  `index --force`, which wipes the keyword index and rebuilds the
+  embeddings with `force`, publishing the authoritative empty generation;
+  `reindex --force` empties only the keyword index and leaves the vectors
+  to the probe, which keeps them under an empty root. Deleting the last
+  notes through the server leaves their vectors stored, never searched,
+  until a note is added or `index --force` runs, since an empty root cannot
+  tell that deletion from an unmounted volume (child 8, #1791).
 - An owned corrupt numpy or SQLite store is renamed with the suffix
   `.corrupt-<UTC timestamp>`, every file including `-wal` and `-shm`,
   logged WARNING with the paths, before its rebuild, which a compatible

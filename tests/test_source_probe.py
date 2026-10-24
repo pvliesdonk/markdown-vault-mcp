@@ -35,8 +35,30 @@ def test_no_file_there_is_absent(tmp_path: Path, make: str) -> None:
         (tmp_path / "a.md").mkdir()
         path = "a.md"
     else:
+        (tmp_path / "other.md").write_text("")  # a vault, not an empty mount point
         path = "a.md"
     assert FileSourceProbe(tmp_path).probe(path).status == "absent"
+
+
+def test_an_empty_root_is_unavailable(tmp_path: Path) -> None:
+    # What an unmounted volume or an empty bind mount looks like (#1791).
+    assert FileSourceProbe(tmp_path).probe("a.md").status == "unavailable"
+
+
+def test_a_root_with_any_entry_answers_absent(tmp_path: Path) -> None:
+    (tmp_path / ".obsidian").mkdir()
+    assert FileSourceProbe(tmp_path).probe("a.md").status == "absent"
+
+
+def test_a_root_that_cannot_be_listed_is_unavailable(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "x.md").write_text("")
+    root.chmod(0o300)  # statable, not listable
+    try:
+        assert FileSourceProbe(root).probe("a.md").status == "unavailable"
+    finally:
+        root.chmod(0o755)
 
 
 def test_a_refused_stat_is_unavailable(tmp_path: Path) -> None:

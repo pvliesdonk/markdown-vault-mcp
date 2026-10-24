@@ -283,6 +283,15 @@ class IndexUnavailableError(MarkdownMCPError):
         self.reason: IndexUnavailableReason = reason
 
 
+class VaultUnavailableError(MarkdownMCPError):
+    """The vault folder is empty while the index holds notes; writes are refused.
+
+    What an unmounted volume or an empty bind mount looks like: one file
+    written there would end the protection that keeps the index and the
+    embeddings (#1791), so writes wait until the volume is back.
+    """
+
+
 class StoreOpenError(MarkdownMCPError):
     """Opening a store failed in a way its backend could classify (#1766).
 

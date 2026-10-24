@@ -42,6 +42,7 @@ from markdown_vault_mcp.scanner import (
     list_section_headings,
     parse_note,
 )
+from markdown_vault_mcp.source_probe import require_vault_root
 from markdown_vault_mcp.types import (
     AttachmentContent,
     DeleteResult,
@@ -186,6 +187,7 @@ class DocumentManager:
             source_dir,
             write_lock=write_lock,
             notifier=self._notifier,
+            indexed=fts.has_documents,
             policy=ArtifactPolicy(
                 attachment_extensions=attachment_extensions,
                 read_only=read_only,
@@ -214,15 +216,18 @@ class DocumentManager:
             self._sync_index()
 
     def _check_writable(self) -> None:
-        """Raise ReadOnlyError if the vault is configured as read-only.
+        """Raise when the vault is read-only, or its folder is empty while indexed.
 
         Raises:
             ReadOnlyError: If ``read_only=True``.
+            VaultUnavailableError: If the vault folder holds nothing while the
+                index holds notes, as when its volume is not mounted (#1791).
         """
         if self._read_only:
             raise ReadOnlyError(
                 "Vault is read-only; write operations are not permitted."
             )
+        require_vault_root(self._source_dir, indexed=self._fts.has_documents())
 
     @contextlib.contextmanager
     def write_scope(self) -> Iterator[None]:

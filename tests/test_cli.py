@@ -817,6 +817,7 @@ def test_reindex_prints_stats() -> None:
     mock_result.skipped = 4
 
     mock_vault = MagicMock()
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -836,6 +837,7 @@ def test_reindex_calls_build_index_first() -> None:
     mock_result = MagicMock()
     mock_result.added = mock_result.modified = mock_result.deleted = 0
     mock_result.unchanged = mock_result.skipped = 0
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -853,6 +855,7 @@ def test_reindex_force_drops_and_rebuilds() -> None:
     mock_result = MagicMock()
     mock_result.added = mock_result.modified = mock_result.deleted = 0
     mock_result.unchanged = mock_result.skipped = 0
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -868,6 +871,7 @@ def test_reindex_without_force_keeps_warm_restart() -> None:
     mock_result = MagicMock()
     mock_result.added = mock_result.modified = mock_result.deleted = 0
     mock_result.unchanged = mock_result.skipped = 0
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -884,6 +888,7 @@ def test_reindex_builds_embeddings_when_configured() -> None:
     mock_result.added = 1
     mock_result.modified = mock_result.deleted = mock_result.skipped = 0
     mock_result.unchanged = 5
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.return_value = 10
 
@@ -904,6 +909,7 @@ def test_reindex_swallows_embeddings_not_configured_error() -> None:
         mock_result.skipped
     ) = 0
     mock_result.unchanged = 5
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.side_effect = EmbeddingsNotConfiguredError(
         "not configured"
@@ -924,6 +930,7 @@ def test_reindex_surfaces_internal_valueerror_from_embeddings() -> None:
         mock_result.skipped
     ) = 0
     mock_result.unchanged = 5
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.side_effect = ValueError(
         "Failed to load vector index after _load_vectors()"
@@ -943,6 +950,7 @@ def test_reindex_never_forces_embedding_rebuild() -> None:
     mock_result.modified = 1
     mock_result.deleted = mock_result.skipped = 0
     mock_result.unchanged = 10
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.return_value = 4
 
