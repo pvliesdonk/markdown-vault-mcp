@@ -5,7 +5,10 @@ because the identity it opens against reads ``provider.dimension``, which
 some providers answer with a network probe; a provider that is down must
 not stop a vault from being built. On a store the vault owns, a corrupt
 store or one holding another identity (a model change) is rebuilt into a
-fresh generation through the caller's ``rebuild``; without a rebuild (a
+fresh generation through the caller's ``rebuild``. A corrupt built-in store
+is first moved aside, every file of it renamed to ``.corrupt-<UTC time>``
+through its backend's ``quarantine``, so nothing is rebuilt over it; a
+rename that is refused leaves it unavailable (#1505). Without a rebuild (a
 process that does not own the files) the store's own
 :class:`~markdown_vault_mcp.exceptions.StoreCorruptError` or
 :class:`~markdown_vault_mcp.exceptions.StoreIncompatibleError` propagates,
@@ -21,7 +24,6 @@ is kept as provisional and reused until a sized store replaces it.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import logging
 import threading
@@ -92,6 +94,8 @@ class VectorStoreSlot:
         # Guards opening, swapping and closing; never held across a rebuild.
         self._lock = threading.Lock()
         self._closed = False
+        # True while a rebuild replaces a store moved aside as corrupt.
+        self._recovering = False
 
     @property
     def location(self) -> Path | str | None:
@@ -107,6 +111,11 @@ class VectorStoreSlot:
     def owns_files(self) -> bool:
         """Whether this process may rebuild the store's files."""
         return self._owns_files
+
+    @property
+    def recovering_corrupt(self) -> bool:
+        """Whether the rebuild running now replaces a store moved aside as corrupt."""
+        return self._recovering
 
     @property
     def backend_name(self) -> str:
@@ -212,17 +221,43 @@ class VectorStoreSlot:
         """Rebuild a store that would not open, outside the lock; re-raise without one."""
         if rebuild is None:
             raise exc
+        corrupt = isinstance(exc, StoreCorruptError)
+        if corrupt:
+            self._move_aside()
         logger.warning(
             "vector_store_rebuild_started location=%s reason=%s",
             self._location,
             type(exc).__name__,
         )
-        self._run_rebuild(rebuild)
+        self._recovering = corrupt
+        try:
+            self._run_rebuild(rebuild)
+        finally:
+            self._recovering = False
         if self._store is None:
             raise ValueError(
                 "Failed to rebuild the vector store after it would not open."
             ) from exc
         return self._store
+
+    def _move_aside(self) -> None:
+        """Rename an owned corrupt store's files aside, if its backend can (#1505).
+
+        Nothing for an injected store, one this process does not own, one in
+        memory, or a backend without ``quarantine`` (PostgreSQL).
+
+        Raises:
+            StoreUnavailableError: If the files cannot be renamed.
+        """
+        quarantine = getattr(self._backend, "quarantine", None)
+        if (
+            quarantine is None
+            or self._injected
+            or not self._owns_files
+            or self._location is None
+        ):
+            return
+        quarantine(self._location)
 
     def _refuse_closed(self) -> None:
         """Refuse to open behind a closed slot; called under the lock.
@@ -393,18 +428,23 @@ class VectorStoreSlot:
         the end, so readers keep its rows meanwhile and a rebuild that embeds
         nothing leaves them. Otherwise :meth:`fresh`: a fresh store over the
         location for an owned slot (the old files survive until the rebuild
-        publishes), the injected store emptied in place.
+        publishes), the injected store emptied in place. A corrupt store is
+        moved aside first (#1505).
 
         Raises:
             ReadOnlyError: If this process does not own the store's files.
             StoreOpenError: If the store is unavailable or of an unsupported
-                schema.
+                schema, or corrupt and cannot be moved aside.
         """
         self._refuse_unowned()
         if self._store is None:
             # A store that will not open is rebuilt into a fresh one below.
-            with contextlib.suppress(StoreCorruptError, StoreIncompatibleError):
+            try:
                 self.get(rebuild=None)
+            except StoreCorruptError:
+                self._move_aside()
+            except StoreIncompatibleError:
+                pass
         if self._store is not None and self._answers(self._store):
             return self._store
         return self.fresh()
