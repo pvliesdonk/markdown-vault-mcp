@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
+    """Return the current time in UTC."""
     return datetime.now(UTC)
 
 

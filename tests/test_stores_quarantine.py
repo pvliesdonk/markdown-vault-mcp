@@ -140,3 +140,38 @@ def test_the_move_is_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) ->
     location, paths = lines[0].args  # type: ignore[misc]
     assert location == "emb"
     assert paths == ",".join(str(p) for p in moved)
+
+
+def test_an_undo_that_fails_is_logged_and_still_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from pathlib import Path as RealPath
+
+    own = (tmp_path / "emb.v2.json", tmp_path / "emb.v2.m1.npy")
+    _touch(*own)
+    real = RealPath.rename
+
+    def flaky(self: RealPath, target: RealPath) -> RealPath:
+        if self.name == "emb.v2.m1.npy" or ".corrupt-" in self.name:
+            raise PermissionError("refused")
+        return real(self, target)
+
+    monkeypatch.setattr(RealPath, "rename", flaky)
+    with caplog.at_level(logging.WARNING), pytest.raises(StoreUnavailableError):
+        move_aside(own, backend="numpy", location="emb")
+    assert any(
+        r.msg.startswith("vector_store_move_aside_undo_failed") for r in caplog.records
+    )
+
+
+def test_a_refused_stat_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.stores import _quarantine
+
+    def refused(_path: Path) -> bool:
+        raise PermissionError("refused")
+
+    monkeypatch.setattr(_quarantine, "path_exists", refused)
+    with pytest.raises(StoreUnavailableError, match="cannot be moved aside"):
+        move_aside([tmp_path / "emb.v2.json"], backend="numpy", location="emb")

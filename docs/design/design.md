@@ -4672,10 +4672,22 @@ another one, and is the explicit switch of choice C.
   rename undoes the renames already made and raises *unavailable*: a
   corrupt store that cannot be moved is never rebuilt over. A process that
   does not own the files renames nothing and raises `StoreCorruptError`.
-  The automatic rebuild uses a compatible released sidecar as donor
-  (`EmbeddingsManager._rebuild_corrupt`), so unchanged notes cost no
-  provider call; a user's forced rebuild and a store of another identity
-  still re-embed everything, as `force` promises. The server never deletes
+  Threads of one process meet the same corrupt store at startup (a search
+  and the writer, say), and the writer lock is shared within a process, so
+  the slot takes its own recovery lock and opens the store again under it
+  before renaming: a failure seen before another thread moved the files
+  aside returns the store that thread left, renaming nothing. The lock is
+  never held across the rebuild, which may wait on the writer thread. Every
+  automatic rebuild, the writer's `_open_store` and a search's recovery job
+  (`BuildEmbeddings(after_fault=True)`, on the writer thread), runs
+  `EmbeddingsManager.rebuild_after_fault`, which opens the store again to
+  tell the faults apart: another identity is rebuilt with `force`, and a
+  corrupt store moved aside reopens empty and takes the ordinary cold build,
+  where a compatible released sidecar donates, so unchanged notes cost no
+  provider call. A user's forced rebuild and a store of another identity
+  still re-embed everything, as `force` promises. A store whose damage
+  shows only after it opened (a SQLite page a streamed read meets) is not
+  moved aside (#1881). The server never deletes
   a `.corrupt-*` file; the operator may. A PostgreSQL store keeps
   dropping and recreating its own damaged tables without `CASCADE`.
 - Permission errors, a full disk and an unavailable PostgreSQL stay typed

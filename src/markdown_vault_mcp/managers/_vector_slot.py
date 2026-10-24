@@ -33,6 +33,7 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
     StoreCorruptError,
     StoreIncompatibleError,
+    StoreOpenError,
 )
 from markdown_vault_mcp.interfaces import DescribesStore, ReportsResources
 from markdown_vault_mcp.types import EmbeddingIdentity
@@ -94,8 +95,9 @@ class VectorStoreSlot:
         # Guards opening, swapping and closing; never held across a rebuild.
         self._lock = threading.Lock()
         self._closed = False
-        # True while a rebuild replaces a store moved aside as corrupt.
-        self._recovering = False
+        # Serializes moving a corrupt store aside across threads; the
+        # writer lock in the backend only excludes other processes (#1505).
+        self._recovery = threading.Lock()
 
     @property
     def location(self) -> Path | str | None:
@@ -111,11 +113,6 @@ class VectorStoreSlot:
     def owns_files(self) -> bool:
         """Whether this process may rebuild the store's files."""
         return self._owns_files
-
-    @property
-    def recovering_corrupt(self) -> bool:
-        """Whether the rebuild running now replaces a store moved aside as corrupt."""
-        return self._recovering
 
     @property
     def backend_name(self) -> str:
@@ -191,6 +188,22 @@ class VectorStoreSlot:
         """
         if self._store is not None:
             return self._store
+        opened = self._open()
+        if isinstance(opened, StoreOpenError):
+            return self._rebuilt(opened, rebuild)
+        return opened
+
+    def _open(self) -> EmbeddingStore | StoreOpenError:
+        """Return the installed, provisional or newly opened store, or why it would not open.
+
+        A corrupt store or one of another identity is returned as its
+        error, not raised, for the caller to rebuild or raise.
+
+        Raises:
+            RuntimeError: If the slot is closed.
+            StoreOpenError: If the store is unavailable or of an unsupported
+                schema.
+        """
         with self._lock:
             self._refuse_closed()
             if self._store is not None:
@@ -202,43 +215,66 @@ class VectorStoreSlot:
                     self._location, self._open_identity(), owns_files=self._owns_files
                 )
             except (StoreCorruptError, StoreIncompatibleError) as exc:
-                failure = exc
+                return exc
+            if store.identity.dimension == 0:
+                # Nothing is stored and the dimension is not known: let
+                # reads search the empty store, but install nothing, so
+                # the writer opens through writable(), which learns the
+                # provider's dimension.
+                self._provisional = store
             else:
-                if store.identity.dimension == 0:
-                    # Nothing is stored and the dimension is not known: let
-                    # reads search the empty store, but install nothing, so
-                    # the writer opens through writable(), which learns the
-                    # provider's dimension.
-                    self._provisional = store
-                else:
-                    self._store = store
-                return store
-        return self._rebuilt(failure, rebuild)
+                self._store = store
+            return store
 
     def _rebuilt(
-        self, exc: Exception, rebuild: Callable[[], object] | None
+        self, exc: StoreOpenError, rebuild: Callable[[], object] | None
     ) -> EmbeddingStore:
-        """Rebuild a store that would not open, outside the lock; re-raise without one."""
+        """Rebuild a store that would not open, outside the lock; re-raise without one.
+
+        A corrupt store is moved aside first; when another thread already
+        did, the store it left is returned without a rebuild.
+        """
         if rebuild is None:
             raise exc
-        corrupt = isinstance(exc, StoreCorruptError)
-        if corrupt:
-            self._move_aside()
+        if isinstance(exc, StoreCorruptError):
+            recovered = self._recover_corrupt()
+            if recovered is not None:
+                return recovered
         logger.warning(
             "vector_store_rebuild_started location=%s reason=%s",
             self._location,
             type(exc).__name__,
         )
-        self._recovering = corrupt
-        try:
-            self._run_rebuild(rebuild)
-        finally:
-            self._recovering = False
+        self._run_rebuild(rebuild)
         if self._store is None:
             raise ValueError(
                 "Failed to rebuild the vector store after it would not open."
             ) from exc
         return self._store
+
+    def _recover_corrupt(self) -> EmbeddingStore | None:
+        """Move a corrupt store aside, unless another thread already did.
+
+        Under the recovery lock the store is opened again: a failure seen
+        before another thread moved the files aside (and maybe rebuilt them)
+        must not rename what that thread left. Never held across a rebuild,
+        which may wait on the writer thread that meets the same store.
+
+        Returns:
+            The store that opens now, with nothing renamed; ``None`` once the
+            corrupt files are moved aside, or when the store now holds
+            another identity, for the caller to rebuild.
+
+        Raises:
+            StoreUnavailableError: If the files cannot be renamed.
+        """
+        with self._recovery:
+            opened = self._open()
+            if not isinstance(opened, StoreOpenError):
+                return opened
+            if isinstance(opened, StoreCorruptError):
+                self._move_aside()
+            return None
 
     def _move_aside(self) -> None:
         """Rename an owned corrupt store's files aside, if its backend can (#1505).
@@ -442,7 +478,7 @@ class VectorStoreSlot:
             try:
                 self.get(rebuild=None)
             except StoreCorruptError:
-                self._move_aside()
+                self._recover_corrupt()
             except StoreIncompatibleError:
                 pass
         if self._store is not None and self._answers(self._store):

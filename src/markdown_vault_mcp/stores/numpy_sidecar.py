@@ -840,8 +840,10 @@ class NumpySidecarBackend:
     ) -> list[Path]:
         """Rename this store's own files at *location* aside: it is corrupt (#1505).
 
-        ``{base}.v2.json`` and every ``{base}.v2.m{seq}.npy`` are renamed to ``<name>.corrupt-<UTC time>``
-        under the writer lock; a released sidecar (``{base}.json``, ``{base}.npy``) and ``{base}.lock`` are left.
+        ``{base}.v2.json`` and every ``{base}.v2.m{seq}.npy`` are renamed
+        to ``<name>.corrupt-<UTC time>`` under the writer lock; a released
+        sidecar (``{base}.json``, ``{base}.npy``) and ``{base}.lock`` are
+        left.
 
         Args:
             location: The store's base path; ``":memory:"`` moves nothing.
