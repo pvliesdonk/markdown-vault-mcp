@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
-from markdown_vault_mcp.exceptions import StoreIncompatibleError
 from markdown_vault_mcp.fts_index import should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers.embeddings import (
@@ -413,23 +412,10 @@ class IndexManager:
             if (keep_paths is None or row["path"] not in keep_paths)
             and self._is_path_excluded(row["path"])
         ]
-        if (
-            stale_paths
-            and vectors is None
-            and self._embeddings.embedding_provider is not None
-        ):
-            try:
-                opened = self._embeddings._open_store()
-            except StoreIncompatibleError as exc:
-                # A store this provider may not write (an injected store of
-                # another model): the keyword purge still runs (#1778).
-                logger.warning("purge_vectors_skipped reason=store_refused err=%s", exc)
-            else:
-                # A store never built has nothing to purge. Handing it back
-                # would let the caller embed changed notes into it, and the
-                # first build would then no longer be a cold build that can
-                # upgrade a released sidecar (#1505).
-                vectors = opened if opened.count else None
+        if stale_paths and vectors is None:
+            # Opened if need be; None for a store never built, one of another
+            # model (#1778) or while an import defers vectors (#1505).
+            vectors = self._embeddings.store_for_purge()
 
         for stale_path in stale_paths:
             self._fts.delete_by_path(stale_path)

@@ -14,6 +14,7 @@ helpers that stayed behind (`_is_path_excluded`,
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -29,13 +30,14 @@ from markdown_vault_mcp.exceptions import (
 from markdown_vault_mcp.indexing.embedding_reconciler import (
     EmbeddingReconciler,
     RebuildOutcome,
+    RebuildPreview,
     ReconcileResult,
 )
 from markdown_vault_mcp.source_probe import FileSourceProbe
 from markdown_vault_mcp.utils.fs import path_exists
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection
+    from collections.abc import Callable, Collection, Iterator
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.indexing.donor import Donor
@@ -45,6 +47,8 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import EmbeddingIdentity, ParsedNote
 
 logger = logging.getLogger(__name__)
+
+_NO_RECONCILER = "No reconciler without an embedding provider."
 
 # Maximum chunks per embedding provider call.  Keeps memory bounded during
 # build_embeddings() — FastEmbed/ONNX can allocate pathologically large buffers
@@ -126,6 +130,9 @@ class EmbeddingsManager:
                 text_format=embed_text_builder.format_token(),
             )
         self._slot = vector_slot
+        # While set, the keyword index updates with the vector store left
+        # closed and unwritten: an import's full build follows (#1505).
+        self._vectors_deferred = False
         self._conflicts: set[str] = set()
         self._retries: set[str] = set()
         self._reconciler = (
@@ -169,7 +176,49 @@ class EmbeddingsManager:
 
     def _loaded_store(self) -> EmbeddingStore | None:
         """Return the open store if this provider may write to it, opening nothing."""
-        return self._slot.writable_current() if self._slot is not None else None
+        if self._vectors_deferred or self._slot is None:
+            return None
+        return self._slot.writable_current()
+
+    @contextlib.contextmanager
+    def vectors_deferred(self) -> Iterator[None]:
+        """Leave the vector store closed and unwritten for the duration.
+
+        A keyword-index update inside it neither embeds a changed note nor
+        removes a purged one's rows: an import's full build, which follows,
+        publishes a whole generation from the updated index (#1505).
+
+        Yields:
+            Nothing.
+        """
+        self._vectors_deferred = True
+        try:
+            yield
+        finally:
+            self._vectors_deferred = False
+
+    def store_for_purge(self) -> EmbeddingStore | None:
+        """Return the store a purge of newly excluded notes removes rows from.
+
+        Opens it if need be. A store never built is not handed back: there is
+        nothing to remove, and the caller would embed changed notes into it,
+        so the first build would no longer be a cold one that can upgrade a
+        released sidecar (#1505). ``None`` too without a provider, while
+        vectors are deferred, or for a store this provider may not write (an
+        injected store of another model, #1778), logged; the keyword purge
+        runs either way.
+
+        Returns:
+            The populated store, or ``None``.
+        """
+        if self._vectors_deferred or self._embedding_provider is None:
+            return None
+        try:
+            opened = self._open_store()
+        except StoreIncompatibleError as exc:
+            logger.warning("purge_vectors_skipped reason=store_refused err=%s", exc)
+            return None
+        return opened if opened.count else None
 
     def _open_store(self) -> EmbeddingStore:
         """Open (installing) the store for writing.
@@ -293,27 +342,59 @@ class EmbeddingsManager:
 
         identity = self._slot.identity
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
-            raise RuntimeError("No reconciler without an embedding provider.")
+            raise RuntimeError(_NO_RECONCILER)
         upgrade = None if force or donor is not None else self._upgrade_donor(identity)
         try:
-            outcome = self._reconciler.rebuild(
+            outcome = self._full_build(
                 store, identity, donor=donor or upgrade, reuse_own=reuse_own
             )
         finally:
             if upgrade is not None:
                 upgrade.close()
-        return self._finish_cold_build(store, identity, outcome)
+        return outcome.embedded
+
+    def _full_build(
+        self,
+        store: EmbeddingStore,
+        identity: EmbeddingIdentity,
+        *,
+        donor: Donor | None,
+        reuse_own: bool,
+    ) -> RebuildOutcome:
+        """Build every chunk into *store* and report it: the cold build and the import.
+
+        Returns:
+            What the build did; ``published`` also counts an authoritative
+            empty generation.
+
+        Raises:
+            EmbeddingsNotPublishedError: If the build kept a populated store
+                because a provider batch failed (#1505).
+        """
+        if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
+            raise RuntimeError(_NO_RECONCILER)
+        outcome = self._reconciler.rebuild(
+            store, identity, donor=donor, reuse_own=reuse_own
+        )
+        published = self._finish_cold_build(store, identity, outcome)
+        return RebuildOutcome(
+            embedded=outcome.embedded,
+            reused=outcome.reused,
+            attempted=outcome.attempted,
+            published=published,
+            failed_batches=outcome.failed_batches,
+        )
 
     def _finish_cold_build(
         self,
         store: EmbeddingStore,
         identity: EmbeddingIdentity,
         outcome: RebuildOutcome,
-    ) -> int:
+    ) -> bool:
         """Report a full build's outcome, publishing an authoritative empty one.
 
         Returns:
-            The number of chunks the provider embedded.
+            Whether a generation was published, the empty one included.
 
         Raises:
             EmbeddingsNotPublishedError: If the build kept a populated store
@@ -347,7 +428,77 @@ class EmbeddingsManager:
         else:
             store.publish_generation(identity, [])
             logger.info("build_embeddings_saved_empty_index")
-        return embedded
+            return True
+        return outcome.published
+
+    def import_target(self) -> EmbeddingStore:
+        """Open, for writing, the store an import publishes into (#1505).
+
+        Returns:
+            The configured store, or a fresh one over its location when it
+            will not open or holds another identity; the import replaces it.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            StoreBusyError: If another process is writing the store.
+            StoreOpenError: If the store is otherwise unavailable or of an
+                unsupported schema.
+        """
+        self._require_vectors()
+        if self._slot is None:  # pragma: no cover - _require_vectors() ran
+            raise RuntimeError("No vector store slot without an embedding provider.")
+        return self._slot.rebuild_target()
+
+    def import_from(self, donor: Donor) -> RebuildOutcome:
+        """Run a full build into the configured store, copying from *donor* (#1505).
+
+        Per chunk a vector is copied from the store's own rows, then from
+        *donor*; the rest are embedded. One generation replaces the store,
+        so a repeated import embeds nothing.
+
+        Args:
+            donor: The source, opened read-only.
+
+        Returns:
+            What the build did.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            EmbeddingsNotPublishedError: If a provider batch failed while the
+                store held vectors: nothing was published.
+            StoreOpenError: If the store cannot be opened for writing.
+        """
+        store = self.import_target()
+        if self._slot is None:  # pragma: no cover - import_target() checked
+            raise RuntimeError("No vector store slot without an embedding provider.")
+        return self._full_build(store, self._slot.identity, donor=donor, reuse_own=True)
+
+    def preview_import(self, donor: Donor) -> RebuildPreview:
+        """Count what :meth:`import_from` would copy and embed, writing nothing.
+
+        The store is read as it is; one that will not open or holds another
+        identity counts as holding nothing to reuse, since the import would
+        replace it.
+
+        Args:
+            donor: The source, opened read-only.
+
+        Returns:
+            The counts.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            StoreOpenError: If the store is unavailable.
+        """
+        self._require_vectors()
+        if self._slot is None or self._reconciler is None:  # pragma: no cover
+            raise RuntimeError(_NO_RECONCILER)
+        identity = self._slot.identity
+        try:
+            store: EmbeddingStore | None = self._slot.get(rebuild=None)
+        except (StoreCorruptError, StoreIncompatibleError):
+            store = None  # the import would replace it
+        return self._reconciler.preview(store, identity, donor=donor, reuse_own=True)
 
     def _upgrade_donor(self, identity: EmbeddingIdentity) -> Donor | None:
         """Open the sidecar a 5.x release left beside a new built-in store, as a donor.

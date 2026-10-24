@@ -33,6 +33,7 @@ src/markdown_vault_mcp/
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
     embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported
+    embedding_import.py -- import_embeddings: `embeddings import` from another store — source resolution (DSN from the environment only), the refusals in order, the dry-run count, ImportReport/ImportRefused (#1505)
     document.py        -- DocumentManager: note CRUD, backlinks, delete/rename/move orchestration; artifact CRUD delegated to ArtifactStore (#1235)
     artifacts.py       -- ArtifactStore: validate/size/read/write/unlink/move for non-.md artifacts over the manager's shared lock + notifier (#1235); internal collaborator, not re-exported
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)

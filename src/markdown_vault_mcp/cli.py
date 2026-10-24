@@ -141,13 +141,20 @@ def serve(
 # surface template-owned. Module-level ``TYPE_CHECKING`` guards are fine — they
 # are erased at runtime.
 
+import enum  # noqa: E402
 from typing import TYPE_CHECKING, NamedTuple  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.config_sections import VaultSettings
     from markdown_vault_mcp.config_sections._assembly import VaultInstances
-    from markdown_vault_mcp.exceptions import StoreCorruptError, StoreIncompatibleError
+    from markdown_vault_mcp.exceptions import (
+        StoreBusyError,
+        StoreCorruptError,
+        StoreIncompatibleError,
+    )
+    from markdown_vault_mcp.managers.embedding_import import ImportReport
     from markdown_vault_mcp.vault import Vault
 
 
@@ -156,6 +163,7 @@ class _BuiltVault(NamedTuple):
 
     vault: Vault
     instances: VaultInstances
+    settings: VaultSettings | None = None
 
     def close(self) -> None:
         """Close the vault, then the collaborators it was given.
@@ -174,6 +182,7 @@ def _build_vault(
     scratch_state: bool = False,
     in_memory_vectors: bool = False,
     shared_files: bool = False,
+    scratch_index: bool = False,
 ) -> _BuiltVault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
@@ -198,6 +207,9 @@ def _build_vault(
             running server may own them: an on-disk index opens read-only
             (#1758) and an unusable vector sidecar makes a search raise
             instead of being rebuilt (#1734).
+        scratch_index: Keep the keyword index and its state in memory and
+            open the configured vector store read-only, where it is
+            configured, for a dry run that writes nothing (#1505).
 
     Returns:
         The constructed :class:`~markdown_vault_mcp.vault.Vault` (index not
@@ -239,6 +251,14 @@ def _build_vault(
         settings = dataclasses.replace(settings, state_path=None)
     if shared_files:
         settings = dataclasses.replace(settings, owns_index_files=False)
+    if scratch_index:
+        settings = dataclasses.replace(
+            settings,
+            embeddings_path=settings.effective_embeddings_path(),
+            index_path=None,
+            state_path=None,
+            owns_index_files=False,
+        )
     return _BuiltVault(
         Vault(
             source_dir=config.source_dir,
@@ -249,6 +269,7 @@ def _build_vault(
             on_write=instances.on_write,
         ),
         instances,
+        settings,
     )
 
 
@@ -285,6 +306,7 @@ def index(
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotConfiguredError,
         EmbeddingsNotPublishedError,
+        StoreBusyError,
     )
 
     quiet_http_loggers()
@@ -303,8 +325,27 @@ def index(
         except EmbeddingsNotPublishedError as exc:
             typer.echo(f"Error: {exc} Retry when the provider recovers.", err=True)
             raise typer.Exit(1) from exc
+    except StoreBusyError as exc:
+        typer.echo(_busy_message(exc, "index"), err=True)
+        raise typer.Exit(1) from exc
     finally:
         built.close()
+
+
+def _busy_message(exc: StoreBusyError, command: str) -> str:
+    """Say that a running server holds the vector store, and what to do.
+
+    Args:
+        exc: The store's refusal: its writer lock or lease is held elsewhere.
+        command: The command to run again.
+
+    Returns:
+        The ``ERROR:`` line for stderr.
+    """
+    return (
+        f"ERROR: {exc.backend}:{exc.location} is being written by another "
+        f"process. Stop the server first, then run {command} again."
+    )
 
 
 def _embed_in_memory(vault: Vault) -> None:
@@ -467,7 +508,10 @@ def reindex(
 ) -> None:
     """Incrementally reindex the vault."""
     from markdown_vault_mcp._http_logging import quiet_http_loggers
-    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+    from markdown_vault_mcp.exceptions import (
+        EmbeddingsNotConfiguredError,
+        StoreBusyError,
+    )
 
     quiet_http_loggers()
     built = _build_vault(source_dir, index_path)
@@ -489,8 +533,138 @@ def reindex(
             typer.echo(f"Embedded {n} chunks")
         except EmbeddingsNotConfiguredError:
             pass  # embeddings not configured
+    except StoreBusyError as exc:
+        typer.echo(_busy_message(exc, "reindex"), err=True)
+        raise typer.Exit(1) from exc
     finally:
         built.close()
+
+
+embeddings_app = typer.Typer(
+    help="Move embeddings between vector stores.", no_args_is_help=True
+)
+app.add_typer(embeddings_app, name="embeddings")
+
+
+class _SourceKind(enum.StrEnum):
+    """The vector stores an import reads from."""
+
+    numpy = "numpy"
+    sqlite = "sqlite"
+    postgres = "postgres"
+
+
+@embeddings_app.command("import")
+def embeddings_import(
+    source: _SourceKind = typer.Option(
+        ...,
+        "--from",
+        help="The store to copy vectors from: numpy, sqlite or postgres.",
+    ),
+    from_path: str | None = typer.Option(
+        None,
+        "--from-path",
+        help=(
+            "Base path of a numpy or sqlite source (default: the configured "
+            "embeddings base)."
+        ),
+    ),
+    from_schema: str | None = typer.Option(
+        None,
+        "--from-schema",
+        help="Schema of a postgres source (default: the configured schema).",
+    ),
+    from_dsn_env: str | None = typer.Option(
+        None,
+        "--from-dsn-env",
+        help=(
+            "Environment variable holding a postgres source's connection string "
+            f"(default: ${_ENV_PREFIX}_EMBEDDING_POSTGRES_DSN)."
+        ),
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Count what would be copied and embedded; write nothing.",
+    ),
+) -> None:
+    """Copy vectors from another store into the configured one, embedding only what it lacks."""
+    from pathlib import Path
+
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
+    from markdown_vault_mcp.exceptions import (
+        EmbeddingsNotPublishedError,
+        StoreOpenError,
+    )
+    from markdown_vault_mcp.managers.embedding_import import (
+        ImportRefused,
+        ImportSource,
+        import_embeddings,
+    )
+
+    quiet_http_loggers()
+    built = _build_vault(in_memory_vectors=True, scratch_index=dry_run)
+    wanted = ImportSource(
+        source.value,
+        path=Path(from_path) if from_path else None,
+        schema=from_schema,
+        dsn_env=from_dsn_env,
+    )
+    try:
+        if built.settings is None:  # pragma: no cover - _build_vault always sets it
+            raise RuntimeError("The vault was built without its settings.")
+        report = import_embeddings(built.vault, built.settings, wanted, dry_run=dry_run)
+    except ImportRefused as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    except EmbeddingsNotPublishedError as exc:
+        typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
+        raise typer.Exit(1) from exc
+    except StoreOpenError as exc:
+        typer.echo(f"ERROR: the configured store cannot be opened: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        built.close()
+    _report_import(report)
+
+
+def _report_import(report: ImportReport) -> None:
+    """Print what an import did, or would do; exit 1 when it saved nothing.
+
+    Args:
+        report: The import's report.
+
+    Raises:
+        typer.Exit: With code 1 when the build published nothing.
+    """
+    refused = report.refused_rows
+    rows = f", {refused} source row{'' if refused == 1 else 's'} refused"
+    rows = rows if refused else ""
+    if report.dry_run:
+        typer.echo(
+            f"Would import from {report.source} into {report.destination}: "
+            f"{report.chunks} chunks, {report.reused} reusable, {report.embedded} "
+            f"to embed{rows}. Nothing was written."
+        )
+        return
+    if not report.published:
+        typer.echo(
+            f"ERROR: the provider embedded none of the chunks {report.source} "
+            "lacks, so nothing was published. Retry when the provider recovers.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    typer.echo(
+        f"Imported from {report.source} into {report.destination}: "
+        f"{report.chunks} chunks, {report.reused} reused, {report.embedded} "
+        f"embedded{rows}."
+    )
+    if report.failed_batches:
+        batches = report.failed_batches
+        typer.echo(
+            f"{batches} provider batch{'' if batches == 1 else 'es'} failed; the "
+            "server embeds the chunks still missing at its next start."
+        )
 
 
 # DOMAIN-COMMANDS-END

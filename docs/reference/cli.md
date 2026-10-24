@@ -59,3 +59,7 @@ Incrementally reindex the vault.
 | `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
 | `--index-path` |  |  | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`). |
 | `--force` |  | False | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
+
+## `markdown-vault-mcp embeddings`
+
+Move embeddings between vector stores.
