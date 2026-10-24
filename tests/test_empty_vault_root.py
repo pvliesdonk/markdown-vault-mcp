@@ -326,3 +326,24 @@ def test_a_new_empty_vault_takes_its_first_note(tmp_path: Path) -> None:
         assert (tmp_path / "vault" / "first.md").is_file()
     finally:
         vault.close()
+
+
+def test_a_refused_build_walks_nothing(
+    tmp_path: Path, built: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.managers import index as index_mod
+
+    for name in NOTES:
+        (built / name).unlink()
+
+    def walked(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("an empty vault folder needs no walk")
+
+    monkeypatch.setattr(index_mod, "scan_directory", walked)
+    vault = _vault(tmp_path, indexed_frontmatter_fields=["tags"])  # not warm
+    try:
+        stats = vault.index.build_index()
+        assert stats.documents_indexed == 0
+        assert vault._index_mgr.vault_root_empty
+    finally:
+        vault.close()

@@ -4637,8 +4637,9 @@ another one, and is the explicit switch of choice C.
   `VaultUnavailableError`, a WARNING `ToolError` telling the model to tell
   the user, while the folder is empty and the index holds notes: one note
   or attachment written there would make the next pass read a vault whose
-  notes were all deleted. A new vault (an empty index) takes its first note. `FileSourceProbe` answers
-  *unavailable* under the same root, which covers a lost `index.db` beside
+  notes were all deleted, while a new vault (an empty index) still takes its
+  first note. For the vectors, under the same empty root, `FileSourceProbe`
+  answers *unavailable*, which covers a lost `index.db` beside
   an empty folder. A folder holding anything (an `.obsidian/`, an excluded
   file) is a vault whose notes are gone, so its removals and an exclusion
   covering every note proceed as before. The deliberate "I emptied it" is

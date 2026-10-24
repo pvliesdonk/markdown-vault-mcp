@@ -338,8 +338,9 @@ class IndexManager:
     def vault_root_empty(self) -> bool:
         """Whether the last non-forced build or reindex was refused for an empty vault folder (#1791).
 
-        A forced build clears it; a warm start, which never reaches this
-        manager, leaves it as it was.
+        Every non-forced pass sets it afresh, so one that finds the folder
+        populated again clears it; a forced build clears it too; a warm
+        start, which never reaches this manager, leaves it as it was.
         """
         return self._vault_root_empty
 
@@ -498,6 +499,10 @@ class IndexManager:
             for row in self._fts.list_tombstones():
                 self._fts.delete_by_path(row["path"])
 
+        # Checked before the walk: an empty folder has nothing to scan (#1791).
+        if not force and self._refuse_empty_root():
+            return IndexStats(documents_indexed=0, chunks_indexed=0, skipped=0)
+
         logger.info("build_index_scanning path=%s", self._source_dir)
 
         skip_reasons: dict[str, dict[str, str]] = {}
@@ -525,13 +530,6 @@ class IndexManager:
             # incomplete, and the build says so instead of claiming a full one.
             logger.warning(
                 "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
-            )
-        if not force and self._refuse_empty_root():
-            return IndexStats(
-                documents_indexed=0,
-                chunks_indexed=0,
-                skipped=0,
-                walk_complete=not walk_errors,
             )
 
         total_chunks = 0
