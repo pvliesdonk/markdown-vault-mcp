@@ -487,6 +487,9 @@ class ReindexResult:
             (missing required frontmatter, matching an exclude pattern, or
             unparseable), whether newly skipped this scan or unchanged since
             they were last skipped (#665).
+        vault_root_empty: The vault folder held no entries while the index
+            held notes, as when its volume is not mounted, so the pass changed
+            nothing and every count is 0 (#1791).
     """
 
     added: int
@@ -494,6 +497,7 @@ class ReindexResult:
     deleted: int
     unchanged: int
     skipped: int = 0
+    vault_root_empty: bool = False
 
 
 @dataclass

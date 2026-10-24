@@ -256,3 +256,34 @@ def test_a_lost_index_beside_an_empty_folder_keeps_the_vectors(
         )
     finally:
         vault.close()
+
+
+def test_a_refused_reindex_says_so(tmp_path: Path, built: Path) -> None:
+    for name in NOTES:
+        (built / name).unlink()
+    vault = _vault(tmp_path)
+    try:
+        vault.index.build_index()
+        result = vault.index.reindex()
+        assert result.vault_root_empty is True
+        assert result.unchanged == 0
+    finally:
+        vault.close()
+
+
+def test_the_reindex_command_fails_over_an_empty_vault_folder(
+    tmp_path: Path, built: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import _ENV_PREFIX, app
+
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(built))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
+    monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", raising=False)
+    for name in NOTES:
+        (built / name).unlink()
+    result = CliRunner().invoke(app, ["reindex"])
+    assert result.exit_code == 1
+    assert "vault folder is empty" in result.stderr
+    assert "Reindex:" not in result.stdout

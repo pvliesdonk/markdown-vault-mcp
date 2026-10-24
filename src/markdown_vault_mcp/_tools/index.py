@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
+from fastmcp.exceptions import ToolError
 from fastmcp_pvl_core import register_long_running_tool, tool_boundary
 
 from markdown_vault_mcp._tools._outcomes import library_outcomes
@@ -231,6 +233,8 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
             ToolError: If the caller's job limit is reached when the call is
                 promoted to a background job; the queued reindex is cancelled, so
                 fetch pending job results and retry.
+            ToolError: If the vault folder is empty while the index holds notes,
+                as when its volume is not mounted: nothing is reindexed (#1791).
         """
         if force:
             stats = await asyncio.wrap_future(vault.index.build_index_async(force=True))
@@ -244,7 +248,16 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
                 "full_rebuild": True,
             }
         result = await asyncio.wrap_future(vault.index.reindex_async())
-        return {**asdict(result), "status": "completed", "full_rebuild": False}
+        if result.vault_root_empty:
+            raise ToolError(
+                "The vault folder is empty, as when its volume is not mounted, so "
+                "nothing was reindexed and the index keeps its notes. The request "
+                "was fine; tell the user to check the vault's storage.",
+                log_level=logging.WARNING,
+            )
+        payload = asdict(result)
+        del payload["vault_root_empty"]
+        return {**payload, "status": "completed", "full_rebuild": False}
 
     @register_long_running_tool(
         mcp,

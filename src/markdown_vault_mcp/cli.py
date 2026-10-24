@@ -522,6 +522,15 @@ def reindex(
         # this process (#1124).
         built.vault.index.build_index(force=force)
         result = built.vault.index.reindex()
+        if result.vault_root_empty:
+            typer.echo(
+                "ERROR: the vault folder is empty while the index holds notes, as "
+                "when its volume is not mounted, so nothing was reindexed. Mount "
+                "it and run reindex again; to empty the vault on purpose, run "
+                "index --force.",
+                err=True,
+            )
+            raise typer.Exit(1)
         typer.echo(
             f"Reindex: {result.added} added, {result.modified} modified, "
             f"{result.deleted} deleted, {result.unchanged} unchanged, "

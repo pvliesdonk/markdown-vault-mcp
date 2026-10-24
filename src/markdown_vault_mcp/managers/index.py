@@ -692,7 +692,9 @@ class IndexManager:
             changes.skipped_unchanged,
         )
         if self._refuse_empty_root():
-            return ReindexResult(added=0, modified=0, deleted=0, unchanged=0)
+            return ReindexResult(
+                added=0, modified=0, deleted=0, unchanged=0, vault_root_empty=True
+            )
 
         # Pre-parse notes outside the lock to minimise lock hold time.
         parsed, newly_skipped, newly_skip_reasons = self._parse_changed_notes(

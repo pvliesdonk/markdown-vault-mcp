@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from fastmcp import Client
 
 from tests.conftest import wait_for_mcp_writer_drain
@@ -12,7 +13,6 @@ from tests.server_factory import make_server
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
 
 # Mirrors tests/test_server.py's _CLEAR_VARS: env vars that must not leak
 # from the shell/CI environment into a test that sets up its own minimal
@@ -108,3 +108,24 @@ async def test_reindex_force_reparses_every_document(
     assert data["added"] == 2
     assert data["modified"] == data["deleted"] == data["unchanged"] == 0
     assert status["documents_indexed"] == 2
+
+
+async def test_reindex_over_an_empty_vault_folder_is_a_server_side_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused pass is not a completed reindex with nothing in it (#1791)."""
+    from fastmcp.exceptions import ToolError
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    server = make_server()
+    async with Client(server) as client:
+        await wait_for_mcp_writer_drain(client)
+        (vault / "a.md").rename(tmp_path / "a.md")  # the volume goes away
+        with pytest.raises(ToolError, match="vault folder is empty"):
+            await client.call_tool("reindex", {})
