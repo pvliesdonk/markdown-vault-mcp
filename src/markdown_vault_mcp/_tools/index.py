@@ -272,8 +272,9 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         get_index_status), or with force to rebuild them all.
 
         Args:
-            force: Discard every embedding and rebuild from scratch, as after the
-                embedding model changed; default false embeds only what changed.
+            force: Re-embed every chunk, as after the embedding model changed; the
+                current embeddings keep serving until the rebuild completes.
+                Default false embeds only what changed.
 
         Returns:
             On inline completion, a dict with `"status": "completed"` and
@@ -292,6 +293,8 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
                 fetch pending job results and retry.
             EmbeddingsNotConfiguredError: If no embedding provider is
                 configured.
+            ToolError: If a forced rebuild kept the existing embeddings
+                because some embedding requests failed; retry later.
         """
         embedded = await asyncio.wrap_future(
             vault.index.build_embeddings_async(force=force)

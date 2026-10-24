@@ -190,7 +190,7 @@ force, after a failed build (`last_build_embeddings_error` in
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `force` | `boolean` | `false` | Discard every embedding and rebuild from scratch, as after the embedding model changed; default false embeds only what changed. |
+| `force` | `boolean` | `false` | Re-embed every chunk, as after the embedding model changed; the current embeddings keep serving until the rebuild completes. Default false embeds only what changed. |
 
 **Returns**
 
@@ -207,6 +207,7 @@ promotion is reported through `get_job_result` and mirrored in
 - IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 - ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued build is cancelled, so fetch pending job results and retry.
 - EmbeddingsNotConfiguredError: If no embedding provider is configured.
+- ToolError: If a forced rebuild kept the existing embeddings because some embedding requests failed; retry later.
 
 <!-- DOMAIN-EXAMPLE-build_embeddings-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

@@ -4427,18 +4427,33 @@ counted as a refused row. A read that fails once the donor is open
 publishes nothing, rather than paying to re-embed the rest.
 
 **A full build with a donor (#1505 child 4).** Only the path that
-publishes a whole generation consults a donor: a cold build, the rebuild
-after a model change, an import. For each chunk it looks first in the
-destination's own rows (#1795's rule), then in the donor; hits are copied,
-misses go to the provider, so a repeated build or import embeds nothing.
-The generation is published once, at the end, so a build that dies before
-then publishes nothing. A provider batch that fails keeps today's
-behaviour (#649: skipped, published without, retried later) only when the
-destination holds no rows; a build that would replace a populated store
-publishes only when every batch succeeded, so a failed import never
-shrinks a working store. Incremental
-per-document writes are unchanged. One line reports it:
-`embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d`.
+publishes a whole generation consults a donor:
+`EmbeddingReconciler.rebuild(store, identity, *, donor=None, reuse_own=False)`,
+reached through `EmbeddingsManager.build_embeddings` on a cold build or
+`force` (a rebuild after a model change, an import). For each chunk it
+looks in the destination's own rows when the caller asks (`reuse_own`, as
+an import does, so a repeated import embeds nothing), then in the donor;
+a found vector of another length than a known dimension is a miss. Hits
+are copied, misses go to the provider once per input and document, and
+the rows are laid out in chunk order. `force` without `reuse_own` keeps
+re-embedding every chunk, so the `build_embeddings` tool's meaning does
+not change. The generation is published once, at the end, so a build
+that dies before then publishes nothing. A provider batch that fails
+keeps today's behaviour (#649: skipped, published without, retried later)
+only when the destination holds no rows; a build that would replace a
+populated store publishes nothing unless every batch succeeded, logged
+`build_embeddings_not_published reason=batch_failed failed_batches=%d`,
+so a failed rebuild or import never shrinks a working store;
+`build_embeddings` then raises `EmbeddingsNotPublishedError`, which the
+`build_embeddings` tool reports as a server-side failure at WARNING ("the
+existing embeddings were kept unchanged; retry later") and the `index`
+command as an error with exit status 1, instead of a quiet
+`chunks_embedded: 0`. The result is
+a `RebuildOutcome` (embedded, reused, attempted, published, failed
+batches); `build_embeddings_saved chunks=%d reused=%d` reports a published
+build, and a donor build also logs
+`embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d published=%s`,
+`reused` counting donor hits.
 
 **The released-sidecar upgrade (#1505 children 2 and 5).** v5.0.0 and
 v5.1.0 write `{base}.json` (`rows` plus `index_metadata`: provider,

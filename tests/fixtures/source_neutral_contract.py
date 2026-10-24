@@ -218,7 +218,8 @@ class SourceNeutralContract:
     ) -> None:
         world.write("a.md", "Apples are red.")
         world.write("b.md", "Boats float.")
-        embedded, attempted = world.writer.rebuild(world.store, world.identity)
+        outcome = world.writer.rebuild(world.store, world.identity)
+        embedded, attempted = outcome.embedded, outcome.attempted
         assert (embedded, attempted) == (2, 2)
         assert world.store.tokens() == {p: world.token(p) for p in ("a.md", "b.md")}
         calls = world.provider.calls

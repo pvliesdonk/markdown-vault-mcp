@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
     EmbeddingsNotConfiguredError,
+    EmbeddingsNotPublishedError,
     StoreCorruptError,
     StoreIncompatibleError,
 )
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
+    from markdown_vault_mcp.indexing.donor import Donor
     from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordIndex, SourceProbe
     from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -218,7 +220,13 @@ class EmbeddingsManager:
     # Embeddings
     # ------------------------------------------------------------------
 
-    def build_embeddings(self, *, force: bool = False) -> int:
+    def build_embeddings(
+        self,
+        *,
+        force: bool = False,
+        donor: Donor | None = None,
+        reuse_own: bool = False,
+    ) -> int:
         """Build or converge the vector index against the FTS index.
 
         Without ``force``, a non-empty persisted vector index is diffed
@@ -238,14 +246,20 @@ class EmbeddingsManager:
             force: If ``True``, rebuild from scratch even if a vector index
                 already exists on disk (e.g. after changing the embedding
                 model).
+            donor: A read-only store whose vectors the full build copies for
+                chunks with a matching embedding input (#1505). Ignored when
+                a populated store converges instead.
+            reuse_own: Let the full build copy the store's own matching
+                vectors; off by default, so ``force`` re-embeds every chunk.
 
         Returns:
-            Number of chunks successfully embedded. Any provider exception on
-            a batch (a token-context rejection being the motivating case, but
-            also transient API/network errors) is logged and the batch
-            skipped, so this may be less than the total number of chunks
-            attempted; if every batch is skipped, ``0`` is returned and no
-            vectors are saved. A successful build with no embeddable chunks
+            Number of chunks successfully embedded and saved; chunks copied
+            from a donor or the store's own rows are not counted. Any
+            provider exception on a batch (a token-context rejection being
+            the motivating case, but also transient API/network errors) is
+            logged and the batch skipped, so this may be less than the total
+            number of chunks attempted; if every batch is skipped and no
+            vector was copied, ``0`` is returned and no vectors are saved. A successful build with no embeddable chunks
             publishes an empty generation so stale vectors cannot survive a
             forced rebuild. On the convergence path this counts only the newly
             embedded chunks — a fully converged index returns ``0``.
@@ -255,6 +269,10 @@ class EmbeddingsManager:
                 configured. A ``ValueError``
                 subclass, so callers may catch either; narrow to it to let
                 genuine internal ``ValueError``s surface (#774).
+            EmbeddingsNotPublishedError: If a full build would have replaced
+                a store that already holds vectors but a provider batch
+                failed: nothing was published and the existing embeddings
+                stay (#1505).
         """
         self._require_vectors()
         if self._embedding_provider is None or self._slot is None:
@@ -274,10 +292,19 @@ class EmbeddingsManager:
         identity = self._slot.identity
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError("No reconciler without an embedding provider.")
-        embedded, total = self._reconciler.rebuild(store, identity)
+        outcome = self._reconciler.rebuild(
+            store, identity, donor=donor, reuse_own=reuse_own
+        )
+        embedded, total = outcome.embedded, outcome.attempted
 
-        if embedded > 0:
-            logger.info("build_embeddings_saved chunks=%d", embedded)
+        if outcome.published:
+            logger.info(
+                "build_embeddings_saved chunks=%d reused=%d", embedded, outcome.reused
+            )
+        elif not outcome.published and (embedded or outcome.reused):
+            # The reconciler logged build_embeddings_not_published: the
+            # populated store keeps its rows, and nothing was saved.
+            raise EmbeddingsNotPublishedError(failed_batches=outcome.failed_batches)
         elif total > 0:
             # Every batch was skipped (e.g. provider down for the whole build,
             # or a dimension mismatch). Surface it loudly rather than as the
