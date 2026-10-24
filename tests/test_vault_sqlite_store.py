@@ -212,6 +212,19 @@ class TestStatusBeforeTheStoreOpens:
         finally:
             vault.close()
 
+    def test_status_counts_the_v2_store_before_the_released_sidecar(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "index-db-embeddings.json").write_text("[{}, {}]")
+        (tmp_path / "index-db-embeddings.v2.json").write_text(
+            '{"format_version": 2, "rows": [{}, {}, {}]}'
+        )
+        vault = _unbuilt(tmp_path, "numpy")
+        try:
+            assert vault.index.embeddings_status()["chunk_count"] == 3
+        finally:
+            vault.close()
+
     def test_a_malformed_numpy_commit_file_counts_zero_and_says_so(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:

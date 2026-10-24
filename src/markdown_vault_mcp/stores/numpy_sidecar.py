@@ -3,11 +3,15 @@
 Reads are served from a resident snapshot (:mod:`._resident`): one float32
 matrix with a parallel metadata list, replaced whole by each write.
 
-On disk a store is ``{base}.json``, the commit point, and the matrix it
-names, ``{base}.m{seq}.npy``. A persist writes the matrix under a new name
+On disk a store is ``{base}.v2.json``, the commit point, and the matrix it
+names, ``{base}.v2.m{seq}.npy``. A persist writes the matrix under a new name
 and then atomically replaces the JSON, so an interrupted persist leaves the
-previous state whole. A sidecar written before #1767 (``{base}.npy`` beside
-a JSON that names no matrix) opens as it is; its rows carry no token.
+previous state whole. Until the first persist, a store with no
+``{base}.v2.json`` opens the sidecar a release wrote (``{base}.json`` beside
+``{base}.npy``, its rows without tokens) or an edge build wrote
+(``{base}.json`` naming ``{base}.m{seq}.npy``) in place; no code writes,
+renames or deletes those files, so a downgrade still finds them (#1505).
+Once ``{base}.v2.json`` exists, a writer's open logs them as unused.
 
 ``replace_document`` and ``remove_document`` publish in memory at once and
 become durable at :meth:`NumpySidecarStore.checkpoint` or ``close()``;
@@ -76,11 +80,50 @@ logger = logging.getLogger(__name__)
 FORMAT_VERSION = 2
 
 _BACKEND_NAME = "numpy"
-_COMMIT_SUFFIX = ".json"
+_COMMIT_SUFFIX = ".v2.json"
+_LEGACY_JSON_SUFFIX = ".json"
+
+
+def commit_path(base: Path) -> Path:
+    """Return the store's commit file for *base*: ``{base}.v2.json``.
+
+    Names derive with ``Path.with_suffix``, so a base that carries an
+    extension (``emb.npy``) names ``emb.v2.json`` (#819).
+    """
+    return base.with_suffix(_COMMIT_SUFFIX)
+
+
+def legacy_paths(base: Path) -> tuple[Path, ...]:
+    """Return the released and edge-build sidecar files beside *base*.
+
+    ``{base}.json`` and ``{base}.npy``, whether or not they exist, and every
+    ``{base}.m{seq}.npy`` that exists; the store never writes, renames or
+    deletes them.
+    """
+    return (
+        base.with_suffix(_LEGACY_JSON_SUFFIX),
+        base.with_suffix(".npy"),
+        *_numbered_matrices(base, prefix=".m").values(),
+    )
+
+
+def committed_json(base: Path) -> Path | None:
+    """Return the JSON a reader of *base* opens, or ``None`` if neither exists.
+
+    The store's own ``{base}.v2.json`` once committed, otherwise a released
+    or edge-build ``{base}.json``.
+
+    Raises:
+        OSError: If a stat is refused.
+    """
+    for path in (commit_path(base), base.with_suffix(_LEGACY_JSON_SUFFIX)):
+        if path_exists(path):
+            return path
+    return None
 
 
 def _matrix_path(base: Path, seq: int) -> Path:
-    return base.with_suffix(f".m{seq}.npy")
+    return base.with_suffix(f".v2.m{seq}.npy")
 
 
 def _write_atomic(target: Path, write: Callable[[IO[bytes]], object]) -> None:
@@ -104,9 +147,13 @@ def _commit_file(path: Path, data: bytes) -> None:
     _write_atomic(path, lambda fh: fh.write(data))
 
 
-def _numbered_matrices(base: Path) -> dict[int, Path]:
-    """Return the ``{base}.m{seq}.npy`` matrices beside *base*, by ``seq``."""
-    prefix, suffix = base.with_suffix(".m").name, ".npy"
+def _numbered_matrices(base: Path, *, prefix: str = ".v2.m") -> dict[int, Path]:
+    """Return the ``{base}{prefix}{seq}.npy`` matrices beside *base*, by ``seq``.
+
+    The default prefix names this store's own matrices; ``.m`` names an
+    edge build's.
+    """
+    prefix, suffix = base.with_suffix(prefix).name, ".npy"
     found: dict[int, Path] = {}
     for path in base.parent.glob(f"{prefix}*{suffix}"):
         seq = path.name[len(prefix) : -len(suffix)]
@@ -116,9 +163,12 @@ def _numbered_matrices(base: Path) -> dict[int, Path]:
 
 
 def _sweep(base: Path, keep: Path) -> None:
-    """Remove every matrix beside *base* except *keep*: superseded or orphaned."""
-    stale = [base.with_suffix(".npy"), *_numbered_matrices(base).values()]
-    for path in stale:
+    """Remove this store's matrices beside *base* except *keep*: superseded or orphaned.
+
+    Only ``{base}.v2.m{seq}.npy``: a released or edge-build sidecar is never
+    removed (#1505).
+    """
+    for path in _numbered_matrices(base).values():
         if path == keep:
             continue
         try:
@@ -166,11 +216,15 @@ class NumpySidecarStore(ResidentStore):
         read_only: bool,
         seq: int,
         matrix_path: Path | None,
+        json_path: Path | None = None,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
         self._base = base
         self._seq = seq
         self._matrix_path = matrix_path
+        # The commit file the snapshot came from: a sidecar opened in place
+        # until this store's first persist commits ``{base}.v2.json``.
+        self._json_path = json_path
         self._dirty = False
 
     # -- publishing ----------------------------------------------------------
@@ -248,7 +302,9 @@ class NumpySidecarStore(ResidentStore):
             # name and stating it; then the files are measured once more.
             for _attempt in range(2):
                 matrix = self._matrix_path
-                stored = self._stored_bytes(self._base, matrix)
+                stored = self._stored_bytes(
+                    self._json_path or commit_path(self._base), matrix
+                )
                 if self._matrix_path == matrix:
                     break
         return StoreResources(
@@ -259,14 +315,18 @@ class NumpySidecarStore(ResidentStore):
         )
 
     @staticmethod
-    def _stored_bytes(base: Path, matrix: Path | None) -> int:
-        """Return the size of the commit file and *matrix*, a missing one 0.
+    def _stored_bytes(json_path: Path, matrix: Path | None) -> int:
+        """Return the size of *json_path* and *matrix*, a missing one 0.
+
+        *json_path* is the commit file this store's snapshot came from, so a
+        reader that opened a sidecar in place keeps measuring that sidecar
+        after a writer commits ``{base}.v2.json``.
 
         Raises:
             OSError: If a stat is refused (#1625).
         """
         files = [
-            base.with_suffix(_COMMIT_SUFFIX),
+            json_path,
             *([matrix] if matrix is not None else []),
         ]
         return sum(file_bytes(p) for p in files)
@@ -288,8 +348,9 @@ class NumpySidecarStore(ResidentStore):
         _write_atomic(
             matrix_path, lambda fh: np.save(fh, np.ascontiguousarray(snap.matrix))
         )
-        _commit_file(self._base.with_suffix(_COMMIT_SUFFIX), data)
+        _commit_file(commit_path(self._base), data)
         self._seq, self._matrix_path = seq, matrix_path
+        self._json_path = commit_path(self._base)
         _sweep(self._base, matrix_path)
         logger.debug(
             "numpy_store_checkpointed path=%s rows=%d generation=%d",
@@ -568,7 +629,7 @@ def _open_file(
     base: Path, identity: EmbeddingIdentity, *, read_only: bool
 ) -> NumpySidecarStore:
     where = str(base)
-    json_path, legacy = base.with_suffix(_COMMIT_SUFFIX), base.with_suffix(".npy")
+    v2_json, legacy = commit_path(base), base.with_suffix(".npy")
     try:
         if path_exists(base.parent) and not is_directory(base.parent):
             raise _outcome(
@@ -576,6 +637,7 @@ def _open_file(
                 f"Vector store at {where} cannot be opened: {base.parent} is not a directory.",
                 where,
             )
+        json_path = committed_json(base) or v2_json
         has_json, has_legacy = path_exists(json_path), path_exists(legacy)
     except OSError as exc:
         raise _outcome(
@@ -587,7 +649,8 @@ def _open_file(
         if has_legacy:
             raise _outcome(
                 StoreCorruptError,
-                f"Vector store at {where} has {legacy.name} but no {json_path.name}.",
+                f"Vector store at {where} has {legacy.name} but no "
+                f"{base.with_suffix(_LEGACY_JSON_SUFFIX).name}.",
                 where,
             )
         return NumpySidecarStore(
@@ -599,6 +662,8 @@ def _open_file(
         )
     stored, matrix = _load_committed(json_path, base, where)
     _check_identity(stored, matrix, identity, where)
+    if json_path == v2_json and not read_only:
+        _report_unused_sidecar(base)
     snap = _snapshot_from(stored, matrix, identity, where)
     logger.info(
         "numpy_store_opened path=%s rows=%d generation=%d format_version=%d",
@@ -607,13 +672,35 @@ def _open_file(
         snap.generation,
         stored.version,
     )
+    # A sidecar opened in place keeps its own numbering; this store's next
+    # matrix numbers above its own ``.v2.m*`` files only.
+    in_place = json_path != v2_json
     return NumpySidecarStore(
         snap,
         base=base,
         read_only=read_only,
-        seq=stored.seq,
+        seq=_highest_seq(base) if in_place else stored.seq,
         matrix_path=stored.matrix_path,
+        json_path=json_path,
     )
+
+
+def _report_unused_sidecar(base: Path) -> None:
+    """Log the released or edge-build files a committed v2 store left behind.
+
+    Informational: a refused stat skips the file rather than failing the open.
+    """
+    present = 0
+    found = False
+    for path in legacy_paths(base):
+        with contextlib.suppress(OSError):
+            if path_exists(path):
+                present += file_bytes(path)
+                found = True
+    if found:
+        logger.info(
+            "embeddings_legacy_sidecar_unused path=%s bytes=%d", str(base), present
+        )
 
 
 class NumpySidecarBackend:

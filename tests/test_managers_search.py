@@ -1410,7 +1410,7 @@ class TestSearchLoadVectorsSelfHeal:
         """The matrix file the store's commit file names."""
         base = mgr._embeddings_path
         assert base is not None
-        (matrix,) = base.parent.glob(f"{base.name}.m*.npy")
+        (matrix,) = base.parent.glob(f"{base.name}.v2.m*.npy")
         return matrix
 
     @staticmethod
@@ -1418,7 +1418,7 @@ class TestSearchLoadVectorsSelfHeal:
         """Drop the last metadata row from the on-disk .json (count mismatch)."""
         import json
 
-        json_path = mgr._embeddings_path.with_suffix(".json")  # type: ignore[union-attr]
+        json_path = mgr._embeddings_path.with_suffix(".v2.json")  # type: ignore[union-attr]
         payload = json.loads(json_path.read_text(encoding="utf-8"))
         payload["rows"] = payload["rows"][:-1]
         json_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -1554,7 +1554,7 @@ class TestSearchLoadVectorsSelfHeal:
     ) -> None:
         """No commit file means nothing was committed: an empty store, no rebuild."""
         mgr = search_mgr_with_embeddings
-        mgr._embeddings_path.with_suffix(".json").unlink()  # type: ignore[union-attr]
+        mgr._embeddings_path.with_suffix(".v2.json").unlink()  # type: ignore[union-attr]
         mgr._rebuild_embeddings = lambda: pytest.fail("rebuilt")
         mgr.vectors = None
         result = mgr._load_vectors()
