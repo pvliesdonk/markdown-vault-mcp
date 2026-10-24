@@ -384,7 +384,7 @@ class TestRemovalRule:
         assert sorted(metadata_by_path(store)) == ["b.md"]
         assert probe.asked == []
 
-    def test_a_tombstone_removes_without_asking_the_source(self, tmp_path):
+    def test_a_tombstone_keeps_without_asking_the_source(self, tmp_path):
         probe = _Probe()
         fts, store, rec = self._orphan(tmp_path, probe=probe)
         fts.upsert_tombstone(
@@ -393,7 +393,8 @@ class TestRemovalRule:
             modified_at=0.0,
         )
         rec.reconcile(store, site="test")
-        assert sorted(metadata_by_path(store)) == ["b.md"]
+        # The note exists but does not parse: kept until fixed or deleted (#1505).
+        assert sorted(metadata_by_path(store)) == ["a.md", "b.md"]
         assert probe.asked == []
 
     def test_a_keyword_gap_keeps_and_says_so(

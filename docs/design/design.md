@@ -4594,12 +4594,22 @@ another one, and is the explicit switch of choice C.
   fastmcp-server-template#823.
 
 **Recovery (#1505 children 7 to 10).**
-- An unparseable note (a YAML error, missing required frontmatter) keeps
-  its rows when it is tombstoned, and convergence finds them current once
-  it is fixed; deletion and exclusion still remove them (child 7). Kept
-  rows must not reach search results; whether semantic and hybrid search
-  already drop rows of a note absent from the keyword index is
-  unverified, and child 7 checks it and adds the filter if not.
+- A tombstoned note (any skip category: a YAML error, missing required
+  frontmatter, invalid UTF-8, a parser fault) keeps its rows:
+  `EmbeddingReconciler._remove_unbacked` removes on an exclusion, keeps on a
+  tombstone without asking the source (DEBUG `embedding_reconcile_kept
+  site=%s path=%s reason=tombstoned`), and otherwise asks the source probe
+  as before. Once the note is fixed, convergence re-tokens or partly embeds
+  it, so only chunks whose input changed reach the provider. Deletion drops
+  the tombstone, so the probe answers *absent* and the rows go; an
+  exclusion removes them. A full build (forced, a model change, an import)
+  publishes only the notes the keyword index holds, so a note broken then
+  drops out and is embedded again once fixed. Kept rows never reach a
+  result: search did not filter them (checked for child 7), and
+  `SearchManager._adapt_semantic_rows`, which semantic, hybrid and
+  `get_similar` share, now drops every vector row whose path is not in
+  `documents_live`, after the candidate cap, which is not widened for it.
+  The same filter covers a keyword-index gap (child 7).
 - A vault root that exists but holds no candidate notes while the keyword
   index holds some is *unavailable* for that pass: nothing is removed,
   logged WARNING `vault_root_empty_removals_refused indexed=%d`.
