@@ -3,8 +3,9 @@
 A ``stat`` classified by errno, as the spec's ``SourceProbe`` says: a path
 that does not exist, or names something that is not a regular file, is
 *absent*; a stat the file system refuses is *unavailable*, as is any path
-under a source root that is not a statable directory (an unmounted volume
-must remove nothing). *Present* carries the file's content hash, the
+under a source root that is not a statable, listable directory holding at
+least one entry: an unmounted volume, or the empty mount point it leaves,
+must remove nothing (#1791). *Present* carries the file's content hash, the
 keyword index's token, so it reads the file; the deletion rule only asks
 about paths the keyword index holds no rows for.
 """
@@ -12,6 +13,7 @@ about paths the keyword index holds no rows for.
 from __future__ import annotations
 
 import logging
+import os
 import stat as stat_module
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
@@ -82,7 +84,16 @@ class FileSourceProbe:
         return True
 
     def _root_available(self) -> bool:
+        """Whether the root is a directory that holds anything at all.
+
+        An empty one is an unmounted volume's mount point as much as a vault
+        whose notes were all deleted, and only the first is common; an
+        explicit forced rebuild empties a vault deliberately (#1791).
+        """
         try:
-            return stat_module.S_ISDIR(self._source_dir.stat().st_mode)
+            if not stat_module.S_ISDIR(self._source_dir.stat().st_mode):
+                return False
+            with os.scandir(self._source_dir) as entries:
+                return next(entries, None) is not None
         except OSError:
             return False

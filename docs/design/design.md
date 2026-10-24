@@ -977,8 +977,10 @@ tokens (the store's `tokens()` and `rows_for()`) and reconciles:
   name in its directory listing, so a case-only rename of a note or a
   folder on a case-insensitive file system reads as absent). *Absent*
   removes; *unavailable* — a refused stat or read, or a source root that is
-  not a statable directory (the root check lives in the probe, not the
-  embedding path) — keeps them, logged once per pass
+  not a statable, listable directory holding at least one entry, so an
+  unmounted volume's empty mount point removes nothing (#1791; the root
+  check lives in the probe, not the embedding path) — keeps them, logged
+  once per pass
   (`embedding_reconcile_source_unavailable`); *present* is a keyword-index
   gap and keeps them, logged per path (`embedding_reconcile_kept`). A
   body-less note that still has FTS chunk rows reclaims without asking.
@@ -4553,8 +4555,10 @@ another one, and is the explicit switch of choice C.
   index is brought up to date (`build_index`, `reindex`) inside
   `EmbeddingsManager.vectors_deferred()`, so no vector store is opened,
   embedded into or purged (`store_for_purge` returns `None`); a vault that
-  then holds no chunks is refused (`vault_empty`), so a missing folder never
-  empties a store. Last the destination opens for writing
+  then holds no chunks, or whose folder that update found empty
+  (`IndexManager.vault_root_empty`, child 8: the index kept its notes), is
+  refused (`vault_empty`), so a missing folder never empties a store or
+  imports against notes that are not there. Last the destination opens for writing
   (`EmbeddingsManager.import_from` through `rebuild_target`), where a
   PostgreSQL destination's lease refuses. One full build, shared with the
   cold build (`_full_build`), copies each chunk from the destination's own
@@ -4616,10 +4620,21 @@ another one, and is the explicit switch of choice C.
   `documents_live`, after the candidate cap, which is not widened for it.
   The same filter covers a keyword-index gap (child 7).
 - A vault root that exists but holds no candidate notes while the keyword
-  index holds some is *unavailable* for that pass: nothing is removed,
-  logged WARNING `vault_root_empty_removals_refused indexed=%d`.
-  Removals resume when notes reappear or after an explicit forced
-  rebuild, the deliberate "I emptied it" (child 8, #1791).
+  index holds some (tombstones counted) is *unavailable* for that pass,
+  logged WARNING `vault_root_empty_removals_refused indexed=%d`
+  (`IndexManager._refuse_empty_root`). A `reindex` whose scan finds
+  nothing to index or skip, after exclusions, returns a zero result before
+  its deletion loop, tracker update and tombstone sync. A non-forced
+  `build_index` (also what a settings change runs) returns zero
+  `IndexStats` and leaves the tracker and tombstones alone, so the notes
+  read as unchanged when the volume returns. Removals resume when notes
+  reappear or after an explicit forced rebuild (`index --force`,
+  `reindex --force`, the tools' `force`), the deliberate "I emptied it".
+  For the vectors, `FileSourceProbe` answers *unavailable* under a root
+  with no entries at all, which covers a lost `index.db` beside an empty
+  folder; a folder holding only non-note files (`.obsidian/`) still
+  reads as a vault whose notes are gone there, since finding a candidate
+  note would cost a scan per probe (child 8, #1791).
 - An owned corrupt numpy or SQLite store is renamed with the suffix
   `.corrupt-<UTC timestamp>`, every file including `-wal` and `-shm`,
   logged WARNING with the paths, before its rebuild, which a compatible

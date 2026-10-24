@@ -164,6 +164,8 @@ class IndexManager:
             attachment_extensions
         )
         self._embed_builder = embed_text_builder or EmbedTextBuilder()
+        # Whether the last pass found an empty vault folder (#1791).
+        self._vault_root_empty = False
         # Composed vector-lifecycle collaborator (#1157). The shared path
         # helpers are injected as callables (per the #736 precedent) so the
         # exclusion and discovery semantics stay defined here.
@@ -331,6 +333,11 @@ class IndexManager:
             skip, content_hash=content_hash, modified_at=modified_at
         )
 
+    @property
+    def vault_root_empty(self) -> bool:
+        """Whether the last build or reindex was refused for an empty vault folder (#1791)."""
+        return self._vault_root_empty
+
     def _refuse_empty_root(self, found: int) -> bool:
         """Whether this pass must change nothing because the vault folder is empty.
 
@@ -346,7 +353,8 @@ class IndexManager:
         Returns:
             ``True`` when the pass is refused, after one WARNING.
         """
-        if found or not self._fts.has_documents():
+        self._vault_root_empty = not found and self._fts.has_documents()
+        if not self._vault_root_empty:
             return False
         logger.warning(
             "vault_root_empty_removals_refused indexed=%d",

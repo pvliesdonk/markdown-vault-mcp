@@ -193,3 +193,25 @@ def test_a_settings_change_over_an_empty_folder_keeps_the_tracker(
         assert (result.added, result.deleted) == (0, 0)
     finally:
         again.close()
+
+
+def test_a_lost_index_beside_an_empty_folder_keeps_the_vectors(
+    tmp_path: Path, built: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    for name in NOTES:
+        (built / name).unlink()
+    for lost in tmp_path.glob("index.db*"):
+        lost.unlink()
+    vault = _vault(tmp_path)
+    try:
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            vault.index.build_index()
+            vault.index.build_embeddings()
+        assert _state(vault)[1] == set(NOTES)
+        assert any(
+            r.msg.startswith("embedding_reconcile_source_unavailable")
+            for r in caplog.records
+        )
+    finally:
+        vault.close()

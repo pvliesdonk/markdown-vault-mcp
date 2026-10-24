@@ -251,6 +251,8 @@ When the helper is invoked but `debugpy` isn't installed (say, someone sets `DEB
 
 Set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env` to the vault's path on the host. This server's `compose.yml` mounts that path at `/data/vault` and tells the server inside to use `/data/vault`, so the one variable is a host path to Compose and a container path to the server. Left unset, as `.env.example` ships it, Compose mounts `./vault` beside `compose.yml`: an empty vault, enough for a first try. The files under `examples/` carry a host path; replace it with your own.
 
+If the vault's volume is missing when the server starts, Docker gives the server an empty folder at `/data/vault`. A vault folder that holds no notes while the index holds some counts as unavailable, logged as `vault_root_empty_removals_refused`. The index and the embeddings are kept, so the server picks up where it left off once the volume is back. To empty a vault on purpose, delete its notes and run `markdown-vault-mcp reindex --force`.
+
 The write tools are on by default; `MARKDOWN_VAULT_MCP_READ_ONLY=true` makes a search-only server. The server keeps its own state on the `state-data` volume, so the vault mount can be read-only.
 
 ### What `/data/state` holds
