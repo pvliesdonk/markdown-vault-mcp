@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
@@ -27,20 +28,21 @@ from markdown_vault_mcp.exceptions import (
 )
 from markdown_vault_mcp.indexing.embedding_reconciler import (
     EmbeddingReconciler,
+    RebuildOutcome,
     ReconcileResult,
 )
 from markdown_vault_mcp.source_probe import FileSourceProbe
+from markdown_vault_mcp.utils.fs import path_exists
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection
-    from pathlib import Path
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.indexing.donor import Donor
     from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordIndex, SourceProbe
     from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.providers import EmbeddingProvider
-    from markdown_vault_mcp.types import ParsedNote
+    from markdown_vault_mcp.types import EmbeddingIdentity, ParsedNote
 
 logger = logging.getLogger(__name__)
 
@@ -292,16 +294,37 @@ class EmbeddingsManager:
         identity = self._slot.identity
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError("No reconciler without an embedding provider.")
-        outcome = self._reconciler.rebuild(
-            store, identity, donor=donor, reuse_own=reuse_own
-        )
-        embedded, total = outcome.embedded, outcome.attempted
+        upgrade = None if force or donor is not None else self._upgrade_donor(identity)
+        try:
+            outcome = self._reconciler.rebuild(
+                store, identity, donor=donor or upgrade, reuse_own=reuse_own
+            )
+        finally:
+            if upgrade is not None:
+                upgrade.close()
+        return self._finish_cold_build(store, identity, outcome)
 
+    def _finish_cold_build(
+        self,
+        store: EmbeddingStore,
+        identity: EmbeddingIdentity,
+        outcome: RebuildOutcome,
+    ) -> int:
+        """Report a full build's outcome, publishing an authoritative empty one.
+
+        Returns:
+            The number of chunks the provider embedded.
+
+        Raises:
+            EmbeddingsNotPublishedError: If the build kept a populated store
+                because a provider batch failed (#1505).
+        """
+        embedded, total = outcome.embedded, outcome.attempted
         if outcome.published:
             logger.info(
                 "build_embeddings_saved chunks=%d reused=%d", embedded, outcome.reused
             )
-        elif not outcome.published and (embedded or outcome.reused):
+        elif embedded or outcome.reused:
             # The reconciler logged build_embeddings_not_published: the
             # populated store keeps its rows, and nothing was saved.
             raise EmbeddingsNotPublishedError(failed_batches=outcome.failed_batches)
@@ -325,6 +348,40 @@ class EmbeddingsManager:
             store.publish_generation(identity, [])
             logger.info("build_embeddings_saved_empty_index")
         return embedded
+
+    def _upgrade_donor(self, identity: EmbeddingIdentity) -> Donor | None:
+        """Open the sidecar a 5.x release left beside a new built-in store, as a donor.
+
+        Only for the numpy and SQLite stores, only from ``{base}.json`` (never
+        another store's own files: a switch between stores is an explicit
+        import), only when the keyword index has chunks to copy vectors for,
+        and only when it may donate; a refusal is logged by
+        :meth:`Donor.open` and the cold build embeds as before (#1505).
+        """
+        if self._slot is None or self._slot.backend_name not in ("numpy", "sqlite"):
+            return None
+        if self._fts.count_chunks() == 0:
+            return None
+        base = self._slot.location
+        if not isinstance(base, Path) or not path_exists(base.with_suffix(".json")):
+            return None
+        from markdown_vault_mcp.indexing.donor import Donor
+        from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+
+        opened = Donor.open(
+            NumpySidecarBackend(legacy_only=True),
+            base,
+            identity,
+            builder=self._embed_builder,
+        )
+        if not isinstance(opened, Donor):
+            return None
+        logger.info(
+            "embeddings_upgrade_started donor=%s store=%s",
+            opened.source,
+            self._slot.backend_name,
+        )
+        return opened
 
     def _converge_embeddings(self, vectors: EmbeddingStore) -> int:
         """Reconcile a non-empty store with the keyword index (#665, #1768).
@@ -421,11 +478,11 @@ class EmbeddingsManager:
                 )
                 return 0
         count = 0
-        # The store's own derivation picks the JSON a reader opens: its
-        # {base}.v2.json once committed, else a released or edge-build
-        # {base}.json (#1505). It uses Path.with_suffix, so an
+        # The store's own derivation names its commit file, {base}.v2.json;
+        # a released or edge-build {base}.json is not this store until an
+        # upgrade copies it in (#1505). It uses Path.with_suffix, so an
         # EMBEDDINGS_PATH that carries an extension resolves to the real
-        # files (#819). Every layout keeps the rows in the JSON.
+        # files (#819). The commit file keeps the rows.
         # A refused stat raises: a status of "no vectors" for a store the
         # server cannot read would be wrong (#1625).
         from markdown_vault_mcp.stores.numpy_sidecar import committed_json
@@ -434,12 +491,8 @@ class EmbeddingsManager:
         if json_path is not None:
             try:
                 with json_path.open(encoding="utf-8") as fh:
-                    loaded_meta = json.load(fh)
-                if isinstance(loaded_meta, list):
-                    count = len(loaded_meta)
-                else:
-                    count = len(loaded_meta.get("rows", []))
-            except (OSError, json.JSONDecodeError) as exc:
+                    count = len(json.load(fh)["rows"])
+            except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
                 logger.warning(
                     "embeddings_status_metadata_read_failed path=%s err=%s",
                     json_path,

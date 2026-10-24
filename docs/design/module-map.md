@@ -51,6 +51,7 @@ src/markdown_vault_mcp/
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
+    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, numbered_files, report_unused_sidecar (#1505)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
     postgres_vectors.py -- PostgresVectorBackend/PostgresVectorStore: a vault's vectors in a PostgreSQL schema; open sorts every failure into the five outcomes, reads are REPEATABLE READ from the live meta row (#1504)
     registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)

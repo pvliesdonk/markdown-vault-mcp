@@ -848,3 +848,58 @@ class TestResources:
         store.close()
         with pytest.raises(RuntimeError):
             store.resources()
+
+
+class TestUnusedReleasedSidecar:
+    """A SQLite writer reports a released sidecar left beside it (#1505)."""
+
+    def _committed_beside_a_release(self, tmp_path: Path) -> Path:
+        import shutil
+
+        base = _base(tmp_path)
+        store = SqliteVectorBackend().open(base, IDENT)
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        store.close()
+        fixture = Path(__file__).parent / "fixtures" / "sidecar_v5_1"
+        for suffix in (".json", ".npy"):
+            shutil.copy(
+                fixture / f"index-db-embeddings{suffix}", base.with_suffix(suffix)
+            )
+        return base
+
+    def test_a_sqlite_writer_logs_an_unused_released_sidecar(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        base = self._committed_beside_a_release(tmp_path)
+        size = sum(base.with_suffix(s).stat().st_size for s in (".json", ".npy"))
+        backend = SqliteVectorBackend()
+        caplog.clear()
+        with caplog.at_level(logging.INFO):
+            backend.open(base, IDENT).close()
+            backend.open(base, IDENT, owns_files=False).close()
+        unused = [
+            r.args
+            for r in caplog.records
+            if r.msg.startswith("embeddings_legacy_sidecar_unused ")
+        ]
+        assert unused == [(str(base), size)]
+
+    def test_no_line_while_the_store_does_not_exist(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+        import shutil
+
+        base = _base(tmp_path)
+        base.parent.mkdir(parents=True)
+        fixture = Path(__file__).parent / "fixtures" / "sidecar_v5_1"
+        shutil.copy(fixture / "index-db-embeddings.json", base.with_suffix(".json"))
+        with caplog.at_level(logging.INFO):
+            SqliteVectorBackend().open(base, IDENT).close()
+        assert not [
+            r
+            for r in caplog.records
+            if r.msg.startswith("embeddings_legacy_sidecar_unused ")
+        ]

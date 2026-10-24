@@ -75,7 +75,7 @@ def source(request: pytest.FixtureRequest, tmp_path: Path) -> Source:
         ]
         write_legacy_sidecar(base, vectors, meta, provider=_PROVIDER)
         return Source(
-            NumpySidecarBackend(),
+            NumpySidecarBackend(legacy_only=True),
             base,
             [base.with_suffix(".json"), base.with_suffix(".npy")],
         )
@@ -176,7 +176,9 @@ def test_a_bare_list_sidecar_is_refused_as_identity_unknown(
     base.with_suffix(".json").write_text(json.dumps([{"path": "a.md"}]))
     np.save(base.with_suffix(".npy"), np.asarray([[1, 0, 0]], dtype=np.float32))
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
-        donor = Donor.open(NumpySidecarBackend(), base, _IDENT, builder=_BUILDER)
+        donor = Donor.open(
+            NumpySidecarBackend(legacy_only=True), base, _IDENT, builder=_BUILDER
+        )
     assert isinstance(donor, DonorRefused)
     assert [args[1] for args in _refusals(caplog)] == ["identity_unknown"]
 

@@ -4026,15 +4026,16 @@ becomes durable at `checkpoint()`, while `publish_generation` is durable
 before it returns.
 One process writes a base path at a time, as with the released sidecar:
 two writers would pick the same next matrix name. Another
-process opens it with `owns_files=False`, read-only. A sidecar the
-released `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an
-edge build's format-2 `{base}.json` naming `{base}.m<N>.npy`, opens in
-place, its released rows without tokens, until the first persist commits
-`{base}.v2.json`; this store never writes, renames or deletes those files,
-so a 5.1 binary still finds them after an upgrade (#1505 child 2;
-§ Embedding transitions and recovery). `committed_json(base)` is the one
-place the order is decided, and `embeddings_status` counts an unopened
-store through it.
+process opens it with `owns_files=False`, read-only. A store's files are
+its own: the store reads only `{base}.v2.json`. A sidecar the released
+`VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge
+build's format-2 `{base}.json` naming `{base}.m<N>.npy`, is opened only by
+`NumpySidecarBackend(legacy_only=True)`, always read-only and with its
+released rows carrying no tokens, which is what the upgrade's donor reads;
+this store never writes, renames or deletes those files, so a 5.1 binary
+still finds them after an upgrade (#1505 children 2 and 5; § Embedding
+transitions and recovery). `embeddings_status` counts an unopened store
+through `committed_json(base)`, which names `{base}.v2.json` only.
 
 The SQLite backend (`stores/sqlite_vectors.py`, #1497) keeps its rows in
 its own database, `{base}.sqlite3`: `meta` (format version, identity,
@@ -4466,22 +4467,35 @@ writes `{base}.v2.json` and `{base}.v2.m<N>.npy`, and its sweep
 (`stores/numpy_sidecar.py:_sweep`) removes only its own `.v2.m*.npy`
 matrices; the SQLite store keeps `{base}.sqlite3`. No code writes, renames
 or deletes `{base}.json`, `{base}.npy` or an edge build's
-`{base}.m<N>.npy` (child 2). Until child 5, a numpy store with no
-`{base}.v2.json` opens such a sidecar in place (§ the numpy backend). At start,
-when the configured built-in store is absent at `{base}` and `{base}.json`
-is a released sidecar or an edge build's numpy-v2 file
-(`format_version: 2`), it is opened as a donor for the full build, logged
-`embeddings_upgrade_started donor=%s store=%s`; a bare list is refused as
-`identity_unknown`. Until that build publishes the new store does not
-exist, so stopping, crashing or rolling back to 5.1 leaves the sidecar as
-5.1 wrote it, and the next start retries (rollback before activation).
+`{base}.m<N>.npy` (child 2). Either built-in store upgrades the same way
+(child 5, `EmbeddingsManager._upgrade_donor`): when a full build is not
+forced, the configured numpy or SQLite store holds no vectors, the keyword
+index holds chunks, and `{base}.json` exists (a released sidecar or an edge
+build's `format_version: 2` file), it is opened as a donor through
+`NumpySidecarBackend(legacy_only=True)` for that build, logged
+`embeddings_upgrade_started donor=%s store=%s`, so unchanged chunks cost no
+provider call; a bare list is refused as `identity_unknown` and a sidecar
+of another model as `identity_differs`, and the build embeds everything.
+The automatic path reads only `{base}.json`, never a `{base}.v2.json` or a
+`{base}.sqlite3` (choice C: switching between stores is the explicit
+import below), and never under `force`. The boot reindex never writes into
+a store that was never built: when it purges newly excluded notes, a store
+it opened for that and found empty is not handed to the per-note loop
+(`IndexManager._purge_stale_excluded`), so a note edited offline is left
+to the build and the build stays a cold, upgrading one. Until that build publishes, the new
+store holds nothing, so stopping, crashing or rolling back to 5.1 leaves the
+sidecar as 5.1 wrote it, and the next start retries (rollback before
+activation). The cost is paid once: the donor and the new store are both
+resident during the build, about twice the vectors in memory, and a reader
+process that opens before the writer's first start on the new version sees
+an empty store until the upgrade publishes (child 10 documents both).
 After activation, 5.1 reads its untouched, now stale sidecar and
 re-embeds only the notes changed since (downgrade after activation: the
 expected outcome, not a guarantee). Each start that finds the configured
 store active and `{base}.json` or `{base}.npy` present logs at INFO
 `embeddings_legacy_sidecar_unused path=%s bytes=%d`, `bytes` counting
 `{base}.json`, `{base}.npy` and any edge-build `{base}.m<N>.npy`, from a
-writer's open only (`stores/numpy_sidecar.py:_report_unused_sidecar`); the user docs say
+writer's open only, numpy or SQLite (`stores/_legacy.py:report_unused_sidecar`); the user docs say
 when deleting them is safe. Until then the vectors exist twice, about
 `4 × chunks × dimensions` bytes each.
 

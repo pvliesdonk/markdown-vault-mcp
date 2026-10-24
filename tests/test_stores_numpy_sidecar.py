@@ -230,7 +230,7 @@ class TestOpenOutcomes:
         base = _base(tmp_path)
         base.parent.mkdir(parents=True)
         np.save(base.with_suffix(".npy"), np.zeros((1, 3), dtype=np.float32))
-        backend = NumpySidecarBackend()
+        backend = NumpySidecarBackend(legacy_only=True)
         with pytest.raises(StoreCorruptError):
             backend.open(base, IDENT)
 
@@ -285,7 +285,7 @@ class TestLegacySidecar:
 
     def test_a_vector_index_sidecar_opens_without_tokens(self, tmp_path: Path) -> None:
         base, identity = self._legacy(tmp_path)
-        store = NumpySidecarBackend().open(base, identity)
+        store = NumpySidecarBackend(legacy_only=True).open(base, identity)
         assert (store.count, store.generation) == (2, 0)
         assert store.tokens() == {"a.md": None, "b.md": None}
         assert list(store.rows_for("a.md")[0].vector) == pytest.approx([0.6, 0.8, 0.0])
@@ -295,13 +295,16 @@ class TestLegacySidecar:
     ) -> None:
         base, identity = self._legacy(tmp_path)
         other = EmbeddingIdentity(identity.provider, "other", "", "v1", 3)
-        backend = NumpySidecarBackend()
+        backend = NumpySidecarBackend(legacy_only=True)
         with pytest.raises(StoreIncompatibleError):
             backend.open(base, other)
 
-    def test_the_first_persist_moves_to_the_new_layout(self, tmp_path: Path) -> None:
+    def test_a_writer_starts_empty_beside_a_released_sidecar(
+        self, tmp_path: Path
+    ) -> None:
         base, identity = self._legacy(tmp_path)
         store = NumpySidecarBackend().open(base, identity)
+        assert store.count == 0  # a store's files are its own; a donor reads these
         store.replace_document(
             doc("c.md", [[0, 0, 1]], token="tc"), expected_token=ANY_TOKEN
         )
@@ -310,7 +313,7 @@ class TestLegacySidecar:
         assert base.with_suffix(".npy").exists()
         assert base.with_suffix(".v2.json").is_file()
         again = NumpySidecarBackend().open(base, identity)
-        assert again.tokens() == {"a.md": None, "b.md": None, "c.md": "tc"}
+        assert again.tokens() == {"c.md": "tc"}
 
     def test_a_metadata_list_sidecar_opens_with_a_warning(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -318,7 +321,7 @@ class TestLegacySidecar:
         base = tmp_path / "list-embeddings"
         np.save(base.with_suffix(".npy"), np.asarray([[1, 0, 0]], dtype=np.float32))
         base.with_suffix(".json").write_text(json.dumps([{"path": "a.md"}]))
-        store = NumpySidecarBackend().open(base, IDENT)
+        store = NumpySidecarBackend(legacy_only=True).open(base, IDENT)
         assert store.count == 1
         assert any(
             r.msg == "numpy_store_legacy_rows_unverified path=%s"
@@ -338,7 +341,9 @@ class TestLegacySidecar:
         write_legacy_sidecar(
             base, [[1, 0, 0]], [{"path": "a.md"}], provider=provider, text_format=None
         )
-        store = NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
+        store = NumpySidecarBackend(legacy_only=True).open(
+            base, EmbeddingIdentity.of(provider, "v1")
+        )
         assert store.count == 1
 
     def test_a_sidecar_without_a_variant_opens_for_a_variantless_provider(
@@ -350,7 +355,9 @@ class TestLegacySidecar:
         payload = json.loads(base.with_suffix(".json").read_text())
         del payload["index_metadata"]["provider_variant"]
         base.with_suffix(".json").write_text(json.dumps(payload))
-        store = NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
+        store = NumpySidecarBackend(legacy_only=True).open(
+            base, EmbeddingIdentity.of(provider, "v1")
+        )
         assert store.count == 1
 
     def test_a_sidecar_without_a_variant_is_incompatible_for_a_variant_provider(
@@ -360,7 +367,7 @@ class TestLegacySidecar:
         base = tmp_path / "old"
         write_legacy_sidecar(base, [[1, 0, 0]], [{"path": "a.md"}], provider=provider)
         variant = EmbeddingIdentity("mock", provider.model_name, "q8", "v1", 3)
-        backend = NumpySidecarBackend()
+        backend = NumpySidecarBackend(legacy_only=True)
         with pytest.raises(StoreIncompatibleError):
             backend.open(base, variant)
 
@@ -377,7 +384,7 @@ class TestLegacySidecar:
         else:
             vectors.append([0, 0, 1])
         write_legacy_sidecar(base, vectors, rows, provider=provider)
-        backend = NumpySidecarBackend()
+        backend = NumpySidecarBackend(legacy_only=True)
         identity = EmbeddingIdentity.of(provider, "v1")
         with pytest.raises(StoreCorruptError):
             backend.open(base, identity)
@@ -765,7 +772,9 @@ class TestResources:
         write_legacy_sidecar(
             base, [[3.0, 4.0, 0.0]], [{"path": "a.md", "folder": ""}], provider=provider
         )
-        store = NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
+        store = NumpySidecarBackend(legacy_only=True).open(
+            base, EmbeddingIdentity.of(provider, "v1")
+        )
         files = (base.with_suffix(".json"), base.with_suffix(".npy"))
         assert store.resources().stored_bytes == sum(p.stat().st_size for p in files)
         store.close()
@@ -824,7 +833,7 @@ class TestV2Layout:
         assert [_sha(p) for p in released] == before
         assert base.with_suffix(".v2.json").is_file()
 
-    def test_the_v2_store_is_preferred_once_committed(self, tmp_path: Path) -> None:
+    def test_the_v2_store_is_the_writers_only_source(self, tmp_path: Path) -> None:
         base, identity = self._released(tmp_path)
         store = NumpySidecarBackend().open(base, identity)
         store.replace_document(
@@ -832,7 +841,9 @@ class TestV2Layout:
         )
         store.close()
         again = NumpySidecarBackend().open(base, identity)
-        assert again.tokens() == {"a.md": None, "b.md": None, "c.md": "tc"}
+        assert again.tokens() == {"c.md": "tc"}
+        released = NumpySidecarBackend(legacy_only=True).open(base, identity)
+        assert released.tokens() == {"a.md": None, "b.md": None}
 
     def test_sweep_removes_only_v2_matrices(self, tmp_path: Path) -> None:
         base, identity = self._released(tmp_path)
@@ -860,18 +871,21 @@ class TestV2Layout:
             "emb.v2.m1.npy",
         ]
 
-    def test_an_edge_build_sidecar_opens_in_place_and_is_left_alone(
+    def test_an_edge_build_sidecar_is_read_by_a_donor_and_left_alone(
         self, tmp_path: Path
     ) -> None:
         base = self._edge(tmp_path)
         edge = [base.with_suffix(".json"), base.with_suffix(".m3.npy")]
-        before = [_sha(p) for p in edge]
+        expected = [_sha(p) for p in edge]
+        assert set(
+            NumpySidecarBackend(legacy_only=True).open(base, IDENT).tokens()
+        ) == {"e.md"}
         store = NumpySidecarBackend().open(base, IDENT)
-        assert set(store.tokens()) == {"e.md"}
+        assert store.count == 0
         store.replace_document(doc("f.md", [[0, 1, 0]]), expected_token=ANY_TOKEN)
         store.close()
         assert base.with_suffix(".v2.m1.npy").is_file()
-        assert [_sha(p) for p in edge] == before
+        assert [_sha(p) for p in edge] == expected
 
     def test_a_reader_after_the_first_v2_commit_reads_v2(self, tmp_path: Path) -> None:
         base, identity = self._released(tmp_path)
@@ -916,7 +930,7 @@ class TestV2Layout:
             base.with_suffix(".m3.npy"),
         ]
         size = sum(p.stat().st_size for p in legacy)
-        logger = "markdown_vault_mcp.stores.numpy_sidecar"
+        logger = "markdown_vault_mcp.stores"
         with caplog.at_level(logging.INFO, logger=logger):
             backend.open(base, identity).close()
             backend.open(base, identity, owns_files=False).close()
@@ -938,9 +952,7 @@ class TestV2Layout:
         store = NumpySidecarBackend().open(base, IDENT)
         store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
         store.close()
-        with caplog.at_level(
-            logging.INFO, logger="markdown_vault_mcp.stores.numpy_sidecar"
-        ):
+        with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.stores"):
             NumpySidecarBackend().open(base, IDENT).close()
         assert not [
             r
@@ -969,7 +981,7 @@ class TestV2LayoutEdges:
     ) -> None:
         base, identity = self._released(tmp_path)
         base.with_suffix(".json").unlink()
-        backend = NumpySidecarBackend()
+        backend = NumpySidecarBackend(legacy_only=True)
         with pytest.raises(StoreCorruptError) as refused:
             backend.open(base, identity)
         assert f"no {base.with_suffix('.json').name}" in str(refused.value)
@@ -977,7 +989,7 @@ class TestV2LayoutEdges:
     def test_a_reader_measures_the_files_it_opened(self, tmp_path: Path) -> None:
         base, identity = self._released(tmp_path)
         backend = NumpySidecarBackend()
-        reader = backend.open(base, identity, owns_files=False)
+        reader = NumpySidecarBackend(legacy_only=True).open(base, identity)
         writer = backend.open(base, identity)
         writer.replace_document(doc("c.md", [[0, 0, 1]]), expected_token=ANY_TOKEN)
         writer.checkpoint()
@@ -1001,9 +1013,7 @@ class TestV2LayoutEdges:
         other = EmbeddingIdentity(identity.provider, "other", "", "v1", 3)
         backend = NumpySidecarBackend()
         with (
-            caplog.at_level(
-                logging.INFO, logger="markdown_vault_mcp.stores.numpy_sidecar"
-            ),
+            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.stores"),
             pytest.raises(StoreIncompatibleError),
         ):
             backend.open(base, other)
@@ -1052,7 +1062,9 @@ class TestRecordedIdentity:
         base = tmp_path / "legacy-embeddings"
         base.with_suffix(".json").write_text(json.dumps([{"path": "a.md"}]))
         np.save(base.with_suffix(".npy"), np.asarray([[1, 0, 0]], dtype=np.float32))
-        store = NumpySidecarBackend().open(base, IDENT, owns_files=False)
+        store = NumpySidecarBackend(legacy_only=True).open(
+            base, IDENT, owns_files=False
+        )
         assert store.recorded_identity is None
 
     def test_a_sidecar_without_a_dimension_records_none(self, tmp_path: Path) -> None:
@@ -1064,7 +1076,7 @@ class TestRecordedIdentity:
         payload = json.loads(base.with_suffix(".json").read_text())
         payload["index_metadata"]["dimension"] = 0
         base.with_suffix(".json").write_text(json.dumps(payload))
-        store = NumpySidecarBackend().open(
+        store = NumpySidecarBackend(legacy_only=True).open(
             base, EmbeddingIdentity.of(provider, "v1"), owns_files=False
         )
         assert store.recorded_identity is None
