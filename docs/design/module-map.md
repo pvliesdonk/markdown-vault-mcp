@@ -33,6 +33,7 @@ src/markdown_vault_mcp/
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
     embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported
+    embedding_import.py -- import_embeddings: `embeddings import` from another store — source resolution (DSN from the environment only), the refusals in order, the dry-run count, ImportReport/ImportRefused (#1505)
     document.py        -- DocumentManager: note CRUD, backlinks, delete/rename/move orchestration; artifact CRUD delegated to ArtifactStore (#1235)
     artifacts.py       -- ArtifactStore: validate/size/read/write/unlink/move for non-.md artifacts over the manager's shared lock + notifier (#1235); internal collaborator, not re-exported
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
@@ -51,6 +52,8 @@ src/markdown_vault_mcp/
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
+    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, numbered_files, report_unused_sidecar (#1505)
+    _writer_lock.py    -- one writer process per built-in store: the flock on {base}.lock, shared and counted within a process, a no-op where no lock can be taken; StoreBusyError otherwise (#1505)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
     postgres_vectors.py -- PostgresVectorBackend/PostgresVectorStore: a vault's vectors in a PostgreSQL schema; open sorts every failure into the five outcomes, reads are REPEATABLE READ from the live meta row (#1504)
     registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)
@@ -64,6 +67,7 @@ src/markdown_vault_mcp/
     coordinator.py     -- IndexWriteCoordinator: owns the writer + build/async orchestration (#576)
     head_reconciler.py -- IndexHeadReconciler: reindexes until the index reflects git HEAD, whatever moved it (#1532)
     embedding_reconciler.py -- EmbeddingReconciler: the one writer of embedding rows, built from the keyword index with content_hash tokens; conditional replace, conflicts re-queued (#1768)
+    donor.py           -- Donor: a read-only store whose compatible vectors a full build copies by embedding input, refusing an unknown or other identity (#1505)
   facets/
     __init__.py        -- package aggregator: re-exports the five facets (Reader/Writer/Graph/Index/Summarize)
     reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)

@@ -28,7 +28,11 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg_pool import ConnectionPool, PoolTimeout
 
-from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
+from markdown_vault_mcp.exceptions import (
+    StoreBusyError,
+    StoreNotConfiguredError,
+    StoreUnavailableError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -129,7 +133,8 @@ def unavailable(
         schema: The vault schema, which is the outcome's location.
 
     Returns:
-        The error, its message ending ``(reason=<reason>)``.
+        The error, its message ending ``(reason=<reason>)``: a
+        :class:`~markdown_vault_mcp.exceptions.StoreBusyError` for ``lease``.
     """
     logger.warning(
         "postgres_vector_store_unavailable schema=%s reason=%s detail=%s",
@@ -137,9 +142,9 @@ def unavailable(
         reason,
         message,
     )
-    return StoreUnavailableError(
-        f"{message} (reason={reason})", backend=BACKEND_NAME, location=schema
-    )
+    # A lease held elsewhere is a running writer: stop it first (#1505).
+    kind = StoreBusyError if reason == "lease" else StoreUnavailableError
+    return kind(f"{message} (reason={reason})", backend=BACKEND_NAME, location=schema)
 
 
 def not_configured(message: str, *, schema: str) -> StoreNotConfiguredError:

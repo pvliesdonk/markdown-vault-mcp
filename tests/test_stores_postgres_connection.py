@@ -15,7 +15,11 @@ from pgvector import Vector
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
+from markdown_vault_mcp.exceptions import (
+    StoreBusyError,
+    StoreNotConfiguredError,
+    StoreUnavailableError,
+)
 from markdown_vault_mcp.stores import _postgres as pg
 
 if TYPE_CHECKING:
@@ -672,3 +676,11 @@ def test_an_extension_schema_without_usage_is_unavailable_privilege(
             postgres_server,
             sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)),
         )
+
+
+def test_only_a_held_lease_is_busy() -> None:
+    held = pg.unavailable("Taken.", reason="lease", schema=_SCHEMA)
+    refused = pg.unavailable("PostgreSQL refused.", reason="refused", schema=_SCHEMA)
+    assert isinstance(held, StoreBusyError)  # stop the server first (#1505)
+    assert isinstance(refused, StoreUnavailableError)
+    assert not isinstance(refused, StoreBusyError)

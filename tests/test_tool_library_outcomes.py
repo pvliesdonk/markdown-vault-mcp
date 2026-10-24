@@ -19,6 +19,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentUnreadableError,
     EditConflictError,
     EmbeddingsNotConfiguredError,
+    EmbeddingsNotPublishedError,
     IndexUnavailableError,
     InvalidRequestError,
     ReadOnlyError,
@@ -208,3 +209,12 @@ def test_mapping_above_the_boundary_does_not_count() -> None:
 
     assert not maps_library_outcomes(upside_down)
     assert maps_library_outcomes(right_way_up)
+
+
+def test_an_unpublished_rebuild_says_the_embeddings_were_kept() -> None:
+    """#1505: a forced rebuild that kept the store is not a quiet success."""
+    err = outcome_error(EmbeddingsNotPublishedError(failed_batches=2))
+    assert err is not None
+    assert err.log_level == logging.WARNING
+    assert "kept" in str(err)
+    assert "Retry later" in str(err)

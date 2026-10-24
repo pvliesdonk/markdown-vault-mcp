@@ -289,7 +289,8 @@ class TestBulkRetoken:
 class TestRebuild:
     def test_it_publishes_one_generation_with_tokens(self, tmp_path):
         fts, _, store, rec = _setup(tmp_path, NOTES)
-        assert rec.rebuild(store, store.identity) == (2, 2)
+        outcome = rec.rebuild(store, store.identity)
+        assert (outcome.embedded, outcome.attempted, outcome.published) == (2, 2, True)
         hashes = {r["path"]: r["content_hash"] for r in fts.list_chunks()}
         assert (store.generation, store.tokens()) == (1, hashes)
 
@@ -307,8 +308,12 @@ class TestRebuild:
             return real(texts)
 
         provider.embed = second_batch_fails  # type: ignore[method-assign]
-        embedded, attempted = rec.rebuild(store, store.identity)
-        assert (embedded, attempted) == (4, 6)
+        outcome = rec.rebuild(store, store.identity)
+        assert (outcome.embedded, outcome.attempted, outcome.failed_batches) == (
+            4,
+            6,
+            1,
+        )
         provider.embed = real  # type: ignore[method-assign]
         provider.texts.clear()
         result = rec.reconcile(store, site="test")
@@ -379,7 +384,7 @@ class TestRemovalRule:
         assert sorted(metadata_by_path(store)) == ["b.md"]
         assert probe.asked == []
 
-    def test_a_tombstone_removes_without_asking_the_source(self, tmp_path):
+    def test_a_tombstone_keeps_without_asking_the_source(self, tmp_path):
         probe = _Probe()
         fts, store, rec = self._orphan(tmp_path, probe=probe)
         fts.upsert_tombstone(
@@ -387,6 +392,20 @@ class TestRemovalRule:
             content_hash="h",
             modified_at=0.0,
         )
+        rec.reconcile(store, site="test")
+        # The note exists but does not parse: kept until fixed or deleted (#1505).
+        assert sorted(metadata_by_path(store)) == ["a.md", "b.md"]
+        assert probe.asked == []
+
+    def test_an_excluded_tombstone_is_removed(self, tmp_path):
+        probe = _Probe()
+        fts, store, rec = self._orphan(tmp_path, probe=probe)
+        fts.upsert_tombstone(
+            SkippedFile(path="a.md", category="parse_error", detail="x"),
+            content_hash="h",
+            modified_at=0.0,
+        )
+        rec._is_excluded = lambda path: path == "a.md"  # the exclusion wins
         rec.reconcile(store, site="test")
         assert sorted(metadata_by_path(store)) == ["b.md"]
         assert probe.asked == []
@@ -714,3 +733,195 @@ class TestChunkReuse:
         provider.texts.clear()
         result = rec.reconcile(store, ["s.md"], site="test")
         assert (result.embedded, result.reused, len(provider.texts)) == (4, 0, 4)
+
+
+class TestStoredInputs:
+    """One matching rule for own-store reuse and donors (#1505)."""
+
+    def test_stored_inputs_is_the_reconcilers_rule(self) -> None:
+        from markdown_vault_mcp.indexing.embedding_reconciler import stored_inputs
+
+        builder = EmbedTextBuilder(searchable_fields=("summary",))
+        rows = [
+            VectorRow(
+                [1.0, 0.0],
+                {"title": "T", "heading": "H", "content": "c1", "preamble": "p"},
+            ),
+            VectorRow([0.0, 1.0], {"title": "T", "content": "c2"}),
+            VectorRow([1.0, 1.0], {"content": "no title"}),
+        ]
+        known = stored_inputs(builder, rows)
+        first = builder.build(
+            title="T", heading="H", content="c1", fields_text="p", is_first_chunk=True
+        )
+        second = builder.build(
+            title="T", heading=None, content="c2", fields_text="", is_first_chunk=False
+        )
+        assert set(known) == {first, second}
+        assert list(known[first]) == [1.0, 0.0]
+
+
+class _FakeDonor:
+    """A donor answering from a dict of path -> {input: vector}."""
+
+    def __init__(self, given: dict[str, dict[str, Any]], *, fail: bool = False) -> None:
+        self.given, self.fail = given, fail
+        self.source = "fake:donor"
+        self.refused_rows = 0
+
+    def vectors_for(self, path: str) -> dict[str, Any]:
+        if self.fail:
+            from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+            raise StoreUnavailableError("gone", backend="fake", location="donor")
+        return self.given.get(path, {})
+
+
+def _donate(rec: EmbeddingReconciler, paths: list[str], dim: int = 8) -> _FakeDonor:
+    """A donor holding a distinct unit vector for every input of *paths*."""
+    docs = rec.documents()
+    given: dict[str, dict[str, Any]] = {}
+    for n, path in enumerate(paths):
+        for i, text in enumerate(docs[path].texts):
+            vector = np.zeros(dim, dtype=np.float32)
+            vector[(n + i) % dim] = 1.0
+            given.setdefault(path, {})[text] = vector
+    return _FakeDonor(given)
+
+
+def _failing_second_batch(provider: _Counting) -> None:
+    real = provider.embed
+    calls = 0
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("provider down")
+        return real(texts)
+
+    provider.embed = embed  # type: ignore[method-assign]
+
+
+class TestRebuildWithDonor:
+    """#1505 child 4: the full build copies donor vectors."""
+
+    def test_a_donor_supplies_matching_chunks(self, tmp_path):
+        _fts, provider, store, rec = _setup(tmp_path, NOTES)
+        donated, other = sorted(rec.documents())
+        donor = _donate(rec, [donated])
+        outcome = rec.rebuild(store, store.identity, donor=donor)
+        docs = rec.documents()
+        assert provider.texts == list(docs[other].texts)
+        assert outcome.reused == len(docs[donated].texts)
+        for row, text in zip(store.rows_for(donated), docs[donated].texts, strict=True):
+            assert np.allclose(row.vector, donor.given[donated][text])
+
+    def test_a_changed_chunk_is_embedded_and_the_rest_donated(self, tmp_path):
+        body = "## One\n\nApples.\n\n## Two\n\nPears.\n\n## Three\n\nPlums.\n"
+        notes = {"a.md": f"# A\n\n{body}\n## One\n\nApples.\n\n## Four\n\nEnd.\n"}
+        _fts, provider, store, rec = _setup(tmp_path, notes, chunker=SECTIONS)
+        doc = rec.documents()["a.md"]
+        assert len(doc.texts) >= 4
+        assert len(set(doc.texts)) < len(doc.texts)  # a duplicated section
+        donor = _donate(rec, ["a.md"])
+        missing = doc.texts[1]
+        del donor.given["a.md"][missing]
+        outcome = rec.rebuild(store, store.identity, donor=donor)
+        assert provider.texts == [missing]
+        assert outcome.embedded == doc.texts.count(missing)
+        assert outcome.reused == len(doc.texts) - doc.texts.count(missing)
+        rows = store.rows_for("a.md")
+        layout = [
+            (r.metadata.get("heading"), r.metadata.get("start_line")) for r in rows
+        ]
+        assert layout == [(m.get("heading"), m.get("start_line")) for m in doc.metadata]
+        for row, text in zip(rows, doc.texts, strict=True):
+            if text != missing:
+                assert np.allclose(row.vector, donor.given["a.md"][text])
+
+    def test_reuse_own_rows_when_asked(self, tmp_path):
+        _fts, provider, store, rec = _setup(tmp_path, NOTES)
+        rec.rebuild(store, store.identity)
+        provider.texts.clear()
+        outcome = rec.rebuild(store, store.identity, reuse_own=True)
+        assert (provider.texts, outcome.embedded, outcome.published) == ([], 0, True)
+
+    def test_a_forced_rebuild_still_embeds_every_chunk(self, tmp_path):
+        _fts, provider, store, rec = _setup(tmp_path, NOTES)
+        rec.rebuild(store, store.identity)
+        provider.texts.clear()
+        outcome = rec.rebuild(store, store.identity)
+        assert outcome.embedded == outcome.attempted == len(provider.texts) > 0
+        assert outcome.reused == 0
+
+    def test_a_failed_batch_keeps_a_populated_store(self, tmp_path, caplog):
+        notes = {f"n{i}.md": f"# N{i}\n\nBody {i}.\n" for i in range(6)}
+        _fts, provider, store, rec = _setup(tmp_path, notes)
+        rec.rebuild(store, store.identity)
+        expected = (store.generation, store.tokens(), store.count)
+        _failing_second_batch(provider)
+        with caplog.at_level(logging.WARNING):
+            outcome = rec.rebuild(store, store.identity)
+        actual = (store.generation, store.tokens(), store.count)
+        assert actual == expected
+        assert (outcome.published, outcome.failed_batches) == (False, 1)
+        assert [
+            r.args
+            for r in caplog.records
+            if r.msg.startswith("build_embeddings_not_published ")
+        ] == [(1,)]
+
+    def test_a_failed_batch_into_an_empty_store_publishes_the_rest(self, tmp_path):
+        notes = {f"n{i}.md": f"# N{i}\n\nBody {i}.\n" for i in range(6)}
+        _fts, provider, store, rec = _setup(tmp_path, notes)
+        _failing_second_batch(provider)
+        outcome = rec.rebuild(store, store.identity)
+        assert (outcome.published, outcome.embedded, store.count) == (True, 4, 4)
+
+    def test_a_donor_vector_of_another_length_is_embedded(self, tmp_path):
+        _fts, provider, store, rec = _setup(tmp_path, NOTES)
+        path = sorted(rec.documents())[0]
+        donor = _donate(rec, [path], dim=3)
+        outcome = rec.rebuild(store, store.identity, donor=donor)
+        assert outcome.reused == 0
+        assert set(rec.documents()[path].texts) <= set(provider.texts)
+        assert all(len(r.vector) == 8 for r in store.rows_for(path))
+
+    def test_a_donor_read_failure_publishes_nothing(self, tmp_path):
+        from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+        _fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        donor = _FakeDonor({}, fail=True)
+        with pytest.raises(StoreUnavailableError):
+            rec.rebuild(store, store.identity, donor=donor)
+        assert (store.generation, store.count) == (0, 0)
+
+    def test_the_donor_summary_is_logged_once(self, tmp_path, caplog):
+        _fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        donated, _other = sorted(rec.documents())
+        donor = _donate(rec, [donated])
+        donor.refused_rows = 2
+        with caplog.at_level(logging.INFO):
+            outcome = rec.rebuild(store, store.identity, donor=donor)
+        lines = [
+            r.args for r in caplog.records if r.msg.startswith("embeddings_donor_used ")
+        ]
+        assert lines == [("fake:donor", outcome.reused, outcome.embedded, 2, True)]
+
+    def test_a_real_donor_store_feeds_the_build(self, tmp_path):
+        from markdown_vault_mcp.indexing.donor import Donor
+
+        _fts, provider, store, rec = _setup(tmp_path, NOTES)
+        base = tmp_path / "donor-embeddings"
+        source = NumpySidecarBackend().open(base, store.identity)
+        rec.rebuild(source, store.identity)
+        source.close()
+        provider.texts.clear()
+        builder = EmbedTextBuilder()
+        donor = Donor.open(NumpySidecarBackend(), base, store.identity, builder=builder)
+        assert isinstance(donor, Donor)
+        with donor:
+            outcome = rec.rebuild(store, store.identity, donor=donor)
+        assert (provider.texts, outcome.embedded, outcome.published) == ([], 0, True)
+        assert outcome.reused == outcome.attempted > 0

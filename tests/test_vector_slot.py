@@ -70,13 +70,13 @@ class TestOpening:
         assert rebuilt == [1]
 
     def test_an_owned_corrupt_store_rebuilds(self, tmp_path: Path) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         store = slot.get(rebuild=slot.fresh)
         assert store.count == 0
 
     def test_a_rebuild_that_installs_nothing_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         with pytest.raises(ValueError, match="rebuild"):
             slot.get(rebuild=lambda: None)
@@ -86,7 +86,7 @@ class TestOpening:
         self, tmp_path: Path, fault: str
     ) -> None:
         if fault == "corrupt":
-            (tmp_path / "vec.json").write_text("{not json")
+            (tmp_path / "vec.v2.json").write_text("{not json")
         else:
             _persist_with(
                 tmp_path / "vec", EmbeddingIdentity("mock", "old", "", "v1", 3)
@@ -370,12 +370,12 @@ class TestWritingThroughTheSlot:
     def test_a_store_that_will_not_open_rebuilds_into_a_fresh_one(
         self, tmp_path: Path
     ) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         target = slot.rebuild_target()
         assert target.count == 0
         assert slot.current() is target
-        assert (tmp_path / "vec.json").read_text() == "{not json"
+        assert (tmp_path / "vec.v2.json").read_text() == "{not json"
 
     def test_a_process_that_does_not_own_the_files_may_not_rebuild(
         self, tmp_path: Path
@@ -464,7 +464,7 @@ class TestLoaderCasesPorted:
     def test_a_rebuild_that_raises_is_logged_then_propagates(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
 
         def rebuild() -> None:
@@ -477,7 +477,7 @@ class TestLoaderCasesPorted:
         )
 
     def test_an_empty_rebuild_is_accepted(self, tmp_path: Path) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         store = slot.get(rebuild=slot.rebuild_target)
         assert store.count == 0

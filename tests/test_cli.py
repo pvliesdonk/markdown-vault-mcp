@@ -817,6 +817,7 @@ def test_reindex_prints_stats() -> None:
     mock_result.skipped = 4
 
     mock_vault = MagicMock()
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -836,6 +837,7 @@ def test_reindex_calls_build_index_first() -> None:
     mock_result = MagicMock()
     mock_result.added = mock_result.modified = mock_result.deleted = 0
     mock_result.unchanged = mock_result.skipped = 0
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -853,6 +855,7 @@ def test_reindex_force_drops_and_rebuilds() -> None:
     mock_result = MagicMock()
     mock_result.added = mock_result.modified = mock_result.deleted = 0
     mock_result.unchanged = mock_result.skipped = 0
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -868,6 +871,7 @@ def test_reindex_without_force_keeps_warm_restart() -> None:
     mock_result = MagicMock()
     mock_result.added = mock_result.modified = mock_result.deleted = 0
     mock_result.unchanged = mock_result.skipped = 0
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
@@ -884,6 +888,7 @@ def test_reindex_builds_embeddings_when_configured() -> None:
     mock_result.added = 1
     mock_result.modified = mock_result.deleted = mock_result.skipped = 0
     mock_result.unchanged = 5
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.return_value = 10
 
@@ -904,6 +909,7 @@ def test_reindex_swallows_embeddings_not_configured_error() -> None:
         mock_result.skipped
     ) = 0
     mock_result.unchanged = 5
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.side_effect = EmbeddingsNotConfiguredError(
         "not configured"
@@ -924,6 +930,7 @@ def test_reindex_surfaces_internal_valueerror_from_embeddings() -> None:
         mock_result.skipped
     ) = 0
     mock_result.unchanged = 5
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.side_effect = ValueError(
         "Failed to load vector index after _load_vectors()"
@@ -943,6 +950,7 @@ def test_reindex_never_forces_embedding_rebuild() -> None:
     mock_result.modified = 1
     mock_result.deleted = mock_result.skipped = 0
     mock_result.unchanged = 10
+    mock_result.vault_root_empty = False  # a real ReindexResult's default
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.return_value = 4
 
@@ -1139,7 +1147,7 @@ def test_batch_commands_embed_into_a_configured_embeddings_path(
 
     assert result.exit_code == 0, result.output
     assert counting.calls > 0
-    assert shared.with_suffix(".json").is_file()
+    assert shared.with_suffix(".v2.json").is_file()
 
 
 @pytest.mark.parametrize("embeddings_path", [True, False], ids=["set", "default"])
@@ -1529,3 +1537,21 @@ def test_search_by_meaning_reads_a_postgres_store_without_an_index_path(
     assert result.exit_code == 0, result.output
     found = [r["path"] for r in json.loads(result.stdout)]
     assert found == (["a.md"] if seeded else [])  # what the store holds, no more
+
+
+def test_index_reports_an_unpublished_rebuild() -> None:
+    """#1505: a forced rebuild that kept the old embeddings exits non-zero, saying so."""
+    from markdown_vault_mcp.exceptions import EmbeddingsNotPublishedError
+
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 5
+    mock_stats.chunks_indexed = 20
+    mock_vault.index.build_index.return_value = mock_stats
+    mock_vault.index.build_embeddings.side_effect = EmbeddingsNotPublishedError(
+        failed_batches=1
+    )
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
+        result = runner.invoke(app, ["index", "--force"])
+    assert result.exit_code == 1
+    assert "kept" in result.output

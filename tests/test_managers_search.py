@@ -849,7 +849,15 @@ def _semantic_mgr_with_ranked_chunks(base: Path) -> SearchManager:
     vi._embeddings = np.vstack(vecs).astype(np.float32)
     vi.save(base)
 
+    # The keyword index holds the three notes, so their vectors may be served
+    # (#1505); their text shares no term with the query "q".
     fts = FTSIndex(db_path=":memory:")
+    notes = base.parent / "notes-src"
+    notes.mkdir(parents=True, exist_ok=True)
+    for name in ("giantA", "giantB", "TARGET"):
+        (notes / f"{name}.md").write_text(f"# {name}\n\nbody text\n")
+    for note in scan_directory(notes):
+        fts.upsert_note(note)
     mgr = SearchManager(
         fts=fts,
         source_dir=base.parent,
@@ -1046,6 +1054,13 @@ def test_folder_scoped_get_similar_keeps_room_for_other_files(
         ]
         return [dict(r) for r in eligible[:limit]]
 
+    # Both notes exist in the keyword index, so their rows may be served (#1505).
+    vault = search_mgr_with_embeddings._source_dir
+    (vault / "notes").mkdir(exist_ok=True)
+    (vault / "notes" / "long.md").write_text("# Long\n\nlong body\n")
+    (vault / "notes" / "other.md").write_text("# Other\n\nother body\n")
+    for note in scan_directory(vault):
+        search_mgr_with_embeddings._fts.upsert_note(note)
     store = search_mgr_with_embeddings._load_vectors()
     monkeypatch.setattr(store, "similar_to_document", fake_similar)
 
@@ -1410,7 +1425,7 @@ class TestSearchLoadVectorsSelfHeal:
         """The matrix file the store's commit file names."""
         base = mgr._embeddings_path
         assert base is not None
-        (matrix,) = base.parent.glob(f"{base.name}.m*.npy")
+        (matrix,) = base.parent.glob(f"{base.name}.v2.m*.npy")
         return matrix
 
     @staticmethod
@@ -1418,7 +1433,7 @@ class TestSearchLoadVectorsSelfHeal:
         """Drop the last metadata row from the on-disk .json (count mismatch)."""
         import json
 
-        json_path = mgr._embeddings_path.with_suffix(".json")  # type: ignore[union-attr]
+        json_path = mgr._embeddings_path.with_suffix(".v2.json")  # type: ignore[union-attr]
         payload = json.loads(json_path.read_text(encoding="utf-8"))
         payload["rows"] = payload["rows"][:-1]
         json_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -1554,7 +1569,7 @@ class TestSearchLoadVectorsSelfHeal:
     ) -> None:
         """No commit file means nothing was committed: an empty store, no rebuild."""
         mgr = search_mgr_with_embeddings
-        mgr._embeddings_path.with_suffix(".json").unlink()  # type: ignore[union-attr]
+        mgr._embeddings_path.with_suffix(".v2.json").unlink()  # type: ignore[union-attr]
         mgr._rebuild_embeddings = lambda: pytest.fail("rebuilt")
         mgr.vectors = None
         result = mgr._load_vectors()

@@ -170,7 +170,11 @@ class KeywordIndex(Protocol):
         ...
 
     def get_chunk_counts(self, paths: Iterable[str]) -> dict[str, int]:
-        """Return the chunk count for each of *paths*."""
+        """Return the chunk count for each of *paths* that is a live note.
+
+        A tombstoned or absent path is left out, never defaulted: semantic
+        search drops vector rows of the paths left out (#1505).
+        """
         ...
 
     def has_documents(self) -> bool:

@@ -17,7 +17,7 @@ import time
 from concurrent.futures import CancelledError, Future
 from typing import TYPE_CHECKING, Any
 
-from markdown_vault_mcp.exceptions import IndexUnavailableError
+from markdown_vault_mcp.exceptions import IndexUnavailableError, StoreUnavailableError
 from markdown_vault_mcp.fts_index import INDEX_SEMANTICS_VERSION
 from markdown_vault_mcp.indexing.build_lifecycle import BuildLifecycle
 from markdown_vault_mcp.indexing.index_writer import (
@@ -400,6 +400,10 @@ class IndexWriteCoordinator:
         except CancelledError:
             # Cancellation (writer-shutdown drain) is not a failure — don't record (#584).
             logger.debug("async_build_embeddings_cancelled")
+        except StoreUnavailableError as exc:
+            # The writer logged it at WARNING; it heals itself (#1505).
+            self._last_build_embeddings_error = exc
+            logger.debug("async_build_embeddings_job_unavailable err=%s", exc)
         except BaseException as exc:
             # Record, never propagate — escaping strands the writer (#584).
             self._last_build_embeddings_error = exc

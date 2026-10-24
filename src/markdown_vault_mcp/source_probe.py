@@ -3,8 +3,9 @@
 A ``stat`` classified by errno, as the spec's ``SourceProbe`` says: a path
 that does not exist, or names something that is not a regular file, is
 *absent*; a stat the file system refuses is *unavailable*, as is any path
-under a source root that is not a statable directory (an unmounted volume
-must remove nothing). *Present* carries the file's content hash, the
+under a source root that is not a statable, listable directory holding at
+least one entry: an unmounted volume, or the empty mount point it leaves,
+must remove nothing (#1791). *Present* carries the file's content hash, the
 keyword index's token, so it reads the file; the deletion rule only asks
 about paths the keyword index holds no rows for.
 """
@@ -12,10 +13,12 @@ about paths the keyword index holds no rows for.
 from __future__ import annotations
 
 import logging
+import os
 import stat as stat_module
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import VaultUnavailableError
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.types import SourceState
 
@@ -82,7 +85,50 @@ class FileSourceProbe:
         return True
 
     def _root_available(self) -> bool:
-        try:
-            return stat_module.S_ISDIR(self._source_dir.stat().st_mode)
-        except OSError:
+        """Whether the root is a directory that holds anything at all (see :func:`holds_entries`)."""
+        return holds_entries(self._source_dir)
+
+
+def holds_entries(folder: Path) -> bool:
+    """Whether *folder* is a listable directory holding at least one entry.
+
+    An empty one is what an unmounted volume's mount point, or a bind mount
+    Docker created, looks like, as much as a vault whose notes were all
+    deleted, and only the first is common: the keyword index and the vector
+    store remove nothing under it, and an explicit forced rebuild empties a
+    vault deliberately (#1791). A folder holding only non-note files
+    (``.obsidian/``) is a vault whose notes are gone.
+
+    Args:
+        folder: The vault's root directory.
+
+    Returns:
+        ``False`` for a missing, unlistable, non-directory or empty folder.
+    """
+    try:
+        if not stat_module.S_ISDIR(folder.stat().st_mode):
             return False
+        with os.scandir(folder) as entries:
+            return next(entries, None) is not None
+    except OSError:
+        return False
+
+
+def require_vault_root(folder: Path, *, indexed: bool) -> None:
+    """Refuse a write into an empty vault folder while the index holds notes.
+
+    Args:
+        folder: The vault's root directory.
+        indexed: Whether the keyword index holds documents.
+
+    Raises:
+        VaultUnavailableError: If *indexed* and *folder* holds no entries
+            (:func:`holds_entries`): one file written there would end the
+            protection that keeps the index and the embeddings (#1791).
+    """
+    if indexed and not holds_entries(folder):
+        raise VaultUnavailableError(
+            "The vault folder is empty while the index holds notes, as when its "
+            "volume is not mounted, so writes are refused until it is back. The "
+            "request was fine; tell the user to check the vault's storage."
+        )

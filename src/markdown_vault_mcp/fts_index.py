@@ -2748,7 +2748,9 @@ class FTSIndex:
     def get_chunk_counts(self, paths: Iterable[str]) -> dict[str, int]:
         """Return a ``{path: chunk_count}`` map for the given paths.
 
-        Missing paths are omitted; callers should default to ``1``.
+        Paths that are not live notes (tombstoned or absent) are omitted, so
+        a caller can tell them apart: semantic search drops their vector
+        rows (#1505).
 
         Materialises *paths* into a list BEFORE the retry window opens.
         ``@_retry_on_locked`` cannot be used directly here because the

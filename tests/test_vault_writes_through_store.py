@@ -184,7 +184,9 @@ class TestARefusedWriteKeepsTheOldRows:
 
 
 class TestUpgradingFromALegacySidecar:
-    def test_unchanged_notes_converge_without_embedding(self, tmp_path: Path) -> None:
+    def test_unchanged_notes_are_copied_in_without_embedding(
+        self, tmp_path: Path
+    ) -> None:
         provider = _Switchable()
         vault = _vault(tmp_path, provider)
         try:
@@ -209,14 +211,17 @@ class TestUpgradingFromALegacySidecar:
             vault.index.build_index()
             assert vault.index.build_embeddings() == 0
             assert provider.calls == 0
-            # The token-less rows were adopted under their tokens (#1768) ...
-            assert None not in vault._vectors.tokens().values()  # type: ignore[union-attr]
+            # The upgrade's donor copied the token-less rows into a store of
+            # the note's own tokens ...
+            tokens = vault._vectors.tokens()  # type: ignore[union-attr]
+            assert set(tokens) == {r.metadata["path"] for r in rows}
         finally:
             vault.close()
-        # ... which is a change: the checkpoint moved the store to the new layout.
+        # ... published as the store's own layout, leaving the released sidecar
+        # for a downgrade (#1505).
         names = sorted(p.name for p in tmp_path.glob("index-db-embeddings*"))
-        assert "index-db-embeddings.json" in names
-        assert not legacy_matrix.exists()
+        assert "index-db-embeddings.v2.json" in names
+        assert legacy_matrix.exists()
 
 
 class TestPurges:

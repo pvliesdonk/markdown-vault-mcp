@@ -122,7 +122,7 @@ class TestBootEmbeddingConvergence:
         v1.close()
 
         # Every save rewrites the commit file, so its mtime shows a save.
-        commit = tmp_path / "vectors.json"
+        commit = tmp_path / "vectors.v2.json"
         mtime_before = commit.stat().st_mtime_ns
         calls = _track_embeds(provider)
         v2 = _boot(vault_dir, tmp_path, provider)
@@ -729,7 +729,7 @@ class TestPreambleConvergence:
 
         # Rewrite the sidecar to the pre-upgrade shape: strip the per-row
         # preamble keys and the index-level embed_text_format token.
-        json_path = tmp_path / "vectors.json"
+        json_path = tmp_path / "vectors.v2.json"
         payload = _json.loads(json_path.read_text(encoding="utf-8"))
         for row in payload["rows"]:
             row.pop("preamble", None)

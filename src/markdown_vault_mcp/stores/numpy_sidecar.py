@@ -3,11 +3,16 @@
 Reads are served from a resident snapshot (:mod:`._resident`): one float32
 matrix with a parallel metadata list, replaced whole by each write.
 
-On disk a store is ``{base}.json``, the commit point, and the matrix it
-names, ``{base}.m{seq}.npy``. A persist writes the matrix under a new name
+On disk a store is ``{base}.v2.json``, the commit point, and the matrix it
+names, ``{base}.v2.m{seq}.npy``. A persist writes the matrix under a new name
 and then atomically replaces the JSON, so an interrupted persist leaves the
-previous state whole. A sidecar written before #1767 (``{base}.npy`` beside
-a JSON that names no matrix) opens as it is; its rows carry no token.
+previous state whole. A store's files are its own: the sidecar a release
+wrote (``{base}.json`` beside ``{base}.npy``, its rows without tokens) or an
+edge build wrote (``{base}.json`` naming ``{base}.m{seq}.npy``) is read only by
+``NumpySidecarBackend(legacy_only=True)``, read-only, which is what an
+upgrade's donor uses; no code writes, renames or deletes those files, so a
+downgrade still finds them (#1505). Once ``{base}.v2.json`` exists, a writer's
+open logs them as unused.
 
 ``replace_document`` and ``remove_document`` publish in memory at once and
 become durable at :meth:`NumpySidecarStore.checkpoint` or ``close()``;
@@ -27,6 +32,7 @@ import json
 import logging
 import os
 import tempfile
+import weakref
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -38,6 +44,10 @@ from markdown_vault_mcp.exceptions import (
     StoreOpenError,
     StoreUnavailableError,
     StoreUnsupportedSchemaError,
+)
+from markdown_vault_mcp.stores._legacy import (
+    numbered_files,
+    report_unused_sidecar,
 )
 from markdown_vault_mcp.stores._resident import (
     NUMPY_AVAILABLE,
@@ -51,6 +61,11 @@ from markdown_vault_mcp.stores._resident import (
     validated_generation,
     with_document,
     without_document,
+)
+from markdown_vault_mcp.stores._writer_lock import (
+    WriterLock,
+    hold_writer_lock,
+    release_from_finalizer,
 )
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreResources
@@ -76,11 +91,36 @@ logger = logging.getLogger(__name__)
 FORMAT_VERSION = 2
 
 _BACKEND_NAME = "numpy"
-_COMMIT_SUFFIX = ".json"
+_COMMIT_SUFFIX = ".v2.json"
+_LEGACY_JSON_SUFFIX = ".json"
+_MEMORY = ":memory:"
+
+
+def commit_path(base: Path) -> Path:
+    """Return the store's commit file for *base*: ``{base}.v2.json``.
+
+    Names derive with ``Path.with_suffix``, so a base that carries an
+    extension (``emb.npy``) names ``emb.v2.json`` (#819).
+    """
+    return base.with_suffix(_COMMIT_SUFFIX)
+
+
+def committed_json(base: Path) -> Path | None:
+    """Return the store's committed ``{base}.v2.json``, or ``None`` before its first persist.
+
+    A released or edge-build ``{base}.json`` is not this store: an upgrade
+    reads it through a donor (``NumpySidecarBackend(legacy_only=True)``,
+    #1505).
+
+    Raises:
+        OSError: If a stat is refused.
+    """
+    path = commit_path(base)
+    return path if path_exists(path) else None
 
 
 def _matrix_path(base: Path, seq: int) -> Path:
-    return base.with_suffix(f".m{seq}.npy")
+    return base.with_suffix(f".v2.m{seq}.npy")
 
 
 def _write_atomic(target: Path, write: Callable[[IO[bytes]], object]) -> None:
@@ -105,20 +145,17 @@ def _commit_file(path: Path, data: bytes) -> None:
 
 
 def _numbered_matrices(base: Path) -> dict[int, Path]:
-    """Return the ``{base}.m{seq}.npy`` matrices beside *base*, by ``seq``."""
-    prefix, suffix = base.with_suffix(".m").name, ".npy"
-    found: dict[int, Path] = {}
-    for path in base.parent.glob(f"{prefix}*{suffix}"):
-        seq = path.name[len(prefix) : -len(suffix)]
-        if seq.isdigit():
-            found[int(seq)] = path
-    return found
+    """Return this store's ``{base}.v2.m{seq}.npy`` matrices beside *base*, by ``seq``."""
+    return numbered_files(base, ".v2.m")
 
 
 def _sweep(base: Path, keep: Path) -> None:
-    """Remove every matrix beside *base* except *keep*: superseded or orphaned."""
-    stale = [base.with_suffix(".npy"), *_numbered_matrices(base).values()]
-    for path in stale:
+    """Remove this store's matrices beside *base* except *keep*: superseded or orphaned.
+
+    Only ``{base}.v2.m{seq}.npy``: a released or edge-build sidecar is never
+    removed (#1505).
+    """
+    for path in _numbered_matrices(base).values():
         if path == keep:
             continue
         try:
@@ -152,6 +189,9 @@ def _payload(snap: Snapshot, matrix_name: str, seq: int) -> bytes:
     return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
+_OWN_IDENTITY = object()
+
+
 class NumpySidecarStore(ResidentStore):
     """A vector store held in memory, optionally persisted beside a base path.
 
@@ -166,11 +206,25 @@ class NumpySidecarStore(ResidentStore):
         read_only: bool,
         seq: int,
         matrix_path: Path | None,
+        json_path: Path | None = None,
+        recorded_identity: EmbeddingIdentity | object | None = _OWN_IDENTITY,
+        writer_lock: WriterLock | None = None,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
+        # This writer's share of {base}.lock, released at close (#1505), or
+        # when the store is collected unclosed: it can write nothing then.
+        self._writer_lock = writer_lock
+        if writer_lock is not None:
+            weakref.finalize(self, release_from_finalizer, writer_lock)
+        # What the opened files recorded; _OWN_IDENTITY once this store wrote
+        # them, or when nothing was read.
+        self._recorded = recorded_identity
         self._base = base
         self._seq = seq
         self._matrix_path = matrix_path
+        # The commit file the snapshot came from: ``{base}.v2.json``, or the
+        # released ``{base}.json`` a legacy_only reader opened (#1505).
+        self._json_path = json_path
         self._dirty = False
 
     # -- publishing ----------------------------------------------------------
@@ -234,6 +288,23 @@ class NumpySidecarStore(ResidentStore):
             len(new.rows),
         )
 
+    @property
+    def recorded_identity(self) -> EmbeddingIdentity | None:
+        """The identity the opened files recorded, or ``None`` when they recorded none.
+
+        ``None`` for a bare-list sidecar, which opens under whatever identity
+        it is asked for, and for one whose ``index_metadata`` names no
+        positive dimension; a released sidecar's missing variant and text
+        format read as ``""`` and ``v1``, as :func:`_check_identity` reads
+        them. A store that wrote its own files reports its :attr:`identity`;
+        so does one that read none (no files, or in memory), which a donor
+        refuses as empty instead. A donor never matches a ``None`` (#1505).
+        """
+        recorded = self._recorded
+        if isinstance(recorded, EmbeddingIdentity) or recorded is None:
+            return recorded
+        return self.identity
+
     def resources(self) -> StoreResources:
         """Return the search mode and measured sizes (#1377): always resident.
 
@@ -248,7 +319,9 @@ class NumpySidecarStore(ResidentStore):
             # name and stating it; then the files are measured once more.
             for _attempt in range(2):
                 matrix = self._matrix_path
-                stored = self._stored_bytes(self._base, matrix)
+                stored = self._stored_bytes(
+                    self._json_path or commit_path(self._base), matrix
+                )
                 if self._matrix_path == matrix:
                     break
         return StoreResources(
@@ -259,14 +332,18 @@ class NumpySidecarStore(ResidentStore):
         )
 
     @staticmethod
-    def _stored_bytes(base: Path, matrix: Path | None) -> int:
-        """Return the size of the commit file and *matrix*, a missing one 0.
+    def _stored_bytes(json_path: Path, matrix: Path | None) -> int:
+        """Return the size of *json_path* and *matrix*, a missing one 0.
+
+        *json_path* is the commit file this store's snapshot came from, so a
+        legacy_only reader measures the released sidecar it opened, not the
+        ``{base}.v2.json`` a writer commits beside it.
 
         Raises:
             OSError: If a stat is refused (#1625).
         """
         files = [
-            base.with_suffix(_COMMIT_SUFFIX),
+            json_path,
             *([matrix] if matrix is not None else []),
         ]
         return sum(file_bytes(p) for p in files)
@@ -288,8 +365,10 @@ class NumpySidecarStore(ResidentStore):
         _write_atomic(
             matrix_path, lambda fh: np.save(fh, np.ascontiguousarray(snap.matrix))
         )
-        _commit_file(self._base.with_suffix(_COMMIT_SUFFIX), data)
+        _commit_file(commit_path(self._base), data)
         self._seq, self._matrix_path = seq, matrix_path
+        self._json_path = commit_path(self._base)
+        self._recorded = _OWN_IDENTITY
         _sweep(self._base, matrix_path)
         logger.debug(
             "numpy_store_checkpointed path=%s rows=%d generation=%d",
@@ -324,6 +403,8 @@ class NumpySidecarStore(ResidentStore):
             self.checkpoint()
         finally:
             self._closed = True
+            if self._writer_lock is not None:
+                self._writer_lock.release()
 
 
 @dataclass(frozen=True)
@@ -565,10 +646,21 @@ def _load_committed(json_path: Path, base: Path, where: str) -> tuple[_Stored, A
 
 
 def _open_file(
-    base: Path, identity: EmbeddingIdentity, *, read_only: bool
+    base: Path,
+    identity: EmbeddingIdentity,
+    *,
+    read_only: bool,
+    legacy_only: bool,
+    writer_lock: WriterLock | None,
 ) -> NumpySidecarStore:
+    """Open the store's own ``{base}.v2.json``, or with *legacy_only* the sidecar a release left.
+
+    A writer never reads ``{base}.json`` in place: a released or edge-build
+    sidecar is read only read-only, through a donor (#1505).
+    """
     where = str(base)
-    json_path, legacy = base.with_suffix(_COMMIT_SUFFIX), base.with_suffix(".npy")
+    v2_json, legacy = commit_path(base), base.with_suffix(".npy")
+    released = base.with_suffix(_LEGACY_JSON_SUFFIX)
     try:
         if path_exists(base.parent) and not is_directory(base.parent):
             raise _outcome(
@@ -576,7 +668,9 @@ def _open_file(
                 f"Vector store at {where} cannot be opened: {base.parent} is not a directory.",
                 where,
             )
-        has_json, has_legacy = path_exists(json_path), path_exists(legacy)
+        json_path = released if legacy_only else v2_json
+        has_json = path_exists(json_path)
+        has_legacy = legacy_only and path_exists(legacy)
     except OSError as exc:
         raise _outcome(
             StoreUnavailableError,
@@ -587,7 +681,7 @@ def _open_file(
         if has_legacy:
             raise _outcome(
                 StoreCorruptError,
-                f"Vector store at {where} has {legacy.name} but no {json_path.name}.",
+                f"Vector store at {where} has {legacy.name} but no {released.name}.",
                 where,
             )
         return NumpySidecarStore(
@@ -596,9 +690,12 @@ def _open_file(
             read_only=read_only,
             seq=0,
             matrix_path=None,
+            writer_lock=writer_lock,
         )
     stored, matrix = _load_committed(json_path, base, where)
     _check_identity(stored, matrix, identity, where)
+    if not read_only:
+        report_unused_sidecar(base)
     snap = _snapshot_from(stored, matrix, identity, where)
     logger.info(
         "numpy_store_opened path=%s rows=%d generation=%d format_version=%d",
@@ -613,6 +710,30 @@ def _open_file(
         read_only=read_only,
         seq=stored.seq,
         matrix_path=stored.matrix_path,
+        json_path=json_path,
+        recorded_identity=_recorded_identity(stored, identity),
+        writer_lock=writer_lock,
+    )
+
+
+def _recorded_identity(
+    stored: _Stored, identity: EmbeddingIdentity
+) -> EmbeddingIdentity | None:
+    """Return the identity *stored*'s metadata recorded, or ``None`` if it recorded none.
+
+    Called after :func:`_check_identity`, which refuses metadata naming
+    another provider, model, variant or text format (missing ones read as
+    the released defaults), so only the dimension can still differ: a
+    request for dimension 0 does not know it yet.
+    """
+    if stored.meta is None or stored.dimension <= 0:
+        return None
+    return EmbeddingIdentity(
+        identity.provider,
+        identity.model,
+        identity.variant,
+        identity.text_format,
+        stored.dimension,
     )
 
 
@@ -621,6 +742,17 @@ class NumpySidecarBackend:
 
     family: StoreFamily = "vector"
     name = _BACKEND_NAME
+
+    def __init__(self, *, legacy_only: bool = False) -> None:
+        """Choose which files at a base path the stores this backend opens are.
+
+        Args:
+            legacy_only: Open the sidecar a release or an edge build left
+                (``{base}.json``) instead of the store's own
+                ``{base}.v2.json``, always read-only: what an upgrade's donor
+                reads (#1505).
+        """
+        self._legacy_only = legacy_only
 
     def open(
         self,
@@ -656,7 +788,7 @@ class NumpySidecarBackend:
             )
         if not isinstance(identity, EmbeddingIdentity):
             raise ValueError("A vector store opens against an EmbeddingIdentity.")
-        if location is None or str(location) == ":memory:":
+        if location is None or str(location) == _MEMORY:
             return NumpySidecarStore(
                 fresh_snapshot(identity),
                 base=None,
@@ -664,7 +796,39 @@ class NumpySidecarBackend:
                 seq=0,
                 matrix_path=None,
             )
-        return _open_file(Path(location), identity, read_only=not owns_files)
+        base, read_only = Path(location), self._legacy_only or not owns_files
+        lock = None if read_only else hold_writer_lock(base, backend=_BACKEND_NAME)
+        try:
+            return _open_file(
+                base,
+                identity,
+                read_only=read_only,
+                legacy_only=self._legacy_only,
+                writer_lock=lock,
+            )
+        except BaseException:
+            if lock is not None:
+                lock.release()
+            raise
+
+    def hold_writer(self, location: Path | str) -> WriterLock:
+        """Take a writer's share of *location*'s lock without opening a store.
+
+        For a caller that closes one store and opens another on the same
+        location, so the lock is not given up in between (#1505).
+
+        Args:
+            location: The store's base path; ``":memory:"`` locks nothing.
+
+        Returns:
+            The share, to release once the new store is open.
+
+        Raises:
+            StoreBusyError: If another process holds the lock.
+        """
+        if str(location) == _MEMORY:
+            return WriterLock(None)
+        return hold_writer_lock(Path(location), backend=_BACKEND_NAME)
 
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity
@@ -682,7 +846,7 @@ class NumpySidecarBackend:
                 "NumpySidecarBackend requires 'numpy'. "
                 "Install it with: pip install 'markdown-vault-mcp[embeddings]'"
             )
-        if location is None or str(location) == ":memory:":
+        if location is None or str(location) == _MEMORY:
             return NumpySidecarStore(
                 fresh_snapshot(identity),
                 base=None,
@@ -691,16 +855,22 @@ class NumpySidecarBackend:
                 matrix_path=None,
             )
         base = Path(location)
-        seq = _highest_seq(base) if is_directory(base.parent) else 0
-        # Not dirty: a rebuild that writes nothing (every provider call
-        # failed) must not commit an empty store over the previous one.
-        return NumpySidecarStore(
-            fresh_snapshot(identity),
-            base=base,
-            read_only=False,
-            seq=seq,
-            matrix_path=None,
-        )
+        lock = hold_writer_lock(base, backend=_BACKEND_NAME)
+        try:
+            seq = _highest_seq(base) if is_directory(base.parent) else 0
+            # Not dirty: a rebuild that writes nothing (every provider call
+            # failed) must not commit an empty store over the previous one.
+            return NumpySidecarStore(
+                fresh_snapshot(identity),
+                base=base,
+                read_only=False,
+                seq=seq,
+                matrix_path=None,
+                writer_lock=lock,
+            )
+        except BaseException:
+            lock.release()
+            raise
 
 
 register_backend("vector", _BACKEND_NAME, NumpySidecarBackend)
