@@ -127,7 +127,9 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
         config: The run's configuration.
 
     Returns:
-        The memory figures and each kind's warm p50 and p95, in seconds.
+        The memory figures, the index's and store's bytes in page cache
+        after the searches (``None`` without ``fincore``), and each kind's
+        warm p50 and p95, in seconds.
     """
     provider = synth.StandInProvider(config["dim"])
     vault = _vault(config, provider)
@@ -151,6 +153,9 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
                 ]
                 warm[kind] = probes.percentiles(samples)
         now = probes.read_memory(os.getpid())
+        cached = probes.resident_bytes(
+            _files(config, _INDEX_GLOB) + _files(config, _STORE_GLOB)
+        )
     finally:
         vault.close()
     return {
@@ -159,7 +164,10 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
             "adds_anon": after.peak_anon - before.peak_anon,
             "adds_resident": after.peak_resident - before.peak_resident,
             "process_anon": now.anon,
-            "file_backed": now.file,
+            # The index and store are read, not mapped, so this is mostly
+            # shared libraries; their page cache is the next figure.
+            "mapped_files": now.file,
+            "page_cache": cached,
         },
         "warm": warm,
     }

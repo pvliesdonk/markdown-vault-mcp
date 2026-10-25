@@ -172,7 +172,8 @@ def _memory_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
                 _name(config),
                 *adds,
                 _mib(memory.get("process_anon")),
-                _mib(memory.get("file_backed")),
+                _mib(memory.get("mapped_files")),
+                _mib(memory.get("page_cache")),
                 _MISSING if closed is None else ("yes" if closed else "no"),
             ]
         )
@@ -231,9 +232,8 @@ def _restart_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
                 _plain(restart.get("texts_embedded")),
                 _plain(recovery.get("texts_embedded")),
                 _plain(recovery.get("texts_beyond_allowed")),
-                _MISSING
-                if "moved_aside" not in recovery
-                else str(recovery["moved_aside"]),
+                f"{restart.get('moved_aside', _MISSING)} / "
+                f"{recovery.get('moved_aside', _MISSING)}",
             ]
         )
     return rows
@@ -268,7 +268,8 @@ def render_markdown(result: dict[str, Any]) -> str:
             "Adds (anonymous)",
             "Adds (resident)",
             "Process",
-            "File-backed",
+            "Mapped files",
+            "Index and store in page cache",
             "Store closed at baseline",
         ],
         _memory_rows(configs),
@@ -298,7 +299,7 @@ def render_markdown(result: dict[str, Any]) -> str:
             "Texts embedded",
             "Texts embedded after a kill",
             "Beyond the edit in progress",
-            "Store moved aside",
+            "Store moved aside (restart / after a kill)",
         ],
         _restart_rows(configs),
     )

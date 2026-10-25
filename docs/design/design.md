@@ -4754,8 +4754,11 @@ phase's leftovers.
 **Metrics.**
 
 - *Memory apart from page cache.* Process memory is `Pss_Anon + Pss_Shmem`
-  from `/proc/<pid>/smaps_rollup`; page-cache pages of the index and store
-  (`Pss_File`) are reported in their own column. *What semantic search adds*
+  from `/proc/<pid>/smaps_rollup`. Mapped files (`Pss_File`) are reported
+  apart; they are mostly shared libraries, since the index and store are
+  read, not mapped. The index's and store's own pages in page cache after
+  the warm searches come from `fincore` (absent without it) in a column of
+  their own. *What semantic search adds*
   is a peak minus a peak in one process: the vault answers 20 keyword
   searches with the vector store still closed (the table says whether it
   was, and marks the figures invalid when it was not), then warm searches of
@@ -4771,7 +4774,9 @@ phase's leftovers.
   privileges needed) and times its first search. util-linux `fincore`, when
   installed, confirms the files left page cache, per kind; otherwise the
   report says `unconfirmed`. SQLite's `-shm` file is mapped into the process,
-  so it is left out of the check. On tmpfs or ramfs the pages cannot leave memory, so the
+  so it is left out of the check. The cold process builds the index before
+  evicting, so SQLite's own in-process cache keeps the few pages that
+  warm-start check read. On tmpfs or ramfs the pages cannot leave memory, so the
   harness warns that cold latency is not cold there.
 - *Bytes per edit.* Single-note edits through the server's path: the
   writer facet's `write`, then waiting for the index writer to drain, which
@@ -4789,9 +4794,15 @@ phase's leftovers.
   SIGKILL once the given number have finished and the next note is written,
   while the index writer's work on it is still queued or running. A restart
   follows. The finished edits were embedded before the kill, so a clean
-  restart embeds at most the edit in progress's one rewritten section; the
-  report gives the texts embedded, the excess over that one, and whether a
-  corrupt store was moved aside.
+  restart embeds only the edit in progress's rewritten section; the
+  allowance is what one edit was measured to embed in the edits phase. The
+  report gives the texts embedded, the excess over the allowance, and
+  whether a corrupt store was moved aside on either restart. A kill after
+  another number of edits than asked, such as by the OOM killer, fails the
+  run.
+- *Partial results.* Each backend's figures are written to
+  `partial.json` in its work folder as each phase finishes, so a late
+  failure keeps the earlier hours of work.
 - *Bounds.* Each phase has a timeout (`--phase-timeout`) and each edit's
   wait for the index writer another (`--drain-timeout`), so a stuck writer
   fails the run instead of hanging it.

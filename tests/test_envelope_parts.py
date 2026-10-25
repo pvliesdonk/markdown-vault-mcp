@@ -260,7 +260,8 @@ def _result() -> dict[str, object]:
                     "adds_anon": 95 << 20,
                     "adds_resident": 99 << 20,
                     "process_anon": 300 << 20,
-                    "file_backed": 40 << 20,
+                    "mapped_files": 40 << 20,
+                    "page_cache": 120 << 20,
                 },
                 "latency": {
                     "warm": {"unfiltered": {"p50": 0.01, "p95": 0.02}},
@@ -301,6 +302,18 @@ class TestTheReport:
         text = report.render_markdown(result)
         assert "invalid: store open" in text
         assert "95.0 MiB" not in text
+
+    def test_page_cache_and_mapped_files_are_told_apart(self) -> None:
+        text = report.render_markdown(_result())
+        assert "| 40.0 MiB | 120.0 MiB |" in text
+        assert "Mapped files" in text and "Index and store in page cache" in text
+
+    def test_both_restarts_show_whether_a_store_was_moved_aside(self) -> None:
+        result = _result()
+        config = result["configs"][0]  # type: ignore[index]
+        config["restart"]["moved_aside"] = True
+        config["recovery"] = {"moved_aside": False}
+        assert "| True / False |" in report.render_markdown(result)
 
     def test_each_cold_search_shows_its_eviction(self) -> None:
         result = _result()

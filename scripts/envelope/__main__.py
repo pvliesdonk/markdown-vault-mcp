@@ -37,8 +37,6 @@ BACKENDS = {"numpy": "resident", "sqlite": "streamed"}
 """Each backend measured, with the search mode it runs in."""
 
 _SENTINEL = ".envelope-work"
-_TEXTS_PER_EDIT = 1
-"""Texts an edit leaves to embed: it rewrites one section, one chunk."""
 _CHECKPOINT = "edits-finished"
 
 
@@ -167,15 +165,23 @@ def _spawn(
     if done.returncode:
         tail = "\n".join(done.stderr.splitlines()[-20:])
         raise SystemExit(f"phase {phase} failed ({done.returncode}):\n{tail}")
-    figures: dict[str, Any] = json.loads(done.stdout.splitlines()[-1])
+    lines = done.stdout.splitlines()
+    if not lines:
+        raise SystemExit(f"phase {phase} exited cleanly but printed no figures")
+    figures: dict[str, Any] = json.loads(lines[-1])
     return figures, seconds
 
 
-def _recovery(config: dict[str, Any]) -> dict[str, Any]:
+def _recovery(config: dict[str, Any], *, texts_per_edit: int) -> dict[str, Any]:
     """Kill an edit run once ``kill_after`` edits finished, then restart.
 
     The finished edits were embedded before the kill, so a clean restart
-    embeds only what the edit in progress left: one rewritten section.
+    embeds only what the edit in progress left: what one edit was measured
+    to embed, *texts_per_edit*.
+
+    Raises:
+        SystemExit: If the run died after another number of edits, such as
+            from the OOM killer, so the kill was not the harness's.
     """
     kill_after = config["kill_after"]
     run = {
@@ -188,12 +194,17 @@ def _recovery(config: dict[str, Any]) -> dict[str, Any]:
     checkpoint.unlink(missing_ok=True)  # the plain edit run left its count
     _spawn("edits", run, expect_kill=True)
     finished = int(checkpoint.read_text()) if checkpoint.exists() else 0
+    if finished != kill_after:
+        raise SystemExit(
+            f"the edit run was killed after {finished} edits, not {kill_after}: "
+            "a kill the harness did not make (out of memory?)"
+        )
     after, wall = _spawn("restart", config)
     return {
         "finished_edits": finished,
         "texts_embedded": after["texts_embedded"],
-        "texts_allowed": _TEXTS_PER_EDIT,
-        "texts_beyond_allowed": max(0, after["texts_embedded"] - _TEXTS_PER_EDIT),
+        "texts_allowed": texts_per_edit,
+        "texts_beyond_allowed": max(0, after["texts_embedded"] - texts_per_edit),
         "moved_aside": after["moved_aside"],
         "seconds": after["seconds"],
         "wall_seconds": wall,
@@ -208,27 +219,33 @@ def measure(backend: str, config: dict[str, Any]) -> dict[str, Any]:
         config: The run's settings and its work folder.
 
     Returns:
-        The backend's figures.
+        The backend's figures, also kept in ``partial.json`` in the backend's
+        work folder as each phase finishes.
     """
-    built, _ = _spawn("build", config)
+    partial = Path(config["work"]) / "partial.json"
+    figures: dict[str, Any] = {"backend": backend, "search": config["search"]}
+
+    def keep(key: str, value: Any) -> None:
+        # A later phase can fail after hours of work; what is done stays.
+        figures[key] = value
+        partial.write_text(json.dumps(figures, indent=2) + "\n")
+
+    keep("build", _spawn("build", config)[0])
     memory, _ = _spawn("memory", config)
+    keep("memory", memory["memory"])
     cold, eviction = {}, {}
     for kind in KINDS:
-        figures, _ = _spawn("cold", {**config, "kind": kind})
-        cold[kind] = figures["seconds"]
-        eviction[kind] = figures["eviction"]
+        timed, _ = _spawn("cold", {**config, "kind": kind})
+        cold[kind] = timed["seconds"]
+        eviction[kind] = timed["eviction"]
+    keep("latency", {"warm": memory["warm"], "cold": cold, "eviction": eviction})
     restarted, wall = _spawn("restart", config)
+    keep("restart", {**restarted, "wall_seconds": wall})
     edits, _ = _spawn("edits", config)
-    return {
-        "backend": backend,
-        "search": config["search"],
-        "build": built,
-        "memory": memory["memory"],
-        "latency": {"warm": memory["warm"], "cold": cold, "eviction": eviction},
-        "restart": {**restarted, "wall_seconds": wall},
-        "edits": edits,
-        "recovery": _recovery(config),
-    }
+    keep("edits", edits)
+    texts_per_edit = int(edits["texts_embedded"]["max"])
+    keep("recovery", _recovery(config, texts_per_edit=texts_per_edit))
+    return figures
 
 
 def main(argv: list[str] | None = None) -> int:

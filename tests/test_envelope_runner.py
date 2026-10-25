@@ -7,15 +7,14 @@ width and the counts are small enough to keep this a smoke test.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
 from scripts.envelope import __main__ as cli
 from scripts.envelope import synth, worker
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="reads /proc"
@@ -61,8 +60,13 @@ def test_a_run_measures_every_phase(
 
     memory = config["memory"]
     assert memory["store_closed_at_baseline"] is True
-    for key in ("adds_anon", "adds_resident", "process_anon", "file_backed"):
+    for key in ("adds_anon", "adds_resident", "process_anon", "mapped_files"):
         assert isinstance(memory[key], int)
+    assert memory["page_cache"] is None or memory["page_cache"] > 0
+    partial = json.loads(
+        (tmp_path / "out" / "work" / backend / "partial.json").read_text()
+    )
+    assert partial["recovery"] == config["recovery"]
 
     latency = config["latency"]
     assert set(latency["warm"]) == _KINDS
@@ -81,7 +85,7 @@ def test_a_run_measures_every_phase(
     assert 0 < restart["seconds"] < restart["wall_seconds"]
     recovery = config["recovery"]
     assert recovery["finished_edits"] == kill_after  # never a stale count
-    assert recovery["texts_embedded"] <= recovery["texts_allowed"] == 1
+    assert recovery["texts_embedded"] == recovery["texts_allowed"] == 1
     assert recovery["texts_beyond_allowed"] == 0
     assert recovery["moved_aside"] is False
 
@@ -171,3 +175,46 @@ def test_counts_that_cannot_be_measured_are_refused(
 def test_an_out_folder_inside_the_repository_is_refused() -> None:
     with pytest.raises(SystemExit, match="inside the repository"):
         cli.main(["--notes", "3", "--out", str(cli.REPO / "envelope-out")])
+
+
+def _fake_spawn(finished: int) -> Any:
+    def spawn(
+        phase: str, config: dict[str, Any], *, expect_kill: bool = False
+    ) -> tuple[dict[str, Any], float]:
+        del phase
+        if expect_kill:
+            (Path(config["work"]) / "edits-finished").write_text(str(finished))
+            return {}, 1.0
+        return {"seconds": 0.5, "texts_embedded": 1, "moved_aside": False}, 1.0
+
+    return spawn
+
+
+def test_a_kill_the_harness_did_not_make_fails_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_spawn", _fake_spawn(finished=3))
+    config = {**_config(tmp_path), "kill_after": 5, "edits": 10}
+    with pytest.raises(SystemExit, match="killed after 3 edits, not 5"):
+        cli._recovery(config, texts_per_edit=1)
+
+
+def test_recovery_allows_what_an_edit_was_measured_to_embed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_spawn", _fake_spawn(finished=5))
+    config = {**_config(tmp_path), "kill_after": 5, "edits": 10}
+    recovery = cli._recovery(config, texts_per_edit=2)
+    assert recovery["texts_allowed"] == 2
+    assert recovery["texts_beyond_allowed"] == 0
+
+
+def test_a_phase_that_prints_nothing_fails_clearly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def silent(argv: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(cli.subprocess, "run", silent)
+    with pytest.raises(SystemExit, match="printed no figures"):
+        cli._spawn("build", _config(tmp_path))
