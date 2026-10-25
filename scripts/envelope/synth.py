@@ -207,7 +207,10 @@ def split_note(text: str) -> tuple[dict[str, object], str]:
         The frontmatter as a dict and the markdown body.
     """
     _, header, body = text.split("---\n", 2)
-    fields = dict(line.split(": ", 1) for line in header.splitlines())
+    fields: dict[str, str] = {}
+    for line in header.splitlines():
+        key, value = line.split(": ", 1)
+        fields[key] = value
     frontmatter: dict[str, object] = {
         "tags": fields["tags"].strip("[]").split(", "),
         "status": fields["status"],

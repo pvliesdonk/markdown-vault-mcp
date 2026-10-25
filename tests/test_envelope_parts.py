@@ -279,7 +279,8 @@ class TestTheReport:
         text = report.render_markdown(_result())
         assert "numpy (resident)" in text
         assert "postgres (streamed)" in text
-        assert "95.0 MiB" in text and "99.0 MiB" in text
+        assert "95.0 MiB" in text
+        assert "99.0 MiB" in text
         assert "22,764" in text
 
     def test_a_dsn_never_reaches_the_table_or_the_file(self, tmp_path: Path) -> None:
