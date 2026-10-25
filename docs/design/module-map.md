@@ -55,7 +55,7 @@ src/markdown_vault_mcp/
     _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, numbered_files, report_unused_sidecar (#1505)
     _writer_lock.py    -- one writer process per built-in store: the flock on {base}.lock, shared and counted within a process, a no-op where no lock can be taken; StoreBusyError otherwise (#1505)
     _quarantine.py     -- move_aside: a corrupt built-in store's files renamed to .corrupt-<UTC time> under one suffix, undone on a refused rename (StoreUnavailableError) (#1505)
-    numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
+    numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as `{base}.v2.json` naming a per-persist `{base}.v2.m<N>.npy`; a release's or edge build's `{base}.json` is read only through `legacy_only=True`, read-only, as an upgrade or import source (#1505)
     postgres_vectors.py -- PostgresVectorBackend/PostgresVectorStore: a vault's vectors in a PostgreSQL schema; open sorts every failure into the five outcomes, reads are REPEATABLE READ from the live meta row (#1504)
     registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)
     sqlite_keyword.py  -- SqliteKeywordBackend: opens FTSIndex, classifies SQLite failures as unavailable or corrupt (#1766)
