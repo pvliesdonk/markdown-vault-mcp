@@ -4521,7 +4521,8 @@ sidecar as 5.1 wrote it, and the next start retries (rollback before
 activation). The cost is paid once: the donor and the new store are both
 resident during the build, about twice the vectors in memory, and a reader
 process that opens before the writer's first start on the new version sees
-an empty store until the upgrade publishes (child 10 documents both).
+an empty store until the upgrade publishes (both documented in
+`docs/use/embedding-state.md`).
 After activation, 5.1 reads its untouched, now stale sidecar and
 re-embeds only the notes changed since (downgrade after activation: the
 expected outcome, not a guarantee). Each start that finds the configured
@@ -4696,7 +4697,8 @@ another one, and is the explicit switch of choice C.
   with) runs `wal_checkpoint(TRUNCATE)` first, so a stopped server's
   `index.db` is complete by itself. SQLite folds the WAL on the last close
   only, and a reader process still holding the file would otherwise leave
-  commits in `index.db-wal` (child 10). The checkpoint runs with
+  commits in `index.db-wal` (child 10; the backup steps in
+  `docs/use/embedding-state.md` rely on it). The checkpoint runs with
   `busy_timeout = 0` and never fails the close: an error logs WARNING
   `fts_index_checkpoint_failed path=%s err=%s`, and frames a reader on an
   older snapshot still needs stay in the WAL, logged WARNING
