@@ -172,7 +172,7 @@ class TestTheProcReaders:
         with probes.PeakSampler(interval_s=0.002) as sampler:
             block = bytearray(64 << 20)
             block[::4096] = b"x" * len(block[::4096])
-            sampler.wait_for_sample()
+            assert sampler.wait_for_sample()
             del block
         assert sampler.peak_anon >= 60 << 20
         assert sampler.peak_resident >= sampler.peak_anon

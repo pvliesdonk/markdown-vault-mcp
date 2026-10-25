@@ -155,10 +155,17 @@ class PeakSampler:
         self.peak_resident = max(self.peak_resident, status.get("VmRSS", 0))
         self._sampled.set()
 
-    def wait_for_sample(self) -> None:
-        """Block until the thread has taken a sample after this call."""
+    def wait_for_sample(self, timeout_s: float = 5.0) -> bool:
+        """Block until the thread has taken a sample after this call.
+
+        Args:
+            timeout_s: The longest to wait.
+
+        Returns:
+            Whether a sample was taken in time.
+        """
         self._sampled.clear()
-        self._sampled.wait()
+        return self._sampled.wait(timeout_s)
 
     def _run(self) -> None:
         while not self._stop.is_set():
