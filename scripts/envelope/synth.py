@@ -58,20 +58,29 @@ class StandInProvider(EmbeddingProvider):
     distribution and normalized, in float32 like the deployed vectors.
 
     Attributes:
-        texts: Every text embedded so far, documents and queries alike.
+        count: The texts embedded so far, documents and queries alike.
+        calls: The embedding calls made so far.
+        texts: The texts themselves, kept only when asked for, since holding
+            them grows the measured process.
     """
 
-    def __init__(self, dim: int = DEFAULT_DIMENSION) -> None:
+    def __init__(
+        self, dim: int = DEFAULT_DIMENSION, *, keep_texts: bool = False
+    ) -> None:
         """Make vectors *dim* wide.
 
         Args:
             dim: The vector width.
+            keep_texts: Whether to keep each text in :attr:`texts`.
         """
         self._dim = dim
+        self._keep_texts = keep_texts
+        self.count = 0
+        self.calls = 0
         self.texts: list[str] = []
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        """Return each text's fixed unit vector, and record the texts.
+        """Return each text's fixed unit vector, and count the texts.
 
         Args:
             texts: The texts to embed.
@@ -79,7 +88,10 @@ class StandInProvider(EmbeddingProvider):
         Returns:
             One vector per text.
         """
-        self.texts.extend(texts)
+        self.count += len(texts)
+        self.calls += 1
+        if self._keep_texts:
+            self.texts.extend(texts)
         return [self._vector(text) for text in texts]
 
     def _vector(self, text: str) -> list[float]:
@@ -88,7 +100,8 @@ class StandInProvider(EmbeddingProvider):
             self._dim, dtype=np.float32
         )
         vector /= np.linalg.norm(vector)
-        return [float(v) for v in vector]
+        values: list[float] = vector.tolist()
+        return values
 
     @property
     def dimension(self) -> int:

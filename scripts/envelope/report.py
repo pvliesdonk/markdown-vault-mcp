@@ -10,21 +10,42 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 import sqlite3
 import subprocess
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any
 
 _MISSING = "—"
+_HIDDEN = "<hidden>"
+_SECRET_KEY = re.compile(r"dsn|conninfo|password|database_url", re.IGNORECASE)
+_SECRET_TEXT = (
+    re.compile(r"postgres(?:ql)?://\S+", re.IGNORECASE),
+    re.compile(r"password\s*=\s*\S+", re.IGNORECASE),
+)
 
 
 def _scrub(value: Any) -> Any:
-    """Return *value* without any mapping key that names a DSN."""
+    """Return *value* without connection strings.
+
+    Mapping keys that name one (a DSN, a conninfo, a password, a database
+    URL) are dropped and the rest made strings, as JSON needs, and URIs and
+    ``password=`` pairs inside strings are replaced, through dicts, lists,
+    tuples and sets.
+    """
     if isinstance(value, dict):
-        return {k: _scrub(v) for k, v in value.items() if "dsn" not in k.lower()}
-    if isinstance(value, list):
+        return {
+            str(k): _scrub(v)
+            for k, v in value.items()
+            if not _SECRET_KEY.search(str(k))
+        }
+    if isinstance(value, list | tuple | set):
         return [_scrub(v) for v in value]
+    if isinstance(value, str):
+        for pattern in _SECRET_TEXT:
+            value = pattern.sub(_HIDDEN, value)
     return value
 
 
@@ -57,7 +78,7 @@ def _version(package: str) -> str:
         return "not installed"
 
 
-def environment(out_dir: Path) -> dict[str, str]:
+def environment(out_dir: Path) -> dict[str, Any]:
     """Describe what the run's figures depend on.
 
     Args:
@@ -65,12 +86,15 @@ def environment(out_dir: Path) -> dict[str, str]:
             is recorded.
 
     Returns:
-        The git commit, Python, SQLite, numpy and psycopg versions, the CPU,
-        memory, kernel and the filesystem type.
+        The git commit and whether tracked files differ from it, the Python,
+        SQLite, numpy and psycopg versions, the CPU, memory, kernel and the
+        filesystem type.
     """
     repo = Path(__file__).resolve().parent
+    status = _run("git", "status", "--porcelain", "--untracked-files=no", cwd=repo)
     return {
         "git_sha": _run("git", "rev-parse", "--short", "HEAD", cwd=repo) or "unknown",
+        "dirty": bool(status),
         "python": platform.python_version(),
         "sqlite": sqlite3.sqlite_version,
         "numpy": _version("numpy"),
@@ -83,7 +107,9 @@ def environment(out_dir: Path) -> dict[str, str]:
 
 
 def write_json(result: dict[str, Any], out_dir: Path) -> Path:
-    """Write *result* to ``<git sha>-<size>.json`` in *out_dir*.
+    """Write *result* to ``<git sha>[-dirty]-<size>-<UTC time>.json`` in *out_dir*.
+
+    The time keeps a rerun from overwriting an earlier result.
 
     Args:
         result: The run's result.
@@ -94,7 +120,10 @@ def write_json(result: dict[str, Any], out_dir: Path) -> Path:
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     clean = _scrub(result)
-    path = out_dir / f"{clean['environment']['git_sha']}-{clean['size']}.json"
+    env = clean["environment"]
+    commit = env["git_sha"] + ("-dirty" if env.get("dirty") else "")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    path = out_dir / f"{commit}-{clean['size']}-{stamp}.json"
     path.write_text(json.dumps(clean, indent=2, sort_keys=True) + "\n")
     return path
 

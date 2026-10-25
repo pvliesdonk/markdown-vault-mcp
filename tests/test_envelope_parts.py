@@ -5,14 +5,11 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import pytest
 from scripts.envelope import probes, report, synth
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.vault import Vault
@@ -34,8 +31,15 @@ class TestTheStandInProvider:
         a, b = synth.StandInProvider(dim=16).embed(["tides", "boats"])
         assert a != b
 
-    def test_it_counts_every_text_it_embeds(self) -> None:
+    def test_it_counts_texts_and_calls_without_keeping_them(self) -> None:
         provider = synth.StandInProvider(dim=8)
+        provider.embed(["a", "b"])
+        provider.embed_query(["q"])
+        assert (provider.count, provider.calls) == (3, 2)
+        assert provider.texts == []
+
+    def test_it_keeps_the_texts_when_asked(self) -> None:
+        provider = synth.StandInProvider(dim=8, keep_texts=True)
         provider.embed(["a", "b"])
         provider.embed_query(["q"])
         assert provider.texts == ["a", "b", "q"]
@@ -81,9 +85,9 @@ class TestTheSyntheticVault:
             vault.close()
         assert stats.documents_indexed == 12
         assert stats.chunks_indexed == 12 * synth.CHUNKS_PER_NOTE
-        assert synth.notes_for_chunks(22_764) * synth.CHUNKS_PER_NOTE == (
-            pytest.approx(22_764, abs=synth.CHUNKS_PER_NOTE)
-        )
+        assert synth.notes_for_chunks(22_764) == 3252
+        assert synth.notes_for_chunks(100) == 14  # 98 chunks, the nearest
+        assert synth.notes_for_chunks(1) == 1
         assert spec.chunks_per_note == synth.CHUNKS_PER_NOTE
 
     def test_an_edit_rewrites_one_section_of_one_note(self, tmp_path: Path) -> None:
@@ -101,6 +105,8 @@ class TestTheSyntheticVault:
             if len(set(pair)) > 1
         ]
         assert len(changed) == 1
+        (index,) = changed
+        assert new_sections[index].startswith(f"Section {index}\n")
 
     def test_the_queries_use_the_vault_vocabulary(self) -> None:
         words = set(synth.VOCABULARY)
@@ -168,6 +174,17 @@ class TestTheProcReaders:
         assert probes.read_io(os.getpid())["wchar"] >= 0
 
     @linux_only
+    def test_waiting_for_a_sample_takes_one_after_the_call(self) -> None:
+        sampler = probes.PeakSampler(interval_s=3600)
+        with sampler:
+            block = bytearray(64 << 20)
+            block[::4096] = b"x" * len(block[::4096])
+            assert sampler.wait_for_sample()
+            seen = sampler.peak_anon
+            del block
+        assert seen >= 60 << 20
+
+    @linux_only
     def test_the_sampler_sees_a_peak_that_has_gone(self) -> None:
         with probes.PeakSampler(interval_s=0.002) as sampler:
             block = bytearray(64 << 20)
@@ -184,8 +201,25 @@ class TestTheProcReaders:
         present = tmp_path / "store.bin"
         present.write_bytes(b"\0" * (1 << 20))
         assert probes.evict([present, tmp_path / "absent.bin"]) == [present]
-        resident = probes.resident_bytes([present])
-        assert resident is None or 0 <= resident <= 1 << 20
+
+    @linux_only
+    def test_eviction_drops_a_disk_file_from_page_cache(self) -> None:
+        # tmp_path may be tmpfs, whose pages cannot leave memory; the repo's
+        # gitignored scratch folder is on whatever disk the checkout is.
+        folder = Path(__file__).resolve().parents[1] / "docs" / "superpowers"
+        folder.mkdir(parents=True, exist_ok=True)
+        if report.environment(folder)["filesystem"] in {"tmpfs", "ramfs"}:
+            pytest.skip("the checkout is on a memory-backed filesystem")
+        present = folder / f"evict-{os.getpid()}.bin"
+        try:
+            present.write_bytes(b"x" * (1 << 20))
+            probes.evict([present])
+            resident = probes.resident_bytes([present])
+        finally:
+            present.unlink()
+        if resident is None:
+            pytest.skip("util-linux fincore is not installed")
+        assert resident == 0
 
 
 class TestPercentiles:
@@ -255,8 +289,34 @@ class TestTheReport:
         assert "hunter2" not in text
         assert "hunter2" not in path.read_text()
         assert "(hidden DSN)" in text
-        assert path.name == "abc1234-deployed.json"
+        assert path.name.startswith("abc1234-deployed-")
         assert json.loads(path.read_text())["configs"][1].get("dsn") is None
+
+    def test_a_dsn_inside_a_value_or_a_tuple_is_hidden(self, tmp_path: Path) -> None:
+        result = _result()
+        result["configs"].append(  # type: ignore[attr-defined]
+            {
+                "backend": "postgres",
+                "search": "streamed",
+                "error": "connection to postgresql://u:hunter2@db/x failed",
+                "detail": "host=db port=5432 user=u password=hunter2 dbname=x",
+                "pairs": ({"conninfo": "hunter2"},),
+                7: "an int key",
+            }
+        )
+        text = report.render_markdown(result)
+        written = report.write_json(result, tmp_path).read_text()
+        for output in (text, written):
+            assert "hunter2" not in output
+        assert "<hidden>" in written
+
+    def test_a_dirty_tree_and_a_rerun_get_their_own_file(self, tmp_path: Path) -> None:
+        result = _result()
+        result["environment"]["dirty"] = True  # type: ignore[index]
+        first = report.write_json(result, tmp_path)
+        second = report.write_json(result, tmp_path)
+        assert first != second
+        assert first.name.startswith("abc1234-dirty-deployed-")
 
     def test_the_environment_names_what_the_figures_depend_on(
         self, tmp_path: Path
@@ -265,3 +325,4 @@ class TestTheReport:
         for key in ("git_sha", "python", "sqlite", "numpy", "kernel", "cpu"):
             assert env[key]
         assert "filesystem" in env
+        assert isinstance(env["dirty"], bool)

@@ -142,7 +142,7 @@ class PeakSampler:
         """
         self._interval_s = interval_s
         self._stop = threading.Event()
-        self._sampled = threading.Event()
+        self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self.peak_anon = 0
         self.peak_resident = 0
@@ -151,21 +151,22 @@ class PeakSampler:
         """Take one sample now."""
         status = parse_status(Path("/proc/self/status").read_text())
         anon = status.get("RssAnon", 0) + status.get("RssShmem", 0)
-        self.peak_anon = max(self.peak_anon, anon)
-        self.peak_resident = max(self.peak_resident, status.get("VmRSS", 0))
-        self._sampled.set()
+        with self._lock:
+            self.peak_anon = max(self.peak_anon, anon)
+            self.peak_resident = max(self.peak_resident, status.get("VmRSS", 0))
 
-    def wait_for_sample(self, timeout_s: float = 5.0) -> bool:
-        """Block until the thread has taken a sample after this call.
+    def wait_for_sample(self) -> bool:
+        """Take a sample now, on the calling thread.
 
-        Args:
-            timeout_s: The longest to wait.
+        A sample the background thread read before this call could land
+        after it, so waiting on the thread could return stale figures; a
+        sample taken here cannot.
 
         Returns:
-            Whether a sample was taken in time.
+            Always ``True``, so callers can assert it.
         """
-        self._sampled.clear()
-        return self._sampled.wait(timeout_s)
+        self.sample()
+        return True
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -193,9 +194,10 @@ class PeakSampler:
 def evict(paths: Iterable[Path]) -> list[Path]:
     """Drop the clean page-cache pages of each existing file.
 
-    ``posix_fadvise(POSIX_FADV_DONTNEED)`` needs no privileges but drops only
-    clean pages, so a caller syncs the files first; whether they left the
-    cache is what :func:`resident_bytes` checks.
+    Each file is synced, then advised with
+    ``posix_fadvise(POSIX_FADV_DONTNEED)``, which needs no privileges but
+    drops only clean, unmapped pages, and none at all on tmpfs; whether they
+    left the cache is what :func:`resident_bytes` checks.
 
     Args:
         paths: The files; missing ones are skipped.
