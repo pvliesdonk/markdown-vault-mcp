@@ -121,6 +121,6 @@ These embed only part of the vault:
 | `embeddings_donor_refused source=… reason=…` | The files or store offered cannot be reused: `identity_unknown` (no model recorded), `identity_differs` (another model), or a store that is empty, damaged, out of reach or unsupported. |
 | `embeddings_legacy_sidecar_unused path=… bytes=…` | The 5.x files are still there and no longer read. `path` is their shared base, such as `/data/state/index-db-embeddings`, and `bytes` their total size. |
 | `embeddings_import_completed …` | `embeddings import` finished; `embeddings_import_refused reason=…` says why it stopped instead. |
-| `vector_store_moved_aside location=… reason=corrupt paths=…` | A damaged `numpy` or `sqlite` store was renamed with a `.corrupt-<time>` suffix and is being built again. |
+| `vector_store_moved_aside location=… reason=… paths=…` | A damaged `numpy` or `sqlite` store was renamed with a `.corrupt-<time>` suffix and is being built again. `location` is the store's base; `reason` is `corrupt`, or `unusable` for a file found in the store's place that is not a usable store. |
 | `vault_root_empty_removals_refused indexed=…` | The vault folder looked empty, so nothing was removed. |
 | `fts_index_checkpoint_incomplete path=… frames=… checkpointed=…` | At shutdown another process still needed part of `index.db-wal`; copy the `-wal` file with `index.db`. |

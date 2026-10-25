@@ -4026,7 +4026,7 @@ reader never sees a matrix and a row list that disagree. On disk
 `{base}.v2.m<N>.npy`, written under a new name per persist; the sweep
 removes only this store's own `.v2.m*.npy` matrices. A corrupt store's
 `.v2.json` and every `.v2.m*.npy` are renamed aside by its `quarantine`
-before a rebuild (§ Recovery, below); in this backend `replace_document` publishes in memory and
+before a rebuild (§ Embedding transitions and recovery, below); in this backend `replace_document` publishes in memory and
 becomes durable at `checkpoint()`, while `publish_generation` is durable
 before it returns.
 One process writes a base path at a time: two writers would pick the same
@@ -4089,7 +4089,7 @@ logged like any failed write. A writable open holds the `{base}.lock`
 writer lock above but takes no SQLite write lock on an existing store and changes nothing in a database that is not a vector
 store before refusing it. A store that fails its open as corrupt has its
 `.sqlite3`, `-wal` and `-shm` renamed aside by its `quarantine` before a
-rebuild (§ Recovery, below). `open_fresh` reads and checks nothing: before its
+rebuild (§ Embedding transitions and recovery, below). `open_fresh` reads and checks nothing: before its
 first write it moves a file that is not a vector store, or whose pages
 `PRAGMA quick_check` finds damaged, aside the same way (`move_aside`, the
 `.sqlite3`, `-wal` and `-shm` under one `.corrupt-<time>` suffix, a refused
@@ -4659,11 +4659,16 @@ another one, and is the explicit switch of choice C.
   tell that deletion from an unmounted volume (#1791).
 - An owned corrupt numpy or SQLite store is renamed with the suffix
   `.corrupt-<YYYYMMDDTHHMMSSZ>`, every file including `-wal` and `-shm`,
-  logged WARNING `vector_store_moved_aside location=%s reason=corrupt
-  paths=%s`, before its rebuild. `VectorStoreSlot` does it, the
-  one place both rebuild routes meet a corrupt store: the automatic rebuild
-  of a store that will not open (`get` with a rebuild) and a full build's
-  `rebuild_target` (`build_embeddings(force=True)`, an import). Each
+  logged WARNING `vector_store_moved_aside location=%s reason=%s
+  paths=%s` (`reason=corrupt`), before its rebuild. `VectorStoreSlot` does
+  it, the one place both rebuild routes meet a store that fails its open as
+  corrupt: the automatic rebuild of a store that will not open (`get` with a
+  rebuild) and a full build's `rebuild_target` (`build_embeddings(force=True)`,
+  an import). As a fallback, the SQLite store's first write after
+  `open_fresh` moves aside the same way (`reason=unusable`) a file that is
+  not a vector store or whose pages are damaged, damage the open did not
+  see: a damaged store whose identity still reads is refused as another
+  model and reaches `open_fresh` through `rebuild_target`. Each
   backend's `quarantine` (`stores/_quarantine.py:move_aside`) holds the
   writer lock and lists the files under it; every file of one store takes
   the same suffix, with `-2`, `-3` and so on when any name is taken, so
