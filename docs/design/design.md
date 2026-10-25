@@ -4521,7 +4521,8 @@ sidecar as 5.1 wrote it, and the next start retries (rollback before
 activation). The cost is paid once: the donor and the new store are both
 resident during the build, about twice the vectors in memory, and a reader
 process that opens before the writer's first start on the new version sees
-an empty store until the upgrade publishes (both documented in `docs/use/embedding-state.md`).
+an empty store until the upgrade publishes (both documented in
+`docs/use/embedding-state.md`).
 After activation, 5.1 reads its untouched, now stale sidecar and
 re-embeds only the notes changed since (downgrade after activation: the
 expected outcome, not a guarantee). Each start that finds the configured

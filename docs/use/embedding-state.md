@@ -19,7 +19,7 @@ The files sit beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (here `index.db`), or at `M
 | `index-db-embeddings.v2.json` and the `index-db-embeddings.v2.m<N>.npy` it names | the `numpy` store, the default | every note embedded again |
 | `index-db-embeddings.sqlite3` (and its `-wal`, `-shm` while the server runs) | the `sqlite` store | every note embedded again |
 | the schema named by `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA` | the `postgres` store | every note embedded again |
-| `index-db-embeddings.lock` | the server, while it writes the `numpy` or `sqlite` store | nothing; safe to leave or delete while no server runs |
+| `index-db-embeddings.lock` | the server, or `index`, `reindex` and `embeddings import`, while one of them writes the `numpy` or `sqlite` store | nothing; safe to leave or delete while no server runs |
 | `index-db-embeddings.json` and `.npy` | a 5.0 or 5.1 server | nothing once the upgrade below has run; going back to 5.1 then embeds everything again |
 | `*.corrupt-<time>` | the server, when it set a damaged store aside | nothing; they are yours to inspect or delete |
 
@@ -29,7 +29,7 @@ A 5.0 or 5.1 server kept its vectors in `index-db-embeddings.json` and `.npy`. O
 
 What the upgrade costs, once:
 
-- **Memory:** the old files and the new store are both held in memory while it runs, about twice the vectors.
+- **Memory:** about twice the vectors while it runs, since the old files sit in memory beside the new vectors being built.
 - **Disk:** the vectors exist twice until you delete the old files, each copy about `4 × chunks × dimensions` bytes. A vault of 20,000 chunks at 1,024 dimensions needs about 82 MB for each.
 - **Search by meaning before the server's first start:** `markdown-vault-mcp search` run against the new version before the server has started once finds no stored vectors, because the new store does not exist yet. Start the server first; the upgrade runs in the background and searches by meaning answer once it finishes.
 
@@ -53,14 +53,20 @@ Back up the embeddings: they cost money to rebuild. The index is optional, since
 |---|---|---|
 | `index.db` | copy `index.db` alone: a server that stopped cleanly folds everything into it | `sqlite3 index.db ".backup index-copy.db"` |
 | `numpy` store | copy `index-db-embeddings.v2.json` and the matrix it names | stop the server first: a save replaces the matrix |
-| `sqlite` store | copy `index-db-embeddings.sqlite3` | `sqlite3 index-db-embeddings.sqlite3 ".backup embeddings-copy.sqlite3"` |
-| `postgres` store | `pg_dump -n <schema>` ([Backup and restore](postgresql.md#backup-and-restore)) | the same; it does not block the server |
+| `sqlite` store | copy `index-db-embeddings.sqlite3`, and its `-wal` file if one is left | `sqlite3 index-db-embeddings.sqlite3 ".backup embeddings-copy.sqlite3"` |
+| `postgres` store | `pg_dump -n <schema>` ([Backup and restore](postgresql.md#backup-and-restore)) | the same |
 
-A plain copy of a SQLite file while the server runs can miss changes that still sit in its `-wal` file; the `.backup` command does not. If another process held `index.db` open when the server stopped, some changes can stay in `index.db-wal` and the log says `fts_index_checkpoint_incomplete`; copy the `-wal` file too, or start and stop the server once more.
+The Docker image has no `sqlite3` command; Python's own online backup does the same there:
+
+```bash
+docker compose exec markdown-vault-mcp python -c "import sqlite3; sqlite3.connect('/data/state/index-db-embeddings.sqlite3').backup(sqlite3.connect('/data/state/embeddings-copy.sqlite3'))"
+```
+
+A plain copy of a SQLite file while the server runs can miss changes that still sit in its `-wal` file; the `.backup` command does not. A server that stops cleanly folds each `-wal` file into its database, unless another process still read an older state at that moment. The log then says `fts_index_checkpoint_incomplete` for `index.db` or `sqlite_vector_store_truncate_busy` for the `sqlite` store; copy the `-wal` file with its database, or start and stop the server once more.
 
 ## Restoring
 
-Stop the server, put the files back where they were, and start it. The backups need not be the same age as each other or as the notes:
+Stop the server and put the files back where they were. Before you start it, delete any `-wal` or `-shm` file beside a SQLite file you put back (`index.db` or `index-db-embeddings.sqlite3`) unless it came from the same backup: SQLite would replay a newer `-wal` file onto the older database and damage it. The backups need not be the same age as each other or as the notes:
 
 - **Embeddings older than the notes:** only the notes changed since the backup are embedded again.
 - **An index older than the embeddings, or no index at all:** the index catches up from the notes, and nothing is embedded.
@@ -89,7 +95,7 @@ The `postgres` store's space is covered in [Space](postgresql.md#space).
 
 Each of these asks the provider for every section of every note, which a paid provider bills:
 
-- no `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`, so the vectors live in memory and are embedded again at each start;
+- no `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` with a `numpy` or `sqlite` store, so the vectors live in memory and are embedded again at each start;
 - a change of embedding provider, model or dimensions;
 - a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `embeddings import`;
 - `markdown-vault-mcp index --force`, or the `build_embeddings` tool with `force`;
@@ -100,7 +106,9 @@ Each of these asks the provider for every section of every note, which a paid pr
 These embed only part of the vault:
 
 - notes changed since a restored backup was made;
-- notes changed while you ran 5.1 again, when you upgrade a second time.
+- notes changed while you ran 5.1 again, when you upgrade a second time;
+- every note long enough to split, after a change to `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`, `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` or `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS`;
+- every note whose title changes, after a change to `MARKDOWN_VAULT_MCP_TITLE_FIELD`, since a section is embedded with its note's title.
 
 `markdown-vault-mcp reindex --force` rebuilds the index only: the embeddings are kept.
 

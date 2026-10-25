@@ -162,12 +162,16 @@ def test_upgrading_again_after_a_downgrade_embeds_only_changed_notes(
     _run(tmp_path, store)  # the upgrade: the new store is now active
     assert _Counting.texts == []
     _edit(tmp_path)  # a note changed while the older release ran
+    # ...which rewrote its sidecar; unreadable bytes prove it is not read again.
+    (tmp_path / "index-db-embeddings.json").write_text("{written by 5.1")
+    caplog.clear()  # an earlier test's log level can let the upgrade's lines in
     with caplog.at_level(logging.INFO):
         _run(tmp_path, store)
     assert _only_the_edited_note_was_embedded()
-    assert not [
-        r for r in caplog.records if r.msg.startswith("embeddings_upgrade_started")
-    ]
+    events = [r.msg.split(" ", 1)[0] for r in caplog.records]
+    assert "build_embeddings_converged" in events  # the capture saw INFO lines
+    assert "embeddings_upgrade_started" not in events
+    assert "embeddings_donor_refused" not in events
 
 
 def _sums(files: list[Path]) -> dict[str, str]:
