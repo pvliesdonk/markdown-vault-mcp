@@ -262,3 +262,25 @@ def test_a_search_first_corrupt_rebuild_uses_the_released_sidecar(
         vault.close()
     assert [t for t in provider.texts if t != "tides"] == []  # only the query
     assert _aside(tmp_path)
+
+
+def test_a_damaged_sqlite_store_of_another_model_is_moved_aside_not_deleted(
+    tmp_path: Path,
+) -> None:
+    # The open reads its identity before it meets the damage, so it is
+    # refused as another model and rebuilt through a fresh open (#1862 review).
+    _build(tmp_path, "sqlite")
+    target = tmp_path / "index-db-embeddings.sqlite3"
+    data = bytearray(target.read_bytes())
+    middle = len(data) // 2
+    data[middle : middle + 4096] = os.urandom(4096)
+    target.write_bytes(bytes(data))
+    damaged = target.read_bytes()
+    vault = _vault(tmp_path, "sqlite", _Counting(dim=16))  # another identity
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+    finally:
+        vault.close()
+    copies = [p for p in _aside(tmp_path) if ".sqlite3.corrupt-" in p.name]
+    assert [p.read_bytes() for p in copies] == [damaged]

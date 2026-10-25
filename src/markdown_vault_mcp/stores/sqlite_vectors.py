@@ -520,14 +520,15 @@ def _check_pages(conn: sqlite3.Connection, where: str) -> None:
 
 
 def _replace_if_unusable(path: Path) -> None:
-    """Remove *path* (and its WAL files) unless it is a vector store to empty.
+    """Move *path* (and its WAL files) aside unless it is a vector store to empty.
 
     A store whose own tables read but whose pages are damaged is unusable
-    too: emptying it in place would fail on those pages.
+    too: emptying it in place would fail on those pages. Its files are
+    renamed with a ``.corrupt-<time>`` suffix, never deleted (#1505).
 
     Raises:
         StoreUnsupportedSchemaError: If it is a vector store of a newer format.
-        StoreUnavailableError: If it cannot be read.
+        StoreUnavailableError: If it cannot be read or moved aside.
     """
     where = str(path)
     probe = _registry(path, read_only=True)
@@ -544,9 +545,11 @@ def _replace_if_unusable(path: Path) -> None:
             raise outcome from exc
     finally:
         probe.close()
-    logger.warning("sqlite_vector_store_corrupt_replaced path=%s", where)
-    for stale in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
-        stale.unlink(missing_ok=True)
+    move_aside(
+        (path, Path(f"{path}-wal"), Path(f"{path}-shm")),
+        backend="sqlite",
+        location=where,
+    )
 
 
 def _create(path: Path, *, replace_unusable: bool) -> SqliteConnectionRegistry:

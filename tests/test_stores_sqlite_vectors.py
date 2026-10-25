@@ -45,6 +45,10 @@ def _db(tmp_path: Path) -> Path:
     return _base(tmp_path).with_suffix(".sqlite3")
 
 
+def _aside(tmp_path: Path) -> list[Path]:
+    return sorted(_base(tmp_path).parent.glob("*.corrupt-*"))
+
+
 @pytest.fixture
 def opened() -> Iterator[list[Any]]:
     """The stores a factory fixture opens, closed when the test ends."""
@@ -570,13 +574,21 @@ class TestOpenFresh:
         fresh.close()
         assert _reopened(tmp_path)[1] == {"a.md": "ta"}
 
-    def test_a_file_that_is_not_a_database_is_replaced(self, tmp_path: Path) -> None:
+    def test_a_file_that_is_not_a_database_is_moved_aside(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         _db(tmp_path).parent.mkdir(parents=True)
         _db(tmp_path).write_bytes(b"not a database " * 100)
         fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
-        fresh.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        with caplog.at_level(logging.WARNING):
+            fresh.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
         fresh.close()
         assert _reopened(tmp_path)[0] == 1
+        (copy,) = _aside(tmp_path)
+        assert copy.read_bytes() == b"not a database " * 100
+        assert [
+            r for r in caplog.records if r.msg.startswith("vector_store_moved_aside")
+        ]
 
     def test_a_newer_format_is_not_replaced(self, tmp_path: Path) -> None:
         _seed(tmp_path)
@@ -609,12 +621,15 @@ class TestDamagedPages:
         backend, base = SqliteVectorBackend(), _base(tmp_path)
         with pytest.raises(StoreCorruptError):
             backend.open(base, IDENT)
+        damaged = _db(tmp_path).read_bytes()
         fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
         fresh.publish_generation(IDENT, [doc("new.md", [[0, 1, 0]])])
         fresh.close()
         again = SqliteVectorBackend().open(_base(tmp_path), IDENT)
         assert again.tokens() == {"new.md": "t1"}
         again.close()
+        copies = [p for p in _aside(tmp_path) if ".sqlite3.corrupt-" in p.name]
+        assert [p.read_bytes() for p in copies] == [damaged]  # kept, not deleted
 
 
 class TestWalAfterAGeneration:
@@ -763,24 +778,25 @@ class TestDeferredCreation:
         ]
         fresh.close()
 
-    def test_an_unusable_file_that_cannot_be_removed_is_unavailable(
+    def test_an_unusable_file_that_cannot_be_moved_aside_is_unavailable(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _db(tmp_path).parent.mkdir(parents=True)
         _db(tmp_path).write_bytes(b"not a database " * 100)
-        real_unlink = Path.unlink
+        real_rename = Path.rename
 
-        def refuse(self: Path, missing_ok: bool = False) -> None:
+        def refuse(self: Path, target: Path) -> Path:
             if self == _db(tmp_path):
                 raise PermissionError("refused")
-            real_unlink(self, missing_ok=missing_ok)
+            return real_rename(self, target)
 
-        monkeypatch.setattr(Path, "unlink", refuse)
+        monkeypatch.setattr(Path, "rename", refuse)
         fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
         document = doc("a.md", [[1, 0, 0]])
         with pytest.raises(StoreUnavailableError):
             fresh.replace_document(document, expected_token=ANY_TOKEN)
         fresh.close()
+        assert _db(tmp_path).read_bytes() == b"not a database " * 100  # untouched
 
     def test_a_writable_open_of_a_store_takes_no_write_lock(
         self, tmp_path: Path

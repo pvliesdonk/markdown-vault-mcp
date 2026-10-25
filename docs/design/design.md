@@ -4090,10 +4090,12 @@ writer lock above but takes no SQLite write lock on an existing store and change
 store before refusing it. A store that fails its open as corrupt has its
 `.sqlite3`, `-wal` and `-shm` renamed aside by its `quarantine` before a
 rebuild (child 9, below). `open_fresh` reads and checks nothing: before its
-first write it removes a file that is not a vector store or whose pages
-`PRAGMA quick_check` finds damaged, a fallback for damage the open did not
-see, since the rename leaves nothing there in the usual case (refusing a
-newer format instead), and
+first write it moves a file that is not a vector store, or whose pages
+`PRAGMA quick_check` finds damaged, aside the same way (`move_aside`, the
+`.sqlite3`, `-wal` and `-shm` under one `.corrupt-<time>` suffix, a refused
+rename raising *unavailable*). That catches damage the open did not see, such
+as a damaged store whose identity still reads, which is refused as another
+model and rebuilt through `open_fresh`; it refuses a newer format instead, and
 that write empties a usable database inside its own transaction, so a
 conflict or an interrupt keeps the old rows. `embeddings_status` counts
 the database's rows read-only before the store opens. Vectors keep their
