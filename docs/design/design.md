@@ -4717,6 +4717,76 @@ PostgreSQL tables; #1476's content-history recovery; a memory bound on
 publishing a whole generation, which a full build already holds in memory
 today and #1506's envelope measures.
 
+### Measuring the operating envelope (#1506)
+
+#1506's budgets (the comment on #1506 has the table) are checked against the
+assembled server, not a search-only prototype. `scripts/envelope/` is the
+maintainer tool that measures it (#1895). It is not a test or a CI job, and
+it measures without judging: #1899 compares its figures with the budgets.
+
+Run it from the repository root on Linux:
+
+```bash
+uv run python -m scripts.envelope --size deployed --backends numpy,sqlite --out DIR
+```
+
+`--size growth` is ten times the deployed size and needs a few GB in `DIR`;
+`--notes N` sets the vault size directly. It writes `DIR/<git sha>-<size>.json`
+and prints the tables.
+
+**Inputs.** A seeded synthetic vault (`synth.generate_vault`): notes of six
+H2 sections in a 1,000-word vocabulary, one folder in ten holding the notes
+filtered search restricts to. The indexer makes seven chunks of each note
+(`synth.CHUNKS_PER_NOTE`, checked by a test), so the deployed size, about
+22,764 chunks (#1501), is about 3,252 notes; the report records the chunk
+count the indexer actually made. Vectors come from `synth.StandInProvider`:
+1,024-wide like the deployed model's, seeded from each text's SHA-256,
+normalized float32, with no network calls; it counts every text it embeds.
+`--batch-size` sets the texts per provider call to keep the build short; it is
+not a measured figure.
+
+**Process.** Each backend (`numpy` resident, `sqlite` streamed) gets its own
+copy of the vault, and each phase runs in a fresh process
+(`scripts/envelope/worker.py`), so a reading never includes a previous
+phase's leftovers.
+
+**Metrics.**
+
+- *Memory apart from page cache.* Process memory is `Pss_Anon + Pss_Shmem`
+  from `/proc/<pid>/smaps_rollup`; page-cache pages of the index and store
+  (`Pss_File`) are reported in their own column. *What semantic search adds*
+  is a peak minus a peak in one process: the vault answers 20 keyword
+  searches with the vector store still closed (the report says whether it
+  was), then warm searches of every kind; peaks are sampled every 10 ms from
+  `/proc/self/status`. It is reported as anonymous (`RssAnon + RssShmem`) and
+  as total resident (`VmRSS`); #1502's figures, the budget's source, were
+  sampled process RSS.
+- *Warm latency.* p50 and p95 per kind after discarded warm-up calls:
+  semantic, hybrid, filtered (semantic in the filter folder) and similar
+  notes.
+- *Cold latency.* A fresh process per kind fsyncs the index and store files,
+  drops their clean pages with `posix_fadvise(POSIX_FADV_DONTNEED)` (no
+  privileges needed) and times its first search. util-linux `fincore`, when
+  installed, confirms the files left page cache; otherwise the report says
+  `unconfirmed`. On tmpfs or ramfs the pages cannot leave memory, so the
+  harness warns that cold latency is not cold there.
+- *Bytes per edit.* Single-note edits through the server's path: the
+  writer facet's `write`, then waiting for the index writer to drain, which
+  re-indexes and re-embeds the note. Per edit: `wchar` from `/proc/self/io`
+  (bytes passed to write calls, including SQLite's WAL; `write_bytes` lags
+  without an fsync), the growth of the store's files, the texts embedded,
+  and the note's whole vector size beside them.
+- *Restart.* The wall time from starting a process to its first semantic
+  search returning, after the boot steps (`build_index`,
+  `build_embeddings`), and the texts embedded besides the query.
+- *Recovery.* An edit run that records each finished edit and kills itself
+  with SIGKILL while the next one is in flight, then a restart. The texts
+  the restart may embed are those of the finished edits and the one in
+  flight; the report gives the excess, and whether a corrupt store was moved
+  aside instead.
+- *Environment.* The git commit, Python, SQLite, numpy and psycopg versions,
+  the CPU, memory, kernel and the work folder's filesystem type.
+
 ### `providers.py`: Embedding Providers
 
 Copied from ifcraftcorpus, adapted:
