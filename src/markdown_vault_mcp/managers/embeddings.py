@@ -224,7 +224,7 @@ class EmbeddingsManager:
         """Open (installing) the store for writing.
 
         An owned store that is corrupt or of another identity is rebuilt
-        through :meth:`build_embeddings`.
+        through :meth:`rebuild_after_fault`.
 
         Returns:
             The writable store.
@@ -234,12 +234,33 @@ class EmbeddingsManager:
         """
         if self._slot is None or self._embedding_provider is None:
             raise RuntimeError("_require_vectors() must be called before _open_store()")
-        rebuild = (
-            (lambda: self.build_embeddings(force=True))
-            if self._slot.owns_files
-            else None
-        )
+        rebuild = self.rebuild_after_fault if self._slot.owns_files else None
         return self._slot.writable(rebuild=rebuild)
+
+    def rebuild_after_fault(self) -> int:
+        """Rebuild the store after it would not open: of another identity, or corrupt.
+
+        The store is opened again to tell the two apart. One of another
+        identity is rebuilt with ``force``, re-embedding every chunk. A
+        corrupt one, which the slot moved aside, reopens empty and takes the
+        ordinary cold build, where a compatible 5.x sidecar donates, so
+        unchanged notes cost no provider call (#1505).
+
+        Returns:
+            Number of chunks embedded.
+
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            StoreOpenError: If the store still will not open.
+        """
+        self._require_vectors()
+        if self._slot is None:  # pragma: no cover - _require_vectors() ran
+            raise RuntimeError(_NO_RECONCILER)
+        try:
+            self._slot.get(rebuild=None)
+        except StoreIncompatibleError:
+            return self.build_embeddings(force=True)
+        return self.build_embeddings()
 
     # ------------------------------------------------------------------
     # Inline reindex embedding

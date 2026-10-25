@@ -5,7 +5,10 @@ because the identity it opens against reads ``provider.dimension``, which
 some providers answer with a network probe; a provider that is down must
 not stop a vault from being built. On a store the vault owns, a corrupt
 store or one holding another identity (a model change) is rebuilt into a
-fresh generation through the caller's ``rebuild``; without a rebuild (a
+fresh generation through the caller's ``rebuild``. A corrupt built-in store
+is first moved aside, every file of it renamed to ``.corrupt-<UTC time>``
+through its backend's ``quarantine``, so nothing is rebuilt over it; a
+rename that is refused leaves it unavailable (#1505). Without a rebuild (a
 process that does not own the files) the store's own
 :class:`~markdown_vault_mcp.exceptions.StoreCorruptError` or
 :class:`~markdown_vault_mcp.exceptions.StoreIncompatibleError` propagates,
@@ -21,7 +24,6 @@ is kept as provisional and reused until a sized store replaces it.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import logging
 import threading
@@ -31,6 +33,7 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
     StoreCorruptError,
     StoreIncompatibleError,
+    StoreOpenError,
 )
 from markdown_vault_mcp.interfaces import DescribesStore, ReportsResources
 from markdown_vault_mcp.types import EmbeddingIdentity
@@ -92,6 +95,9 @@ class VectorStoreSlot:
         # Guards opening, swapping and closing; never held across a rebuild.
         self._lock = threading.Lock()
         self._closed = False
+        # Serializes moving a corrupt store aside across threads; the
+        # writer lock in the backend only excludes other processes (#1505).
+        self._recovery = threading.Lock()
 
     @property
     def location(self) -> Path | str | None:
@@ -182,6 +188,22 @@ class VectorStoreSlot:
         """
         if self._store is not None:
             return self._store
+        opened = self._open()
+        if isinstance(opened, StoreOpenError):
+            return self._rebuilt(opened, rebuild)
+        return opened
+
+    def _open(self) -> EmbeddingStore | StoreOpenError:
+        """Return the installed, provisional or newly opened store, or why it would not open.
+
+        A corrupt store or one of another identity is returned as its
+        error, not raised, for the caller to rebuild or raise.
+
+        Raises:
+            RuntimeError: If the slot is closed.
+            StoreOpenError: If the store is unavailable or of an unsupported
+                schema.
+        """
         with self._lock:
             self._refuse_closed()
             if self._store is not None:
@@ -193,25 +215,31 @@ class VectorStoreSlot:
                     self._location, self._open_identity(), owns_files=self._owns_files
                 )
             except (StoreCorruptError, StoreIncompatibleError) as exc:
-                failure = exc
+                return exc
+            if store.identity.dimension == 0:
+                # Nothing is stored and the dimension is not known: let
+                # reads search the empty store, but install nothing, so
+                # the writer opens through writable(), which learns the
+                # provider's dimension.
+                self._provisional = store
             else:
-                if store.identity.dimension == 0:
-                    # Nothing is stored and the dimension is not known: let
-                    # reads search the empty store, but install nothing, so
-                    # the writer opens through writable(), which learns the
-                    # provider's dimension.
-                    self._provisional = store
-                else:
-                    self._store = store
-                return store
-        return self._rebuilt(failure, rebuild)
+                self._store = store
+            return store
 
     def _rebuilt(
-        self, exc: Exception, rebuild: Callable[[], object] | None
+        self, exc: StoreOpenError, rebuild: Callable[[], object] | None
     ) -> EmbeddingStore:
-        """Rebuild a store that would not open, outside the lock; re-raise without one."""
+        """Rebuild a store that would not open, outside the lock; re-raise without one.
+
+        A corrupt store is moved aside first; when another thread already
+        did, the store it left is returned without a rebuild.
+        """
         if rebuild is None:
             raise exc
+        if isinstance(exc, StoreCorruptError):
+            recovered = self._recover_corrupt()
+            if recovered is not None:
+                return recovered
         logger.warning(
             "vector_store_rebuild_started location=%s reason=%s",
             self._location,
@@ -223,6 +251,49 @@ class VectorStoreSlot:
                 "Failed to rebuild the vector store after it would not open."
             ) from exc
         return self._store
+
+    def _recover_corrupt(self) -> EmbeddingStore | None:
+        """Move a corrupt store aside, unless another thread already did.
+
+        Under the recovery lock the store is opened again: a failure seen
+        before another thread moved the files aside (and maybe rebuilt them)
+        must not rename what that thread left. Never held across a rebuild,
+        which may wait on the writer thread that meets the same store.
+
+        Returns:
+            The store that opens now, with nothing renamed; ``None`` once the
+            corrupt files are moved aside, or when the store now holds
+            another identity, for the caller to rebuild.
+
+        Raises:
+            StoreUnavailableError: If the files cannot be renamed.
+        """
+        with self._recovery:
+            opened = self._open()
+            if not isinstance(opened, StoreOpenError):
+                return opened
+            if isinstance(opened, StoreCorruptError):
+                self._move_aside()
+            return None
+
+    def _move_aside(self) -> None:
+        """Rename an owned corrupt store's files aside, if its backend can (#1505).
+
+        Nothing for an injected store, one this process does not own, one in
+        memory, or a backend without ``quarantine`` (PostgreSQL).
+
+        Raises:
+            StoreUnavailableError: If the files cannot be renamed.
+        """
+        quarantine = getattr(self._backend, "quarantine", None)
+        if (
+            quarantine is None
+            or self._injected
+            or not self._owns_files
+            or self._location is None
+        ):
+            return
+        quarantine(self._location)
 
     def _refuse_closed(self) -> None:
         """Refuse to open behind a closed slot; called under the lock.
@@ -393,18 +464,23 @@ class VectorStoreSlot:
         the end, so readers keep its rows meanwhile and a rebuild that embeds
         nothing leaves them. Otherwise :meth:`fresh`: a fresh store over the
         location for an owned slot (the old files survive until the rebuild
-        publishes), the injected store emptied in place.
+        publishes), the injected store emptied in place. A corrupt store is
+        moved aside first (#1505).
 
         Raises:
             ReadOnlyError: If this process does not own the store's files.
             StoreOpenError: If the store is unavailable or of an unsupported
-                schema.
+                schema, or corrupt and cannot be moved aside.
         """
         self._refuse_unowned()
         if self._store is None:
             # A store that will not open is rebuilt into a fresh one below.
-            with contextlib.suppress(StoreCorruptError, StoreIncompatibleError):
+            try:
                 self.get(rebuild=None)
+            except StoreCorruptError:
+                self._recover_corrupt()
+            except StoreIncompatibleError:
+                pass
         if self._store is not None and self._answers(self._store):
             return self._store
         return self.fresh()

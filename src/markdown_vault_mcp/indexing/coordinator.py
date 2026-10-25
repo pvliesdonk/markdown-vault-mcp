@@ -355,16 +355,19 @@ class IndexWriteCoordinator:
         return result
 
     def rebuild_embeddings(self) -> None:
-        """Force-rebuild the vector index for the search-recovery path.
+        """Rebuild the vector index for the search-recovery path.
 
         Invoked by ``SearchManager._load_vectors`` when an owned store is
-        corrupt or of another identity (an embedding-model upgrade). Runs on
+        corrupt or of another identity (an embedding-model upgrade): the
+        manager's ``rebuild_after_fault`` forces a rebuild for another
+        identity and cold-builds a corrupt store the slot moved aside, with
+        a 5.x sidecar as donor (#1505). Runs on
         the writer thread to preserve the single-owner invariant. Carries NO
         ``require_built`` gate: the index is necessarily built when vectors
         are being loaded. The rebuilt-chunk count is discarded — the caller
         invokes this for its side-effect only.
         """
-        self._writer.submit(BuildEmbeddings(force=True)).result()
+        self._writer.submit(BuildEmbeddings(after_fault=True)).result()
 
     # ------------------------------------------------------------------
     # Asynchronous builds
