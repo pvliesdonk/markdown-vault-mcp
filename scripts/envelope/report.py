@@ -163,13 +163,17 @@ def _memory_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     rows = []
     for config in configs:
         memory = config.get("memory", {})
+        closed = memory.get("store_closed_at_baseline")
+        adds = [_mib(memory.get("adds_anon")), _mib(memory.get("adds_resident"))]
+        if closed is False:  # an open store at the baseline hides what search adds
+            adds = ["invalid: store open"] * 2
         rows.append(
             [
                 _name(config),
-                _mib(memory.get("adds_anon")),
-                _mib(memory.get("adds_resident")),
+                *adds,
                 _mib(memory.get("process_anon")),
                 _mib(memory.get("file_backed")),
+                _MISSING if closed is None else ("yes" if closed else "no"),
             ]
         )
     return rows
@@ -180,6 +184,7 @@ def _latency_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     for config in configs:
         latency = config.get("latency", {})
         warm, cold = latency.get("warm", {}), latency.get("cold", {})
+        eviction = latency.get("eviction", {})
         for kind in sorted(set(warm) | set(cold)):
             stats = warm.get(kind, {})
             rows.append(
@@ -189,6 +194,7 @@ def _latency_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
                     _ms(stats.get("p50")),
                     _ms(stats.get("p95")),
                     _ms(cold.get(kind)),
+                    eviction.get(kind, _MISSING),
                 ]
             )
     return rows
@@ -223,6 +229,7 @@ def _restart_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
                 if restart.get("seconds") is None
                 else f"{restart['seconds']:.2f} s",
                 _plain(restart.get("texts_embedded")),
+                _plain(recovery.get("texts_embedded")),
                 _plain(recovery.get("texts_beyond_allowed")),
                 _MISSING
                 if "moved_aside" not in recovery
@@ -262,12 +269,13 @@ def render_markdown(result: dict[str, Any]) -> str:
             "Adds (resident)",
             "Process",
             "File-backed",
+            "Store closed at baseline",
         ],
         _memory_rows(configs),
     )
     lines += ["### Search latency", ""]
     lines += _table(
-        ["Configuration", "Kind", "Warm p50", "Warm p95", "Cold"],
+        ["Configuration", "Kind", "Warm p50", "Warm p95", "Cold", "Cold eviction"],
         _latency_rows(configs),
     )
     lines += ["### Single-note edits (median / max per edit)", ""]
@@ -288,7 +296,8 @@ def render_markdown(result: dict[str, Any]) -> str:
             "Configuration",
             "Until search works",
             "Texts embedded",
-            "Re-embedded after kill",
+            "Texts embedded after a kill",
+            "Beyond the edit in progress",
             "Store moved aside",
         ],
         _restart_rows(configs),

@@ -39,7 +39,7 @@ KINDS = ("semantic", "hybrid", "filtered", "similar")
 _KEYWORD_SEARCHES = 20
 _STORE_GLOB = "index-db-embeddings*"
 _INDEX_GLOB = "index.db*"
-_CHECKPOINT = "edits-finished"
+_CHECKPOINT = "edits-finished"  # read by the orchestrator
 
 
 def _vault(config: dict[str, Any], provider: synth.StandInProvider) -> Vault:
@@ -111,7 +111,7 @@ def build(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "notes": stats.documents_indexed,
         "chunks": stats.chunks_indexed,
-        "texts_embedded": len(provider.texts),
+        "texts_embedded": provider.count,
         "seconds": seconds,
     }
 
@@ -139,9 +139,10 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
                     synth.QUERIES[i % len(synth.QUERIES)], mode="keyword"
                 )
         closed = vault._vectors is None
+        searches = _searches(vault, config)  # its path list is not search's
         warm = {}
         with probes.PeakSampler() as after:
-            for kind, search in _searches(vault, config).items():
+            for kind, search in searches.items():
                 for i in range(config["discard"]):
                     search(i)
                 samples = [
@@ -165,8 +166,14 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _eviction(config: dict[str, Any]) -> str:
+    """Evict the index and store files; say whether they left page cache.
+
+    SQLite maps ``-shm`` into the process, and mapped pages cannot be
+    dropped, so it is evicted with the rest but left out of the check.
+    """
     files = probes.evict(_files(config, _INDEX_GLOB) + _files(config, _STORE_GLOB))
-    resident = probes.resident_bytes(files)
+    checked = [f for f in files if not f.name.endswith("-shm")]
+    resident = probes.resident_bytes(checked)
     if resident is None:
         return "unconfirmed"
     return "confirmed" if resident == 0 else f"resident {resident} bytes"
@@ -203,14 +210,19 @@ class _MovedAside(logging.Handler):
 
 
 def restart(config: dict[str, Any]) -> dict[str, Any]:
-    """Do what a restarted server does, then search once.
+    """Boot as the server does, then search once.
+
+    The server's boot (``domain.py``) builds the index (a no-op on a warm
+    start), reindexes to pick up changes made while it was down (the
+    default ``boot_reindex``), then builds embeddings. The search's single
+    query is the one text a clean restart embeds.
 
     Args:
         config: The run's configuration.
 
     Returns:
-        The texts embedded besides the query, and whether a corrupt store
-        was moved aside.
+        The process's age when the search returned, the texts embedded
+        besides the query, and whether a corrupt store was moved aside.
     """
     provider = synth.StandInProvider(config["dim"])
     handler = _MovedAside()
@@ -218,13 +230,15 @@ def restart(config: dict[str, Any]) -> dict[str, Any]:
     vault = _vault(config, provider)
     try:
         vault.index.build_index()
+        vault.index.reindex()
         vault.index.build_embeddings()
-        query = synth.QUERIES[0]
-        vault.reader.search(query, mode="semantic")
+        vault.reader.search(synth.QUERIES[0], mode="semantic")
+        seconds = probes.process_age()
     finally:
         vault.close()
     return {
-        "texts_embedded": sum(1 for t in provider.texts if t != query),
+        "seconds": seconds,
+        "texts_embedded": provider.count - 1,
         "moved_aside": handler.seen,
     }
 
@@ -244,13 +258,21 @@ def _edit_numbers(config: dict[str, Any]) -> Iterator[int]:
     yield from range(first, first + config["edits"])
 
 
+def _drain(vault: Vault, config: dict[str, Any]) -> None:
+    if not vault.index.wait_for_drain(timeout=config["drain_timeout_s"]):
+        raise RuntimeError(
+            f"the index writer did not drain within {config['drain_timeout_s']} s"
+        )
+
+
 def edits(config: dict[str, Any]) -> dict[str, Any]:
     """Make single-note edits through the server's write path.
 
     Each edit writes the note, then waits for the index writer to drain,
     which re-indexes and re-embeds it. With ``kill_at`` set, the process
-    records each finished edit and kills itself straight after that many,
-    while the next edit's write is in flight.
+    records each finished edit and kills itself once that many have
+    finished and the next note is written, while the index writer's work
+    on it is still queued or running.
 
     Args:
         config: The run's configuration.
@@ -273,15 +295,15 @@ def edits(config: dict[str, Any]) -> dict[str, Any]:
             io, size, texts = (
                 probes.read_io(os.getpid()),
                 _store_bytes(config),
-                len(provider.texts),
+                provider.count,
             )
             _edit(vault, config, path, number)
             if done == config.get("kill_at"):
                 os.kill(os.getpid(), signal.SIGKILL)
-            vault.index.wait_for_drain()
+            _drain(vault, config)
             figures["wchar"].append(probes.read_io(os.getpid())["wchar"] - io["wchar"])
             figures["store_delta"].append(_store_bytes(config) - size)
-            figures["texts"].append(len(provider.texts) - texts)
+            figures["texts"].append(provider.count - texts)
             checkpoint.write_text(str(done + 1))
     finally:
         vault.close()

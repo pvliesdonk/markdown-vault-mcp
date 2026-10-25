@@ -222,6 +222,17 @@ class TestTheProcReaders:
         assert resident == 0
 
 
+class TestProcessAge:
+    def test_the_age_is_uptime_minus_the_start_time(self) -> None:
+        fields = ["S"] + ["0"] * 18 + ["250"] + ["0"] * 10
+        stat = "4242 (a name (with) spaces) " + " ".join(fields)
+        assert probes.parse_process_age(stat, "12.75 99.0", 100) == 10.25
+
+    @linux_only
+    def test_this_process_has_an_age(self) -> None:
+        assert probes.process_age() > 0
+
+
 class TestPercentiles:
     def test_nearest_rank(self) -> None:
         values = [float(v) for v in range(1, 101)]
@@ -282,6 +293,20 @@ class TestTheReport:
         assert "95.0 MiB" in text
         assert "99.0 MiB" in text
         assert "22,764" in text
+
+    def test_adds_measured_with_the_store_open_are_marked_invalid(self) -> None:
+        result = _result()
+        memory = result["configs"][0]["memory"]  # type: ignore[index]
+        memory["store_closed_at_baseline"] = False
+        text = report.render_markdown(result)
+        assert "invalid: store open" in text
+        assert "95.0 MiB" not in text
+
+    def test_each_cold_search_shows_its_eviction(self) -> None:
+        result = _result()
+        latency = result["configs"][0]["latency"]  # type: ignore[index]
+        latency["eviction"] = {"unfiltered": "resident 4096 bytes"}
+        assert "| resident 4096 bytes |" in report.render_markdown(result)
 
     def test_a_dsn_never_reaches_the_table_or_the_file(self, tmp_path: Path) -> None:
         result = _result()

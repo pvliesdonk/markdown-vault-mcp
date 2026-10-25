@@ -246,6 +246,37 @@ def resident_bytes(paths: Iterable[Path]) -> int | None:
     return sum(int(line) for line in run.stdout.split())
 
 
+def parse_process_age(stat: str, uptime: str, ticks_per_second: int) -> float:
+    """Return a process's age from ``/proc/<pid>/stat`` and ``/proc/uptime``.
+
+    Args:
+        stat: The stat file's contents; field 22 is the start time in clock
+            ticks after boot.
+        uptime: ``/proc/uptime``'s contents; its first field is seconds
+            since boot.
+        ticks_per_second: The kernel's clock ticks per second.
+
+    Returns:
+        The seconds since the process started.
+    """
+    after_name = stat.rsplit(")", 1)[1].split()  # the name may hold spaces
+    started = int(after_name[19]) / ticks_per_second  # field 22 overall
+    return float(uptime.split()[0]) - started
+
+
+def process_age() -> float:
+    """Return this process's age in seconds, from interpreter start.
+
+    Returns:
+        The age, to the kernel's clock-tick resolution.
+    """
+    return parse_process_age(
+        Path("/proc/self/stat").read_text(),
+        Path("/proc/uptime").read_text(),
+        os.sysconf("SC_CLK_TCK"),
+    )
+
+
 def percentiles(values: Iterable[float]) -> dict[str, float]:
     """Return the nearest-rank p50 and p95 of *values*.
 

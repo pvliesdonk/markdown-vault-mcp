@@ -37,6 +37,19 @@ BACKENDS = {"numpy": "resident", "sqlite": "streamed"}
 """Each backend measured, with the search mode it runs in."""
 
 _SENTINEL = ".envelope-work"
+_TEXTS_PER_EDIT = 1
+"""Texts an edit leaves to embed: it rewrites one section, one chunk."""
+_CHECKPOINT = "edits-finished"
+
+
+def _count(minimum: int) -> Any:
+    def parse(value: str) -> int:
+        number = int(value)
+        if number < minimum:
+            raise argparse.ArgumentTypeError(f"must be at least {minimum}")
+        return number
+
+    return parse
 
 
 def _backends(value: str) -> list[str]:
@@ -53,18 +66,31 @@ def _backends(value: str) -> list[str]:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m scripts.envelope")
     parser.add_argument("--size", choices=sorted(SIZES), default="deployed")
-    parser.add_argument("--notes", type=int, help="note count; overrides --size")
+    parser.add_argument("--notes", type=_count(1), help="note count; overrides --size")
     parser.add_argument("--backends", type=_backends, default=list(BACKENDS))
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--dim", type=int, default=synth.DEFAULT_DIMENSION)
-    parser.add_argument("--queries", type=int, default=50)
-    parser.add_argument("--discard", type=int, default=5)
-    parser.add_argument("--edits", type=int, default=200)
-    parser.add_argument("--kill-after", type=int, help="default: half the edits")
+    parser.add_argument("--dim", type=_count(1), default=synth.DEFAULT_DIMENSION)
+    parser.add_argument("--queries", type=_count(1), default=50)
+    parser.add_argument("--discard", type=_count(0), default=5)
+    parser.add_argument("--edits", type=_count(1), default=200)
     parser.add_argument(
-        "--batch-size", type=int, default=64, help="texts per provider call"
+        "--kill-after",
+        type=_count(0),
+        help="finished edits before the kill; default half",
+    )
+    parser.add_argument(
+        "--batch-size", type=_count(1), default=64, help="texts per provider call"
     )
     parser.add_argument("--seed", type=int, default=1506)
+    parser.add_argument(
+        "--phase-timeout", type=_count(1), default=7200, help="seconds per phase"
+    )
+    parser.add_argument(
+        "--drain-timeout",
+        type=_count(1),
+        default=600,
+        help="seconds an edit may wait for the index writer",
+    )
     return parser
 
 
@@ -87,6 +113,10 @@ def cold_warning(environment: dict[str, str]) -> str | None:
 
 def _work_folder(out: Path) -> Path:
     """Return a fresh ``OUT/work``, removing only one this harness made."""
+    if out.resolve().is_relative_to(REPO):
+        raise SystemExit(
+            f"--out {out} is inside the repository; choose a folder outside it"
+        )
     work = out / "work"
     if work.exists():
         if not (work / _SENTINEL).exists():
@@ -103,18 +133,37 @@ def _work_folder(out: Path) -> Path:
 def _spawn(
     phase: str, config: dict[str, Any], *, expect_kill: bool = False
 ) -> tuple[dict[str, Any], float]:
-    """Run one phase in a fresh process; return its figures and wall seconds."""
+    """Run one phase in a fresh process; return its figures and wall seconds.
+
+    Raises:
+        SystemExit: If the phase fails, outlasts ``phase_timeout_s``, or,
+            with *expect_kill*, ends other than by SIGKILL.
+    """
     start = time.perf_counter()
-    done = subprocess.run(  # fixed argv, no shell; see pyproject's S603 entry
-        [sys.executable, "-m", "scripts.envelope.worker", phase, json.dumps(config)],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        done = subprocess.run(  # fixed argv, no shell; see pyproject's S603 entry
+            [
+                sys.executable,
+                "-m",
+                "scripts.envelope.worker",
+                phase,
+                json.dumps(config),
+            ],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=config["phase_timeout_s"],
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit(
+            f"phase {phase} did not finish within {config['phase_timeout_s']} s"
+        ) from None
     seconds = time.perf_counter() - start
     if expect_kill and done.returncode == -signal.SIGKILL:
         return {}, seconds
+    if expect_kill and done.returncode == 0:
+        raise SystemExit(f"phase {phase} was to kill itself but finished")
     if done.returncode:
         tail = "\n".join(done.stderr.splitlines()[-20:])
         raise SystemExit(f"phase {phase} failed ({done.returncode}):\n{tail}")
@@ -123,6 +172,11 @@ def _spawn(
 
 
 def _recovery(config: dict[str, Any]) -> dict[str, Any]:
+    """Kill an edit run once ``kill_after`` edits finished, then restart.
+
+    The finished edits were embedded before the kill, so a clean restart
+    embeds only what the edit in progress left: one rewritten section.
+    """
     kill_after = config["kill_after"]
     run = {
         **config,
@@ -130,17 +184,19 @@ def _recovery(config: dict[str, Any]) -> dict[str, Any]:
         "edits": kill_after + 1,
         "kill_at": kill_after,
     }
+    checkpoint = Path(config["work"]) / _CHECKPOINT
+    checkpoint.unlink(missing_ok=True)  # the plain edit run left its count
     _spawn("edits", run, expect_kill=True)
-    checkpoint = Path(config["work"]) / "edits-finished"
     finished = int(checkpoint.read_text()) if checkpoint.exists() else 0
-    after, seconds = _spawn("restart", config)
-    allowed = (finished + 1) * synth.CHUNKS_PER_NOTE
+    after, wall = _spawn("restart", config)
     return {
         "finished_edits": finished,
         "texts_embedded": after["texts_embedded"],
-        "texts_beyond_allowed": max(0, after["texts_embedded"] - allowed),
+        "texts_allowed": _TEXTS_PER_EDIT,
+        "texts_beyond_allowed": max(0, after["texts_embedded"] - _TEXTS_PER_EDIT),
         "moved_aside": after["moved_aside"],
-        "seconds": seconds,
+        "seconds": after["seconds"],
+        "wall_seconds": wall,
     }
 
 
@@ -156,13 +212,12 @@ def measure(backend: str, config: dict[str, Any]) -> dict[str, Any]:
     """
     built, _ = _spawn("build", config)
     memory, _ = _spawn("memory", config)
-    cold = {}
-    eviction = "unconfirmed"
+    cold, eviction = {}, {}
     for kind in KINDS:
         figures, _ = _spawn("cold", {**config, "kind": kind})
         cold[kind] = figures["seconds"]
-        eviction = figures["eviction"] if kind == "semantic" else eviction
-    restarted, seconds = _spawn("restart", config)
+        eviction[kind] = figures["eviction"]
+    restarted, wall = _spawn("restart", config)
     edits, _ = _spawn("edits", config)
     return {
         "backend": backend,
@@ -170,7 +225,7 @@ def measure(backend: str, config: dict[str, Any]) -> dict[str, Any]:
         "build": built,
         "memory": memory["memory"],
         "latency": {"warm": memory["warm"], "cold": cold, "eviction": eviction},
-        "restart": {**restarted, "seconds": seconds},
+        "restart": {**restarted, "wall_seconds": wall},
         "edits": edits,
         "recovery": _recovery(config),
     }
@@ -202,7 +257,11 @@ def main(argv: list[str] | None = None) -> int:
         "kill_after": args.edits // 2 if args.kill_after is None else args.kill_after,
         "batch_size": args.batch_size,
         "seed": args.seed,
+        "phase_timeout_s": args.phase_timeout,
+        "drain_timeout_s": args.drain_timeout,
     }
+    if settings["kill_after"] >= args.edits:
+        raise SystemExit("--kill-after must be below --edits")
     work = _work_folder(args.out)
     environment = report.environment(work)
     warning = cold_warning(environment)

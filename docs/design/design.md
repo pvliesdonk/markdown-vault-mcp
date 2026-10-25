@@ -4741,7 +4741,8 @@ filtered search restricts to. The indexer makes seven chunks of each note
 22,764 chunks (#1501), is about 3,252 notes; the report records the chunk
 count the indexer actually made. Vectors come from `synth.StandInProvider`:
 1,024-wide like the deployed model's, seeded from each text's SHA-256,
-normalized float32, with no network calls; it counts every text it embeds.
+normalized float32, with no network calls; it counts the texts it embeds and
+the calls, without keeping the texts, so it does not grow the process.
 `--batch-size` sets the texts per provider call to keep the build short; it is
 not a measured figure.
 
@@ -4756,8 +4757,9 @@ phase's leftovers.
   from `/proc/<pid>/smaps_rollup`; page-cache pages of the index and store
   (`Pss_File`) are reported in their own column. *What semantic search adds*
   is a peak minus a peak in one process: the vault answers 20 keyword
-  searches with the vector store still closed (the report says whether it
-  was), then warm searches of every kind; peaks are sampled every 10 ms from
+  searches with the vector store still closed (the table says whether it
+  was, and marks the figures invalid when it was not), then warm searches of
+  every kind; peaks are sampled every 10 ms from
   `/proc/self/status`. It is reported as anonymous (`RssAnon + RssShmem`) and
   as total resident (`VmRSS`); #1502's figures, the budget's source, were
   sampled process RSS.
@@ -4767,8 +4769,9 @@ phase's leftovers.
 - *Cold latency.* A fresh process per kind fsyncs the index and store files,
   drops their clean pages with `posix_fadvise(POSIX_FADV_DONTNEED)` (no
   privileges needed) and times its first search. util-linux `fincore`, when
-  installed, confirms the files left page cache; otherwise the report says
-  `unconfirmed`. On tmpfs or ramfs the pages cannot leave memory, so the
+  installed, confirms the files left page cache, per kind; otherwise the
+  report says `unconfirmed`. SQLite's `-shm` file is mapped into the process,
+  so it is left out of the check. On tmpfs or ramfs the pages cannot leave memory, so the
   harness warns that cold latency is not cold there.
 - *Bytes per edit.* Single-note edits through the server's path: the
   writer facet's `write`, then waiting for the index writer to drain, which
@@ -4776,14 +4779,22 @@ phase's leftovers.
   (bytes passed to write calls, including SQLite's WAL; `write_bytes` lags
   without an fsync), the growth of the store's files, the texts embedded,
   and the note's whole vector size beside them.
-- *Restart.* The wall time from starting a process to its first semantic
-  search returning, after the boot steps (`build_index`,
-  `build_embeddings`), and the texts embedded besides the query.
-- *Recovery.* An edit run that records each finished edit and kills itself
-  with SIGKILL while the next one is in flight, then a restart. The texts
-  the restart may embed are those of the finished edits and the one in
-  flight; the report gives the excess, and whether a corrupt store was moved
-  aside instead.
+- *Restart.* A fresh process boots as the server does (`domain.py`):
+  `build_index`, the boot `reindex` that picks up changes made while it was
+  down, then `build_embeddings`. The figure is the process's age, from
+  `/proc/self/stat`, when its first semantic search returns, so teardown is
+  left out; the spawn-to-exit wall time is kept beside it. The texts
+  embedded besides the query should be none.
+- *Recovery.* An edit run records each finished edit and kills itself with
+  SIGKILL once the given number have finished and the next note is written,
+  while the index writer's work on it is still queued or running. A restart
+  follows. The finished edits were embedded before the kill, so a clean
+  restart embeds at most the edit in progress's one rewritten section; the
+  report gives the texts embedded, the excess over that one, and whether a
+  corrupt store was moved aside.
+- *Bounds.* Each phase has a timeout (`--phase-timeout`) and each edit's
+  wait for the index writer another (`--drain-timeout`), so a stuck writer
+  fails the run instead of hanging it.
 - *Environment.* The git commit, Python, SQLite, numpy and psycopg versions,
   the CPU, memory, kernel and the work folder's filesystem type.
 
