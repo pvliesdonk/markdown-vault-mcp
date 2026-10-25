@@ -253,3 +253,22 @@ class TestCloseFoldsTheWal:
         assert not [
             r for r in caplog.records if r.msg.startswith("fts_index_checkpoint_")
         ]
+
+    def test_a_close_racing_another_close_logs_nothing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        index = FTSIndex(db_path=tmp_path / "index.db")
+        real = index._registry.conn
+
+        def closed_meanwhile() -> sqlite3.Connection:
+            # Another thread's close() won between the closed check and conn().
+            raise sqlite3.ProgrammingError("Cannot operate on a closed FTSIndex")
+
+        index._registry.conn = closed_meanwhile  # type: ignore[method-assign]
+        with caplog.at_level(logging.WARNING):
+            index.close()
+        assert not [
+            r for r in caplog.records if r.msg.startswith("fts_index_checkpoint_")
+        ]
+        with pytest.raises(sqlite3.ProgrammingError):
+            real()

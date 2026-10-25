@@ -2796,12 +2796,17 @@ class FTSIndex:
         ``index.db`` alone would miss commits (#1505). This never waits: a
         read transaction elsewhere makes the truncate report busy, and only
         frames that reader still needs stay outside the file, which is logged
-        and folded in by the next writer.
+        and folded in by the next writer. A busy result with no frame counts
+        (another connection was checkpointing at that instant) is not logged:
+        that checkpoint folds the frames.
         """
         if self._registry.is_memory or self._read_only or self._registry.closed:
             return
         try:
             conn = self._registry.conn()
+        except sqlite3.ProgrammingError:  # another thread's close() got here first
+            return
+        try:
             waits = int(conn.execute("PRAGMA busy_timeout").fetchone()[0])
             conn.execute("PRAGMA busy_timeout = 0")
             try:
