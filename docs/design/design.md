@@ -4727,7 +4727,8 @@ it measures without judging: #1899 compares its figures with the budgets.
 Run it from the repository root on Linux:
 
 ```bash
-uv run python -m scripts.envelope --size deployed --backends numpy,sqlite --out DIR
+uv run --extra postgres python -m scripts.envelope --size deployed \
+    --backends numpy,sqlite,postgres --out DIR
 ```
 
 `--size growth` is ten times the deployed size and needs a few GB in `DIR`;
@@ -4751,8 +4752,8 @@ the calls, without keeping the texts, so it does not grow the process.
 `--batch-size` sets the texts per provider call to keep the build short; it is
 not a measured figure.
 
-**Process.** Each backend (`numpy` resident, `sqlite` streamed) gets its own
-copy of the vault, and each phase runs in a fresh process
+**Process.** Each backend (`numpy` resident, `sqlite` and `postgres`
+streamed) gets its own copy of the vault, and each phase runs in a fresh process
 (`scripts/envelope/worker.py`), so a reading never includes a previous
 phase's leftovers.
 
@@ -4811,6 +4812,23 @@ phase's leftovers.
 - *Bounds.* Each phase has a timeout (`--phase-timeout`) and each edit's
   wait for the index writer another (`--drain-timeout`), so a stuck writer
   fails the run instead of hanging it.
+- *PostgreSQL.* The database comes from where the test suite's does
+  (`tests/fixtures/postgres.py`): `MVM_TEST_POSTGRES_DSN`, or else a
+  throwaway `pgvector/pgvector` container the harness starts and removes
+  (`MVM_TEST_POSTGRES_IMAGE` picks the image); nothing else is reached. The
+  vectors go in a schema of the harness's own (`mvm_envelope_` and a random
+  suffix), dropped at the end, also on SIGTERM. Only PostgreSQL workers get
+  the connection string, through their environment, never argv or the JSON;
+  error output and results have connection strings replaced, and outputs
+  name the database by its source. Process memory excludes the service. The
+  service's memory (a throwaway container's, from `docker stats`: on cgroup
+  v2 that leaves out inactive page cache only), the database's and schema's
+  sizes, the server and pgvector versions, and the WAL each edit wrote are
+  reported apart. The WAL figure is cluster-wide. PostgreSQL writes no local
+  store files, so its store growth is left blank and its `wchar` counts the
+  local index only. Before each cold search a throwaway container restarts,
+  dropping its buffers but not the host's page cache; a given database is
+  not restarted, and the report says so.
 - *Environment.* The git commit and whether tracked files differ from it,
   the Python, SQLite, numpy and psycopg versions, the CPU, memory, kernel
   and the work folder's filesystem type. Result files are named by commit,

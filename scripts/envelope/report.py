@@ -27,6 +27,20 @@ _SECRET_TEXT = (
 )
 
 
+def hide_secrets(text: str) -> str:
+    """Replace connection URIs and ``password=`` pairs in *text*.
+
+    Args:
+        text: Free text, such as a worker's error output.
+
+    Returns:
+        The text with each match replaced by ``<hidden>``.
+    """
+    for pattern in _SECRET_TEXT:
+        text = pattern.sub(_HIDDEN, text)
+    return text
+
+
 def _scrub(value: Any) -> Any:
     """Return *value* without connection strings.
 
@@ -44,8 +58,7 @@ def _scrub(value: Any) -> Any:
     if isinstance(value, list | tuple | set):
         return [_scrub(v) for v in value]
     if isinstance(value, str):
-        for pattern in _SECRET_TEXT:
-            value = pattern.sub(_HIDDEN, value)
+        return hide_secrets(value)
     return value
 
 
@@ -245,6 +258,26 @@ def _restart_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     return rows
 
 
+def _service_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
+    rows = []
+    for config in configs:
+        service = config.get("service")
+        if service is None:
+            continue
+        rows.append(
+            [
+                _name(config),
+                _mib(service.get("memory")),
+                _mib(service.get("database_bytes")),
+                _mib(service.get("schema_bytes")),
+                _spread(config.get("edits", {}).get("wal_bytes"), _plain),
+                f"{service.get('server_version', _MISSING)} / "
+                f"{service.get('pgvector_version', _MISSING)}",
+            ]
+        )
+    return rows
+
+
 def render_markdown(result: dict[str, Any]) -> str:
     """Render *result* as markdown tables, one per kind of figure.
 
@@ -297,6 +330,13 @@ def render_markdown(result: dict[str, Any]) -> str:
         ],
         _edit_rows(configs),
     )
+    if any(c.get("backend") == "postgres" for c in configs):
+        lines += [
+            "PostgreSQL's store writes no local files: its wchar counts the "
+            "local index only, and its store's writes are the WAL column of "
+            "the PostgreSQL service table.",
+            "",
+        ]
     lines += ["### Restart and recovery", ""]
     lines += _table(
         [
@@ -309,4 +349,18 @@ def render_markdown(result: dict[str, Any]) -> str:
         ],
         _restart_rows(configs),
     )
+    services = _service_rows(configs)
+    if services:
+        lines += ["### PostgreSQL service", ""]
+        lines += _table(
+            [
+                "Configuration",
+                "Service memory",
+                "Database",
+                "Vectors' schema",
+                "WAL per edit, cluster-wide (median / max)",
+                "PostgreSQL / pgvector",
+            ],
+            services,
+        )
     return "\n".join(lines)

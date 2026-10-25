@@ -35,6 +35,9 @@ from markdown_vault_mcp.vault import Vault
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+DSN_ENV = "MVM_ENVELOPE_POSTGRES_DSN"
+"""How the orchestrator hands a PostgreSQL worker its connection string."""
+
 KINDS = ("semantic", "hybrid", "filtered", "similar")
 _KEYWORD_SEARCHES = 20
 _STORE_GLOB = "index-db-embeddings*"
@@ -42,8 +45,24 @@ _INDEX_GLOB = "index.db*"
 _CHECKPOINT = "edits-finished"  # read by the orchestrator
 
 
+def _postgres_dsn() -> str:
+    """The connection string the orchestrator put in this process's environment.
+
+    Held as a ``SecretDsn``, so a traceback that shows it prints it hidden.
+    """
+    from tests.fixtures.postgres import SecretDsn
+
+    return SecretDsn(os.environ[DSN_ENV])
+
+
 def _vault(config: dict[str, Any], provider: synth.StandInProvider) -> Vault:
     work = Path(config["work"])
+    postgres: dict[str, Any] = {}
+    if config["backend"] == "postgres":
+        postgres = {
+            "embedding_postgres_dsn": _postgres_dsn(),
+            "embedding_postgres_schema": config["schema"],
+        }
     return Vault(
         source_dir=work / "vault",
         settings=VaultSettings(
@@ -52,6 +71,7 @@ def _vault(config: dict[str, Any], provider: synth.StandInProvider) -> Vault:
             embedding_store=config["backend"],
             embedding_search=config["search"],
             embedding_batch_size=config["batch_size"],
+            **postgres,
         ),
         embedding_provider=provider,
     )
@@ -261,6 +281,16 @@ def _edit(vault: Vault, config: dict[str, Any], path: str, number: int) -> None:
     vault.writer.write(path, body, frontmatter)
 
 
+def _wal_reader(config: dict[str, Any]) -> Callable[[], int] | None:
+    """Return a reader of PostgreSQL's WAL position, for that backend only."""
+    if config["backend"] != "postgres":
+        return None
+    from scripts.envelope import postgres
+
+    dsn = _postgres_dsn()
+    return lambda: postgres.wal_position(dsn)
+
+
 def _edit_numbers(config: dict[str, Any]) -> Iterator[int]:
     first = config.get("first_edit", 0)
     yield from range(first, first + config["edits"])
@@ -287,19 +317,23 @@ def edits(config: dict[str, Any]) -> dict[str, Any]:
 
     Returns:
         Per-edit spreads of the bytes written, store growth, texts embedded
-        and the note's vector bytes.
+        and the note's vector bytes. PostgreSQL's store has no local files,
+        so its store growth is ``None`` and its WAL written is given instead
+        (``wal_bytes``, counting every session's: ``wal_scope``).
     """
     provider = synth.StandInProvider(config["dim"])
     vault = _vault(config, provider)
     paths = _paths(config)
     checkpoint = Path(config["work"]) / _CHECKPOINT
     note_bytes = synth.CHUNKS_PER_NOTE * config["dim"] * 4
-    figures: dict[str, list[int]] = {"wchar": [], "store_delta": [], "texts": []}
+    wal = _wal_reader(config)
+    figures: dict[str, list[int]] = {k: [] for k in ("wchar", "store", "texts", "wal")}
     try:
         vault.index.build_index()
         vault.reader.search(synth.QUERIES[0], mode="semantic")  # open the store
         for done, number in enumerate(_edit_numbers(config)):
             path = paths[(number * 7919) % len(paths)]
+            position = wal() if wal else 0  # outside the wchar window
             io, size, texts = (
                 probes.read_io(os.getpid()),
                 _store_bytes(config),
@@ -310,18 +344,24 @@ def edits(config: dict[str, Any]) -> dict[str, Any]:
                 os.kill(os.getpid(), signal.SIGKILL)
             _drain(vault, config)
             figures["wchar"].append(probes.read_io(os.getpid())["wchar"] - io["wchar"])
-            figures["store_delta"].append(_store_bytes(config) - size)
+            figures["store"].append(_store_bytes(config) - size)
             figures["texts"].append(provider.count - texts)
+            if wal:
+                figures["wal"].append(wal() - position)
             checkpoint.write_text(str(done + 1))
     finally:
         vault.close()
-    return {
+    result: dict[str, Any] = {
         "count": len(figures["texts"]),
         "wchar": _spread(figures["wchar"]),
-        "store_delta": _spread(figures["store_delta"]),
+        "store_delta": None if wal else _spread(figures["store"]),
         "texts_embedded": _spread(figures["texts"]),
         "note_vector_bytes": {"median": note_bytes, "max": note_bytes},
     }
+    if wal:
+        result["wal_bytes"] = _spread(figures["wal"])
+        result["wal_scope"] = "cluster"
+    return result
 
 
 PHASES: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {

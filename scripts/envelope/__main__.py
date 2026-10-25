@@ -2,8 +2,8 @@
 
 Usage, from the repository root::
 
-    uv run python -m scripts.envelope --size deployed --backends numpy,sqlite \\
-        --out ~/envelope-runs
+    uv run --extra postgres python -m scripts.envelope --size deployed \\
+        --backends numpy,sqlite,postgres --out ~/envelope-runs
 
 For each backend it generates the synthetic vault in ``OUT/work/<backend>``,
 then runs each phase in a fresh process (``scripts.envelope.worker``): build,
@@ -11,29 +11,36 @@ memory and warm latency, a cold search of each kind, restart, single-note
 edits, and a recovery run that kills itself mid-edit and restarts. It writes
 ``OUT/<git sha>[-dirty]-<size>-<UTC time>.json`` and prints the markdown
 tables. At the growth size a run needs a few GB in ``OUT``; nothing is
-written inside the repository.
+written inside the repository. PostgreSQL comes from ``MVM_TEST_POSTGRES_DSN``
+or a throwaway container (``scripts.envelope.postgres``), never any other
+database.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import shutil
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from scripts.envelope import report, synth
-from scripts.envelope.worker import KINDS, PHASES
+from scripts.envelope import postgres, report, synth
+from scripts.envelope.worker import DSN_ENV, KINDS, PHASES
+
+if TYPE_CHECKING:
+    from scripts.envelope.postgres import Database
 
 REPO = Path(__file__).resolve().parents[2]
 SIZES = {"deployed": 22_764, "growth": 227_640}
 """Target chunk counts: the deployed vault (#1501) and ten times that."""
 
-BACKENDS = {"numpy": "resident", "sqlite": "streamed"}
+BACKENDS = {"numpy": "resident", "sqlite": "streamed", "postgres": "streamed"}
 """Each backend measured, with the search mode it runs in."""
 
 _SENTINEL = ".envelope-work"
@@ -129,22 +136,34 @@ def _work_folder(out: Path) -> Path:
 
 
 def _spawn(
-    phase: str, config: dict[str, Any], *, expect_kill: bool = False
+    phase: str,
+    config: dict[str, Any],
+    *,
+    expect_kill: bool = False,
+    db: Database | None = None,
 ) -> tuple[dict[str, Any], float]:
     """Run one phase in a fresh process; return its figures and wall seconds.
 
+    A PostgreSQL phase gets *db*'s connection string in its environment;
+    no other phase does.
+
     Raises:
         SystemExit: If the phase fails, outlasts ``phase_timeout_s``, or,
-            with *expect_kill*, ends other than by SIGKILL.
+            with *expect_kill*, ends other than by SIGKILL. Connection
+            strings are hidden in the error output shown.
     """
     if phase not in PHASES:
         raise ValueError(f"no worker phase {phase!r}")
+    env = dict(os.environ)
+    if db is not None and config["backend"] == "postgres":
+        env[DSN_ENV] = db.dsn
     start = time.perf_counter()
     try:
         done = subprocess.run(  # fixed argv, no shell; see pyproject's S603 entry
             [sys.executable, "-m", "scripts.envelope.worker", phase],
             input=json.dumps(config),  # on stdin: kept out of argv and ps
             cwd=REPO,
+            env=env,
             capture_output=True,
             text=True,
             check=False,
@@ -161,6 +180,9 @@ def _spawn(
         raise SystemExit(f"phase {phase} was to kill itself but finished")
     if done.returncode:
         tail = "\n".join(done.stderr.splitlines()[-20:])
+        if db is not None:
+            tail = tail.replace(db.dsn, "<hidden>")
+        tail = report.hide_secrets(tail)
         raise SystemExit(f"phase {phase} failed ({done.returncode}):\n{tail}")
     lines = done.stdout.splitlines()
     if not lines:
@@ -169,7 +191,9 @@ def _spawn(
     return figures, seconds
 
 
-def _recovery(config: dict[str, Any], *, texts_per_edit: int) -> dict[str, Any]:
+def _recovery(
+    config: dict[str, Any], *, texts_per_edit: int, db: Database | None = None
+) -> dict[str, Any]:
     """Kill an edit run once ``kill_after`` edits finished, then restart.
 
     The finished edits were embedded before the kill, so a clean restart
@@ -189,14 +213,14 @@ def _recovery(config: dict[str, Any], *, texts_per_edit: int) -> dict[str, Any]:
     }
     checkpoint = Path(config["work"]) / _CHECKPOINT
     checkpoint.unlink(missing_ok=True)  # the plain edit run left its count
-    _spawn("edits", run, expect_kill=True)
+    _spawn("edits", run, expect_kill=True, db=db)
     finished = int(checkpoint.read_text()) if checkpoint.exists() else 0
     if finished != kill_after:
         raise SystemExit(
             f"the edit run was killed after {finished} edits, not {kill_after}: "
             "a kill the harness did not make (out of memory?)"
         )
-    after, wall = _spawn("restart", config)
+    after, wall = _spawn("restart", config, db=db)
     return {
         "finished_edits": finished,
         "texts_embedded": after["texts_embedded"],
@@ -208,12 +232,52 @@ def _recovery(config: dict[str, Any], *, texts_per_edit: int) -> dict[str, Any]:
     }
 
 
-def measure(backend: str, config: dict[str, Any]) -> dict[str, Any]:
+def _cold(
+    config: dict[str, Any], db: Database | None
+) -> tuple[dict[str, float], dict[str, str]]:
+    """Time the first search of each kind in a fresh process.
+
+    A throwaway PostgreSQL restarts before each, dropping its buffers; a
+    given one is left alone, and each kind's eviction note says which.
+    """
+    pg = db if config["backend"] == "postgres" else None
+    cold, eviction = {}, {}
+    for kind in KINDS:
+        if pg is not None and pg.container is not None:
+            postgres.restart(pg)
+        timed, _ = _spawn("cold", {**config, "kind": kind}, db=db)
+        cold[kind] = timed["seconds"]
+        eviction[kind] = timed["eviction"]
+        if pg is not None:
+            service = (
+                "service restarted, host page cache kept"
+                if pg.container is not None
+                else "service not restarted (a database the harness did not start)"
+            )
+            eviction[kind] = f"index files {eviction[kind]}; {service}"
+    return cold, eviction
+
+
+def _service(
+    config: dict[str, Any], db: Database, memory: int | None
+) -> dict[str, Any]:
+    """Describe the PostgreSQL service: its memory, sizes and versions."""
+    return {
+        "memory": memory,
+        **postgres.sizes(db.dsn, config["schema"]),
+        **postgres.versions(db.dsn),
+    }
+
+
+def measure(
+    backend: str, config: dict[str, Any], db: Database | None = None
+) -> dict[str, Any]:
     """Run every phase for *backend*.
 
     Args:
         backend: The backend's registry name.
         config: The run's settings and its work folder.
+        db: The run's PostgreSQL, for that backend.
 
     Returns:
         The backend's figures, also kept in ``partial.json`` in the backend's
@@ -221,28 +285,40 @@ def measure(backend: str, config: dict[str, Any]) -> dict[str, Any]:
     """
     partial = Path(config["work"]) / "partial.json"
     figures: dict[str, Any] = {"backend": backend, "search": config["search"]}
+    pg = db if backend == "postgres" else None
+    if pg is not None:
+        figures["source"] = pg.source
 
     def keep(key: str, value: Any) -> None:
         # A later phase can fail after hours of work; what is done stays.
         figures[key] = value
         partial.write_text(json.dumps(figures, indent=2) + "\n")
 
-    keep("build", _spawn("build", config)[0])
-    memory, _ = _spawn("memory", config)
+    keep("build", _spawn("build", config, db=db)[0])
+    memory, _ = _spawn("memory", config, db=db)
     keep("memory", memory["memory"])
-    cold, eviction = {}, {}
-    for kind in KINDS:
-        timed, _ = _spawn("cold", {**config, "kind": kind})
-        cold[kind] = timed["seconds"]
-        eviction[kind] = timed["eviction"]
+    service_memory = (
+        postgres.service_memory(pg.container)
+        if pg is not None and pg.container is not None
+        else None
+    )
+    cold, eviction = _cold(config, db)
     keep("latency", {"warm": memory["warm"], "cold": cold, "eviction": eviction})
-    restarted, wall = _spawn("restart", config)
+    restarted, wall = _spawn("restart", config, db=db)
     keep("restart", {**restarted, "wall_seconds": wall})
-    edits, _ = _spawn("edits", config)
+    edits, _ = _spawn("edits", config, db=db)
     keep("edits", edits)
     texts_per_edit = int(edits["texts_embedded"]["max"])
-    keep("recovery", _recovery(config, texts_per_edit=texts_per_edit))
+    keep("recovery", _recovery(config, texts_per_edit=texts_per_edit, db=db))
+    if pg is not None:
+        keep("service", _service(config, pg, service_memory))
     return figures
+
+
+def _exit_on_sigterm(signum: int, frame: object) -> None:
+    """Turn SIGTERM into an exit, so a container and schema are removed."""
+    del frame
+    raise SystemExit(128 + signum)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -281,13 +357,20 @@ def main(argv: list[str] | None = None) -> int:
     warning = cold_warning(environment)
     if warning:
         sys.stderr.write(warning)
+    signal.signal(signal.SIGTERM, _exit_on_sigterm)  # so cleanup still runs
     configs = []
-    for backend in args.backends:
-        folder = work / backend
-        synth.generate_vault(folder / "vault", notes=notes, seed=args.seed)
-        config = {**settings, "work": str(folder), "backend": backend}
-        config["search"] = BACKENDS[backend]
-        configs.append(measure(backend, config))
+    with contextlib.ExitStack() as stack:
+        db = None
+        if "postgres" in args.backends:
+            db = stack.enter_context(postgres.database(os.environ))
+        for backend in args.backends:
+            folder = work / backend
+            synth.generate_vault(folder / "vault", notes=notes, seed=args.seed)
+            config = {**settings, "work": str(folder), "backend": backend}
+            config["search"] = BACKENDS[backend]
+            if backend == "postgres" and db is not None:
+                config["schema"] = stack.enter_context(postgres.schema(db))
+            configs.append(measure(backend, config, db))
     result = {
         "size": size,
         "notes": configs[0]["build"]["notes"],

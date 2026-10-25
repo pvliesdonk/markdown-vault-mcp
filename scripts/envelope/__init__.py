@@ -16,4 +16,6 @@ Modules:
     probes: the ``/proc`` readers, the peak sampler, page-cache eviction and
         percentiles.
     report: the run's environment, the JSON file and the markdown table.
+    worker: one measurement phase in a fresh process.
+    postgres: the run's PostgreSQL and its service figures.
 """

@@ -180,7 +180,7 @@ def test_an_out_folder_inside_the_repository_is_refused() -> None:
 
 def _fake_spawn(finished: int) -> Any:
     def spawn(
-        phase: str, config: dict[str, Any], *, expect_kill: bool = False
+        phase: str, config: dict[str, Any], *, expect_kill: bool = False, **_: Any
     ) -> tuple[dict[str, Any], float]:
         del phase
         if expect_kill:

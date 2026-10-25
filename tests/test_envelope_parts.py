@@ -366,3 +366,33 @@ class TestTheReport:
             assert env[key]
         assert "filesystem" in env
         assert isinstance(env["dirty"], bool)
+
+
+def test_the_postgres_service_gets_a_table_of_its_own() -> None:
+    result = _result()
+    result["configs"][1].update(  # type: ignore[index]
+        {
+            "service": {
+                "memory": 80 << 20,
+                "database_bytes": 300 << 20,
+                "schema_bytes": 120 << 20,
+                "server_version": "17.6",
+                "pgvector_version": "0.8.1",
+            },
+            "edits": {"wal_bytes": {"median": 40_000, "max": 90_000}},
+        }
+    )
+    text = report.render_markdown(result)
+    assert "### PostgreSQL service" in text
+    assert (
+        "| postgres (streamed) | 80.0 MiB | 300.0 MiB | 120.0 MiB | "
+        "40,000 / 90,000 | 17.6 / 0.8.1 |" in text
+    )
+    assert "PostgreSQL's store writes no local files" in text
+    assert "Store growth" in text
+
+
+def test_no_service_table_without_postgres() -> None:
+    result = _result()
+    result["configs"] = result["configs"][:1]  # type: ignore[index]
+    assert "PostgreSQL service" not in report.render_markdown(result)
