@@ -267,6 +267,7 @@ def _service_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
         rows.append(
             [
                 _name(config),
+                config.get("source", _MISSING),
                 _mib(service.get("memory")),
                 _mib(service.get("database_bytes")),
                 _mib(service.get("schema_bytes")),
@@ -333,8 +334,9 @@ def render_markdown(result: dict[str, Any]) -> str:
     if any(c.get("backend") == "postgres" for c in configs):
         lines += [
             "PostgreSQL's store writes no local files: its wchar counts the "
-            "local index only, and its store's writes are the WAL column of "
-            "the PostgreSQL service table.",
+            "local index only (libpq sends with send(2), which wchar leaves "
+            "out), and its store's writes are the WAL column of the "
+            "PostgreSQL service table.",
             "",
         ]
     lines += ["### Restart and recovery", ""]
@@ -355,9 +357,10 @@ def render_markdown(result: dict[str, Any]) -> str:
         lines += _table(
             [
                 "Configuration",
-                "Service memory",
-                "Database",
-                "Vectors' schema",
+                "Source",
+                "Service memory at rest, after warm searches",
+                "Database (after the edits)",
+                "Vectors' schema (after the edits)",
                 "WAL per edit, cluster-wide (median / max)",
                 "PostgreSQL / pgvector",
             ],

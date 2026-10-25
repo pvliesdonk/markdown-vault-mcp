@@ -7,15 +7,17 @@ never anything else, and its connection string reaches no output.
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from scripts.envelope import __main__ as cli
-from scripts.envelope import postgres, synth
+from scripts.envelope import postgres, report, worker
 
-from tests.fixtures.postgres import DSN_ENV, docker_available
+from tests.fixtures.postgres import DSN_ENV, docker_available, report_unavailable
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,6 +43,7 @@ class TestTheParsers:
         )
 
     def test_no_database_is_a_clear_refusal(self) -> None:
+        pytest.importorskip("psycopg")  # without it the refusal names the extra
         with (
             pytest.raises(SystemExit, match="no PostgreSQL"),
             postgres.database({}, docker_available=lambda: False),
@@ -68,7 +71,10 @@ def test_a_run_measures_postgres_without_showing_its_dsn(
     (path,) = out.glob("*.json")
     text = path.read_text()
     printed = capsys.readouterr()
-    for secret in (postgres_server.dsn, "password="):
+    password = re.search(r"password=(\S+)", postgres_server.dsn)
+    secrets = [postgres_server.dsn, "password="]
+    secrets += [password.group(1)] if password else []
+    for secret in secrets:
         assert secret not in text
         assert secret not in printed.out + printed.err
 
@@ -108,18 +114,81 @@ def test_a_database_never_shows_its_dsn_in_its_repr() -> None:
     assert "hunter2" not in repr(db)
 
 
-def test_a_failing_phase_never_shows_the_dsn(tmp_path: Path) -> None:
-    dsn = "host=127.0.0.1 port=1 user=u password=hunter2 dbname=x"
-    db = postgres.Database(dsn, "MVM_TEST_POSTGRES_DSN (hidden DSN)")
-    synth.generate_vault(tmp_path / "vault", notes=2, seed=1)
-    config = {
-        "work": str(tmp_path), "backend": "postgres", "search": "streamed",
+def _fake_run(seen: dict[str, Any], stderr: str = "") -> Any:
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen.update(kwargs["env"])
+        return subprocess.CompletedProcess(argv, 1, stdout="", stderr=stderr)
+
+    return run
+
+
+def _config(tmp_path: Path, backend: str) -> dict[str, Any]:
+    return {
+        "work": str(tmp_path), "backend": backend, "search": "streamed",
         "schema": "absent", "dim": 8, "batch_size": 8, "phase_timeout_s": 120,
     }  # fmt: skip
+
+
+def test_a_failing_phase_never_shows_the_dsn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dsn = "host=127.0.0.1 port=1 user=u password=hunter2 dbname=x"
+    db = postgres.Database(dsn, "MVM_TEST_POSTGRES_DSN (hidden DSN)")
+    stderr = f"boom {dsn}\nuri postgresql://u:hunter2@h/x\nretry password=hunter2"
+    monkeypatch.setattr(cli.subprocess, "run", _fake_run({}, stderr))
     with pytest.raises(SystemExit) as failure:
-        cli._spawn("build", config, db=db)
+        cli._spawn("build", _config(tmp_path, "postgres"), db=db)
     assert "hunter2" not in str(failure.value)
+    assert "<hidden>" in str(failure.value)
     assert "phase build failed" in str(failure.value)
+
+
+@pytest.mark.parametrize("backend", ["numpy", "sqlite", "postgres"])
+def test_only_a_postgres_worker_gets_a_connection_string(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backend: str
+) -> None:
+    monkeypatch.setenv(DSN_ENV, "host=h password=given")
+    db = postgres.Database("host=h password=given", "MVM_TEST_POSTGRES_DSN")
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(cli.subprocess, "run", _fake_run(seen))
+    with pytest.raises(SystemExit):
+        cli._spawn("build", _config(tmp_path, backend), db=db)
+    assert DSN_ENV not in seen
+    assert (worker.DSN_ENV in seen) == (backend == "postgres")
+
+
+def test_a_bare_run_leaves_postgres_out() -> None:
+    assert cli._parser().parse_args(["--out", "x"]).backends == ["numpy", "sqlite"]
+
+
+def test_the_tables_name_where_the_database_came_from() -> None:
+    result = {
+        "size": "custom",
+        "environment": {"git_sha": "abc"},
+        "configs": [
+            {
+                "backend": "postgres",
+                "search": "streamed",
+                "source": "throwaway container pgvector/pgvector:0.8.1-pg17",
+                "service": {"memory": 1 << 20},
+            }
+        ],
+    }
+    text = report.render_markdown(result)
+    assert "| throwaway container pgvector/pgvector:0.8.1-pg17 |" in text
+
+
+def test_a_failed_container_restart_is_not_reported_as_a_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def docker(*args: str, timeout: float = 0) -> subprocess.CompletedProcess[str]:
+        del timeout
+        return subprocess.CompletedProcess(list(args), 1, stdout="", stderr="no")
+
+    monkeypatch.setattr(postgres, "_docker", docker)
+    db = postgres.Database("host=h port=5 password=p", "throwaway", "abc123")
+    with pytest.raises(SystemExit, match="could not restart"):
+        postgres.restart(db)
 
 
 @linux_only
@@ -127,7 +196,7 @@ def test_a_run_on_a_throwaway_container_restarts_it_and_cleans_up(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if not docker_available():
-        pytest.skip("needs the Docker CLI and daemon")
+        report_unavailable("needs the Docker CLI and daemon", os.environ)
     monkeypatch.delenv(DSN_ENV, raising=False)  # keeps MVM_TEST_POSTGRES_IMAGE
     before = _containers()
     out = tmp_path / "out"

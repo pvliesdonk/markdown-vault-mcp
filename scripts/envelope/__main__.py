@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from scripts.envelope import postgres, report, synth
 from scripts.envelope.worker import DSN_ENV, KINDS, PHASES
+from tests.fixtures.postgres import DSN_ENV as GIVEN_DSN_ENV
 
 if TYPE_CHECKING:
     from scripts.envelope.postgres import Database
@@ -41,7 +42,11 @@ SIZES = {"deployed": 22_764, "growth": 227_640}
 """Target chunk counts: the deployed vault (#1501) and ten times that."""
 
 BACKENDS = {"numpy": "resident", "sqlite": "streamed", "postgres": "streamed"}
-"""Each backend measured, with the search mode it runs in."""
+"""Each backend that can be measured, with the search mode it runs in."""
+
+DEFAULT_BACKENDS = ["numpy", "sqlite"]
+"""A bare run's backends: PostgreSQL is opt-in, since it writes a whole vault
+into the database it is given."""
 
 _SENTINEL = ".envelope-work"
 _CHECKPOINT = "edits-finished"
@@ -72,7 +77,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m scripts.envelope")
     parser.add_argument("--size", choices=sorted(SIZES), default="deployed")
     parser.add_argument("--notes", type=_count(1), help="note count; overrides --size")
-    parser.add_argument("--backends", type=_backends, default=list(BACKENDS))
+    parser.add_argument(
+        "--backends",
+        type=_backends,
+        default=DEFAULT_BACKENDS,
+        help="comma-separated; default numpy,sqlite (postgres is opt-in)",
+    )
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--dim", type=_count(1), default=synth.DEFAULT_DIMENSION)
     parser.add_argument("--queries", type=_count(1), default=50)
@@ -155,6 +165,7 @@ def _spawn(
     if phase not in PHASES:
         raise ValueError(f"no worker phase {phase!r}")
     env = dict(os.environ)
+    env.pop(GIVEN_DSN_ENV, None)  # no worker reads the given DSN
     if db is not None and config["backend"] == "postgres":
         env[DSN_ENV] = db.dsn
     start = time.perf_counter()
@@ -315,6 +326,31 @@ def measure(
     return figures
 
 
+def _measure_all(
+    args: argparse.Namespace, settings: dict[str, Any], work: Path, notes: int
+) -> list[dict[str, Any]]:
+    """Measure each backend; a PostgreSQL database opens when its turn comes.
+
+    Cleanup (the schema, then the container) ignores a second SIGTERM.
+    """
+    configs = []
+    with contextlib.ExitStack() as stack:
+        try:
+            db = None
+            for backend in args.backends:
+                folder = work / backend
+                synth.generate_vault(folder / "vault", notes=notes, seed=args.seed)
+                config = {**settings, "work": str(folder), "backend": backend}
+                config["search"] = BACKENDS[backend]
+                if backend == "postgres":
+                    db = stack.enter_context(postgres.database(os.environ))
+                    config["schema"] = stack.enter_context(postgres.schema(db))
+                configs.append(measure(backend, config, db))
+        finally:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    return configs
+
+
 def _exit_on_sigterm(signum: int, frame: object) -> None:
     """Turn SIGTERM into an exit, so a container and schema are removed."""
     del frame
@@ -357,20 +393,11 @@ def main(argv: list[str] | None = None) -> int:
     warning = cold_warning(environment)
     if warning:
         sys.stderr.write(warning)
-    signal.signal(signal.SIGTERM, _exit_on_sigterm)  # so cleanup still runs
-    configs = []
-    with contextlib.ExitStack() as stack:
-        db = None
-        if "postgres" in args.backends:
-            db = stack.enter_context(postgres.database(os.environ))
-        for backend in args.backends:
-            folder = work / backend
-            synth.generate_vault(folder / "vault", notes=notes, seed=args.seed)
-            config = {**settings, "work": str(folder), "backend": backend}
-            config["search"] = BACKENDS[backend]
-            if backend == "postgres" and db is not None:
-                config["schema"] = stack.enter_context(postgres.schema(db))
-            configs.append(measure(backend, config, db))
+    previous = signal.signal(signal.SIGTERM, _exit_on_sigterm)  # cleanup runs
+    try:
+        configs = _measure_all(args, settings, work, notes)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
     result = {
         "size": size,
         "notes": configs[0]["build"]["notes"],

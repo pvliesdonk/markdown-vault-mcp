@@ -4731,6 +4731,8 @@ uv run --extra postgres python -m scripts.envelope --size deployed \
     --backends numpy,sqlite,postgres --out DIR
 ```
 
+Without `--backends` it measures `numpy` and `sqlite`; PostgreSQL is
+opt-in, since it writes a whole vault into the database it is given.
 `--size growth` is ten times the deployed size and needs a few GB in `DIR`;
 `--notes N` sets the vault size directly. It writes
 `DIR/<git sha>[-dirty]-<size>-<UTC time>.json` and prints the tables.
@@ -4817,16 +4819,21 @@ phase's leftovers.
   throwaway `pgvector/pgvector` container the harness starts and removes
   (`MVM_TEST_POSTGRES_IMAGE` picks the image); nothing else is reached. The
   vectors go in a schema of the harness's own (`mvm_envelope_` and a random
-  suffix), dropped at the end, also on SIGTERM. Only PostgreSQL workers get
-  the connection string, through their environment, never argv or the JSON;
-  error output and results have connection strings replaced, and outputs
-  name the database by its source. Process memory excludes the service. The
-  service's memory (a throwaway container's, from `docker stats`: on cgroup
-  v2 that leaves out inactive page cache only), the database's and schema's
-  sizes, the server and pgvector versions, and the WAL each edit wrote are
-  reported apart. The WAL figure is cluster-wide. PostgreSQL writes no local
-  store files, so its store growth is left blank and its `wchar` counts the
-  local index only. Before each cold search a throwaway container restarts,
+  suffix), dropped at the end, also on SIGTERM; the database opens only when
+  the PostgreSQL backend's turn comes. Only PostgreSQL workers get the
+  connection string, through a variable of the harness's own in their
+  environment (no worker inherits `MVM_TEST_POSTGRES_DSN`), never argv or
+  the JSON; error output and results have connection strings replaced, and
+  the JSON and tables name the database by its source. Process memory
+  excludes the service. Reported apart: the service's memory at rest after
+  the warm searches (a throwaway container's, one `docker stats` reading:
+  on cgroup v2 that includes shared buffers and active page cache, and
+  leaves out inactive page cache only); the database's and schema's sizes
+  after the edits; the server and pgvector versions; and the WAL each edit
+  wrote, from the difference of two `pg_current_wal_lsn()` positions, which
+  is cluster-wide. PostgreSQL writes no local store files, so its store
+  growth is left blank, and its `wchar` counts the local index only: libpq
+  sends with `send(2)`, which `wchar` leaves out. Before each cold search a throwaway container restarts,
   dropping its buffers but not the host's page cache; a given database is
   not restarted, and the report says so.
 - *Environment.* The git commit and whether tracked files differ from it,

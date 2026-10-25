@@ -114,12 +114,17 @@ def schema(db: Database) -> Iterator[str]:
     from psycopg import sql
 
     name = f"{SCHEMA_PREFIX}{uuid.uuid4().hex[:12]}"
-    with _connect(db.dsn, autocommit=True) as conn:
-        conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
     try:
+        with _connect(db.dsn, autocommit=True) as conn:
+            conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
         yield name
     finally:
-        _drop_schema(db.dsn, name)
+        try:
+            _drop_schema(db.dsn, name)  # IF EXISTS: safe if the create failed
+        except Exception:
+            if db.container is None:
+                raise
+            # A throwaway's schema goes with its container; keep the real error.
 
 
 def _fixture_call(call: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -161,7 +166,8 @@ def restart(db: Database) -> None:
     """
     if db.container is None:
         raise SystemExit("only a throwaway PostgreSQL is restarted")
-    _docker("restart", db.container, timeout=120)
+    if _docker("restart", db.container, timeout=120).returncode:
+        raise SystemExit("could not restart the throwaway PostgreSQL")
     port = _published_port(db.container)
     if port is not None:
         db.dsn = SecretDsn(with_port(db.dsn, port))

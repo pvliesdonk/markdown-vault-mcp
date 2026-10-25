@@ -385,7 +385,8 @@ def test_the_postgres_service_gets_a_table_of_its_own() -> None:
     text = report.render_markdown(result)
     assert "### PostgreSQL service" in text
     assert (
-        "| postgres (streamed) | 80.0 MiB | 300.0 MiB | 120.0 MiB | "
+        "| postgres (streamed) | MVM_TEST_POSTGRES_DSN (hidden DSN) | 80.0 MiB | "
+        "300.0 MiB | 120.0 MiB | "
         "40,000 / 90,000 | 17.6 / 0.8.1 |" in text
     )
     assert "PostgreSQL's store writes no local files" in text
