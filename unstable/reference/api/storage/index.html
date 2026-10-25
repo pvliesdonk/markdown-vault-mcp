@@ -1145,6 +1145,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../use/embedding-state/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../use/git-integration/" class="md-nav__link">
         
   
@@ -2480,6 +2508,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.hold_writer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hold_writer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.quarantine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.open_fresh" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2506,6 +2556,17 @@
   
     <nav class="md-nav" aria-label="NumpySidecarStore">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.recorded_identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recorded_identity
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.replace_document" class="md-nav__link">
@@ -3604,6 +3665,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.hold_writer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hold_writer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.quarantine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.open_fresh" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3630,6 +3713,17 @@
   
     <nav class="md-nav" aria-label="NumpySidecarStore">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.recorded_identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recorded_identity
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.replace_document" class="md-nav__link">
@@ -5650,8 +5744,7 @@ from; <code>None</code> when unknown.</p>
 
 
 <h2 id="markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend" class="doc doc-heading">
-            <code>NumpySidecarBackend</code>
-
+              <code class="highlight language-python"><span class="n">NumpySidecarBackend</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">legacy_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -5661,6 +5754,42 @@ from; <code>None</code> when unknown.</p>
 
 
         <p>Open a :class:<code>NumpySidecarStore</code> at a base path, or in memory.</p>
+
+        <p>Choose which files at a base path the stores this backend opens are.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>legacy_only</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Open the sidecar a release or an edge build left
+(<code>{base}.json</code>) instead of the store's own
+<code>{base}.v2.json</code>, always read-only: what an upgrade's donor
+reads (#1505).</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
 
@@ -5773,7 +5902,7 @@ the rows must belong to.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="NumpySidecarStore(snapshot, *, base, read_only, seq, matrix_path) (markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore)" href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore">NumpySidecarStore</a></code>
+                  <code><a class="autorefs autorefs-internal" title="NumpySidecarStore(snapshot, *, base, read_only, seq, matrix_path, json_path=None, recorded_identity=_OWN_IDENTITY, writer_lock=None) (markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore)" href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore">NumpySidecarStore</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5865,6 +5994,228 @@ the rows must belong to.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.hold_writer" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">hold_writer</span><span class="p">(</span><span class="n">location</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.hold_writer" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Take a writer's share of <em>location</em>'s lock without opening a store.</p>
+<p>For a caller that closes one store and opens another on the same
+location, so the lock is not given up in between (#1505).</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>location</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | <span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The store's base path; <code>":memory:"</code> locks nothing.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.stores._writer_lock.WriterLock">WriterLock</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The share, to release once the new store is open.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="StoreBusyError">StoreBusyError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If another process holds the lock.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.quarantine" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">quarantine</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">clock</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.quarantine" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Rename this store's own files at <em>location</em> aside: it is corrupt (#1505).</p>
+<p><code>{base}.v2.json</code> and every <code>{base}.v2.m{seq}.npy</code> are renamed
+to <code>&lt;name&gt;.corrupt-&lt;UTC time&gt;</code> under the writer lock; a released
+sidecar (<code>{base}.json</code>, <code>{base}.npy</code>) and <code>{base}.lock</code> are
+left.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>location</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | <span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The store's base path; <code>":memory:"</code> moves nothing.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>clock</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span>[[], <span title="datetime.datetime">datetime</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Supplies the time the suffix is stamped with.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="list">list</span>[<span title="pathlib.Path">Path</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The files' new paths; empty when there were none.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="StoreBusyError">StoreBusyError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If another process holds the lock.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="StoreUnavailableError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreUnavailableError)" href="../exceptions/#markdown_vault_mcp.exceptions.StoreUnavailableError">StoreUnavailableError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If a file cannot be renamed; none is.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarBackend.open_fresh" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">open_fresh</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="n">identity</span><span class="p">)</span></code>
 
@@ -5918,7 +6269,7 @@ matrix name above every one already there.</p>
 
 
 <h2 id="markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">NumpySidecarStore</span><span class="p">(</span><span class="n">snapshot</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">read_only</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">matrix_path</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">NumpySidecarStore</span><span class="p">(</span><span class="n">snapshot</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">read_only</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">matrix_path</span><span class="p">,</span> <span class="n">json_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">recorded_identity</span><span class="o">=</span><span class="n">_OWN_IDENTITY</span><span class="p">,</span> <span class="n">writer_lock</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -5949,6 +6300,35 @@ matrix name above every one already there.</p>
 
 
 
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.recorded_identity" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">recorded_identity</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.recorded_identity" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The identity the opened files recorded, or <code>None</code> when they recorded none.</p>
+<p><code>None</code> for a bare-list sidecar, which opens under whatever identity
+it is asked for, and for one whose <code>index_metadata</code> names no
+positive dimension; a released sidecar's missing variant and text
+format read as <code>""</code> and <code>v1</code>, as :func:<code>_check_identity</code> reads
+them. A store that wrote its own files reports its :attr:<code>identity</code>;
+so does one that read none (no files, or in memory), which a donor
+refuses as empty instead. A donor never matches a <code>None</code> (#1505).</p>
+
+    </div>
+
+</div>
 
 
 

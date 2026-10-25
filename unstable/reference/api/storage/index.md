@@ -312,9 +312,17 @@ Raises:
 | ------------ | --------------------------------------------------- |
 | `ValueError` | If a row's metadata["path"] names another document. |
 
-## `NumpySidecarBackend`
+## `NumpySidecarBackend(*, legacy_only=False)`
 
 Open a :class:`NumpySidecarStore` at a base path, or in memory.
+
+Choose which files at a base path the stores this backend opens are.
+
+Parameters:
+
+| Name          | Type   | Description                                                                                                                                                        | Default |
+| ------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `legacy_only` | `bool` | Open the sidecar a release or an edge build left ({base}.json) instead of the store's own {base}.v2.json, always read-only: what an upgrade's donor reads (#1505). | `False` |
 
 ### `open(location, identity=None, *, owns_files=True)`
 
@@ -345,6 +353,56 @@ Raises:
 | `StoreUnsupportedSchemaError` | If their format is newer.                |
 | `StoreIncompatibleError`      | If they hold another identity.           |
 
+### `hold_writer(location)`
+
+Take a writer's share of *location*'s lock without opening a store.
+
+For a caller that closes one store and opens another on the same location, so the lock is not given up in between (#1505).
+
+Parameters:
+
+| Name       | Type   | Description | Default                                          |
+| ---------- | ------ | ----------- | ------------------------------------------------ |
+| `location` | \`Path | str\`       | The store's base path; ":memory:" locks nothing. |
+
+Returns:
+
+| Type         | Description                                       |
+| ------------ | ------------------------------------------------- |
+| `WriterLock` | The share, to release once the new store is open. |
+
+Raises:
+
+| Type             | Description                        |
+| ---------------- | ---------------------------------- |
+| `StoreBusyError` | If another process holds the lock. |
+
+### `quarantine(location, *, clock=None)`
+
+Rename this store's own files at *location* aside: it is corrupt (#1505).
+
+`{base}.v2.json` and every `{base}.v2.m{seq}.npy` are renamed to `<name>.corrupt-<UTC time>` under the writer lock; a released sidecar (`{base}.json`, `{base}.npy`) and `{base}.lock` are left.
+
+Parameters:
+
+| Name       | Type                       | Description | Default                                          |
+| ---------- | -------------------------- | ----------- | ------------------------------------------------ |
+| `location` | \`Path                     | str\`       | The store's base path; ":memory:" moves nothing. |
+| `clock`    | \`Callable\[[], datetime\] | None\`      | Supplies the time the suffix is stamped with.    |
+
+Returns:
+
+| Type         | Description                                       |
+| ------------ | ------------------------------------------------- |
+| `list[Path]` | The files' new paths; empty when there were none. |
+
+Raises:
+
+| Type                    | Description                           |
+| ----------------------- | ------------------------------------- |
+| `StoreBusyError`        | If another process holds the lock.    |
+| `StoreUnavailableError` | If a file cannot be renamed; none is. |
+
 ### `open_fresh(location, identity)`
 
 Open *location* as an empty store at *identity*, reading nothing there.
@@ -357,13 +415,19 @@ Raises:
 | ------------- | -------------------------- |
 | `ImportError` | If numpy is not installed. |
 
-## `NumpySidecarStore(snapshot, *, base, read_only, seq, matrix_path)`
+## `NumpySidecarStore(snapshot, *, base, read_only, seq, matrix_path, json_path=None, recorded_identity=_OWN_IDENTITY, writer_lock=None)`
 
 Bases: `ResidentStore`
 
 A vector store held in memory, optionally persisted beside a base path.
 
 Construct through :class:`NumpySidecarBackend`.
+
+### `recorded_identity`
+
+The identity the opened files recorded, or `None` when they recorded none.
+
+`None` for a bare-list sidecar, which opens under whatever identity it is asked for, and for one whose `index_metadata` names no positive dimension; a released sidecar's missing variant and text format read as `""` and `v1`, as :func:`_check_identity` reads them. A store that wrote its own files reports its :attr:`identity`; so does one that read none (no files, or in memory), which a donor refuses as empty instead. A donor never matches a `None` (#1505).
 
 ### `replace_document(document, *, expected_token)`
 

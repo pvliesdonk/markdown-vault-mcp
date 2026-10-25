@@ -1145,6 +1145,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../use/embedding-state/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../use/git-integration/" class="md-nav__link">
         
   
@@ -2880,7 +2908,7 @@
 <p>An upgrade never rewrites your notes. What it can touch is the state the server derives from them.</p>
 <ul>
 <li><strong>The text index.</strong> The index records how it was built: the version of the rules that turn notes into index rows, the embedding model, and the indexing settings (title field, searchable and indexed frontmatter fields, chunk size override, attachment extensions). When any of these differs at start, the server rebuilds the index once and logs <code>index_provenance_changed</code> naming what changed. A release that changes those rules says so on its <strong>State</strong> line.</li>
-<li><strong>The embeddings.</strong> A rebuild of the text index keeps them: only a note whose sections came out different is embedded again.</li>
+<li><strong>The embeddings.</strong> A rebuild of the text index keeps them: only a note whose sections came out different is embedded again. <a href="../use/embedding-state/">Upgrading, switching and restoring embeddings</a> covers the move from 5.x, switching stores, and backing them up.</li>
 <li><strong>Where that state lives.</strong> Under Docker Compose, on the <code>state-data</code> volume at <code>/data/state</code>. On a package install, wherever the environment file's <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> and <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> point (<a href="../deploy/systemd/">systemd</a>). A command that a desktop client starts keeps the index in memory unless <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> is set, so it rebuilds at every start anyway. The change-tracking file sits beside the index, or in memory without one, unless <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names a path. Earlier releases defaulted it to a <code>.markdown_vault_mcp/</code> folder inside the vault. On the first start after the upgrade the server copies that file beside the index, so nothing is indexed or embedded again, and logs <code>legacy_state_file_unused</code> while the folder is there; delete it once the new file exists.</li>
 </ul>
 <!-- DOMAIN-UPGRADE-INTRO-END -->

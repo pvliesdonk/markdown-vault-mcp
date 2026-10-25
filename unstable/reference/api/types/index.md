@@ -295,7 +295,7 @@ Attributes:
 | `updated_links` | `int` | Number of source documents whose links were actually rewritten. A source the rewrite left byte-identical is not counted, because it still names the old path (#1521). |
 | `hint`          | \`str | None\`                                                                                                                                                                |
 
-## `IndexStats(documents_indexed, chunks_indexed, skipped, walk_complete=True)`
+## `IndexStats(documents_indexed, chunks_indexed, skipped, walk_complete=True, vault_root_empty=False)`
 
 Statistics from :meth:`~markdown_vault_mcp.facets.index.IndexFacet.build_index`.
 
@@ -307,20 +307,22 @@ Attributes:
 | `chunks_indexed`    | `int`  | Total number of chunks indexed.                                                                                                                                         |
 | `skipped`           | `int`  | Number of documents skipped due to parse errors.                                                                                                                        |
 | `walk_complete`     | `bool` | False when a directory could not be read, so the scan may have missed notes; the keyword index records it, and no empty cold embedding build trusts that build (#1785). |
+| `vault_root_empty`  | `bool` | The vault folder held no entries while the index held notes, as when its volume is not mounted, so the build changed nothing and every count is 0 (#1791).              |
 
-## `ReindexResult(added, modified, deleted, unchanged, skipped=0)`
+## `ReindexResult(added, modified, deleted, unchanged, skipped=0, vault_root_empty=False)`
 
 Result of :meth:`~markdown_vault_mcp.facets.index.IndexFacet.reindex`.
 
 Attributes:
 
-| Name        | Type  | Description                                                                                                                                                                                                             |
-| ----------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `added`     | `int` | Documents added since the last index.                                                                                                                                                                                   |
-| `modified`  | `int` | Documents that changed since the last index.                                                                                                                                                                            |
-| `deleted`   | `int` | Documents removed since the last index.                                                                                                                                                                                 |
-| `unchanged` | `int` | Documents with no changes.                                                                                                                                                                                              |
-| `skipped`   | `int` | Files present on disk that were deliberately not indexed (missing required frontmatter, matching an exclude pattern, or unparseable), whether newly skipped this scan or unchanged since they were last skipped (#665). |
+| Name               | Type   | Description                                                                                                                                                                                                             |
+| ------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `added`            | `int`  | Documents added since the last index.                                                                                                                                                                                   |
+| `modified`         | `int`  | Documents that changed since the last index.                                                                                                                                                                            |
+| `deleted`          | `int`  | Documents removed since the last index.                                                                                                                                                                                 |
+| `unchanged`        | `int`  | Documents with no changes.                                                                                                                                                                                              |
+| `skipped`          | `int`  | Files present on disk that were deliberately not indexed (missing required frontmatter, matching an exclude pattern, or unparseable), whether newly skipped this scan or unchanged since they were last skipped (#665). |
+| `vault_root_empty` | `bool` | The vault folder held no entries while the index held notes, as when its volume is not mounted, so the pass changed nothing and every count is 0 (#1791).                                                               |
 
 ## `VaultStats(document_count, chunk_count, folder_count, semantic_search_available, indexed_frontmatter_fields=list(), attachment_extensions=list(), link_count=0, broken_link_count=0, orphan_count=0)`
 

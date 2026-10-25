@@ -1145,6 +1145,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/embedding-state/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/git-integration/" class="md-nav__link">
         
   
@@ -3968,7 +3996,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code></td>
 <td>(none)</td>
 <td>No</td>
-<td>Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.json and the matrix it names beside index.db); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.</td>
+<td>Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.v2.json and the matrix it names beside index.db; the first build copies in the vectors a release's sidecar there holds, then leaves it alone); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code></td>

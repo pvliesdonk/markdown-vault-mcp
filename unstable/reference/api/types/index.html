@@ -1145,6 +1145,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../use/embedding-state/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../use/git-integration/" class="md-nav__link">
         
   
@@ -5875,7 +5903,7 @@ references are not tracked as links (#1338). <code>None</code> otherwise.</p>
 
 
 <h2 id="markdown_vault_mcp.types.IndexStats" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">IndexStats</span><span class="p">(</span><span class="n">documents_indexed</span><span class="p">,</span> <span class="n">chunks_indexed</span><span class="p">,</span> <span class="n">skipped</span><span class="p">,</span> <span class="n">walk_complete</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">IndexStats</span><span class="p">(</span><span class="n">documents_indexed</span><span class="p">,</span> <span class="n">chunks_indexed</span><span class="p">,</span> <span class="n">skipped</span><span class="p">,</span> <span class="n">walk_complete</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">vault_root_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -5947,6 +5975,19 @@ empty cold embedding build trusts that build (#1785).</p>
               </div>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.IndexStats.vault_root_empty">vault_root_empty</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The vault folder held no entries while the index
+held notes, as when its volume is not mounted, so the build
+changed nothing and every count is 0 (#1791).</p>
+              </div>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -5984,7 +6025,7 @@ empty cold embedding build trusts that build (#1785).</p>
 
 
 <h2 id="markdown_vault_mcp.types.ReindexResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ReindexResult</span><span class="p">(</span><span class="n">added</span><span class="p">,</span> <span class="n">modified</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">unchanged</span><span class="p">,</span> <span class="n">skipped</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">ReindexResult</span><span class="p">(</span><span class="n">added</span><span class="p">,</span> <span class="n">modified</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">unchanged</span><span class="p">,</span> <span class="n">skipped</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">vault_root_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -6065,6 +6106,19 @@ empty cold embedding build trusts that build (#1785).</p>
 (missing required frontmatter, matching an exclude pattern, or
 unparseable), whether newly skipped this scan or unchanged since
 they were last skipped (#665).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.ReindexResult.vault_root_empty">vault_root_empty</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The vault folder held no entries while the index
+held notes, as when its volume is not mounted, so the pass changed
+nothing and every count is 0 (#1791).</p>
               </div>
             </td>
           </tr>

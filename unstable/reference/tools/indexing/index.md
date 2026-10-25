@@ -91,6 +91,7 @@ When promoted, a dict with `"status": "working"`, a `job_id`, and a `poll_with` 
 - ToolError: If the index is busy or still building; retry shortly.
 - IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 - ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued reindex is cancelled, so fetch pending job results and retry.
+- ToolError: If the vault folder is empty while the index holds notes, as when its volume is not mounted: nothing is reindexed (#1791).
 
 ## `build_embeddings`
 
@@ -102,9 +103,9 @@ Embeddings are built automatically, so it is needed only after reindex with forc
 
 **Parameters**
 
-| Name    | Type      | Default | Description                                                                                                                     |
-| ------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `force` | `boolean` | `false` | Discard every embedding and rebuild from scratch, as after the embedding model changed; default false embeds only what changed. |
+| Name    | Type      | Default | Description                                                                                                                                                          |
+| ------- | --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `force` | `boolean` | `false` | Re-embed every chunk, as after the embedding model changed; the current embeddings keep serving until the rebuild completes. Default false embeds only what changed. |
 
 **Returns**
 
@@ -116,3 +117,4 @@ On inline completion, a dict with `"status": "completed"` and `chunks_embedded` 
 - IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 - ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued build is cancelled, so fetch pending job results and retry.
 - EmbeddingsNotConfiguredError: If no embedding provider is configured.
+- ToolError: If a forced rebuild kept the existing embeddings because some embedding requests failed; retry later.
