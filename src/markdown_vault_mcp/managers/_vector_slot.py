@@ -367,7 +367,7 @@ class VectorStoreSlot:
                 if share is not None:
                     share.release()
 
-    def _answers(self, store: EmbeddingStore) -> bool:
+    def answers(self, store: EmbeddingStore) -> bool:
         """Whether *store*'s rows answer this provider's queries: the same identity."""
         return store.identity == self.identity
 
@@ -435,7 +435,7 @@ class VectorStoreSlot:
                 may not be rebuilt.
         """
         store = self.get(rebuild=rebuild)
-        if not self._answers(store):
+        if not self.answers(store):
             if store.count == 0:
                 self.fresh()
             elif rebuild is None or self._injected:
@@ -481,7 +481,7 @@ class VectorStoreSlot:
                 self._recover_corrupt()
             except StoreIncompatibleError:
                 pass
-        if self._store is not None and self._answers(self._store):
+        if self._store is not None and self.answers(self._store):
             return self._store
         return self.fresh()
 

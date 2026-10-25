@@ -501,7 +501,9 @@ class IndexManager:
 
         # Checked before the walk: an empty folder has nothing to scan (#1791).
         if not force and self._refuse_empty_root():
-            return IndexStats(documents_indexed=0, chunks_indexed=0, skipped=0)
+            return IndexStats(
+                documents_indexed=0, chunks_indexed=0, skipped=0, vault_root_empty=True
+            )
 
         logger.info("build_index_scanning path=%s", self._source_dir)
 

@@ -4635,10 +4635,11 @@ another one, and is the explicit switch of choice C.
   zero result before its deletion loop, tracker update and tombstone sync;
   a non-forced `build_index` (also what a settings change runs) returns zero
   `IndexStats` and leaves the tracker and tombstones alone, so the notes
-  read as unchanged when the volume returns. The refused reindex says so:
-  `ReindexResult.vault_root_empty` is set, the `reindex` tool raises a
-  WARNING `ToolError` (the request was fine; tell the user), and the
-  `reindex` command exits 1 naming `index --force` as the deliberate path.
+  read as unchanged when the volume returns. A refusal says so:
+  `ReindexResult.vault_root_empty` and `IndexStats.vault_root_empty` are
+  set, the `reindex` tool raises a WARNING `ToolError` (the request was
+  fine; tell the user), and the `reindex` and `index` commands exit 1 naming
+  `index --force` as the deliberate path.
   Writes (`DocumentManager` and `ArtifactStore` `_check_writable`, through
   `source_probe.require_vault_root`) are refused with
   `VaultUnavailableError`, a WARNING `ToolError` telling the model to tell
