@@ -4692,8 +4692,17 @@ another one, and is the explicit switch of choice C.
   dropping and recreating its own damaged tables without `CASCADE`.
 - Permission errors, a full disk and an unavailable PostgreSQL stay typed
   *unavailable* outcomes: no rebuild, removal or rename.
-- `Vault.close` checkpoints `index.db`'s WAL with `TRUNCATE`, so a
-  stopped server's keyword index is self-contained (child 10).
+- Closing the keyword index (`FTSIndex.close`, which `Vault.close` ends
+  with) runs `wal_checkpoint(TRUNCATE)` first, so a stopped server's
+  `index.db` is complete by itself. SQLite folds the WAL on the last close
+  only, and a reader process still holding the file would otherwise leave
+  commits in `index.db-wal` (child 10). The checkpoint runs with
+  `busy_timeout = 0` and never fails the close: an error logs WARNING
+  `fts_index_checkpoint_failed path=%s err=%s`, and frames a reader on an
+  older snapshot still needs stay in the WAL, logged WARNING
+  `fts_index_checkpoint_incomplete path=%s frames=%d checkpointed=%d`, for
+  the next writer to fold in. A read-only or in-memory index skips it.
+  `FTSIndex.checkpoint()`, the lifecycle method, still waits and raises.
 
 Out of scope: reusing vectors for a renamed note (matching is by path);
 changing the default built-in store (#1506); quarantining damaged
