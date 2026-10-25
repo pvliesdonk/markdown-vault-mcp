@@ -547,8 +547,9 @@ def _replace_if_unusable(path: Path) -> None:
         probe.close()
     move_aside(
         (path, Path(f"{path}-wal"), Path(f"{path}-shm")),
-        backend="sqlite",
-        location=where,
+        backend=_BACKEND_NAME,
+        location=str(path.with_suffix("")),
+        reason="unusable",
     )
 
 
@@ -557,7 +558,7 @@ def _create(path: Path, *, replace_unusable: bool) -> SqliteConnectionRegistry:
 
     Raises:
         StoreUnavailableError: If the directory cannot be created, or an
-            unusable file there cannot be checked or removed.
+            unusable file there cannot be checked or moved aside.
         StoreUnsupportedSchemaError: If the file there is a vector store of
             a newer format.
         sqlite3.Error: If the database cannot be opened.
@@ -1392,7 +1393,8 @@ class SqliteVectorBackend:
         """Open *location* as an empty store at *identity*, reading nothing there.
 
         Before the first write, a file that is not a vector store or whose
-        pages are damaged is removed, whatever that write's outcome; the
+        pages are damaged is moved aside with its ``-wal`` and ``-shm``
+        (``.corrupt-<time>``), whatever that write's outcome; the
         write empties a usable database in its own transaction. Until then
         a reader opens the old rows. Unlike :meth:`open`, this checks
         nothing at the location: the first write raises

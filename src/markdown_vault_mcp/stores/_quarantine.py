@@ -54,6 +54,7 @@ def move_aside(
     *,
     backend: str,
     location: str,
+    reason: str = "corrupt",
     clock: Callable[[], datetime] | None = None,
 ) -> list[Path]:
     """Rename each existing file in *paths* aside, all under one suffix.
@@ -62,6 +63,9 @@ def move_aside(
         paths: The store's files; those that do not exist are skipped.
         backend: The store's backend name, for the error.
         location: The store's location, for the log line and the error.
+        reason: Why the files are moved, for the log line and the error:
+            ``corrupt`` for a store that failed its open, ``unusable`` for a
+            file a fresh store found in its place.
         clock: Supplies the time the suffix is stamped with; UTC now by
             default.
 
@@ -93,14 +97,15 @@ def move_aside(
     except OSError as exc:
         _undo(done)
         raise StoreUnavailableError(
-            f"Vector store at {location} is corrupt and cannot be moved aside: {exc}",
+            f"Vector store at {location} is {reason} and cannot be moved aside: {exc}",
             backend=backend,
             location=location,
         ) from exc
     moved = [target for _, target in done]
     logger.warning(
-        "vector_store_moved_aside location=%s reason=corrupt paths=%s",
+        "vector_store_moved_aside location=%s reason=%s paths=%s",
         location,
+        reason,
         ",".join(str(p) for p in moved),
     )
     return moved

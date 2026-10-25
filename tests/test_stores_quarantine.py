@@ -137,8 +137,9 @@ def test_the_move_is_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) ->
     lines = [r for r in caplog.records if r.msg.startswith("vector_store_moved_aside")]
     assert len(lines) == 1
     assert lines[0].levelno == logging.WARNING
-    location, paths = lines[0].args  # type: ignore[misc]
+    location, reason, paths = lines[0].args  # type: ignore[misc]
     assert location == "emb"
+    assert reason == "corrupt"
     assert paths == ",".join(str(p) for p in moved)
 
 

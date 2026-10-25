@@ -586,9 +586,10 @@ class TestOpenFresh:
         assert _reopened(tmp_path)[0] == 1
         (copy,) = _aside(tmp_path)
         assert copy.read_bytes() == b"not a database " * 100
-        assert [
+        (line,) = [
             r for r in caplog.records if r.msg.startswith("vector_store_moved_aside")
         ]
+        assert line.args[:2] == (str(_base(tmp_path)), "unusable")  # type: ignore[index]
 
     def test_a_newer_format_is_not_replaced(self, tmp_path: Path) -> None:
         _seed(tmp_path)
@@ -793,10 +794,34 @@ class TestDeferredCreation:
         monkeypatch.setattr(Path, "rename", refuse)
         fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
         document = doc("a.md", [[1, 0, 0]])
-        with pytest.raises(StoreUnavailableError):
+        with pytest.raises(StoreUnavailableError, match="is unusable and cannot"):
             fresh.replace_document(document, expected_token=ANY_TOKEN)
         fresh.close()
         assert _db(tmp_path).read_bytes() == b"not a database " * 100  # untouched
+
+    def test_a_rename_refused_midway_puts_the_database_back(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _db(tmp_path).parent.mkdir(parents=True)
+        _db(tmp_path).write_bytes(b"not a database " * 100)
+        wal = Path(f"{_db(tmp_path)}-wal")
+        wal.write_bytes(b"a wal of another store")
+        real_rename = Path.rename
+
+        def refuse_the_wal(self: Path, target: Path) -> Path:
+            if self == wal:
+                raise PermissionError("refused")
+            return real_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", refuse_the_wal)
+        fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
+        document = doc("a.md", [[1, 0, 0]])
+        with pytest.raises(StoreUnavailableError):
+            fresh.replace_document(document, expected_token=ANY_TOKEN)
+        fresh.close()
+        assert _db(tmp_path).read_bytes() == b"not a database " * 100
+        assert wal.read_bytes() == b"a wal of another store"
+        assert _aside(tmp_path) == []
 
     def test_a_writable_open_of_a_store_takes_no_write_lock(
         self, tmp_path: Path
