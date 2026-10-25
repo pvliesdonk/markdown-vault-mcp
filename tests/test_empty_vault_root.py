@@ -289,6 +289,26 @@ def test_the_reindex_command_fails_over_an_empty_vault_folder(
     assert "Reindex:" not in result.stdout
 
 
+def test_the_index_command_fails_over_an_empty_vault_folder(
+    tmp_path: Path, built: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import _ENV_PREFIX, app
+
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(built))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEXED_FIELDS", "tags")  # not warm
+    monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", raising=False)
+    for name in NOTES:
+        (built / name).unlink()
+    result = CliRunner().invoke(app, ["index"])
+    assert result.exit_code == 1
+    assert "vault folder is empty" in result.stderr
+    assert "run index again" in result.stderr
+    assert "Indexed" not in result.stdout
+
+
 def test_no_note_is_written_into_an_empty_vault_folder(
     tmp_path: Path, built: Path
 ) -> None:

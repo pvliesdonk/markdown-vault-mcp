@@ -313,6 +313,9 @@ def index(
     built = _build_vault(source_dir, index_path)
     try:
         stats = built.vault.index.build_index(force=force)
+        if stats.vault_root_empty:
+            typer.echo(_empty_root_message("indexed", "index"), err=True)
+            raise typer.Exit(1)
         typer.echo(
             f"Indexed {stats.documents_indexed} documents, "
             f"{stats.chunks_indexed} chunks"
@@ -323,13 +326,30 @@ def index(
         except EmbeddingsNotConfiguredError:
             pass  # embeddings not configured
         except EmbeddingsNotPublishedError as exc:
-            typer.echo(f"Error: {exc} Retry when the provider recovers.", err=True)
+            typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
             raise typer.Exit(1) from exc
     except StoreBusyError as exc:
         typer.echo(_busy_message(exc, "index"), err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
+
+
+def _empty_root_message(done: str, command: str) -> str:
+    """Say that an empty vault folder stopped *command*, and what to do.
+
+    Args:
+        done: What did not happen, such as ``"indexed"``.
+        command: The command to run again once the folder is back.
+
+    Returns:
+        The one-line refusal for stderr.
+    """
+    return (
+        "ERROR: the vault folder is empty while the index holds notes, as "
+        f"when its volume is not mounted, so nothing was {done}. Mount it and "
+        f"run {command} again; to empty the vault on purpose, run index --force."
+    )
 
 
 def _busy_message(exc: StoreBusyError, command: str) -> str:
@@ -523,13 +543,7 @@ def reindex(
         built.vault.index.build_index(force=force)
         result = built.vault.index.reindex()
         if result.vault_root_empty:
-            typer.echo(
-                "ERROR: the vault folder is empty while the index holds notes, as "
-                "when its volume is not mounted, so nothing was reindexed. Mount "
-                "it and run reindex again; to empty the vault on purpose, run "
-                "index --force.",
-                err=True,
-            )
+            typer.echo(_empty_root_message("reindexed", "reindex"), err=True)
             raise typer.Exit(1)
         typer.echo(
             f"Reindex: {result.added} added, {result.modified} modified, "

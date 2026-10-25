@@ -577,6 +577,7 @@ def test_index_prints_stats() -> None:
     """``index`` prints indexed documents and chunks."""
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 42
     mock_stats.chunks_indexed = 128
     mock_vault.index.build_index.return_value = mock_stats
@@ -594,6 +595,7 @@ def test_index_force_propagates() -> None:
     """``--force`` is forwarded to build_index and build_embeddings."""
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 10
     mock_stats.chunks_indexed = 30
     mock_vault.index.build_index.return_value = mock_stats
@@ -630,6 +632,7 @@ def test_index_builds_embeddings_when_configured() -> None:
     """``index`` calls build_embeddings() after build_index() when configured."""
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 5
     mock_stats.chunks_indexed = 20
     mock_vault.index.build_index.return_value = mock_stats
@@ -649,6 +652,7 @@ def test_index_swallows_embeddings_not_configured_error() -> None:
 
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 5
     mock_stats.chunks_indexed = 20
     mock_vault.index.build_index.return_value = mock_stats
@@ -668,6 +672,7 @@ def test_index_surfaces_internal_valueerror_from_embeddings() -> None:
     """An internal ValueError (not EmbeddingsNotConfiguredError) surfaces (#774)."""
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 5
     mock_stats.chunks_indexed = 20
     mock_vault.index.build_index.return_value = mock_stats
@@ -1358,6 +1363,7 @@ def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         mock_vault = MagicMock()
         mock_stats = MagicMock()
+        mock_stats.vault_root_empty = False  # a real IndexStats's default
         mock_stats.documents_indexed = 0
         mock_stats.chunks_indexed = 0
         mock_vault.index.build_index.return_value = mock_stats
@@ -1381,6 +1387,7 @@ def test_default_level_pins_httpx_httpcore_to_warning(
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(tmp_path))
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 0
     mock_stats.chunks_indexed = 0
     mock_vault.index.build_index.return_value = mock_stats
@@ -1414,6 +1421,7 @@ def test_verbose_resets_httpx_httpcore_to_follow_root(
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 0
     mock_stats.chunks_indexed = 0
     mock_vault.index.build_index.return_value = mock_stats
@@ -1444,6 +1452,7 @@ def test_root_handler_added_when_none_exist(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 0
     mock_stats.chunks_indexed = 0
     mock_vault.index.build_index.return_value = mock_stats
@@ -1545,6 +1554,7 @@ def test_index_reports_an_unpublished_rebuild() -> None:
 
     mock_vault = MagicMock()
     mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False  # a real IndexStats's default
     mock_stats.documents_indexed = 5
     mock_stats.chunks_indexed = 20
     mock_vault.index.build_index.return_value = mock_stats

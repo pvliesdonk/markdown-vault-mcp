@@ -242,6 +242,33 @@ def test_another_identity_still_rebuilds_from_scratch(
     assert _aside(tmp_path) == []
 
 
+class _SameName(_Counting):
+    """One model name at any dimension, as an endpoint swap can produce."""
+
+    @property
+    def model_name(self) -> str:
+        return "same-name"
+
+
+@pytest.mark.parametrize("store", ["numpy", "sqlite"])
+def test_a_dimension_change_under_the_same_model_rebuilds(
+    tmp_path: Path, store: str
+) -> None:
+    # The store opens at its stored dimension, so only writing finds it is
+    # another identity; the rebuild must not take that path again (#1862 review).
+    _build(tmp_path, store, provider=_SameName(dim=16))
+    provider = _SameName(dim=32)
+    vault = _vault(tmp_path, store, provider)
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert vault.index.embeddings_status()["identity"]["dimension"] == 32
+    finally:
+        vault.close()
+    assert len(provider.texts) >= len(NOTES)
+    assert _aside(tmp_path) == []
+
+
 @pytest.mark.parametrize("store", ["numpy", "sqlite"])
 def test_a_search_first_corrupt_rebuild_uses_the_released_sidecar(
     tmp_path: Path, store: str

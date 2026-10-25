@@ -241,7 +241,8 @@ class EmbeddingsManager:
         """Rebuild the store after it would not open: of another identity, or corrupt.
 
         The store is opened again to tell the two apart. One of another
-        identity is rebuilt with ``force``, re-embedding every chunk. A
+        identity, including one that differs only in dimension and so
+        opens, is rebuilt with ``force``, re-embedding every chunk. A
         corrupt one, which the slot moved aside, reopens empty and takes the
         ordinary cold build, where a compatible 5.x sidecar donates, so
         unchanged notes cost no provider call (#1505).
@@ -257,8 +258,12 @@ class EmbeddingsManager:
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
         try:
-            self._slot.get(rebuild=None)
+            store = self._slot.get(rebuild=None)
         except StoreIncompatibleError:
+            return self.build_embeddings(force=True)
+        # A store that differs only in dimension opens at its stored one, so
+        # only this check finds it; the cold build would call back here.
+        if store.count and not self._slot.answers(store):
             return self.build_embeddings(force=True)
         return self.build_embeddings()
 
