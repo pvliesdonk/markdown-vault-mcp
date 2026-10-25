@@ -10,7 +10,10 @@ tool under pvl-core's ``tool_boundary``:
 - a stale ``if_match`` (``ConcurrentModificationError``) tells the model to
   read again and retry, at INFO;
 - an index that is busy or still building tells it to retry shortly, at
-  WARNING, because it heals itself.
+  WARNING, because it heals itself;
+- a full embedding build that kept the existing embeddings because provider
+  batches failed (``EmbeddingsNotPublishedError``) tells it the request was
+  fine and to retry later, at WARNING (#1505).
 
 :func:`maps_library_outcomes` lets a test check that every tool carries it.
 
@@ -31,9 +34,11 @@ from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
     EditConflictError,
+    EmbeddingsNotPublishedError,
     IndexUnavailableError,
     InvalidRequestError,
     ReadOnlyError,
+    VaultUnavailableError,
 )
 
 if TYPE_CHECKING:
@@ -76,6 +81,17 @@ def outcome_error(exc: Exception) -> ToolError | None:
         )
     if isinstance(exc, _CHANGE_THE_REQUEST):
         return ToolError(str(exc), log_level=logging.INFO)
+    if isinstance(exc, VaultUnavailableError):
+        # The volume may come back by itself; the message tells the model to
+        # tell the user (#1791).
+        return ToolError(str(exc), log_level=logging.WARNING)
+    if isinstance(exc, EmbeddingsNotPublishedError):
+        return ToolError(
+            "Some embedding requests failed, so the existing embeddings were kept "
+            "unchanged; the request was fine. Retry later, and tell the user if "
+            "it keeps failing.",
+            log_level=logging.WARNING,
+        )
     if isinstance(exc, IndexUnavailableError) and exc.reason in _TRANSIENT_INDEX:
         # The middleware logs the ToolError at WARNING; nothing to add here.
         return ToolError(

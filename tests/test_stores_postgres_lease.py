@@ -12,7 +12,11 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
+from markdown_vault_mcp.exceptions import (
+    StoreBusyError,
+    StoreNotConfiguredError,
+    StoreUnavailableError,
+)
 from markdown_vault_mcp.stores import _postgres as pg
 from markdown_vault_mcp.stores import _postgres_lease as leases
 from markdown_vault_mcp.stores._postgres_lease import Lease, LeaseRegistry
@@ -59,6 +63,7 @@ def test_a_second_acquire_is_refused_naming_the_holder(
         conninfo = _conninfo(postgres_schema)
         with pytest.raises(StoreUnavailableError, match="reason=lease") as failure:
             Lease.acquire(conninfo, schema=postgres_schema.name)
+        assert isinstance(failure.value, StoreBusyError)  # #1505: stop the server first
         assert "holder-1504" in str(failure.value)
         assert str(first.pid) in str(failure.value)
     finally:

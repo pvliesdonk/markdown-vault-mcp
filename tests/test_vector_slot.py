@@ -70,13 +70,13 @@ class TestOpening:
         assert rebuilt == [1]
 
     def test_an_owned_corrupt_store_rebuilds(self, tmp_path: Path) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         store = slot.get(rebuild=slot.fresh)
         assert store.count == 0
 
     def test_a_rebuild_that_installs_nothing_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         with pytest.raises(ValueError, match="rebuild"):
             slot.get(rebuild=lambda: None)
@@ -86,7 +86,7 @@ class TestOpening:
         self, tmp_path: Path, fault: str
     ) -> None:
         if fault == "corrupt":
-            (tmp_path / "vec.json").write_text("{not json")
+            (tmp_path / "vec.v2.json").write_text("{not json")
         else:
             _persist_with(
                 tmp_path / "vec", EmbeddingIdentity("mock", "old", "", "v1", 3)
@@ -370,12 +370,15 @@ class TestWritingThroughTheSlot:
     def test_a_store_that_will_not_open_rebuilds_into_a_fresh_one(
         self, tmp_path: Path
     ) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         target = slot.rebuild_target()
         assert target.count == 0
         assert slot.current() is target
-        assert (tmp_path / "vec.json").read_text() == "{not json"
+        # Moved aside, not rebuilt over (#1505 child 9).
+        assert not (tmp_path / "vec.v2.json").exists()
+        (copy,) = tmp_path.glob("vec.v2.json.corrupt-*")
+        assert copy.read_text() == "{not json"
 
     def test_a_process_that_does_not_own_the_files_may_not_rebuild(
         self, tmp_path: Path
@@ -464,7 +467,7 @@ class TestLoaderCasesPorted:
     def test_a_rebuild_that_raises_is_logged_then_propagates(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
 
         def rebuild() -> None:
@@ -477,7 +480,7 @@ class TestLoaderCasesPorted:
         )
 
     def test_an_empty_rebuild_is_accepted(self, tmp_path: Path) -> None:
-        (tmp_path / "vec.json").write_text("{not json")
+        (tmp_path / "vec.v2.json").write_text("{not json")
         slot = _slot(tmp_path / "vec")
         store = slot.get(rebuild=slot.rebuild_target)
         assert store.count == 0
@@ -811,3 +814,43 @@ class TestTheSlotAfterReview:
             assert set(reopened.tokens()) == {"new.md"}
         finally:
             reopened.close()
+
+
+class TestCorruptRecovery:
+    def test_a_stale_corrupt_failure_moves_nothing_aside(self, tmp_path: Path) -> None:
+        # Another thread already moved the store aside and rebuilt it: a
+        # failure seen before that must not rename the healthy store (#1505).
+        _persist_with(tmp_path / "vec", IDENTITY)
+        before = sorted(p.name for p in tmp_path.iterdir())
+        slot = _slot(tmp_path / "vec")
+        stale = StoreCorruptError("seen earlier", backend="numpy", location="vec")
+        store = slot._rebuilt(stale, lambda: pytest.fail("rebuilt"))
+        assert store.count == 1
+        assert sorted(p.name for p in tmp_path.iterdir()) == before
+
+    def test_concurrent_recoveries_move_the_store_aside_once(
+        self, tmp_path: Path
+    ) -> None:
+        import threading
+
+        (tmp_path / "vec.v2.json").write_text("{not json")
+        (tmp_path / "vec.v2.m1.npy").write_bytes(b"x")
+        slot = _slot(tmp_path / "vec")
+        barrier = threading.Barrier(4)
+        errors: list[BaseException] = []
+
+        def recover() -> None:
+            barrier.wait()
+            try:
+                slot.get(rebuild=slot.fresh)
+            except BaseException as exc:  # collected for the assert below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=recover) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert errors == []
+        assert len(list(tmp_path.glob("vec.v2.json.corrupt-*"))) == 1
+        assert not (tmp_path / "vec.v2.json").exists()  # nothing put back

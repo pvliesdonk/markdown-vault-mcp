@@ -42,6 +42,7 @@ from markdown_vault_mcp.exceptions import (
 )
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
+from markdown_vault_mcp.source_probe import require_vault_root
 from markdown_vault_mcp.types import AttachmentContent, WriteResult
 from markdown_vault_mcp.utils import (
     artifact_suffix,
@@ -55,7 +56,7 @@ from markdown_vault_mcp.utils.fs import is_regular_file
 if TYPE_CHECKING:
     import os
     import threading
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.managers._write_notifier import WriteNotifier
@@ -96,6 +97,8 @@ class ArtifactStore:
             object, so artifact and note writes serialise against each other.
         notifier: The manager's shared write notifier.
         policy: Construction-time artifact policy.
+        indexed: Whether the keyword index holds notes; with it, a write into
+            an empty vault folder is refused (#1791). ``None`` skips the check.
     """
 
     def __init__(
@@ -105,8 +108,10 @@ class ArtifactStore:
         write_lock: threading.RLock,
         notifier: WriteNotifier,
         policy: ArtifactPolicy,
+        indexed: Callable[[], bool] | None = None,
     ) -> None:
         self._source_dir = source_dir
+        self._indexed = indexed
         self._file_write_lock = write_lock
         self._notifier = notifier
         self._policy = policy
@@ -116,15 +121,19 @@ class ArtifactStore:
         return effective_attachment_extensions(self._policy.attachment_extensions)
 
     def _check_writable(self) -> None:
-        """Raise when the vault is read-only.
+        """Raise when the vault is read-only, or its folder is empty while indexed.
 
         Raises:
             ReadOnlyError: If the vault was constructed read-only.
+            VaultUnavailableError: If the vault folder holds nothing while the
+                index holds notes, as when its volume is not mounted (#1791).
         """
         if self._policy.read_only:
             raise ReadOnlyError(
                 "Vault is read-only; write operations are not permitted."
             )
+        if self._indexed is not None:
+            require_vault_root(self._source_dir, indexed=self._indexed())
 
     def _check_no_clobber(
         self, abs_path: Path, path: str, if_match: str | None

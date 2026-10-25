@@ -14,6 +14,8 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from markdown_vault_mcp.exceptions import StoreUnavailableError
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,10 +36,16 @@ class ReindexAll:
 
 @dataclass(frozen=True)
 class BuildEmbeddings:
-    """Full vector index build."""
+    """Full vector index build.
+
+    ``after_fault`` rebuilds a store that would not open instead: forced for
+    another identity, an ordinary cold build for a corrupt one moved aside
+    (#1505).
+    """
 
     kind: ClassVar[str] = "build_embeddings"
     force: bool = False
+    after_fault: bool = False
 
 
 @dataclass(frozen=True)
@@ -306,7 +314,7 @@ class IndexWriter:
                 # _closed or draining pending Futures, so every
                 # submit().result() hangs.
                 with contextlib.suppress(Exception):
-                    logger.exception("writer_job_failed kind=%s", job.kind)
+                    _log_job_failure(job.kind, exc)
             except BaseException as exc:
                 # KeyboardInterrupt / SystemExit / asyncio.CancelledError —
                 # capture into the Future so waiters unblock, then re-raise
@@ -416,6 +424,8 @@ def run_reindex_all(job: ReindexAll, ctx: WriterContext) -> Any:  # noqa: ARG001
 def run_build_embeddings(job: BuildEmbeddings, ctx: WriterContext) -> Any:
     """Execute a full vector index build."""
     try:
+        if job.after_fault:
+            return ctx.index_manager.rebuild_embeddings_after_fault()
         return ctx.index_manager.build_embeddings(force=job.force)
     finally:
         _requeue_conflicts(ctx)
@@ -467,3 +477,16 @@ def run_flush_dirty_embeddings(
         raise
     finally:
         _requeue_conflicts(ctx)
+
+
+def _log_job_failure(kind: str, exc: Exception) -> None:
+    """Log a failed job: a store that is unavailable for now is a WARNING.
+
+    A store that cannot be reached, or that another process is writing
+    (#1505), heals itself once it is back or that process exits; anything
+    else is a fault, logged with its traceback.
+    """
+    if isinstance(exc, StoreUnavailableError):
+        logger.warning("writer_job_unavailable kind=%s err=%s", kind, exc)
+    else:
+        logger.exception("writer_job_failed kind=%s", kind)

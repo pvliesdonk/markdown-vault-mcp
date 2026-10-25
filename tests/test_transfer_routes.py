@@ -152,6 +152,9 @@ async def test_upload_conflict_returns_409(
     tmp_path: Path, path: str, replay: bool
 ) -> None:
     """Late creates and upload retries return a conflict without spending the link."""
+    # Another note keeps the vault folder from going empty when the test
+    # deletes its upload below; an empty folder refuses writes (#1791).
+    (tmp_path / "keep.md").write_text("# Keep\n")
     server = make_server(
         transport="http",
         config=_config(tmp_path, base_url="https://mcp.example.com"),

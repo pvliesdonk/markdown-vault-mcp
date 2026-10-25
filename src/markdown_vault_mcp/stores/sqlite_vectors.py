@@ -37,6 +37,7 @@ import contextlib
 import json
 import logging
 import sqlite3
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -54,6 +55,8 @@ from markdown_vault_mcp.stores._identity import (
     identity_mapping,
     served_identity,
 )
+from markdown_vault_mcp.stores._legacy import report_unused_sidecar
+from markdown_vault_mcp.stores._quarantine import move_aside
 from markdown_vault_mcp.stores._resident import (
     NUMPY_AVAILABLE,
     ResidentStore,
@@ -78,6 +81,11 @@ from markdown_vault_mcp.stores._streamed import (
     rows_per_batch,
     scan,
 )
+from markdown_vault_mcp.stores._writer_lock import (
+    WriterLock,
+    hold_writer_lock,
+    release_from_finalizer,
+)
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import (
     ANY_TOKEN,
@@ -92,6 +100,7 @@ with contextlib.suppress(ImportError):  # numpy is the embeddings extra
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
+    from datetime import datetime
 
     from markdown_vault_mcp.types import (
         DocumentRows,
@@ -511,14 +520,15 @@ def _check_pages(conn: sqlite3.Connection, where: str) -> None:
 
 
 def _replace_if_unusable(path: Path) -> None:
-    """Remove *path* (and its WAL files) unless it is a vector store to empty.
+    """Move *path* (and its WAL files) aside unless it is a vector store to empty.
 
     A store whose own tables read but whose pages are damaged is unusable
-    too: emptying it in place would fail on those pages.
+    too: emptying it in place would fail on those pages. Its files are
+    renamed with a ``.corrupt-<time>`` suffix, never deleted (#1505).
 
     Raises:
         StoreUnsupportedSchemaError: If it is a vector store of a newer format.
-        StoreUnavailableError: If it cannot be read.
+        StoreUnavailableError: If it cannot be read or moved aside.
     """
     where = str(path)
     probe = _registry(path, read_only=True)
@@ -535,9 +545,12 @@ def _replace_if_unusable(path: Path) -> None:
             raise outcome from exc
     finally:
         probe.close()
-    logger.warning("sqlite_vector_store_corrupt_replaced path=%s", where)
-    for stale in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
-        stale.unlink(missing_ok=True)
+    move_aside(
+        (path, Path(f"{path}-wal"), Path(f"{path}-shm")),
+        backend=_BACKEND_NAME,
+        location=str(path.with_suffix("")),
+        reason="unusable",
+    )
 
 
 def _create(path: Path, *, replace_unusable: bool) -> SqliteConnectionRegistry:
@@ -545,7 +558,7 @@ def _create(path: Path, *, replace_unusable: bool) -> SqliteConnectionRegistry:
 
     Raises:
         StoreUnavailableError: If the directory cannot be created, or an
-            unusable file there cannot be checked or removed.
+            unusable file there cannot be checked or moved aside.
         StoreUnsupportedSchemaError: If the file there is a vector store of
             a newer format.
         sqlite3.Error: If the database cannot be opened.
@@ -721,8 +734,14 @@ class SqliteVectorStore(ResidentStore):
         registry: SqliteConnectionRegistry | None,
         reset_pending: bool = False,
         mode: _Mode = _RESIDENT,
+        writer_lock: WriterLock | None = None,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
+        # This writer's share of {base}.lock, released at close (#1505), or
+        # when the store is collected unclosed: it can write nothing then.
+        self._writer_lock = writer_lock
+        if writer_lock is not None:
+            weakref.finalize(self, release_from_finalizer, writer_lock)
         self._path = path
         self._registry = registry
         self._reset_pending = reset_pending
@@ -1149,8 +1168,12 @@ class SqliteVectorStore(ResidentStore):
                 self._truncate_wal()
             finally:
                 self._closed = True
-                if self._registry is not None:
-                    self._registry.close()
+                try:
+                    if self._registry is not None:
+                        self._registry.close()
+                finally:
+                    if self._writer_lock is not None:
+                        self._writer_lock.release()
 
 
 def _open_memory(identity: EmbeddingIdentity) -> SqliteVectorStore:
@@ -1162,7 +1185,12 @@ def _open_memory(identity: EmbeddingIdentity) -> SqliteVectorStore:
 
 
 def _open_file(
-    path: Path, identity: EmbeddingIdentity, *, read_only: bool, mode: _Mode
+    path: Path,
+    identity: EmbeddingIdentity,
+    *,
+    read_only: bool,
+    mode: _Mode,
+    writer_lock: WriterLock | None,
 ) -> SqliteVectorStore:
     where = str(path)
     try:
@@ -1187,6 +1215,7 @@ def _open_file(
             read_only=read_only,
             registry=None,
             mode=mode,
+            writer_lock=writer_lock,
         )
     registry = _registry(path, read_only=read_only)
     try:
@@ -1207,8 +1236,15 @@ def _open_file(
         "streamed" if mode.streamed else "resident",
         snap.generation,
     )
+    if not read_only:
+        report_unused_sidecar(path.with_suffix(""))
     return SqliteVectorStore(
-        snap, path=path, read_only=read_only, registry=registry, mode=mode
+        snap,
+        path=path,
+        read_only=read_only,
+        registry=registry,
+        mode=mode,
+        writer_lock=writer_lock,
     )
 
 
@@ -1278,9 +1314,78 @@ class SqliteVectorBackend:
             raise ValueError("A vector store opens against an EmbeddingIdentity.")
         if location is None or str(location) == _MEMORY:
             return _open_memory(identity)
-        return _open_file(
-            _db_file(location), identity, read_only=not owns_files, mode=self._mode
+        lock = (
+            hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+            if owns_files
+            else None
         )
+        try:
+            return _open_file(
+                _db_file(location),
+                identity,
+                read_only=not owns_files,
+                mode=self._mode,
+                writer_lock=lock,
+            )
+        except BaseException:
+            if lock is not None:
+                lock.release()
+            raise
+
+    def hold_writer(self, location: Path | str) -> WriterLock:
+        """Take a writer's share of *location*'s lock without opening a store.
+
+        For a caller that closes one store and opens another on the same
+        location, so the lock is not given up in between (#1505).
+
+        Args:
+            location: The store's base path; ``":memory:"`` locks nothing.
+
+        Returns:
+            The share, to release once the new store is open.
+
+        Raises:
+            StoreBusyError: If another process holds the lock.
+        """
+        if str(location) == ":memory:":
+            return WriterLock(None)
+        return hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+
+    def quarantine(
+        self,
+        location: Path | str,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> list[Path]:
+        """Rename this store's own files at *location* aside: it is corrupt (#1505).
+
+        ``{base}.sqlite3`` and its ``-wal`` and ``-shm`` are renamed to
+        ``<name>.corrupt-<UTC time>`` under the writer lock; ``{base}.lock``
+        is left.
+
+        Args:
+            location: The store's base path; ``":memory:"`` moves nothing.
+            clock: Supplies the time the suffix is stamped with.
+
+        Returns:
+            The files' new paths; empty when there were none.
+
+        Raises:
+            StoreBusyError: If another process holds the lock.
+            StoreUnavailableError: If a file cannot be renamed; none is.
+        """
+        if str(location) == _MEMORY:
+            return []
+        base = Path(location)
+        db = _db_file(base)
+        files = [db, Path(f"{db}-wal"), Path(f"{db}-shm")]
+        lock = hold_writer_lock(base, backend=_BACKEND_NAME)
+        try:
+            return move_aside(
+                files, backend=_BACKEND_NAME, location=str(base), clock=clock
+            )
+        finally:
+            lock.release()
 
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity
@@ -1288,7 +1393,8 @@ class SqliteVectorBackend:
         """Open *location* as an empty store at *identity*, reading nothing there.
 
         Before the first write, a file that is not a vector store or whose
-        pages are damaged is removed, whatever that write's outcome; the
+        pages are damaged is moved aside with its ``-wal`` and ``-shm``
+        (``.corrupt-<time>``), whatever that write's outcome; the
         write empties a usable database in its own transaction. Until then
         a reader opens the old rows. Unlike :meth:`open`, this checks
         nothing at the location: the first write raises
@@ -1301,14 +1407,20 @@ class SqliteVectorBackend:
         _require_numpy()
         if location is None or str(location) == _MEMORY:
             return _open_memory(identity)
-        return SqliteVectorStore(
-            fresh_snapshot(identity),
-            path=_db_file(location),
-            read_only=False,
-            registry=None,
-            reset_pending=True,
-            mode=self._mode,
-        )
+        lock = hold_writer_lock(Path(location), backend=_BACKEND_NAME)
+        try:
+            return SqliteVectorStore(
+                fresh_snapshot(identity),
+                path=_db_file(location),
+                read_only=False,
+                registry=None,
+                reset_pending=True,
+                mode=self._mode,
+                writer_lock=lock,
+            )
+        except BaseException:
+            lock.release()
+            raise
 
 
 register_backend("vector", _BACKEND_NAME, SqliteVectorBackend)

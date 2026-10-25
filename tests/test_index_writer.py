@@ -340,6 +340,10 @@ class _FakeIndexManager:
         self.build_embeddings_calls.append(force)
         return 42
 
+    def rebuild_embeddings_after_fault(self):
+        self.build_embeddings_calls.append("after_fault")
+        return 7
+
     def process_dirty_paths(
         self, paths: set[str], *, on_refreshed: Callable[[str], None]
     ) -> None:
@@ -408,6 +412,20 @@ def test_build_embeddings_job_calls_index_manager():
         result = writer.submit(BuildEmbeddings(force=True)).result(timeout=5)
         assert result == 42
         assert im.build_embeddings_calls == [True]
+    finally:
+        writer.close(timeout=5)
+
+
+def test_an_after_fault_job_rebuilds_through_the_fault_path():
+    # A search that met a store that would not open rebuilds through the
+    # manager, which tells corrupt from another identity (#1505).
+    im = _FakeIndexManager()
+    writer = _make_real_writer(im)
+    writer.start()
+    try:
+        result = writer.submit(BuildEmbeddings(after_fault=True)).result(timeout=5)
+        assert result == 7
+        assert im.build_embeddings_calls == ["after_fault"]
     finally:
         writer.close(timeout=5)
 
@@ -563,3 +581,34 @@ def test_run_flush_dirty_embeddings_recovers_snapshot_on_failure():
         assert im.flush_paths_calls == [{"x.md", "y.md"}]
     finally:
         writer.close(timeout=5)
+
+
+def test_a_busy_store_is_a_warning_not_a_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from markdown_vault_mcp.exceptions import StoreBusyError
+
+    def busy_runner(job, ctx):  # noqa: ARG001
+        raise StoreBusyError(
+            "Vector store at /v/emb is being written by another process.",
+            backend="numpy",
+            location="/v/emb",
+        )
+
+    writer = IndexWriter(runners={"build_index": busy_runner}, ctx=None)
+    writer.start()
+    try:
+        pending = writer.submit(BuildIndex())
+        with (
+            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.indexing"),
+            pytest.raises(StoreBusyError),
+        ):
+            pending.result(timeout=5)
+    finally:
+        writer.close(timeout=5)
+    # It heals itself once the other process exits: a WARNING, no traceback (#1505).
+    (record,) = [r for r in caplog.records if r.msg.startswith("writer_job_")]
+    assert record.msg.startswith("writer_job_unavailable ")
+    assert (record.levelname, record.exc_info) == ("WARNING", None)

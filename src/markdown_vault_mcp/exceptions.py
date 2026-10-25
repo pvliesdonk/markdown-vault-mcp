@@ -137,6 +137,28 @@ class EmbeddingsNotConfiguredError(InvalidRequestError):
     """
 
 
+class EmbeddingsNotPublishedError(MarkdownMCPError, RuntimeError):
+    """Raised when a full embedding build kept a populated store unchanged.
+
+    A build that would replace a store already holding vectors publishes
+    nothing unless every provider batch succeeded, so a provider that fails
+    part-way never shrinks a working store (#1505). The request was fine:
+    the previous embeddings still serve searches, and a retry once the
+    provider recovers completes the build. A server-side failure, not a
+    request the caller must change.
+
+    Attributes:
+        failed_batches: How many provider batches failed.
+    """
+
+    def __init__(self, *, failed_batches: int) -> None:
+        super().__init__(
+            f"{failed_batches} embedding provider batch(es) failed, so the existing "
+            "embeddings were kept unchanged."
+        )
+        self.failed_batches = failed_batches
+
+
 class SummarizeTimeoutError(InvalidRequestError, RuntimeError):
     """Raised when a summarization request outruns its per-request budget.
 
@@ -261,6 +283,15 @@ class IndexUnavailableError(MarkdownMCPError):
         self.reason: IndexUnavailableReason = reason
 
 
+class VaultUnavailableError(MarkdownMCPError):
+    """The vault folder is empty while the index holds notes; writes are refused.
+
+    What an unmounted volume or an empty bind mount looks like: one file
+    written there would end the protection that keeps the index and the
+    embeddings (#1791), so writes wait until the volume is back.
+    """
+
+
 class StoreOpenError(MarkdownMCPError):
     """Opening a store failed in a way its backend could classify (#1766).
 
@@ -290,6 +321,15 @@ class StoreUnavailableError(StoreOpenError):
     A service that is down, a volume that is not mounted, a parent that is
     not a directory, a permission that is refused. Possibly transient; never
     a reason to rebuild.
+    """
+
+
+class StoreBusyError(StoreUnavailableError):
+    """Another process is writing the store; stop it first.
+
+    A built-in store's writer lock (``{base}.lock``) or PostgreSQL's writer
+    lease is held elsewhere (#1505). Unavailable for now, never a reason to
+    rebuild.
     """
 
 

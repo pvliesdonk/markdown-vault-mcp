@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
-from markdown_vault_mcp.exceptions import StoreIncompatibleError
 from markdown_vault_mcp.fts_index import should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers.embeddings import (
@@ -34,6 +33,7 @@ from markdown_vault_mcp.scanner import (
     parse_note_categorized,
     scan_directory,
 )
+from markdown_vault_mcp.source_probe import holds_entries
 from markdown_vault_mcp.types import (
     IndexStats,
     ParsedNote,
@@ -90,7 +90,7 @@ class IndexManager:
         fts: The FTS index to populate and query.
         tracker: Hash-based change tracker for incremental reindexing.
         source_dir: Absolute path to the vault root directory.
-        embeddings_path: Base path for ``.npy`` / ``.json`` sidecar files.
+        embeddings_path: Base path of the embedding store's files.
             ``None`` keeps the vectors in memory (#1708).
         embedding_provider: Provider used to generate embeddings.
         chunk_strategy: Strategy for splitting documents into chunks.
@@ -165,6 +165,8 @@ class IndexManager:
             attachment_extensions
         )
         self._embed_builder = embed_text_builder or EmbedTextBuilder()
+        # Whether the last pass found an empty vault folder (#1791).
+        self._vault_root_empty = False
         # Composed vector-lifecycle collaborator (#1157). The shared path
         # helpers are injected as callables (per the #736 precedent) so the
         # exclusion and discovery semantics stay defined here.
@@ -332,7 +334,41 @@ class IndexManager:
             skip, content_hash=content_hash, modified_at=modified_at
         )
 
-    def _sync_tombstones(self) -> None:
+    @property
+    def vault_root_empty(self) -> bool:
+        """Whether the last non-forced build or reindex was refused for an empty vault folder (#1791).
+
+        Every non-forced pass sets it afresh, so one that finds the folder
+        populated again clears it; a forced build clears it too; a warm
+        start, which never reaches this manager, leaves it as it was.
+        """
+        return self._vault_root_empty
+
+    def _refuse_empty_root(self) -> bool:
+        """Whether this pass must change nothing because the vault folder is empty.
+
+        A folder with no entries at all, while the keyword index holds
+        documents (tombstones included), is what an unmounted volume or an
+        empty bind mount looks like: the pass is *unavailable*, so nothing is
+        removed and the tracker keeps its state (#1791, #1505). A forced
+        rebuild, the deliberate "I emptied it", wipes the index first and
+        never asks.
+
+        Returns:
+            ``True`` when the pass is refused, after one WARNING.
+        """
+        self._vault_root_empty = self._fts.has_documents() and not holds_entries(
+            self._source_dir
+        )
+        if not self._vault_root_empty:
+            return False
+        logger.warning(
+            "vault_root_empty_removals_refused indexed=%d",
+            self._fts.count_documents(),
+        )
+        return True
+
+    def _sync_tombstones(self) -> list[str]:
         """Drop tombstone rows whose skip left the tracker registry (#1129).
 
         The tracker's ``skip_reasons`` map stays authoritative for what is
@@ -342,11 +378,18 @@ class IndexManager:
         ``deleted`` event fires — and its tombstone must not linger as a
         phantom candidate. Called after ``update_state`` so the re-read
         registry reflects this pass.
+
+        Returns:
+            The dropped paths: their notes were deleted, renamed away or
+            excluded, so the vectors a tombstone kept go too (#1505).
         """
         reasons = self._tracker.skip_reasons()
+        dropped: list[str] = []
         for row in self._fts.list_tombstones():
             if row["path"] not in reasons:
                 self._fts.delete_by_path(row["path"])
+                dropped.append(row["path"])
+        return dropped
 
     def _state_notes_from_index(self) -> list[ParsedNote]:
         """Build tracker-state notes from the index's current contents.
@@ -413,17 +456,10 @@ class IndexManager:
             if (keep_paths is None or row["path"] not in keep_paths)
             and self._is_path_excluded(row["path"])
         ]
-        if (
-            stale_paths
-            and vectors is None
-            and self._embeddings.embedding_provider is not None
-        ):
-            try:
-                vectors = self._embeddings._open_store()
-            except StoreIncompatibleError as exc:
-                # A store this provider may not write (an injected store of
-                # another model): the keyword purge still runs (#1778).
-                logger.warning("purge_vectors_skipped reason=store_refused err=%s", exc)
+        if stale_paths and vectors is None:
+            # Opened if need be; None for a store never built, one of another
+            # model (#1778) or while an import defers vectors (#1505).
+            vectors = self._embeddings.store_for_purge()
 
         for stale_path in stale_paths:
             self._fts.delete_by_path(stale_path)
@@ -455,12 +491,19 @@ class IndexManager:
         """
         if force:
             logger.info("build_index_force_rebuild")
+            self._vault_root_empty = False
             for row in self._fts.list_notes():
                 self._fts.delete_by_path(row["path"])
             # list_notes() is live-only, so tombstones need their own wipe;
             # the scan below re-creates one per still-skipped candidate.
             for row in self._fts.list_tombstones():
                 self._fts.delete_by_path(row["path"])
+
+        # Checked before the walk: an empty folder has nothing to scan (#1791).
+        if not force and self._refuse_empty_root():
+            return IndexStats(
+                documents_indexed=0, chunks_indexed=0, skipped=0, vault_root_empty=True
+            )
 
         logger.info("build_index_scanning path=%s", self._source_dir)
 
@@ -648,6 +691,10 @@ class IndexManager:
             changes.unchanged,
             changes.skipped_unchanged,
         )
+        if self._refuse_empty_root():
+            return ReindexResult(
+                added=0, modified=0, deleted=0, unchanged=0, vault_root_empty=True
+            )
 
         # Pre-parse notes outside the lock to minimise lock hold time.
         parsed, newly_skipped, newly_skip_reasons = self._parse_changed_notes(
@@ -729,7 +776,12 @@ class IndexManager:
         self._tracker.update_state(
             state_notes, skipped=newly_skipped, skip_reasons=newly_skip_reasons
         )
-        self._sync_tombstones()
+        dropped = self._sync_tombstones()
+        if vectors is not None and dropped:
+            # A tombstone kept its note's vectors (#1505); with the note gone
+            # they go too, now rather than at the next full converge.
+            self._embeddings.reconcile_paths(vectors, dropped, site="purge")
+            vectors.checkpoint()
 
         return ReindexResult(
             added=indexed_added,
@@ -923,6 +975,17 @@ class IndexManager:
                 configured.
         """
         return self._embeddings.build_embeddings(force=force)
+
+    def rebuild_embeddings_after_fault(self) -> int:
+        """Rebuild a vector store that would not open (#1505).
+
+        Thin delegation to
+        :meth:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager.rebuild_after_fault`.
+
+        Returns:
+            Number of chunks embedded.
+        """
+        return self._embeddings.rebuild_after_fault()
 
     def skipped_files(self) -> list[SkippedFile]:
         """Return files dropped from the index for a surfaced reason (#775).

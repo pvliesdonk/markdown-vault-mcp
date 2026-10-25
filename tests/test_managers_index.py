@@ -1157,6 +1157,111 @@ class TestBuildEmbeddings:
         assert not embeddings_path.exists()  # no vectors saved
         assert any("all_batches_failed" in r.getMessage() for r in caplog.records)
 
+    def test_a_fully_donated_build_publishes_and_logs_saved(self, tmp_path, caplog):
+        """A build that copies every chunk from a donor saves, never 'all failed' (#1505)."""
+        import logging
+
+        from markdown_vault_mcp.embed_text import EmbedTextBuilder
+        from markdown_vault_mcp.indexing.donor import Donor
+        from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+        from tests.conftest import MockEmbeddingProvider
+
+        class Counting(MockEmbeddingProvider):
+            def __init__(self) -> None:
+                super().__init__()
+                self.texts: list[str] = []
+
+            def embed(self, texts):
+                self.texts.extend(texts)
+                return super().embed(texts)
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "a.md").write_text("# A\n\nApples.\n", encoding="utf-8")
+        (vault / "b.md").write_text("# B\n\nBoats.\n", encoding="utf-8")
+        first, _fts, _ = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=tmp_path / "donor",
+            embedding_provider=Counting(),
+        )
+        first.build_index()
+        first.build_embeddings()
+        provider = Counting()
+        mgr, _fts2, _ = _make_index_mgr(
+            vault,
+            tmp_path / "second",
+            embeddings_path=tmp_path / "dest",
+            embedding_provider=provider,
+        )
+        mgr.build_index()
+        identity = EmbeddingIdentity.of(provider, "v1")
+        donor = Donor.open(
+            NumpySidecarBackend(),
+            tmp_path / "donor",
+            identity,
+            builder=EmbedTextBuilder(),
+        )
+        assert isinstance(donor, Donor)
+        caplog.clear()  # the first manager's build may already be captured
+        with caplog.at_level(logging.INFO), donor:
+            count = mgr._embeddings.build_embeddings(donor=donor)
+        assert (count, provider.texts) == (0, [])
+        assert _stored(tmp_path / "dest", provider).count == 2
+        messages = [r.msg for r in caplog.records]
+        assert any(m.startswith("build_embeddings_saved ") for m in messages)
+        assert not any("all_batches_failed" in m for m in messages)
+        (saved,) = [
+            r for r in caplog.records if r.msg.startswith("build_embeddings_saved ")
+        ]
+        assert saved.args == (0, 2)
+
+    def test_a_build_not_published_says_so(self, tmp_path, caplog):
+        """A forced rebuild of a populated store with a failed batch keeps it (#1505)."""
+        import logging
+
+        from tests.conftest import MockEmbeddingProvider
+
+        class Flaky(MockEmbeddingProvider):
+            fail = False
+            calls = 0
+
+            def embed(self, texts):
+                self.calls += 1
+                if self.fail and self.calls % 2 == 0:
+                    raise RuntimeError("provider down")
+                return super().embed(texts)
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        for i in range(6):
+            (vault / f"n{i}.md").write_text(f"# N{i}\n\nBody {i}.\n", encoding="utf-8")
+        provider = Flaky()
+        embeddings_path = tmp_path / "embeddings"
+        mgr, _fts, _ = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+            embedding_batch_size=2,
+        )
+        mgr.build_index()
+        mgr.build_embeddings()
+        expected = _stored(embeddings_path, provider).tokens()
+        provider.fail, provider.calls = True, 0
+        from markdown_vault_mcp.exceptions import EmbeddingsNotPublishedError
+
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.raises(EmbeddingsNotPublishedError) as kept,
+        ):
+            mgr.build_embeddings(force=True)
+        assert kept.value.failed_batches == 1
+        assert _stored(embeddings_path, provider).tokens() == expected
+        assert any(
+            r.msg.startswith("build_embeddings_not_published ") for r in caplog.records
+        )
+
 
 # ---------------------------------------------------------------------------
 # Convergence reclaims stale vectors only on authoritative FTS absence (#1130)
@@ -1208,13 +1313,13 @@ class TestConvergeStaleConfirmation:
 
         return set(metadata_by_path(_stored(embeddings_path, provider)))
 
-    def test_unparseable_source_reclaims_via_tombstone(self, tmp_path: Path) -> None:
-        """A parse-failure skip is tombstoned (#1129), so its vectors reclaim.
+    def test_unparseable_source_keeps_its_vectors_until_repaired(
+        self, tmp_path: Path
+    ) -> None:
+        """A parse-failure skip is tombstoned (#1129) and keeps its vectors (#1505).
 
-        The stale-content counterpart of the FTS fix: a file that becomes
-        unparseable stops serving its last-good vectors too — the tombstone
-        records the absence as deliberate, so convergence reclaims instead
-        of conservatively keeping them (the pre-#1129 #1130 behaviour).
+        The file still exists, so its last-good vectors are kept, out of
+        search, and reused for its unchanged chunks once it is repaired.
         """
         vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
 
@@ -1228,7 +1333,7 @@ class TestConvergeStaleConfirmation:
         assert mgr._fts.get_tombstone("bad.md") is not None
 
         mgr.build_embeddings()
-        assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
+        assert self._sidecar_paths(embeddings_path, provider) == {"good.md", "bad.md"}
 
         # Once repaired and re-indexed, the note converges back in.
         (vault / "bad.md").write_text(
@@ -1339,8 +1444,8 @@ class TestConvergeStaleConfirmation:
         mgr2.build_embeddings()
         assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
 
-    def test_missing_frontmatter_skip_still_reclaims(self, tmp_path: Path) -> None:
-        """A deliberate required-frontmatter skip is authoritative."""
+    def test_missing_frontmatter_skip_keeps_its_vectors(self, tmp_path: Path) -> None:
+        """A required-frontmatter skip keeps the note's vectors until fixed (#1505)."""
 
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -1366,7 +1471,10 @@ class TestConvergeStaleConfirmation:
         (vault / "bad.md").write_text("# Bad\n\nBad body.\n", encoding="utf-8")
         mgr.build_index(force=True)
         mgr.build_embeddings()
-        assert set(metadata_by_path(_stored(embeddings_path, provider))) == {"good.md"}
+        assert set(metadata_by_path(_stored(embeddings_path, provider))) == {
+            "good.md",
+            "bad.md",
+        }
 
     def test_note_without_embeddable_text_still_reclaims(self, tmp_path: Path) -> None:
         """A note that parses to no embeddable text loses its vectors (#930/#1087)."""
@@ -1441,8 +1549,8 @@ class TestOpenStoreSelfHeal:
         assert slot is not None
         slot.replace(None)
 
-        json_path = embeddings_path.with_suffix(".json")
-        (matrix_path,) = state_dir.glob("embeddings.m*.npy")
+        json_path = embeddings_path.with_suffix(".v2.json")
+        (matrix_path,) = state_dir.glob("embeddings.v2.m*.npy")
         assert json_path.exists()
         return mgr, holder, matrix_path, json_path
 

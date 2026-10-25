@@ -17,7 +17,7 @@ import time
 from concurrent.futures import CancelledError, Future
 from typing import TYPE_CHECKING, Any
 
-from markdown_vault_mcp.exceptions import IndexUnavailableError
+from markdown_vault_mcp.exceptions import IndexUnavailableError, StoreUnavailableError
 from markdown_vault_mcp.fts_index import INDEX_SEMANTICS_VERSION
 from markdown_vault_mcp.indexing.build_lifecycle import BuildLifecycle
 from markdown_vault_mcp.indexing.index_writer import (
@@ -355,16 +355,19 @@ class IndexWriteCoordinator:
         return result
 
     def rebuild_embeddings(self) -> None:
-        """Force-rebuild the vector index for the search-recovery path.
+        """Rebuild the vector index for the search-recovery path.
 
         Invoked by ``SearchManager._load_vectors`` when an owned store is
-        corrupt or of another identity (an embedding-model upgrade). Runs on
+        corrupt or of another identity (an embedding-model upgrade): the
+        manager's ``rebuild_after_fault`` forces a rebuild for another
+        identity and cold-builds a corrupt store the slot moved aside, with
+        a 5.x sidecar as donor (#1505). Runs on
         the writer thread to preserve the single-owner invariant. Carries NO
         ``require_built`` gate: the index is necessarily built when vectors
         are being loaded. The rebuilt-chunk count is discarded — the caller
         invokes this for its side-effect only.
         """
-        self._writer.submit(BuildEmbeddings(force=True)).result()
+        self._writer.submit(BuildEmbeddings(after_fault=True)).result()
 
     # ------------------------------------------------------------------
     # Asynchronous builds
@@ -400,6 +403,10 @@ class IndexWriteCoordinator:
         except CancelledError:
             # Cancellation (writer-shutdown drain) is not a failure — don't record (#584).
             logger.debug("async_build_embeddings_cancelled")
+        except StoreUnavailableError as exc:
+            # The writer logged it at WARNING; it heals itself (#1505).
+            self._last_build_embeddings_error = exc
+            logger.debug("async_build_embeddings_job_unavailable err=%s", exc)
         except BaseException as exc:
             # Record, never propagate — escaping strands the writer (#584).
             self._last_build_embeddings_error = exc

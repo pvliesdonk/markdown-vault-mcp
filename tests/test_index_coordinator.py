@@ -1212,3 +1212,29 @@ def test_a_default_allowlist_matches_an_index_predating_the_key(
         assert coord2._chunking_meta_matches() is True
     finally:
         coord2.close(timeout=5)
+
+
+def test_on_build_embeddings_done_leaves_an_unavailable_store_to_the_writer_log(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        fut.set_exception(
+            StoreUnavailableError("down", backend="postgres", location="vault")
+        )
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.indexing"):
+            coord._on_build_embeddings_done(fut)
+        assert isinstance(coord._last_build_embeddings_error, StoreUnavailableError)
+    finally:
+        coord.close(timeout=5)
+    # The writer already logged it at WARNING; no second line above DEBUG (#1505).
+    assert [
+        r.levelname
+        for r in caplog.records
+        if r.msg.startswith("async_build_embeddings")
+    ] == ["DEBUG"]

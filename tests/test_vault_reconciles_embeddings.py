@@ -106,13 +106,14 @@ class TestUpgrade:
 
 
 class TestParseErrorOnTheFlush:
-    def test_a_note_edited_into_bad_frontmatter_loses_its_vectors(self, tmp_path):
+    def test_a_note_edited_into_bad_frontmatter_keeps_its_vectors(self, tmp_path):
         vault = _vault(tmp_path, MockEmbeddingProvider())
         try:
             vault.index.build_index()
             vault.index.build_embeddings()
             _write(vault, "alpha.md", "---\ntitle: [unclosed\n---\nbody\n")
-            assert sorted(metadata_by_path(vault._vectors)) == ["beta.md"]  # type: ignore[arg-type]
+            # Kept until the note is fixed or deleted, out of search (#1505).
+            assert sorted(metadata_by_path(vault._vectors)) == ["alpha.md", "beta.md"]  # type: ignore[arg-type]
         finally:
             vault.close()
 

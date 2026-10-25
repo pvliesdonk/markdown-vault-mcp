@@ -2923,7 +2923,7 @@ class TestSemanticSearch:
         vectors = col2._search_mgr._load_vectors()
         assert vectors.count == expected_count
 
-        with (tmp_path / "embeddings.json").open(encoding="utf-8") as fh:
+        with (tmp_path / "embeddings.v2.json").open(encoding="utf-8") as fh:
             payload = json.load(fh)
         assert payload["index_metadata"]["provider"] == "alternate-mock"
         assert payload["index_metadata"]["model"] == "alternate-model-v1"
@@ -3320,8 +3320,8 @@ class TestBuildEmbeddings:
         for size in batch_sizes:
             assert size <= _EMBEDDING_BATCH_SIZE
         # The store was saved at the end: its commit file and one matrix.
-        assert (tmp_path / "embeddings.json").exists()
-        assert list(tmp_path.glob("embeddings.m*.npy"))
+        assert (tmp_path / "embeddings.v2.json").exists()
+        assert list(tmp_path.glob("embeddings.v2.m*.npy"))
 
 
 # ---------------------------------------------------------------------------

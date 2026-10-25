@@ -2748,7 +2748,9 @@ class FTSIndex:
     def get_chunk_counts(self, paths: Iterable[str]) -> dict[str, int]:
         """Return a ``{path: chunk_count}`` map for the given paths.
 
-        Missing paths are omitted; callers should default to ``1``.
+        Paths that are not live notes (tombstoned or absent) are omitted, so
+        a caller can tell them apart: semantic search drops their vector
+        rows (#1505).
 
         Materialises *paths* into a list BEFORE the retry window opens.
         ``@_retry_on_locked`` cannot be used directly here because the
@@ -2786,12 +2788,55 @@ class FTSIndex:
         )
         return {r["path"]: int(r["chunk_count"]) for r in rows}
 
+    def _truncate_wal(self) -> None:
+        """Fold the WAL into the database file and truncate it, best effort.
+
+        SQLite folds and deletes the WAL when the last connection closes, but
+        not while another process still has the file open, so a copy of
+        ``index.db`` alone would miss commits (#1505). This never waits: a
+        read transaction elsewhere makes the truncate report busy, and only
+        frames that reader still needs stay outside the file, which is logged
+        and folded in by the next writer. A busy result with no frame counts
+        (another connection was checkpointing at that instant) is not logged:
+        that checkpoint folds the frames.
+        """
+        if self._registry.is_memory or self._read_only or self._registry.closed:
+            return
+        try:
+            conn = self._registry.conn()
+        except sqlite3.ProgrammingError:  # another thread's close() got here first
+            return
+        try:
+            waits = int(conn.execute("PRAGMA busy_timeout").fetchone()[0])
+            conn.execute("PRAGMA busy_timeout = 0")
+            try:
+                _, frames, checkpointed = conn.execute(
+                    "PRAGMA wal_checkpoint(TRUNCATE)"
+                ).fetchone()
+            finally:
+                conn.execute(f"PRAGMA busy_timeout = {waits:d}")
+        except sqlite3.Error as exc:
+            logger.warning(
+                "fts_index_checkpoint_failed path=%s err=%s", self._db_path, exc
+            )
+            return
+        if 0 <= checkpointed < frames:
+            logger.warning(
+                "fts_index_checkpoint_incomplete path=%s frames=%d checkpointed=%d",
+                self._db_path,
+                frames,
+                checkpointed,
+            )
+
     def close(self) -> None:
-        """Close every per-thread connection and mark this index closed.
+        """Fold the WAL away, then close every per-thread connection.
 
         Idempotent — delegates to :meth:`SqliteConnectionRegistry.close`.
         After ``close()``, any thread calling a public method raises
         ``sqlite3.ProgrammingError`` from ``_conn()``.
         """
-        self._registry.close()
+        try:
+            self._truncate_wal()
+        finally:
+            self._registry.close()
         logger.debug("fts_index_closed db_path=%s", self._db_path)
