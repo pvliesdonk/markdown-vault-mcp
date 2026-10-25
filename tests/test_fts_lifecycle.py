@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -119,3 +121,135 @@ class TestCheckpoint:
             index.checkpoint()
         finally:
             index.close()
+
+
+def _attach_reader(db: Path) -> sqlite3.Connection:
+    """Another process's read-only connection, idle after one read."""
+    reader = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    reader.execute("SELECT count(*) FROM meta").fetchone()
+    return reader
+
+
+def _meta_keys_of_a_copy(db: Path, folder: Path) -> set[str]:
+    """Open a copy of *db* alone, without its WAL, and list its meta keys."""
+    folder.mkdir()
+    copy = folder / db.name
+    copy.write_bytes(db.read_bytes())
+    conn = sqlite3.connect(copy)
+    try:
+        return {row[0] for row in conn.execute("SELECT key FROM meta")}
+    except sqlite3.OperationalError:  # the table itself is still in the WAL
+        return set()
+    finally:
+        conn.close()
+
+
+class TestCloseFoldsTheWal:
+    """A stopped server's index.db is complete without its WAL (#1505 child 10)."""
+
+    def test_close_with_a_reader_attached_leaves_index_db_complete(
+        self, tmp_path: Path
+    ) -> None:
+        db = tmp_path / "index.db"
+        index = FTSIndex(db_path=db)
+        index.set_build_completed()
+        reader = _attach_reader(db)
+        try:
+            index.close()
+            assert "build_completed_at" in _meta_keys_of_a_copy(db, tmp_path / "copy")
+        finally:
+            reader.close()
+
+    def test_close_does_not_wait_for_a_reader_mid_transaction(
+        self, tmp_path: Path
+    ) -> None:
+        db = tmp_path / "index.db"
+        index = FTSIndex(db_path=db)
+        index.set_build_completed()
+        reader = _attach_reader(db)
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM meta").fetchone()
+        try:
+            started = time.monotonic()
+            index.close()
+            assert time.monotonic() - started < 1.0  # not busy_timeout's 5 s
+            assert "build_completed_at" in _meta_keys_of_a_copy(db, tmp_path / "copy")
+        finally:
+            reader.close()
+
+    def test_close_warns_when_frames_stay_in_the_wal(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        db = tmp_path / "index.db"
+        index = FTSIndex(db_path=db)
+        index.set_build_completed()
+        reader = _attach_reader(db)
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM meta").fetchone()  # an older snapshot
+        index.set_build_completed()  # committed after the reader's snapshot
+        try:
+            with caplog.at_level(logging.WARNING):
+                index.close()
+        finally:
+            reader.close()
+        lines = [
+            r
+            for r in caplog.records
+            if r.msg.startswith("fts_index_checkpoint_incomplete")
+        ]
+        assert len(lines) == 1
+        path, frames, checkpointed = lines[0].args  # type: ignore[misc]
+        assert str(path) == str(db)
+        assert frames > checkpointed
+
+    def test_a_failed_checkpoint_on_close_is_logged_and_still_closes(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        index = FTSIndex(db_path=tmp_path / "index.db")
+        real = index._registry.conn
+
+        class _Refusing:
+            def __init__(self, conn: sqlite3.Connection) -> None:
+                self._conn = conn
+
+            def execute(self, sql: str, *args: object) -> sqlite3.Cursor:
+                if "wal_checkpoint" in sql:
+                    raise sqlite3.OperationalError("disk I/O error")
+                return self._conn.execute(sql, *args)
+
+        index._registry.conn = lambda: _Refusing(real())  # type: ignore[assignment,return-value]
+        with caplog.at_level(logging.WARNING):
+            index.close()
+        assert any(
+            r.msg.startswith("fts_index_checkpoint_failed") for r in caplog.records
+        )
+        with pytest.raises(sqlite3.ProgrammingError):
+            real()
+
+    @pytest.mark.parametrize("kind", ["memory", "read_only"])
+    def test_close_runs_no_checkpoint_where_it_cannot(
+        self, tmp_path: Path, kind: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        if kind == "memory":
+            index = FTSIndex(":memory:")
+        else:
+            FTSIndex(db_path=tmp_path / "index.db").close()
+            index = FTSIndex(db_path=tmp_path / "index.db", read_only=True)
+        with caplog.at_level(logging.WARNING):
+            index.close()
+            index.close()  # idempotent
+        assert not [
+            r for r in caplog.records if r.msg.startswith("fts_index_checkpoint_")
+        ]
+
+    def test_closing_twice_logs_nothing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        index = FTSIndex(db_path=tmp_path / "index.db")
+        index.set_build_completed()
+        with caplog.at_level(logging.WARNING):
+            index.close()
+            index.close()
+        assert not [
+            r for r in caplog.records if r.msg.startswith("fts_index_checkpoint_")
+        ]
