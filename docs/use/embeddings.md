@@ -483,6 +483,14 @@ markdown-vault-mcp embeddings import --from numpy --dry-run
 markdown-vault-mcp embeddings import --from numpy
 ```
 
+The same command works in the other directions. From a `numpy` store into PostgreSQL, set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres` with its schema and connection string, then run `markdown-vault-mcp embeddings import --from numpy --from-path /data/state/index-db-embeddings`: with a `postgres` store configured, the built-in source has no default base path. Back from PostgreSQL into `sqlite`, the schema and connection string default to the configured ones:
+
+```bash
+MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite markdown-vault-mcp embeddings import --from postgres
+```
+
+A source schema other than the configured one takes `--from-schema`, and its connection string comes from the variable `--from-dsn-env` names.
+
 Then start the server. The options:
 
 | Option | What it names |

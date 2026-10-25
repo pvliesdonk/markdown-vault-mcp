@@ -119,7 +119,7 @@ These embed only part of the vault:
 | `embeddings_upgrade_started donor=… store=…` | The 5.x files are being copied into the configured store. |
 | `embeddings_donor_used source=… reused=… embedded=… refused_rows=… published=…` | A build or import finished. The fields count the vectors copied, the chunks embedded and the stored rows skipped as unreadable; `published` says whether the result replaced the store. |
 | `embeddings_donor_refused source=… reason=…` | The files or store offered cannot be reused: `identity_unknown` (no model recorded), `identity_differs` (another model), or a store that is empty, damaged, out of reach or unsupported. |
-| `embeddings_legacy_sidecar_unused path=… bytes=…` | The 5.x files are still there and no longer read. |
+| `embeddings_legacy_sidecar_unused path=… bytes=…` | The 5.x files are still there and no longer read. `path` is their shared base, such as `/data/state/index-db-embeddings`, and `bytes` their total size. |
 | `embeddings_import_completed …` | `embeddings import` finished; `embeddings_import_refused reason=…` says why it stopped instead. |
 | `vector_store_moved_aside location=… reason=corrupt paths=…` | A damaged `numpy` or `sqlite` store was renamed with a `.corrupt-<time>` suffix and is being built again. |
 | `vault_root_empty_removals_refused indexed=…` | The vault folder looked empty, so nothing was removed. |

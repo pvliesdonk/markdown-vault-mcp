@@ -687,7 +687,7 @@ stay on the live `count_documents()`.
 "is this FTS absence deliberate?" (#1130): a stale sidecar path is
 reclaimable iff it is excluded or its source is gone from disk, while a
 tombstoned path (any category) keeps its rows, out of search, until it is
-fixed or its tombstone drops with the note (#1505 child 7, § Embedding
+fixed or its tombstone drops with the note (#1505, § Embedding
 transitions and recovery); a missing source is checked (one `stat`, transient-`OSError`-aware, with an
 unavailable source *root* confirming nothing); and an empty embedding build
 is authoritative iff every candidate absent from FTS has a tombstone. The
@@ -970,7 +970,7 @@ tokens (the store's `tokens()` and `rows_for()`) and reconciles:
 - Vectors for documents no longer in the FTS index are removed — but only
   when the absence is **authoritative** (#1130, #1785). An exclusion
   removes them; a tombstone (a deliberate skip, #1129) keeps them, out of
-  search, until the note is fixed or its tombstone drops (#1505 child 7);
+  search, until the note is fixed or its tombstone drops (#1505);
   otherwise the
   `SourceProbe` decides (the file-backed `FileSourceProbe`: a `stat`
   classified by errno, with every path component confirmed under its exact
@@ -1389,7 +1389,7 @@ on every flush, so a failed checkpoint retries without paying the provider again
 Store open and rebuild failures propagate, so the writer retains the snapshot.
 A note the refresh tombstoned (unparseable frontmatter, #1129) keeps its vectors
 on the flush, out of search, though its keyword row is replaced by the
-tombstone (#1505 child 7; § Embedding transitions and recovery).
+tombstone (#1505; § Embedding transitions and recovery).
 The boundary
 guarantees visibility of prior writes, not isolation from concurrent
 edits. Graph read tools keep their existing optional wait and stale metadata.
@@ -4026,11 +4026,11 @@ reader never sees a matrix and a row list that disagree. On disk
 `{base}.v2.m<N>.npy`, written under a new name per persist; the sweep
 removes only this store's own `.v2.m*.npy` matrices. A corrupt store's
 `.v2.json` and every `.v2.m*.npy` are renamed aside by its `quarantine`
-before a rebuild (child 9, below); in this backend `replace_document` publishes in memory and
+before a rebuild (§ Recovery, below); in this backend `replace_document` publishes in memory and
 becomes durable at `checkpoint()`, while `publish_generation` is durable
 before it returns.
 One process writes a base path at a time: two writers would pick the same
-next matrix name. Since #1505 child 6a this is enforced, for the numpy and
+next matrix name. Since #1505 this is enforced, for the numpy and
 SQLite stores alike (`stores/_writer_lock.py`): a writer's open (and
 `open_fresh`) takes an advisory `flock` on `{base}.lock` and its `close()`
 releases it, and a writer open in another process is refused with
@@ -4061,7 +4061,7 @@ build's format-2 `{base}.json` naming `{base}.m<N>.npy`, is opened only by
 `NumpySidecarBackend(legacy_only=True)`, always read-only and with its
 released rows carrying no tokens, which is what the upgrade's donor reads;
 this store never writes, renames or deletes those files, so a 5.1 binary
-still finds them after an upgrade (#1505 children 2 and 5; § Embedding
+still finds them after an upgrade (#1505; § Embedding
 transitions and recovery). `embeddings_status` counts an unopened store
 through `committed_json(base)`, which names `{base}.v2.json` only.
 
@@ -4089,7 +4089,7 @@ logged like any failed write. A writable open holds the `{base}.lock`
 writer lock above but takes no SQLite write lock on an existing store and changes nothing in a database that is not a vector
 store before refusing it. A store that fails its open as corrupt has its
 `.sqlite3`, `-wal` and `-shm` renamed aside by its `quarantine` before a
-rebuild (child 9, below). `open_fresh` reads and checks nothing: before its
+rebuild (§ Recovery, below). `open_fresh` reads and checks nothing: before its
 first write it moves a file that is not a vector store, or whose pages
 `PRAGMA quick_check` finds damaged, aside the same way (`move_aside`, the
 `.sqlite3`, `-wal` and `-shm` under one `.corrupt-<time>` suffix, a refused
@@ -4372,7 +4372,7 @@ re-tokens (signature equal, token moved or absent: the stored vectors are
 republished, no provider call), embeds (signature differs), or removes (a
 body-less document, or one the keyword index holds no rows for on a
 tombstone, an exclusion or a `SourceProbe` answering *absent*, #1785; from
-#1505 child 7 a tombstone for an unparseable note keeps its rows).
+#1505 a tombstone for an unparseable note keeps its rows).
 `IndexManager`'s exclusion purge and reindex deletion loop delete their
 keyword rows and hand the paths to the reconciler too, so every vector
 write carries the token it observed. An empty cold build is published only
@@ -4415,7 +4415,7 @@ keyword index lags what the previous holder published; #1812 holds the
 many-writer case.
 
 Bounds: an empty vault folder refuses removals (§ Embedding transitions
-and recovery, #1505 child 8); `embeddings_status` reports the store's
+and recovery, #1505); `embeddings_status` reports the store's
 search mode and measured sizes (Search memory, above); how often the full matrix is
 rewritten is #1497's.
 
@@ -4425,11 +4425,8 @@ Decision (decision 35): an operator who upgrades, switches embedding store
 or restores from a backup pays the embedding provider only for text that
 changed. The server never invents an identity it cannot read, never
 destroys state to heal itself, and logs what it reused, refused and why.
-This section is the target #1505's children implement on
-`integration/1505-embedding-transitions`; each paragraph names the child
-that builds it, and the markers go once every child has merged.
 
-**The donor (#1505 child 3).** A donor (`indexing/donor.py:Donor`) is an
+**The donor (#1505).** A donor (`indexing/donor.py:Donor`) is an
 existing vector store opened read-only (`owns_files=False`); it is never
 written, leased, renamed or deleted. `Donor.open` returns the donor or a
 `DonorRefused(source, reason, detail)`, `source` being `<backend>:<location>`
@@ -4462,7 +4459,7 @@ counted as a refused row. A read that fails once the donor is open
 (`StoreUnavailableError` from `vectors_for`) fails the build, which then
 publishes nothing, rather than paying to re-embed the rest.
 
-**A full build with a donor (#1505 child 4).** Only the path that
+**A full build with a donor (#1505).** Only the path that
 publishes a whole generation consults a donor:
 `EmbeddingReconciler.rebuild(store, identity, *, donor=None, reuse_own=False)`,
 reached through `EmbeddingsManager.build_embeddings` on a cold build or
@@ -4491,7 +4488,7 @@ build, and a donor build also logs
 `embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d published=%s`,
 `reused` counting donor hits.
 
-**The released-sidecar upgrade (#1505 children 2 and 5).** v5.0.0 and
+**The released-sidecar upgrade (#1505).** v5.0.0 and
 v5.1.0 write `{base}.json` (`rows` plus `index_metadata`: provider,
 model, provider variant, dimension, embed text format; no
 `format_version`) and `{base}.npy`; the oldest layout is a bare JSON list
@@ -4502,8 +4499,8 @@ writes `{base}.v2.json` and `{base}.v2.m<N>.npy`, and its sweep
 (`stores/numpy_sidecar.py:_sweep`) removes only its own `.v2.m*.npy`
 matrices; the SQLite store keeps `{base}.sqlite3`. No code writes, renames
 or deletes `{base}.json`, `{base}.npy` or an edge build's
-`{base}.m<N>.npy` (child 2). Either built-in store upgrades the same way
-(child 5, `EmbeddingsManager._upgrade_donor`): when a full build is not
+`{base}.m<N>.npy`. Either built-in store upgrades the same way
+(`EmbeddingsManager._upgrade_donor`): when a full build is not
 forced, the configured numpy or SQLite store holds no vectors, the keyword
 index holds chunks, and `{base}.json` exists (a released sidecar or an edge
 build's `format_version: 2` file), it is opened as a donor through
@@ -4535,7 +4532,7 @@ writer's open only, numpy or SQLite (`stores/_legacy.py:report_unused_sidecar`);
 when deleting them is safe. Until then the vectors exist twice, about
 `4 × chunks × dimensions` bytes each.
 
-**The explicit import (#1505 child 6).** `markdown-vault-mcp embeddings
+**The explicit import (#1505).** `markdown-vault-mcp embeddings
 import --from numpy|sqlite|postgres [--from-path BASE] [--from-schema
 SCHEMA] [--from-dsn-env VAR] [--dry-run]` (`cli.py`, a Typer group;
 `managers/embedding_import.py`) imports into the configured store from
@@ -4557,8 +4554,8 @@ another one, and is the explicit switch of choice C.
 - **Order.** Refusals that write nothing come first: no provider, a
   destination kept in memory, the same store (built-in stores compared by
   their writer lock's path, so `emb`, `emb.npy` and `emb.sqlite3` are one
-  base, #819). A built-in destination's writer lock (`stores/_writer_lock.py`,
-  child 6a) is then taken for the whole import, so a running server refuses
+  base, #819). A built-in destination's writer lock (`stores/_writer_lock.py`)
+  is then taken for the whole import, so a running server refuses
   it before anything is written (building the vault opens `index.db`, as
   every command does), and the source is opened as a donor, refusing an
   unknown or other identity, an empty or an unreadable source. The keyword
@@ -4566,7 +4563,7 @@ another one, and is the explicit switch of choice C.
   `EmbeddingsManager.vectors_deferred()`, so no vector store is opened,
   embedded into or purged (`store_for_purge` returns `None`); a vault that
   then holds no chunks, or whose folder that update found empty
-  (`IndexManager.vault_root_empty`, child 8: the index kept its notes), is
+  (`IndexManager.vault_root_empty`: the index kept its notes), is
   refused (`vault_empty`), so a missing folder never empties a store or
   imports against notes that are not there. Last the destination opens for writing
   (`EmbeddingsManager.import_from` through `rebuild_target`), where a
@@ -4592,7 +4589,7 @@ another one, and is the explicit switch of choice C.
   published without them (#649); an import that published nothing (every
   chunk to embed failed) exits 1. Logged `embeddings_import_started`,
   `embeddings_import_previewed` or `embeddings_import_completed` (with
-  `refused_rows` and `failed_batches`), beside child 4's
+  `refused_rows` and `failed_batches`), beside the build's
   `embeddings_donor_used`.
 - **Refusals.** One `ERROR:` line naming the remedy, exit status 1, logged
   once at WARNING `embeddings_import_refused reason=%s`: `not_configured`
@@ -4608,7 +4605,7 @@ another one, and is the explicit switch of choice C.
   commands only, so `docs/use/embeddings.md` documents the options until
   fastmcp-server-template#823.
 
-**Recovery (#1505 children 7 to 10).**
+**Recovery (#1505).**
 - A tombstoned note (any skip category: a YAML error, missing required
   frontmatter, invalid UTF-8, a parser fault) keeps its rows:
   `EmbeddingReconciler._remove_unbacked` removes on an exclusion, keeps on a
@@ -4624,11 +4621,11 @@ another one, and is the explicit switch of choice C.
   drops them at the next full converge. A full build (forced, a model change, an import)
   publishes only the notes the keyword index holds, so a note broken then
   drops out and is embedded again once fixed. Kept rows never reach a
-  result: search did not filter them (checked for child 7), and
+  result: search did not filter them before #1505, and
   `SearchManager._adapt_semantic_rows`, which semantic, hybrid and
   `get_similar` share, now drops every vector row whose path is not in
   `documents_live`, after the candidate cap, which is not widened for it.
-  The same filter covers a keyword-index gap (child 7).
+  The same filter covers a keyword-index gap.
 - A vault root that exists but holds no entries at all
   (`source_probe.holds_entries`), while the keyword index holds documents
   (tombstones counted), is *unavailable* for that pass, logged WARNING
@@ -4659,11 +4656,11 @@ another one, and is the explicit switch of choice C.
   to the probe, which keeps them under an empty root. Deleting the last
   notes through the server leaves their vectors stored, never searched,
   until a note is added or `index --force` runs, since an empty root cannot
-  tell that deletion from an unmounted volume (child 8, #1791).
+  tell that deletion from an unmounted volume (#1791).
 - An owned corrupt numpy or SQLite store is renamed with the suffix
   `.corrupt-<YYYYMMDDTHHMMSSZ>`, every file including `-wal` and `-shm`,
   logged WARNING `vector_store_moved_aside location=%s reason=corrupt
-  paths=%s`, before its rebuild (child 9). `VectorStoreSlot` does it, the
+  paths=%s`, before its rebuild. `VectorStoreSlot` does it, the
   one place both rebuild routes meet a corrupt store: the automatic rebuild
   of a store that will not open (`get` with a rebuild) and a full build's
   `rebuild_target` (`build_embeddings(force=True)`, an import). Each
@@ -4699,7 +4696,7 @@ another one, and is the explicit switch of choice C.
   with) runs `wal_checkpoint(TRUNCATE)` first, so a stopped server's
   `index.db` is complete by itself. SQLite folds the WAL on the last close
   only, and a reader process still holding the file would otherwise leave
-  commits in `index.db-wal` (child 10; the backup steps in
+  commits in `index.db-wal` (the backup steps in
   `docs/use/embedding-state.md` rely on it). The checkpoint runs with
   `busy_timeout = 0` and never fails the close: an error logs WARNING
   `fts_index_checkpoint_failed path=%s err=%s`, and frames a reader on an

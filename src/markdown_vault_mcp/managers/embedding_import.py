@@ -17,7 +17,7 @@ holds no notes is refused, so a missing folder never empties a store. Last
 the destination opens for writing, where a PostgreSQL destination's lease
 refuses.
 
-See ``docs/design/design.md`` § "The explicit import (#1505 child 6)".
+See ``docs/design/design.md`` § "The explicit import (#1505)".
 """
 
 from __future__ import annotations
