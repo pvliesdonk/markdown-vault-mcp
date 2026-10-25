@@ -159,6 +159,12 @@ def _table(header: list[str], rows: list[list[str]]) -> list[str]:
     ]
 
 
+def _yes_no(value: bool | None) -> str:
+    if value is None:
+        return _MISSING
+    return "yes" if value else "no"
+
+
 def _memory_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     rows = []
     for config in configs:
@@ -174,7 +180,7 @@ def _memory_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
                 _mib(memory.get("process_anon")),
                 _mib(memory.get("mapped_files")),
                 _mib(memory.get("page_cache")),
-                _MISSING if closed is None else ("yes" if closed else "no"),
+                _yes_no(closed),
             ]
         )
     return rows

@@ -1,8 +1,8 @@
 """One measurement phase in a fresh process (#1895).
 
-``python -m scripts.envelope.worker <phase> <config-json>`` runs one phase
-against the work folder the configuration names and writes its figures as
-one JSON line on stdout. The orchestrator in ``__main__`` starts a process
+``python -m scripts.envelope.worker <phase>`` reads its configuration as
+JSON on stdin, runs one phase against the work folder it names and writes
+its figures as one JSON line on stdout. The orchestrator in ``__main__`` starts a process
 per phase, so each reading starts from a process that has done nothing else.
 
 Phases:
@@ -334,15 +334,15 @@ PHASES: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
 
 
 def main(argv: list[str]) -> int:
-    """Run the phase *argv* names and write its figures to stdout.
+    """Run the phase *argv* names on the configuration stdin carries.
 
     Args:
-        argv: The phase and the configuration as JSON.
+        argv: The phase's name.
 
     Returns:
         The exit status.
     """
-    phase, config = argv[0], json.loads(argv[1])
+    phase, config = argv[0], json.loads(sys.stdin.read())
     figures = PHASES[phase](config)
     sys.stdout.write(json.dumps(figures) + "\n")
     return 0

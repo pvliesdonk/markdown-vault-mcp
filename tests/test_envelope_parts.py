@@ -306,7 +306,8 @@ class TestTheReport:
     def test_page_cache_and_mapped_files_are_told_apart(self) -> None:
         text = report.render_markdown(_result())
         assert "| 40.0 MiB | 120.0 MiB |" in text
-        assert "Mapped files" in text and "Index and store in page cache" in text
+        assert "Mapped files" in text
+        assert "Index and store in page cache" in text
 
     def test_both_restarts_show_whether_a_store_was_moved_aside(self) -> None:
         result = _result()

@@ -147,8 +147,9 @@ def test_an_edit_that_never_drains_fails_instead_of_hanging() -> None:
                 del timeout
                 return False
 
+    stuck, config = _Stuck(), {"drain_timeout_s": 5}
     with pytest.raises(RuntimeError, match="did not drain within 5 s"):
-        worker._drain(_Stuck(), {"drain_timeout_s": 5})  # type: ignore[arg-type]
+        worker._drain(stuck, config)  # type: ignore[arg-type]
 
 
 def test_a_phase_that_outlasts_its_timeout_is_stopped(tmp_path: Path) -> None:
@@ -216,5 +217,6 @@ def test_a_phase_that_prints_nothing_fails_clearly(
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     monkeypatch.setattr(cli.subprocess, "run", silent)
+    config = _config(tmp_path)
     with pytest.raises(SystemExit, match="printed no figures"):
-        cli._spawn("build", _config(tmp_path))
+        cli._spawn("build", config)

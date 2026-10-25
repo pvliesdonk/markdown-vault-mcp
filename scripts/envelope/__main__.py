@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.envelope import report, synth
-from scripts.envelope.worker import KINDS
+from scripts.envelope.worker import KINDS, PHASES
 
 REPO = Path(__file__).resolve().parents[2]
 SIZES = {"deployed": 22_764, "growth": 227_640}
@@ -137,16 +137,13 @@ def _spawn(
         SystemExit: If the phase fails, outlasts ``phase_timeout_s``, or,
             with *expect_kill*, ends other than by SIGKILL.
     """
+    if phase not in PHASES:
+        raise ValueError(f"no worker phase {phase!r}")
     start = time.perf_counter()
     try:
         done = subprocess.run(  # fixed argv, no shell; see pyproject's S603 entry
-            [
-                sys.executable,
-                "-m",
-                "scripts.envelope.worker",
-                phase,
-                json.dumps(config),
-            ],
+            [sys.executable, "-m", "scripts.envelope.worker", phase],
+            input=json.dumps(config),  # on stdin: kept out of argv and ps
             cwd=REPO,
             capture_output=True,
             text=True,
