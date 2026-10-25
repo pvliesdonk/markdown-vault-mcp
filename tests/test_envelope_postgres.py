@@ -92,7 +92,8 @@ def test_a_run_measures_postgres_without_showing_its_dsn(
     assert service["memory"] is None  # a database it did not start
     assert service["schema_bytes"] > 0
     assert service["database_bytes"] >= service["schema_bytes"]
-    assert service["server_version"] and service["pgvector_version"]
+    assert service["server_version"]
+    assert service["pgvector_version"]
     assert config["recovery"]["texts_beyond_allowed"] == 0
     assert "PostgreSQL service" in printed.out
     assert _envelope_schemas(postgres_server.dsn) == []
@@ -136,8 +137,9 @@ def test_a_failing_phase_never_shows_the_dsn(
     db = postgres.Database(dsn, "MVM_TEST_POSTGRES_DSN (hidden DSN)")
     stderr = f"boom {dsn}\nuri postgresql://u:hunter2@h/x\nretry password=hunter2"
     monkeypatch.setattr(cli.subprocess, "run", _fake_run({}, stderr))
+    config = _config(tmp_path, "postgres")
     with pytest.raises(SystemExit) as failure:
-        cli._spawn("build", _config(tmp_path, "postgres"), db=db)
+        cli._spawn("build", config, db=db)
     assert "hunter2" not in str(failure.value)
     assert "<hidden>" in str(failure.value)
     assert "phase build failed" in str(failure.value)
@@ -151,8 +153,9 @@ def test_only_a_postgres_worker_gets_a_connection_string(
     db = postgres.Database("host=h password=given", "MVM_TEST_POSTGRES_DSN")
     seen: dict[str, Any] = {}
     monkeypatch.setattr(cli.subprocess, "run", _fake_run(seen))
+    config = _config(tmp_path, backend)
     with pytest.raises(SystemExit):
-        cli._spawn("build", _config(tmp_path, backend), db=db)
+        cli._spawn("build", config, db=db)
     assert DSN_ENV not in seen
     assert (worker.DSN_ENV in seen) == (backend == "postgres")
 
