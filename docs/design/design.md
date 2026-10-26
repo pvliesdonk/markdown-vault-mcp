@@ -4731,8 +4731,13 @@ uv run python -m scripts.envelope --size deployed --backends numpy,sqlite --out 
 ```
 
 `--size growth` is ten times the deployed size and needs a few GB in `DIR`;
-`--notes N` sets the vault size directly. It writes `DIR/<git sha>-<size>.json`
-and prints the tables.
+`--notes N` sets the vault size directly. It writes
+`DIR/<git sha>[-dirty]-<size>-<UTC time>.json` and prints the tables.
+
+The harness is strict-typed. Gate 3 (`uv run mypy src/ tests/`) checks it
+through the tests' imports; on its own, check it as a package with the
+source tree on the path, `MYPYPATH=src uv run mypy -p scripts.envelope`,
+since the installed package has no `py.typed` marker yet (#1911).
 
 **Inputs.** A seeded synthetic vault (`synth.generate_vault`): notes of six
 H2 sections in a 1,000-word vocabulary, one folder in ten holding the notes
@@ -4806,8 +4811,10 @@ phase's leftovers.
 - *Bounds.* Each phase has a timeout (`--phase-timeout`) and each edit's
   wait for the index writer another (`--drain-timeout`), so a stuck writer
   fails the run instead of hanging it.
-- *Environment.* The git commit, Python, SQLite, numpy and psycopg versions,
-  the CPU, memory, kernel and the work folder's filesystem type.
+- *Environment.* The git commit and whether tracked files differ from it,
+  the Python, SQLite, numpy and psycopg versions, the CPU, memory, kernel
+  and the work folder's filesystem type. Result files are named by commit,
+  size and UTC time, so reruns never overwrite one another.
 
 ### `providers.py`: Embedding Providers
 

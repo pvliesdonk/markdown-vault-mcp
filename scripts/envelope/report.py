@@ -238,8 +238,8 @@ def _restart_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
                 _plain(restart.get("texts_embedded")),
                 _plain(recovery.get("texts_embedded")),
                 _plain(recovery.get("texts_beyond_allowed")),
-                f"{restart.get('moved_aside', _MISSING)} / "
-                f"{recovery.get('moved_aside', _MISSING)}",
+                f"{_yes_no(restart.get('moved_aside'))} / "
+                f"{_yes_no(recovery.get('moved_aside'))}",
             ]
         )
     return rows

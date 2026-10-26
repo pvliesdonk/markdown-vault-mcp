@@ -9,9 +9,9 @@ For each backend it generates the synthetic vault in ``OUT/work/<backend>``,
 then runs each phase in a fresh process (``scripts.envelope.worker``): build,
 memory and warm latency, a cold search of each kind, restart, single-note
 edits, and a recovery run that kills itself mid-edit and restarts. It writes
-``OUT/<git sha>-<size>.json`` and prints the markdown table. At the growth
-size a run needs a few GB in ``OUT``; nothing is written inside the
-repository.
+``OUT/<git sha>[-dirty]-<size>-<UTC time>.json`` and prints the markdown
+tables. At the growth size a run needs a few GB in ``OUT``; nothing is
+written inside the repository.
 """
 
 from __future__ import annotations

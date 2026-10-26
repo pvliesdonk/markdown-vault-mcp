@@ -314,7 +314,7 @@ class TestTheReport:
         config = result["configs"][0]  # type: ignore[index]
         config["restart"]["moved_aside"] = True
         config["recovery"] = {"moved_aside": False}
-        assert "| True / False |" in report.render_markdown(result)
+        assert "| yes / no |" in report.render_markdown(result)
 
     def test_each_cold_search_shows_its_eviction(self) -> None:
         result = _result()
