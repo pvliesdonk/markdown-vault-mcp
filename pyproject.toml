@@ -476,6 +476,11 @@ ignore = ["E501"]
 # and an optional injected store as keyword-only construction arguments; a
 # parameter object for one constructor is ceremony. Gate-only, as above.
 "src/markdown_vault_mcp/managers/_vector_slot.py" = ["PLR0913"]
+# The envelope harness (#1895) runs fixed argv lists (git, stat, fincore)
+# over its own files, never a shell (S603), and seeds `random` for
+# reproducible synthetic notes, not secrets (S311). Gate-only rules, so a
+# `# noqa` would be stripped (RUF100).
+"scripts/envelope/*.py" = ["S311", "S603"]
 # PROJECT-RUFF-IGNORES-END
 
 [tool.ruff.lint.isort]

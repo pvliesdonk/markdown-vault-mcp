@@ -4717,6 +4717,130 @@ PostgreSQL tables; #1476's content-history recovery; a memory bound on
 publishing a whole generation, which a full build already holds in memory
 today and #1506's envelope measures.
 
+### Measuring the operating envelope (#1506)
+
+#1506's budgets (the comment on #1506 has the table) are checked against the
+assembled server, not a search-only prototype. `scripts/envelope/` is the
+maintainer tool that measures it (#1895). It is not a test or a CI job, and
+it measures without judging: #1899 compares its figures with the budgets.
+
+Run it from the repository root on Linux:
+
+```bash
+uv run --extra postgres python -m scripts.envelope --size deployed \
+    --backends numpy,sqlite,postgres --out DIR
+```
+
+Without `--backends` it measures `numpy` and `sqlite`; PostgreSQL is
+opt-in, since it writes a whole vault into the database it is given.
+`--size growth` is ten times the deployed size and needs a few GB in `DIR`;
+`--notes N` sets the vault size directly. It writes
+`DIR/<git sha>[-dirty]-<size>-<UTC time>.json` and prints the tables.
+
+The harness is strict-typed. Gate 3 (`uv run mypy src/ tests/`) checks it
+through the tests' imports; on its own, check it as a package with the
+source tree on the path, `MYPYPATH=src uv run mypy -p scripts.envelope`,
+since the installed package has no `py.typed` marker yet (#1911).
+
+**Inputs.** A seeded synthetic vault (`synth.generate_vault`): notes of six
+H2 sections in a 1,000-word vocabulary, one folder in ten holding the notes
+filtered search restricts to. The indexer makes seven chunks of each note
+(`synth.CHUNKS_PER_NOTE`, checked by a test), so the deployed size, about
+22,764 chunks (#1501), is about 3,252 notes; the report records the chunk
+count the indexer actually made. Vectors come from `synth.StandInProvider`:
+1,024-wide like the deployed model's, seeded from each text's SHA-256,
+normalized float32, with no network calls; it counts the texts it embeds and
+the calls, without keeping the texts, so it does not grow the process.
+`--batch-size` sets the texts per provider call to keep the build short; it is
+not a measured figure.
+
+**Process.** Each backend (`numpy` resident, `sqlite` and `postgres`
+streamed) gets its own copy of the vault, and each phase runs in a fresh process
+(`scripts/envelope/worker.py`), so a reading never includes a previous
+phase's leftovers.
+
+**Metrics.**
+
+- *Memory apart from page cache.* Process memory is `Pss_Anon + Pss_Shmem`
+  from `/proc/<pid>/smaps_rollup`. Mapped files (`Pss_File`) are reported
+  apart; they are mostly shared libraries, since the index and store are
+  read, not mapped. The index's and store's own pages in page cache after
+  the warm searches come from `fincore` (absent without it) in a column of
+  their own. *What semantic search adds*
+  is a peak minus a peak in one process: the vault answers 20 keyword
+  searches with the vector store still closed (the table says whether it
+  was, and marks the figures invalid when it was not), then warm searches of
+  every kind; peaks are sampled every 10 ms from
+  `/proc/self/status`. It is reported as anonymous (`RssAnon + RssShmem`) and
+  as total resident (`VmRSS`); #1502's figures, the budget's source, were
+  sampled process RSS.
+- *Warm latency.* p50 and p95 per kind after discarded warm-up calls:
+  semantic, hybrid, filtered (semantic in the filter folder) and similar
+  notes.
+- *Cold latency.* A fresh process per kind fsyncs the index and store files,
+  drops their clean pages with `posix_fadvise(POSIX_FADV_DONTNEED)` (no
+  privileges needed) and times its first search. util-linux `fincore`, when
+  installed, confirms the files left page cache, per kind; otherwise the
+  report says `unconfirmed`. SQLite's `-shm` file is mapped into the process,
+  so it is left out of the check. The cold process builds the index before
+  evicting, so SQLite's own in-process cache keeps the few pages that
+  warm-start check read. On tmpfs or ramfs the pages cannot leave memory, so the
+  harness warns that cold latency is not cold there.
+- *Bytes per edit.* Single-note edits through the server's path: the
+  writer facet's `write`, then waiting for the index writer to drain, which
+  re-indexes and re-embeds the note. Per edit: `wchar` from `/proc/self/io`
+  (bytes passed to write calls, including SQLite's WAL; `write_bytes` lags
+  without an fsync), the growth of the store's files, the texts embedded,
+  and the note's whole vector size beside them.
+- *Restart.* A fresh process boots as the server does (`domain.py`):
+  `build_index`, the boot `reindex` that picks up changes made while it was
+  down, then `build_embeddings`. The figure is the process's age, from
+  `/proc/self/stat`, when its first semantic search returns, so teardown is
+  left out; the spawn-to-exit wall time is kept beside it. The texts
+  embedded besides the query should be none.
+- *Recovery.* An edit run records each finished edit and kills itself with
+  SIGKILL once the given number have finished and the next note is written,
+  while the index writer's work on it is still queued or running. A restart
+  follows. The finished edits were embedded before the kill, so a clean
+  restart embeds only the edit in progress's rewritten section; the
+  allowance is what one edit was measured to embed in the edits phase. The
+  report gives the texts embedded, the excess over the allowance, and
+  whether a corrupt store was moved aside on either restart. A kill after
+  another number of edits than asked, such as by the OOM killer, fails the
+  run.
+- *Partial results.* Each backend's figures are written to
+  `partial.json` in its work folder as each phase finishes, so a late
+  failure keeps the earlier hours of work.
+- *Bounds.* Each phase has a timeout (`--phase-timeout`) and each edit's
+  wait for the index writer another (`--drain-timeout`), so a stuck writer
+  fails the run instead of hanging it.
+- *PostgreSQL.* The database comes from where the test suite's does
+  (`tests/fixtures/postgres.py`): `MVM_TEST_POSTGRES_DSN`, or else a
+  throwaway `pgvector/pgvector` container the harness starts and removes
+  (`MVM_TEST_POSTGRES_IMAGE` picks the image); nothing else is reached. The
+  vectors go in a schema of the harness's own (`mvm_envelope_` and a random
+  suffix), dropped at the end, also on SIGTERM; the database opens only when
+  the PostgreSQL backend's turn comes. Only PostgreSQL workers get the
+  connection string, through a variable of the harness's own in their
+  environment (no worker inherits `MVM_TEST_POSTGRES_DSN`), never argv or
+  the JSON; error output and results have connection strings replaced, and
+  the JSON and tables name the database by its source. Process memory
+  excludes the service. Reported apart: the service's memory at rest after
+  the warm searches (a throwaway container's, one `docker stats` reading:
+  on cgroup v2 that includes shared buffers and active page cache, and
+  leaves out inactive page cache only); the database's and schema's sizes
+  after the edits; the server and pgvector versions; and the WAL each edit
+  wrote, from the difference of two `pg_current_wal_lsn()` positions, which
+  is cluster-wide. PostgreSQL writes no local store files, so its store
+  growth is left blank, and its `wchar` counts the local index only: libpq
+  sends with `send(2)`, which `wchar` leaves out. Before each cold search a
+  throwaway container restarts, dropping its buffers but not the host's page
+  cache; a given database is not restarted, and the report says so.
+- *Environment.* The git commit and whether tracked files differ from it,
+  the Python, SQLite, numpy and psycopg versions, the CPU, memory, kernel
+  and the work folder's filesystem type. Result files are named by commit,
+  size and UTC time, so reruns never overwrite one another.
+
 ### `providers.py`: Embedding Providers
 
 Copied from ifcraftcorpus, adapted:
