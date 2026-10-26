@@ -333,21 +333,20 @@ def edits(config: dict[str, Any]) -> dict[str, Any]:
         vault.reader.search(synth.QUERIES[0], mode="semantic")  # open the store
         for done, number in enumerate(_edit_numbers(config)):
             path = paths[(number * 7919) % len(paths)]
-            position = wal() if wal else 0  # outside the wchar window
-            io, size, texts = (
-                probes.read_io(os.getpid()),
-                _store_bytes(config),
-                provider.count,
-            )
+            # PostgreSQL writes no local store files: its growth is the WAL,
+            # read outside the wchar window.
+            position = wal() if wal else _store_bytes(config)
+            io, texts = probes.read_io(os.getpid()), provider.count
             _edit(vault, config, path, number)
             if done == config.get("kill_at"):
                 os.kill(os.getpid(), signal.SIGKILL)
             _drain(vault, config)
             figures["wchar"].append(probes.read_io(os.getpid())["wchar"] - io["wchar"])
-            figures["store"].append(_store_bytes(config) - size)
             figures["texts"].append(provider.count - texts)
             if wal:
                 figures["wal"].append(wal() - position)
+            else:
+                figures["store"].append(_store_bytes(config) - position)
             checkpoint.write_text(str(done + 1))
     finally:
         vault.close()

@@ -4833,9 +4833,9 @@ phase's leftovers.
   wrote, from the difference of two `pg_current_wal_lsn()` positions, which
   is cluster-wide. PostgreSQL writes no local store files, so its store
   growth is left blank, and its `wchar` counts the local index only: libpq
-  sends with `send(2)`, which `wchar` leaves out. Before each cold search a throwaway container restarts,
-  dropping its buffers but not the host's page cache; a given database is
-  not restarted, and the report says so.
+  sends with `send(2)`, which `wchar` leaves out. Before each cold search a
+  throwaway container restarts, dropping its buffers but not the host's page
+  cache; a given database is not restarted, and the report says so.
 - *Environment.* The git commit and whether tracked files differ from it,
   the Python, SQLite, numpy and psycopg versions, the CPU, memory, kernel
   and the work folder's filesystem type. Result files are named by commit,
