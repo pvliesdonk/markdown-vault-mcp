@@ -1,4 +1,4 @@
-FROM python:3.15-slim
+FROM python:3.14-slim
 
 # DOCKERFILE-APT-DEPS-START — add domain apt packages below; kept across copier update
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs gosu \
