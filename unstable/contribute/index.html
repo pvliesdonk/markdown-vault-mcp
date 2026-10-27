@@ -2822,7 +2822,7 @@ uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </sp
 uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>--fix<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>.<span class="w">    </span><span class="c1"># lint and format</span>
 uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>src/<span class="w"> </span>tests/<span class="w">                              </span><span class="c1"># type-check</span>
 </code></pre></div>
-<p>CI runs the tests on Python 3.11 through 3.14; 3.14 also collects branch coverage and enforces the 80% total and patch coverage thresholds. To reproduce that run: <code>uv run --python 3.14 pytest --cov --cov-report=xml --durations=20</code>.</p>
+<p>CI runs the tests on Python 3.11 through 3.14, and on 3.15 as an experimental job whose failure blocks nothing; 3.14 also collects branch coverage and enforces the 80% total and patch coverage thresholds. To reproduce that run: <code>uv run --python 3.14 pytest --cov --cov-report=xml --durations=20</code>.</p>
 <h3 id="moving-a-clone">Moving a clone<a class="headerlink" href="#moving-a-clone" title="Permanent link">&para;</a></h3>
 <p><code>uv sync</code> writes <code>.venv/bin/*</code> scripts with absolute shebangs. After moving the repository, <code>uv run pytest</code> fails with <code>ModuleNotFoundError: No module named 'fastmcp'</code>. Recreate the environment:</p>
 <div class="highlight"><pre><span></span><code>rm<span class="w"> </span>-rf<span class="w"> </span>.venv

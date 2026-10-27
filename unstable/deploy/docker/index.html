@@ -3276,6 +3276,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:dev<span class="w"> </span>.
 </code></pre></div>
 <p>then point the <code>image:</code> line at that tag.</p>
+<p>The image is Debian 13 with a Python build that uv installs under <code>/opt/python</code>, at the version CI collects coverage on (3.14). That build bundles its own SQLite, so a server that keeps state in SQLite does not depend on Debian's library.</p>
 <h3 id="health">Health<a class="headerlink" href="#health" title="Permanent link">&para;</a></h3>
 <p>The server serves two unauthenticated routes for an orchestrator to probe. They sit outside the MCP mount and outside auth, so they answer normally while the MCP endpoint still answers <code>401</code>.</p>
 <table>

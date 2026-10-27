@@ -3071,6 +3071,8 @@ cares about: the context must still appear, and pass.</p>
 </div>
 <h3 id="coveragepatch-if-you-require-it"><code>coverage/patch</code>, if you require it<a class="headerlink" href="#coveragepatch-if-you-require-it" title="Permanent link">&para;</a></h3>
 <p>CI requires the full test suite to pass on Python 3.11 through 3.14.
+It also runs it on Python 3.15, as an experimental job that cannot fail
+<code>CI Success</code>.
 Only the Python 3.14 job collects branch coverage, using
 <code>uv run pytest --cov --cov-report=xml --durations=20</code>. The other interpreters
 run <code>uv run pytest --durations=20</code>. The coverage job retains the 80% total

@@ -14,7 +14,7 @@ uv run ruff check --fix . && uv run ruff format .    # lint and format
 uv run mypy src/ tests/                              # type-check
 ```
 
-CI runs the tests on Python 3.11 through 3.14; 3.14 also collects branch coverage and enforces the 80% total and patch coverage thresholds. To reproduce that run: `uv run --python 3.14 pytest --cov --cov-report=xml --durations=20`.
+CI runs the tests on Python 3.11 through 3.14, and on 3.15 as an experimental job whose failure blocks nothing; 3.14 also collects branch coverage and enforces the 80% total and patch coverage thresholds. To reproduce that run: `uv run --python 3.14 pytest --cov --cov-report=xml --durations=20`.
 
 ### Moving a clone
 

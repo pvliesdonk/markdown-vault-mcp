@@ -187,6 +187,8 @@ docker build -t ghcr.io/pvliesdonk/markdown-vault-mcp:dev .
 
 then point the `image:` line at that tag.
 
+The image is Debian 13 with a Python build that uv installs under `/opt/python`, at the version CI collects coverage on (3.14). That build bundles its own SQLite, so a server that keeps state in SQLite does not depend on Debian's library.
+
 ### Health
 
 The server serves two unauthenticated routes for an orchestrator to probe. They sit outside the MCP mount and outside auth, so they answer normally while the MCP endpoint still answers `401`.

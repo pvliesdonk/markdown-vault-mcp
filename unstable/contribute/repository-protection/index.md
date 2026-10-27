@@ -79,7 +79,7 @@ Let the workflow run on every pull request to a protected branch and decide insi
 
 ### `coverage/patch`, if you require it
 
-CI requires the full test suite to pass on Python 3.11 through 3.14. Only the Python 3.14 job collects branch coverage, using `uv run pytest --cov --cov-report=xml --durations=20`. The other interpreters run `uv run pytest --durations=20`. The coverage job retains the 80% total and patch thresholds. Each job has a 20-minute timeout and reports its [slowest test durations](https://docs.pytest.org/en/stable/how-to/usage.html#profiling-test-execution-duration) when `pytest` finishes.
+CI requires the full test suite to pass on Python 3.11 through 3.14. It also runs it on Python 3.15, as an experimental job that cannot fail `CI Success`. Only the Python 3.14 job collects branch coverage, using `uv run pytest --cov --cov-report=xml --durations=20`. The other interpreters run `uv run pytest --durations=20`. The coverage job retains the 80% total and patch thresholds. Each job has a 20-minute timeout and reports its [slowest test durations](https://docs.pytest.org/en/stable/how-to/usage.html#profiling-test-execution-duration) when `pytest` finishes.
 
 Python 3.14 supports branch measurement with coverage.py's [`sys.monitoring` core](https://coverage.readthedocs.io/en/latest/config.html#run-core). Python 3.12 and 3.13 cannot use that core for branch coverage.
 
