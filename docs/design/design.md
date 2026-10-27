@@ -4051,9 +4051,11 @@ take the lock in between; a store collected unclosed gives its share back
 through a finalizer that never waits for the lock's guard, and a forked
 child holds nothing. Where no lock can be taken (no `fcntl`, as on Windows,
 or a lock file that cannot be created) the writer proceeds as before, logged
-at DEBUG `embeddings_writer_lock_skipped`; a lock file this user cannot
+at DEBUG `writer_lock_skipped`; a lock file this user cannot
 write is locked read-only; a lock over a network or VM file share may not
-hold. Another
+hold. The keyword index takes the same lock for an owning on-disk open,
+on `{index}.lock` (its full name plus `.lock`, so `index.db.lock`, never
+`index.lock`), with the refusal naming the "Keyword index" (#1890). Another
 process opens it with `owns_files=False`, read-only, taking no lock. A store's files are
 its own: the store reads only `{base}.v2.json`. A sidecar the released
 `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge

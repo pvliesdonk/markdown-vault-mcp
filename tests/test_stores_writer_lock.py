@@ -204,9 +204,7 @@ def test_an_unlockable_directory_writes_as_before(
     finally:
         folder.chmod(0o755)
     assert [
-        r.args
-        for r in caplog.records
-        if r.msg.startswith("embeddings_writer_lock_skipped")
+        r.args for r in caplog.records if r.msg.startswith("writer_lock_skipped")
     ] == [(str(folder / "emb.lock"), "unwritable")]
 
 
@@ -220,9 +218,7 @@ def test_without_fcntl_the_writer_proceeds(
     with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.stores"):
         _backend(name).open(base, IDENT).close()
     reasons = [
-        r.args[1]
-        for r in caplog.records
-        if r.msg.startswith("embeddings_writer_lock_skipped")
+        r.args[1] for r in caplog.records if r.msg.startswith("writer_lock_skipped")
     ]
     assert reasons == ["unsupported"]
 
@@ -263,9 +259,7 @@ def test_a_file_system_without_locks_writes_as_before(
     with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.stores"):
         _backend(name).open(base, IDENT).close()
     assert [
-        r.args[1]
-        for r in caplog.records
-        if r.msg.startswith("embeddings_writer_lock_skipped")
+        r.args[1] for r in caplog.records if r.msg.startswith("writer_lock_skipped")
     ] == ["unwritable"]
 
 
@@ -452,3 +446,42 @@ def test_holding_an_in_memory_store_locks_nothing(
     monkeypatch.chdir(tmp_path)
     _backend(name).hold_writer(":memory:").release()
     assert list(tmp_path.iterdir()) == []
+
+
+def _lock_elsewhere(lock: Path) -> int:
+    """Hold *lock* through a second open file description, as another process would."""
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def test_a_named_lock_file_is_used_as_given(tmp_path: Path) -> None:
+    db = tmp_path / "index.db"
+    share = _writer_lock.hold_writer_lock(
+        db, backend="sqlite", lock_file=Path(f"{db}.lock")
+    )
+    try:
+        assert (tmp_path / "index.db.lock").is_file()
+        assert not (tmp_path / "index.lock").exists()
+    finally:
+        share.release()
+
+
+def test_the_refusal_names_the_label(tmp_path: Path) -> None:
+    db = tmp_path / "index.db"
+    fd = _lock_elsewhere(tmp_path / "index.db.lock")
+    try:
+        with pytest.raises(StoreBusyError) as failure:
+            _writer_lock.hold_writer_lock(
+                db,
+                backend="sqlite",
+                lock_file=tmp_path / "index.db.lock",
+                label="Keyword index",
+            )
+    finally:
+        os.close(fd)
+    assert str(failure.value).startswith(
+        f"Keyword index at {db} is being written by another process"
+    )
+    assert failure.value.location == str(db)
+    assert failure.value.backend == "sqlite"
