@@ -54,24 +54,40 @@ def test_close_leaves_the_index_open_while_its_writer_runs(
 
     monkeypatch.setattr(coordinator_mod, "run_process_dirty_paths", blocked)
     vault = _vault(tmp_path)
+    fts = vault._fts
+    slot_closes: list[None] = []
+    real_slot_close = vault._vector_slot.close
+
+    def counted_slot_close() -> None:
+        slot_closes.append(None)
+        real_slot_close()
+
+    monkeypatch.setattr(vault._vector_slot, "close", counted_slot_close)
     writer = vault._coordinator.writer
     (tmp_path / "vault" / "late.md").write_text("# Late\n\nWritten during close.\n")
     writer.mark_dirty({"late.md"})
-    writer.submit(ProcessDirtyPaths())
+    job = writer.submit(ProcessDirtyPaths())
     assert entered.wait(timeout=10)
     monkeypatch.setattr(vault_mod, "_WRITER_DRAIN_TIMEOUT_S", 0.2)
 
     try:
         with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.vault"):
             vault.close()
-        assert len(_skipped(caplog)) == 1
-        assert _skipped(caplog)[0].levelno == logging.WARNING
-        assert writer._thread is not None
-        assert writer._thread.is_alive()
+        assert [r.levelno for r in _skipped(caplog)] == [logging.WARNING]
+        assert slot_closes == []
+        assert writer.close(timeout=0) is False
     finally:
         release.set()
-    writer._thread.join(timeout=10)
-    assert not writer._thread.is_alive()
+    job.result(timeout=10)
+    assert fts.get_note("late.md") is not None
+
+    assert writer.close(timeout=10) is True
+    caplog.clear()
+    vault.close()
+    assert _skipped(caplog) == []
+    assert slot_closes == [None]
+    with pytest.raises(sqlite3.ProgrammingError):
+        fts.get_note("late.md")
 
     index = SqliteKeywordBackend().open(tmp_path / "index.db")
     try:

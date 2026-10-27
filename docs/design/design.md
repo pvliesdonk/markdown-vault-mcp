@@ -4057,10 +4057,11 @@ hold. The keyword index takes the same lock for an owning on-disk open,
 on `{index}.lock` (its full name plus `.lock`, so `index.db.lock`, never
 `index.lock`; named after the index's real path, so a symlink shares it),
 with the refusal naming the "Keyword index" (#1890). `Vault.close()` closes
-the keyword index only once the index writer has stopped: a job still running
-after the 30 s drain keeps the index, its WAL and its lock open until the job
-ends and the process exits, logged at WARNING
-`index_close_skipped reason=writer_running` (#1896). Another process opens a
+the keyword index and the vector store only once the index writer has stopped:
+a job still running after the 30 s drain keeps both, with their connections
+and locks, open until the job ends and they are collected or the process
+exits, logged at WARNING `index_close_skipped reason=writer_running`; a later
+`close()` closes them (#1896). Another process opens a
 store or the index with `owns_files=False`, read-only, taking no lock. A store's files are
 its own: the store reads only `{base}.v2.json`. A sidecar the released
 `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge
