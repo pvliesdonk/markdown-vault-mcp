@@ -227,23 +227,32 @@ class Service:
         try:
             vault = self._build_vault(settings, instances)
         except StoreBusyError as exc:
-            # Another process owns the index (#1890): serve without a vault,
-            # as for a missing directory, rather than crash-loop under a
-            # restart policy, and open it once that process exits.
-            logger.error(
-                "vault_unavailable reason=index_busy path=%s error=%s",
-                exc.location,
-                exc,
-            )
-            self._startup_error = (
-                f"{exc} This server opens the vault once that process exits."
-            )
-            set_vault_singleton(None, unavailable=self._startup_error)
-            self._waiting = asyncio.create_task(
-                self._open_when_released(settings, instances)
-            )
+            busy = exc
+        else:
+            await self._serve(vault, settings, instances)
             return
-        await self._serve(vault, settings, instances)
+        self._wait_for_index(busy, settings, instances)
+
+    def _wait_for_index(
+        self, busy: StoreBusyError, settings: VaultSettings, instances: VaultInstances
+    ) -> None:
+        """Serve without a vault while another process owns its index (#1890).
+
+        As for a missing directory, rather than crash-loop under a restart
+        policy; the vault opens once that process exits.
+        """
+        logger.error(
+            "vault_unavailable reason=index_busy path=%s error=%s",
+            busy.location,
+            busy,
+        )
+        self._startup_error = (
+            f"{busy} This server opens the vault once that process exits."
+        )
+        set_vault_singleton(None, unavailable=self._startup_error)
+        self._waiting = asyncio.create_task(
+            self._open_when_released(settings, instances)
+        )
 
     def _build_vault(self, settings: VaultSettings, instances: VaultInstances) -> Vault:
         """Construct the vault from the resolved settings and collaborators.
@@ -280,9 +289,7 @@ class Service:
             except StoreBusyError:
                 continue
             except Exception as exc:
-                logger.error(
-                    "vault_unavailable reason=open_failed error=%s", exc, exc_info=True
-                )
+                logger.exception("vault_unavailable reason=open_failed error=%s", exc)
                 self._startup_error = str(exc)
                 set_vault_singleton(None, unavailable=self._startup_error)
                 return
@@ -294,7 +301,7 @@ class Service:
         except Exception:
             # Nothing awaits this task until stop(): say so now, and leave
             # the vault for stop() to close.
-            logger.error("vault_start_failed after=index_busy", exc_info=True)
+            logger.exception("vault_start_failed after=index_busy")
 
     async def _serve(
         self, vault: Vault, settings: VaultSettings, instances: VaultInstances
@@ -357,6 +364,13 @@ class Service:
         # Start any other background tasks (e.g. git pull loop).
         vault.start()
 
+        self._start_file_watcher(vault, settings, instances)
+
+    def _start_file_watcher(
+        self, vault: Vault, settings: VaultSettings, instances: VaultInstances
+    ) -> None:
+        """Start the file watcher when no other source reports vault changes."""
+        config = self._config
         # File watcher — only when git pull and webhook are both inactive so the
         # watcher and git checkout don't race to trigger reindex (#558).
         from markdown_vault_mcp._file_watcher import (

@@ -76,8 +76,9 @@ def holder(db: Path) -> Iterator[Holder]:
 
 
 def test_a_second_process_may_not_write_the_index(db: Path, holder: Holder) -> None:
+    backend = SqliteKeywordBackend()
     with pytest.raises(StoreBusyError) as failure:
-        SqliteKeywordBackend().open(db)
+        backend.open(db)
     assert isinstance(failure.value, StoreUnavailableError)
     assert str(failure.value).startswith(f"Keyword index at {db} is being written")
     assert f"pid {holder.pid}" in str(failure.value)
@@ -89,8 +90,9 @@ def test_the_refusal_writes_nothing(db: Path, tmp_path: Path) -> None:
     held = Holder(db, note=True)
     try:
         before = _files(tmp_path)
+        backend = SqliteKeywordBackend()
         with pytest.raises(StoreBusyError):
-            SqliteKeywordBackend().open(db)
+            backend.open(db)
         assert _files(tmp_path) == before
         reader = SqliteKeywordBackend().open(db, owns_files=False)
         try:
@@ -166,8 +168,9 @@ def _lock_is_free(lock: Path) -> bool:
 
 def test_a_failed_open_releases_the_lock(db: Path) -> None:
     db.write_bytes(b"not a database at all, just bytes " * 200)
+    backend = SqliteKeywordBackend()
     with pytest.raises(StoreCorruptError):
-        SqliteKeywordBackend().open(db)
+        backend.open(db)
     assert _lock_is_free(Path(f"{db}.lock"))
 
 
@@ -204,7 +207,8 @@ def test_two_names_for_one_index_share_one_lock(tmp_path: Path) -> None:
     held = Holder(real)
     try:
         alias.symlink_to(real)
+        backend = SqliteKeywordBackend()
         with pytest.raises(StoreBusyError):
-            SqliteKeywordBackend().open(alias)
+            backend.open(alias)
     finally:
         held.stop()

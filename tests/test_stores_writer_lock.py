@@ -450,7 +450,7 @@ def test_holding_an_in_memory_store_locks_nothing(
 
 def _lock_elsewhere(lock: Path) -> int:
     """Hold *lock* through a second open file description, as another process would."""
-    fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     return fd
 
