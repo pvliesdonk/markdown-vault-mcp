@@ -2,6 +2,11 @@
 
 ## 2026-10-27
 
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
+  for #1897: psycopg 3.3.0 iterates a named cursor wrongly (fixed in 3.3.1,
+  ticket #1226), which cut a store search with a `predicate` short. Observed with
+  the `postgres` extra's floors on Python 3.11; the floor is now 3.3.1.
+  `valid_for` now reads psycopg 3.3.1 or later. Next review: 2027-04-22.
 - Added [The SQLite each installation channel brings](sqlite-runtime-by-channel.md)
   for #1896. Observed: the published v5.1.0 image has SQLite 3.46.1 and the
   edge image 3.53.1; freshly downloaded uv-managed CPython 3.11 to 3.14 has

@@ -183,8 +183,8 @@ file-watcher = ["watchdog>=4.0"]
 summarize = ["openai>=1.45"]
 # PostgreSQL/pgvector embedding store (#1504): psycopg 3 and its pool, and
 # pgvector's adapter. numpy is unbounded here for the same reason as above.
-postgres = ["psycopg[binary]>=3.3", "psycopg-pool>=3.3", "pgvector>=0.5", "numpy"]
-all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45", "psycopg[binary]>=3.3", "psycopg-pool>=3.3", "pgvector>=0.5"]
+postgres = ["psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5", "numpy"]
+all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45", "psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.

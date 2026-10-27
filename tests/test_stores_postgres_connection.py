@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import socket
 import threading
 import uuid
@@ -21,6 +22,9 @@ from markdown_vault_mcp.exceptions import (
     StoreUnavailableError,
 )
 from markdown_vault_mcp.stores import _postgres as pg
+from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
+from markdown_vault_mcp.types import EmbeddingIdentity
+from tests.fixtures.postgres import OLD_PGVECTOR_ENV
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -307,6 +311,27 @@ def test_an_extension_older_than_the_minimum_is_not_configured(
     ):
         pg.find_extension(conn, schema=_SCHEMA)
     assert "installed" in str(failure.value)
+
+
+def test_a_real_pgvector_below_the_minimum_is_refused_at_open(
+    postgres_schema: PostgresSchema,
+) -> None:
+    if os.environ.get(OLD_PGVECTOR_ENV, "").strip().lower() != "true":
+        pytest.skip(f"needs a pgvector below the minimum and {OLD_PGVECTOR_ENV}=true")
+    with psycopg.connect(postgres_schema.dsn) as admin:
+        row = admin.execute(
+            "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+        ).fetchone()
+    assert row is not None
+    installed = tuple(int(part) for part in str(row[0]).split("."))
+    assert installed < pg.MIN_PGVECTOR
+    backend = PostgresVectorBackend(postgres_schema.dsn)
+    with pytest.raises(StoreNotConfiguredError) as failure:
+        backend.open(postgres_schema.name, EmbeddingIdentity("fake", "m", "", "v1", 3))
+    message = str(failure.value)
+    assert f"is {row[0]} installed" in message
+    assert "needs 0.7.0 or later" in message
+    assert "ALTER EXTENSION vector UPDATE;" in message
 
 
 def _admin_execute(server: PostgresServer, statement: sql.Composable) -> None:

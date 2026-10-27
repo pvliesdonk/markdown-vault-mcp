@@ -32,6 +32,9 @@ if TYPE_CHECKING:
 
 DSN_ENV = "MVM_TEST_POSTGRES_DSN"
 IMAGE_ENV = "MVM_TEST_POSTGRES_IMAGE"
+# Set to ``true`` only where the image's pgvector is below the store's minimum
+# (the range workflow's refusal job, #1897); the refusal test skips without it.
+OLD_PGVECTOR_ENV = "MVM_TEST_POSTGRES_OLD_PGVECTOR"
 DEFAULT_IMAGE = "pgvector/pgvector:0.8.1-pg17"
 SCHEMA_PREFIX = "mvm_test_"
 _READY_TIMEOUT_S = 90.0
