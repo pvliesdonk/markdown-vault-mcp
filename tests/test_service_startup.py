@@ -131,7 +131,7 @@ async def test_stop_without_a_vault_has_nothing_to_close(tmp_path: Path) -> None
 async def test_a_second_server_on_a_held_index_starts_unavailable(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    from tests.test_stores_keyword_lock import Holder
+    from tests.fixtures.keyword_index_holder import Holder
 
     (tmp_path / "vault").mkdir()
     index = tmp_path / "state" / "index.db"
@@ -148,7 +148,7 @@ async def test_a_second_server_on_a_held_index_starts_unavailable(
                 for r in caplog.records
                 if r.msg.startswith("vault_unavailable reason=index_busy")
             ]
-            assert [r.args for r in records] == [(str(index),)]
+            assert [r.args[0] for r in records] == [str(index)]
             assert [r.levelno for r in records] == [logging.ERROR]
             with pytest.raises(ConfigurationError) as failure:
                 get_vault_singleton()
@@ -159,3 +159,60 @@ async def test_a_second_server_on_a_held_index_starts_unavailable(
             await service.stop()
     finally:
         held.stop()
+
+
+async def test_the_server_opens_the_vault_once_the_index_is_released(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from markdown_vault_mcp import domain as domain_mod
+    from tests.fixtures.keyword_index_holder import Holder
+
+    monkeypatch.setattr(domain_mod, "_INDEX_BUSY_RETRY_S", 0.05)
+    (tmp_path / "vault").mkdir()
+    (tmp_path / "vault" / "alpha.md").write_text("# Alpha\n\nDragons.\n")
+    index = tmp_path / "state" / "index.db"
+    held = Holder(index)
+    service = Service(ProjectConfig(source_dir=tmp_path / "vault", index_path=index))
+    try:
+        with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.domain"):
+            await service.start()
+            with pytest.raises(ConfigurationError, match="Keyword index at"):
+                get_vault_singleton()
+            held.stop()
+            for _ in range(200):
+                if service.startup_error is None:
+                    break
+                await asyncio.sleep(0.05)
+        assert service.startup_error is None
+        assert get_vault_singleton() is service.vault
+        assert any(r.msg.startswith("vault_available") for r in caplog.records)
+    finally:
+        held.stop()
+        await service.stop()
+
+
+async def test_stop_cancels_the_wait_for_a_held_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp import domain as domain_mod
+    from tests.fixtures.keyword_index_holder import Holder
+
+    monkeypatch.setattr(domain_mod, "_INDEX_BUSY_RETRY_S", 0.05)
+    (tmp_path / "vault").mkdir()
+    index = tmp_path / "index.db"
+    held = Holder(index)
+    try:
+        service = Service(
+            ProjectConfig(source_dir=tmp_path / "vault", index_path=index)
+        )
+        await service.start()
+        await service.stop()
+        assert service.startup_error is not None
+    finally:
+        held.stop()
+    # The stopped service took no share: another process may own the index.
+    Holder(index).stop()

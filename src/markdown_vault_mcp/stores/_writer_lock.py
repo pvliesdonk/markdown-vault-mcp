@@ -11,7 +11,7 @@ server leaves none behind; the file itself is never deleted, and the pid it
 names is cleared on the last release. Inside one process every writer on a
 base shares one lock, counted, so two vaults in one process never block each
 other; a caller that closes one store and opens another on the same base
-holds a share across the swap (the backends' ``hold_writer``), so another
+holds a share across the swap (the vector backends' ``hold_writer``), so another
 process cannot take the lock in between. A store collected unclosed gives its
 share back through a finalizer that never waits for the guard, and a forked
 child holds nothing.
@@ -104,10 +104,10 @@ def hold_writer_lock(
     lock_file: Path | None = None,
     label: str = "Vector store",
 ) -> WriterLock:
-    """Take a writer's share of the lock on *base*.
+    """Take a writer's share of the lock for the store at *base*.
 
-    The store's directory is created if need be, as its first write would,
-    so the lock covers a store from its first open.
+    The lock file's directory is created if need be, as the store's first
+    write would, so the lock covers a store from its first open.
 
     Args:
         base: The store's base path, named in the refusal.

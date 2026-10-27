@@ -16,30 +16,12 @@ from markdown_vault_mcp.exceptions import (
     StoreUnavailableError,
 )
 from markdown_vault_mcp.stores.sqlite_keyword import SqliteKeywordBackend
+from tests.fixtures.keyword_index_holder import Holder
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
 _ROOT = str(Path(__file__).resolve().parents[1])
-
-# Opens the index as its owner, optionally after indexing one note, and holds
-# it until a line arrives on stdin.
-_HOLDER = textwrap.dedent(
-    """
-    import sys
-    from pathlib import Path
-    from markdown_vault_mcp.stores.sqlite_keyword import SqliteKeywordBackend
-    from markdown_vault_mcp.types import Chunk
-    from tests.test_fts_index import make_note
-    index = SqliteKeywordBackend().open(Path(sys.argv[1]))
-    if sys.argv[2] == "note":
-        chunk = Chunk(heading=None, heading_level=0, content="Dragons.", start_line=0)
-        index.upsert_note(make_note("alpha.md", chunks=[chunk]))
-    print("held", flush=True)
-    sys.stdin.readline()
-    index.close()
-    """
-)
 
 _PROBE = textwrap.dedent(
     """
@@ -65,34 +47,18 @@ def _another_process_writes(db: Path) -> bool:
         text=True,
         cwd=_ROOT,
         check=True,
+        timeout=60,
     ).stdout.strip()
     return out == "wrote"
 
 
-class Holder:
-    """Another process owning the keyword index at *db*."""
-
-    def __init__(self, db: Path, *, note: bool = False) -> None:
-        self.process = subprocess.Popen(
-            [sys.executable, "-c", _HOLDER, str(db), "note" if note else "-"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            cwd=_ROOT,
-        )
-        assert self.process.stdout is not None
-        assert self.process.stdout.readline().strip() == "held"
-
-    @property
-    def pid(self) -> int:
-        return self.process.pid
-
-    def stop(self) -> None:
-        if self.process.poll() is None:
-            assert self.process.stdin is not None
-            self.process.stdin.write("\n")
-            self.process.stdin.flush()
-        self.process.wait(timeout=30)
+def _files(root: Path) -> dict[str, bytes]:
+    # The shared-memory index is SQLite's scratch, rewritten by any reader.
+    return {
+        str(p.relative_to(root)): p.read_bytes()
+        for p in sorted(root.rglob("*"))
+        if p.is_file() and not p.name.endswith("-shm")
+    }
 
 
 @pytest.fixture
@@ -119,14 +85,13 @@ def test_a_second_process_may_not_write_the_index(db: Path, holder: Holder) -> N
     assert failure.value.location == str(db)
 
 
-def test_the_refusal_writes_nothing(db: Path) -> None:
+def test_the_refusal_writes_nothing(db: Path, tmp_path: Path) -> None:
     held = Holder(db, note=True)
     try:
-        wal = Path(f"{db}-wal")
-        before = (db.read_bytes(), wal.read_bytes() if wal.exists() else None)
+        before = _files(tmp_path)
         with pytest.raises(StoreBusyError):
             SqliteKeywordBackend().open(db)
-        assert (db.read_bytes(), wal.read_bytes() if wal.exists() else None) == before
+        assert _files(tmp_path) == before
         reader = SqliteKeywordBackend().open(db, owns_files=False)
         try:
             assert reader.count_documents() == 1
@@ -204,3 +169,42 @@ def test_a_failed_open_releases_the_lock(db: Path) -> None:
     with pytest.raises(StoreCorruptError):
         SqliteKeywordBackend().open(db)
     assert _lock_is_free(Path(f"{db}.lock"))
+
+
+def test_an_unclosed_index_releases_its_share_when_collected(db: Path) -> None:
+    import gc
+
+    index = SqliteKeywordBackend().open(db)
+    del index
+    gc.collect()
+    assert _another_process_writes(db)
+
+
+def test_a_vault_that_fails_to_build_releases_the_lock(tmp_path: Path) -> None:
+    import dataclasses
+    import gc
+
+    from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+    from markdown_vault_mcp.vault import Vault
+
+    (tmp_path / "vault").mkdir()
+    db = tmp_path / "index.db"
+    settings = dataclasses.replace(VaultSettings(), index_path=db)
+    with pytest.raises(ValueError, match="needs an embedding_provider"):
+        # Fails after the keyword index opened: a store without a provider.
+        Vault(source_dir=tmp_path / "vault", settings=settings, vector_store=object())
+    gc.collect()
+    assert _another_process_writes(db)
+
+
+def test_two_names_for_one_index_share_one_lock(tmp_path: Path) -> None:
+    real = tmp_path / "real" / "index.db"
+    real.parent.mkdir()
+    alias = tmp_path / "alias.db"
+    held = Holder(real)
+    try:
+        alias.symlink_to(real)
+        with pytest.raises(StoreBusyError):
+            SqliteKeywordBackend().open(alias)
+    finally:
+        held.stop()

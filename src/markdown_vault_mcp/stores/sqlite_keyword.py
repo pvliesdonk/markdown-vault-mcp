@@ -13,7 +13,9 @@ a keyword store has no identity.
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import weakref
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,7 +25,11 @@ from markdown_vault_mcp.exceptions import (
     StoreUnavailableError,
 )
 from markdown_vault_mcp.fts_index import FTSIndex
-from markdown_vault_mcp.stores._writer_lock import WriterLock, hold_writer_lock
+from markdown_vault_mcp.stores._writer_lock import (
+    WriterLock,
+    hold_writer_lock,
+    release_from_finalizer,
+)
 from markdown_vault_mcp.stores.registry import register_backend
 
 if TYPE_CHECKING:
@@ -95,7 +101,7 @@ class SqliteKeywordBackend:
         # Taken before FTSIndex runs any DDL, so a refused open writes nothing.
         share = None if read_only or is_memory else _hold(Path(db_path))
         try:
-            return FTSIndex(
+            index = FTSIndex(
                 db_path=db_path,
                 indexed_frontmatter_fields=self._indexed_frontmatter_fields,
                 searchable_frontmatter_fields=self._searchable_frontmatter_fields,
@@ -109,6 +115,12 @@ class SqliteKeywordBackend:
             if isinstance(exc, sqlite3.DatabaseError):
                 raise self._classify(exc, str(db_path)) from exc
             raise
+        if share is not None:
+            # An index collected unclosed (a vault whose construction failed
+            # after this open, say) gives its share back, as a vector store
+            # does; after close() the share is already back and this is a no-op.
+            weakref.finalize(index, release_from_finalizer, share)
+        return index
 
     def _classify(self, exc: sqlite3.DatabaseError, location: str) -> StoreOpenError:
         """Map a SQLite error at open to the contract's outcome."""
@@ -130,13 +142,16 @@ class SqliteKeywordBackend:
 def _hold(db_path: Path) -> WriterLock:
     """Take this process's share of the lock on the index at *db_path*.
 
+    The lock file is named after the index's real path, so two names for one
+    file (a symlink, say) share one lock.
+
     Raises:
         StoreBusyError: If another process holds ``{db_path}.lock``.
     """
     return hold_writer_lock(
         db_path,
         backend=SqliteKeywordBackend.name,
-        lock_file=Path(f"{db_path}.lock"),
+        lock_file=Path(f"{os.path.realpath(db_path)}.lock"),
         label="Keyword index",
     )
 

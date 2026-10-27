@@ -12,6 +12,7 @@ module-level singleton reaches the live Vault from HTTP routes outside DI.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -30,11 +31,17 @@ from markdown_vault_mcp.vault import Vault
 if TYPE_CHECKING:
     from markdown_vault_mcp._file_watcher import VaultFileWatcher
     from markdown_vault_mcp.config_sections._assembly import VaultInstances
+    from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 
 logger = logging.getLogger(__name__)
 
 
 _vault_singleton: Vault | None = None
+
+#: Seconds between attempts to open a vault whose index another process
+#: owns (#1890): a ``reindex`` overlapping a restart delays the vault, it
+#: does not leave the server without one.
+_INDEX_BUSY_RETRY_S = 5.0
 # Why there is no singleton although the lifespan ran: the message every
 # out-of-context accessor (transfer sink, webhook routes) raises with.
 _vault_unavailable: str | None = None
@@ -149,6 +156,8 @@ class Service:
         # Why start() built no vault: the message every accessor raises with
         # until the operator fixes the deployment and restarts.
         self._startup_error: str | None = None
+        # Opens the vault once another process releases its index (#1890).
+        self._waiting: asyncio.Task[None] | None = None
 
     @property
     def vault(self) -> Vault:
@@ -216,22 +225,77 @@ class Service:
                 type(instances.embedding_provider).__name__,
             )
         try:
-            vault = Vault(
-                source_dir=config.source_dir,
-                settings=settings,
-                embedding_provider=instances.embedding_provider,
-                summarizer=instances.summarizer,
-                git_strategy=instances.git_strategy,
-                on_write=instances.on_write,
-            )
+            vault = self._build_vault(settings, instances)
         except StoreBusyError as exc:
-            # Another server owns the index (#1890): serve without a vault,
+            # Another process owns the index (#1890): serve without a vault,
             # as for a missing directory, rather than crash-loop under a
-            # restart policy until the other one exits.
-            logger.error("vault_unavailable reason=index_busy path=%s", exc.location)
-            self._startup_error = str(exc)
+            # restart policy, and open it once that process exits.
+            logger.error(
+                "vault_unavailable reason=index_busy path=%s error=%s",
+                exc.location,
+                exc,
+            )
+            self._startup_error = (
+                f"{exc} This server opens the vault once that process exits."
+            )
             set_vault_singleton(None, unavailable=self._startup_error)
+            self._waiting = asyncio.create_task(
+                self._open_when_released(settings, instances)
+            )
             return
+        await self._serve(vault, settings, instances)
+
+    def _build_vault(self, settings: VaultSettings, instances: VaultInstances) -> Vault:
+        """Construct the vault from the resolved settings and collaborators.
+
+        Raises:
+            StoreBusyError: If another process owns the index.
+        """
+        return Vault(
+            source_dir=self._config.source_dir,
+            settings=settings,
+            embedding_provider=instances.embedding_provider,
+            summarizer=instances.summarizer,
+            git_strategy=instances.git_strategy,
+            on_write=instances.on_write,
+        )
+
+    async def _open_when_released(
+        self, settings: VaultSettings, instances: VaultInstances
+    ) -> None:
+        """Retry the vault until its index is free, then serve it (#1890).
+
+        A vault built while :meth:`stop` cancels this task is closed, so a
+        stopped service holds no share of the index.
+        """
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(_INDEX_BUSY_RETRY_S)
+            built = loop.run_in_executor(None, self._build_vault, settings, instances)
+            try:
+                vault = await asyncio.shield(built)
+            except asyncio.CancelledError:
+                built.add_done_callback(_close_built_vault)
+                raise
+            except StoreBusyError:
+                continue
+            except Exception as exc:
+                logger.error(
+                    "vault_unavailable reason=open_failed error=%s", exc, exc_info=True
+                )
+                self._startup_error = str(exc)
+                set_vault_singleton(None, unavailable=self._startup_error)
+                return
+            break
+        logger.info("vault_available after=index_busy")
+        self._startup_error = None
+        await self._serve(vault, settings, instances)
+
+    async def _serve(
+        self, vault: Vault, settings: VaultSettings, instances: VaultInstances
+    ) -> None:
+        """Publish *vault*, submit the boot jobs and start the background tasks."""
+        config = self._config
         self._vault = vault
         set_vault_singleton(vault)
 
@@ -356,6 +420,11 @@ class Service:
 
     async def stop(self) -> None:
         """Stop the file watcher, close the Vault, then close the collaborators built for it."""
+        if self._waiting is not None:
+            self._waiting.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._waiting
+            self._waiting = None
         if self._file_watcher is not None:
             self._file_watcher.stop()
         # Clear the singleton before closing so any in-flight HTTP handler gets a
@@ -369,6 +438,12 @@ class Service:
             self._instances.close()
             self._instances = None
         logger.info("vault_shut_down")
+
+
+def _close_built_vault(built: asyncio.Future[Vault]) -> None:
+    """Close a vault whose construction finished after its wait was cancelled."""
+    if not built.cancelled() and built.exception() is None:
+        built.result().close()
 
 
 def get_vault(ctx: Context = CurrentContext()) -> Vault:
