@@ -369,7 +369,7 @@ def test_status_of_a_damaged_store_counts_none_and_warns(
     ] == ["StoreCorruptError"]
 
 
-class TestThePostgresStoreContract(VaultStoreContract):
+class TestPostgresVaultConformance(VaultStoreContract):
     @pytest.fixture
     def store_settings(self, postgres_schema: PostgresSchema) -> dict[str, Any]:
         return {

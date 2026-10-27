@@ -375,13 +375,13 @@ def test_status_raises_when_a_streamed_store_cannot_be_read(
         vault.close()
 
 
-class TestTheSqliteStoreContract(VaultStoreContract):
+class TestSqliteVaultConformance(VaultStoreContract):
     @pytest.fixture
     def store_settings(self) -> dict[str, Any]:
         return {"embedding_store": "sqlite"}
 
 
-class TestTheStreamedSqliteStoreContract(VaultStoreContract):
+class TestStreamedSqliteVaultConformance(VaultStoreContract):
     @pytest.fixture
     def store_settings(self) -> dict[str, Any]:
         return {"embedding_store": "sqlite", "embedding_search": "streamed"}
