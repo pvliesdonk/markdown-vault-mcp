@@ -612,3 +612,44 @@ def test_a_busy_store_is_a_warning_not_a_traceback(
     (record,) = [r for r in caplog.records if r.msg.startswith("writer_job_")]
     assert record.msg.startswith("writer_job_unavailable ")
     assert (record.levelname, record.exc_info) == ("WARNING", None)
+
+
+def test_close_reports_a_never_started_writer_stopped():
+    writer = IndexWriter(runners={"build_index": _identity_runner}, ctx=None)
+    assert writer.close(timeout=5) is True
+
+
+def test_close_reports_an_idle_writer_stopped():
+    writer = IndexWriter(runners={"build_index": _identity_runner}, ctx=None)
+    writer.start()
+    assert writer.close(timeout=5) is True
+
+
+def test_close_reports_a_job_past_the_timeout_running():
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocking_runner(job, ctx):  # noqa: ARG001
+        entered.set()
+        release.wait(timeout=30)
+
+    writer = IndexWriter(runners={"build_index": blocking_runner}, ctx=None)
+    writer.start()
+    future = writer.submit(BuildIndex())
+    assert entered.wait(timeout=5)
+    try:
+        assert writer.close(timeout=0.1) is False
+    finally:
+        release.set()
+    future.result(timeout=5)
+    assert writer.close(timeout=5) is True
+
+
+def test_close_from_the_worker_reports_it_running():
+    def closing_runner(job, ctx):  # noqa: ARG001
+        return writer.close(timeout=5)
+
+    writer = IndexWriter(runners={"build_index": closing_runner}, ctx=None)
+    writer.start()
+    assert writer.submit(BuildIndex()).result(timeout=5) is False
+    assert writer.close(timeout=5) is True

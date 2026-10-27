@@ -485,9 +485,13 @@ class IndexWriteCoordinator:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def close(self, timeout: float = 30.0) -> None:
+    def close(self, timeout: float = 30.0) -> bool:
         """Drain and close the writer, including all scheduled build attempts.
 
         Does not close the FTS index; Vault closes it after the writer drains.
+
+        Returns:
+            Whether the writer stopped within *timeout*
+            (:meth:`IndexWriter.close`).
         """
-        self._writer.close(timeout=timeout)
+        return self._writer.close(timeout=timeout)
