@@ -58,17 +58,24 @@ async def test_existing_directory_builds_the_vault(tmp_path: Path) -> None:
         await service.stop()
 
 
+def _sqlite_runtime(caplog: pytest.LogCaptureFixture) -> list[Any]:
+    return [
+        (r.levelno, r.args)
+        for r in caplog.records
+        if r.msg == "sqlite_runtime version=%s"
+    ]
+
+
+@pytest.mark.parametrize("vault", ["present", "absent"])
 async def test_start_logs_the_sqlite_runtime_once(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, vault: str
 ) -> None:
-    service = Service(ProjectConfig(source_dir=tmp_path))
+    source = tmp_path if vault == "present" else tmp_path / "absent"
+    service = Service(ProjectConfig(source_dir=source))
     with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.domain"):
         await service.start()
     try:
-        records = [r for r in caplog.records if r.msg.startswith("sqlite_runtime")]
-        assert [(r.levelno, r.args) for r in records] == [
-            (logging.INFO, (sqlite3.sqlite_version,))
-        ]
+        assert _sqlite_runtime(caplog) == [(logging.INFO, (sqlite3.sqlite_version,))]
     finally:
         await service.stop()
 
@@ -198,6 +205,7 @@ async def test_the_server_opens_the_vault_once_the_index_is_released(
             await service.start()
             with pytest.raises(ConfigurationError, match="Keyword index at"):
                 get_vault_singleton()
+            await asyncio.sleep(0.3)  # several refused retries
             held.stop()
             for _ in range(200):
                 if service.startup_error is None:
@@ -206,6 +214,8 @@ async def test_the_server_opens_the_vault_once_the_index_is_released(
         assert service.startup_error is None
         assert get_vault_singleton() is service.vault
         assert any(r.msg.startswith("vault_available") for r in caplog.records)
+        # Each retry rebuilds the vault, never the runtime line (#1896).
+        assert len(_sqlite_runtime(caplog)) == 1
     finally:
         held.stop()
         await service.stop()

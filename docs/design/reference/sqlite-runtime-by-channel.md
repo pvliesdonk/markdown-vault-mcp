@@ -32,7 +32,7 @@ sources:
   - id: debian-changelog
     title: sqlite3 3.46.1-7+deb13u2 changelog
     resource: https://metadata.ftp-master.debian.org/changelogs//main/s/sqlite3/sqlite3_3.46.1-7+deb13u2_changelog
-    accessed: 2026-10-26
+    accessed: 2026-10-27
 ---
 
 # The SQLite each installation channel brings
@@ -53,6 +53,7 @@ the 3.50.7 and 3.44.6 backports), whose conditions are on
     Desktop bundle also use;
   - the `.deb` and `.rpm` packages, which run on the system `python3`;
   - how uv picks the Python it runs;
+  - when the index is on disk at all;
   - the network-filesystem requirement WAL places on the index's storage.
 - **Does not cover:**
   - Homebrew, conda and pyenv builds;
@@ -73,20 +74,35 @@ the 3.50.7 and 3.44.6 backports), whose conditions are on
   against, so an operator can read it against the table below. It checks
   nothing. [pins: tests/test_service_startup.py::test_start_logs_the_sqlite_runtime_once]
 
+### When the index is on disk
+
+- With `MARKDOWN_VAULT_MCP_INDEX_PATH` unset the keyword index is in memory
+  (`config.py`, "unset keeps the index in memory"), and the keyword index
+  skips WAL for an in-memory database (`fts_index.py`), so neither the
+  WAL-reset bug nor the filesystem requirement below applies. The Claude Code
+  plugin (`.claude-plugin/plugin/.mcp.json`) and the Desktop bundle
+  (`packaging/mcpb/manifest.json.in`) set no index path; the Docker compose
+  file and the systemd guide do.
+
 ### Docker image
 
 - The published `latest` image, v5.1.0, is built on `python:3.14-slim`
-  (Debian 13; `git show v5.1.0:Dockerfile`). It runs Python 3.14.8 with SQLite 3.46.1, which is
-  in the affected range. [observed: `docker run --rm --entrypoint python
+  (Debian 13; `git show v5.1.0:Dockerfile`). It runs Python 3.14.8 with
+  SQLite 3.46.1, which is in the affected range. [observed: `docker run --rm --entrypoint python
   ghcr.io/pvliesdonk/markdown-vault-mcp:latest -I -c "import sys, sqlite3;
   print(sys.version, sqlite3.sqlite_version)"`]
-- Debian 13's `libsqlite3-0` is `3.46.1-7+deb13u2`. Its changelog lists CVE
-  fixes only, and no WAL-reset fix. [source: debian-packages] [source:
-  debian-changelog]
+- Debian 13's `libsqlite3-0` is `3.46.1-7+deb13u2`. Its trixie entries
+  backport FTS5 CVE fixes and a build dependency, and no WAL-reset fix.
+  [source: debian-packages] [source: debian-changelog] That the image's
+  Python links this Debian library is inferred from the matching version,
+  not read from the image's build.
 - Since template v11.5.0 (#1922), the image is built on `debian:trixie-slim`
   with a uv-managed CPython. The `edge` image built on 2026-10-27 runs Python
-  3.14.10 with SQLite 3.53.1, which is fixed. The first release built from
-  that Dockerfile carries the fix. [observed: the same command on `:edge`]
+  3.14.10 with SQLite 3.53.1, which is fixed. [observed: the same command on
+  `:edge`] `edge` images built before 2026-10-27 are on `python:3.14-slim`
+  like v5.1.0. A release built from the current Dockerfile gets the SQLite of
+  the CPython uv downloads at its build. [unverified] No such release exists
+  yet; its `sqlite_runtime` line will settle it.
 
 ### uv-managed CPython (PyPI through uvx, the plugin, the Desktop bundle)
 

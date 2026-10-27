@@ -190,6 +190,12 @@ class Service:
     async def start(self) -> None:
         """Build the Vault and submit the boot jobs; start background tasks."""
         config = self._config
+        # Which SQLite this channel brought, to read against the channel
+        # table in docs/use/storage.md (#1896; evidence in
+        # docs/design/reference/sqlite-runtime-by-channel.md). Logged once
+        # per start, before anything can refuse it. Diagnostics, never a
+        # check.
+        logger.info("sqlite_runtime version=%s", sqlite3.sqlite_version)
         # No vault directory, no vault: the index writer and the file watcher
         # cannot run over an absent path (a wrong path used to crash the
         # lifespan here with a raw FileNotFoundError). The server still
@@ -213,11 +219,6 @@ class Service:
             set_vault_singleton(None, unavailable=self._startup_error)
             return
         logger.info("vault_initialising source_dir=%s", config.source_dir)
-        # Which SQLite this channel brought, to read against the channel
-        # table in docs/use/storage.md (#1896; evidence in
-        # docs/design/reference/sqlite-runtime-by-channel.md). Diagnostics,
-        # never a check.
-        logger.info("sqlite_runtime version=%s", sqlite3.sqlite_version)
 
         # Settings-first construction (#1158): the config-derived knobs
         # travel as one VaultSettings; the constructed collaborators stay
