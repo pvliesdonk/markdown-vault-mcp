@@ -330,7 +330,7 @@ def test_a_real_pgvector_below_the_minimum_is_refused_at_open(
         backend.open(postgres_schema.name, EmbeddingIdentity("fake", "m", "", "v1", 3))
     message = str(failure.value)
     assert f"is {row[0]} installed" in message
-    assert "needs 0.7.0 or later" in message
+    assert f"needs {'.'.join(map(str, pg.MIN_PGVECTOR))} or later" in message
     assert "ALTER EXTENSION vector UPDATE;" in message
 
 

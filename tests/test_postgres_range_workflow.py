@@ -93,7 +93,7 @@ def _job_images(job: str) -> list[str]:
     return list(_workflow()["jobs"][job]["strategy"]["matrix"]["image"])
 
 
-def _run(job: str, name: str) -> str:
+def _step_command(job: str, name: str) -> str:
     steps = _workflow()["jobs"][job]["steps"]
     return str(next(step["run"] for step in steps if step.get("name") == name))
 
@@ -106,16 +106,20 @@ def _release(text: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _postgres_floors() -> dict[str, tuple[int, ...]]:
+def _floors(extra_name: str) -> dict[str, tuple[int, ...]]:
     extra = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
         "optional-dependencies"
-    ]["postgres"]
+    ][extra_name]
     floors: dict[str, tuple[int, ...]] = {}
     for requirement in extra:
         match = re.fullmatch(r"([a-z-]+)(\[[a-z]+\])?>=([\d.]+)", requirement)
         if match is not None:
             floors[match.group(1) + (match.group(2) or "")] = _release(match.group(3))
     return floors
+
+
+def _postgres_floors() -> dict[str, tuple[int, ...]]:
+    return _floors("postgres")
 
 
 def _pins(text: str) -> dict[str, tuple[int, ...]]:
@@ -126,11 +130,26 @@ def _pins(text: str) -> dict[str, tuple[int, ...]]:
 def test_the_floors_job_installs_exactly_the_postgres_extras_floors() -> None:
     floors = _postgres_floors()
     assert set(floors) == {"psycopg[binary]", "psycopg-pool", "pgvector"}
-    assert _pins(_run("floors", "Install the driver floors")) == floors
+    assert _pins(_step_command("floors", "Install the driver floors")) == floors
+
+
+def test_the_all_extra_carries_the_postgres_extras_floors() -> None:
+    every = _floors("all")
+    assert {name: every.get(name) for name in _postgres_floors()} == _postgres_floors()
 
 
 def test_the_floors_job_checks_what_it_installed_before_the_tests_run() -> None:
-    check = _run("floors", "Check the installed drivers")
+    names = [step.get("name") for step in _workflow()["jobs"]["floors"]["steps"]]
+    install, check_at, run_at = (
+        names.index(name)
+        for name in (
+            "Install the driver floors",
+            "Check the installed drivers",
+            "Run the PostgreSQL tests",
+        )
+    )
+    assert install < check_at < run_at
+    check = _step_command("floors", "Check the installed drivers")
     wanted = re.search(r"wanted = (\{.*\})", check)
     assert wanted is not None
     expected = {
@@ -138,7 +157,8 @@ def test_the_floors_job_checks_what_it_installed_before_the_tests_run() -> None:
     }
     pins = re.findall(r'"([a-z-]+)": "([\d.]+)"', wanted.group(1))
     assert {name: _release(version) for name, version in pins} == expected
-    assert "--no-sync" in _run("floors", "Run the PostgreSQL tests")
+    assert "uv run --no-sync" in check
+    assert "uv run --no-sync" in _step_command("floors", "Run the PostgreSQL tests")
 
 
 def test_the_floors_job_runs_on_the_lowest_supported_python() -> None:
@@ -171,8 +191,10 @@ def test_the_refusal_job_runs_on_a_pgvector_below_the_minimum() -> None:
         assert match is not None, image
         assert tuple(map(int, match.groups()[:3])) < MIN_PGVECTOR
     assert str(_workflow()["jobs"]["refusal"]["env"][OLD_PGVECTOR_ENV]) == "true"
-    run = _run("refusal", "Run the refusal test")
+    run = _step_command("refusal", "Run the refusal test")
     assert "test_a_real_pgvector_below_the_minimum_is_refused_at_open" in run
+    # A skip exits 0, so the job requires the one test to have passed.
+    assert 'grep -q "1 passed"' in run
 
 
 def test_the_workflow_runs_when_the_store_or_its_tests_change() -> None:

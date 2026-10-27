@@ -3,7 +3,7 @@ type: Reference
 title: PostgreSQL and pgvector behaviour behind the vector store
 description: What the PostgreSQL vector store relies on in PostgreSQL 17, pgvector 0.8 and psycopg 3 — extension privileges, zero-vector scoring, schemas and search_path, snapshots, DELETE against TRUNCATE, advisory locks, durability settings, error codes and connect-time failures, cursors, COPY, pooling, connection poolers, connection parameters, schema backups and vacuuming.
 subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changelog to 0.8.7; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1; the range workflow's eight images (2026-10-22); psycopg 3.3.0 to 3.3.3, psycopg-pool 3.3.0 and pgvector-python 0.5.0 on Python 3.11 (2026-10-27)"
-valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x (0.7.4 or later on 17, 0.8.7 or later on 18), psycopg 3.3.1 or later in 3.x"
+valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x (0.7.4 or later on 17, 0.8.7 or later on 18), psycopg 3.3.x (3.3.1 or later)"
 generated:
   by: process:researching-references
   at: 2026-10-22T15:00:00+02:00
@@ -11,6 +11,8 @@ stale_after: 2027-04-22T15:00:00+02:00
 verified:
   - by: process:researching-references
     at: 2026-10-22T15:00:00+02:00
+  - by: process:researching-references
+    at: 2026-10-27T15:30:00+01:00
 status: stable
 sources:
   - id: pgvector-readme
@@ -286,7 +288,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 - `DECLARE` without `WITH HOLD` is usable only inside a transaction block, and every PostgreSQL cursor is insensitive. [source: pg-declare]
 - A psycopg named (server-side) cursor iterates in batches of `itersize`, default 100. [source: psycopg-cursors-api] [pins: tests/test_stores_postgres_search.py::test_a_selective_predicate_reads_past_the_first_batch]
-- psycopg 3.3.0 iterates a named cursor wrongly; 3.3.1's notes read "Fix iteration on server-side cursors (ticket #1226)". [source: psycopg-news] With 3.3.0 a store search with a `predicate` (offered by the store's contract; none of the server's searches pass one) returned none of the rows past the first batch, and the two search tests that read past it failed; with 3.3.1 every PostgreSQL test passes, and 3.3.2 and 3.3.3 pass the selective-predicate test. [observed: the PostgreSQL tests with psycopg pinned to each, psycopg-pool 3.3.0 and pgvector-python 0.5.0, Python 3.11, `pgvector/pgvector:0.8.7-pg18`, and for 3.3.0 and 3.3.1 also `pgvector/pgvector:0.7.0-pg15`, 2026-10-27] The `postgres` extra therefore requires `psycopg[binary]>=3.3.1`. [pins: tests/test_postgres_range_workflow.py::test_the_floors_job_installs_exactly_the_postgres_extras_floors]
+- psycopg 3.3.0 iterates a named cursor wrongly; 3.3.1's notes read "Fix iteration on server-side cursors (ticket #1226)". [source: psycopg-news] With 3.3.0 a store search with a `predicate` (offered by the store's contract; none of the server's searches pass one) returned none of the rows past the first batch, and the two search tests that read past it failed; with 3.3.1 every PostgreSQL test passes, and 3.3.2 and 3.3.3 pass the selective-predicate test. [observed: the PostgreSQL tests with psycopg pinned to 3.3.0 and 3.3.1, the selective-predicate test with 3.3.2 and 3.3.3, psycopg-pool 3.3.0 and pgvector-python 0.5.0, Python 3.11, `pgvector/pgvector:0.8.7-pg18`, and for 3.3.0 and 3.3.1 also `pgvector/pgvector:0.7.0-pg15`, 2026-10-27] The `postgres` extra therefore requires `psycopg[binary]>=3.3.1`. The range workflow's `floors` job runs the search test on the floor driver. [pins: tests/test_stores_postgres_search.py::test_a_selective_predicate_reads_past_the_first_batch, tests/test_postgres_range_workflow.py::test_the_floors_job_installs_exactly_the_postgres_extras_floors]
 - On a non-autocommit connection a named cursor runs inside the implicit transaction; on an autocommit connection it fails with `NoActiveSqlTransaction: DECLARE CURSOR can only be used in transaction blocks`. [observed: probe 13]
 - Ordered rows (`ORDER BY e <#> q, path`) stream through a named cursor inside a `REPEATABLE READ`, read-only transaction. [observed: probe 13]
 - Binary `COPY … FROM STDIN` with `write_row()` needs a binary dumper for every type and applies no casts; `Copy.set_types()` names the types. [source: psycopg-copy]

@@ -146,7 +146,10 @@ jobs:
       - name: Pull the image
         run: docker pull --quiet "$MVM_TEST_POSTGRES_IMAGE"
 
+      # A skipped test exits 0, so the step also requires that it passed.
       - name: Run the refusal test
-        run: >-
-          uv run --no-sync --no-build pytest -q
-          "tests/test_stores_postgres_connection.py::test_a_real_pgvector_below_the_minimum_is_refused_at_open"
+        run: |
+          uv run --no-sync --no-build pytest -q -rs \
+            "tests/test_stores_postgres_connection.py::test_a_real_pgvector_below_the_minimum_is_refused_at_open" \
+            | tee refusal.out
+          grep -q "1 passed" refusal.out
