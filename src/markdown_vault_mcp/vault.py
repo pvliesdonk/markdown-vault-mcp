@@ -80,6 +80,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# How long close() waits for the index writer to drain (#1896).
+_WRITER_DRAIN_TIMEOUT_S = 30.0
+
 
 def _adopt_legacy_state_file(source_dir: Path, state_path: Path | None) -> None:
     """Seed the state file from its pre-#1693 copy in the vault, once.
@@ -1063,7 +1066,11 @@ class Vault:
 
         Stops the pull loop :meth:`start` started, drains the index writer
         (deferred embeddings included) and the pending write callbacks,
-        then closes the SQLite connection. The
+        then closes the SQLite connection. A writer job still running after
+        the drain timeout keeps the keyword index open: closing it would cut
+        the job's connection mid-write (#1896). That index then keeps its
+        WAL and its writer lock until the job ends and the process exits,
+        and ``index_close_skipped`` is logged. The
         collaborators passed to the constructor (``git_strategy``,
         ``on_write``, ``embedding_provider``, ``summarizer``) belong to
         whoever built them and are not closed here (#1765): close them
@@ -1078,8 +1085,9 @@ class Vault:
         # single-owner IndexWriter, draining pending jobs.  Must precede the
         # FTS close below — the writer's drain touches FTS (#576).  The
         # hasattr guard covers __init__ failing before _coordinator was set.
+        writer_stopped = True
         if hasattr(self, "_coordinator"):
-            self._coordinator.close(timeout=30.0)
+            writer_stopped = self._coordinator.close(timeout=_WRITER_DRAIN_TIMEOUT_S)
 
         # 2. Deferred embedding updates are flushed by the IndexWriter
         # before its close() returns; no further flush needed here (#559).
@@ -1093,8 +1101,15 @@ class Vault:
         if hasattr(self, "_vector_slot"):
             self._vector_slot.close()
 
-        # 4. Close SQLite.
-        self._fts.close()
+        # 4. Close SQLite, unless the writer is still using it (#1896).
+        if writer_stopped:
+            self._fts.close()
+        else:
+            logger.warning(
+                "index_close_skipped reason=writer_running db_path=%s timeout_s=%s",
+                self._index_path,
+                _WRITER_DRAIN_TIMEOUT_S,
+            )
 
     # ------------------------------------------------------------------
     # Indexing readiness (issue #525)
