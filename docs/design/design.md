@@ -4061,7 +4061,11 @@ the keyword index and the vector store only once the index writer has stopped:
 a job still running after the 30 s drain keeps both, with their connections
 and locks, open until the job ends and they are collected or the process
 exits, logged at WARNING `index_close_skipped reason=writer_running`; a later
-`close()` closes them (#1896). Another process opens a
+`close()` closes them (#1896). The server logs the SQLite it runs on at startup,
+INFO `sqlite_runtime version=`, and checks nothing about it; which SQLite each
+installation channel brings, and WAL's same-host requirement, are in
+[`reference/sqlite-runtime-by-channel.md`](reference/sqlite-runtime-by-channel.md)
+(#1896). Another process opens a
 store or the index with `owns_files=False`, read-only, taking no lock. A store's files are
 its own: the store reads only `{base}.v2.json`. A sidecar the released
 `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge

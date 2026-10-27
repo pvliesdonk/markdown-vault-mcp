@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sqlite3
 from typing import TYPE_CHECKING
 
 from fastmcp.dependencies import CurrentContext
@@ -189,6 +190,12 @@ class Service:
     async def start(self) -> None:
         """Build the Vault and submit the boot jobs; start background tasks."""
         config = self._config
+        # Which SQLite this channel brought, to read against the channel
+        # table in docs/use/storage.md (#1896; evidence in
+        # docs/design/reference/sqlite-runtime-by-channel.md). Logged once
+        # per start, before anything can refuse it. Diagnostics, never a
+        # check.
+        logger.info("sqlite_runtime version=%s", sqlite3.sqlite_version)
         # No vault directory, no vault: the index writer and the file watcher
         # cannot run over an absent path (a wrong path used to crash the
         # lifespan here with a raw FileNotFoundError). The server still

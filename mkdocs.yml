@@ -176,6 +176,7 @@ nav:
       - Embeddings: use/embeddings.md
       - PostgreSQL embedding store: use/postgresql.md
       - Upgrading, switching and restoring embeddings: use/embedding-state.md
+      - Index storage and SQLite: use/storage.md
       - Git integration: use/git-integration.md
       - Vault explorer: use/vault-explorer.md
       - Obsidian everywhere: use/obsidian-everywhere.md
