@@ -198,9 +198,11 @@ def test_the_import_refuses_while_a_server_writes(
     result = _import("--from", "numpy", "--from-path", str(env / "released"))
     assert result.exit_code == 1
     assert "Stop the server first" in result.stderr
-    # Building the vault opens index.db, as any command does; nothing else.
+    # Building the vault opens index.db, and takes its lock (#1890), as any
+    # owning command does; nothing else.
     after = _sums(env)
     after.pop("index.db", None)
+    after.pop("index.db.lock", None)
     assert after == before
 
 

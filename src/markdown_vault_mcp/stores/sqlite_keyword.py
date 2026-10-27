@@ -1,6 +1,8 @@
 """The SQLite keyword backend: opens ``FTSIndex`` with typed outcomes (#1766).
 
-Reachable outcomes: *unavailable* (the file cannot be opened: a parent that
+Reachable outcomes: *busy* (another process owns the file: an owning open
+holds ``{index}.lock`` beside it until the index closes, #1890),
+*unavailable* (the file cannot be opened: a parent that
 is not a directory, a refused permission, a read-only file on a writable
 open), *corrupt* (the bytes are not a SQLite database) and *unsupported
 schema* (a ``schema_version`` above what this code reads, raised by
@@ -12,6 +14,7 @@ a keyword store has no identity.
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.exceptions import (
@@ -20,11 +23,10 @@ from markdown_vault_mcp.exceptions import (
     StoreUnavailableError,
 )
 from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.stores._writer_lock import WriterLock, hold_writer_lock
 from markdown_vault_mcp.stores.registry import register_backend
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from markdown_vault_mcp.types import StoreFamily
 
 _CORRUPT_ERRORNAMES = frozenset({"SQLITE_NOTADB", "SQLITE_CORRUPT"})
@@ -72,13 +74,15 @@ class SqliteKeywordBackend:
                 in-memory index.
             identity: Must be ``None``; a keyword store has no identity.
             owns_files: ``False`` opens a file read-only (#1758) and is
-                ignored for an in-memory index.
+                ignored for an in-memory index. ``True`` on a file takes
+                its writer lock, held until the index closes.
 
         Returns:
             The open :class:`~markdown_vault_mcp.fts_index.FTSIndex`.
 
         Raises:
             ValueError: If *identity* is given.
+            StoreBusyError: If another process owns the file.
             StoreUnavailableError: If the file cannot be opened or written.
             StoreCorruptError: If the file is not a SQLite database.
             StoreUnsupportedSchemaError: If its ``schema_version`` is newer.
@@ -87,16 +91,24 @@ class SqliteKeywordBackend:
             raise ValueError("A keyword store has no identity to check.")
         db_path: Path | str = ":memory:" if location is None else location
         is_memory = str(db_path) == ":memory:"
+        read_only = not owns_files and not is_memory
+        # Taken before FTSIndex runs any DDL, so a refused open writes nothing.
+        share = None if read_only or is_memory else _hold(Path(db_path))
         try:
             return FTSIndex(
                 db_path=db_path,
                 indexed_frontmatter_fields=self._indexed_frontmatter_fields,
                 searchable_frontmatter_fields=self._searchable_frontmatter_fields,
                 fts_weights=self._fts_weights,
-                read_only=not owns_files and not is_memory,
+                read_only=read_only,
+                writer_lock=share,
             )
-        except sqlite3.DatabaseError as exc:
-            raise self._classify(exc, str(db_path)) from exc
+        except BaseException as exc:
+            if share is not None:
+                share.release()
+            if isinstance(exc, sqlite3.DatabaseError):
+                raise self._classify(exc, str(db_path)) from exc
+            raise
 
     def _classify(self, exc: sqlite3.DatabaseError, location: str) -> StoreOpenError:
         """Map a SQLite error at open to the contract's outcome."""
@@ -113,6 +125,20 @@ class SqliteKeywordBackend:
             backend=self.name,
             location=location,
         )
+
+
+def _hold(db_path: Path) -> WriterLock:
+    """Take this process's share of the lock on the index at *db_path*.
+
+    Raises:
+        StoreBusyError: If another process holds ``{db_path}.lock``.
+    """
+    return hold_writer_lock(
+        db_path,
+        backend=SqliteKeywordBackend.name,
+        lock_file=Path(f"{db_path}.lock"),
+        label="Keyword index",
+    )
 
 
 register_backend("keyword", "sqlite", SqliteKeywordBackend)

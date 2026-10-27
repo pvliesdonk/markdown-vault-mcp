@@ -304,7 +304,11 @@ class TestStateLocation:
             r.message.startswith("legacy_state_file_copy_failed")
             for r in caplog.records
         )
-        assert sorted(p.name for p in index.parent.iterdir()) == ["index.db"]
+        # The index and its writer lock (#1890); no partial state file.
+        assert sorted(p.name for p in index.parent.iterdir()) == [
+            "index.db",
+            "index.db.lock",
+        ]
 
     def test_embeddings_without_an_index_stay_in_memory(self, tmp_path: Path) -> None:
         from tests.conftest import MockEmbeddingProvider
