@@ -289,7 +289,12 @@ class Service:
             break
         logger.info("vault_available after=index_busy")
         self._startup_error = None
-        await self._serve(vault, settings, instances)
+        try:
+            await self._serve(vault, settings, instances)
+        except Exception:
+            # Nothing awaits this task until stop(): say so now, and leave
+            # the vault for stop() to close.
+            logger.error("vault_start_failed after=index_busy", exc_info=True)
 
     async def _serve(
         self, vault: Vault, settings: VaultSettings, instances: VaultInstances

@@ -310,3 +310,41 @@ async def test_a_build_that_failed_after_stop_leaves_nothing_to_close() -> None:
     cancelled: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
     cancelled.cancel()
     _close_built_vault(cancelled)
+
+
+async def test_a_vault_that_fails_to_start_after_the_wait_is_logged_and_stopped(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from markdown_vault_mcp import domain as domain_mod
+
+    monkeypatch.setattr(domain_mod, "_INDEX_BUSY_RETRY_S", 0.01)
+    closed: list[bool] = []
+
+    class _Built:
+        def close(self) -> None:
+            closed.append(True)
+
+    outcomes: list[object] = [_busy(), _Built()]
+
+    def build(_self: Service, _settings: object, _instances: object) -> object:
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    async def serve(self: Service, vault: Any, _s: object, _i: object) -> None:
+        self._vault = vault
+        raise RuntimeError("the boot jobs could not be submitted")
+
+    monkeypatch.setattr(Service, "_build_vault", build)
+    monkeypatch.setattr(Service, "_serve", serve)
+    service = Service(ProjectConfig(source_dir=tmp_path))
+    with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.domain"):
+        await service.start()
+        assert service._waiting is not None
+        await asyncio.wait_for(asyncio.shield(service._waiting), timeout=10)
+    assert any(r.msg.startswith("vault_start_failed") for r in caplog.records)
+    await service.stop()  # does not raise, and closes the vault it built
+    assert closed == [True]
