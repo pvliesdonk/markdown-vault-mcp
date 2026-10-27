@@ -3,7 +3,10 @@ name: PostgreSQL range
 # The supported PostgreSQL and pgvector range of the PostgreSQL vector store
 # (#1504, spec §8.4): the PostgreSQL tests against every image below. The docs
 # state exactly this range, and tests/test_postgres_range_workflow.py keeps
-# them in step, along with MIN_PGVECTOR in stores/_postgres.py.
+# them in step, along with MIN_PGVECTOR in stores/_postgres.py. Two more jobs
+# (#1897): `floors` runs the tests with the postgres extra's lowest declared
+# drivers on the lowest supported Python, and `refusal` checks that a real
+# pgvector below MIN_PGVECTOR is refused with the SQL to run.
 on:
   pull_request:
     branches: [main, "release/**", "integration/**"]
@@ -76,3 +79,77 @@ jobs:
 
       - name: Run the PostgreSQL tests
         run: uv run --no-sync --no-build pytest tests/*postgres*.py -q --durations=10
+
+  floors:
+    name: Driver floors (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          # The lowest and the newest of the range above.
+          - pgvector/pgvector:0.7.0-pg15
+          - pgvector/pgvector:0.8.7-pg18
+    env:
+      CI: "true"
+      MVM_TEST_POSTGRES_IMAGE: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
+        with:
+          python-version: "3.11"
+
+      # The postgres extra's lower bounds in pyproject.toml, over the locked sync.
+      - name: Install the driver floors
+        run: uv pip install --no-build "psycopg[binary]==3.3.1" "psycopg-pool==3.3.0" "pgvector==0.5.0"
+
+      - name: Check the installed drivers
+        run: |
+          uv run --no-sync --no-build python - <<'EOF'
+          from importlib.metadata import version
+          wanted = {"psycopg": "3.3.1", "psycopg-pool": "3.3.0", "pgvector": "0.5.0"}
+          found = {name: version(name) for name in wanted}
+          print(found)
+          assert found == wanted, found
+          EOF
+
+      - name: Pull the image
+        run: docker pull --quiet "$MVM_TEST_POSTGRES_IMAGE"
+
+      - name: Run the PostgreSQL tests
+        run: uv run --no-sync --no-build pytest tests/*postgres*.py -q --durations=10
+
+  refusal:
+    name: pgvector below the minimum (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - pgvector/pgvector:0.6.2-pg16
+    env:
+      CI: "true"
+      MVM_TEST_POSTGRES_IMAGE: ${{ matrix.image }}
+      MVM_TEST_POSTGRES_OLD_PGVECTOR: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
+        with:
+          python-version: "3.14"
+
+      - name: Pull the image
+        run: docker pull --quiet "$MVM_TEST_POSTGRES_IMAGE"
+
+      # A skipped test exits 0, so the step also requires that it passed.
+      - name: Run the refusal test
+        run: |
+          uv run --no-sync --no-build pytest -q -rs \
+            "tests/test_stores_postgres_connection.py::test_a_real_pgvector_below_the_minimum_is_refused_at_open" \
+            | tee refusal.out
+          grep -q "1 passed" refusal.out

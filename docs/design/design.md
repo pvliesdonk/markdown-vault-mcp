@@ -4177,7 +4177,14 @@ its first write's transaction, so an open changes nothing. The supported
 range is PostgreSQL 15 to 18 with pgvector 0.7.0 (`MIN_PGVECTOR`) or later,
 17 with 0.7.4 and 18 with 0.8.7, the lowest built for them: `.github/workflows/postgres-range.yml` runs the PostgreSQL
 tests on one pinned image per combination, and the minimum is the lowest
-pgvector that workflow passes, so the docs state only what it runs. It finds the
+pgvector that workflow passes, so the docs state only what it runs. The same
+workflow (#1897) also runs those tests with the `postgres` extra's lowest
+declared drivers on the lowest supported Python. That run found psycopg
+3.3.0's broken named-cursor iteration, so the floor is 3.3.1; the bug was
+latent, because only a search with a `predicate` reads through a named
+cursor and the server passes none. A third job checks on a real pgvector
+0.6.2 that the store refuses it. PostgreSQL 14 and older are neither tested
+nor refused. It finds the
 extension's schema in `pg_extension`, sets `search_path` to the vault
 schema and that one itself, and checks the vault schema exists in
 `pg_namespace`, because PostgreSQL silently skips a missing schema in the
