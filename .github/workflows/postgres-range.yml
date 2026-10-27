@@ -104,11 +104,11 @@ jobs:
 
       # The postgres extra's lower bounds in pyproject.toml, over the locked sync.
       - name: Install the driver floors
-        run: uv pip install "psycopg[binary]==3.3.1" "psycopg-pool==3.3.0" "pgvector==0.5.0"
+        run: uv pip install --no-build "psycopg[binary]==3.3.1" "psycopg-pool==3.3.0" "pgvector==0.5.0"
 
       - name: Check the installed drivers
         run: |
-          uv run --no-sync python - <<'EOF'
+          uv run --no-sync --no-build python - <<'EOF'
           from importlib.metadata import version
           wanted = {"psycopg": "3.3.1", "psycopg-pool": "3.3.0", "pgvector": "0.5.0"}
           found = {name: version(name) for name in wanted}

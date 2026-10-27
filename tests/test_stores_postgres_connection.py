@@ -326,8 +326,9 @@ def test_a_real_pgvector_below_the_minimum_is_refused_at_open(
     installed = tuple(int(part) for part in str(row[0]).split("."))
     assert installed < pg.MIN_PGVECTOR
     backend = PostgresVectorBackend(postgres_schema.dsn)
+    identity = EmbeddingIdentity("fake", "m", "", "v1", 3)
     with pytest.raises(StoreNotConfiguredError) as failure:
-        backend.open(postgres_schema.name, EmbeddingIdentity("fake", "m", "", "v1", 3))
+        backend.open(postgres_schema.name, identity)
     message = str(failure.value)
     assert f"is {row[0]} installed" in message
     assert f"needs {'.'.join(map(str, pg.MIN_PGVECTOR))} or later" in message
