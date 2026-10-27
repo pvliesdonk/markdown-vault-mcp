@@ -2,7 +2,7 @@
 
 A pin under ``[tool.uv] override-dependencies`` / ``constraint-dependencies``
 is a workaround that must go away once its reason does.  ``scripts/check_pins.py``
-enforces ``# until: <issue URL>`` on every entry and, in CI, fails once that
+enforces ``# until: <issue URL>`` on every entry and, in CI, warns once that
 issue is closed; this test runs its offline half against the committed
 ``pyproject.toml`` so an untracked pin never lands.
 """
@@ -53,20 +53,46 @@ _ONLINE = (
 )
 
 
-def test_resolved_issue_fails_online() -> None:
-    problems = findings(_ONLINE, state_of=lambda _url: "fixed")
-    assert problems == [
+def test_resolved_issue_warns_without_failing() -> None:
+    """An upstream fix lands outside any PR, so it must not fail one (#825)."""
+    warnings: list[str] = []
+    assert findings(_ONLINE, state_of=lambda _url: "fixed", warn=warnings.append) == []
+    assert warnings == [
         (
             "pyproject.toml:6 [tool.uv] override-dependencies 'pygments<2.21': outlived its "
             "reason — https://github.com/o/r/issues/7 is resolved; lift the pin"
         )
     ]
-    assert findings(_ONLINE, state_of=lambda _url: "open") == []
+    open_warnings: list[str] = []
+    assert (
+        findings(_ONLINE, state_of=lambda _url: "open", warn=open_warnings.append) == []
+    )
+    assert open_warnings == []
 
 
 def test_abandoned_issue_asks_for_a_live_one() -> None:
-    (problem,) = findings(_ONLINE, state_of=lambda _url: "abandoned")
-    assert "closed without a fix" in problem
+    warnings: list[str] = []
+    assert (
+        findings(_ONLINE, state_of=lambda _url: "abandoned", warn=warnings.append) == []
+    )
+    (warning,) = warnings
+    assert "closed without a fix" in warning
+
+
+def test_resolved_issue_is_an_annotation_and_exit_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(_ONLINE, encoding="utf-8")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr("scripts.check_pins.fetch_issue_state", lambda *_a: "fixed")
+    assert main([]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("::warning::pyproject.toml:6 ")
+    assert "lift the pin" in out
+    assert "check_pins: OK (1 [tool.uv] pin(s), 1 warning(s) above)" in out
 
 
 def test_lookup_failure_warns_but_does_not_fail() -> None:

@@ -184,6 +184,8 @@ commit them and push, and the `.github/rulesets/` path filter starts
 ### `coverage/patch`, if you require it
 
 CI requires the full test suite to pass on Python 3.11 through 3.14.
+It also runs it on Python 3.15, as an experimental job that cannot fail
+`CI Success`.
 Only the Python 3.14 job collects branch coverage, using
 `uv run pytest --cov --cov-report=xml --durations=20`. The other interpreters
 run `uv run pytest --durations=20`. The coverage job retains the 80% total
