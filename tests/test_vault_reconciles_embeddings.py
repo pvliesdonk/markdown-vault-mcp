@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.indexing import FlushDirtyEmbeddings
 from markdown_vault_mcp.types import DocumentRows
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vault_store_contract import VaultStoreContract
 from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 class _Counting(MockEmbeddingProvider):
@@ -264,3 +265,9 @@ class TestPurgesUseObservedTokens:
             assert sorted(metadata_by_path(store)) == ["alpha.md"]  # type: ignore[arg-type]
         finally:
             vault.close()
+
+
+class TestTheNumpyStoreContract(VaultStoreContract):
+    @pytest.fixture
+    def store_settings(self) -> dict[str, Any]:
+        return {"embedding_store": "numpy"}

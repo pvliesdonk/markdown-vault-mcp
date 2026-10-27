@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vault_store_contract import VaultStoreContract
 from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
@@ -372,3 +373,15 @@ def test_status_raises_when_a_streamed_store_cannot_be_read(
     finally:
         monkeypatch.undo()
         vault.close()
+
+
+class TestTheSqliteStoreContract(VaultStoreContract):
+    @pytest.fixture
+    def store_settings(self) -> dict[str, Any]:
+        return {"embedding_store": "sqlite"}
+
+
+class TestTheStreamedSqliteStoreContract(VaultStoreContract):
+    @pytest.fixture
+    def store_settings(self) -> dict[str, Any]:
+        return {"embedding_store": "sqlite", "embedding_search": "streamed"}
