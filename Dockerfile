@@ -1,4 +1,24 @@
+<<<<<<< before updating
 FROM python:3.14-slim
+=======
+# Python comes from uv, not from a `python:*-slim` base: that image's SQLite is
+# Debian's system library, which lacks the WAL-reset corruption fix
+# (template#829), while a uv-managed CPython bundles a current SQLite.  It also
+# keeps the shipped interpreter off Renovate's Docker-tag bumps (template#828):
+# keep PYTHON_VERSION below equal to the Python version whose ci.yml test job
+# collects coverage, so the image runs the interpreter CI measures.
+FROM debian:trixie-slim
+
+# What a `python:*-slim` image carried and a bare Debian lacks: CA roots for
+# TLS (git over HTTPS, outbound clients), /etc/services, and zoneinfo data.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates netbase tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Here, between the two apt RUNs, so neither merges into the other: the
+# packages above must not depend on what a project keeps in the block below.
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
+>>>>>>> after updating
 
 # DOCKERFILE-APT-DEPS-START — add domain apt packages below; kept across copier update
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs gosu \
@@ -6,10 +26,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs gos
     && git lfs install --system
 # DOCKERFILE-APT-DEPS-END
 
-COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
-
-ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+ARG PYTHON_VERSION=3.14
+# The interpreter lives under /opt, not root's home, so the venv's symlinked
+# `python` stays readable after the entrypoint drops to appuser.
+# `only-managed` keeps `uv sync` off any python3 an apt package pulls in.
+ENV LANG=C.UTF-8 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON=${PYTHON_VERSION} \
+    UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PYTHON_PREFERENCE=only-managed
+RUN uv python install "$PYTHON_VERSION"
 
 WORKDIR /app
 

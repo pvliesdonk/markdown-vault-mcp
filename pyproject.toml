@@ -259,9 +259,10 @@ build-backend = "hatchling.build"
 # and `override-dependencies` are invisible to Renovate, so its update-lockfile
 # fallback cannot rewrite a deliberate cap the way it can one expressed in
 # `[project]` (#508) — and `scripts/check_pins.py` fails CI unless every entry
-# carries `# until: <issue URL>`, and again once that issue closes, so a pin
-# here cannot quietly outlive its reason.  Keep one bound per package: the same
-# script rejects a package bounded both here and in `[project]`.
+# carries `# until: <issue URL>`, and warns on every CI run once that issue
+# closes, so a pin here cannot quietly outlive its reason.  Keep one bound per
+# package: the same script rejects a package bounded both here and in
+# `[project]`.
 #
 # The single numpy bound (extras above are deliberately bare).  numpy 2.5+
 # is 3.12-only and its PEP 695 stubs abort mypy at this project's

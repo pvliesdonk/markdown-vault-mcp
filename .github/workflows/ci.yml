@@ -35,8 +35,10 @@ jobs:
         # resource, prompt or CLI option.
         run: uv run --no-sync --no-build python scripts/gen_reference.py --check
 
-      - name: Verify [tool.uv] pins carry a live exit condition
-        # A pin's `# until:` issue being closed fails this step: lift the pin.
+      - name: Verify [tool.uv] pins carry an exit condition
+        # A pin's `# until:` issue being closed shows here as a warning
+        # annotation (lift the pin), not a failure: the upstream state
+        # changes outside any pull request.  A pin without one fails.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: uv run --no-sync --no-build python scripts/check_pins.py
@@ -81,6 +83,12 @@ jobs:
             experimental: false
           - python-version: "3.14"
             experimental: false
+          # The newest CPython runs ahead of the claimed versions: a red leg
+          # here does not fail `CI Success`, so a dependency still missing
+          # wheels for it blocks nothing.  A template release makes it
+          # required, with its classifier; the Docker image stays on 3.14.
+          - python-version: "3.15"
+            experimental: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
