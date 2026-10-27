@@ -4051,10 +4051,13 @@ take the lock in between; a store collected unclosed gives its share back
 through a finalizer that never waits for the lock's guard, and a forked
 child holds nothing. Where no lock can be taken (no `fcntl`, as on Windows,
 or a lock file that cannot be created) the writer proceeds as before, logged
-at DEBUG `embeddings_writer_lock_skipped`; a lock file this user cannot
+at DEBUG `writer_lock_skipped`; a lock file this user cannot
 write is locked read-only; a lock over a network or VM file share may not
-hold. Another
-process opens it with `owns_files=False`, read-only, taking no lock. A store's files are
+hold. The keyword index takes the same lock for an owning on-disk open,
+on `{index}.lock` (its full name plus `.lock`, so `index.db.lock`, never
+`index.lock`; named after the index's real path, so a symlink shares it),
+with the refusal naming the "Keyword index" (#1890). Another process opens a
+store or the index with `owns_files=False`, read-only, taking no lock. A store's files are
 its own: the store reads only `{base}.v2.json`. A sidecar the released
 `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge
 build's format-2 `{base}.json` naming `{base}.m<N>.npy`, is opened only by
@@ -6775,3 +6778,4 @@ Later decisions (2026-10-22, #1505):
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
 | 35 | Embedding transitions | A full build may consult a read-only donor store and copy a vector whose rebuilt embedding input matches the chunk's, under an equal and known identity, publishing one generation; the released v5.x sidecar upgrades into the configured built-in store automatically, every other switch goes through an explicit `embeddings import`; the released sidecar is never written again and is reported while unused; a missing identity never matches; permission, disk and availability failures never trigger a rebuild, removal or rename; an owned corrupt built-in store is moved aside before its rebuild, refining decision 31 (#1505). | The owner chose automatic only for the built-in upgrade and explicit otherwise (C), keeping the released sidecar (A), and the donor mechanism, on 2026-10-22. Only vectors matching current text are copied, so no stale or deleted note is imported; one mechanism serves the upgrade, a store switch and a restore; #1795's input rebuild is the matching rule already trusted for a store's own rows; the minor release needs the upgrade automatic. **Rejected:** a bulk copy of every row through the contract; converters per pair of stores; an automatic import on every store switch; deleting the released sidecar after the upgrade. |
+| 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |

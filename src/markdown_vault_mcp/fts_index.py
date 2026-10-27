@@ -61,6 +61,8 @@ from markdown_vault_mcp.types import (
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable
 
+    from markdown_vault_mcp.stores._writer_lock import WriterLock
+
 logger = logging.getLogger(__name__)
 
 #: Paths bound per ``list_chunks`` statement, well under SQLite's variable
@@ -646,6 +648,9 @@ class FTSIndex:
             persistence are skipped and the index ranks with the weights
             stored in it; a write method raises ``sqlite3.OperationalError``.
             The file must exist and be at this version's schema.
+        writer_lock: This process's share of the file's writer lock, taken
+            by the opener (#1890); :meth:`close` releases it. ``None`` for a
+            read-only or in-memory index, or a caller that takes no lock.
     """
 
     #: The layout this code writes and the highest it reads (#1766).
@@ -662,8 +667,10 @@ class FTSIndex:
         searchable_frontmatter_fields: list[str] | None = None,
         fts_weights: dict[str, float] | None = None,
         read_only: bool = False,
+        writer_lock: WriterLock | None = None,
     ) -> None:
         self._db_path = db_path
+        self._writer_lock = writer_lock
         self._indexed_fields: list[str] = indexed_frontmatter_fields or []
         self._searchable_fields: tuple[str, ...] = tuple(
             searchable_frontmatter_fields or ()
@@ -2831,12 +2838,17 @@ class FTSIndex:
     def close(self) -> None:
         """Fold the WAL away, then close every per-thread connection.
 
-        Idempotent — delegates to :meth:`SqliteConnectionRegistry.close`.
+        Idempotent — delegates to :meth:`SqliteConnectionRegistry.close`,
+        then gives the writer lock's share back, if one was handed in.
         After ``close()``, any thread calling a public method raises
         ``sqlite3.ProgrammingError`` from ``_conn()``.
         """
         try:
             self._truncate_wal()
         finally:
-            self._registry.close()
+            try:
+                self._registry.close()
+            finally:
+                if self._writer_lock is not None:
+                    self._writer_lock.release()
         logger.debug("fts_index_closed db_path=%s", self._db_path)

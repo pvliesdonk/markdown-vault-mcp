@@ -349,6 +349,7 @@ class Vault:
             owns and closes the store it opens.
 
     Raises:
+        StoreBusyError: If another process owns the keyword index (#1890).
         StoreUnavailableError: If the keyword index cannot be opened; so do
             ``StoreCorruptError`` and ``StoreUnsupportedSchemaError`` (#1766).
         ConfigurationError: If ``settings.embedding_store`` names no

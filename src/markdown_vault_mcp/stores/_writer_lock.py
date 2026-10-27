@@ -1,15 +1,17 @@
-"""One process writes a built-in vector store at a time (#1505).
+"""One process writes a built-in vector store, or a keyword index, at a time.
 
-A numpy or SQLite writer holds an advisory lock on ``{base}.lock`` (named with
-``Path.with_suffix``, #819) while it is open; a second process that opens a
-writer on the same base is refused with :class:`StoreBusyError`, so a batch
-command cannot write a store a running server is writing. Readers take no
+A numpy or SQLite vector writer holds an advisory lock on ``{base}.lock``
+(named with ``Path.with_suffix``, #819) while it is open (#1505); an owning
+keyword index holds one on ``{index}.lock``, its full name plus ``.lock``
+(#1890). A second process that opens a writer on the same file is refused
+with :class:`StoreBusyError`, so a batch command cannot write a store a
+running server is writing. Readers take no
 lock. The operating system drops the lock when its process dies, so a killed
 server leaves none behind; the file itself is never deleted, and the pid it
 names is cleared on the last release. Inside one process every writer on a
 base shares one lock, counted, so two vaults in one process never block each
 other; a caller that closes one store and opens another on the same base
-holds a share across the swap (the backends' ``hold_writer``), so another
+holds a share across the swap (the vector backends' ``hold_writer``), so another
 process cannot take the lock in between. A store collected unclosed gives its
 share back through a finalizer that never waits for the guard, and a forked
 child holds nothing.
@@ -95,15 +97,24 @@ def release_from_finalizer(share: WriterLock) -> None:
             _GUARD.release()
 
 
-def hold_writer_lock(base: Path, *, backend: str) -> WriterLock:
-    """Take a writer's share of the lock on *base*.
+def hold_writer_lock(
+    base: Path,
+    *,
+    backend: str,
+    lock_file: Path | None = None,
+    label: str = "Vector store",
+) -> WriterLock:
+    """Take a writer's share of the lock for the store at *base*.
 
-    The store's directory is created if need be, as its first write would,
-    so the lock covers a store from its first open.
+    The lock file's directory is created if need be, as the store's first
+    write would, so the lock covers a store from its first open.
 
     Args:
-        base: The store's base path; the lock file is ``{base}.lock``.
+        base: The store's base path, named in the refusal.
         backend: The backend's registry name, for the refusal.
+        lock_file: The lock file; ``None`` means ``{base}.lock`` by
+            ``Path.with_suffix``, the vector stores' naming.
+        label: What the refusal says is being written.
 
     Returns:
         The share, to release when the store closes.
@@ -111,7 +122,11 @@ def hold_writer_lock(base: Path, *, backend: str) -> WriterLock:
     Raises:
         StoreBusyError: If another process holds the lock.
     """
-    path = Path(base).with_suffix(LOCK_SUFFIX)
+    path = (
+        Path(lock_file)
+        if lock_file is not None
+        else Path(base).with_suffix(LOCK_SUFFIX)
+    )
     if fcntl is None:
         return _skipped(path, "unsupported")
     key = os.path.realpath(path)
@@ -130,7 +145,7 @@ def hold_writer_lock(base: Path, *, backend: str) -> WriterLock:
             holder = _holder(fd)
             os.close(fd)
             raise StoreBusyError(
-                f"Vector store at {base} is being written by another process"
+                f"{label} at {base} is being written by another process"
                 f"{holder}; stop that process first.",
                 backend=backend,
                 location=str(base),
@@ -188,7 +203,7 @@ def _holder(fd: int) -> str:
 
 def _skipped(path: Path, reason: str) -> WriterLock:
     """Return a share that locks nothing, saying why."""
-    logger.debug("embeddings_writer_lock_skipped path=%s reason=%s", str(path), reason)
+    logger.debug("writer_lock_skipped path=%s reason=%s", str(path), reason)
     return WriterLock(None)
 
 
