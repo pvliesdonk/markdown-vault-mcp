@@ -126,3 +126,36 @@ async def test_stop_without_a_vault_has_nothing_to_close(tmp_path: Path) -> None
     assert service.startup_error is not None
 
     await service.stop()  # must not raise
+
+
+async def test_a_second_server_on_a_held_index_starts_unavailable(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from tests.test_stores_keyword_lock import Holder
+
+    (tmp_path / "vault").mkdir()
+    index = tmp_path / "state" / "index.db"
+    held = Holder(index)
+    try:
+        service = Service(
+            ProjectConfig(source_dir=tmp_path / "vault", index_path=index)
+        )
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.domain"):
+            await service.start()
+        try:
+            records = [
+                r
+                for r in caplog.records
+                if r.msg.startswith("vault_unavailable reason=index_busy")
+            ]
+            assert [r.args for r in records] == [(str(index),)]
+            assert [r.levelno for r in records] == [logging.ERROR]
+            with pytest.raises(ConfigurationError) as failure:
+                get_vault_singleton()
+            assert f"Keyword index at {index}" in str(failure.value)
+            assert "being written by another process" in str(failure.value)
+            assert service.startup_error == str(failure.value)
+        finally:
+            await service.stop()
+    finally:
+        held.stop()

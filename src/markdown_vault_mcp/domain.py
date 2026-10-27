@@ -24,7 +24,7 @@ from markdown_vault_mcp.config_sections._assembly import (
     to_vault_instances,
     to_vault_settings,
 )
-from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.exceptions import ConfigurationError, StoreBusyError
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -156,8 +156,8 @@ class Service:
 
         Raises:
             ConfigurationError: If :meth:`start` ran but built no vault
-                because the directory does not exist; the message names the
-                variable to set.
+                because the directory does not exist (the message names the
+                variable to set) or another process owns the index.
             RuntimeError: If :meth:`start` has not run.
         """
         if self._vault is None:
@@ -215,14 +215,23 @@ class Service:
                 "embedding_provider_resolved provider=%s",
                 type(instances.embedding_provider).__name__,
             )
-        vault = Vault(
-            source_dir=config.source_dir,
-            settings=settings,
-            embedding_provider=instances.embedding_provider,
-            summarizer=instances.summarizer,
-            git_strategy=instances.git_strategy,
-            on_write=instances.on_write,
-        )
+        try:
+            vault = Vault(
+                source_dir=config.source_dir,
+                settings=settings,
+                embedding_provider=instances.embedding_provider,
+                summarizer=instances.summarizer,
+                git_strategy=instances.git_strategy,
+                on_write=instances.on_write,
+            )
+        except StoreBusyError as exc:
+            # Another server owns the index (#1890): serve without a vault,
+            # as for a missing directory, rather than crash-loop under a
+            # restart policy until the other one exits.
+            logger.error("vault_unavailable reason=index_busy path=%s", exc.location)
+            self._startup_error = str(exc)
+            set_vault_singleton(None, unavailable=self._startup_error)
+            return
         self._vault = vault
         set_vault_singleton(vault)
 
