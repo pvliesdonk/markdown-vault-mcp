@@ -1091,7 +1091,7 @@ class Vault:
             writer_stopped = self._coordinator.close(timeout=_WRITER_DRAIN_TIMEOUT_S)
 
         # 2. Deferred embedding updates are flushed by the IndexWriter
-        # before its close() returns; no further flush needed here (#559).
+        # before it stops; no further flush needed here (#559).
 
         # 3. Drain the write-callback queue (git commits). The callback
         # itself is its owner's to close (#1765).
