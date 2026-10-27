@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every ``[tool.uv]`` pin carries its exit condition; CI fails once it is met.
+"""Every ``[tool.uv]`` pin carries its exit condition; CI warns once it is met.
 
 A pin in ``[tool.uv] override-dependencies`` / ``constraint-dependencies`` is a
 temporary workaround for an upstream problem.  Two things go wrong with such
@@ -12,15 +12,18 @@ script enforces the convention that fixes both:
 * no package is bounded both in ``[project]`` / ``[dependency-groups]`` and
   in a ``[tool.uv]`` table (keep one bound per package);
 * in CI (``--offline`` not given), every referenced issue is looked up with
-  ``GITHUB_TOKEN``; an issue closed as completed or a merged PR fails the run
-  ("lift the pin"), and one closed without a fix fails too ("re-point the
-  pin at a live issue").  A lookup that cannot be completed (private repo,
-  rate limit, network) is printed as a warning and does not fail.
+  ``GITHUB_TOKEN``; an issue closed as completed or a merged PR raises a
+  warning ("lift the pin"), and so does one closed without a fix ("re-point
+  the pin at a live issue").  Neither fails the run: the upstream state
+  changes outside any pull request, so a failure would turn every branch red
+  at once (#825).  A lookup that cannot be completed (private repo, rate
+  limit, network) is a warning too.  Under GitHub Actions each warning is a
+  ``::warning::`` annotation on the run.
 
 The ``# until:`` comment goes on the entry's own line, on a comment line
 directly above it, or on the array's opening line (``= [  # until: ...``),
 where it covers every entry without one of its own.  Exit status 1 with one
-line per finding; 0 when clean.
+line per finding; 0 when clean, warnings or not.
 """
 
 from __future__ import annotations
@@ -188,7 +191,8 @@ def findings(
 ) -> list[str]:
     """Every violation as one human-readable line; ``state_of`` None = offline.
 
-    Lookup failures go to ``warn`` and never become findings."""
+    What a lookup says (resolved, abandoned, or unreachable) goes to ``warn``
+    and never becomes a finding: only the text itself can fail the check."""
     out: list[str] = []
     pins = parse_pins(text) if pins is None else pins
     bounded = project_bounded_names(tomllib.loads(text))
@@ -222,11 +226,11 @@ def findings(
                 )
                 state = "open"
             if state == "fixed":
-                out.append(
+                warn(
                     f"{where}: outlived its reason — {pin.until} is resolved; lift the pin"
                 )
             elif state == "abandoned":
-                out.append(
+                warn(
                     f"{where}: {pin.until} was closed without a fix; re-point `until:` at "
                     "a live issue, or lift the pin if it is no longer needed"
                 )
@@ -275,15 +279,25 @@ def main(argv: list[str] | None = None) -> int:
     token = os.environ.get("GITHUB_TOKEN") or None
     state_of = None if args.offline else (lambda url: fetch_issue_state(url, token))
     pins = parse_pins(text)
-    problems = findings(text, state_of=state_of, pins=pins)
+    prefix = (
+        "::warning::" if os.environ.get("GITHUB_ACTIONS") == "true" else "WARNING: "
+    )
+    warnings: list[str] = []
+
+    def warn(msg: str) -> None:
+        warnings.append(msg)
+        print(prefix + msg)
+
+    problems = findings(text, state_of=state_of, pins=pins, warn=warn)
     for line in problems:
         print(line)
     if not problems:
-        what = (
-            "each with an exit condition"
-            if args.offline
-            else "all exit conditions still open"
-        )
+        if args.offline:
+            what = "each with an exit condition"
+        elif warnings:
+            what = f"{len(warnings)} warning(s) above"
+        else:
+            what = "all exit conditions still open"
         print(f"check_pins: OK ({len(pins)} [tool.uv] pin(s), {what})")
     return 1 if problems else 0
 
