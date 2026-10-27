@@ -8,6 +8,7 @@ accessor fails with the variable to set.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -53,6 +54,21 @@ async def test_existing_directory_builds_the_vault(tmp_path: Path) -> None:
     try:
         assert service.startup_error is None
         assert service.vault.source_dir == tmp_path
+    finally:
+        await service.stop()
+
+
+async def test_start_logs_the_sqlite_runtime_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    service = Service(ProjectConfig(source_dir=tmp_path))
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.domain"):
+        await service.start()
+    try:
+        records = [r for r in caplog.records if r.msg.startswith("sqlite_runtime")]
+        assert [(r.levelno, r.args) for r in records] == [
+            (logging.INFO, (sqlite3.sqlite_version,))
+        ]
     finally:
         await service.stop()
 

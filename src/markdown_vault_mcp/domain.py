@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sqlite3
 from typing import TYPE_CHECKING
 
 from fastmcp.dependencies import CurrentContext
@@ -212,6 +213,11 @@ class Service:
             set_vault_singleton(None, unavailable=self._startup_error)
             return
         logger.info("vault_initialising source_dir=%s", config.source_dir)
+        # Which SQLite this channel brought, to read against the channel
+        # table in docs/use/storage.md (#1896; evidence in
+        # docs/design/reference/sqlite-runtime-by-channel.md). Diagnostics,
+        # never a check.
+        logger.info("sqlite_runtime version=%s", sqlite3.sqlite_version)
 
         # Settings-first construction (#1158): the config-derived knobs
         # travel as one VaultSettings; the constructed collaborators stay

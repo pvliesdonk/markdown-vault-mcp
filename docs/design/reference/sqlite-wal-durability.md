@@ -52,7 +52,9 @@ relies on:
 
 Read-only (`mode=ro`) opens are covered by
 [`sqlite-read-only-connections.md`](sqlite-read-only-connections.md); this
-page adds only what a read-only connection does to checkpoints.
+page adds only what a read-only connection does to checkpoints. Which
+SQLite each installation channel brings, and WAL's same-host requirement on
+storage, are on [`sqlite-runtime-by-channel.md`](sqlite-runtime-by-channel.md).
 
 ## Scope
 

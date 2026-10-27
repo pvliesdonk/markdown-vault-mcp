@@ -1,5 +1,16 @@
 # Reference research log
 
+## 2026-10-27
+
+- Added [The SQLite each installation channel brings](sqlite-runtime-by-channel.md)
+  for #1896. Observed: the published v5.1.0 image has SQLite 3.46.1 and the
+  edge image 3.53.1; freshly downloaded uv-managed CPython 3.11 to 3.14 has
+  3.53.1, older managed builds 3.50.4; python.org's macOS and Windows
+  installers bundle 3.50.4; the system `python3` of Debian 12 to 14, Ubuntu
+  24.04 and 26.04, and Fedora 43 and 44 links 3.40.1 to 3.53.4. Recorded
+  uv's preference for an installed Python over a download, and WAL's
+  same-host requirement. Next review: 2027-04-27.
+
 ## 2026-10-22
 
 - Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
