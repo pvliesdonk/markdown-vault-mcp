@@ -80,6 +80,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# How long close() waits for the index writer to drain (#1896).
+_WRITER_DRAIN_TIMEOUT_S = 30.0
+
 
 def _adopt_legacy_state_file(source_dir: Path, state_path: Path | None) -> None:
     """Seed the state file from its pre-#1693 copy in the vault, once.
@@ -1063,7 +1066,12 @@ class Vault:
 
         Stops the pull loop :meth:`start` started, drains the index writer
         (deferred embeddings included) and the pending write callbacks,
-        then closes the SQLite connection. The
+        then closes the stores. A writer job still running after the drain
+        timeout keeps the keyword index and the vector store open: closing
+        either would cut the job's writes short (#1896). They then keep
+        their connections and writer locks until the job ends and they are
+        collected, or the process exits, and ``index_close_skipped`` is
+        logged. A later ``close()`` closes them once the job has ended. The
         collaborators passed to the constructor (``git_strategy``,
         ``on_write``, ``embedding_provider``, ``summarizer``) belong to
         whoever built them and are not closed here (#1765): close them
@@ -1073,20 +1081,30 @@ class Vault:
         # this vault, and the strategy object itself stays its owner's (#1765).
         self.stop()
 
-        # 1. Close the coordinator: it joins the legacy background-build
-        # thread (whose worker submits to the writer) and THEN closes the
-        # single-owner IndexWriter, draining pending jobs.  Must precede the
-        # FTS close below — the writer's drain touches FTS (#576).  The
-        # hasattr guard covers __init__ failing before _coordinator was set.
+        # 1. Close the coordinator: it closes the single-owner IndexWriter,
+        # draining pending jobs, and reports whether the worker stopped.
+        # Must precede the store closes below — the drain writes to both
+        # (#576, #1896).  The hasattr guard covers __init__ failing before
+        # _coordinator was set.
+        writer_stopped = True
         if hasattr(self, "_coordinator"):
-            self._coordinator.close(timeout=30.0)
+            writer_stopped = self._coordinator.close(timeout=_WRITER_DRAIN_TIMEOUT_S)
 
         # 2. Deferred embedding updates are flushed by the IndexWriter
-        # before its close() returns; no further flush needed here (#559).
+        # before it stops; no further flush needed here (#559).
 
         # 3. Drain the write-callback queue (git commits). The callback
         # itself is its owner's to close (#1765).
         self._write_callback.close(timeout=30.0)
+
+        if not writer_stopped:
+            # Leave both stores to the job still writing to them (#1896).
+            logger.warning(
+                "index_close_skipped reason=writer_running db_path=%s timeout_s=%s",
+                self._index_path,
+                _WRITER_DRAIN_TIMEOUT_S,
+            )
+            return
 
         # Close the vector store the vault opened; it persists what is
         # pending. An injected store is its owner's (#1765, #1777).

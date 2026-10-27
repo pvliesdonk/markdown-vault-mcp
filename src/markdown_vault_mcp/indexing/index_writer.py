@@ -183,7 +183,7 @@ class IndexWriter:
             self._queue.put((job, future))
         return future
 
-    def close(self, timeout: float = 30.0) -> None:
+    def close(self, timeout: float = 30.0) -> bool:
         """Signal shutdown and drain the queue before joining the worker.
 
         Marks the writer closed so no new external submissions are
@@ -195,14 +195,24 @@ class IndexWriter:
 
         The worker thread is daemon; if the drain exceeds *timeout*,
         process exit kills the remainder.
+
+        Returns:
+            True when no worker is running any more (or none was started);
+            False when the drain outlived *timeout*, or when called from the
+            worker itself, which cannot join its own thread. A caller must
+            not close what the worker writes to while this is False (#1896).
         """
         with self._submit_lock:
             newly_closed = not self._closed.is_set()
             self._closed.set()
         if newly_closed:
             self._queue.put(_SHUTDOWN_SENTINEL)
-        if self._thread is not None and threading.current_thread() is not self._thread:
-            self._thread.join(timeout=timeout)
+        if self._thread is None:
+            return True
+        if threading.current_thread() is self._thread:
+            return False
+        self._thread.join(timeout=timeout)
+        return not self._thread.is_alive()
 
     def is_closed(self) -> bool:
         """Return True if :meth:`close` has been called."""
