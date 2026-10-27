@@ -8,7 +8,7 @@ accessor fails with the variable to set.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -216,3 +216,97 @@ async def test_stop_cancels_the_wait_for_a_held_index(
         held.stop()
     # The stopped service took no share: another process may own the index.
     Holder(index).stop()
+
+
+def _busy() -> Exception:
+    from markdown_vault_mcp.exceptions import StoreBusyError
+
+    return StoreBusyError(
+        "Keyword index at /x is being written by another process; stop it.",
+        backend="sqlite",
+        location="/x",
+    )
+
+
+async def test_a_retry_that_fails_otherwise_reports_why(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from markdown_vault_mcp import domain as domain_mod
+
+    monkeypatch.setattr(domain_mod, "_INDEX_BUSY_RETRY_S", 0.01)
+    # Busy at start, still busy at the first retry, then another fault.
+    outcomes: list[Exception] = [_busy(), _busy(), RuntimeError("the disk went away")]
+
+    def build(_self: Service, _settings: object, _instances: object) -> object:
+        raise outcomes.pop(0)
+
+    monkeypatch.setattr(Service, "_build_vault", build)
+    service = Service(ProjectConfig(source_dir=tmp_path))
+    with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.domain"):
+        await service.start()
+        assert service._waiting is not None
+        await asyncio.wait_for(service._waiting, timeout=10)
+    try:
+        assert service.startup_error == "the disk went away"
+        with pytest.raises(ConfigurationError, match="the disk went away"):
+            get_vault_singleton()
+        assert any(
+            r.msg.startswith("vault_unavailable reason=open_failed")
+            for r in caplog.records
+        )
+    finally:
+        await service.stop()
+
+
+async def test_a_vault_built_after_stop_is_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    import threading
+
+    from markdown_vault_mcp import domain as domain_mod
+
+    monkeypatch.setattr(domain_mod, "_INDEX_BUSY_RETRY_S", 0.01)
+    entered, release = threading.Event(), threading.Event()
+    closed: list[bool] = []
+
+    class _Built:
+        def close(self) -> None:
+            closed.append(True)
+
+    calls = [0]
+
+    def build(_self: Service, _settings: object, _instances: object) -> object:
+        calls[0] += 1
+        if calls[0] == 1:
+            raise _busy()
+        entered.set()
+        release.wait(timeout=10)
+        return _Built()
+
+    monkeypatch.setattr(Service, "_build_vault", build)
+    service = Service(ProjectConfig(source_dir=tmp_path))
+    await service.start()
+    await asyncio.to_thread(entered.wait, 10)
+    await service.stop()  # cancels the wait while the vault is being built
+    release.set()
+    for _ in range(200):
+        if closed:
+            break
+        await asyncio.sleep(0.01)
+    assert closed == [True]
+
+
+async def test_a_build_that_failed_after_stop_leaves_nothing_to_close() -> None:
+    import asyncio
+
+    from markdown_vault_mcp.domain import _close_built_vault
+
+    failed: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    failed.set_exception(_busy())
+    _close_built_vault(failed)  # nothing was built: no close, no raise
+    cancelled: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    cancelled.cancel()
+    _close_built_vault(cancelled)
