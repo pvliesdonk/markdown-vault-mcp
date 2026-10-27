@@ -5782,7 +5782,10 @@ dependency of `python-frontmatter`.
 
 ### Docker
 
-Same pattern as ifcraftcorpus: `python:3.12-slim` base, `uv` for installs.
+The template's image: a `debian:trixie-slim` base with a uv-managed CPython 3.14
+under `/opt/python`, `uv` for installs. The uv-managed CPython bundles its own
+SQLite (3.53.1 at template v11.5.0), so the image no longer runs Debian's
+3.46.1, which lacks the WAL-reset fix (template#829).
 CI/CD, GitHub Actions, and PyPI publishing adapted from ifcraftcorpus with
 minimal changes.
 

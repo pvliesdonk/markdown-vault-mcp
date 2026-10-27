@@ -1,6 +1,3 @@
-<<<<<<< before updating
-FROM python:3.14-slim
-=======
 # Python comes from uv, not from a `python:*-slim` base: that image's SQLite is
 # Debian's system library, which lacks the WAL-reset corruption fix
 # (template#829), while a uv-managed CPython bundles a current SQLite.  It also
@@ -18,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Here, between the two apt RUNs, so neither merges into the other: the
 # packages above must not depend on what a project keeps in the block below.
 COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
->>>>>>> after updating
 
 # DOCKERFILE-APT-DEPS-START — add domain apt packages below; kept across copier update
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs gosu \
