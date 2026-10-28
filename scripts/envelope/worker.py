@@ -113,26 +113,34 @@ def _timed(call: Callable[[], Any]) -> float:
 def build(config: dict[str, Any]) -> dict[str, Any]:
     """Index the vault and embed it.
 
+    The process's peak memory is sampled from before the vault opens until
+    both builds return, so it includes reading every note and its metadata
+    and holding the texts to embed (#1898).
+
     Args:
         config: The run's configuration.
 
     Returns:
-        The notes and chunks indexed, the texts embedded and the seconds.
+        The notes and chunks indexed, the texts embedded, the seconds, and
+        the process's peak anonymous and resident memory, in bytes.
     """
     provider = synth.StandInProvider(config["dim"])
-    vault = _vault(config, provider)
-    try:
-        start = time.perf_counter()
-        stats = vault.index.build_index()
-        vault.index.build_embeddings()
-        seconds = time.perf_counter() - start
-    finally:
-        vault.close()
+    with probes.PeakSampler() as peak:
+        vault = _vault(config, provider)
+        try:
+            start = time.perf_counter()
+            stats = vault.index.build_index()
+            vault.index.build_embeddings()
+            seconds = time.perf_counter() - start
+        finally:
+            vault.close()
     return {
         "notes": stats.documents_indexed,
         "chunks": stats.chunks_indexed,
         "texts_embedded": provider.count,
         "seconds": seconds,
+        "peak_anon": peak.peak_anon,
+        "peak_resident": peak.peak_resident,
     }
 
 

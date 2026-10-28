@@ -178,6 +178,23 @@ def _yes_no(value: bool | None) -> str:
     return "yes" if value else "no"
 
 
+def _build_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
+    rows = []
+    for config in configs:
+        build = config.get("build", {})
+        seconds = build.get("seconds")
+        rows.append(
+            [
+                _name(config),
+                _MISSING if seconds is None else f"{seconds:.1f} s",
+                _plain(build.get("texts_embedded")),
+                _mib(build.get("peak_anon")),
+                _mib(build.get("peak_resident")),
+            ]
+        )
+    return rows
+
+
 def _memory_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     rows = []
     for config in configs:
@@ -301,6 +318,17 @@ def render_markdown(result: dict[str, Any]) -> str:
     sources = [f"{_name(c)}: {c['source']}" for c in configs if c.get("source")]
     if sources:
         lines += ["Sources: " + "; ".join(sources) + ".", ""]
+    lines += ["### Build", ""]
+    lines += _table(
+        [
+            "Configuration",
+            "Index and embed",
+            "Texts embedded",
+            "Peak (anonymous)",
+            "Peak (resident)",
+        ],
+        _build_rows(configs),
+    )
     lines += ["### Memory", ""]
     lines += _table(
         [

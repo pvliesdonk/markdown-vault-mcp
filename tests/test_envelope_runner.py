@@ -9,12 +9,13 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 from scripts.envelope import __main__ as cli
-from scripts.envelope import synth, worker
+from scripts.envelope import probes, synth, worker
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="reads /proc"
@@ -57,6 +58,10 @@ def test_a_run_measures_every_phase(
     assert result["chunks"] == 30 * synth.CHUNKS_PER_NOTE
     (config,) = result["configs"]
     assert (config["backend"], config["search"]) == (backend, search)
+
+    build = config["build"]
+    assert isinstance(build["peak_anon"], int)
+    assert build["peak_resident"] >= build["peak_anon"] > 0
 
     memory = config["memory"]
     assert memory["store_closed_at_baseline"] is True
@@ -120,6 +125,31 @@ def _config(tmp_path: Path, backend: str = "numpy") -> dict[str, Any]:
         "work": str(tmp_path), "backend": backend, "search": cli.BACKENDS[backend],
         "dim": 16, "batch_size": 64, "drain_timeout_s": 60, "phase_timeout_s": 600,
     }  # fmt: skip
+
+
+def test_the_build_reports_a_peak_freed_before_it_ends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = synth.StandInProvider.embed
+    spiked: list[int] = []
+
+    def embed(self: synth.StandInProvider, texts: list[str]) -> list[list[float]]:
+        if not spiked:
+            block = bytearray(64 << 20)
+            block[::4096] = b"x" * len(block[::4096])
+            spiked.append(len(block))
+            time.sleep(0.05)  # five of the sampler's intervals
+            del block
+        return real(self, texts)
+
+    monkeypatch.setattr(synth.StandInProvider, "embed", embed)
+    config = _config(tmp_path)
+    with probes.PeakSampler() as before:
+        pass
+    build = worker.build(config)
+    assert spiked
+    assert build["peak_anon"] >= before.peak_anon + (60 << 20)
+    assert build["peak_resident"] >= build["peak_anon"]
 
 
 def test_a_restart_embeds_a_note_changed_while_the_server_was_down(
