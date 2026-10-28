@@ -7,12 +7,13 @@ It is evidence for #1900 (the default store and 015's release kind) and #1901
 (the operator docs). It decides neither.
 
 The numbers proposed on #1506 for each figure were derived from #1502's
-search-only prototype with headroom. They were proposed to be tested, not
-agreed limits. So this page reports the measurements first, then asks of each
-proposed number whether the measurements support it.
+search-only prototype with headroom. #1506's refinement comment calls them
+agreed budgets; the account holder has since said they are proposals to be
+validated, not limits ([correction on #1506](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1506#issuecomment-6469508664)).
+So this page reports the measurements first, then asks of each proposed
+number whether the measurements support it.
 
-Units are decimal MB (10^6 bytes), as the proposals use; the harness's own
-tables print MiB. Each figure gives both runs, run 1 / run 2, where they
+Units are decimal MB (10^6 bytes); the harness's own tables print MiB. Each figure gives both runs, run 1 / run 2, where they
 differ.
 
 ## Runs
@@ -32,12 +33,14 @@ differ.
 - **Stores**: numpy (resident), sqlite (streamed), postgres (streamed).
   PostgreSQL 17.9 with pgvector 0.8.2 ran in a throwaway container the
   harness started on the same host, reached over loopback.
-- **Host**: Intel i7-11700K (16 threads), 128 GB RAM, ext4, Linux 7.2.9,
+- **Host**: Intel i7-11700K (16 threads), 131.5 GB of memory as the kernel
+  reports it, ext4 (which `stat -f` reports as `ext2/ext3`), Linux 7.2.9,
   Python 3.14.8, SQLite 3.53.1, numpy 2.4.6, psycopg 3.3.6.
-- **Two runs** of the whole matrix, back to back (run 1 11:27–12:05 UTC,
-  run 2 12:08–12:45 UTC). Run 1 had three idle PostgreSQL containers, left
-  behind by earlier test runs, beside it for everything except its growth
-  PostgreSQL run. They were removed before run 2. Each run's JSON and tables
+- **Two runs** of the whole matrix, back to back. As the operator observed
+  them (the JSON carries no timestamps): run 1 from 11:27 to 12:05 UTC, run 2
+  from 12:08 to 12:45 UTC, and run 1 had three idle PostgreSQL containers,
+  left behind by earlier test runs, beside it for everything except its
+  growth PostgreSQL run. They were removed before run 2. Each run's JSON and tables
   are in [`envelope-runs/`](envelope-runs/).
 
 ## Measurements
@@ -46,12 +49,12 @@ differ.
 
 | | Deployed | Growth |
 |---|---|---|
-| **Memory warm semantic searches add** (peak RSS above the keyword-only baseline) | | |
+| **Memory warm searches add** (peak RSS during the warm searches of every kind, above the keyword-only baseline) | | |
 | numpy | 165 / 205 | 2,093 / 2,060 |
 | sqlite | 20 | 25 |
 | postgres (the vault process) | 15 | 20 |
 | **Process anonymous memory after the searches** | | |
-| numpy | 247 | 1,330 |
+| numpy | 247 | 1,330 / 1,331 |
 | sqlite | 102 | 106 |
 | postgres | 111 | 117 |
 | **PostgreSQL service memory at rest** (container) | 534 / 531 | 580 |
@@ -113,7 +116,7 @@ was kept, so its cold figure is warmer than the local stores'.
 | **Texts embedded after a kill, beyond the edit in progress** (every store) | 0 | 0 |
 | **Store moved aside** (every store) | no | no |
 
-### Storage
+### Storage (before the edits)
 
 | | Deployed | Growth |
 |---|---|---|
@@ -121,16 +124,20 @@ was kept, so its cold figure is warmer than the local stores'.
 | sqlite | 110.2 MB | 1,101.7 MB |
 | postgres (vectors' schema) | 143.7 MB | 1,433.4 MB |
 
+These are the status's `stored_bytes` after the warm searches, before the
+edits. After the 200 edits, PostgreSQL's schema was 152.7 MB and 1,446.2 MB
+(the service table in `envelope-runs/`).
+
 ## The proposed numbers against the measurements
 
 | Proposed on #1506 | What the measurements show |
 |---|---|
-| Memory semantic search adds: ≤ 150 MB at both sizes | A flat figure fits only the streamed stores, and they use far less (15–25 MB at both sizes). numpy's grows with the vault: 165–205 MB deployed, about 2.1 GB at growth, about twice its vector matrix (#1936). A number for numpy would have to scale with chunks × dimensions. |
-| Unfiltered search p95: ≤ 100 ms deployed, ≤ 1 s growth | Only numpy is under 100 ms deployed. The assembled server's streamed search has a p95 of 118–159 ms there and a median of 98–117 ms, against about 39 ms per search in #1502's prototype, which scanned vectors without the server's metadata and result work. At growth, sqlite sits at the 1 s line (1,035 and 1,000 ms) and postgres at about 0.52 s. The 100 ms figure reflects the prototype, not the server. |
+| Memory semantic search adds: ≤ 150 MB at both sizes | A flat figure fits only the streamed stores, and they use far less (15–25 MB at both sizes). numpy's grows with the vault: 165–205 MB deployed, about 2.1 GB at growth, about twice its vector matrix (#1936), so it scales with chunks × dimensions. |
+| Unfiltered search p95: ≤ 100 ms deployed, ≤ 1 s growth | Semantic, hybrid and similar-note search are all unfiltered. Deployed, only numpy is under 100 ms for all three (at most 82 ms). The streamed stores' p95 is 105–159 ms across the three, and their semantic median 98–117 ms. #1502's prototype took about 39 ms per search; it scanned vectors without the server's metadata and result work. At growth, sqlite's semantic and hybrid p95 sit at the 1 s line (1,035 / 1,000 and 1,072 / 987 ms) and its similar-note p95 is above it in both runs (1,055 / 1,063 ms). postgres is at 0.49–0.60 s for all three, and numpy's similar-note search at 0.31–0.33 s. |
 | Filtered p95 below the unfiltered figure | It holds for sqlite and postgres at both sizes, by a wide margin. For numpy it held in one run of each size and not the other (deployed 65 vs 45 ms, then 32 vs 39 ms; growth 102 vs 107 ms, then 96 vs 81 ms). Resident filtered search is about as fast as unfiltered, not reliably faster. |
-| A one-note edit writes on the order of that note's vectors, never the whole store | sqlite (store growth up to 78 KB) and postgres (up to 145 KB of WAL) write within about five times the note's 29 KB. numpy rewrites its whole store on every edit: 106 MB deployed, 1.06 GB at growth. This is a design property of the sidecar, not a tuning question. |
+| A one-note edit writes on the order of that note's vectors, never the whole store | postgres writes up to 145 KB of WAL, about five times the note's 29 KB of vectors. sqlite's store file grows by at most 78 KB (median 0), since pages are rewritten in place. The bytes sqlite's process writes, keyword index included, are 0.27 MB median (about nine times the note's vectors) and at most 3.7 MB deployed and 2.5 MB at growth. Neither rewrites its store. numpy rewrites its whole store on every edit: 106 MB deployed, 1.06 GB at growth. The sidecar is written as one file, so this follows from its design. |
 | Restart and recovery: no unchanged note is embedded again | Holds on every store at both sizes, in both runs. |
-| Whole-process memory and time until search works: measured, no number yet | Measured above. Two findings: PostgreSQL's restart takes about seven times as long as a local store's (10 s deployed, 81–89 s growth; #1937), and every store's cold build peaks at 2.4–3.6 GB at growth, an order of magnitude above a streamed store's serving process (#1938). |
+| Whole-process memory and time until search works: measured, no number yet | Measured above. Two findings. PostgreSQL's restart takes 4–6 times as long as a local store's at deployed size (10 s) and 6–8 times at growth (81–89 s; #1937). Every store's cold build peaks at 2.4–3.6 GB of resident memory at growth, 21 to 34 times the 106–117 MB of anonymous memory a streamed store's process holds once it serves (#1938). |
 
 ## What the status reports, against the measurements
 
@@ -161,6 +168,8 @@ correction.
   dominates a real build.
 - PostgreSQL ran on loopback in a container on the same host. A database
   across a network adds a round trip to every query and every restart check.
+- Restart memory is not measured. The cold-build peak stands in for boot
+  memory, since the boot `reindex` reads every note through the same scanner.
 - Cold latency is cold for the vault's files. PostgreSQL's was measured with
   the host page cache kept.
 - The synthetic vault is uniform: six sections a note, a 1,000-word
