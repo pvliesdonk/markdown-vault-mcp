@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -12,6 +12,7 @@ from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vault_store_contract import VaultStoreContract
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -366,3 +367,14 @@ def test_status_of_a_damaged_store_counts_none_and_warns(
         for r in caplog.records
         if r.msg.startswith("embeddings_status_store_not_counted ")
     ] == ["StoreCorruptError"]
+
+
+class TestPostgresVaultConformance(VaultStoreContract):
+    @pytest.fixture
+    def store_settings(self, postgres_schema: PostgresSchema) -> dict[str, Any]:
+        return {
+            "embedding_store": "postgres",
+            "embedding_search": "streamed",
+            "embedding_postgres_dsn": postgres_schema.dsn,
+            "embedding_postgres_schema": postgres_schema.name,
+        }

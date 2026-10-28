@@ -74,6 +74,7 @@ from markdown_vault_mcp.config_sections._helpers import (
     parse_opt_int,
     parse_weight_map,
 )
+from markdown_vault_mcp.config_sections.indexing import store_default_search
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
@@ -209,8 +210,9 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Base path for the embeddings files. Defaults beside "
-                "INDEX_PATH (index-db-embeddings.v2.json and the matrix it names "
-                "beside index.db; the first build copies in the vectors a "
+                "INDEX_PATH (index-db-embeddings.sqlite3 beside index.db, or "
+                "index-db-embeddings.v2.json and the matrix it names with "
+                "EMBEDDING_STORE=numpy; the first build copies in the vectors a "
                 "release's sidecar there holds, then leaves it alone); without INDEX_PATH the "
                 "vectors are kept in "
                 "memory and rebuilt at each start. "
@@ -221,13 +223,14 @@ class ProjectConfig:
         },
     )
     embedding_store: str = field(
-        default="numpy",
+        default="sqlite",
         metadata={
             "help": (
-                "Where embeddings are stored. 'numpy' (the default) keeps "
-                "them in files beside the index; 'sqlite' keeps them in one "
-                "SQLite database there (index-db-embeddings.sqlite3), each "
-                "change written durably on its own. Without INDEX_PATH or "
+                "Where embeddings are stored. 'sqlite' (the default) keeps "
+                "them in one SQLite database beside the index "
+                "(index-db-embeddings.sqlite3), each change written durably "
+                "on its own; 'numpy' keeps them in files there and rewrites "
+                "them all on each save. Without INDEX_PATH or "
                 "EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps "
                 "them in a PostgreSQL schema with pgvector "
                 "(EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the "
@@ -248,8 +251,8 @@ class ProjectConfig:
                 "'streamed' needs EMBEDDING_STORE=sqlite or postgres, and "
                 "postgres is always streamed; vectors kept in memory (no "
                 "INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it "
-                "is the store's default: 'streamed' with postgres, 'resident' "
-                "otherwise."
+                "is the store's default: 'streamed' with sqlite and postgres, "
+                "'resident' with numpy."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -1206,9 +1209,7 @@ class ProjectConfig:
             )
         if not self.embedding_search:  # unset: the store's default
             object.__setattr__(
-                self,
-                "embedding_search",
-                "streamed" if self.embedding_store == "postgres" else "resident",
+                self, "embedding_search", store_default_search(self.embedding_store)
             )
         embedding_searches = ("resident", "streamed")
         if self.embedding_search not in embedding_searches:
@@ -1364,11 +1365,11 @@ class ProjectConfig:
             index_path=opt_path(env(_ENV_PREFIX, "INDEX_PATH")),
             state_path=opt_path(env(_ENV_PREFIX, "STATE_PATH")),
             embeddings_path=opt_path(env(_ENV_PREFIX, "EMBEDDINGS_PATH")),
-            embedding_store=(env(_ENV_PREFIX, "EMBEDDING_STORE") or "numpy")
+            embedding_store=(env(_ENV_PREFIX, "EMBEDDING_STORE") or "sqlite")
             .strip()
             .lower(),
             # Unset is "the store's default", resolved in __post_init__:
-            # streamed for postgres, resident otherwise.
+            # resident for numpy, streamed otherwise.
             embedding_search=(env(_ENV_PREFIX, "EMBEDDING_SEARCH") or "")
             .strip()
             .lower(),

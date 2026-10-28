@@ -64,7 +64,7 @@ def register(mcp: FastMCP) -> None:
               files, or null when the vectors are held in memory, kept in a
               database (see backend and store_details), or not configured.
             - backend (str | None): Name of the store holding the vectors
-              (such as `"numpy"`), or null if no provider is configured.
+              (such as `"sqlite"`), or null if no provider is configured.
             - identity (dict | None): The provider, model, variant, text
               format and dimension the stored vectors were embedded with,
               or null until the store is first opened.

@@ -1152,7 +1152,7 @@ def test_batch_commands_embed_into_a_configured_embeddings_path(
 
     assert result.exit_code == 0, result.output
     assert counting.calls > 0
-    assert shared.with_suffix(".v2.json").is_file()
+    assert shared.with_suffix(".sqlite3").is_file()
 
 
 @pytest.mark.parametrize("embeddings_path", [True, False], ids=["set", "default"])
@@ -1180,6 +1180,8 @@ def test_search_leaves_an_unusable_shared_sidecar_alone(
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+    # The faults below are written into the numpy store's files.
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_STORE", "numpy")
     if embeddings_path:
         monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", str(tmp_path / "emb"))
     else:

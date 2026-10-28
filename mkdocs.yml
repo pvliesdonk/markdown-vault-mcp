@@ -174,8 +174,10 @@ nav:
       - Overview: use/index.md
       # PROJECT-NAV-USE-START — this server's how-tos and explanations (docs/use/); kept across copier update
       - Embeddings: use/embeddings.md
+      - Choosing an embedding store: use/embedding-stores.md
       - PostgreSQL embedding store: use/postgresql.md
       - Upgrading, switching and restoring embeddings: use/embedding-state.md
+      - Index storage and SQLite: use/storage.md
       - Git integration: use/git-integration.md
       - Vault explorer: use/vault-explorer.md
       - Obsidian everywhere: use/obsidian-everywhere.md

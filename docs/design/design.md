@@ -3459,8 +3459,9 @@ class Vault:
 kwargs):
 - `index_path=None`: index is created in-memory (`:memory:` SQLite). If
   provided, persisted to disk.
-- `embeddings_path=None`: the sidecars default to `{index name}-embeddings`,
-  the name's dots made dashes (`index-db-embeddings.v2.json` beside `index.db`)
+- `embeddings_path=None`: the store's files default to `{index name}-embeddings`,
+  the name's dots made dashes (`index-db-embeddings.sqlite3` beside `index.db`,
+  or `index-db-embeddings.v2.json` with `embedding_store="numpy"`)
   so `Path.with_suffix` cannot cut it at a dot (#819),
   or the vectors are held in memory without one. Semantic search follows the
   embedding provider alone (#1708). On the server, an explicit
@@ -4051,10 +4052,22 @@ take the lock in between; a store collected unclosed gives its share back
 through a finalizer that never waits for the lock's guard, and a forked
 child holds nothing. Where no lock can be taken (no `fcntl`, as on Windows,
 or a lock file that cannot be created) the writer proceeds as before, logged
-at DEBUG `embeddings_writer_lock_skipped`; a lock file this user cannot
+at DEBUG `writer_lock_skipped`; a lock file this user cannot
 write is locked read-only; a lock over a network or VM file share may not
-hold. Another
-process opens it with `owns_files=False`, read-only, taking no lock. A store's files are
+hold. The keyword index takes the same lock for an owning on-disk open,
+on `{index}.lock` (its full name plus `.lock`, so `index.db.lock`, never
+`index.lock`; named after the index's real path, so a symlink shares it),
+with the refusal naming the "Keyword index" (#1890). `Vault.close()` closes
+the keyword index and the vector store only once the index writer has stopped:
+a job still running after the 30 s drain keeps both, with their connections
+and locks, open until the job ends and they are collected or the process
+exits, logged at WARNING `index_close_skipped reason=writer_running`; a later
+`close()` closes them (#1896). The server logs the SQLite it runs on at startup,
+INFO `sqlite_runtime version=`, and checks nothing about it; which SQLite each
+installation channel brings, and WAL's same-host requirement, are in
+[`reference/sqlite-runtime-by-channel.md`](reference/sqlite-runtime-by-channel.md)
+(#1896). Another process opens a
+store or the index with `owns_files=False`, read-only, taking no lock. A store's files are
 its own: the store reads only `{base}.v2.json`. A sidecar the released
 `VectorIndex.save` wrote (`{base}.json` and `{base}.npy`), or an edge
 build's format-2 `{base}.json` naming `{base}.m<N>.npy`, is opened only by
@@ -4165,7 +4178,14 @@ its first write's transaction, so an open changes nothing. The supported
 range is PostgreSQL 15 to 18 with pgvector 0.7.0 (`MIN_PGVECTOR`) or later,
 17 with 0.7.4 and 18 with 0.8.7, the lowest built for them: `.github/workflows/postgres-range.yml` runs the PostgreSQL
 tests on one pinned image per combination, and the minimum is the lowest
-pgvector that workflow passes, so the docs state only what it runs. It finds the
+pgvector that workflow passes, so the docs state only what it runs. The same
+workflow (#1897) also runs those tests with the `postgres` extra's lowest
+declared drivers on the lowest supported Python. That run found psycopg
+3.3.0's broken named-cursor iteration, so the floor is 3.3.1; the bug was
+latent, because only a search with a `predicate` reads through a named
+cursor and the server passes none. A third job checks on a real pgvector
+0.6.2 that the store refuses it. PostgreSQL 14 and older are neither tested
+nor refused. It finds the
 extension's schema in `pg_extension`, sets `search_path` to the vault
 schema and that one itself, and checks the vault schema exists in
 `pg_namespace`, because PostgreSQL silently skips a missing schema in the
@@ -4312,8 +4332,9 @@ is in `docs/design/reference/postgresql-pgvector.md`.
 `VectorStoreSlot` that opens it on first use through the backend
 `EMBEDDING_STORE` names (or an injected `vector_backend`), or uses an
 injected `vector_store`, which stays the caller's. With
-`EMBEDDING_SEARCH=streamed` (and `EMBEDDING_SEARCH_WORKSPACE_MB`) it
-constructs the SQLite backend in streamed mode; the numpy store refuses
+`EMBEDDING_SEARCH=streamed` (and `EMBEDDING_SEARCH_WORKSPACE_MB`), the
+SQLite store's default since #1900, it constructs the SQLite backend in
+streamed mode; the numpy store refuses
 `streamed` (Search memory, above). `EMBEDDING_STORE=postgres` builds the
 PostgreSQL backend from `EMBEDDING_POSTGRES_DSN`, `_SCHEMA`, `_POOL_SIZE`
 and `_STATEMENT_TIMEOUT_S`, and hands the slot the schema as its location;
@@ -4418,6 +4439,16 @@ Bounds: an empty vault folder refuses removals (§ Embedding transitions
 and recovery, #1505); `embeddings_status` reports the store's
 search mode and measured sizes (Search memory, above); how often the full matrix is
 rewritten is #1497's.
+
+The file-backed counterpart of case 6, `tests/fixtures/vault_store_contract.py`
+(#1898), runs a real `Vault` over a folder of notes on every store
+(numpy, sqlite resident and streamed, PostgreSQL). A deleted note loses
+its vectors, as does a newly excluded one on reindex; a forced rebuild
+over an unreadable vault root keeps every vector, because the empty build
+is not authoritative (#1785); a conflicting write is re-queued and lands;
+and the vault closes the store it opened but leaves an injected one open
+(decision 30). The dict source shows the contract holds without a working
+tree; it is not a supported database-owned vault, which is #1474's.
 
 ### Embedding transitions and recovery (#1505)
 
@@ -4712,10 +4743,213 @@ another one, and is the explicit switch of choice C.
   `FTSIndex.checkpoint()`, the lifecycle method, still waits and raises.
 
 Out of scope: reusing vectors for a renamed note (matching is by path);
-changing the default built-in store (#1506); quarantining damaged
+changing the default built-in store (#1900, § The default embedding store); quarantining damaged
 PostgreSQL tables; #1476's content-history recovery; a memory bound on
 publishing a whole generation, which a full build already holds in memory
 today and #1506's envelope measures.
+
+### Measuring the operating envelope (#1506)
+
+The numbers proposed on #1506 (the comment on #1506 has the table) are tested
+against the assembled server, not a search-only prototype. `scripts/envelope/`
+is the maintainer tool that measures it (#1895). It is not a test or a CI job,
+and it measures without judging. [operating-envelope.md](operating-envelope.md)
+records #1899's runs and sets each proposed number beside the measurements.
+
+Run it from the repository root on Linux:
+
+```bash
+uv run --extra postgres python -m scripts.envelope --size deployed \
+    --backends numpy,sqlite,postgres --out DIR
+```
+
+Without `--backends` it measures `numpy` and `sqlite`; PostgreSQL is
+opt-in, since it writes a whole vault into the database it is given.
+`--size growth` is ten times the deployed size and needs a few GB in `DIR`;
+`--notes N` sets the vault size directly. It writes
+`DIR/<git sha>[-dirty]-<size>-<UTC time>.json` and prints the tables.
+
+The harness is strict-typed. Gate 3 (`uv run mypy src/ tests/`) checks it
+through the tests' imports; on its own, check it as a package with the
+source tree on the path, `MYPYPATH=src uv run mypy -p scripts.envelope`,
+since the installed package has no `py.typed` marker yet (#1911).
+
+**Inputs.** A seeded synthetic vault (`synth.generate_vault`): notes of six
+H2 sections in a 1,000-word vocabulary, one folder in ten holding the notes
+filtered search restricts to. The indexer makes seven chunks of each note
+(`synth.CHUNKS_PER_NOTE`, checked by a test), so the deployed size, about
+22,764 chunks (#1501), is about 3,252 notes; the report records the chunk
+count the indexer actually made. Vectors come from `synth.StandInProvider`:
+1,024-wide like the deployed model's, seeded from each text's SHA-256,
+normalized float32, with no network calls; it counts the texts it embeds and
+the calls, without keeping the texts, so it does not grow the process.
+`--batch-size` sets the texts per provider call to keep the build short; it is
+not a measured figure.
+
+**Process.** Each backend (`numpy` resident, `sqlite` and `postgres`
+streamed) gets its own copy of the vault, and each phase runs in a fresh process
+(`scripts/envelope/worker.py`), so a reading never includes a previous
+phase's leftovers.
+
+**Metrics.**
+
+- *Memory apart from page cache.* Process memory is `Pss_Anon + Pss_Shmem`
+  from `/proc/<pid>/smaps_rollup`. Mapped files (`Pss_File`) are reported
+  apart; they are mostly shared libraries, since the index and store are
+  read, not mapped. The index's and store's own pages in page cache after
+  the warm searches come from `fincore` (absent without it) in a column of
+  their own. *What semantic search adds*
+  is a peak minus a peak in one process: the vault answers 20 keyword
+  searches with the vector store still closed (the table says whether it
+  was, and marks the figures invalid when it was not), then warm searches of
+  every kind; peaks are sampled every 10 ms from
+  `/proc/self/status`. It is reported as anonymous (`RssAnon + RssShmem`) and
+  as total resident (`VmRSS`); #1502's figures, the budget's source, were
+  sampled process RSS.
+- *Build peak.* The build phase samples the same two figures the same way,
+  from before the vault opens until it has closed, so reading every note and
+  its metadata (`build_index`'s scan) and holding the texts to embed
+  (`build_embeddings`) are in it (#1898). It is the whole process's peak,
+  interpreter and libraries included, not an "adds" figure, and like every
+  sampled peak it can miss a spike shorter than the 10 ms interval. The
+  report's Build table gives it beside the build's seconds, which are timed
+  with the sampler running, and the texts embedded.
+- *Status beside the measurements.* After the warm searches, the memory
+  phase records what `embeddings_status` reports (`search_mode`,
+  `stored_bytes`, `resident_vector_bytes`, `search_workspace_bytes`) and
+  measures the store's size at the same moment. The report sets each figure
+  beside the one it should match or bound, so #1899 can check the status
+  report against the measurements.
+  - A local store is measured by all its files, the writer lock left out.
+    SQLite's status counts the database with its `-wal` and `-shm`, and
+    numpy's counts the commit file and the current matrix. An unswept older
+    numpy matrix or temporary file is in the measurement and not in the
+    status by design, so a numpy measurement above the status is leftover
+    files, not a miscount.
+  - PostgreSQL's store is measured as every relation in its schema, tables,
+    indexes and TOAST, by the same `pg_total_relation_size` its status uses.
+    A match there shows only that the status counts every relation.
+  - The memory semantic search adds bounds the resident vectors for a
+    resident store, and the configured search workspace for a streamed one.
+    PostgreSQL scores in the server, so the process should add little.
+  - A status read that fails is recorded by its exception's type, and the
+    phase's other figures are kept.
+- *Warm latency.* p50 and p95 per kind after discarded warm-up calls:
+  semantic, hybrid, filtered (semantic in the filter folder) and similar
+  notes.
+- *Cold latency.* A fresh process per kind fsyncs the index and store files,
+  drops their clean pages with `posix_fadvise(POSIX_FADV_DONTNEED)` (no
+  privileges needed) and times its first search. util-linux `fincore`, when
+  installed, confirms the files left page cache, per kind; otherwise the
+  report says `unconfirmed`. SQLite's `-shm` file is mapped into the process,
+  so it is left out of the check. The cold process builds the index before
+  evicting, so SQLite's own in-process cache keeps the few pages that
+  warm-start check read. On tmpfs or ramfs the pages cannot leave memory, so the
+  harness warns that cold latency is not cold there.
+- *Bytes per edit.* Single-note edits through the server's path: the
+  writer facet's `write`, then waiting for the index writer to drain, which
+  re-indexes and re-embeds the note. Per edit: `wchar` from `/proc/self/io`
+  (bytes passed to write calls, including SQLite's WAL; `write_bytes` lags
+  without an fsync), the growth of the store's files, the texts embedded,
+  and the note's whole vector size beside them.
+- *Restart.* A fresh process boots as the server does (`domain.py`):
+  `build_index`, the boot `reindex` that picks up changes made while it was
+  down, then `build_embeddings`. The figure is the process's age, from
+  `/proc/self/stat`, when its first semantic search returns, so teardown is
+  left out; the spawn-to-exit wall time is kept beside it. The texts
+  embedded besides the query should be none.
+- *Recovery.* An edit run records each finished edit and kills itself with
+  SIGKILL once the given number have finished and the next note is written,
+  while the index writer's work on it is still queued or running. A restart
+  follows. The finished edits were embedded before the kill, so a clean
+  restart embeds only the edit in progress's rewritten section; the
+  allowance is what one edit was measured to embed in the edits phase. The
+  report gives the texts embedded, the excess over the allowance, and
+  whether a corrupt store was moved aside on either restart. A kill after
+  another number of edits than asked, such as by the OOM killer, fails the
+  run.
+- *Partial results.* Each backend's figures are written to
+  `partial.json` in its work folder as each phase finishes, so a late
+  failure keeps the earlier hours of work.
+- *Bounds.* Each phase has a timeout (`--phase-timeout`) and each edit's
+  wait for the index writer another (`--drain-timeout`), so a stuck writer
+  fails the run instead of hanging it.
+- *PostgreSQL.* The database comes from where the test suite's does
+  (`tests/fixtures/postgres.py`): `MVM_TEST_POSTGRES_DSN`, or else a
+  throwaway `pgvector/pgvector` container the harness starts and removes
+  (`MVM_TEST_POSTGRES_IMAGE` picks the image); nothing else is reached. The
+  vectors go in a schema of the harness's own (`mvm_envelope_` and a random
+  suffix), dropped at the end, also on SIGTERM; the database opens only when
+  the PostgreSQL backend's turn comes. Only PostgreSQL workers get the
+  connection string, through a variable of the harness's own in their
+  environment (no worker inherits `MVM_TEST_POSTGRES_DSN`), never argv or
+  the JSON; error output and results have connection strings replaced, and
+  the JSON and tables name the database by its source. Process memory
+  excludes the service. Reported apart: the service's memory at rest after
+  the warm searches (a throwaway container's, one `docker stats` reading:
+  on cgroup v2 that includes shared buffers and active page cache, and
+  leaves out inactive page cache only); the database's and schema's sizes
+  after the edits; the server and pgvector versions; and the WAL each edit
+  wrote, from the difference of two `pg_current_wal_lsn()` positions, which
+  is cluster-wide. PostgreSQL writes no local store files, so its store
+  growth is left blank, and its `wchar` counts the local index only: libpq
+  sends with `send(2)`, which `wchar` leaves out. Before each cold search a
+  throwaway container restarts, dropping its buffers but not the host's page
+  cache; a given database is not restarted, and the report says so.
+- *Environment.* The git commit and whether tracked files differ from it,
+  the Python, SQLite, numpy and psycopg versions, the CPU, memory, kernel
+  and the work folder's filesystem type. Result files are named by commit,
+  size and UTC time, so reruns never overwrite one another.
+
+### The default embedding store (#1900)
+
+Decision (decision 37): with no `EMBEDDING_STORE` set, the vectors live in
+the SQLite store, and with no `EMBEDDING_SEARCH` set each store searches in
+its own mode: streamed for SQLite and PostgreSQL, resident for numpy
+(`config_sections/indexing.py:store_default_search`). `ProjectConfig`
+resolves an unset mode at construction; the library resolves an unset
+`VaultSettings.embedding_search` (`""`) where it builds the backend
+(`vault.py:_search_mode`), so `embedding_store="numpy"` alone still works and
+`embedding_store="postgres"` no longer needs `streamed` spelled out. A store
+held in memory, with no index or embeddings path, is resident whatever the
+mode, as before.
+
+The choice follows #1899's measurements
+([operating-envelope.md](operating-envelope.md)). Against numpy, the streamed
+SQLite store:
+
+- writes about 0.27 MB per one-note edit (the note's pages and the keyword
+  index) where numpy rewrites its whole store, 106 MB deployed and 1.06 GB
+  at growth;
+- adds 20–25 MB to the process for searching, where numpy adds 165–205 MB
+  deployed and about 2.1 GB at growth, about twice its vector matrix;
+- pays in latency: semantic p95 is 140–159 ms deployed against numpy's
+  39–45 ms, and 1.0 s at growth against 0.08–0.11 s; similar-note search at
+  growth is 1.06 s.
+
+An operator who wants resident speed sets `EMBEDDING_SEARCH=resident`
+(SQLite, resident memory, per-note writes) or `EMBEDDING_STORE=numpy`. None
+of the numbers proposed on #1506 is adopted as a budget: the measured
+envelope is the documented capacity, and #1901 writes it up for operators.
+
+**Upgrading.** A 5.x install that set no store starts with an empty SQLite
+store, and the released-sidecar upgrade (§ Embedding transitions and
+recovery) copies every vector whose note is unchanged into it, with no
+provider call. The 5.x `{base}.json` and `{base}.npy` are left in place, so
+they take disk until the operator removes them. A store only an edge build
+wrote (`{base}.v2.json` with no released sidecar beside it) is not read
+automatically, since moving between stores is the explicit `embeddings
+import`; such an install embeds once.
+`tests/test_embeddings_upgrade.py::test_a_v5_1_install_upgrades_onto_the_default_store_for_free`
+pins the free upgrade through the defaults.
+
+**Compatibility with v5.1.0.** The default change asks nothing of an
+operator: the upgrade is automatic, and an explicit `EMBEDDING_STORE=numpy`
+keeps the numpy layout. `EMBEDDING_STORE`, `EMBEDDING_SEARCH` and
+`VaultSettings.embedding_store` are not in v5.1.0, so changing their
+defaults breaks no released surface and carries no `!`. The package's
+release kind is not decided here: knope cuts it from the commits, and
+library changes already on the trunk since v5.1.0 carry `!`.
 
 ### `providers.py`: Embedding Providers
 
@@ -6651,3 +6885,5 @@ Later decisions (2026-10-22, #1505):
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
 | 35 | Embedding transitions | A full build may consult a read-only donor store and copy a vector whose rebuilt embedding input matches the chunk's, under an equal and known identity, publishing one generation; the released v5.x sidecar upgrades into the configured built-in store automatically, every other switch goes through an explicit `embeddings import`; the released sidecar is never written again and is reported while unused; a missing identity never matches; permission, disk and availability failures never trigger a rebuild, removal or rename; an owned corrupt built-in store is moved aside before its rebuild, refining decision 31 (#1505). | The owner chose automatic only for the built-in upgrade and explicit otherwise (C), keeping the released sidecar (A), and the donor mechanism, on 2026-10-22. Only vectors matching current text are copied, so no stale or deleted note is imported; one mechanism serves the upgrade, a store switch and a restore; #1795's input rebuild is the matching rule already trusted for a store's own rows; the minor release needs the upgrade automatic. **Rejected:** a bulk copy of every row through the contract; converters per pair of stores; an automatic import on every store switch; deleting the released sidecar after the upgrade. |
+| 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
+| 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |

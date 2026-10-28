@@ -49,6 +49,12 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   Python's explicit transactions, which usage the WAL-reset bug threatens,
   and how to back up a live database (#1497). Read before changing how the
   SQLite vector store writes, checkpoints or closes.
+- [The SQLite each installation channel brings](sqlite-runtime-by-channel.md) —
+  which SQLite the Python running the server links against for the Docker
+  image, PyPI through uvx or pip, the plugin and Desktop bundle, and the
+  `.deb`/`.rpm` packages; how uv picks that Python; and why the index needs a
+  local filesystem (#1896). Read before changing a channel's Python or the
+  storage guidance.
 - [SQLite read-only connections, WAL and FTS5's persisted rank](sqlite-read-only-connections.md) —
   what a `mode=ro` connection reads and refuses on a WAL database, how a
   path becomes a URI, and why FTS5's rank weights belong to the file and

@@ -4,6 +4,22 @@
 
 - `git-history-queries.md`: a `--follow` claim added for #1779. From git 2.56.0, a single-path `--follow` walk crosses a rename made while resolving a merge without printing an `R` record, and walks on past the note's creation into an earlier owner of the old name. Git 2.55.0 printed nothing for the same walk. Source: the 2.56.0 release notes; observed by running both versions' Arch packages against the test's repository. The `subject_version` gains 2.56.0.
 
+## 2026-10-27
+
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
+  for #1897: psycopg 3.3.0 iterates a named cursor wrongly (fixed in 3.3.1,
+  ticket #1226), which cut a store search with a `predicate` short. Observed with
+  the `postgres` extra's floors on Python 3.11; the floor is now 3.3.1.
+  `valid_for` now reads psycopg 3.3.1 or later. Next review: 2027-04-22.
+- Added [The SQLite each installation channel brings](sqlite-runtime-by-channel.md)
+  for #1896. Observed: the published v5.1.0 image has SQLite 3.46.1 and the
+  edge image 3.53.1; freshly downloaded uv-managed CPython 3.11 to 3.14 has
+  3.53.1, older managed builds 3.50.4; python.org's macOS and Windows
+  installers bundle 3.50.4; the system `python3` of Debian 12 to 14, Ubuntu
+  24.04 and 26.04, and Fedora 43 and 44 links 3.40.1 to 3.53.4. Recorded
+  uv's preference for an installed Python over a download, and WAL's
+  same-host requirement. Next review: 2027-04-27.
+
 ## 2026-10-22
 
 - Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)

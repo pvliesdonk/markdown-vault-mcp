@@ -310,7 +310,7 @@ def index(
     )
 
     quiet_http_loggers()
-    built = _build_vault(source_dir, index_path)
+    built = _build_owning_vault("index", source_dir, index_path)
     try:
         stats = built.vault.index.build_index(force=force)
         if stats.vault_root_empty:
@@ -352,8 +352,40 @@ def _empty_root_message(done: str, command: str) -> str:
     )
 
 
+def _build_owning_vault(
+    command: str,
+    source_dir: str | None = None,
+    index_path: str | None = None,
+    **options: bool,
+) -> _BuiltVault:
+    """Build the vault for a command that writes it, or stop with the refusal.
+
+    Opening the index as its owner takes its writer lock (#1890), so beside a
+    running server the build itself is refused, before anything is written.
+
+    Args:
+        command: The command to name in the refusal.
+        source_dir: As for :func:`_build_vault`.
+        index_path: As for :func:`_build_vault`.
+        **options: :func:`_build_vault`'s keyword options.
+
+    Returns:
+        The built vault.
+
+    Raises:
+        typer.Exit: With code 1 when another process owns a store.
+    """
+    from markdown_vault_mcp.exceptions import StoreBusyError
+
+    try:
+        return _build_vault(source_dir, index_path, **options)
+    except StoreBusyError as exc:
+        typer.echo(_busy_message(exc, command), err=True)
+        raise typer.Exit(1) from exc
+
+
 def _busy_message(exc: StoreBusyError, command: str) -> str:
-    """Say that a running server holds the vector store, and what to do.
+    """Say that a running server holds a store, and what to do.
 
     Args:
         exc: The store's refusal: its writer lock or lease is held elsewhere.
@@ -534,7 +566,7 @@ def reindex(
     )
 
     quiet_http_loggers()
-    built = _build_vault(source_dir, index_path)
+    built = _build_owning_vault("reindex", source_dir, index_path)
     try:
         # reindex() needs a built index (#525); build_index() is a cheap no-op
         # when the index is already populated (a SQL row-count check, no
@@ -626,7 +658,9 @@ def embeddings_import(
     )
 
     quiet_http_loggers()
-    built = _build_vault(in_memory_vectors=True, scratch_index=dry_run)
+    built = _build_owning_vault(
+        "embeddings import", in_memory_vectors=True, scratch_index=dry_run
+    )
     wanted = ImportSource(
         source.value,
         path=Path(from_path) if from_path else None,

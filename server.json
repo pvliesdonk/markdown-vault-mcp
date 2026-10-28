@@ -145,17 +145,17 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-          "description": "Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.v2.json and the matrix it names beside index.db; the first build copies in the vectors a release's sidecar there holds, then leaves it alone); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.",
+          "description": "Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.sqlite3 beside index.db, or index-db-embeddings.v2.json and the matrix it names with EMBEDDING_STORE=numpy; the first build copies in the vectors a release's sidecar there holds, then leaves it alone); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.",
           "format": "filepath"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_STORE",
-          "description": "Where embeddings are stored. 'numpy' (the default) keeps them in files beside the index; 'sqlite' keeps them in one SQLite database there (index-db-embeddings.sqlite3), each change written durably on its own. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps them in a PostgreSQL schema with pgvector (EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the postgres extra).",
-          "default": "numpy"
+          "description": "Where embeddings are stored. 'sqlite' (the default) keeps them in one SQLite database beside the index (index-db-embeddings.sqlite3), each change written durably on its own; 'numpy' keeps them in files there and rewrites them all on each save. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps them in a PostgreSQL schema with pgvector (EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the postgres extra).",
+          "default": "sqlite"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH",
-          "description": "How semantic search reads the embeddings. 'resident' holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it is the store's default: 'streamed' with postgres, 'resident' otherwise."
+          "description": "How semantic search reads the embeddings. 'resident' holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it is the store's default: 'streamed' with sqlite and postgres, 'resident' with numpy."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB",
@@ -785,17 +785,17 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-          "description": "Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.v2.json and the matrix it names beside index.db; the first build copies in the vectors a release's sidecar there holds, then leaves it alone); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.",
+          "description": "Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.sqlite3 beside index.db, or index-db-embeddings.v2.json and the matrix it names with EMBEDDING_STORE=numpy; the first build copies in the vectors a release's sidecar there holds, then leaves it alone); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.",
           "format": "filepath"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_STORE",
-          "description": "Where embeddings are stored. 'numpy' (the default) keeps them in files beside the index; 'sqlite' keeps them in one SQLite database there (index-db-embeddings.sqlite3), each change written durably on its own. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps them in a PostgreSQL schema with pgvector (EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the postgres extra).",
-          "default": "numpy"
+          "description": "Where embeddings are stored. 'sqlite' (the default) keeps them in one SQLite database beside the index (index-db-embeddings.sqlite3), each change written durably on its own; 'numpy' keeps them in files there and rewrites them all on each save. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps them in a PostgreSQL schema with pgvector (EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the postgres extra).",
+          "default": "sqlite"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH",
-          "description": "How semantic search reads the embeddings. 'resident' holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it is the store's default: 'streamed' with postgres, 'resident' otherwise."
+          "description": "How semantic search reads the embeddings. 'resident' holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it is the store's default: 'streamed' with sqlite and postgres, 'resident' with numpy."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB",

@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.indexing import FlushDirtyEmbeddings
 from markdown_vault_mcp.types import DocumentRows
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vault_store_contract import VaultStoreContract
 from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 class _Counting(MockEmbeddingProvider):
@@ -118,34 +119,6 @@ class TestParseErrorOnTheFlush:
             vault.close()
 
 
-class TestConflictRequeue:
-    def test_a_conflicting_document_is_requeued_and_lands_on_the_next_flush(
-        self, tmp_path, monkeypatch: pytest.MonkeyPatch
-    ):
-        vault = _vault(tmp_path, MockEmbeddingProvider())
-        try:
-            vault.index.build_index()
-            vault.index.build_embeddings()
-            store = vault._vectors
-            real = store.replace_document  # type: ignore[union-attr]
-            seen: list[str] = []
-
-            def once(document: DocumentRows, *, expected_token: Any) -> str:
-                if document.path == "alpha.md" and not seen:
-                    seen.append("alpha.md")
-                    return "conflict"
-                return real(document, expected_token=expected_token)
-
-            monkeypatch.setattr(store, "replace_document", once)
-            (vault.source_dir / "alpha.md").write_text("# Alpha\n\nQuinces.\n")
-            vault.index.reindex()
-            vault.index.wait_for_drain(timeout=10)
-            rows = metadata_by_path(store)["alpha.md"]  # type: ignore[arg-type]
-            assert any("Quinces" in r["content"] for r in rows)
-        finally:
-            vault.close()
-
-
 class TestRetriesFromEverySite:
     def test_a_failed_inline_embed_is_retried_by_the_next_flush(self, tmp_path):
         class Flaky(MockEmbeddingProvider):
@@ -171,38 +144,6 @@ class TestRetriesFromEverySite:
             vault._coordinator.writer.submit(FlushDirtyEmbeddings()).result(5)
             rows = metadata_by_path(vault._vectors)["alpha.md"]  # type: ignore[arg-type]
             assert any("Quinces" in r["content"] for r in rows)
-        finally:
-            vault.close()
-
-
-class TestAnUnreadableSource:
-    def test_a_forced_rebuild_over_it_keeps_the_vectors(self, tmp_path):
-        # The default state file lives under source_dir; keep it outside so
-        # chmod(0) on the root does not fail the tracker's write instead.
-        root = tmp_path / "vault"
-        root.mkdir()
-        (root / "alpha.md").write_text("# Alpha\n\nApples and pears.\n")
-        vault = Vault(
-            source_dir=root,
-            settings=VaultSettings(
-                index_path=tmp_path / "index.db",
-                state_path=tmp_path / "state.json",
-                read_only=False,
-            ),
-            embedding_provider=MockEmbeddingProvider(),
-        )
-        try:
-            vault.index.build_index()
-            vault.index.build_embeddings()
-            before = sorted(metadata_by_path(vault._vectors))  # type: ignore[arg-type]
-            root.chmod(0)
-            try:
-                vault.index.build_index(force=True)
-                assert not vault._fts.is_build_walk_complete()
-                vault.index.build_embeddings(force=True)
-            finally:
-                root.chmod(0o755)
-            assert sorted(metadata_by_path(vault._vectors)) == before  # type: ignore[arg-type]
         finally:
             vault.close()
 
@@ -264,3 +205,9 @@ class TestPurgesUseObservedTokens:
             assert sorted(metadata_by_path(store)) == ["alpha.md"]  # type: ignore[arg-type]
         finally:
             vault.close()
+
+
+class TestNumpyVaultConformance(VaultStoreContract):
+    @pytest.fixture
+    def store_settings(self) -> dict[str, Any]:
+        return {"embedding_store": "numpy"}
