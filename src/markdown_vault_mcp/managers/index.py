@@ -552,6 +552,7 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
             was indexed.
         """
+        self._tracker.clear_carries()
         if force:
             logger.info("build_index_force_rebuild")
             self._vault_root_empty = False

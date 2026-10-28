@@ -81,11 +81,12 @@ class ChangeTracker:
         # _skipped_carry); loaded from state so a surfaced skip keeps its
         # reason across scans that do not re-observe the failure (#775).
         self._skip_reasons_carry: dict[str, dict[str, str]] = {}
-        # Indexed entries the last detect_changes() kept under an unreadable
-        # directory, with their recorded hash. update_state() writes that hash
-        # back over the index's, so an empty "re-parse me" hash left by a
-        # forced build (#1929) survives the scans that cannot read the note.
-        self._unwalked_carry: dict[str, str] = {}
+        # Indexed paths the last detect_changes() kept under an unreadable
+        # directory whose recorded hash is the empty "re-parse me" marker a
+        # forced build leaves (#1929). update_state() writes the marker back
+        # over the index's hash, so it survives the scans that cannot read
+        # the note.
+        self._reparse_carry: set[str] = set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -210,9 +211,14 @@ class ChangeTracker:
         # A walk that could not enter a directory saw nothing under it, which
         # is not the same as nothing being there: keep what was indexed there
         # (#1625), exactly as a failed re-hash keeps its prior entry (#831).
-        self._unwalked_carry = _keep_unwalked(
-            indexed_state, skipped_state, disk_state, unreadable_dirs
+        carried = _keep_unwalked(
+            indexed_state,
+            skipped_state,
+            disk_state,
+            _prefixes(unreadable_dirs),
+            exclude_patterns,
         )
+        self._reparse_carry = {path for path, prior in carried.items() if not prior}
 
         added: list[str] = []
         modified: list[str] = []
@@ -294,9 +300,8 @@ class ChangeTracker:
             paths removed from skipped and reasons clamped to the skipped keys.
         """
         new_indexed = {note.path: note.content_hash for note in notes}
-        for path, recorded in self._unwalked_carry.items():
-            if path in new_indexed:
-                new_indexed[path] = recorded
+        for path in self._reparse_carry & new_indexed.keys():
+            new_indexed[path] = ""
         new_skipped = {
             path: content_hash
             for path, content_hash in {
@@ -352,9 +357,7 @@ class ChangeTracker:
         # The carries are consumed by exactly one update_state call; clearing
         # them keeps a later call without a fresh detect_changes (e.g. a full
         # build_index) from merging stale entries into its snapshot.
-        self._skipped_carry = {}
-        self._skip_reasons_carry = {}
-        self._unwalked_carry = {}
+        self.clear_carries()
         logger.debug(
             "update_state_wrote_state indexed=%d skipped=%d skip_reasons=%d",
             len(new_indexed),
@@ -397,6 +400,18 @@ class ChangeTracker:
             len(new_skipped),
         )
 
+    def clear_carries(self) -> None:
+        """Forget what the last :meth:`detect_changes` carried forward.
+
+        A pass that ends without :meth:`update_state` (a refused reindex)
+        leaves its carries behind; a full build, which runs no
+        :meth:`detect_changes` of its own, clears them before it starts so
+        its state write holds only what it saw (#1929).
+        """
+        self._skipped_carry = {}
+        self._skip_reasons_carry = {}
+        self._reparse_carry = set()
+
     def reset(self) -> None:
         """Delete the state file so the next scan treats all files as added.
 
@@ -406,9 +421,7 @@ class ChangeTracker:
         Raises:
             OSError: If the state file cannot be statted or removed (#1625).
         """
-        self._skipped_carry = {}
-        self._skip_reasons_carry = {}
-        self._unwalked_carry = {}
+        self.clear_carries()
         if self._state_path is None:
             self._memory_state = None
             return
@@ -678,23 +691,29 @@ def _keep_unwalked(
     indexed_state: dict[str, str],
     skipped_state: dict[str, str],
     disk_state: dict[str, str],
-    unreadable_dirs: list[str],
+    prefixes: tuple[str, ...],
+    exclude_patterns: Sequence[str] | None,
 ) -> dict[str, str]:
     """Carry recorded entries under an unreadable directory into *disk_state*.
 
     Mutates *disk_state* so those paths read as unchanged rather than deleted
     (#1625): indexed notes stay indexed, and skipped ones stay skipped with
-    their reasons, so their tombstones keep the vectors they hold (#1929).
+    their reasons, so their tombstones keep the vectors they hold (#1929). A
+    skipped path that is now excluded is not carried: excluded files are
+    invisible (#257), and an indexed one is purged by the reindex instead.
 
     Returns:
         The carried indexed entries, path to recorded hash.
     """
-    prefixes = _prefixes(unreadable_dirs)
     if not prefixes:
         return {}
     carried = _unwalked(indexed_state, disk_state, prefixes)
     disk_state.update(carried)
-    disk_state.update(_unwalked(skipped_state, disk_state, prefixes))
+    disk_state.update(
+        (path, prior)
+        for path, prior in _unwalked(skipped_state, disk_state, prefixes).items()
+        if not is_path_excluded(path, exclude_patterns)
+    )
     return carried
 
 

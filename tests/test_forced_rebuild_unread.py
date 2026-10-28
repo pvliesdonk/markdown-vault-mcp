@@ -181,6 +181,47 @@ class TestTheKeywordBuild:
             (root / "sub").chmod(0o755)
             vault.close()
 
+    def test_a_refused_reindex_leaves_nothing_for_a_build_to_merge(
+        self, root: Path, tmp_path: Path
+    ) -> None:
+        """A reindex refused over an unreadable root must not taint the next build.
+
+        Its carries would otherwise write old hashes over the build's own, and
+        a file reverted to those bytes would then read as unchanged.
+        """
+        vault = _vault(root, tmp_path)
+        try:
+            vault.index.build_index()
+            root.chmod(0)
+            assert vault.index.reindex().vault_root_empty
+            root.chmod(0o755)
+            original = (root / "alpha.md").read_text(encoding="utf-8")
+            (root / "alpha.md").write_text("# Alpha\n\nv2word\n", encoding="utf-8")
+            vault.index.build_index(force=True)
+            (root / "alpha.md").write_text(original, encoding="utf-8")
+            assert vault.index.reindex().modified == 1
+            assert _paths(vault, "v2word") == []
+        finally:
+            root.chmod(0o755)
+            vault.close()
+
+
+def test_an_excluded_skip_is_not_carried(tmp_path: Path) -> None:
+    """Excluded files are invisible, under an unreadable folder too (#257)."""
+    from markdown_vault_mcp.tracker import ChangeTracker
+
+    root = tmp_path / "vault"
+    (root / "sub").mkdir(parents=True)
+    tracker = ChangeTracker(tmp_path / "state.json")
+    tracker.update_state([], skipped={"sub/bad.md": "h", "sub/other.md": "h"})
+    (root / "sub").chmod(0)
+    try:
+        tracker.detect_changes(root, exclude_patterns=["sub/bad.md"])
+        tracker.update_state([])
+    finally:
+        (root / "sub").chmod(0o755)
+    assert set(tracker._load_state()[1]) == {"sub/other.md"}
+
 
 def _stored_paths(
     tmp_path: Path, provider: MockEmbeddingProvider, store: str
@@ -251,3 +292,28 @@ class TestTheVectors:
         finally:
             vault.close()
         assert "sub/gamma.md" not in _stored_paths(tmp_path, provider, store)
+
+    def test_a_kept_tombstone_keeps_its_vectors(
+        self, root: Path, tmp_path: Path, store: str
+    ) -> None:
+        """A tombstone holds a broken note's vectors (#1505) across the rebuild.
+
+        The source probe also guards them (an unreadable folder is
+        *unavailable*, never *absent*); this pins the outcome either way.
+        """
+        provider = MockEmbeddingProvider()
+        vault = _vault(root, tmp_path, provider=provider, store=store)
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+            (root / "sub" / "gamma.md").write_bytes(b"# Gamma\n\n\xff\xfe\n")
+            vault.index.reindex()
+            assert [r["path"] for r in vault._fts.list_tombstones()] == ["sub/gamma.md"]
+            (root / "sub").chmod(0)
+            vault.index.build_index(force=True)
+            vault.index.reindex()
+            vault.index.build_embeddings()
+        finally:
+            (root / "sub").chmod(0o755)
+            vault.close()
+        assert "sub/gamma.md" in _stored_paths(tmp_path, provider, store)
