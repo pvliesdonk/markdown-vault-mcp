@@ -17,7 +17,7 @@ Generic markdown vault MCP with hybrid search
 <!-- DOMAIN-README-PITCH-START -->
 Give Claude, or any MCP client, a folder of Markdown notes to search, read and write. An Obsidian vault works as it is.
 
-- **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion, with the vectors kept in files, SQLite or PostgreSQL. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/use/embeddings.md).
+- **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion, with the vectors kept in SQLite, files or PostgreSQL. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/use/embeddings.md) and [Choosing an embedding store](docs/use/embedding-stores.md).
 - **Frontmatter as data.** YAML frontmatter fields become search filters, and long notes are split at their headings.
 - **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes.
 - **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/use/git-integration.md).
@@ -38,7 +38,7 @@ What it assumes:
 
 - **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME`.
 - **Markdown is what gets searched.** Other files, such as PDFs and images, can be read and written as attachments, but their contents are not indexed yet ([#1234](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234)).
-- **Embeddings live in memory.** Search by meaning holds every vector at 4 bytes × chunks × dimensions: about 70 MB for 23,000 chunks at 768 dimensions, about 900 MiB at ten times that and 1,024 dimensions. Memory, not query time, is the first limit ([#1377](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1377)).
+- **Search by meaning trades speed for memory.** By default the vectors live in a SQLite database and each search reads them from disk: measured with 227,640 sections at 1,024 dimensions, searching added 25 MB to the server and 95 in 100 searches returned within about a second. Holding them in memory is about ten times faster there and costs about twice their size, about 2.1 GB at that vault size. [Choosing an embedding store](docs/use/embedding-stores.md) has the measured costs and the limits.
 - **State sits on local disk.** The index and embeddings are files, and the change-tracking file sits beside the index, never inside the vault. Without `MARKDOWN_VAULT_MCP_INDEX_PATH`, the index and that file stay in memory and are rebuilt at each start.
 
 Reach for something else for a corpus of hundreds of thousands of chunks (a vector database behind a retrieval pipeline), for mostly scanned or office documents (a document management system with text recognition), or for many users who must not see each other's notes (a multi-tenant knowledge platform): every caller the server admits gets every tool it exposes.
