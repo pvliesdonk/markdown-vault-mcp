@@ -271,6 +271,13 @@ def _result() -> dict[str, object]:
                     "mapped_files": 40 << 20,
                     "page_cache": 120 << 20,
                 },
+                "status": {
+                    "search_mode": "resident",
+                    "search_workspace_bytes": None,
+                    "stored_bytes": 96 << 20,
+                    "measured_store_bytes": 97 << 20,
+                    "resident_vector_bytes": 89 << 20,
+                },
                 "latency": {
                     "warm": {"unfiltered": {"p50": 0.01, "p95": 0.02}},
                     "cold": {"unfiltered": 0.2},
@@ -310,6 +317,8 @@ class TestTheReport:
         text = report.render_markdown(result)
         assert "invalid: store open" in text
         assert "95.0 MiB" not in text
+        (row,) = [r for r in self._status_rows(text) if "numpy" in r]
+        assert "invalid: store open" in row
 
     @staticmethod
     def _build_rows(text: str) -> list[str]:
@@ -324,6 +333,29 @@ class TestTheReport:
     def test_a_build_without_peaks_shows_dashes(self) -> None:
         rows = self._build_rows(report.render_markdown(_result()))
         assert "| postgres (streamed) | — | — | — | — |" in rows
+
+    @staticmethod
+    def _status_rows(text: str) -> list[str]:
+        _, _, rest = text.partition("### Status beside the measurements\n")
+        return rest.partition("###")[0].splitlines()
+
+    def test_each_status_figure_sits_beside_its_measurement(self) -> None:
+        rows = self._status_rows(report.render_markdown(_result()))
+        row = (
+            "| numpy (resident) | resident | 96.0 MiB | 97.0 MiB "
+            "| 89.0 MiB | 95.0 MiB | — |"
+        )
+        assert row in rows
+
+    def test_a_failed_status_read_is_shown(self) -> None:
+        result = _result()
+        result["configs"][0]["status"] = {"error": "StoreOpenError"}  # type: ignore[index]
+        rows = self._status_rows(report.render_markdown(result))
+        assert any("| failed: StoreOpenError |" in row for row in rows)
+
+    def test_a_run_without_status_shows_dashes(self) -> None:
+        rows = self._status_rows(report.render_markdown(_result()))
+        assert "| postgres (streamed) | — | — | — | — | — | — |" in rows
 
     def test_page_cache_and_mapped_files_are_told_apart(self) -> None:
         text = report.render_markdown(_result())

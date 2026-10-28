@@ -4811,6 +4811,26 @@ phase's leftovers.
   sampled peak it can miss a spike shorter than the 10 ms interval. The
   report's Build table gives it beside the build's seconds, which are timed
   with the sampler running, and the texts embedded.
+- *Status beside the measurements.* After the warm searches, the memory
+  phase records what `embeddings_status` reports (`search_mode`,
+  `stored_bytes`, `resident_vector_bytes`, `search_workspace_bytes`) and
+  measures the store's size at the same moment. The report sets each figure
+  beside the one it should match or bound, so #1899 can check the status
+  report against the measurements.
+  - A local store is measured by all its files, the writer lock left out.
+    SQLite's status counts the database with its `-wal` and `-shm`, and
+    numpy's counts the commit file and the current matrix. An unswept older
+    numpy matrix or temporary file is in the measurement and not in the
+    status by design, so a numpy measurement above the status is leftover
+    files, not a miscount.
+  - PostgreSQL's store is measured as every relation in its schema, tables,
+    indexes and TOAST, by the same `pg_total_relation_size` its status uses.
+    A match there shows only that the status counts every relation.
+  - The memory semantic search adds bounds the resident vectors for a
+    resident store, and the configured search workspace for a streamed one.
+    PostgreSQL scores in the server, so the process should add little.
+  - A status read that fails is recorded by its exception's type, and the
+    phase's other figures are kept.
 - *Warm latency.* p50 and p95 per kind after discarded warm-up calls:
   semantic, hybrid, filtered (semantic in the filter folder) and similar
   notes.

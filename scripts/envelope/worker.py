@@ -43,6 +43,12 @@ _KEYWORD_SEARCHES = 20
 _STORE_GLOB = "index-db-embeddings*"
 _INDEX_GLOB = "index.db*"
 _CHECKPOINT = "edits-finished"  # read by the orchestrator
+_STATUS_KEYS = (
+    "search_mode",
+    "search_workspace_bytes",
+    "stored_bytes",
+    "resident_vector_bytes",
+)
 
 
 def _postgres_dsn() -> str:
@@ -87,7 +93,9 @@ def _files(config: dict[str, Any], pattern: str) -> list[Path]:
 
 
 def _store_bytes(config: dict[str, Any]) -> int:
-    return sum(p.stat().st_size for p in _files(config, _STORE_GLOB) if p.is_file())
+    """Sum the store's files, leaving out its writer lock, which holds a pid."""
+    files = _files(config, _STORE_GLOB)
+    return sum(p.stat().st_size for p in files if p.is_file() and p.suffix != ".lock")
 
 
 def _searches(vault: Vault, config: dict[str, Any]) -> dict[str, Callable[[int], Any]]:
@@ -145,6 +153,33 @@ def build(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _status(vault: Vault, config: dict[str, Any]) -> dict[str, Any]:
+    """Return ``embeddings_status``'s cost figures and the store's measured size.
+
+    A local store's measured size is its files'. PostgreSQL's store has no
+    local files; its measured size is every relation in its schema, by the
+    same ``pg_total_relation_size`` its status uses, so a match there shows
+    the status counts every relation, not that the function is right.
+    A read that fails is recorded by its exception's type, so the phase's
+    other figures are kept; its message could name the database.
+    """
+    try:
+        reported = vault.index.embeddings_status()
+        if config["backend"] == "postgres":
+            from scripts.envelope import postgres
+
+            sizes = postgres.sizes(_postgres_dsn(), config["schema"])
+            measured = sizes["schema_bytes"]
+        else:
+            measured = _store_bytes(config)
+    except Exception as exc:  # a failed read is a finding, not a lost phase
+        return {"error": type(exc).__name__}
+    return {
+        **{key: reported[key] for key in _STATUS_KEYS},
+        "measured_store_bytes": measured,
+    }
+
+
 def memory(config: dict[str, Any]) -> dict[str, Any]:
     """Measure what semantic search adds to memory, and warm latency.
 
@@ -157,8 +192,9 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
 
     Returns:
         The memory figures, the index's and store's bytes in page cache
-        after the searches (``None`` without ``fincore``), and each kind's
-        warm p50 and p95, in seconds.
+        after the searches (``None`` without ``fincore``), each kind's
+        warm p50 and p95, in seconds, and what ``embeddings_status``
+        reports after the searches beside the store's measured size.
     """
     provider = synth.StandInProvider(config["dim"])
     vault = _vault(config, provider)
@@ -185,6 +221,7 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
         cached = probes.resident_bytes(
             _files(config, _INDEX_GLOB) + _files(config, _STORE_GLOB)
         )
+        status = _status(vault, config)
     finally:
         vault.close()
     return {
@@ -199,6 +236,7 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
             "page_cache": cached,
         },
         "warm": warm,
+        "status": status,
     }
 
 

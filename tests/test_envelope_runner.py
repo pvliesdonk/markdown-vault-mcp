@@ -18,6 +18,7 @@ from scripts.envelope import __main__ as cli
 from scripts.envelope import probes, synth, worker
 
 from markdown_vault_mcp import scanner
+from markdown_vault_mcp.facets.index import IndexFacet
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="reads /proc"
@@ -74,6 +75,13 @@ def test_a_run_measures_every_phase(
         (tmp_path / "out" / "work" / backend / "partial.json").read_text()
     )
     assert partial["recovery"] == config["recovery"]
+
+    status = config["status"]
+    assert status["search_mode"] == search
+    assert status["stored_bytes"] > 0
+    assert status["measured_store_bytes"] == status["stored_bytes"]
+    vectors = 30 * synth.CHUNKS_PER_NOTE * 16 * 4
+    assert status["resident_vector_bytes"] == (vectors if search == "resident" else 0)
 
     latency = config["latency"]
     assert set(latency["warm"]) == _KINDS
@@ -161,6 +169,33 @@ def test_the_build_reports_a_peak_freed_before_it_ends(
     assert spiked
     assert build["peak_anon"] >= before.peak_anon + (60 << 20)
     assert build["peak_resident"] >= build["peak_anon"]
+
+
+@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
+def test_the_status_sits_beside_the_measured_store(
+    tmp_path: Path, backend: str
+) -> None:
+    config = {**_config(tmp_path, backend), "discard": 1, "queries": 2}
+    worker.build(config)
+    status = worker.memory(config)["status"]
+    assert status["search_mode"] == cli.BACKENDS[backend]
+    assert status["measured_store_bytes"] == status["stored_bytes"] > 0
+
+
+def test_a_failed_status_read_keeps_the_memory_figures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = {**_config(tmp_path), "discard": 1, "queries": 2}
+    worker.build(config)
+
+    def unreadable(_self: object) -> dict[str, Any]:
+        raise OSError("the sidecar cannot be statted")
+
+    monkeypatch.setattr(IndexFacet, "embeddings_status", unreadable)
+    figures = worker.memory(config)
+    assert figures["status"] == {"error": "OSError"}
+    assert isinstance(figures["memory"]["adds_anon"], int)
+    assert set(figures["warm"]) == _KINDS
 
 
 def test_a_restart_embeds_a_note_changed_while_the_server_was_down(
