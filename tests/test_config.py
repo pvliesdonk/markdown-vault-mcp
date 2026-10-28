@@ -2444,17 +2444,33 @@ class TestSourceDirMissing:
 
 
 class TestEmbeddingStore:
-    def test_defaults_to_numpy(self, tmp_path: Path) -> None:
+    def test_defaults_to_sqlite(self, tmp_path: Path) -> None:
         config = ProjectConfig(source_dir=tmp_path)
-        assert config.embedding_store == "numpy"
-        assert config.indexing.embedding_store == "numpy"
+        assert config.embedding_store == "sqlite"
+        assert config.indexing.embedding_store == "sqlite"
+
+    def test_an_unset_environment_defaults_to_streamed_sqlite(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_EMBEDDING_STORE", raising=False)
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH", raising=False)
+        config = ProjectConfig.from_env()
+        assert (config.embedding_store, config.embedding_search) == (
+            "sqlite",
+            "streamed",
+        )
 
     def test_read_from_the_environment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_STORE", "numpy")
-        assert ProjectConfig.from_env().embedding_store == "numpy"
+        config = ProjectConfig.from_env()
+        assert (config.embedding_store, config.embedding_search) == (
+            "numpy",
+            "resident",
+        )
 
     def test_an_unknown_store_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ConfigurationError, match="EMBEDDING_STORE"):
@@ -2466,13 +2482,13 @@ class TestEmbeddingStore:
 
 
 class TestEmbeddingSearch:
-    def test_defaults_to_resident_with_one_mebibyte(self, tmp_path: Path) -> None:
+    def test_defaults_to_streamed_with_one_mebibyte(self, tmp_path: Path) -> None:
         config = ProjectConfig(source_dir=tmp_path)
         assert (config.embedding_search, config.embedding_search_workspace_mb) == (
-            "resident",
+            "streamed",
             1,
         )
-        assert config.indexing.embedding_search == "resident"
+        assert config.indexing.embedding_search == "streamed"
         assert config.indexing.embedding_search_workspace_mb == 1
 
     def test_read_from_the_environment(
@@ -2509,8 +2525,12 @@ class TestEmbeddingSearch:
 
     def test_streamed_needs_the_sqlite_store(self, tmp_path: Path) -> None:
         with pytest.raises(ConfigurationError) as caught:
-            ProjectConfig(source_dir=tmp_path, embedding_search="streamed")
-        assert "EMBEDDING_SEARCH" in str(caught.value)
+            ProjectConfig(
+                source_dir=tmp_path,
+                embedding_store="numpy",
+                embedding_search="streamed",
+            )
+        assert "EMBEDDING_SEARCH=resident" in str(caught.value)
         assert "EMBEDDING_STORE=sqlite" in str(caught.value)
 
     def test_streamed_with_sqlite_is_accepted(self, tmp_path: Path) -> None:
@@ -2560,7 +2580,7 @@ class TestEmbeddingPostgres:
 
     @pytest.mark.parametrize(
         ("store", "search"),
-        [("postgres", "streamed"), ("numpy", "resident"), ("sqlite", "resident")],
+        [("postgres", "streamed"), ("numpy", "resident"), ("sqlite", "streamed")],
     )
     def test_a_config_built_directly_takes_the_stores_search_default(
         self, store: str, search: str
@@ -2624,7 +2644,7 @@ class TestEmbeddingPostgres:
     ) -> None:
         config = ProjectConfig(source_dir=tmp_path, embedding_postgres_pool_size=0)
         assert (
-            config.embedding_store == "numpy"
+            config.embedding_store == "sqlite"
         )  # not checked unless postgres is chosen
 
     def test_the_dsn_never_shows(self, tmp_path: Path) -> None:

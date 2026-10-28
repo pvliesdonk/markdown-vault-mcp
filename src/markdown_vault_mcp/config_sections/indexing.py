@@ -42,7 +42,7 @@ class IndexingConfig:
     state_path: Path | None = None
     embeddings_path: Path | None = None
     embedding_store: str = "sqlite"
-    embedding_search: str = ""
+    embedding_search: str = "streamed"
     embedding_search_workspace_mb: int = 1
     embedding_postgres_dsn: str | None = field(default=None, repr=False)
     embedding_postgres_schema: str | None = None
