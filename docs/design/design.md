@@ -4438,6 +4438,16 @@ and recovery, #1505); `embeddings_status` reports the store's
 search mode and measured sizes (Search memory, above); how often the full matrix is
 rewritten is #1497's.
 
+The file-backed counterpart of case 6, `tests/fixtures/vault_store_contract.py`
+(#1898), runs a real `Vault` over a folder of notes on every store
+(numpy, sqlite resident and streamed, PostgreSQL). A deleted note loses
+its vectors, as does a newly excluded one on reindex; a forced rebuild
+over an unreadable vault root keeps every vector, because the empty build
+is not authoritative (#1785); a conflicting write is re-queued and lands;
+and the vault closes the store it opened but leaves an injected one open
+(decision 30). The dict source shows the contract holds without a working
+tree; it is not a supported database-owned vault, which is #1474's.
+
 ### Embedding transitions and recovery (#1505)
 
 Decision (decision 35): an operator who upgrades, switches embedding store
