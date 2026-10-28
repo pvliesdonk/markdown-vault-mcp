@@ -89,7 +89,8 @@ def test_a_run_measures_postgres_without_showing_its_dsn(
     assert status["search_mode"] == "streamed"
     assert status["resident_vector_bytes"] == 0
     assert status["stored_bytes"] > 0
-    assert status["measured_store_bytes"] > 0  # the schema's size
+    # The same function over the schema's relations: it checks coverage only.
+    assert status["measured_store_bytes"] == status["stored_bytes"]
     assert config["edits"]["texts_embedded"]["max"] == 1
     assert config["edits"]["store_delta"] is None  # no local store files
     assert config["edits"]["wal_bytes"]["median"] > 0

@@ -224,10 +224,13 @@ def _status_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
         adds = _mib(memory.get("adds_anon"))
         if memory.get("store_closed_at_baseline") is False:
             adds = "invalid: store open"
+        mode = status.get("search_mode") or _MISSING
+        if "error" in status:
+            mode = f"failed: {status['error']}"
         rows.append(
             [
                 _name(config),
-                status.get("search_mode") or _MISSING,
+                mode,
                 _mib(status.get("stored_bytes")),
                 _mib(status.get("measured_store_bytes")),
                 _mib(status.get("resident_vector_bytes")),
@@ -372,11 +375,18 @@ def render_markdown(result: dict[str, Any]) -> str:
             "Stored (status)",
             "Store (measured)",
             "Resident vectors (status)",
-            "Adds, anonymous (measured)",
+            "Adds, anonymous (measured; bounds the vectors or workspace)",
             "Search workspace (status)",
         ],
         _status_rows(configs),
     )
+    if any(c.get("backend") == "postgres" for c in configs):
+        lines += [
+            "PostgreSQL's measured store is its schema's relations by the "
+            "function its status uses, so a match shows only that the status "
+            "counts every relation.",
+            "",
+        ]
     lines += ["### Search latency", ""]
     lines += _table(
         ["Configuration", "Kind", "Warm p50", "Warm p95", "Cold", "Cold eviction"],

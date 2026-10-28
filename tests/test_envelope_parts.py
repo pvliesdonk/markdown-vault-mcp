@@ -317,6 +317,8 @@ class TestTheReport:
         text = report.render_markdown(result)
         assert "invalid: store open" in text
         assert "95.0 MiB" not in text
+        (row,) = [r for r in self._status_rows(text) if "numpy" in r]
+        assert "invalid: store open" in row
 
     @staticmethod
     def _build_rows(text: str) -> list[str]:
@@ -344,6 +346,12 @@ class TestTheReport:
             "| 89.0 MiB | 95.0 MiB | — |"
         )
         assert row in rows
+
+    def test_a_failed_status_read_is_shown(self) -> None:
+        result = _result()
+        result["configs"][0]["status"] = {"error": "StoreOpenError"}  # type: ignore[index]
+        rows = self._status_rows(report.render_markdown(result))
+        assert any("| failed: StoreOpenError |" in row for row in rows)
 
     def test_a_run_without_status_shows_dashes(self) -> None:
         rows = self._status_rows(report.render_markdown(_result()))
