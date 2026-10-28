@@ -248,7 +248,7 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # would have stopped neither, so it buys the look of a guard without one.
 # Patch releases stay open; a minor bump is a deliberate edit here, paired
 # with a publisher that accepts whatever the new minor emits.
-requires = ["hatchling>=1.32,<1.33"]
+requires = ["hatchling>=1.33,<1.34"]
 build-backend = "hatchling.build"
 
 [tool.uv]
