@@ -3,8 +3,9 @@
 This page records what the assembled server costs on each embedding store,
 measured on 28 October 2026 by the envelope harness (`scripts/envelope/`,
 #1895; method in [design.md](design.md#measuring-the-operating-envelope-1506)).
-It is evidence for #1900 (the default store and 015's release kind) and #1901
-(the operator docs). It decides neither.
+It is evidence for #1900 (the default store) and #1901 (the operator docs).
+It decides neither: #1900 chose the SQLite store, searched streamed, and
+adopted none of the proposed numbers as a budget.
 
 The numbers proposed on #1506 for each figure were derived from #1502's
 search-only prototype with headroom. #1506's refinement comment calls them
@@ -180,8 +181,10 @@ correction.
 
 ## What follows
 
-- **#1900** chooses the default store and whether to adopt numbers for these
-  figures. The proposals above are open for that decision.
+- **#1900** chose the SQLite store, searched streamed, as the default, and
+  adopted none of the proposed numbers; the measured envelope is the
+  documented capacity. The release kind is not #1900's: knope cuts it from
+  the commits.
 - **#1901** writes the operator page from this record. `docs/use/embeddings.md`
   still gives #1501 and #1502's prototype figures (39 ms streamed against
   3 ms resident; 106 MB and 950 MB added), which these measurements supersede.

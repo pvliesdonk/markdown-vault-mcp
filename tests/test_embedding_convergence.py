@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp.types import ANY_TOKEN
@@ -31,8 +32,6 @@ from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
     from markdown_vault_mcp.interfaces import EmbeddingStore
 
@@ -48,7 +47,15 @@ def _make_vault_dir(tmp_path: Path, n_docs: int = 3) -> Path:
     return vault
 
 
-def _boot(vault_dir: Path, tmp_path: Path, provider: MockEmbeddingProvider) -> Vault:
+STORES = ["numpy", "sqlite"]
+
+
+def _boot(
+    vault_dir: Path,
+    tmp_path: Path,
+    provider: MockEmbeddingProvider,
+    store: str = "numpy",
+) -> Vault:
     """Replicate the server lifespan boot sequence at the Vault level.
 
     The lifespan submits BuildIndex, ReindexAll (#665 PR2), and
@@ -62,7 +69,7 @@ def _boot(vault_dir: Path, tmp_path: Path, provider: MockEmbeddingProvider) -> V
             index_path=tmp_path / "fts.db",
             state_path=tmp_path / "s.json",
             embeddings_path=tmp_path / "vectors",
-            embedding_store="numpy",
+            embedding_store=store,
         ),
         embedding_provider=provider,
     )
@@ -73,21 +80,25 @@ def _boot(vault_dir: Path, tmp_path: Path, provider: MockEmbeddingProvider) -> V
 
 
 def _stored(
-    tmp_path: Path, provider: MockEmbeddingProvider, *, writable: bool = False
+    tmp_path: Path,
+    provider: MockEmbeddingProvider,
+    *,
+    store: str = "numpy",
+    writable: bool = False,
 ) -> EmbeddingStore:
-    """The store a booted vault wrote at ``tmp_path / "vectors"``.
+    """The *store* a booted vault wrote at ``tmp_path / "vectors"``.
 
     Opened with the default text format, which is what ``_boot``'s vault uses.
     """
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
-    from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+    from markdown_vault_mcp.stores.registry import get_backend
     from markdown_vault_mcp.types import EmbeddingIdentity
 
     identity = EmbeddingIdentity.of(provider, EmbedTextBuilder().format_token())
-    store = NumpySidecarBackend().open(
+    opened: EmbeddingStore = get_backend("vector", store)().open(
         tmp_path / "vectors", identity, owns_files=writable
     )
-    return store
+    return opened
 
 
 def _track_embeds(provider: MockEmbeddingProvider) -> list[list[str]]:
@@ -110,36 +121,45 @@ class _FailingProvider(MockEmbeddingProvider):
         raise RuntimeError("provider down during boot BuildEmbeddings")
 
 
+@pytest.mark.parametrize("store", STORES)
 class TestBootEmbeddingConvergence:
     """Boots must leave the vector index identical to the FTS chunk set."""
 
-    def test_boot_with_no_drift_does_no_embedding_work(self, tmp_path: Path) -> None:
+    def test_boot_with_no_drift_does_no_embedding_work(
+        self, tmp_path: Path, store: str
+    ) -> None:
         """vectors ≡ FTS → second boot embeds nothing and saves nothing."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
-        count1 = v1.index.embeddings_status()["chunk_count"]
+        v1 = _boot(vault_dir, tmp_path, provider, store)
+        status1 = v1.index.embeddings_status()
+        count1 = status1["chunk_count"]
         assert count1 > 0
         v1.close()
 
-        # Every save rewrites the commit file, so its mtime shows a save.
+        # Every numpy save rewrites the commit file, so its mtime shows a save.
         commit = tmp_path / "vectors.v2.json"
-        mtime_before = commit.stat().st_mtime_ns
+        mtime_before = commit.stat().st_mtime_ns if store == "numpy" else None
         calls = _track_embeds(provider)
-        v2 = _boot(vault_dir, tmp_path, provider)
+        v2 = _boot(vault_dir, tmp_path, provider, store)
 
         assert calls == []
-        assert v2.index.embeddings_status()["chunk_count"] == count1
+        status2 = v2.index.embeddings_status()
+        assert status2["chunk_count"] == count1
         assert count1 == v2._fts.count_chunks()
         # A converged index must not be re-saved.
-        assert commit.stat().st_mtime_ns == mtime_before
+        assert status2["generation"] == status1["generation"]
+        if mtime_before is not None:
+            assert commit.stat().st_mtime_ns == mtime_before
         v2.close()
 
-    def test_boot_embeds_documents_added_while_down(self, tmp_path: Path) -> None:
+    def test_boot_embeds_documents_added_while_down(
+        self, tmp_path: Path, store: str
+    ) -> None:
         """Files written externally while no server runs are embedded at boot."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         count1 = v1.index.embeddings_status()["chunk_count"]
         v1.close()
 
@@ -154,7 +174,7 @@ class TestBootEmbeddingConvergence:
         )
 
         calls = _track_embeds(provider)
-        v2 = _boot(vault_dir, tmp_path, provider)
+        v2 = _boot(vault_dir, tmp_path, provider, store)
 
         # Exactly the new chunks were embedded — nothing re-embedded.
         embedded_texts = [t for batch in calls for t in batch]
@@ -175,23 +195,23 @@ class TestBootEmbeddingConvergence:
         v2.close()
 
     def test_boot_removes_vectors_for_documents_deleted_while_down(
-        self, tmp_path: Path
+        self, tmp_path: Path, store: str
     ) -> None:
         """Vectors for files deleted externally are dropped at boot."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         count1 = v1.index.embeddings_status()["chunk_count"]
         v1.close()
 
-        doomed = _stored(tmp_path, provider)
+        doomed = _stored(tmp_path, provider, store=store)
         doomed_chunks = len(metadata_by_path(doomed)["note_2.md"])
         assert doomed_chunks > 0
 
         (vault_dir / "note_2.md").unlink()
 
         calls = _track_embeds(provider)
-        v2 = _boot(vault_dir, tmp_path, provider)
+        v2 = _boot(vault_dir, tmp_path, provider, store)
 
         assert calls == []
         assert (
@@ -201,16 +221,16 @@ class TestBootEmbeddingConvergence:
         )
         v2.close()
 
-        persisted = _stored(tmp_path, provider)
+        persisted = _stored(tmp_path, provider, store=store)
         assert "note_2.md" not in metadata_by_path(persisted)
 
     def test_boot_refreshes_vectors_for_documents_modified_while_down(
-        self, tmp_path: Path
+        self, tmp_path: Path, store: str
     ) -> None:
         """Modified documents get fresh vectors; stale chunk content is gone."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         v1.close()
 
         (vault_dir / "note_1.md").write_text(
@@ -219,7 +239,7 @@ class TestBootEmbeddingConvergence:
         )
 
         calls = _track_embeds(provider)
-        v2 = _boot(vault_dir, tmp_path, provider)
+        v2 = _boot(vault_dir, tmp_path, provider, store)
 
         # Only the modified document's chunks were embedded.
         embedded_texts = [t for batch in calls for t in batch]
@@ -229,7 +249,7 @@ class TestBootEmbeddingConvergence:
         assert v2.index.embeddings_status()["chunk_count"] == v2._fts.count_chunks()
         v2.close()
 
-        persisted = _stored(tmp_path, provider)
+        persisted = _stored(tmp_path, provider, store=store)
         by_path = metadata_by_path(persisted)
         assert all("gardening" in r["content"] for r in by_path["note_1.md"])
         # No stale vector metadata for the old content remains anywhere.
@@ -237,14 +257,14 @@ class TestBootEmbeddingConvergence:
         assert not any("Original body 1" in r["content"] for r in all_rows)
 
     def test_boot_refreshes_metadata_for_line_shift_only_edit(
-        self, tmp_path: Path
+        self, tmp_path: Path, store: str
     ) -> None:
         """An edit that only shifts line numbers (identical chunk content)
         still refreshes start_line in vector metadata (#668 review), and
         persists it without a provider call."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         v1.close()
 
         # Prepend blank lines: chunk content unchanged, start_line shifts.
@@ -252,7 +272,7 @@ class TestBootEmbeddingConvergence:
         (vault_dir / "note_1.md").write_text("\n\n" + original, encoding="utf-8")
 
         calls = _track_embeds(provider)
-        v2 = _boot(vault_dir, tmp_path, provider)
+        v2 = _boot(vault_dir, tmp_path, provider, store)
         assert calls == []
         fts_lines = {
             (r["content"], r["start_line"])
@@ -262,7 +282,7 @@ class TestBootEmbeddingConvergence:
 
         v2.close()
 
-        persisted = _stored(tmp_path, provider)
+        persisted = _stored(tmp_path, provider, store=store)
         vec_lines = {
             (r["content"], r["start_line"])
             for r in metadata_by_path(persisted)["note_1.md"]
@@ -270,7 +290,7 @@ class TestBootEmbeddingConvergence:
         assert vec_lines == fts_lines
 
     def test_boot_persists_reused_vectors_for_moved_sections(
-        self, tmp_path: Path
+        self, tmp_path: Path, store: str
     ) -> None:
         """Swapping two sections of a long note embeds nothing, and the
         convergence checkpoints the moved rows before the vault closes."""
@@ -286,7 +306,7 @@ class TestBootEmbeddingConvergence:
             "# Long\n\n" + section("One") + section("Two") + section("End"),
             encoding="utf-8",
         )
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         v1.close()
 
         note.write_text(
@@ -294,7 +314,7 @@ class TestBootEmbeddingConvergence:
             encoding="utf-8",
         )
         calls = _track_embeds(provider)
-        v2 = _boot(vault_dir, tmp_path, provider)
+        v2 = _boot(vault_dir, tmp_path, provider, store)
         assert calls == []
         fts_lines = {
             (r["content"], r["start_line"])
@@ -303,7 +323,7 @@ class TestBootEmbeddingConvergence:
         }
 
         # Read back from disk while v2 is open: close() would persist anyway.
-        persisted = _stored(tmp_path, provider)
+        persisted = _stored(tmp_path, provider, store=store)
         vec_lines = {
             (r["content"], r["start_line"])
             for r in metadata_by_path(persisted)["long.md"]
@@ -312,7 +332,9 @@ class TestBootEmbeddingConvergence:
         assert len(fts_lines) > 1
         assert vec_lines == fts_lines
 
-    def test_boot_converges_legacy_drifted_vector_index(self, tmp_path: Path) -> None:
+    def test_boot_converges_legacy_drifted_vector_index(
+        self, tmp_path: Path, store: str
+    ) -> None:
         """A historic vectors-subset-of-FTS state heals in a single boot.
 
         Reproduces the drift the old skip-if-nonempty guard accumulated
@@ -322,13 +344,13 @@ class TestBootEmbeddingConvergence:
         """
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path, n_docs=5)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         fts_chunks = v1._fts.count_chunks()
         v1.close()
 
         # Corrupt the sidecar the way the old code path did: drop some
         # documents' vectors while FTS keeps them.
-        vectors = _stored(tmp_path, provider, writable=True)
+        vectors = _stored(tmp_path, provider, store=store, writable=True)
         dropped = len(vectors.rows_for("note_0.md")) + len(
             vectors.rows_for("note_3.md")
         )
@@ -338,7 +360,7 @@ class TestBootEmbeddingConvergence:
         vectors.close()
 
         calls = _track_embeds(provider)
-        v2 = _boot(vault_dir, tmp_path, provider)
+        v2 = _boot(vault_dir, tmp_path, provider, store)
 
         # Exactly the missing chunks were re-embedded.
         embedded_texts = [t for batch in calls for t in batch]
@@ -346,13 +368,13 @@ class TestBootEmbeddingConvergence:
         assert v2.index.embeddings_status()["chunk_count"] == fts_chunks
         v2.close()
 
-        persisted = _stored(tmp_path, provider)
+        persisted = _stored(tmp_path, provider, store=store)
         by_path = metadata_by_path(persisted)
         assert "note_0.md" in by_path
         assert "note_3.md" in by_path
 
     def test_failed_boot_embeddings_job_self_heals_on_next_boot(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, store: str, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Provider outage during one boot's convergence heals on the next.
 
@@ -364,7 +386,7 @@ class TestBootEmbeddingConvergence:
 
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         count1 = v1.index.embeddings_status()["chunk_count"]
         v1.close()
 
@@ -377,7 +399,7 @@ class TestBootEmbeddingConvergence:
         with caplog.at_level(
             logging.WARNING, logger="markdown_vault_mcp.managers.index"
         ):
-            v2 = _boot(vault_dir, tmp_path, _FailingProvider())
+            v2 = _boot(vault_dir, tmp_path, _FailingProvider(), store)
         assert v2.index.embeddings_status()["chunk_count"] == count1
         assert any(
             "embedding_reconcile_skip_doc" in r.getMessage() for r in caplog.records
@@ -386,7 +408,7 @@ class TestBootEmbeddingConvergence:
 
         # Boot 3: provider back — exactly the missing chunks are embedded.
         calls = _track_embeds(provider)
-        v3 = _boot(vault_dir, tmp_path, provider)
+        v3 = _boot(vault_dir, tmp_path, provider, store)
         embedded_texts = [t for batch in calls for t in batch]
         assert len(embedded_texts) == 1
         assert "Written while the server was down" in embedded_texts[0]
@@ -398,12 +420,12 @@ class TestBootEmbeddingConvergence:
         v3.close()
 
     def test_provider_failure_keeps_existing_vectors_for_modified_doc(
-        self, tmp_path: Path
+        self, tmp_path: Path, store: str
     ) -> None:
         """A doc whose re-embed fails keeps its old vectors (no data loss)."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         count1 = v1.index.embeddings_status()["chunk_count"]
         v1.close()
 
@@ -411,21 +433,23 @@ class TestBootEmbeddingConvergence:
             "# Note 1\n\nRewritten while down.\n", encoding="utf-8"
         )
 
-        v2 = _boot(vault_dir, tmp_path, _FailingProvider())
+        v2 = _boot(vault_dir, tmp_path, _FailingProvider(), store)
         assert v2.index.embeddings_status()["chunk_count"] == count1
         v2.close()
 
-        persisted = _stored(tmp_path, provider)
+        persisted = _stored(tmp_path, provider, store=store)
         rows = metadata_by_path(persisted)["note_1.md"]
         # The stale (pre-modification) vectors are still searchable rather
         # than deleted-without-replacement.
         assert any("Original body 1" in r["content"] for r in rows)
 
-    def test_force_rebuild_unchanged_by_convergence(self, tmp_path: Path) -> None:
+    def test_force_rebuild_unchanged_by_convergence(
+        self, tmp_path: Path, store: str
+    ) -> None:
         """force=True still discards and re-embeds the entire corpus."""
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        v1 = _boot(vault_dir, tmp_path, provider)
+        v1 = _boot(vault_dir, tmp_path, provider, store)
         fts_chunks = v1._fts.count_chunks()
         v1.close()
 
@@ -451,15 +475,16 @@ class TestBootEmbeddingConvergence:
 class TestLifespanEmbeddingConvergence:
     """Full MCP lifespan: build + boot reindex + embeddings job converge."""
 
+    @pytest.mark.parametrize("store", STORES)
     def test_warm_boot_lifespan_converges_offline_add(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, store: str
     ) -> None:
         from markdown_vault_mcp import domain as deps_mod
         from markdown_vault_mcp.server import make_server
 
         provider = MockEmbeddingProvider()
         vault_dir = _make_vault_dir(tmp_path)
-        pre = _boot(vault_dir, tmp_path, provider)
+        pre = _boot(vault_dir, tmp_path, provider, store)
         count_before = pre.index.embeddings_status()["chunk_count"]
         pre.close()
 
@@ -471,6 +496,7 @@ class TestLifespanEmbeddingConvergence:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_dir))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_STORE", store)
 
         # Inject the mock provider into the resolved instances so the
         # lifespan submits the boot BuildEmbeddings job without a real
@@ -481,10 +507,13 @@ class TestLifespanEmbeddingConvergence:
         original_to_instances = deps_mod.to_vault_instances
         original_to_settings = deps_mod.to_vault_settings
 
+        served = MockEmbeddingProvider()
+        calls = _track_embeds(served)
+
         def patched_to_instances(config: Any) -> Any:
             return dataclasses.replace(
                 original_to_instances(config),
-                embedding_provider=MockEmbeddingProvider(),
+                embedding_provider=served,
             )
 
         def patched_to_settings(config: Any, *, instances: Any = None) -> Any:
@@ -495,9 +524,13 @@ class TestLifespanEmbeddingConvergence:
         monkeypatch.setattr(deps_mod, "to_vault_settings", patched_to_settings)
         server = make_server()
 
+        embedded_at_boot: list[int] = []
+
         async def _run() -> tuple[dict[str, Any], dict[str, Any], list[str]]:
             async with Client(server) as client:
                 await wait_for_mcp_writer_drain(client)
+                # Counted before the search below embeds its query.
+                embedded_at_boot.append(sum(len(batch) for batch in calls))
                 emb_res = await client.call_tool("embeddings_status", {})
                 stats_res = await client.call_tool("stats", {})
                 search_res = await client.call_tool(
@@ -515,6 +548,8 @@ class TestLifespanEmbeddingConvergence:
         # behind it converged the vector index to the same chunk set.
         assert emb["chunk_count"] == stats["chunk_count"] == count_before + 1
         assert "offline_added.md" in semantic_paths
+        # Only the offline note was embedded; the rest came from the store.
+        assert embedded_at_boot == [1]
 
 
 class TestAccessors:

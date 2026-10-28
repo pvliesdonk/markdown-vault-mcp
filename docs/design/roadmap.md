@@ -698,8 +698,9 @@ inside `015` is unchanged.
 `stated` — The owner chose the SQLite store, searched streamed, as the
 default, and said the release kind is knope's: what the package says is
 informational, and the trunk already carries breaking commits. The release
-kind was never #1900's to decide; it is the consequence of its default
-change, which asks nothing of an operator. § Packages and the envelope
+kind was never #1900's to decide; #1900 records what its default change
+means for it: the change asks nothing of an operator, so it adds no break,
+and knope cuts the kind from the commits. § Packages and the envelope
 question now say so. The order inside `015` is unchanged.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809

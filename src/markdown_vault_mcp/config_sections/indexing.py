@@ -21,17 +21,18 @@ _SEQUENCE_FIELDS = (
 def store_default_search(store: str) -> str:
     """The search mode an embedding store gets when none is set (#1900).
 
-    The numpy store can only hold its vectors in memory; the SQLite and
-    PostgreSQL stores stream them, so the default store's memory does not
-    grow with the vault.
+    The SQLite and PostgreSQL stores stream their vectors, so the default
+    store's memory does not grow with the vault; the numpy store, and any
+    other, holds them in memory.
 
     Args:
         store: The embedding store's registry name.
 
     Returns:
-        ``"resident"`` for ``"numpy"``, ``"streamed"`` for any other store.
+        ``"streamed"`` for ``"sqlite"`` and ``"postgres"``, ``"resident"``
+        for any other store.
     """
-    return "resident" if store == "numpy" else "streamed"
+    return "streamed" if store in ("sqlite", "postgres") else "resident"
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class IndexingConfig:
     state_path: Path | None = None
     embeddings_path: Path | None = None
     embedding_store: str = "sqlite"
-    embedding_search: str = "streamed"
+    embedding_search: str = ""
     embedding_search_workspace_mb: int = 1
     embedding_postgres_dsn: str | None = field(default=None, repr=False)
     embedding_postgres_schema: str | None = None
@@ -73,13 +74,18 @@ class IndexingConfig:
         itself a ``Sequence[str]`` and would otherwise be silently split into
         individual characters.
 
-        ``title_field`` is stripped and must be non-empty.
+        ``title_field`` is stripped and must be non-empty. An unset
+        ``embedding_search`` becomes the store's own (#1900).
 
         Raises:
             ConfigurationError: If a sequence field is set to a ``str`` or
                 ``bytes`` instead of a sequence of strings, or if
                 ``title_field`` is empty/whitespace.
         """
+        if not self.embedding_search:
+            object.__setattr__(
+                self, "embedding_search", store_default_search(self.embedding_store)
+            )
         for name in _SEQUENCE_FIELDS:
             value = getattr(self, name)
             if value is None:

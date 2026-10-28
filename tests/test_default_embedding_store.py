@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from markdown_vault_mcp.config_sections import VaultSettings
+from markdown_vault_mcp.config_sections import IndexingConfig, VaultSettings
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.vault import Vault
@@ -76,3 +76,16 @@ def test_a_numpy_store_still_refuses_streamed_search(tmp_path: Path) -> None:
             embedding_store="numpy",
             embedding_search="streamed",
         )
+
+
+def test_another_store_defaults_to_resident() -> None:
+    assert store_default_search("milvus") == "resident"
+
+
+@pytest.mark.parametrize(
+    ("store", "search"), [("numpy", "resident"), ("sqlite", "streamed")]
+)
+def test_the_indexing_section_takes_the_stores_search_default(
+    store: str, search: str
+) -> None:
+    assert IndexingConfig(embedding_store=store).embedding_search == search

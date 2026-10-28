@@ -229,7 +229,8 @@ def _postgres_backend(settings: VaultSettings) -> Any:
     if _search_mode(settings) != "streamed":
         raise ConfigurationError(
             "embedding_store='postgres' searches in the database: set "
-            "embedding_search='streamed' (EMBEDDING_SEARCH=streamed)."
+            "embedding_search='streamed' (EMBEDDING_SEARCH=streamed), or "
+            "leave it unset."
         )
     if not (settings.embedding_postgres_dsn or "").strip():
         raise ConfigurationError(

@@ -10,6 +10,7 @@ import pytest
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.types import (
     ANY_TOKEN,
     DocumentRows,
@@ -71,10 +72,16 @@ def _stored(vault: Vault) -> EmbeddingStore:
     return store
 
 
-def _reopened(tmp_path: Path, provider: MockEmbeddingProvider) -> EmbeddingStore:
-    return NumpySidecarBackend().open(
+STORES = ["numpy", "sqlite"]
+
+
+def _reopened(
+    tmp_path: Path, provider: MockEmbeddingProvider, store: str = "numpy"
+) -> EmbeddingStore:
+    reopened: EmbeddingStore = get_backend("vector", store)().open(
         tmp_path / "index-db-embeddings", EmbeddingIdentity.of(provider, "v1")
     )
+    return reopened
 
 
 class TestTheColdBuild:
@@ -131,10 +138,13 @@ class TestTheColdBuild:
         ]
 
 
+@pytest.mark.parametrize("store", STORES)
 class TestARefusedWriteKeepsTheOldRows:
-    def test_on_reindex(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def test_on_reindex(
+        self, tmp_path: Path, store: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
         provider = _Switchable()
-        vault = _vault(tmp_path, provider)
+        vault = _vault(tmp_path, provider, embedding_store=store)
         try:
             vault.index.build_index()
             vault.index.build_embeddings()
@@ -151,10 +161,10 @@ class TestARefusedWriteKeepsTheOldRows:
             vault.close()
 
     def test_on_convergence(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, store: str, caplog: pytest.LogCaptureFixture
     ) -> None:
         provider = _Switchable()
-        vault = _vault(tmp_path, provider)
+        vault = _vault(tmp_path, provider, embedding_store=store)
         try:
             vault.index.build_index()
             vault.index.build_embeddings()
@@ -172,9 +182,9 @@ class TestARefusedWriteKeepsTheOldRows:
         finally:
             vault.close()
 
-    def test_on_the_dirty_flush(self, tmp_path: Path) -> None:
+    def test_on_the_dirty_flush(self, tmp_path: Path, store: str) -> None:
         provider = _Switchable()
-        vault = _vault(tmp_path, provider)
+        vault = _vault(tmp_path, provider, embedding_store=store)
         try:
             vault.index.build_index()
             vault.index.build_embeddings()
@@ -228,26 +238,34 @@ class TestUpgradingFromALegacySidecar:
         assert legacy_matrix.exists()
 
 
+@pytest.mark.parametrize("store", STORES)
 class TestPurges:
-    def test_a_newly_excluded_note_leaves_the_store(self, tmp_path: Path) -> None:
-        vault = _vault(tmp_path, MockEmbeddingProvider())
+    def test_a_newly_excluded_note_leaves_the_store(
+        self, tmp_path: Path, store: str
+    ) -> None:
+        vault = _vault(tmp_path, MockEmbeddingProvider(), embedding_store=store)
         try:
             vault.index.build_index()
             vault.index.build_embeddings()
         finally:
             vault.close()
-        vault = _vault(tmp_path, MockEmbeddingProvider(), exclude_patterns=["beta.md"])
+        vault = _vault(
+            tmp_path,
+            MockEmbeddingProvider(),
+            exclude_patterns=["beta.md"],
+            embedding_store=store,
+        )
         try:
             vault.index.build_index()  # already built: no rescan
             vault.index.reindex()  # purges the newly excluded note
             assert sorted(metadata_by_path(_stored(vault))) == ["alpha.md"]
         finally:
             vault.close()
-        reopened = _reopened(tmp_path, MockEmbeddingProvider())
+        reopened = _reopened(tmp_path, MockEmbeddingProvider(), store)
         assert sorted(metadata_by_path(reopened)) == ["alpha.md"]
 
-    def test_a_deleted_note_leaves_the_store(self, tmp_path: Path) -> None:
-        vault = _vault(tmp_path, MockEmbeddingProvider())
+    def test_a_deleted_note_leaves_the_store(self, tmp_path: Path, store: str) -> None:
+        vault = _vault(tmp_path, MockEmbeddingProvider(), embedding_store=store)
         try:
             vault.index.build_index()
             vault.index.build_embeddings()
@@ -256,7 +274,7 @@ class TestPurges:
             assert sorted(metadata_by_path(_stored(vault))) == ["alpha.md"]
         finally:
             vault.close()
-        reopened = _reopened(tmp_path, MockEmbeddingProvider())
+        reopened = _reopened(tmp_path, MockEmbeddingProvider(), store)
         assert sorted(metadata_by_path(reopened)) == ["alpha.md"]
 
 
