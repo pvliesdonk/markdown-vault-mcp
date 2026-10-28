@@ -4331,8 +4331,9 @@ is in `docs/design/reference/postgresql-pgvector.md`.
 `VectorStoreSlot` that opens it on first use through the backend
 `EMBEDDING_STORE` names (or an injected `vector_backend`), or uses an
 injected `vector_store`, which stays the caller's. With
-`EMBEDDING_SEARCH=streamed` (and `EMBEDDING_SEARCH_WORKSPACE_MB`) it
-constructs the SQLite backend in streamed mode; the numpy store refuses
+`EMBEDDING_SEARCH=streamed` (and `EMBEDDING_SEARCH_WORKSPACE_MB`), the
+SQLite store's default since #1900, it constructs the SQLite backend in
+streamed mode; the numpy store refuses
 `streamed` (Search memory, above). `EMBEDDING_STORE=postgres` builds the
 PostgreSQL backend from `EMBEDDING_POSTGRES_DSN`, `_SCHEMA`, `_POOL_SIZE`
 and `_STATEMENT_TIMEOUT_S`, and hands the slot the schema as its location;
@@ -4741,7 +4742,7 @@ another one, and is the explicit switch of choice C.
   `FTSIndex.checkpoint()`, the lifecycle method, still waits and raises.
 
 Out of scope: reusing vectors for a renamed note (matching is by path);
-changing the default built-in store (#1506); quarantining damaged
+changing the default built-in store (#1900, § The default embedding store); quarantining damaged
 PostgreSQL tables; #1476's content-history recovery; a memory bound on
 publishing a whole generation, which a full build already holds in memory
 today and #1506's envelope measures.
@@ -4898,6 +4899,56 @@ phase's leftovers.
   the Python, SQLite, numpy and psycopg versions, the CPU, memory, kernel
   and the work folder's filesystem type. Result files are named by commit,
   size and UTC time, so reruns never overwrite one another.
+
+### The default embedding store (#1900)
+
+Decision (decision 37): with no `EMBEDDING_STORE` set, the vectors live in
+the SQLite store, and with no `EMBEDDING_SEARCH` set each store searches in
+its own mode: streamed for SQLite and PostgreSQL, resident for numpy
+(`config_sections/indexing.py:store_default_search`). `ProjectConfig`
+resolves an unset mode at construction; the library resolves an unset
+`VaultSettings.embedding_search` (`""`) where it builds the backend
+(`vault.py:_search_mode`), so `embedding_store="numpy"` alone still works and
+`embedding_store="postgres"` no longer needs `streamed` spelled out. A store
+held in memory, with no index or embeddings path, is resident whatever the
+mode, as before.
+
+The choice follows #1899's measurements
+([operating-envelope.md](operating-envelope.md)). Against numpy, the streamed
+SQLite store:
+
+- writes about 0.27 MB per one-note edit (the note's pages and the keyword
+  index) where numpy rewrites its whole store, 106 MB deployed and 1.06 GB
+  at growth;
+- adds 20–25 MB to the process for searching, where numpy adds 165–205 MB
+  deployed and about 2.1 GB at growth, about twice its vector matrix;
+- pays in latency: semantic p95 is 140–159 ms deployed against numpy's
+  39–45 ms, and 1.0 s at growth against 0.08–0.11 s; similar-note search at
+  growth is 1.06 s.
+
+An operator who wants resident speed sets `EMBEDDING_SEARCH=resident`
+(SQLite, resident memory, per-note writes) or `EMBEDDING_STORE=numpy`. None
+of the numbers proposed on #1506 is adopted as a budget: the measured
+envelope is the documented capacity, and #1901 writes it up for operators.
+
+**Upgrading.** A 5.x install that set no store starts with an empty SQLite
+store, and the released-sidecar upgrade (§ Embedding transitions and
+recovery) copies every vector whose note is unchanged into it, with no
+provider call. The 5.x `{base}.json` and `{base}.npy` are left in place, so
+they take disk until the operator removes them. A store only an edge build
+wrote (`{base}.v2.json` with no released sidecar beside it) is not read
+automatically, since moving between stores is the explicit `embeddings
+import`; such an install embeds once.
+`tests/test_embeddings_upgrade.py::test_a_v5_1_install_upgrades_onto_the_default_store_for_free`
+pins the free upgrade through the defaults.
+
+**Compatibility with v5.1.0.** The default change asks nothing of an
+operator: the upgrade is automatic, and an explicit `EMBEDDING_STORE=numpy`
+keeps the numpy layout. `EMBEDDING_STORE`, `EMBEDDING_SEARCH` and
+`VaultSettings.embedding_store` are not in v5.1.0, so changing their
+defaults breaks no released surface and carries no `!`. The package's
+release kind is not decided here: knope cuts it from the commits, and
+library changes already on the trunk since v5.1.0 carry `!`.
 
 ### `providers.py`: Embedding Providers
 
@@ -6834,3 +6885,4 @@ Later decisions (2026-10-22, #1505):
 |-|-|-|-|
 | 35 | Embedding transitions | A full build may consult a read-only donor store and copy a vector whose rebuilt embedding input matches the chunk's, under an equal and known identity, publishing one generation; the released v5.x sidecar upgrades into the configured built-in store automatically, every other switch goes through an explicit `embeddings import`; the released sidecar is never written again and is reported while unused; a missing identity never matches; permission, disk and availability failures never trigger a rebuild, removal or rename; an owned corrupt built-in store is moved aside before its rebuild, refining decision 31 (#1505). | The owner chose automatic only for the built-in upgrade and explicit otherwise (C), keeping the released sidecar (A), and the donor mechanism, on 2026-10-22. Only vectors matching current text are copied, so no stale or deleted note is imported; one mechanism serves the upgrade, a store switch and a restore; #1795's input rebuild is the matching rule already trusted for a store's own rows; the minor release needs the upgrade automatic. **Rejected:** a bulk copy of every row through the contract; converters per pair of stores; an automatic import on every store switch; deleting the released sidecar after the upgrade. |
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
+| 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away |
