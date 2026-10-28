@@ -16,8 +16,8 @@ The files sit beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (here `index.db`), or at `M
 | File or schema | Written by | Losing it costs |
 |---|---|---|
 | `index.db` (and `index.db-wal`, `index.db-shm` while the server runs) | the search index | a rebuild of the index from the notes, with no provider calls |
-| `index-db-embeddings.v2.json` and the `index-db-embeddings.v2.m<N>.npy` it names | the `numpy` store, the default | every note embedded again |
-| `index-db-embeddings.sqlite3` (and its `-wal`, `-shm` while the server runs) | the `sqlite` store | every note embedded again |
+| `index-db-embeddings.v2.json` and the `index-db-embeddings.v2.m<N>.npy` it names | the `numpy` store | every note embedded again |
+| `index-db-embeddings.sqlite3` (and its `-wal`, `-shm` while the server runs) | the `sqlite` store, the default | every note embedded again |
 | the schema named by `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA` | the `postgres` store | every note embedded again |
 | `index-db-embeddings.lock` | the server, or `index`, `reindex` and `embeddings import`, while one of them writes the `numpy` or `sqlite` store | nothing; safe to leave or delete while no server runs |
 | `index-db-embeddings.json` and `.npy` | a 5.0 or 5.1 server | nothing once the upgrade below has run; going back to 5.1 then embeds everything again |
@@ -25,7 +25,7 @@ The files sit beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (here `index.db`), or at `M
 
 ## Upgrading from 5.x
 
-A 5.0 or 5.1 server kept its vectors in `index-db-embeddings.json` and `.npy`. On the first start of the new version, the configured `numpy` or `sqlite` store is built from those files: every vector whose note text is unchanged is copied, and only the rest is embedded. Nothing needs setting; the log says `embeddings_upgrade_started`, then `embeddings_donor_used` with how many vectors were copied (`reused`) and how many embedded. Files from another model, or the oldest layout that records no model, are refused (`embeddings_donor_refused`), and every note is embedded again.
+A 5.0 or 5.1 server kept its vectors in `index-db-embeddings.json` and `.npy`. On the first start of the new version, the configured `numpy` or `sqlite` store is built from those files: every vector whose note text is unchanged is copied, and only the rest is embedded. With no `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` set, the new version's store is `sqlite`, so a 5.x install that set none moves into `index-db-embeddings.sqlite3` this way; set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy` to keep the files a numpy store writes instead. Nothing needs setting; the log says `embeddings_upgrade_started`, then `embeddings_donor_used` with how many vectors were copied (`reused`) and how many embedded. Files from another model, or the oldest layout that records no model, are refused (`embeddings_donor_refused`), and every note is embedded again.
 
 What the upgrade costs, once:
 
@@ -97,7 +97,7 @@ Each of these asks the provider for every section of every note, which a paid pr
 
 - no `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` with a `numpy` or `sqlite` store, so the vectors live in memory and are embedded again at each start;
 - a change of embedding provider, model or dimensions;
-- a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `embeddings import`;
+- a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `embeddings import`, which includes leaving it unset on an edge build whose only store is a `numpy` one (`index-db-embeddings.v2.json` with no 5.x files beside it): run `embeddings import --from numpy` first, or set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy`;
 - `markdown-vault-mcp index --force`, or the `build_embeddings` tool with `force`;
 - deleting the store with no backup, or recreating an empty `postgres` schema;
 - a damaged store set aside when no usable 5.x files remain beside it;

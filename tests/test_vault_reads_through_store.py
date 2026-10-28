@@ -29,7 +29,11 @@ def _vault_dir(tmp_path: Path) -> Path:
 
 
 def _settings(tmp_path: Path, **kw: object) -> VaultSettings:
-    return VaultSettings(index_path=tmp_path / "index.db", read_only=False, **kw)
+    return VaultSettings(
+        index_path=tmp_path / "index.db",
+        read_only=False,
+        **{"embedding_store": "numpy", **kw},
+    )
 
 
 class TestTheVaultUsesTheNumpyStore:

@@ -283,7 +283,10 @@ def test_streamed_search_on_the_numpy_store_is_refused(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     root.mkdir()
     settings = VaultSettings(
-        index_path=tmp_path / "index.db", read_only=False, embedding_search="streamed"
+        index_path=tmp_path / "index.db",
+        read_only=False,
+        embedding_store="numpy",
+        embedding_search="streamed",
     )
     provider = MockEmbeddingProvider(dim=16)
     with pytest.raises(ConfigurationError, match="EMBEDDING_STORE"):
