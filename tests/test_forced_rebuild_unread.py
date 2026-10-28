@@ -9,7 +9,6 @@ paid for again once the folder was readable.
 from __future__ import annotations
 
 import os
-import shutil
 from typing import TYPE_CHECKING
 
 import pytest
@@ -89,21 +88,6 @@ class TestTheKeywordBuild:
             (root / "sub").chmod(0o755)
             vault.close()
 
-    def test_a_deleted_folder_still_loses_its_notes(
-        self, root: Path, tmp_path: Path
-    ) -> None:
-        vault = _vault(root, tmp_path)
-        try:
-            vault.index.build_index()
-            shutil.rmtree(root / "subway")
-            (root / "sub").chmod(0)
-            vault.index.build_index(force=True)
-            assert vault.reader.get_metadata("subway/x.md") is None
-            assert vault.reader.get_metadata("sub/gamma.md") is not None
-        finally:
-            (root / "sub").chmod(0o755)
-            vault.close()
-
     def test_a_prefix_sibling_is_not_kept(self, root: Path, tmp_path: Path) -> None:
         """``sub`` unreadable spares ``sub/…``, never ``subway/…``."""
         vault = _vault(root, tmp_path)
@@ -113,6 +97,7 @@ class TestTheKeywordBuild:
             (root / "sub").chmod(0)
             vault.index.build_index(force=True)
             assert vault.reader.get_metadata("subway/x.md") is None
+            assert vault.reader.get_metadata("sub/gamma.md") is not None
         finally:
             (root / "sub").chmod(0o755)
             vault.close()
@@ -149,22 +134,49 @@ class TestTheKeywordBuild:
             (root / "sub").chmod(0o755)
             vault.close()
 
-    def test_a_kept_note_is_read_again_once_readable(
-        self, root: Path, tmp_path: Path
+    @pytest.mark.parametrize(
+        "while_unread",
+        ["nothing", "reindex", "forced_build"],
+        ids=["directly", "after_a_reindex", "after_a_second_forced_build"],
+    )
+    def test_an_unchanged_kept_note_is_read_again_once_readable(
+        self, root: Path, tmp_path: Path, while_unread: str
     ) -> None:
-        """A kept note re-parses on the next readable scan, picking up an edit."""
+        """The empty hash survives every pass that cannot read the note.
+
+        Only a re-parse brings a kept note's rows up to the pipeline that
+        forced the build (#1124), so an unchanged note must count as modified.
+        """
         vault = _vault(root, tmp_path)
         try:
             vault.index.build_index()
             (root / "sub").chmod(0)
             vault.index.build_index(force=True)
+            if while_unread == "reindex":
+                vault.index.reindex()
+            elif while_unread == "forced_build":
+                vault.index.build_index(force=True)
             (root / "sub").chmod(0o755)
-            (root / "sub" / "gamma.md").write_text(
-                "# Gamma\n\nnewword\n", encoding="utf-8"
-            )
+            assert vault.index.reindex().modified == 1
+            assert vault.index.reindex().modified == 0
+        finally:
+            (root / "sub").chmod(0o755)
+            vault.close()
+
+    def test_a_kept_tombstone_survives_a_reindex_while_unread(
+        self, root: Path, tmp_path: Path
+    ) -> None:
+        """A reindex that cannot read the folder keeps its skips (#1929)."""
+        (root / "sub" / "bad.md").write_bytes(b"# Bad\n\n\xff\xfe\n")
+        vault = _vault(root, tmp_path)
+        try:
+            vault.index.build_index()
+            assert [r["path"] for r in vault._fts.list_tombstones()] == ["sub/bad.md"]
+            (root / "sub").chmod(0)
+            vault.index.build_index(force=True)
             vault.index.reindex()
-            assert _paths(vault, "newword") == ["sub/gamma.md"]
-            assert _paths(vault, "gammaword") == []
+            assert [r["path"] for r in vault._fts.list_tombstones()] == ["sub/bad.md"]
+            assert "sub/bad.md" in vault._index_mgr._tracker.skip_reasons()
         finally:
             (root / "sub").chmod(0o755)
             vault.close()

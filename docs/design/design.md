@@ -738,7 +738,11 @@ Two methods manage the index:
   path under a reported directory (an unreadable root spares all), and the
   kept notes enter the tracker state with an empty hash, so the first scan
   that reads them re-parses them under the current pipeline and a note
-  deleted meanwhile is deleted. When a
+  deleted meanwhile is deleted. The tracker writes a recorded hash back for
+  every note it keeps under an unreadable directory, so the empty hash
+  survives the reindexes that still cannot read the note, and it keeps the
+  skipped entries there too, so their tombstones and the vectors they hold
+  survive as well. When a
   persistent `index_path` contains documents that now match
   `exclude_patterns`, they are purged from the FTS and vector indexes
   after the scan, but only when a scan actually runs (that is, on a cold

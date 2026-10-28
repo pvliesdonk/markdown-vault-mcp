@@ -373,8 +373,9 @@ class IndexManager:
         documents (tombstones included), is what an unmounted volume or an
         empty bind mount looks like: the pass is *unavailable*, so nothing is
         removed and the tracker keeps its state (#1791, #1505). A forced
-        rebuild, the deliberate "I emptied it", wipes the index first and
-        never asks.
+        rebuild, the deliberate "I emptied it", never asks: it wipes every row
+        outside the directories its walk could not read, so a root it could
+        not read at all keeps every row (#1929).
 
         Returns:
             ``True`` when the pass is refused, after one WARNING.
@@ -675,7 +676,7 @@ class IndexManager:
         # with an empty hash, so the first scan that reads them re-parses them.
         skipped_state.update(dict.fromkeys(kept.skip_reasons, ""))
         self._tracker.update_state(
-            [*notes, *kept.notes],
+            [*kept.notes, *notes],
             skipped=skipped_state,
             skip_reasons={**kept.skip_reasons, **skip_reasons},
         )
