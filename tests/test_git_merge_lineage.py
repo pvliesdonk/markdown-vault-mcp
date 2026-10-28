@@ -1,8 +1,9 @@
 """Single-note history and diff across a merge (#1306).
 
-``git log --follow`` resolves a note's identity from the diff of a single
-parent, so it cannot cross a rename that belongs to no parent's diff — the
-shape a ``git mv`` performed while resolving a merge produces.  The revision
+Before git 2.56, ``git log --follow`` resolved a note's identity from the diff
+of a single parent, so it could not cross a rename that belongs to no parent's
+diff — the shape a ``git mv`` performed while resolving a merge produces.  From
+2.56 it crosses one without printing a record for it (#1779).  The revision
 reader crosses it by walking ``-m --first-parent``; the history and per-commit
 diff walks did not, and reported a note renamed that way as having no past at
 all, or — once a later commit landed on the new name — only the commits after
@@ -488,3 +489,49 @@ class TestSegmentWalkEdges:
 
         assert _first_parent(repo, root, None) is None
         assert _first_parent(repo, second, None) == root
+
+
+class TestTheFollowWalkThatCrossesTheMergeItself:
+    """From git 2.56, ``--follow`` crosses the merge-time rename unannounced (#1779).
+
+    It carries on under the earlier name without an ``R`` record joining the
+    two, so the boundary walk has to adopt the name git reports, or it never
+    recognises the creation record and lets a predecessor's commits through.
+    These pin the rule without depending on the git a runner happens to have.
+    """
+
+    def test_the_one_other_name_git_reports_is_adopted(self) -> None:
+        """A block naming only the earlier path moves the walk onto it."""
+        from markdown_vault_mcp.git.query import _followed_name
+
+        assert _followed_name(["M", "old.md"], "renamed.md") == "old.md"
+        # The rename's destination is the name git follows at that commit.
+        assert _followed_name(["R096", "a.md", "old.md"], "renamed.md") == "old.md"
+
+    def test_a_block_naming_the_tracked_path_keeps_it(self) -> None:
+        """Git's records already say where the note is; nothing to adopt."""
+        from markdown_vault_mcp.git.query import _followed_name
+
+        assert _followed_name(["R096", "old.md", "renamed.md"], "renamed.md") == (
+            "renamed.md"
+        )
+
+    def test_an_ambiguous_or_empty_block_keeps_the_tracked_path(self) -> None:
+        """No records, or records for two other paths, name no single note."""
+        from markdown_vault_mcp.git.query import _followed_name
+
+        assert _followed_name([], "renamed.md") == "renamed.md"
+        assert _followed_name(["M", "a.md", "M", "b.md"], "renamed.md") == (
+            "renamed.md"
+        )
+
+    def test_the_creation_under_the_earlier_name_is_the_boundary(self) -> None:
+        """Adopting the reported name lets the walk stop at the note's birth."""
+        from markdown_vault_mcp.git.query import _followed_name, _track_records
+
+        tracked = "renamed.md"
+        for block, birth in ((["M", "old.md"], False), (["A", "old.md"], True)):
+            tracked = _followed_name(block, tracked)
+            tracked, reached_birth = _track_records(block, tracked)
+            assert reached_birth is birth
+        assert tracked == "old.md"
