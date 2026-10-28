@@ -4748,10 +4748,11 @@ today and #1506's envelope measures.
 
 ### Measuring the operating envelope (#1506)
 
-#1506's budgets (the comment on #1506 has the table) are checked against the
-assembled server, not a search-only prototype. `scripts/envelope/` is the
-maintainer tool that measures it (#1895). It is not a test or a CI job, and
-it measures without judging: #1899 compares its figures with the budgets.
+The numbers proposed on #1506 (the comment on #1506 has the table) are tested
+against the assembled server, not a search-only prototype. `scripts/envelope/`
+is the maintainer tool that measures it (#1895). It is not a test or a CI job,
+and it measures without judging. [operating-envelope.md](operating-envelope.md)
+records #1899's runs and sets each proposed number beside the measurements.
 
 Run it from the repository root on Linux:
 
