@@ -185,8 +185,8 @@ correction.
   adopted none of the proposed numbers; the measured envelope is the
   documented capacity. The release kind is not #1900's: knope cuts it from
   the commits.
-- **#1901** writes the operator page from this record. `docs/use/embeddings.md`
-  still gives #1501 and #1502's prototype figures (39 ms streamed against
-  3 ms resident; 106 MB and 950 MB added), which these measurements supersede.
+- **#1901** wrote the operator page from this record,
+  [`docs/use/embedding-stores.md`](../use/embedding-stores.md); the prototype
+  figures `docs/use/embeddings.md` gave (#1501, #1502) were replaced in #1940.
 - **#1936**, **#1937** and **#1938** follow up the numpy memory, the PostgreSQL
   restart and the cold-build peak.
