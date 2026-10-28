@@ -60,20 +60,22 @@ class VaultSettings:
             an in-memory database that is discarded when the object is
             collected.
         embeddings_path: Base path of the embedding store's files (the
-            numpy store's ``{path}.v2.json`` and ``{path}.v2.m<N>.npy``).  ``None`` (default) puts them
+            SQLite store's ``{path}.sqlite3``; the numpy store's
+            ``{path}.v2.json`` and ``{path}.v2.m<N>.npy``).  ``None`` (default) puts them
             beside ``index_path`` as ``{index name}-embeddings`` (dots made
             dashes: ``index-db-embeddings``), or keeps
             the vectors in memory without an index path (#1708). Semantic
             search is on whenever ``Vault`` is given an embedding provider.
-        embedding_store: The vector backend's registry name; ``"numpy"``
-            (the default) keeps the vectors in files at ``embeddings_path``,
-            ``"sqlite"`` in one SQLite database there, ``"postgres"`` in the
-            PostgreSQL schema ``embedding_postgres_schema`` names (#1504).
-        embedding_search: ``"resident"`` (the default) holds the vectors in
-            memory; ``"streamed"`` keeps none resident and reads them in
-            batches per search (#1377). Needs ``embedding_store="sqlite"``
-            or ``"postgres"``, which must be streamed; a store held in
-            memory is always resident.
+        embedding_store: The vector backend's registry name; ``"sqlite"``
+            (the default, #1900) keeps the vectors in one SQLite database at
+            ``embeddings_path``, ``"numpy"`` in files there, ``"postgres"`` in
+            the PostgreSQL schema ``embedding_postgres_schema`` names (#1504).
+        embedding_search: ``"resident"`` holds the vectors in memory;
+            ``"streamed"`` keeps none resident and reads them in batches per
+            search (#1377), and needs ``embedding_store="sqlite"`` or
+            ``"postgres"``, which must be streamed. ``""`` (the default) is
+            the store's own: streamed for SQLite and PostgreSQL, resident for
+            numpy. A store held in memory is always resident.
         embedding_search_workspace_bytes: The vector bytes one streamed
             batch may hold (default 1 MiB).
         embedding_postgres_dsn: With ``embedding_store="postgres"``, the
@@ -195,8 +197,8 @@ class VaultSettings:
 
     index_path: Path | None = None
     embeddings_path: Path | None = None
-    embedding_store: str = "numpy"
-    embedding_search: str = "resident"
+    embedding_store: str = "sqlite"
+    embedding_search: str = ""
     embedding_search_workspace_bytes: int = 1 << 20
     embedding_postgres_dsn: str | None = dataclasses.field(default=None, repr=False)
     embedding_postgres_schema: str | None = None

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
 import markdown_vault_mcp.stores.sqlite_keyword
 import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
+from markdown_vault_mcp.config_sections.indexing import store_default_search
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
 # state-path default historically lived in this module). They now name only
@@ -175,25 +176,31 @@ def _configured_vector_backend(settings: VaultSettings) -> Any:
     """
     if settings.embedding_store == "postgres":
         return _postgres_backend(settings)
+    search = _search_mode(settings)
     try:
         factory = get_backend("vector", settings.embedding_store)
     except LookupError as exc:
         raise ConfigurationError(str(exc)) from exc
     if settings.embedding_store != "sqlite":
-        if settings.embedding_search != "resident":
+        if search != "resident":
             raise ConfigurationError(
-                f"embedding_search={settings.embedding_search!r} needs "
+                f"embedding_search={search!r} needs "
                 f"embedding_store='sqlite' (EMBEDDING_STORE=sqlite); the "
                 f"{settings.embedding_store!r} store is resident only."
             )
         return factory()
     try:
         return factory(
-            search=settings.embedding_search,
+            search=search,
             workspace_bytes=settings.embedding_search_workspace_bytes,
         )
     except ValueError as exc:
         raise ConfigurationError(f"Vector search settings refused: {exc}") from exc
+
+
+def _search_mode(settings: VaultSettings) -> str:
+    """The search mode *settings* name, or the store's own when unset (#1900)."""
+    return settings.embedding_search or store_default_search(settings.embedding_store)
 
 
 def _postgres_backend(settings: VaultSettings) -> Any:
@@ -219,7 +226,7 @@ def _postgres_backend(settings: VaultSettings) -> Any:
             "EMBEDDING_STORE=postgres needs the postgres extra: "
             f"pip install 'markdown-vault-mcp[postgres]' ({exc})."
         ) from exc
-    if settings.embedding_search != "streamed":
+    if _search_mode(settings) != "streamed":
         raise ConfigurationError(
             "embedding_store='postgres' searches in the database: set "
             "embedding_search='streamed' (EMBEDDING_SEARCH=streamed)."
