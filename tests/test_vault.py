@@ -2895,6 +2895,7 @@ class TestSemanticSearch:
             source_dir=vault_path,
             settings=VaultSettings(
                 embeddings_path=embeddings_path,
+                embedding_store="numpy",
             ),
             embedding_provider=mock_provider,
         )
@@ -2915,6 +2916,7 @@ class TestSemanticSearch:
             source_dir=vault_path,
             settings=VaultSettings(
                 embeddings_path=embeddings_path,
+                embedding_store="numpy",
             ),
             embedding_provider=AlternateProvider(),
         )
@@ -3297,6 +3299,7 @@ class TestBuildEmbeddings:
             source_dir=vault,
             settings=VaultSettings(
                 embeddings_path=embeddings_path,
+                embedding_store="numpy",
             ),
             embedding_provider=mock_provider,
         )

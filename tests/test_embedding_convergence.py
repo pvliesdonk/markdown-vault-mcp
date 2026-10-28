@@ -62,6 +62,7 @@ def _boot(vault_dir: Path, tmp_path: Path, provider: MockEmbeddingProvider) -> V
             index_path=tmp_path / "fts.db",
             state_path=tmp_path / "s.json",
             embeddings_path=tmp_path / "vectors",
+            embedding_store="numpy",
         ),
         embedding_provider=provider,
     )
@@ -435,6 +436,7 @@ class TestBootEmbeddingConvergence:
                 index_path=tmp_path / "fts.db",
                 state_path=tmp_path / "s.json",
                 embeddings_path=tmp_path / "vectors",
+                embedding_store="numpy",
             ),
             embedding_provider=provider,
         )
@@ -598,6 +600,7 @@ def _boot_enriched(
             index_path=tmp_path / "fts.db",
             state_path=tmp_path / "s.json",
             embeddings_path=tmp_path / "vectors",
+            embedding_store="numpy",
             searchable_frontmatter_fields=["summary"],
         ),
         embedding_provider=provider,
@@ -696,6 +699,7 @@ class TestPreambleConvergence:
                 index_path=tmp_path / "fts.db",
                 state_path=tmp_path / "s.json",
                 embeddings_path=tmp_path / "vectors",
+                embedding_store="numpy",
                 searchable_frontmatter_fields=["summary"],
             ),
             embedding_provider=provider,

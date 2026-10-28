@@ -56,7 +56,11 @@ def _source(tmp_path: Path) -> Path:
 def _vault(tmp_path: Path, provider: MockEmbeddingProvider, **kw: Any) -> Vault:
     return Vault(
         source_dir=_source(tmp_path),
-        settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False, **kw),
+        settings=VaultSettings(
+            index_path=tmp_path / "index.db",
+            read_only=False,
+            **{"embedding_store": "numpy", **kw},
+        ),
         embedding_provider=provider,
     )
 
