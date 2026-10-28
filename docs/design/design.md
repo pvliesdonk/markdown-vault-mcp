@@ -4804,11 +4804,13 @@ phase's leftovers.
   as total resident (`VmRSS`); #1502's figures, the budget's source, were
   sampled process RSS.
 - *Build peak.* The build phase samples the same two figures the same way,
-  from before the vault opens until `build_index` and `build_embeddings`
-  return, so reading every note and its metadata and holding the texts to
-  embed are in it (#1898). It is the whole process's peak, interpreter and
-  libraries included, not an "adds" figure; the report's Build table gives
-  it beside the build's seconds and texts embedded.
+  from before the vault opens until it has closed, so reading every note and
+  its metadata (`build_index`'s scan) and holding the texts to embed
+  (`build_embeddings`) are in it (#1898). It is the whole process's peak,
+  interpreter and libraries included, not an "adds" figure, and like every
+  sampled peak it can miss a spike shorter than the 10 ms interval. The
+  report's Build table gives it beside the build's seconds, which are timed
+  with the sampler running, and the texts embedded.
 - *Warm latency.* p50 and p95 per kind after discarded warm-up calls:
   semantic, hybrid, filtered (semantic in the filter folder) and similar
   notes.

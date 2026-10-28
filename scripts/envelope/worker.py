@@ -114,8 +114,9 @@ def build(config: dict[str, Any]) -> dict[str, Any]:
     """Index the vault and embed it.
 
     The process's peak memory is sampled from before the vault opens until
-    both builds return, so it includes reading every note and its metadata
-    and holding the texts to embed (#1898).
+    it has closed, so it includes reading every note and its metadata and
+    holding the texts to embed (#1898). The seconds are timed with the
+    sampler running.
 
     Args:
         config: The run's configuration.

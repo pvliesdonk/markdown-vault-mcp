@@ -17,6 +17,8 @@ import pytest
 from scripts.envelope import __main__ as cli
 from scripts.envelope import probes, synth, worker
 
+from markdown_vault_mcp import scanner
+
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="reads /proc"
 )
@@ -127,22 +129,31 @@ def _config(tmp_path: Path, backend: str = "numpy") -> dict[str, Any]:
     }  # fmt: skip
 
 
+@pytest.mark.parametrize(
+    ("owner", "name"),
+    [
+        # Reading a note and its metadata, in build_index's scan.
+        (scanner, "parse_note_categorized"),
+        # Embedding, in build_embeddings.
+        (synth.StandInProvider, "embed"),
+    ],
+)
 def test_the_build_reports_a_peak_freed_before_it_ends(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owner: object, name: str
 ) -> None:
-    real = synth.StandInProvider.embed
+    real = getattr(owner, name)
     spiked: list[int] = []
 
-    def embed(self: synth.StandInProvider, texts: list[str]) -> list[list[float]]:
+    def spike(*args: Any, **kwargs: Any) -> Any:
         if not spiked:
             block = bytearray(64 << 20)
             block[::4096] = b"x" * len(block[::4096])
             spiked.append(len(block))
-            time.sleep(0.05)  # five of the sampler's intervals
+            time.sleep(0.2)  # twenty of the sampler's intervals
             del block
-        return real(self, texts)
+        return real(*args, **kwargs)
 
-    monkeypatch.setattr(synth.StandInProvider, "embed", embed)
+    monkeypatch.setattr(owner, name, spike)
     config = _config(tmp_path)
     with probes.PeakSampler() as before:
         pass
