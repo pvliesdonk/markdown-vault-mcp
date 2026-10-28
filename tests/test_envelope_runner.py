@@ -171,6 +171,17 @@ def test_the_build_reports_a_peak_freed_before_it_ends(
     assert build["peak_resident"] >= build["peak_anon"]
 
 
+@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
+def test_the_status_sits_beside_the_measured_store(
+    tmp_path: Path, backend: str
+) -> None:
+    config = {**_config(tmp_path, backend), "discard": 1, "queries": 2}
+    worker.build(config)
+    status = worker.memory(config)["status"]
+    assert status["search_mode"] == cli.BACKENDS[backend]
+    assert status["measured_store_bytes"] == status["stored_bytes"] > 0
+
+
 def test_a_failed_status_read_keeps_the_memory_figures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
