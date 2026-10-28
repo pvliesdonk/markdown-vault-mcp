@@ -1117,6 +1117,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/postgresql/" class="md-nav__link">
         
   
@@ -1153,6 +1181,34 @@
     
   
     Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
   
 
     
@@ -2788,7 +2844,7 @@
 
 <h1 id="command-line">Command line<a class="headerlink" href="#command-line" title="Permanent link">&para;</a></h1>
 <!-- DOMAIN-INTRO-START -->
-<p><code>serve</code> runs the server. <code>index</code>, <code>search</code> and <code>reindex</code> work on the vault and its index directly, without a server. They read the same <code>MARKDOWN_VAULT_MCP_*</code> settings as <code>serve</code>, and <code>--source-dir</code> and <code>--index-path</code> override the vault and index locations. <code>index</code> and <code>reindex</code> also bring the embeddings up to date when an <a href="../../use/embeddings/">embedding provider</a> is configured and an index path, an embeddings path or a <a href="../../use/postgresql/">PostgreSQL store</a> keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or <code>index</code>) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. They update the keyword index before they reach the embeddings, so that index is still brought up to date (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1890">#1890</a>). <code>reindex</code> also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does <code>index</code> without <code>--force</code> when it has to rebuild the index, as after a settings change. <code>embeddings import</code> copies vectors from another store into the configured one (<a href="../../use/embeddings/#moving-vectors-between-stores">Moving vectors between stores</a>). Without an index path, <code>search</code> indexes the vault in memory for that one query and writes no file, not even one <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names, and loads the vectors stored at <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> instead of embedding the vault for the query. With neither path set and no PostgreSQL store, <code>--mode semantic</code> or <code>hybrid</code> with an <a href="../../use/embeddings/">embedding provider</a> configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, <code>search</code> reads the vectors from the database and embeds only the query. With an index path, <code>search</code> only reads the stored index and its vectors, which <code>index</code> and <code>reindex</code> keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the <code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code> stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, <code>--mode semantic</code> or <code>hybrid</code> stops with an error and leaves them as they are.</p>
+<p><code>serve</code> runs the server. <code>index</code>, <code>search</code> and <code>reindex</code> work on the vault and its index directly, without a server. They read the same <code>MARKDOWN_VAULT_MCP_*</code> settings as <code>serve</code>, and <code>--source-dir</code> and <code>--index-path</code> override the vault and index locations. <code>index</code> and <code>reindex</code> also bring the embeddings up to date when an <a href="../../use/embeddings/">embedding provider</a> is configured and an index path, an embeddings path or a <a href="../../use/postgresql/">PostgreSQL store</a> keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or <code>index</code>) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by <code>index.db.lock</code> beside it, so they stop with the same error before writing either store and leave both as they were, as <code>embeddings import</code> does. <code>reindex</code> also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does <code>index</code> without <code>--force</code> when it has to rebuild the index, as after a settings change. <code>embeddings import</code> copies vectors from another store into the configured one (<a href="../../use/embeddings/#moving-vectors-between-stores">Moving vectors between stores</a>). Without an index path, <code>search</code> indexes the vault in memory for that one query and writes no file, not even one <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names, and loads the vectors stored at <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> instead of embedding the vault for the query. With neither path set and no PostgreSQL store, <code>--mode semantic</code> or <code>hybrid</code> with an <a href="../../use/embeddings/">embedding provider</a> configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, <code>search</code> reads the vectors from the database and embeds only the query. With an index path, <code>search</code> only reads the stored index and its vectors, which <code>index</code> and <code>reindex</code> keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the <code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code> stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, <code>--mode semantic</code> or <code>hybrid</code> stops with an error and leaves them as they are.</p>
 <!-- DOMAIN-INTRO-END -->
 
 <p>Generic markdown vault MCP with hybrid search</p>

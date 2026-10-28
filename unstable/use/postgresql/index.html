@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/">
       
       
-        <link rel="prev" href="../embeddings/">
+        <link rel="prev" href="../embedding-stores/">
       
       
         <link rel="next" href="../embedding-state/">
@@ -1117,6 +1117,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -1291,6 +1319,34 @@
     
   
     Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
   
 
     
@@ -2845,8 +2901,8 @@
 
 
 <h1 id="postgresql-embedding-store">PostgreSQL embedding store<a class="headerlink" href="#postgresql-embedding-store" title="Permanent link">&para;</a></h1>
-<p>With <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres</code>, a vault keeps its embeddings in a PostgreSQL schema and the <a href="https://github.com/pgvector/pgvector">pgvector</a> extension scores them. <a href="../embeddings/#keeping-the-embeddings-in-postgresql">Embeddings</a> says what the store is and when to choose it. This page is for the operator who runs it, from the first <code>CREATE SCHEMA</code> to the log line that says something went wrong.</p>
-<p>The store supports PostgreSQL 15 to 18 with pgvector 0.7.0 or later (17 with pgvector 0.7.4 or later and 18 with pgvector 0.8.7 or later, the lowest versions built for them), the range a CI workflow tests on every change to the store. A pip or uv install needs the <code>postgres</code> extra (<code>pip install "markdown-vault-mcp[postgres]"</code>); without it the server refuses to start and names the install command. The Docker image, the Claude Desktop bundle and the Claude Code plugin install <code>[all]</code>, which includes it.</p>
+<p>With <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres</code>, a vault keeps its embeddings in a PostgreSQL schema and the <a href="https://github.com/pgvector/pgvector">pgvector</a> extension scores them. <a href="../embeddings/#keeping-the-embeddings-in-postgresql">Embeddings</a> says what the store is, and <a href="../embedding-stores/">Choosing an embedding store</a> when to choose it. This page is for the operator who runs it, from the first <code>CREATE SCHEMA</code> to the log line that says something went wrong.</p>
+<p>The store supports PostgreSQL 15 to 18 with pgvector 0.7.0 or later (17 with pgvector 0.7.4 or later and 18 with pgvector 0.8.7 or later, the lowest versions built for them), the range a CI workflow tests on every change to the store. Its Python drivers are <code>psycopg</code> 3.3.1, <code>psycopg-pool</code> 3.3 and <code>pgvector</code> 0.5 or later, and the same workflow runs the tests with exactly those on Python 3.11. <code>psycopg</code> 3.3.0 is excluded: it reads server-side cursors wrongly, which those tests caught. PostgreSQL 14 and older are untested; the store neither checks for them nor refuses them. A pgvector older than 0.7.0 is refused when the store opens, with the <code>ALTER EXTENSION vector UPDATE;</code> to run. A pip or uv install needs the <code>postgres</code> extra (<code>pip install "markdown-vault-mcp[postgres]"</code>); without it the server refuses to start and names the install command. The Docker image, the Claude Desktop bundle and the Claude Code plugin install <code>[all]</code>, which includes it.</p>
 <h2 id="provision-the-database">Provision the database<a class="headerlink" href="#provision-the-database" title="Permanent link">&para;</a></h2>
 <p>Run this once per vault, as a superuser, in the database the connection string will name (<code>psql -d vectors</code>; create it first with <code>CREATE DATABASE vectors;</code> if it does not exist):</p>
 <div class="highlight"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="n">EXTENSION</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">vector</span><span class="p">;</span>

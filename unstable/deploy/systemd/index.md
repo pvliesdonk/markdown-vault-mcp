@@ -120,6 +120,7 @@ MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR=/var/lib/markdown-vault-mcp/fastembed
 
 - **A writable vault outside the state directory needs its own `ReadWritePaths=` drop-in**, as above. The server's change-tracking file sits beside the index in the state directory, not in the vault. `ProtectHome=yes` keeps `/home` from the service. A vault under `/srv`, like the one in the drop-in above, stays clear of it.
 - **Without `INDEX_PATH`** the index lives in memory and is rebuilt at every start.
+- **Keep `INDEX_PATH` and `EMBEDDINGS_PATH` on a local disk**, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md)).
 - **Without `FASTEMBED_CACHE_DIR`** FastEmbed keeps its model in the temporary directory. The unit's `PrivateTmp=yes` discards that at every stop, so the model downloads again at each start.
 
 For a vault that commits and pushes through the server, an empty `SOURCE_DIR` plus the variables in [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/#managed-mode-recommended-for-containerized-deployments) is enough: the server clones at the first start.

@@ -1388,6 +1388,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/postgresql/" class="md-nav__link">
         
   
@@ -1424,6 +1452,34 @@
     
   
     Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
   
 
     
@@ -3501,7 +3557,7 @@ directories (default 1000/1000).</p>
 <p>If the vault's volume is missing when the server starts, Docker gives the server an empty folder at <code>/data/vault</code>. A vault folder that holds nothing at all (no notes, and no folder such as <code>.obsidian/</code>) while the index holds notes counts as unavailable, logged as <code>vault_root_empty_removals_refused</code>. The index and the embeddings are kept, so the server picks up where it left off once the volume is back. Meanwhile it refuses writes, since one file written into the empty folder would make it look like a vault whose notes were deleted. To empty a vault on purpose, stop the server and delete its notes. <code>markdown-vault-mcp index --force</code> then rebuilds the index and the embeddings from the empty folder. Deleting the last notes another way leaves their embeddings stored, never shown in search, until a note is added or you run that command.</p>
 <p>The write tools are on by default; <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> makes a search-only server. The server keeps its own state on the <code>state-data</code> volume, so the vault mount can be read-only.</p>
 <h3 id="what-datastate-holds">What <code>/data/state</code> holds<a class="headerlink" href="#what-datastate-holds" title="Permanent link">&para;</a></h3>
-<p>This server keeps its search index (<code>index.db</code>), its embeddings and the FastEmbed model cache under <code>/data/state</code>, beside the server's own state. It writes nothing to <code>/data/service</code>. The notes live only in the vault: the index and embeddings under <code>/data/state</code> are rebuilt when lost, at the cost of a full reindex.</p>
+<p>This server keeps its search index (<code>index.db</code>), its embeddings and the FastEmbed model cache under <code>/data/state</code>, beside the server's own state. It writes nothing to <code>/data/service</code>. The notes live only in the vault: the index and embeddings under <code>/data/state</code> are rebuilt when lost, at the cost of a full reindex. Keep the <code>state-data</code> volume on a local disk, not a network share: the index is SQLite in WAL mode (<a href="../../use/storage/">Index storage and SQLite</a>).</p>
 <h3 id="git">Git<a class="headerlink" href="#git" title="Permanent link">&para;</a></h3>
 <p>The image includes <code>git</code> and <code>git-lfs</code>. For a vault that commits and pushes the changes made through the server, set the variables in <a href="../../use/git-integration/#managed-mode-recommended-for-containerized-deployments">Git integration</a>. An empty vault folder plus <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> is cloned at the first start.</p>
 <!-- DOMAIN-DOCKER-EXTRA-END -->

@@ -18,7 +18,7 @@ Dict with the following fields:
 - provider (str | None): Provider class name when configured (such as `"OllamaProvider"`), or null if not configured.
 - `chunk_count` (int): Number of chunks currently in the vector index.
 - path (str | None): Vector index file path when persisted in files, or null when the vectors are held in memory, kept in a database (see backend and `store_details`), or not configured.
-- backend (str | None): Name of the store holding the vectors (such as `"numpy"`), or null if no provider is configured.
+- backend (str | None): Name of the store holding the vectors (such as `"sqlite"`), or null if no provider is configured.
 - identity (dict | None): The provider, model, variant, text format and dimension the stored vectors were embedded with, or null until the store is first opened.
 - generation (int | None): Count of full rebuilds the store has published, or null until the store is first opened.
 - `search_mode` (str | None): "resident" when semantic search holds the vectors in memory, "streamed" when each search reads them in batches.

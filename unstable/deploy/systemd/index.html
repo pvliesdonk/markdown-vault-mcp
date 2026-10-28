@@ -1261,6 +1261,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/postgresql/" class="md-nav__link">
         
   
@@ -1297,6 +1325,34 @@
     
   
     Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
   
 
     
@@ -3000,6 +3056,7 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
 <ul>
 <li><strong>A writable vault outside the state directory needs its own <code>ReadWritePaths=</code> drop-in</strong>, as above. The server's change-tracking file sits beside the index in the state directory, not in the vault. <code>ProtectHome=yes</code> keeps <code>/home</code> from the service. A vault under <code>/srv</code>, like the one in the drop-in above, stays clear of it.</li>
 <li><strong>Without <code>INDEX_PATH</code></strong> the index lives in memory and is rebuilt at every start.</li>
+<li><strong>Keep <code>INDEX_PATH</code> and <code>EMBEDDINGS_PATH</code> on a local disk</strong>, not a network share: the index is SQLite in WAL mode (<a href="../../use/storage/">Index storage and SQLite</a>).</li>
 <li><strong>Without <code>FASTEMBED_CACHE_DIR</code></strong> FastEmbed keeps its model in the temporary directory. The unit's <code>PrivateTmp=yes</code> discards that at every stop, so the model downloads again at each start.</li>
 </ul>
 <p>For a vault that commits and pushes through the server, an empty <code>SOURCE_DIR</code> plus the variables in <a href="../../use/git-integration/#managed-mode-recommended-for-containerized-deployments">Git integration</a> is enough: the server clones at the first start.</p>

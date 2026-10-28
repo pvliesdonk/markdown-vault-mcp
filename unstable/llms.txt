@@ -34,8 +34,10 @@
 
 - [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/index.md): How to use this server's features for real tasks, and why they behave as they do.
 - [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md): Choose and configure an embedding provider for search by meaning: FastEmbed, Ollama, OpenAI-compatible endpoints or Voyage.
+- [Choosing an embedding store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-stores/index.md): Choose where the embeddings live (SQLite, numpy or PostgreSQL) from what each store was measured to cost in memory, disk, latency and restart time.
 - [PostgreSQL embedding store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/index.md): Run the PostgreSQL embedding store in production: provisioning, TLS, poolers, timeouts, space, backup and status.
 - [Upgrading, switching and restoring embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/index.md): Upgrade from 5.x, switch embedding stores, and back up or restore the index and embeddings without paying to embed unchanged notes again.
+- [Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md): What the server's index files need from the storage they sit on, why one process writes them at a time, and which SQLite each installation method brings.
 - [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/index.md): Choose a git mode for the vault, configure commits, pushes and pulls, and read history back.
 - [Vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/vault-explorer/index.md): What the vault explorer shows in a client that renders MCP Apps, and how to open each view.
 - [Obsidian everywhere](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/obsidian-everywhere/index.md): Keep one Obsidian vault on desktop, mobile and Claude, with git as the source of truth.

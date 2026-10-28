@@ -1117,6 +1117,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../use/embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../use/postgresql/" class="md-nav__link">
         
   
@@ -1153,6 +1181,34 @@
     
   
     Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
   
 
     
@@ -4491,7 +4547,8 @@ in-memory index.</p>
             <td>
               <div class="doc-md-description">
                 <p><code>False</code> opens a file read-only (#1758) and is
-ignored for an in-memory index.</p>
+ignored for an in-memory index. <code>True</code> on a file takes
+its writer lock, held until the index closes.</p>
               </div>
             </td>
             <td>
@@ -4541,6 +4598,16 @@ ignored for an in-memory index.</p>
             <td>
               <div class="doc-md-description">
                 <p>If <em>identity</em> is given.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="StoreBusyError">StoreBusyError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If another process owns the file.</p>
               </div>
             </td>
           </tr>

@@ -1117,6 +1117,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/postgresql/" class="md-nav__link">
         
   
@@ -1153,6 +1181,34 @@
     
   
     Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
   
 
     
@@ -3996,19 +4052,19 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code></td>
 <td>(none)</td>
 <td>No</td>
-<td>Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.v2.json and the matrix it names beside index.db; the first build copies in the vectors a release's sidecar there holds, then leaves it alone); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.</td>
+<td>Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.sqlite3 beside index.db, or index-db-embeddings.v2.json and the matrix it names with EMBEDDING_STORE=numpy; the first build copies in the vectors a release's sidecar there holds, then leaves it alone); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code></td>
-<td><code>numpy</code></td>
+<td><code>sqlite</code></td>
 <td>No</td>
-<td>Where embeddings are stored. 'numpy' (the default) keeps them in files beside the index; 'sqlite' keeps them in one SQLite database there (index-db-embeddings.sqlite3), each change written durably on its own. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps them in a PostgreSQL schema with pgvector (EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the postgres extra).</td>
+<td>Where embeddings are stored. 'sqlite' (the default) keeps them in one SQLite database beside the index (index-db-embeddings.sqlite3), each change written durably on its own; 'numpy' keeps them in files there and rewrites them all on each save. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory. 'postgres' keeps them in a PostgreSQL schema with pgvector (EMBEDDING_POSTGRES_DSN and EMBEDDING_POSTGRES_SCHEMA; the postgres extra).</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH</code></td>
 <td>(none)</td>
 <td>No</td>
-<td>How semantic search reads the embeddings. 'resident' holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it is the store's default: 'streamed' with postgres, 'resident' otherwise.</td>
+<td>How semantic search reads the embeddings. 'resident' holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite or postgres, and postgres is always streamed; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident. Unset, it is the store's default: 'streamed' with sqlite and postgres, 'resident' with numpy.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB</code></td>

@@ -16,7 +16,7 @@
         <link rel="prev" href="../postgresql/">
       
       
-        <link rel="next" href="../git-integration/">
+        <link rel="next" href="../storage/">
       
       
         
@@ -1120,6 +1120,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../postgresql/" class="md-nav__link">
         
   
@@ -1299,6 +1327,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2865,12 +2921,12 @@
 </tr>
 <tr>
 <td><code>index-db-embeddings.v2.json</code> and the <code>index-db-embeddings.v2.m&lt;N&gt;.npy</code> it names</td>
-<td>the <code>numpy</code> store, the default</td>
+<td>the <code>numpy</code> store</td>
 <td>every note embedded again</td>
 </tr>
 <tr>
 <td><code>index-db-embeddings.sqlite3</code> (and its <code>-wal</code>, <code>-shm</code> while the server runs)</td>
-<td>the <code>sqlite</code> store</td>
+<td>the <code>sqlite</code> store, the default</td>
 <td>every note embedded again</td>
 </tr>
 <tr>
@@ -2896,7 +2952,7 @@
 </tbody>
 </table>
 <h2 id="upgrading-from-5x">Upgrading from 5.x<a class="headerlink" href="#upgrading-from-5x" title="Permanent link">&para;</a></h2>
-<p>A 5.0 or 5.1 server kept its vectors in <code>index-db-embeddings.json</code> and <code>.npy</code>. On the first start of the new version, the configured <code>numpy</code> or <code>sqlite</code> store is built from those files: every vector whose note text is unchanged is copied, and only the rest is embedded. Nothing needs setting; the log says <code>embeddings_upgrade_started</code>, then <code>embeddings_donor_used</code> with how many vectors were copied (<code>reused</code>) and how many embedded. Files from another model, or the oldest layout that records no model, are refused (<code>embeddings_donor_refused</code>), and every note is embedded again.</p>
+<p>A 5.0 or 5.1 server kept its vectors in <code>index-db-embeddings.json</code> and <code>.npy</code>. On the first start of the new version, the configured <code>numpy</code> or <code>sqlite</code> store is built from those files: every vector whose note text is unchanged is copied, and only the rest is embedded. With no <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code> set, the new version's store is <code>sqlite</code>, so a 5.x install that set none moves into <code>index-db-embeddings.sqlite3</code> this way; set <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy</code> to keep the files a numpy store writes instead. Nothing needs setting; the log says <code>embeddings_upgrade_started</code>, then <code>embeddings_donor_used</code> with how many vectors were copied (<code>reused</code>) and how many embedded. Files from another model, or the oldest layout that records no model, are refused (<code>embeddings_donor_refused</code>), and every note is embedded again.</p>
 <p>What the upgrade costs, once:</p>
 <ul>
 <li><strong>Memory:</strong> about twice the vectors while it runs, since the old files sit in memory beside the new vectors being built.</li>
@@ -2974,7 +3030,7 @@
 <ul>
 <li>no <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> or <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> with a <code>numpy</code> or <code>sqlite</code> store, so the vectors live in memory and are embedded again at each start;</li>
 <li>a change of embedding provider, model or dimensions;</li>
-<li>a switch of <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code> without <code>embeddings import</code>;</li>
+<li>a switch of <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code> without <code>embeddings import</code>, which includes leaving it unset on an edge build whose only store is a <code>numpy</code> one (<code>index-db-embeddings.v2.json</code> with no 5.x files beside it): run <code>embeddings import --from numpy</code> first, or set <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy</code>;</li>
 <li><code>markdown-vault-mcp index --force</code>, or the <code>build_embeddings</code> tool with <code>force</code>;</li>
 <li>deleting the store with no backup, or recreating an empty <code>postgres</code> schema;</li>
 <li>a damaged store set aside when no usable 5.x files remain beside it;</li>
