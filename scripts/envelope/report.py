@@ -20,6 +20,7 @@ from typing import Any
 
 _MISSING = "—"
 _HIDDEN = "<hidden>"
+_TEXTS_EMBEDDED = "Texts embedded"
 _SECRET_KEY = re.compile(r"dsn|conninfo|password|database_url", re.IGNORECASE)
 _SECRET_TEXT = (
     re.compile(r"postgres(?:ql)?://\S+", re.IGNORECASE),
@@ -178,6 +179,23 @@ def _yes_no(value: bool | None) -> str:
     return "yes" if value else "no"
 
 
+def _build_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
+    rows = []
+    for config in configs:
+        build = config.get("build", {})
+        seconds = build.get("seconds")
+        rows.append(
+            [
+                _name(config),
+                _MISSING if seconds is None else f"{seconds:.1f} s",
+                _plain(build.get("texts_embedded")),
+                _mib(build.get("peak_anon")),
+                _mib(build.get("peak_resident")),
+            ]
+        )
+    return rows
+
+
 def _memory_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     rows = []
     for config in configs:
@@ -301,6 +319,17 @@ def render_markdown(result: dict[str, Any]) -> str:
     sources = [f"{_name(c)}: {c['source']}" for c in configs if c.get("source")]
     if sources:
         lines += ["Sources: " + "; ".join(sources) + ".", ""]
+    lines += ["### Build", ""]
+    lines += _table(
+        [
+            "Configuration",
+            "Index and embed",
+            _TEXTS_EMBEDDED,
+            "Peak (anonymous)",
+            "Peak (resident)",
+        ],
+        _build_rows(configs),
+    )
     lines += ["### Memory", ""]
     lines += _table(
         [
@@ -327,7 +356,7 @@ def render_markdown(result: dict[str, Any]) -> str:
             "wchar bytes",
             "Store growth",
             "Note vectors",
-            "Texts embedded",
+            _TEXTS_EMBEDDED,
         ],
         _edit_rows(configs),
     )
@@ -344,7 +373,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         [
             "Configuration",
             "Until search works",
-            "Texts embedded",
+            _TEXTS_EMBEDDED,
             "Texts embedded after a kill",
             "Beyond the edit in progress",
             "Store moved aside (restart / after a kill)",

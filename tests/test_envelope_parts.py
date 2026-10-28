@@ -256,6 +256,14 @@ def _result() -> dict[str, object]:
             {
                 "backend": "numpy",
                 "search": "resident",
+                "build": {
+                    "notes": 3794,
+                    "chunks": 22764,
+                    "texts_embedded": 22764,
+                    "seconds": 812.5,
+                    "peak_anon": 410 << 20,
+                    "peak_resident": 455 << 20,
+                },
                 "memory": {
                     "adds_anon": 95 << 20,
                     "adds_resident": 99 << 20,
@@ -302,6 +310,20 @@ class TestTheReport:
         text = report.render_markdown(result)
         assert "invalid: store open" in text
         assert "95.0 MiB" not in text
+
+    @staticmethod
+    def _build_rows(text: str) -> list[str]:
+        _, _, rest = text.partition("### Build\n")
+        return rest.partition("###")[0].splitlines()
+
+    def test_the_build_table_shows_both_peaks(self) -> None:
+        rows = self._build_rows(report.render_markdown(_result()))
+        row = "| numpy (resident) | 812.5 s | 22,764 | 410.0 MiB | 455.0 MiB |"
+        assert row in rows
+
+    def test_a_build_without_peaks_shows_dashes(self) -> None:
+        rows = self._build_rows(report.render_markdown(_result()))
+        assert "| postgres (streamed) | — | — | — | — |" in rows
 
     def test_page_cache_and_mapped_files_are_told_apart(self) -> None:
         text = report.render_markdown(_result())
