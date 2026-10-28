@@ -310,6 +310,26 @@ class _Lineage(NamedTuple):
     birth_found: bool
 
 
+def _block_records(path_tokens: list[str]) -> Iterator[tuple[str, list[str]]]:
+    """Yield ``(status, paths)`` from one commit block's ``--name-status`` tokens.
+
+    A record is a status token followed by one path, or two for ``R``/``C``.
+    An empty padding token is skipped; a truncated record ends the scan.
+    """
+    i = 0
+    while i < len(path_tokens):
+        status = path_tokens[i]
+        if not status:
+            i += 1
+            continue
+        wanted = 2 if status[0] in ("R", "C") else 1
+        paths = path_tokens[i + 1 : i + 1 + wanted]
+        if len(paths) < wanted:
+            return
+        yield status, paths
+        i += 1 + wanted
+
+
 def _track_records(path_tokens: list[str], tracked: str) -> tuple[str, bool]:
     """Advance one commit's ``--name-status`` records in a newest-first walk.
 
@@ -326,23 +346,35 @@ def _track_records(path_tokens: list[str], tracked: str) -> tuple[str, bool]:
         the tracked path is the note's birth; ``D`` / ``M`` / ``T`` leave the
         identity intact.
     """
-    i = 0
-    while i < len(path_tokens):
-        status = path_tokens[i]
-        if not status:
-            i += 1
-            continue
-        wanted = 2 if status[0] in ("R", "C") else 1
-        paths = path_tokens[i + 1 : i + 1 + wanted]
-        if len(paths) < wanted:
-            break
+    for status, paths in _block_records(path_tokens):
         if paths[-1] == tracked:
             if status[0] == "R":
                 return paths[0], False
             if status[0] in ("A", "C"):
                 return tracked, True
-        i += 1 + wanted
     return tracked, False
+
+
+def _followed_name(path_tokens: list[str], tracked: str) -> str:
+    """Return the name a ``--follow`` walk is following at one commit (#1779).
+
+    From git 2.56, ``--follow`` crosses a rename made while resolving a merge
+    and carries on under the earlier name, but reports no record for the
+    merge: the next block names the earlier path, with no ``R`` record joining
+    it to *tracked*.  A single-path ``--follow`` walk only reports the path it
+    is following, so a block whose records name *tracked* nowhere but name
+    exactly one other path means git retargeted the walk itself, and that path
+    is adopted — otherwise the creation record under the earlier name goes
+    unrecognised and the walk runs on into a previous owner's commits.
+
+    Returns:
+        The path the block's records name when they name exactly one path and
+        it is not *tracked*; *tracked* otherwise.
+    """
+    named = {paths[-1] for _status, paths in _block_records(path_tokens)}
+    if tracked in named or len(named) != 1:
+        return tracked
+    return named.pop()
 
 
 def _lineage(
@@ -360,6 +392,8 @@ def _lineage(
     it walks past that boundary and into the previous occupant's history.  So
     the boundary is established here, from git's own ``--name-status`` records,
     by walking newest-first and stopping at the record that creates the note.
+    Where git retargets the walk without printing a rename record, the name it
+    reports is adopted (:func:`_followed_name`, #1779).
 
     The walk is deliberately its own invocation rather than a reading of the
     caller's stream: ``--since`` / ``--until`` and a ``-n`` cap trim what the
@@ -409,6 +443,7 @@ def _lineage(
             continue
         (sha,), path_tokens = split
         shas.add(sha)
+        tracked = _followed_name(path_tokens, tracked)
         tracked, reached_birth = _track_records(path_tokens, tracked)
         if reached_birth:
             return _Lineage(shas, True)
@@ -422,8 +457,9 @@ def _first_parent_records_cmd(
 
     ``-m --first-parent`` is load-bearing, not decoration: a rename performed
     *while resolving a merge* appears in no parent's diff, so a plain walk
-    returns no records for it at all — the reader is left believing the merge
-    created the note, and never reaches the name it had before (#1306).
+    prints no record for it — before git 2.56 it returned nothing at all, and
+    from 2.56 it crosses the merge without saying it did (#1779) — leaving the
+    reader unable to say which name the note had before (#1306).
     Restricting to the first parent and asking for its diff surfaces that
     rename as an ordinary ``R`` record.
 
@@ -598,8 +634,9 @@ def _name_segments(
     A note's identity is resolved here the way :func:`get_file_at_ref` resolves
     it — by walking ``-m --first-parent``, which is the only walk that sees a
     rename performed *while resolving a merge*: that rename belongs to no
-    parent's diff, so ``git log --follow`` reports the note as having been
-    created by the merge and never reaches the name it had before.  Where such
+    parent's diff, so ``git log --follow`` prints no record of it: before git
+    2.56 the walk ends there, and from 2.56 it crosses without naming the
+    rename (#1779).  Where such
     a merge joined a branch that had renamed the note too, that branch is
     walked in turn (:func:`_branch_frontiers`), because the name it used is in
     no first-parent diff either.
@@ -949,9 +986,10 @@ def _with_earlier_names(
 ) -> list[HistoryEntry]:
     """Add the note's commits under the names it carried before (#1306).
 
-    ``git log --follow`` resolves a note's identity from a single parent's
-    diff, so it stops at a rename that belongs to no parent's diff — the one a
-    ``git mv`` while resolving a merge produces.  The names on the far side of
+    Before git 2.56, ``git log --follow`` resolved a note's identity from a
+    single parent's diff, so it stopped at a rename that belongs to no parent's
+    diff — the one a ``git mv`` while resolving a merge produces.  From 2.56 it
+    may cross it, but without a record that says so (#1779).  The names on the far side of
     such a rename are recovered here from the walk the revision reader trusts,
     and the commits under them added to what the caller already has.
 
@@ -1562,9 +1600,9 @@ def _per_commit_rows(
     walks past the commit that created the note and into whatever held the
     name before (#1285), and pins :data:`_RENAME_THRESHOLD`, because at git's
     default it stopped at a rename it scored under 50% (#1297).  What it
-    cannot cross at any threshold is a rename that belongs to no parent's
-    diff, so the names on the far side of one are recovered separately
-    (#1306).
+    cannot cross at any threshold before git 2.56 — and from 2.56 crosses
+    without a record (#1779) — is a rename that belongs to no parent's diff,
+    so the names on the far side of one are recovered separately (#1306).
 
     Raises:
         ValueError: If *ref* is not found in this repository.
