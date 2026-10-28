@@ -672,11 +672,40 @@ def _keep_unwalked(
     Mutates *disk_state* so those paths read as unchanged rather than deleted
     (#1625).
     """
-    if not unreadable_dirs:
+    prefixes = _prefixes(unreadable_dirs)
+    if not prefixes:
         return
-    prefixes = ["" if d in ("", ".") else d + "/" for d in unreadable_dirs]
     for rel_path, prior in indexed_state.items():
-        if rel_path not in disk_state and any(
-            rel_path.startswith(prefix) for prefix in prefixes
-        ):
+        if rel_path not in disk_state and is_under(rel_path, prefixes):
             disk_state[rel_path] = prior
+
+
+def _prefixes(rel_dirs: Iterable[str]) -> tuple[str, ...]:
+    return tuple("" if d in ("", ".") else d + "/" for d in rel_dirs)
+
+
+def unread_prefixes(errors: Iterable[OSError], source_dir: Path) -> tuple[str, ...]:
+    """Return the path prefixes a walk's unreadable directories cover.
+
+    Args:
+        errors: The directory errors the walk reported.
+        source_dir: The vault root the walk started from.
+
+    Returns:
+        One prefix per error: ``""`` for the vault root (or a directory
+        outside it), which covers every path, otherwise ``"<rel>/"``.
+    """
+    return _prefixes(_rel_dir(exc.filename, source_dir) for exc in errors)
+
+
+def is_under(rel_path: str, prefixes: tuple[str, ...]) -> bool:
+    """Return whether *rel_path* lies under one of *prefixes*.
+
+    Args:
+        rel_path: A vault-relative POSIX path.
+        prefixes: Prefixes from :func:`unread_prefixes`.
+
+    Returns:
+        ``True`` when a prefix starts *rel_path*; ``False`` for no prefixes.
+    """
+    return any(rel_path.startswith(prefix) for prefix in prefixes)
