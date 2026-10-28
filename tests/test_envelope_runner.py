@@ -75,6 +75,13 @@ def test_a_run_measures_every_phase(
     )
     assert partial["recovery"] == config["recovery"]
 
+    status = config["status"]
+    assert status["search_mode"] == search
+    assert status["stored_bytes"] > 0
+    assert status["measured_store_bytes"] > 0
+    vectors = 30 * synth.CHUNKS_PER_NOTE * 16 * 4
+    assert status["resident_vector_bytes"] == (vectors if search == "resident" else 0)
+
     latency = config["latency"]
     assert set(latency["warm"]) == _KINDS
     assert set(latency["cold"]) == _KINDS

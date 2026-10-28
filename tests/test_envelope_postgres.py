@@ -85,6 +85,11 @@ def test_a_run_measures_postgres_without_showing_its_dsn(
     assert all("not restarted" in v for v in config["latency"]["eviction"].values())
     assert config["restart"]["texts_embedded"] == 0
     assert config["memory"]["store_closed_at_baseline"] is True
+    status = config["status"]
+    assert status["search_mode"] == "streamed"
+    assert status["resident_vector_bytes"] == 0
+    assert status["stored_bytes"] > 0
+    assert status["measured_store_bytes"] > 0  # the schema's size
     assert config["edits"]["texts_embedded"]["max"] == 1
     assert config["edits"]["store_delta"] is None  # no local store files
     assert config["edits"]["wal_bytes"]["median"] > 0

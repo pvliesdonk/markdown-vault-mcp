@@ -4811,6 +4811,14 @@ phase's leftovers.
   sampled peak it can miss a spike shorter than the 10 ms interval. The
   report's Build table gives it beside the build's seconds, which are timed
   with the sampler running, and the texts embedded.
+- *Status beside the measurements.* After the warm searches, the memory
+  phase records what `embeddings_status` reports (`search_mode`,
+  `stored_bytes`, `resident_vector_bytes`, `search_workspace_bytes`) and
+  measures the store's size at the same moment: its files' sizes, or for
+  PostgreSQL its schema's tables, indexes and TOAST. The report sets each
+  figure beside the one it should match or bound, with the memory semantic
+  search adds beside the resident vectors, so #1899 can check the status
+  report against the measurements.
 - *Warm latency.* p50 and p95 per kind after discarded warm-up calls:
   semantic, hybrid, filtered (semantic in the filter folder) and similar
   notes.

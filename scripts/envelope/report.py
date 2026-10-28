@@ -217,6 +217,27 @@ def _memory_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     return rows
 
 
+def _status_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
+    rows = []
+    for config in configs:
+        status, memory = config.get("status", {}), config.get("memory", {})
+        adds = _mib(memory.get("adds_anon"))
+        if memory.get("store_closed_at_baseline") is False:
+            adds = "invalid: store open"
+        rows.append(
+            [
+                _name(config),
+                status.get("search_mode") or _MISSING,
+                _mib(status.get("stored_bytes")),
+                _mib(status.get("measured_store_bytes")),
+                _mib(status.get("resident_vector_bytes")),
+                adds,
+                _mib(status.get("search_workspace_bytes")),
+            ]
+        )
+    return rows
+
+
 def _latency_rows(configs: list[dict[str, Any]]) -> list[list[str]]:
     rows = []
     for config in configs:
@@ -342,6 +363,19 @@ def render_markdown(result: dict[str, Any]) -> str:
             "Store closed at baseline",
         ],
         _memory_rows(configs),
+    )
+    lines += ["### Status beside the measurements", ""]
+    lines += _table(
+        [
+            "Configuration",
+            "Search mode",
+            "Stored (status)",
+            "Store (measured)",
+            "Resident vectors (status)",
+            "Adds, anonymous (measured)",
+            "Search workspace (status)",
+        ],
+        _status_rows(configs),
     )
     lines += ["### Search latency", ""]
     lines += _table(

@@ -43,6 +43,12 @@ _KEYWORD_SEARCHES = 20
 _STORE_GLOB = "index-db-embeddings*"
 _INDEX_GLOB = "index.db*"
 _CHECKPOINT = "edits-finished"  # read by the orchestrator
+_STATUS_KEYS = (
+    "search_mode",
+    "search_workspace_bytes",
+    "stored_bytes",
+    "resident_vector_bytes",
+)
 
 
 def _postgres_dsn() -> str:
@@ -145,6 +151,26 @@ def build(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _status(vault: Vault, config: dict[str, Any]) -> dict[str, Any]:
+    """Return ``embeddings_status``'s cost figures and the store's measured size.
+
+    PostgreSQL's store has no local files; its measured size is its
+    schema's, tables, indexes and TOAST.
+    """
+    reported = vault.index.embeddings_status()
+    if config["backend"] == "postgres":
+        from scripts.envelope import postgres
+
+        sizes = postgres.sizes(_postgres_dsn(), config["schema"])
+        measured = sizes["schema_bytes"]
+    else:
+        measured = _store_bytes(config)
+    return {
+        **{key: reported[key] for key in _STATUS_KEYS},
+        "measured_store_bytes": measured,
+    }
+
+
 def memory(config: dict[str, Any]) -> dict[str, Any]:
     """Measure what semantic search adds to memory, and warm latency.
 
@@ -157,8 +183,9 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
 
     Returns:
         The memory figures, the index's and store's bytes in page cache
-        after the searches (``None`` without ``fincore``), and each kind's
-        warm p50 and p95, in seconds.
+        after the searches (``None`` without ``fincore``), each kind's
+        warm p50 and p95, in seconds, and what ``embeddings_status``
+        reports after the searches beside the store's measured size.
     """
     provider = synth.StandInProvider(config["dim"])
     vault = _vault(config, provider)
@@ -185,6 +212,7 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
         cached = probes.resident_bytes(
             _files(config, _INDEX_GLOB) + _files(config, _STORE_GLOB)
         )
+        status = _status(vault, config)
     finally:
         vault.close()
     return {
@@ -199,6 +227,7 @@ def memory(config: dict[str, Any]) -> dict[str, Any]:
             "page_cache": cached,
         },
         "warm": warm,
+        "status": status,
     }
 
 

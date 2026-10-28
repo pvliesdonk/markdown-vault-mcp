@@ -308,6 +308,7 @@ def measure(
     keep("build", _spawn("build", config, db=db)[0])
     memory, _ = _spawn("memory", config, db=db)
     keep("memory", memory["memory"])
+    keep("status", memory["status"])
     service_memory = (
         postgres.service_memory(pg.container)
         if pg is not None and pg.container is not None
