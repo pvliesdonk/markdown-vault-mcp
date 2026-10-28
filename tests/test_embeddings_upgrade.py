@@ -97,6 +97,34 @@ def test_a_v5_1_vault_upgrades_for_free(tmp_path: Path, store: str) -> None:
     assert _sums(tmp_path) == expected
 
 
+def test_a_v5_1_install_upgrades_onto_the_default_store_for_free(
+    tmp_path: Path,
+) -> None:
+    """A 5.1 install that sets no store lands in streamed SQLite, paying nothing (#1900)."""
+    root = _released(tmp_path)
+    expected = _sums(tmp_path)
+    provider = _Counting()
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        status = vault.index.embeddings_status()
+    finally:
+        vault.close()
+    assert provider.texts == []
+    rows = len(json.loads((FIXTURE / "index-db-embeddings.json").read_text())["rows"])
+    assert (status["backend"], status["search_mode"], status["chunk_count"]) == (
+        "sqlite",
+        "streamed",
+        rows,
+    )
+    assert _sums(tmp_path) == expected
+
+
 @pytest.mark.parametrize("store", STORES)
 def test_the_upgrade_is_logged_once(
     tmp_path: Path, store: str, caplog: pytest.LogCaptureFixture
