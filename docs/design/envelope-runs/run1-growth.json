@@ -1,0 +1,319 @@
+{
+  "chunks": 227640,
+  "configs": [
+    {
+      "backend": "numpy",
+      "build": {
+        "chunks": 227640,
+        "notes": 32520,
+        "peak_anon": 3533930496,
+        "peak_resident": 3569102848,
+        "seconds": 80.27401974098757,
+        "texts_embedded": 227640
+      },
+      "edits": {
+        "count": 200,
+        "note_vector_bytes": {
+          "max": 28672,
+          "median": 28672
+        },
+        "store_delta": {
+          "max": 2,
+          "median": 0.0
+        },
+        "texts_embedded": {
+          "max": 1,
+          "median": 1.0
+        },
+        "wchar": {
+          "max": 1060011990,
+          "median": 1057759119.0
+        }
+      },
+      "latency": {
+        "cold": {
+          "filtered": 2.6918342120479792,
+          "hybrid": 2.9324493610765785,
+          "semantic": 2.826415922958404,
+          "similar": 2.9843927181791514
+        },
+        "eviction": {
+          "filtered": "confirmed",
+          "hybrid": "confirmed",
+          "semantic": "confirmed",
+          "similar": "confirmed"
+        },
+        "warm": {
+          "filtered": {
+            "p50": 0.06691754306666553,
+            "p95": 0.10197218996472657
+          },
+          "hybrid": {
+            "p50": 0.08721688692457974,
+            "p95": 0.11540342913940549
+          },
+          "semantic": {
+            "p50": 0.0708283819258213,
+            "p95": 0.10717858700081706
+          },
+          "similar": {
+            "p50": 0.2660143771208823,
+            "p95": 0.3302744310349226
+          }
+        }
+      },
+      "memory": {
+        "adds_anon": 2093080576,
+        "adds_resident": 2093244416,
+        "mapped_files": 15565824,
+        "page_cache": 1352179712,
+        "process_anon": 1330003968,
+        "store_closed_at_baseline": true
+      },
+      "recovery": {
+        "finished_edits": 100,
+        "moved_aside": false,
+        "seconds": 11.649999999906868,
+        "texts_allowed": 1,
+        "texts_beyond_allowed": 0,
+        "texts_embedded": 1,
+        "wall_seconds": 11.944732584059238
+      },
+      "restart": {
+        "moved_aside": false,
+        "seconds": 11.040000000037253,
+        "texts_embedded": 0,
+        "wall_seconds": 11.509066329104826
+      },
+      "search": "resident",
+      "status": {
+        "measured_store_bytes": 1057624522,
+        "resident_vector_bytes": 932413440,
+        "search_mode": "resident",
+        "search_workspace_bytes": null,
+        "stored_bytes": 1057624522
+      }
+    },
+    {
+      "backend": "sqlite",
+      "build": {
+        "chunks": 227640,
+        "notes": 32520,
+        "peak_anon": 2403463168,
+        "peak_resident": 2440904704,
+        "seconds": 103.2745966729708,
+        "texts_embedded": 227640
+      },
+      "edits": {
+        "count": 200,
+        "note_vector_bytes": {
+          "max": 28672,
+          "median": 28672
+        },
+        "store_delta": {
+          "max": 78264,
+          "median": 0.0
+        },
+        "texts_embedded": {
+          "max": 1,
+          "median": 1.0
+        },
+        "wchar": {
+          "max": 2518954,
+          "median": 270189.0
+        }
+      },
+      "latency": {
+        "cold": {
+          "filtered": 2.292122936109081,
+          "hybrid": 2.930680579971522,
+          "semantic": 2.840080178109929,
+          "similar": 3.058265673927963
+        },
+        "eviction": {
+          "filtered": "confirmed",
+          "hybrid": "confirmed",
+          "semantic": "confirmed",
+          "similar": "confirmed"
+        },
+        "warm": {
+          "filtered": {
+            "p50": 0.16982176597230136,
+            "p95": 0.20138308010064065
+          },
+          "hybrid": {
+            "p50": 0.8647602510172874,
+            "p95": 1.0716626727953553
+          },
+          "semantic": {
+            "p50": 0.8656083878595382,
+            "p95": 1.0348360899370164
+          },
+          "similar": {
+            "p50": 0.8484196639619768,
+            "p95": 1.054891390958801
+          }
+        }
+      },
+      "memory": {
+        "adds_anon": 22093824,
+        "adds_resident": 24875008,
+        "mapped_files": 15663104,
+        "page_cache": 1396244480,
+        "process_anon": 106438656,
+        "store_closed_at_baseline": true
+      },
+      "recovery": {
+        "finished_edits": 100,
+        "moved_aside": false,
+        "seconds": 12.319999999832362,
+        "texts_allowed": 1,
+        "texts_beyond_allowed": 0,
+        "texts_embedded": 1,
+        "wall_seconds": 12.722760474076495
+      },
+      "restart": {
+        "moved_aside": false,
+        "seconds": 13.629999999888241,
+        "texts_embedded": 0,
+        "wall_seconds": 13.900392779847607
+      },
+      "search": "streamed",
+      "status": {
+        "measured_store_bytes": 1101701120,
+        "resident_vector_bytes": 0,
+        "search_mode": "streamed",
+        "search_workspace_bytes": 1048576,
+        "stored_bytes": 1101701120
+      }
+    },
+    {
+      "backend": "postgres",
+      "build": {
+        "chunks": 227640,
+        "notes": 32520,
+        "peak_anon": 2929991680,
+        "peak_resident": 2972348416,
+        "seconds": 106.7376476151403,
+        "texts_embedded": 227640
+      },
+      "edits": {
+        "count": 200,
+        "note_vector_bytes": {
+          "max": 28672,
+          "median": 28672
+        },
+        "store_delta": null,
+        "texts_embedded": {
+          "max": 1,
+          "median": 1.0
+        },
+        "wal_bytes": {
+          "max": 126632,
+          "median": 109480.0
+        },
+        "wal_scope": "cluster",
+        "wchar": {
+          "max": 2387466,
+          "median": 134594.0
+        }
+      },
+      "latency": {
+        "cold": {
+          "filtered": 0.1884680159855634,
+          "hybrid": 0.748372457223013,
+          "semantic": 0.6692468940746039,
+          "similar": 0.5756291840225458
+        },
+        "eviction": {
+          "filtered": "index files confirmed; service restarted, host page cache kept",
+          "hybrid": "index files confirmed; service restarted, host page cache kept",
+          "semantic": "index files confirmed; service restarted, host page cache kept",
+          "similar": "index files confirmed; service restarted, host page cache kept"
+        },
+        "warm": {
+          "filtered": {
+            "p50": 0.11094051320105791,
+            "p95": 0.13708553602918983
+          },
+          "hybrid": {
+            "p50": 0.4748917219694704,
+            "p95": 0.5459264689125121
+          },
+          "semantic": {
+            "p50": 0.46493112994357944,
+            "p95": 0.5261222820263356
+          },
+          "similar": {
+            "p50": 0.4368543759919703,
+            "p95": 0.48750967299565673
+          }
+        }
+      },
+      "memory": {
+        "adds_anon": 14872576,
+        "adds_resident": 20254720,
+        "mapped_files": 18428928,
+        "page_cache": 294543360,
+        "process_anon": 117334016,
+        "store_closed_at_baseline": true
+      },
+      "recovery": {
+        "finished_edits": 100,
+        "moved_aside": false,
+        "seconds": 88.35000000009313,
+        "texts_allowed": 1,
+        "texts_beyond_allowed": 0,
+        "texts_embedded": 1,
+        "wall_seconds": 88.75265008304268
+      },
+      "restart": {
+        "moved_aside": false,
+        "seconds": 89.21999999997206,
+        "texts_embedded": 0,
+        "wall_seconds": 89.6489446091
+      },
+      "search": "streamed",
+      "service": {
+        "database_bytes": 1454143155,
+        "memory": 580177100,
+        "pgvector_version": "0.8.2",
+        "schema_bytes": 1446174720,
+        "server_version": "17.9 (Debian 17.9-1.pgdg12+1)"
+      },
+      "source": "throwaway container tensorchord/vchord-suite:pg17-20260501",
+      "status": {
+        "measured_store_bytes": 1433395200,
+        "resident_vector_bytes": 0,
+        "search_mode": "streamed",
+        "search_workspace_bytes": null,
+        "stored_bytes": 1433395200
+      }
+    }
+  ],
+  "environment": {
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+    "dirty": false,
+    "filesystem": "ext2/ext3",
+    "git_sha": "d77ec72d",
+    "kernel": "7.2.9-arch1-1",
+    "memory": "131513556 kB",
+    "numpy": "2.4.6",
+    "psycopg": "3.3.6",
+    "python": "3.14.8",
+    "sqlite": "3.53.1"
+  },
+  "notes": 32520,
+  "settings": {
+    "batch_size": 64,
+    "dim": 1024,
+    "discard": 5,
+    "drain_timeout_s": 600,
+    "edits": 200,
+    "kill_after": 100,
+    "phase_timeout_s": 7200,
+    "queries": 50,
+    "seed": 1506
+  },
+  "size": "growth"
+}

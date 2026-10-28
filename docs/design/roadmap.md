@@ -74,14 +74,17 @@ recovery ([#1505][1505]) follow both backends. Qualification ([#1506][1506])
 comes last, because it measures the assembled system and decides default
 activation and the release kind.
 
-`stated` — The owner agreed the acceptance budgets for [#1506][1506]: "Derived
-budgets" (25 October 2026), the bounded-memory and latency figures derived from
-[#1502][1502] with headroom
-([budgets](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1506#issuecomment-6398756190)).
+`stated` — The figures proposed for [#1506][1506] on 25 October 2026, the
+bounded-memory and latency numbers derived from [#1502][1502] with headroom
+([proposals](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1506#issuecomment-6398756190)),
+are proposals to validate, not agreed limits: the owner, 28 October 2026
+([correction](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1506#issuecomment-6469508664)).
+[#1899][1899]'s record, [operating-envelope.md](operating-envelope.md), sets
+each beside the measurements; whether to adopt any is [#1900][1900]'s.
 
 `derived` — Inside #1506 the measurement harness ([#1895][1895]) comes first,
-because no one has measured the whole server process, so the budgets leave its
-memory unbounded until the harness supplies a baseline. The runtime policy
+because no one had measured the whole server process, so the proposals left
+its memory open until the harness supplied a baseline. The runtime policy
 ([#1896][1896]) is independent and can run alongside. The default store and the
 release kind ([#1900][1900]) wait on the recorded run ([#1899][1899]) and the
 runtime policy, since either can block activation.
@@ -509,7 +512,7 @@ verified implementation findings.
 | Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Answer inside `030`, before closing the epic. |
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
-| Does the built-in backend stay within a documented memory and latency envelope on every supported install route, including SQLite builds without the WAL-reset fix? | [#1899][1899] against the budgets agreed on [#1506][1506], and the runtime policy in [#1896][1896] | Decides default activation and the release kind of `015`; the storage features can proceed before it. |
+| Does the built-in backend stay within a documented memory and latency envelope on every supported install route, including SQLite builds without the WAL-reset fix? | [#1899][1899]'s measurements ([operating-envelope.md](operating-envelope.md)), with the numbers proposed on [#1506][1506] still to be decided, and the runtime policy in [#1896][1896] | Decides default activation and the release kind of `015`; the storage features can proceed before it. |
 | Does keeping a submodule current on pull need an operator switch, and what happens when the submodule tree is dirty? | [#1565][1565], under [refinement #1563][1563] | Decide before committing the read-only slice to a cut; the refusal in [#1564][1564] does not depend on it. |
 | Which branch and credentials does a writable submodule use, given the detached HEAD `submodule update` leaves and a remote of its own? | [Refinement #1567][1567] | Not knowing does not change the read-only slice; do not shape the write path before it lands. |
 | How does the docs migration interact with the `020 first-class-library` package's documentation work? | [Refinement #1666][1666] of [#1665][1665], with [#1436][1436] | Not knowing does not change the template-first order; decide at refinement whether library docs move with `020` or with the migration. |
@@ -677,6 +680,14 @@ is unchanged: [#1503][1503] comes next, with its source-facing part settled.
 § Sustainable embedding storage and search, and pointed the envelope question
 at the work that now answers it. The order inside `015` is otherwise unchanged:
 #1506 still comes last.
+
+### 28 October 2026 — the #1506 figures are proposals
+
+`stated` — The owner said the figures recorded on 25 October as agreed budgets
+are proposals to validate. § Sustainable embedding storage and search and the
+envelope question now say so, and point at #1899's measurements. Adopting
+numbers, if any, moves to [#1900][1900] beside the default store. The order
+inside `015` is unchanged.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
