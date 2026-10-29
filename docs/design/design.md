@@ -6080,17 +6080,23 @@ committed, so the write tools refuse it before touching disk with a
 `move_folder` when `old_dir` lies in or holds a submodule or a moved file would
 land inside one (a `new_dir` that merely holds one is fine). The OKF tools
 refuse a `folder` inside a submodule and otherwise leave submodules out:
-`okf_convert_links` skips their notes and `okf_generate_index` gives them
-neither a pointer nor an `index.md`. The gitlinks in the index (mode `160000`)
+`okf_convert_links` skips their notes (logged
+`okf_convert_links_submodule_notes_skipped`), and `okf_generate_index` never
+writes their `index.md`, pointing at one only when the submodule ships its
+own. The gitlinks in the index (mode `160000`)
 decide, so a deinitialised submodule is refused too; `git/submodules.py`'s
-`SubmoduleGuard` reads them again only when the index file changes, and when
-git cannot list them it refuses nothing, logs `submodule_list_failed`, and asks
-again on the next write. Paths are compared after `resolve()`, so a symlink
+`SubmoduleGuard` reads them again only when the index file changes. When git
+cannot list them it logs `submodule_list_failed`, keeps the submodules it last
+listed and asks again on the next write; a guard that never listed any, or
+whose vault is in no repository (`submodule_guard_inactive`), refuses
+nothing. Paths are compared after `resolve()`, so a symlink
 into a submodule is refused, but case is not folded: on a case-insensitive
 file system a path spelled `SUB/` is not recognised. A rename or folder move
 whose backlinks come from a note inside a submodule goes ahead and leaves that
-note unrewritten, logged `link_rewrite_source_skipped reason=submodule`; a
-`rename` names it in `hint`, a `move_folder` in `failed_links`.
+note unrewritten, logged at INFO as `link_rewrite_source_skipped
+reason=submodule`; a `rename` names it in `hint`, a `move_folder` in
+`failed_links`. A `move_folder` that would land a file inside a submodule is
+refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
 refuse nothing, since nothing is committed there. A plain repository nested

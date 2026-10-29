@@ -9,8 +9,9 @@ would land on disk and never reach git, so the write managers ask
 The index decides: a gitlink (mode ``160000`` in ``git ls-files --stage``) is
 what makes git refuse, whether the submodule is initialised or not. The list
 is read again only when the index file changes, so an unchanged index costs
-one ``stat``. When git cannot list the index the guard refuses nothing, logs
-it, and asks again on the next write: git fails that write's commit anyway.
+one ``stat``. When git cannot list the index the guard logs it, keeps the
+submodules it last listed, and asks again on the next write; only a guard that
+never listed any refuses nothing then.
 """
 
 from __future__ import annotations
@@ -29,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 _GITLINK_MODE = "160000"
 
-# (st_mtime_ns, st_size, st_ino) of the index file, or None when it is absent.
-_IndexKey = tuple[int, int, int] | None
+# (st_mtime_ns, st_ctime_ns, st_size, st_ino) of the index file, or None when
+# it is absent.
+_IndexKey = tuple[int, int, int, int] | None
 
 
 class SubmoduleGuard:
@@ -116,14 +118,20 @@ class SubmoduleGuard:
                 return self._gitlinks
             gitlinks = self._read_gitlinks(root)
             if gitlinks is None:
-                return ()  # not cached, so the next call asks git again
+                # Key left as it was, so the next call asks git again.
+                return self._gitlinks
             self._gitlinks, self._index_key, self._listed = gitlinks, key, True
             return gitlinks
 
     def _git_root(self) -> Path | None:
         if not self._root_checked:
             found = _find_git_root(self._source_dir)
-            if found is not None:
+            if found is None:
+                logger.info(
+                    "submodule_guard_inactive source_dir=%s reason=no_repository",
+                    self._source_dir,
+                )
+            else:
                 self._root = found.resolve()
                 self._index = _index_file(self._root)
             self._root_checked = True
@@ -178,4 +186,4 @@ def _index_key(index: Path) -> _IndexKey:
         st = index.stat()
     except OSError:
         return None
-    return st.st_mtime_ns, st.st_size, st.st_ino
+    return st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino

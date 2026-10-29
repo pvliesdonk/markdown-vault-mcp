@@ -115,13 +115,13 @@ _ATTACHMENT_UPDATE_LINKS_HINT = (
 )
 
 
-def _unrewritten_links_hint(sources: list[str]) -> str:
-    """The rename hint naming backlink sources left at the old path (#1564)."""
+def _submodule_links_hint(sources: list[str]) -> str:
+    """The rename hint naming backlinks left in git submodules (#1564)."""
     names = ", ".join(repr(s) for s in sources)
     return (
-        f"The links in {names} still name the old path: they could not be "
-        "rewritten, as for a note inside a git submodule. Edit them to point "
-        "at the new path where that is possible."
+        f"The links in {names} still name the old path: those notes are inside "
+        "a git submodule, which this server does not change. Edit them in the "
+        "submodule's own repository."
     )
 
 
@@ -279,8 +279,8 @@ class DocumentManager:
             path: Vault-relative path.
 
         Returns:
-            ``True`` when a write there would be refused; ``False`` without a
-            guard.
+            ``True`` when *path* is a submodule or lies inside one; ``False``
+            for a folder that only holds one, and without a guard.
         """
         guard = self._submodule_guard
         if guard is None:
@@ -1306,8 +1306,9 @@ class DocumentManager:
                     self._update_backlinks(old_path, new_path, backlinks)
                 )
                 updated_links = len(backlink_callbacks)
-                if unrewritten:
-                    hint = _unrewritten_links_hint(unrewritten)
+                in_submodules = [s for s in unrewritten if self.in_submodule(s)]
+                if in_submodules:
+                    hint = _submodule_links_hint(in_submodules)
 
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
@@ -1426,7 +1427,8 @@ class DocumentManager:
             try:
                 source_abs = self._validate_path(source_path)
                 if self.in_submodule(source_path):
-                    logger.warning(
+                    # Expected in a vault with submodules: not degraded.
+                    logger.info(
                         "link_rewrite_source_skipped op=%s path=%s reason=submodule",
                         op_name,
                         source_path,
@@ -1551,6 +1553,8 @@ class DocumentManager:
         Raises:
             DocumentNotFoundError: If the folder contains no files.
             DocumentExistsError: If any destination file already exists.
+            SubmodulePathError: If a destination lies inside a git submodule,
+                checked before collisions so the refusal names the real cause.
         """
         old_rel = old_dir.strip("/")
         new_rel = new_dir.strip("/")
@@ -1568,6 +1572,7 @@ class DocumentManager:
             old_path = f"{old_rel}/{rel_within}"
             new_path = f"{new_rel}/{rel_within}"
             dst_abs = (self._source_dir / new_path).resolve()
+            self._refuse_move_into_submodule(dst_abs, new_dir, new_path)
             moves.append((src_abs, dst_abs))
             if is_note(old_path):
                 md_map[old_path] = new_path
@@ -1597,20 +1602,17 @@ class DocumentManager:
 
         return moves, md_map, non_note_moves
 
-    def _refuse_moves_into_submodule(
-        self, moves: list[tuple[Path, Path]], new_dir: str
+    def _refuse_move_into_submodule(
+        self, dst_abs: Path, new_dir: str, new_path: str
     ) -> None:
         """Refuse a folder move that would put a file inside a submodule (#1564).
 
         *new_dir* may hold a submodule; only a destination inside one is lost.
         """
         guard = self._submodule_guard
-        if guard is None:
-            return
-        for _src, dst in moves:
-            found = guard.submodule_of(dst)
-            if found is not None and found[1]:
-                raise SubmodulePathError.into("new_dir", new_dir, found[0])
+        found = guard.submodule_of(dst_abs) if guard is not None else None
+        if found is not None and found[1]:
+            raise SubmodulePathError.into("new_dir", new_dir, found[0], new_path)
 
     def _dispatch_move_callbacks(
         self,
@@ -1713,7 +1715,6 @@ class DocumentManager:
             moves, md_map, non_note_moves = self._plan_folder_move(
                 old_abs, old_dir, new_dir
             )
-            self._refuse_moves_into_submodule(moves, new_dir)
 
             # 3. Capture backlinks for every moved note BEFORE the move, while
             #    the index still reflects old paths. Annotate each row with its

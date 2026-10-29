@@ -93,9 +93,14 @@ def test_a_submodule_added_later_is_seen(tmp_path: Path) -> None:
     assert guard.submodule_of(source / "later" / "x.md") == ("later", True)
 
 
-def test_a_vault_without_a_repository_refuses_nothing(tmp_path: Path) -> None:
+def test_a_vault_without_a_repository_refuses_nothing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     guard = SubmoduleGuard(tmp_path)
-    assert guard.submodule_of(tmp_path / "sub" / "note.md") is None
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.git.submodules"):
+        assert guard.submodule_of(tmp_path / "sub" / "note.md") is None
+        assert guard.submodule_of(tmp_path / "sub" / "note.md") is None
+    assert [r.msg.split()[0] for r in caplog.records] == ["submodule_guard_inactive"]
     guard.refuse(tmp_path / "sub" / "note.md", "path", "sub/note.md")
 
 
@@ -105,7 +110,42 @@ def test_a_repository_with_no_index_yet_refuses_nothing(tmp_path: Path) -> None:
     assert guard.submodule_of(tmp_path / "sub" / "note.md") is None
 
 
-def test_a_failed_listing_refuses_nothing_and_warns(
+def test_an_unchanged_index_is_not_listed_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_superproject(tmp_path)
+    guard = SubmoduleGuard(source)
+    real = subprocess.run
+    listings: list[None] = []
+
+    def counting(args: list[str], **kw: Any) -> Any:
+        if "ls-files" in args:
+            listings.append(None)
+        return real(args, **kw)
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", counting)
+    for _ in range(3):
+        guard.submodule_of(source / "sub" / "note.md")
+    assert len(listings) == 1
+
+
+def test_a_first_listing_that_fails_refuses_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_superproject(tmp_path)
+    real = subprocess.run
+
+    def failing(args: list[str], **kw: Any) -> Any:
+        if "ls-files" in args:
+            raise subprocess.CalledProcessError(128, args, stderr="fatal: broken")
+        return real(args, **kw)
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", failing)
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(source / "sub" / "note.md") is None
+
+
+def test_a_failed_listing_keeps_the_last_one_and_warns(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -124,11 +164,17 @@ def test_a_failed_listing_refuses_nothing_and_warns(
     (source / "top.md").write_text("# Changed\n")
     _git(source, "add", "top.md")  # a new index, so it is read again
     with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git.submodules"):
-        assert guard.submodule_of(source / "sub" / "note.md") is None
+        assert guard.submodule_of(source / "sub" / "note.md") == ("sub", True)
     assert [r.msg.split()[0] for r in caplog.records] == ["submodule_list_failed"]
     monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", real)
-    # The failure was not cached: the same index is listed again.
-    assert guard.submodule_of(source / "sub" / "note.md") == ("sub", True)
+    _git(
+        source,
+        *("-c", "protocol.file.allow=always", "submodule", "add", "-q"),
+        str(tmp_path / "upstream"),
+        "later",
+    )
+    # The failure was not cached: the next call lists the index again.
+    assert guard.submodule_of(source / "later" / "x.md") == ("later", True)
 
 
 def test_an_index_git_will_not_name_is_listed_on_every_call(
@@ -344,7 +390,8 @@ def test_a_folder_move_that_lands_a_file_in_a_submodule_is_refused(
     vault = vault_of(source)
     before = _snapshot(source)
     with pytest.raises(
-        SubmodulePathError, match=r"^new_dir 'b' would move files into .*'b/sub'"
+        SubmodulePathError,
+        match=r"^new_dir 'b' would move a file to 'b/sub/x.md', inside .*'b/sub'",
     ):
         vault.writer.move_folder("a", "b")
     assert _snapshot(source) == before
@@ -379,9 +426,7 @@ def test_a_backlink_inside_the_submodule_is_reported_not_rewritten(
     (source / "folder" / "x.md").write_text("# X\n")
     vault = vault_of(source)
     before = (source / "sub" / "note.md").read_bytes()
-    with caplog.at_level(
-        logging.WARNING, logger="markdown_vault_mcp.managers.document"
-    ):
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.managers.document"):
         result = vault.writer.move_folder("folder", "moved")
     assert result.failed_links == ["sub/note.md"]
     assert (source / "sub" / "note.md").read_bytes() == before
@@ -404,6 +449,29 @@ def test_a_rename_says_which_backlinks_it_left_alone(
     assert (source / "sub" / "note.md").read_bytes() == before
 
 
+def test_a_rename_with_a_vanished_backlink_source_gives_no_submodule_hint(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    source = make_superproject(tmp_path)
+    (source / "linker.md").write_text("# Linker\n\n[[top]]\n")
+    vault = vault_of(source)
+    (source / "linker.md").unlink()
+    result = vault.writer.rename("top.md", "renamed.md", update_links=True)
+    assert result.hint is None
+
+
+def test_a_move_into_a_submodule_is_refused_before_a_collision(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    """The submodule, not the file in the way, is what the caller must change."""
+    source = make_superproject(tmp_path, sub="b/sub")
+    (source / "a" / "sub").mkdir(parents=True)
+    (source / "a" / "sub" / "note.md").write_text("# Mine\n")
+    vault = vault_of(source)
+    with pytest.raises(SubmodulePathError, match=r"'b/sub/note\.md', inside"):
+        vault.writer.move_folder("a", "b")
+
+
 # ---------------------------------------------------------------------------
 # The OKF tools write into folders they walk
 # ---------------------------------------------------------------------------
@@ -420,6 +488,28 @@ def test_generating_the_root_index_leaves_the_submodule_out(
     assert result.created == ("folder/index.md",)
     assert not (source / "sub" / "index.md").exists()
     assert "/sub/index.md" not in (source / "index.md").read_text()
+
+
+def test_a_submodule_with_its_own_index_keeps_its_pointer(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    source = make_superproject(tmp_path, extra={"index.md": "# Vendored\n"})
+    vault = vault_of(source)
+    before = (source / "sub" / "index.md").read_bytes()
+    vault.writer.okf_generate_index(folder="")
+    assert "/sub/index.md" in (source / "index.md").read_text()
+    assert (source / "sub" / "index.md").read_bytes() == before
+
+
+def test_indexing_a_folder_that_holds_a_submodule_skips_only_the_submodule(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    source = make_superproject(tmp_path, sub="deep/sub")
+    (source / "deep" / "mine.md").write_text("# Mine\n")
+    vault = vault_of(source)
+    vault.writer.okf_generate_index(folder="deep")
+    assert "/deep/mine.md" in (source / "deep" / "index.md").read_text()
+    assert not (source / "deep" / "sub" / "index.md").exists()
 
 
 def test_converting_links_leaves_submodule_notes_alone(

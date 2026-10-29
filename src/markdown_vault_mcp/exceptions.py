@@ -99,12 +99,15 @@ class SubmodulePathError(InvalidRequestError):
         )
 
     @classmethod
-    def into(cls, argument: str, path: str, submodule: str) -> SubmodulePathError:
-        """A folder move that would put files inside the submodule."""
+    def into(
+        cls, argument: str, path: str, submodule: str, landing: str
+    ) -> SubmodulePathError:
+        """A folder move that would put the file *landing* inside the submodule."""
         return cls(
-            f"{argument} {path!r} would move files into the git submodule "
-            f"{submodule!r}; {_NEVER_COMMITTED}. Pass {_article(argument)} "
-            f"{argument} where no moved file lands inside a submodule."
+            f"{argument} {path!r} would move a file to {landing!r}, inside the "
+            f"git submodule {submodule!r}; {_NEVER_COMMITTED}. Pass "
+            f"{_article(argument)} {argument} where no moved file lands inside "
+            "a submodule."
         )
 
     @classmethod

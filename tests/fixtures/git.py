@@ -93,7 +93,12 @@ def git_repo_pair(tmp_path: Path) -> GitRepoPair:
 
 
 def make_superproject(
-    tmp_path: Path, *, vault: str = "", sub: str = "sub", note: str = "# Upstream\n"
+    tmp_path: Path,
+    *,
+    vault: str = "",
+    sub: str = "sub",
+    note: str = "# Upstream\n",
+    extra: dict[str, str] | None = None,
 ) -> Path:
     """Build a superproject holding a submodule at ``<vault>/<sub>`` (#1564).
 
@@ -108,6 +113,7 @@ def make_superproject(
         vault: The vault's folder inside the repository, ``""`` for its root.
         sub: The submodule's path inside the vault.
         note: The text of the submodule's ``note.md``.
+        extra: More files for the submodule, by path inside it.
 
     Returns:
         The vault directory: the repository root, or its *vault* subfolder.
@@ -118,7 +124,9 @@ def make_superproject(
     _run_git(upstream, "config", "user.email", "test@example.com")
     _run_git(upstream, "config", "user.name", "Test User")
     (upstream / "note.md").write_text(note)
-    _run_git(upstream, "add", "note.md")
+    for name, text in (extra or {}).items():
+        (upstream / name).write_text(text)
+    _run_git(upstream, "add", ".")
     _run_git(upstream, "commit", "-qm", "initial")
 
     repo = tmp_path / "repo"
