@@ -25,6 +25,8 @@ Give Claude, or any MCP client, a folder of Markdown notes to search, read and w
 - **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. See [OKF](docs/use/okf.md).
 
 The [tools reference](docs/reference/tools/index.md) lists every tool. The same engine is a Python library: see the [Vault API](docs/reference/api/vault.md).
+
+An index on disk can live in a new folder; see [Index storage and SQLite](docs/use/storage.md).
 <!-- DOMAIN-README-PITCH-END -->
 
 ## Does it fit?

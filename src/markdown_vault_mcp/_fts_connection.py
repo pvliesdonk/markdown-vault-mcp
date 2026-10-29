@@ -165,7 +165,8 @@ class SqliteConnectionRegistry:
 
     Args:
         db_path: SQLite database file path, or ``":memory:"`` for a
-            shared-cache in-memory database.
+            shared-cache in-memory database. A writable file open creates
+            missing parent directories; read-only and in-memory opens do not.
         owner_name: Class name used in the closed-error message so callers
             see the facade they actually hold.
         read_only: Open the database file read-only (``mode=ro``).
@@ -177,6 +178,7 @@ class SqliteConnectionRegistry:
 
     Raises:
         ValueError: If *synchronous* is neither level.
+        OSError: If a writable file's parent directory cannot be created.
     """
 
     def __init__(
@@ -209,6 +211,8 @@ class SqliteConnectionRegistry:
         self.reg_lock = threading.Lock()
         self.closed = False
         self.primary_conn: sqlite3.Connection | None = None
+        if not self.is_memory and not read_only:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
     def connect(self) -> sqlite3.Connection:
         """Open a raw sqlite3 connection to this registry's URI."""

@@ -3994,6 +3994,12 @@ live under `stores/`.
   self-heal, and only when the vault owns the files (decision 31). For the SQLite keyword backend, *not configured* and *incompatible
   identity* are unreachable: no location means in memory, and a keyword
   store has no identity.
+- **Missing keyword-index folders (#1730)**: a writable SQLite connection
+  registry creates the database path's parent folders before its first
+  connection, whether it is used by `FTSIndex` directly or through the
+  keyword backend. This does not depend on the optional POSIX writer lock.
+  Read-only and in-memory opens create no folders. Filesystem failures at
+  backend open are `StoreUnavailableError`, never treated as corruption.
 - **`StoreLifecycle`**: `close()` (idempotent; use after close raises) and
   `checkpoint()` (a no-op in memory or read-only). Whoever opened a store
   closes it (decision 30).

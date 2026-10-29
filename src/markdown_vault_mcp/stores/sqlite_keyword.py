@@ -112,7 +112,7 @@ class SqliteKeywordBackend:
         except BaseException as exc:
             if share is not None:
                 share.release()
-            if isinstance(exc, sqlite3.DatabaseError):
+            if isinstance(exc, (sqlite3.DatabaseError, OSError)):
                 raise self._classify(exc, str(db_path)) from exc
             raise
         if share is not None:
@@ -122,10 +122,14 @@ class SqliteKeywordBackend:
             weakref.finalize(index, release_from_finalizer, share)
         return index
 
-    def _classify(self, exc: sqlite3.DatabaseError, location: str) -> StoreOpenError:
-        """Map a SQLite error at open to the contract's outcome."""
+    def _classify(
+        self, exc: sqlite3.DatabaseError | OSError, location: str
+    ) -> StoreOpenError:
+        """Map a SQLite or filesystem error at open to the contract's outcome."""
         errorname = getattr(exc, "sqlite_errorname", None)
-        corrupt = errorname in _CORRUPT_ERRORNAMES or "not a database" in str(exc)
+        corrupt = isinstance(exc, sqlite3.DatabaseError) and (
+            errorname in _CORRUPT_ERRORNAMES or "not a database" in str(exc)
+        )
         if corrupt:
             return StoreCorruptError(
                 f"Index at {location} is not a SQLite database: {exc}",
