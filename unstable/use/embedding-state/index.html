@@ -3044,6 +3044,7 @@
 <li>every note whose title changes, after a change to <code>MARKDOWN_VAULT_MCP_TITLE_FIELD</code>, since a section is embedded with its note's title.</li>
 </ul>
 <p><code>markdown-vault-mcp reindex --force</code> rebuilds the index only: the embeddings are kept.</p>
+<p>A forced rebuild keeps the notes in a folder the server can't read at the time, with their embeddings, and reads them again once it can, so a folder with the wrong permissions costs no second embedding.</p>
 <h2 id="log-lines-to-look-for">Log lines to look for<a class="headerlink" href="#log-lines-to-look-for" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
