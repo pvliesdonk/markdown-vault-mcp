@@ -160,8 +160,13 @@ class VectorStoreSlot:
             dimension=0,
         )
 
-    def _run_rebuild(self, rebuild: Callable[[], object]) -> None:
-        """Run *rebuild*, logging a failure before it propagates."""
+    def _run_rebuild(self, rebuild: Callable[[], object], reason: str) -> None:
+        """Log why the store is rebuilt, then run *rebuild*, logging a failure."""
+        logger.warning(
+            "vector_store_rebuild_started location=%s reason=%s",
+            self._location,
+            reason,
+        )
         try:
             rebuild()
         except Exception:
@@ -248,12 +253,7 @@ class VectorStoreSlot:
             recovered = self._recover_corrupt()
             if recovered is not None:
                 return recovered
-        logger.warning(
-            "vector_store_rebuild_started location=%s reason=%s",
-            self._location,
-            type(exc).__name__,
-        )
-        self._run_rebuild(rebuild)
+        self._run_rebuild(rebuild, type(exc).__name__)
         if self._store is None:
             raise ValueError(
                 "Failed to rebuild the vector store after it would not open."
@@ -443,12 +443,7 @@ class VectorStoreSlot:
             raise self._query_mismatch(store, dimension, "")
         if self._kept == (installed, dimension):
             raise self._query_mismatch(store, dimension, _RESTART_HINT)
-        logger.warning(
-            "vector_store_rebuild_started location=%s reason=%s",
-            self._location,
-            "dimension",
-        )
-        self._run_rebuild(rebuild)
+        self._run_rebuild(rebuild, "dimension")
         return self._rebuilt_at(dimension)
 
     def _rebuilt_at(self, dimension: int) -> EmbeddingStore:
@@ -541,12 +536,7 @@ class VectorStoreSlot:
                     location=str(self._location) if self._location else ":memory:",
                 )
             else:
-                logger.warning(
-                    "vector_store_rebuild_started location=%s reason=%s",
-                    self._location,
-                    "identity",
-                )
-                self._run_rebuild(rebuild)
+                self._run_rebuild(rebuild, "identity")
         installed = self._store
         if installed is None:  # pragma: no cover - get() or fresh() installed one
             raise RuntimeError("The vector store did not install.")
