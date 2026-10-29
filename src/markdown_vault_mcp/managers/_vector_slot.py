@@ -50,6 +50,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Why a rebuild kept the store at the stored dimension (#1904).
+_RESTART_HINT = (
+    " The provider still reports the stored dimension, so the rebuild kept "
+    "the store; restart the server to rebuild it."
+)
+
 #: The cost fields of ``embeddings_status`` when no store reports them (#1377).
 NO_RESOURCES: dict[str, Any] = {
     "search_mode": None,
@@ -90,6 +96,8 @@ class VectorStoreSlot:
         self._store = store
         self._injected = store is not None
         self._identity: EmbeddingIdentity | None = None
+        # The store a rebuild kept at another dimension than a query's (#1904).
+        self._kept: tuple[EmbeddingStore, int] | None = None
         # The store a read opened before the dimension was known (#1504).
         self._provisional: EmbeddingStore | None = None
         # Guards opening, swapping and closing; never held across a rebuild.
@@ -152,8 +160,13 @@ class VectorStoreSlot:
             dimension=0,
         )
 
-    def _run_rebuild(self, rebuild: Callable[[], object]) -> None:
-        """Run *rebuild*, logging a failure before it propagates."""
+    def _run_rebuild(self, rebuild: Callable[[], object], reason: str) -> None:
+        """Log why the store is rebuilt, then run *rebuild*, logging a failure."""
+        logger.warning(
+            "vector_store_rebuild_started location=%s reason=%s",
+            self._location,
+            reason,
+        )
         try:
             rebuild()
         except Exception:
@@ -240,12 +253,7 @@ class VectorStoreSlot:
             recovered = self._recover_corrupt()
             if recovered is not None:
                 return recovered
-        logger.warning(
-            "vector_store_rebuild_started location=%s reason=%s",
-            self._location,
-            type(exc).__name__,
-        )
-        self._run_rebuild(rebuild)
+        self._run_rebuild(rebuild, type(exc).__name__)
         if self._store is None:
             raise ValueError(
                 "Failed to rebuild the vector store after it would not open."
@@ -325,6 +333,7 @@ class VectorStoreSlot:
         with self._lock:
             provisional, self._provisional = self._provisional, None
             self._store = store
+            self._kept = None
             self._discard(provisional)
 
     def fresh(self) -> EmbeddingStore:
@@ -356,6 +365,7 @@ class VectorStoreSlot:
             try:
                 old, self._store = self._store, None
                 provisional, self._provisional = self._provisional, None
+                self._kept = None
                 # Closed before the fresh store opens, never after: a numpy
                 # store flushes pending rows on close, which must land before
                 # the rebuild's own first persist, never over it.
@@ -386,6 +396,87 @@ class VectorStoreSlot:
             provider.model_name,
             provider.provider_variant,
             self._text_format,
+        )
+
+    def for_query(
+        self,
+        store: EmbeddingStore,
+        dimension: int,
+        *,
+        rebuild: Callable[[], object] | None,
+    ) -> EmbeddingStore:
+        """Return a store that answers a query vector of *dimension* (#1904).
+
+        A read opens the store at its stored dimension without asking the
+        provider (#1504), so a model that changed only its dimension shows
+        first in the length of the query vector. An owned store is rebuilt
+        then, as for a model change, unless another search's rebuild already
+        installed one at *dimension*; without a rebuild, or on an injected
+        store, the mismatch is refused. A rebuild that keeps the old
+        dimension is refused, and so is every later query at *dimension*
+        while that store stays installed, without another rebuild.
+
+        Args:
+            store: The populated store the search read.
+            dimension: The length of the query vector.
+            rebuild: Rebuilds the store, installing the result; ``None``
+                forbids it.
+
+        Returns:
+            *store*, or the store installed at *dimension*.
+
+        Raises:
+            StoreIncompatibleError: If the dimensions differ and the store
+                may not be rebuilt, or a rebuild left it at another dimension.
+            Exception: Whatever *rebuild* raises, unchanged.
+        """
+        installed = self._store
+        if installed is not store and installed is not None:
+            # Another search's rebuild may have closed *store* already. An
+            # installed store at another dimension falls through to the
+            # rebuild, which converges it.
+            if installed.identity.dimension == dimension:
+                return installed
+        elif store.identity.dimension == dimension:
+            return store
+        if rebuild is None or self._injected:
+            raise self._query_mismatch(store, dimension, "")
+        if self._kept == (installed, dimension):
+            raise self._query_mismatch(store, dimension, _RESTART_HINT)
+        self._run_rebuild(rebuild, "dimension")
+        return self._rebuilt_at(dimension)
+
+    def _rebuilt_at(self, dimension: int) -> EmbeddingStore:
+        """Return the store a rebuild installed, refusing one at another dimension.
+
+        The rebuild compares with ``provider.dimension``, which providers
+        cache from their first call: a model that changed its dimension
+        while the process ran still reports the old one, so the rebuild
+        keeps the store. That store is remembered, so later queries are
+        refused without rebuilding again.
+
+        Raises:
+            StoreIncompatibleError: If the store is not at *dimension*.
+        """
+        installed = self._store
+        if installed is None:  # pragma: no cover - unless the slot closed meanwhile
+            raise RuntimeError("The vector store did not install.")
+        if installed.identity.dimension != dimension:
+            self._kept = (installed, dimension)
+            raise self._query_mismatch(installed, dimension, _RESTART_HINT)
+        return installed
+
+    def _query_mismatch(
+        self, store: EmbeddingStore, dimension: int, hint: str
+    ) -> StoreIncompatibleError:
+        """Say which vectors *store* holds and which dimension the query has."""
+        held = store.identity
+        return StoreIncompatibleError(
+            f"The vector store holds {held.model} vectors of dimension "
+            f"{held.dimension}; the provider embeds {held.model} queries at "
+            f"dimension {dimension}.{hint}",
+            backend=self.backend_name,
+            location=str(self._location) if self._location else ":memory:",
         )
 
     def writable_current(self) -> EmbeddingStore | None:
@@ -445,12 +536,7 @@ class VectorStoreSlot:
                     location=str(self._location) if self._location else ":memory:",
                 )
             else:
-                logger.warning(
-                    "vector_store_rebuild_started location=%s reason=%s",
-                    self._location,
-                    "identity",
-                )
-                self._run_rebuild(rebuild)
+                self._run_rebuild(rebuild, "identity")
         installed = self._store
         if installed is None:  # pragma: no cover - get() or fresh() installed one
             raise RuntimeError("The vector store did not install.")

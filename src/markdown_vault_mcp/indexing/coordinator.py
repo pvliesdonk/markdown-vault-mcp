@@ -358,7 +358,9 @@ class IndexWriteCoordinator:
         """Rebuild the vector index for the search-recovery path.
 
         Invoked by ``SearchManager._load_vectors`` when an owned store is
-        corrupt or of another identity (an embedding-model upgrade): the
+        corrupt or of another identity (an embedding-model upgrade), and by
+        ``SearchManager._search_vectors`` when a query vector's length
+        differs from the store's dimension (#1904): the
         manager's ``rebuild_after_fault`` forces a rebuild for another
         identity and cold-builds a corrupt store the slot moved aside, with
         a 5.x sidecar as donor (#1505). Runs on
