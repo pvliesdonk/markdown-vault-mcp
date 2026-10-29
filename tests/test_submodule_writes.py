@@ -126,6 +126,62 @@ def test_a_failed_listing_refuses_nothing_and_warns(
     with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git.submodules"):
         assert guard.submodule_of(source / "sub" / "note.md") is None
     assert [r.msg.split()[0] for r in caplog.records] == ["submodule_list_failed"]
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", real)
+    # The failure was not cached: the same index is listed again.
+    assert guard.submodule_of(source / "sub" / "note.md") == ("sub", True)
+
+
+def test_an_index_git_will_not_name_is_listed_on_every_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = make_superproject(tmp_path)
+    real = subprocess.run
+
+    def no_git_dir(args: list[str], **kw: Any) -> Any:
+        if "--absolute-git-dir" in args:
+            raise subprocess.CalledProcessError(128, args)
+        return real(args, **kw)
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", no_git_dir)
+    guard = SubmoduleGuard(source)
+    with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git.submodules"):
+        assert guard.submodule_of(source / "sub" / "note.md") == ("sub", True)
+    assert [r.msg.split()[0] for r in caplog.records] == ["submodule_index_unknown"]
+    _git(
+        source,
+        *("-c", "protocol.file.allow=always", "submodule", "add", "-q"),
+        str(tmp_path / "upstream"),
+        "later",
+    )
+    assert guard.submodule_of(source / "later" / "x.md") == ("later", True)
+
+
+def test_a_symlink_into_the_submodule_is_found(tmp_path: Path) -> None:
+    source = make_superproject(tmp_path)
+    (source / "alias").symlink_to(source / "sub")
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(source / "alias" / "note.md") == ("sub", True)
+
+
+def test_a_linked_worktree_vault_reads_its_own_index(tmp_path: Path) -> None:
+    """``.git`` is a file there; git names the index."""
+    source = make_superproject(tmp_path)
+    worktree = tmp_path / "wt"
+    _git(source, "worktree", "add", "-q", str(worktree))
+    assert (worktree / ".git").is_file()
+    guard = SubmoduleGuard(worktree)
+    assert guard.submodule_of(worktree / "sub" / "note.md") == ("sub", True)
+
+
+def test_a_vault_that_is_itself_a_submodule_has_none_of_its_own(
+    tmp_path: Path,
+) -> None:
+    """Its git root is the submodule, which holds no gitlinks."""
+    source = make_superproject(tmp_path)
+    guard = SubmoduleGuard(source / "sub")
+    assert guard.submodule_of(source / "sub" / "note.md") is None
 
 
 def test_the_refusal_names_the_argument_and_the_submodule(tmp_path: Path) -> None:
@@ -136,7 +192,8 @@ def test_the_refusal_names_the_argument_and_the_submodule(tmp_path: Path) -> Non
     assert str(inside.value) == (
         "new_path 'deep/sub/x.md' is inside the git submodule 'deep/sub'; this "
         "server does not change files in a submodule, so the change would never "
-        "be committed. Pass a new_path outside 'deep/sub/'."
+        "be committed. Pass a new_path outside 'deep/sub/', or change the file "
+        "in the submodule's own repository."
     )
     with pytest.raises(SubmodulePathError) as contains:
         guard.refuse(source / "deep", "old_dir", "deep")
@@ -214,6 +271,10 @@ REFUSED: dict[str, tuple[Callable[[Vault], object], str]] = {
         "new_path",
     ),
     "move the submodule": (lambda v: v.writer.move_folder("sub", "else"), "old_dir"),
+    "write into a new folder in it": (
+        lambda v: v.writer.write("sub/deeper/new.md", "# New\n"),
+        "path",
+    ),
     "move a folder into it": (
         lambda v: v.writer.move_folder("folder", "sub/folder"),
         "new_dir",
@@ -236,6 +297,7 @@ def test_every_write_tool_refuses_and_writes_nothing(
     with pytest.raises(SubmodulePathError, match=rf"^{argument} .*submodule 'sub'"):
         call(vault)
     assert _snapshot(source) == before
+    assert not (source / "sub" / "deeper").exists()
 
 
 def test_a_deinitialised_submodule_is_refused_too(
@@ -258,6 +320,33 @@ def test_moving_a_folder_that_holds_a_submodule_is_refused(
     before = _snapshot(source)
     with pytest.raises(SubmodulePathError, match=r"^old_dir 'deep' holds"):
         vault.writer.move_folder("deep", "moved")
+    assert _snapshot(source) == before
+
+
+def test_a_folder_may_move_beside_a_submodule(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    """A destination that holds a submodule loses nothing moved next to it."""
+    source = make_superproject(tmp_path, sub="b/sub")
+    (source / "a").mkdir()
+    (source / "a" / "x.md").write_text("# X\n")
+    vault = vault_of(source)
+    vault.writer.move_folder("a", "b")
+    assert (source / "b" / "x.md").read_text() == "# X\n"
+
+
+def test_a_folder_move_that_lands_a_file_in_a_submodule_is_refused(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    source = make_superproject(tmp_path, sub="b/sub")
+    (source / "a" / "sub").mkdir(parents=True)
+    (source / "a" / "sub" / "x.md").write_text("# X\n")
+    vault = vault_of(source)
+    before = _snapshot(source)
+    with pytest.raises(
+        SubmodulePathError, match=r"^new_dir 'b' would move files into .*'b/sub'"
+    ):
+        vault.writer.move_folder("a", "b")
     assert _snapshot(source) == before
 
 
@@ -300,3 +389,69 @@ def test_a_backlink_inside_the_submodule_is_reported_not_rewritten(
     skipped = [r for r in caplog.records if r.msg.startswith("link_rewrite_source_")]
     assert [r.msg.split()[0] for r in skipped] == ["link_rewrite_source_skipped"]
     assert "reason=submodule" in skipped[0].msg
+
+
+def test_a_rename_says_which_backlinks_it_left_alone(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    source = make_superproject(tmp_path, note="# Upstream\n\n[[top]]\n")
+    vault = vault_of(source)
+    before = (source / "sub" / "note.md").read_bytes()
+    result = vault.writer.rename("top.md", "renamed.md", update_links=True)
+    assert result.updated_links == 0
+    assert result.hint is not None
+    assert "'sub/note.md' still name the old path" in result.hint
+    assert (source / "sub" / "note.md").read_bytes() == before
+
+
+# ---------------------------------------------------------------------------
+# The OKF tools write into folders they walk
+# ---------------------------------------------------------------------------
+
+
+def test_generating_the_root_index_leaves_the_submodule_out(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    source = make_superproject(tmp_path)
+    (source / "folder").mkdir()
+    (source / "folder" / "x.md").write_text("# X\n")
+    vault = vault_of(source)
+    result = vault.writer.okf_generate_index(folder="")
+    assert result.created == ("folder/index.md",)
+    assert not (source / "sub" / "index.md").exists()
+    assert "/sub/index.md" not in (source / "index.md").read_text()
+
+
+def test_converting_links_leaves_submodule_notes_alone(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    source = make_superproject(tmp_path, note="# Upstream\n\n[[top]]\n")
+    (source / "mine.md").write_text("# Mine\n\n[[top]]\n")
+    vault = vault_of(source)
+    before = (source / "sub" / "note.md").read_bytes()
+    result = vault.writer.okf_convert_links()
+    assert result.files_changed == 1
+    assert "[[top]]" not in (source / "mine.md").read_text()
+    assert (source / "sub" / "note.md").read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda v: v.writer.okf_generate_index(folder="sub"),
+        lambda v: v.writer.okf_convert_links(folder="sub"),
+        lambda v: v.writer.okf_seed_log(folder="sub"),
+    ],
+    ids=["generate_index", "convert_links", "seed_log"],
+)
+def test_an_okf_folder_inside_the_submodule_is_refused(
+    call: Callable[[Vault], object],
+    tmp_path: Path,
+    vault_of: Callable[[Path], Vault],
+) -> None:
+    source = make_superproject(tmp_path)
+    vault = vault_of(source)
+    before = _snapshot(source)
+    with pytest.raises(SubmodulePathError, match=r"^folder 'sub' is inside"):
+        call(vault)
+    assert _snapshot(source) == before

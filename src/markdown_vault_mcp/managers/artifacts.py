@@ -305,6 +305,7 @@ class ArtifactStore:
             The write result, recording whether the file was created.
 
         Raises:
+            SubmodulePathError: If *path* lies inside a git submodule (#1564).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* does not match.
             DocumentExistsError: If write protection refuses a blind overwrite.
@@ -342,6 +343,7 @@ class ArtifactStore:
             The absolute path that was removed.
 
         Raises:
+            SubmodulePathError: If *path* lies inside a git submodule (#1564).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the artifact does not exist.
             ConcurrentModificationError: If *if_match* does not match.
@@ -374,6 +376,8 @@ class ArtifactStore:
             ``(old_abs, new_abs)``.
 
         Raises:
+            SubmodulePathError: If either path lies inside a git submodule
+                (#1564).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.

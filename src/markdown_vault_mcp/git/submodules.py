@@ -9,7 +9,8 @@ would land on disk and never reach git, so the write managers ask
 The index decides: a gitlink (mode ``160000`` in ``git ls-files --stage``) is
 what makes git refuse, whether the submodule is initialised or not. The list
 is read again only when the index file changes, so an unchanged index costs
-one ``stat``.
+one ``stat``. When git cannot list the index the guard refuses nothing, logs
+it, and asks again on the next write: git fails that write's commit anyway.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ class SubmoduleGuard:
         self._root: Path | None = None
         self._index: Path | None = None
         self._index_key: _IndexKey = None
+        self._listed = False
         self._gitlinks: tuple[Path, ...] = ()
 
     def submodule_of(self, abs_path: Path) -> tuple[str, bool] | None:
@@ -73,21 +75,29 @@ class SubmoduleGuard:
                 return self._name(gitlink), False
         return None
 
-    def refuse(self, abs_path: Path, argument: str, path: str) -> None:
-        """Raise when *abs_path* lies in or holds a submodule.
+    def refuse(
+        self, abs_path: Path, argument: str, path: str, *, holding: bool = True
+    ) -> None:
+        """Raise when *abs_path* lies in a submodule, or holds one.
 
         Args:
             abs_path: The validated absolute path the write would touch.
             argument: The tool parameter that carried *path*.
             path: The path as the caller sent it.
+            holding: Also refuse a folder that holds a submodule. ``False``
+                for a destination folder, whose submodules a move leaves
+                alone.
 
         Raises:
-            SubmodulePathError: When :meth:`submodule_of` finds a submodule.
+            SubmodulePathError: When :meth:`submodule_of` finds a submodule
+                that the arguments refuse.
         """
         found = self.submodule_of(abs_path)
         if found is None:
             return
         submodule, inside = found
+        if not (inside or holding):
+            return
         build = SubmodulePathError.inside if inside else SubmodulePathError.holds
         raise build(argument, path, submodule)
 
@@ -99,11 +109,16 @@ class SubmoduleGuard:
             root = self._git_root()
             if root is None:
                 return ()
-            key = _index_key(self._index)
-            if key != self._index_key:
-                self._gitlinks = self._read_gitlinks(root)
-                self._index_key = key
-            return self._gitlinks
+            # An index file git would not name cannot be watched: list it
+            # on every call instead.
+            key = _index_key(self._index) if self._index is not None else None
+            if self._listed and self._index is not None and key == self._index_key:
+                return self._gitlinks
+            gitlinks = self._read_gitlinks(root)
+            if gitlinks is None:
+                return ()  # not cached, so the next call asks git again
+            self._gitlinks, self._index_key, self._listed = gitlinks, key, True
+            return gitlinks
 
     def _git_root(self) -> Path | None:
         if not self._root_checked:
@@ -114,8 +129,8 @@ class SubmoduleGuard:
             self._root_checked = True
         return self._root
 
-    def _read_gitlinks(self, root: Path) -> tuple[Path, ...]:
-        """List the gitlinks under the vault, or none when git fails."""
+    def _read_gitlinks(self, root: Path) -> tuple[Path, ...] | None:
+        """List the gitlinks under the vault, or ``None`` when git fails."""
         try:
             result = subprocess.run(
                 ["git", "-C", str(root), "ls-files", "--stage", "-z"],
@@ -124,7 +139,7 @@ class SubmoduleGuard:
             )
         except (subprocess.CalledProcessError, FileNotFoundError) as exc:
             logger.warning("submodule_list_failed root=%s err=%s", root, exc)
-            return ()
+            return None
         gitlinks = []
         for entry in result.stdout.split(b"\0"):
             meta, _, name = entry.partition(b"\t")
@@ -151,15 +166,14 @@ def _index_file(root: Path) -> Path | None:
             text=True,
             check=True,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        logger.warning("submodule_index_unknown root=%s err=%s", root, exc)
         return None
     return Path(result.stdout.strip()) / "index"
 
 
-def _index_key(index: Path | None) -> _IndexKey:
+def _index_key(index: Path) -> _IndexKey:
     """Identify the index file's current version, or ``None`` when absent."""
-    if index is None:
-        return None
     try:
         st = index.stat()
     except OSError:
