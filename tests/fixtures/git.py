@@ -90,3 +90,48 @@ def git_repo_pair(tmp_path: Path) -> GitRepoPair:
     _run_git(local, "push", "-u", "origin", "main")
 
     return GitRepoPair(remote_path=remote, local_path=local)
+
+
+def make_superproject(
+    tmp_path: Path, *, vault: str = "", sub: str = "sub", note: str = "# Upstream\n"
+) -> Path:
+    """Build a superproject holding a submodule at ``<vault>/<sub>`` (#1564).
+
+    The layout ``docs/design/reference/git-submodules.md`` was observed on:
+    the submodule holds ``note.md``, added with ``git submodule add`` from a
+    local repository and committed. With *vault* set, the vault is that
+    subfolder of the repository and a second submodule sits at ``other``,
+    outside it.
+
+    Args:
+        tmp_path: A fresh directory to build under.
+        vault: The vault's folder inside the repository, ``""`` for its root.
+        sub: The submodule's path inside the vault.
+        note: The text of the submodule's ``note.md``.
+
+    Returns:
+        The vault directory: the repository root, or its *vault* subfolder.
+    """
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    _run_git(upstream, "init", "-q", "--initial-branch=main")
+    _run_git(upstream, "config", "user.email", "test@example.com")
+    _run_git(upstream, "config", "user.name", "Test User")
+    (upstream / "note.md").write_text(note)
+    _run_git(upstream, "add", "note.md")
+    _run_git(upstream, "commit", "-qm", "initial")
+
+    repo = tmp_path / "repo"
+    source = repo / vault if vault else repo
+    source.mkdir(parents=True)
+    _run_git(repo, "init", "-q", "--initial-branch=main")
+    _run_git(repo, "config", "user.email", "test@example.com")
+    _run_git(repo, "config", "user.name", "Test User")
+    (source / "top.md").write_text("# Top\n")
+    _run_git(repo, "add", ".")
+    add = ["-c", "protocol.file.allow=always", "submodule", "add", "-q"]
+    _run_git(repo, *add, str(upstream), f"{vault}/{sub}" if vault else sub)
+    if vault:
+        _run_git(repo, *add, str(upstream), "other")
+    _run_git(repo, "commit", "-qm", "add submodule")
+    return source

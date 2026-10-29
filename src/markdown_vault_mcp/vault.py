@@ -71,6 +71,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp._commit_scope import CommitScope
     from markdown_vault_mcp.git import PullResult, VersionedStore
+    from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.indexing.head_reconciler import ReconcileOutcome
     from markdown_vault_mcp.interfaces import EmbeddingStore, VectorBackend
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -698,7 +699,20 @@ class Vault:
             sync_index=self._coordinator.prepare_index_read,
             title_field=self._title_field,
             okf_write_enrich=self._okf_write_enrich,
+            submodule_guard=self._build_submodule_guard(),
         )
+
+    def _build_submodule_guard(self) -> SubmoduleGuard | None:
+        """Refuse writes git would never commit: those into a submodule (#1564).
+
+        Only a writable vault with a git strategy commits, so only one gets
+        a guard; the guard itself refuses nothing outside a repository.
+        """
+        if self._read_only or self._git_strategy is None:
+            return None
+        from markdown_vault_mcp.git.submodules import SubmoduleGuard
+
+        return SubmoduleGuard(self._source_dir)
 
     def _build_head_reconciler(self) -> IndexHeadReconciler | None:
         """Wire the reconciler that keeps the index at the git HEAD (#1532).

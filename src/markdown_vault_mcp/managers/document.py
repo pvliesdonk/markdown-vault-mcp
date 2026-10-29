@@ -92,6 +92,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
+    from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
@@ -154,6 +155,8 @@ class DocumentManager:
         title_field: Frontmatter key consulted first when resolving document
             titles.  Must match the value the index managers use, or
             ``read()`` titles would diverge from search titles.
+        submodule_guard: Refuses a write into a git submodule, which would
+            never be committed (#1564). ``None`` refuses nothing.
     """
 
     def __init__(
@@ -173,6 +176,7 @@ class DocumentManager:
         title_field: str = "title",
         okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
         sync_index: Callable[[], None] | None = None,
+        submodule_guard: SubmoduleGuard | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -188,6 +192,7 @@ class DocumentManager:
             write_lock=write_lock,
             notifier=self._notifier,
             indexed=fts.has_documents,
+            submodule_guard=submodule_guard,
             policy=ArtifactPolicy(
                 attachment_extensions=attachment_extensions,
                 read_only=read_only,
@@ -196,6 +201,7 @@ class DocumentManager:
         )
         self._mark_paths_dirty = mark_paths_dirty
         self._sync_index = sync_index
+        self._submodule_guard = submodule_guard
         self._title_field = title_field
         # OKF enforced-write hook (#964): transforms the final note text
         # (stamp `generated`, clear `verified`) before it lands. None when
@@ -228,6 +234,14 @@ class DocumentManager:
                 "Vault is read-only; write operations are not permitted."
             )
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
+
+    def _refuse_submodule(self, abs_path: Path, argument: str, path: str) -> None:
+        """Refuse a write that lies in or holds a git submodule (#1564).
+
+        Call right after validating *path*, before anything touches disk.
+        """
+        if self._submodule_guard is not None:
+            self._submodule_guard.refuse(abs_path, argument, path)
 
     @contextlib.contextmanager
     def write_scope(self) -> Iterator[None]:
@@ -720,6 +734,7 @@ class DocumentManager:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self._validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             if not allow_overwrite:
                 self._check_no_clobber(abs_path, path, if_match)
             check_if_match(abs_path, path, if_match)
@@ -837,6 +852,7 @@ class DocumentManager:
 
         with self._file_write_lock:
             abs_path = self._validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             existed = is_regular_file(abs_path)
             if not existed and not create_if_missing:
                 raise DocumentNotFoundError.note(path)
@@ -968,6 +984,7 @@ class DocumentManager:
 
         with self._file_write_lock:
             abs_path = self._validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             if not is_regular_file(abs_path):
                 raise DocumentNotFoundError.note(path)
 
@@ -1133,6 +1150,7 @@ class DocumentManager:
         with self._file_write_lock:
             if is_note(path):
                 abs_path = self._validate_path(path)
+                self._refuse_submodule(abs_path, "path", path)
                 if not is_regular_file(abs_path):
                     raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
@@ -1206,6 +1224,8 @@ class DocumentManager:
             if is_note(old_path):
                 old_abs = self._validate_path(old_path)
                 new_abs = self._validate_path(new_path)
+                self._refuse_submodule(old_abs, "old_path", old_path)
+                self._refuse_submodule(new_abs, "new_path", new_path)
 
                 if not is_regular_file(old_abs):
                     raise DocumentNotFoundError.note(old_path)
@@ -1351,6 +1371,14 @@ class DocumentManager:
         for source_path, items in by_source.items():
             try:
                 source_abs = self._validate_path(source_path)
+                if self._in_submodule(source_abs):
+                    logger.warning(
+                        "link_rewrite_source_skipped op=%s path=%s reason=submodule",
+                        op_name,
+                        source_path,
+                    )
+                    failed_sources.append(source_path)
+                    continue
                 if not is_regular_file(source_abs):
                     logger.warning(
                         "link_rewrite_source_skipped op=%s path=%s reason=not_found",
@@ -1394,6 +1422,11 @@ class DocumentManager:
                 )
                 failed_sources.append(source_path)
         return pending_callbacks, dirty_paths, failed_sources
+
+    def _in_submodule(self, abs_path: Path) -> bool:
+        """Whether a backlink source lies in a git submodule (#1564)."""
+        guard = self._submodule_guard
+        return guard is not None and guard.submodule_of(abs_path) is not None
 
     def _update_backlinks(
         self,
@@ -1594,6 +1627,8 @@ class DocumentManager:
         with self._file_write_lock:
             old_abs = self._validate_dir_path(old_dir)
             new_abs = self._validate_dir_path(new_dir)
+            self._refuse_submodule(old_abs, "old_dir", old_dir)
+            self._refuse_submodule(new_abs, "new_dir", new_dir)
 
             if not is_directory(old_abs):
                 raise DocumentNotFoundError.folder(old_dir)

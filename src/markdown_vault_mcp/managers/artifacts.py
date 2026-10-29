@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.managers._write_notifier import WriteNotifier
 
 __all__ = ["ArtifactPolicy", "ArtifactStore"]
@@ -99,6 +100,8 @@ class ArtifactStore:
         policy: Construction-time artifact policy.
         indexed: Whether the keyword index holds notes; with it, a write into
             an empty vault folder is refused (#1791). ``None`` skips the check.
+        submodule_guard: Refuses a write into a git submodule, which would
+            never be committed (#1564). ``None`` refuses nothing.
     """
 
     def __init__(
@@ -109,8 +112,10 @@ class ArtifactStore:
         notifier: WriteNotifier,
         policy: ArtifactPolicy,
         indexed: Callable[[], bool] | None = None,
+        submodule_guard: SubmoduleGuard | None = None,
     ) -> None:
         self._source_dir = source_dir
+        self._submodule_guard = submodule_guard
         self._indexed = indexed
         self._file_write_lock = write_lock
         self._notifier = notifier
@@ -134,6 +139,11 @@ class ArtifactStore:
             )
         if self._indexed is not None:
             require_vault_root(self._source_dir, indexed=self._indexed())
+
+    def _refuse_submodule(self, abs_path: Path, argument: str, path: str) -> None:
+        """Refuse a write into a git submodule, before anything touches disk."""
+        if self._submodule_guard is not None:
+            self._submodule_guard.refuse(abs_path, argument, path)
 
     def _check_no_clobber(
         self, abs_path: Path, path: str, if_match: str | None
@@ -303,6 +313,7 @@ class ArtifactStore:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self.validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             self._check_no_clobber(abs_path, path, if_match)
             check_if_match(abs_path, path, if_match)
             created = not is_regular_file(abs_path)
@@ -339,6 +350,7 @@ class ArtifactStore:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self.validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             if not is_regular_file(abs_path):
                 raise DocumentNotFoundError.attachment(path)
             check_if_match(abs_path, path, if_match)
@@ -372,6 +384,8 @@ class ArtifactStore:
         with self._file_write_lock:
             old_abs = self.validate_path(old_path)
             new_abs = self.validate_path(new_path)
+            self._refuse_submodule(old_abs, "old_path", old_path)
+            self._refuse_submodule(new_abs, "new_path", new_path)
             if not is_regular_file(old_abs):
                 raise DocumentNotFoundError.attachment(old_path)
             if is_regular_file(new_abs):
