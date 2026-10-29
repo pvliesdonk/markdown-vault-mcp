@@ -110,7 +110,9 @@ def test_a_read_only_reader_refuses_another_dimension(
     assert before
     reader = _vault(tmp_path, store, 32, owns_index_files=False)
     try:
-        with pytest.raises(StoreIncompatibleError, match=r"16.*32"):
+        with pytest.raises(
+            StoreIncompatibleError, match=r"fixed vectors of dimension 16.*dimension 32"
+        ):
             reader.reader.search("Boats", limit=1, mode="semantic")
     finally:
         reader.close()
@@ -132,8 +134,82 @@ def test_an_injected_store_of_another_dimension_is_refused(tmp_path: Path) -> No
     reader = _vault(tmp_path, "numpy", 32, vector_store=store)
     try:
         reader.index.build_index()
-        with pytest.raises(StoreIncompatibleError, match=r"16.*32"):
+        with pytest.raises(
+            StoreIncompatibleError, match=r"fixed vectors of dimension 16.*dimension 32"
+        ):
             reader.reader.search("Boats", limit=1, mode="semantic")
     finally:
         reader.close()
     assert (store.count, store.identity.dimension) == (count, 16)
+
+
+def test_a_stale_search_reads_the_store_another_search_rebuilt(
+    tmp_path: Path,
+) -> None:
+    """Two searches that read the old store rebuild it once (#1904)."""
+    _built_at_16(tmp_path, "numpy")
+    vault = _vault(tmp_path, "numpy", 32)
+    try:
+        vault.index.build_index()
+        slot = vault._vector_slot
+        old = slot.get(rebuild=None)
+        vault.reader.search("Boats", limit=1, mode="semantic")
+
+        def no_rebuild() -> None:
+            raise AssertionError("rebuilt twice")
+
+        assert slot.for_query(old, 32, rebuild=no_rebuild) is slot.current()
+    finally:
+        vault.close()
+
+
+class _StaleDimension(MockEmbeddingProvider):
+    """Embeds at 32 but reports 16, as a cached dimension does after a model swap."""
+
+    @property
+    def dimension(self) -> int:
+        return 16
+
+
+def test_a_rebuild_that_keeps_the_dimension_is_refused(tmp_path: Path) -> None:
+    """A provider that still reports the stored dimension: no raw ValueError."""
+    _built_at_16(tmp_path, "numpy")
+    vault = Vault(
+        source_dir=tmp_path / "vault",
+        settings=VaultSettings(
+            index_path=tmp_path / "index.db",
+            embeddings_path=tmp_path / "vectors",
+            embedding_store="numpy",
+            read_only=False,
+        ),
+        embedding_provider=_StaleDimension(dim=32, model="fixed"),
+    )
+    try:
+        vault.index.build_index()
+        with pytest.raises(StoreIncompatibleError, match="restart"):
+            vault.reader.search("Boats", limit=1, mode="semantic")
+    finally:
+        vault.close()
+
+
+def test_a_failed_rebuild_is_raised_not_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuild that swapped the store and then failed is not a closed store."""
+    _built_at_16(tmp_path, "numpy")
+    vault = _vault(tmp_path, "numpy", 32)
+    calls: list[None] = []
+
+    def swap_then_fail(_self: EmbeddingsManager) -> int:
+        calls.append(None)
+        vault._vector_slot.fresh()
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(EmbeddingsManager, "rebuild_after_fault", swap_then_fail)
+    try:
+        vault.index.build_index()
+        with pytest.raises(RuntimeError, match="provider down"):
+            vault.reader.search("Boats", limit=1, mode="semantic")
+        assert len(calls) == 1
+    finally:
+        vault.close()

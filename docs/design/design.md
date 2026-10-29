@@ -1175,7 +1175,7 @@ operator learns why the note was left out.
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
-| `StoreIncompatibleError`, `StoreCorruptError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors were embedded with another provider, model, variant, text format or dimension, or are corrupt, and the vault was built with `owns_index_files=False`, so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The store's own open outcome, raised as it is (#1734, #1778). Not a `ValueError`: `get_context()` and the graph view catch `StoreOpenError` explicitly to leave their similar notes and semantic edges out instead of failing |
+| `StoreIncompatibleError`, `StoreCorruptError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors were embedded with another provider, model, variant, text format or dimension, or are corrupt, and the vault was built with `owns_index_files=False` or handed the store (`vector_store=`), so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The store's own open outcome, raised as it is (#1734, #1778). Not a `ValueError`: `get_context()` and the graph view catch `StoreOpenError` explicitly to leave their similar notes and semantic edges out instead of failing |
 
 `build_embeddings()` processes chunks in bounded batches (configurable via
 `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological
@@ -4357,18 +4357,21 @@ the dimension from the stored files, because `provider.dimension` is a
 network probe for several providers: stored vectors stay readable with
 the provider down. The writer path, which needs the provider anyway,
 checks the dimension before writing; a read that finds nothing stored
-installs nothing, so the writer always sets the dimension. A search
-learns the provider's dimension from its own query vector, at no extra
-call: one of another length than a populated store's (the model changed
-its dimension under the same name) rebuilds an owned store, as a model
-change does, and is a `StoreIncompatibleError` on a store the process
-does not own or was handed (#1904). That read's
+installs nothing, so the writer always sets the dimension. That read's
 store is kept as provisional and reused by later reads, and the slot
 closes it when a sized store replaces it or the slot closes; `fresh()`
 likewise closes the store it replaces, and does so before opening the
 fresh one, so a numpy store's pending rows land before the rebuild's
-first persist, never over it. The slot closes every store it opens and
-stops using, because a database-backed store holds a pool (#1504), and
+first persist, never over it. A search learns the provider's dimension
+from its own query vector, at no extra call: one of another length than a
+populated store's (the model changed its dimension under the same name)
+rebuilds an owned store once, as a model change does, and a rebuild that
+fails is raised, never retried as a closed store; on a store the
+process does not own or was handed it is a `StoreIncompatibleError`
+(#1904). So is a rebuild that keeps the old dimension: providers cache
+their dimension from the first call, so a model that changed it while the
+process ran is rebuilt only after a restart. The slot closes every store
+it opens and stops using, because a database-backed store holds a pool (#1504), and
 its location may be a directory base or a schema name. The swap holds the
 slot's lock through the old store's close and the fresh open, so a read
 meanwhile waits, and `embeddings_status` may see no store for that moment.

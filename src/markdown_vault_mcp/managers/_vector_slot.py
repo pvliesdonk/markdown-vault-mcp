@@ -400,7 +400,8 @@ class VectorStoreSlot:
         A read opens the store at its stored dimension without asking the
         provider (#1504), so a model that changed only its dimension shows
         first in the length of the query vector. An owned store is rebuilt
-        then, as for a model change; without a rebuild, or on an injected
+        then, as for a model change, unless another search's rebuild already
+        installed one at *dimension*; without a rebuild, or on an injected
         store, the mismatch is refused.
 
         Args:
@@ -409,21 +410,23 @@ class VectorStoreSlot:
             rebuild: Rebuilds the store, installing the result; ``None``
                 forbids it.
 
+        Returns:
+            *store*, or the store installed at *dimension*.
+
         Raises:
             StoreIncompatibleError: If the dimensions differ and the store
-                may not be rebuilt.
+                may not be rebuilt, or the rebuild left the store at another
+                dimension.
         """
-        held = store.identity.dimension
-        if held == dimension:
+        installed = self._store
+        if installed is not store and installed is not None:
+            # Another search's rebuild may have closed *store* already.
+            if installed.identity.dimension == dimension:
+                return installed
+        elif store.identity.dimension == dimension:
             return store
         if rebuild is None or self._injected:
-            raise StoreIncompatibleError(
-                f"The vector store holds vectors of dimension {held}; the "
-                f"provider now embeds {store.identity.model} at dimension "
-                f"{dimension}.",
-                backend=self.backend_name,
-                location=str(self._location) if self._location else ":memory:",
-            )
+            raise self._query_mismatch(store, dimension, "")
         logger.warning(
             "vector_store_rebuild_started location=%s reason=%s",
             self._location,
@@ -433,7 +436,30 @@ class VectorStoreSlot:
         installed = self._store
         if installed is None:  # pragma: no cover - the read installed one
             raise RuntimeError("The vector store did not install.")
+        if installed.identity.dimension != dimension:
+            # The rebuild compares with provider.dimension, which providers
+            # cache from their first call: a model that changed its
+            # dimension while the process ran still reports the old one.
+            raise self._query_mismatch(
+                installed,
+                dimension,
+                " The provider still reports the stored dimension, so the "
+                "rebuild kept the store; restart the server to rebuild it.",
+            )
         return installed
+
+    def _query_mismatch(
+        self, store: EmbeddingStore, dimension: int, hint: str
+    ) -> StoreIncompatibleError:
+        """Say which vectors *store* holds and which dimension the query has."""
+        held = store.identity
+        return StoreIncompatibleError(
+            f"The vector store holds {held.model} vectors of dimension "
+            f"{held.dimension}; the provider embeds {held.model} queries at "
+            f"dimension {dimension}.{hint}",
+            backend=self.backend_name,
+            location=str(self._location) if self._location else ":memory:",
+        )
 
     def writable_current(self) -> EmbeddingStore | None:
         """Return the installed store if this provider may write to it, else ``None``.

@@ -1156,7 +1156,7 @@ def test_batch_commands_embed_into_a_configured_embeddings_path(
 
 
 @pytest.mark.parametrize("embeddings_path", [True, False], ids=["set", "default"])
-@pytest.mark.parametrize("fault", ["other-provider", "corrupt"])
+@pytest.mark.parametrize("fault", ["other-provider", "dimension", "corrupt"])
 @pytest.mark.parametrize("mode", ["semantic", "hybrid"])
 def test_search_leaves_an_unusable_shared_sidecar_alone(
     tmp_path: Path,
@@ -1169,10 +1169,12 @@ def test_search_leaves_an_unusable_shared_sidecar_alone(
     import markdown_vault_mcp.providers as providers_mod
 
     dim = {"value": 32}
+    # "dimension": the same model name at another dimension (#1904).
+    model = "fixed" if fault == "dimension" else None
     monkeypatch.setattr(
         providers_mod,
         "get_embedding_provider",
-        lambda _config: MockEmbeddingProvider(dim["value"]),
+        lambda _config: MockEmbeddingProvider(dim["value"], model=model),
     )
     vault_dir = tmp_path / "vault"
     vault_dir.mkdir()
@@ -1199,7 +1201,7 @@ def test_search_leaves_an_unusable_shared_sidecar_alone(
 
     assert result.exit_code == 1
     assert "ERROR: cannot search by meaning" in result.stderr
-    remedy = "embedding settings" if fault == "other-provider" else "run index"
+    remedy = "run index" if fault == "corrupt" else "embedding settings"
     assert remedy in result.stderr
     assert [p.read_bytes() for p in sidecars] == before
 

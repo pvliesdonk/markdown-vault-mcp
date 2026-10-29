@@ -151,6 +151,14 @@ def _rrf_accumulate(
         )
 
 
+class _RebuildFailedError(Exception):
+    """Carries a rebuild's error past the closed-store retry (#1904)."""
+
+    def __init__(self, error: RuntimeError) -> None:
+        super().__init__(str(error))
+        self.error = error
+
+
 class SearchManager:
     """Manages search, listing, and query operations against the vault.
 
@@ -173,7 +181,9 @@ class SearchManager:
             Invoked by ``_load_vectors`` on any unrecoverable sidecar fault —
             an embedding-identity mismatch (provider, model, or provider
             variant), an embedding-text format mismatch, a row-count
-            mismatch, or a truncated/zero-byte/incomplete sidecar. ``None``
+            mismatch, or a truncated/zero-byte/incomplete sidecar; and by
+            ``_search_vectors`` when the query vector's length differs from
+            a populated store's dimension (#1904). ``None``
             leaves the store alone and the search raises the store's
             :exc:`~markdown_vault_mcp.exceptions.StoreCorruptError` or
             :exc:`~markdown_vault_mcp.exceptions.StoreIncompatibleError`
@@ -357,21 +367,45 @@ class SearchManager:
                 raise
             return read(replaced)
 
-    def _search_store(
-        self, store: EmbeddingStore, query: str, limit: int, folder: str | None
+    def _search_vectors(
+        self, query: str, limit: int, folder: str | None
     ) -> list[dict[str, Any]]:
-        """Search *store* for *query*; an empty store embeds nothing.
+        """Search the vault's store for *query*; an empty store embeds nothing.
 
-        A query vector of another length than the store's sends the store
-        to its slot, which rebuilds or refuses it (#1904).
+        A query vector of another length than the store's sends the store to
+        its slot first, which rebuilds or refuses it (#1904). A rebuild that
+        fails is raised as it is, never retried as a closed store by
+        :meth:`_vector_rows`.
+
+        Args:
+            query: The search text.
+            limit: Maximum number of rows.
+            folder: Restrict to this folder prefix, or ``None``.
+
+        Returns:
+            The store's rows, best first.
+
+        Raises:
+            StoreIncompatibleError: If the store holds vectors of another
+                dimension and may not be rebuilt.
         """
-        if not store.count:
-            return []
-        vector = self._query_vector(query)
-        store = self._slot.for_query(
-            store, len(vector), rebuild=self._rebuild_embeddings
-        )
-        return store.search(vector, limit=limit, folder=folder)
+
+        def read(store: EmbeddingStore) -> list[dict[str, Any]]:
+            if not store.count:
+                return []
+            vector = self._query_vector(query)
+            try:
+                store = self._slot.for_query(
+                    store, len(vector), rebuild=self._rebuild_embeddings
+                )
+            except RuntimeError as exc:
+                raise _RebuildFailedError(exc) from exc
+            return store.search(vector, limit=limit, folder=folder)
+
+        try:
+            return self._vector_rows(read)
+        except _RebuildFailedError as failed:
+            raise failed.error from failed.error.__cause__
 
     def _load_vectors(self) -> EmbeddingStore | None:
         """Open or return the vault's vector store through its slot (#1777).
@@ -1082,9 +1116,7 @@ class SearchManager:
             filters=filters,
             okf_filters=okf_filters,
         )
-        raw = self._vector_rows(
-            lambda vectors: self._search_store(vectors, query, candidate_limit, folder)
-        )
+        raw = self._search_vectors(query, candidate_limit, folder)
 
         filtered = self._post_filter_semantic_rows(
             raw, filters=filters, okf_filters=okf_filters
@@ -1147,11 +1179,7 @@ class SearchManager:
             fts_raw, alpha=self._length_downweight_alpha
         )
 
-        vec_raw = self._vector_rows(
-            lambda vectors: self._search_store(
-                vectors, query, vec_candidate_limit, folder
-            )
-        )
+        vec_raw = self._search_vectors(query, vec_candidate_limit, folder)
         vec_filtered = self._post_filter_semantic_rows(
             vec_raw, filters=filters, okf_filters=okf_filters
         )
