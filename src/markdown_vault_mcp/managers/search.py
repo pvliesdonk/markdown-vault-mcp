@@ -388,6 +388,7 @@ class SearchManager:
         Raises:
             StoreIncompatibleError: If the store holds vectors of another
                 dimension and may not be rebuilt.
+            RuntimeError: If the rebuild fails.
         """
 
         def read(store: EmbeddingStore) -> list[dict[str, Any]]:

@@ -92,8 +92,9 @@ def test_a_search_rebuilds_once_at_the_new_dimension(
     vault = _vault(tmp_path, store, 32)
     try:
         vault.index.build_index()
-        results = vault.reader.search("Boats and harbours.", limit=1, mode=mode)
-        assert results[0].path == "beta.md"
+        # The mock's vectors are random per text, so only that rows came back
+        # says the rebuilt store was searched.
+        assert vault.reader.search("Boats and harbours.", limit=1, mode=mode)
         vault.reader.search("Apples and pears.", limit=1, mode=mode)
         assert len(rebuilds) == 1
         assert vault.index.embeddings_status()["identity"]["dimension"] == 32
@@ -171,9 +172,19 @@ class _StaleDimension(MockEmbeddingProvider):
         return 16
 
 
-def test_a_rebuild_that_keeps_the_dimension_is_refused(tmp_path: Path) -> None:
-    """A provider that still reports the stored dimension: no raw ValueError."""
+def test_a_rebuild_that_keeps_the_dimension_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider that still reports the stored dimension: refused, rebuilt once."""
     _built_at_16(tmp_path, "numpy")
+    rebuilds: list[None] = []
+    real = EmbeddingsManager.rebuild_after_fault
+
+    def counting(self: EmbeddingsManager) -> int:
+        rebuilds.append(None)
+        return real(self)
+
+    monkeypatch.setattr(EmbeddingsManager, "rebuild_after_fault", counting)
     vault = Vault(
         source_dir=tmp_path / "vault",
         settings=VaultSettings(
@@ -186,8 +197,10 @@ def test_a_rebuild_that_keeps_the_dimension_is_refused(tmp_path: Path) -> None:
     )
     try:
         vault.index.build_index()
-        with pytest.raises(StoreIncompatibleError, match="restart"):
-            vault.reader.search("Boats", limit=1, mode="semantic")
+        for _ in range(2):
+            with pytest.raises(StoreIncompatibleError, match="restart"):
+                vault.reader.search("Boats", limit=1, mode="semantic")
+        assert len(rebuilds) == 1
     finally:
         vault.close()
 

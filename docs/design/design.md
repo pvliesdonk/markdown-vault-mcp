@@ -4366,12 +4366,14 @@ first persist, never over it. A search learns the provider's dimension
 from its own query vector, at no extra call: one of another length than a
 populated store's (the model changed its dimension under the same name)
 rebuilds an owned store once, as a model change does, and a rebuild that
-fails is raised, never retried as a closed store; on a store the
-process does not own or was handed it is a `StoreIncompatibleError`
-(#1904). So is a rebuild that keeps the old dimension: providers cache
-their dimension from the first call, so a model that changed it while the
-process ran is rebuilt only after a restart. The slot closes every store
-it opens and stops using, because a database-backed store holds a pool (#1504), and
+fails is raised, never retried as a closed store. A store the process
+does not own, or one it was handed, is refused with
+`StoreIncompatibleError` (#1904). So is a rebuild that keeps the old
+dimension, and every later query while that store stays installed, with
+no further rebuild: providers cache their dimension from the first call,
+so a model that changed it while the process ran is rebuilt only after a
+restart. The slot closes every store it opens and stops using, because a
+database-backed store holds a pool (#1504), and
 its location may be a directory base or a schema name. The swap holds the
 slot's lock through the old store's close and the fresh open, so a read
 meanwhile waits, and `embeddings_status` may see no store for that moment.
