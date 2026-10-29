@@ -357,6 +357,22 @@ class SearchManager:
                 raise
             return read(replaced)
 
+    def _search_store(
+        self, store: EmbeddingStore, query: str, limit: int, folder: str | None
+    ) -> list[dict[str, Any]]:
+        """Search *store* for *query*; an empty store embeds nothing.
+
+        A query vector of another length than the store's sends the store
+        to its slot, which rebuilds or refuses it (#1904).
+        """
+        if not store.count:
+            return []
+        vector = self._query_vector(query)
+        store = self._slot.for_query(
+            store, len(vector), rebuild=self._rebuild_embeddings
+        )
+        return store.search(vector, limit=limit, folder=folder)
+
     def _load_vectors(self) -> EmbeddingStore | None:
         """Open or return the vault's vector store through its slot (#1777).
 
@@ -1067,13 +1083,7 @@ class SearchManager:
             okf_filters=okf_filters,
         )
         raw = self._vector_rows(
-            lambda vectors: (
-                vectors.search(
-                    self._query_vector(query), limit=candidate_limit, folder=folder
-                )
-                if vectors.count
-                else []
-            ),
+            lambda vectors: self._search_store(vectors, query, candidate_limit, folder)
         )
 
         filtered = self._post_filter_semantic_rows(
@@ -1138,13 +1148,9 @@ class SearchManager:
         )
 
         vec_raw = self._vector_rows(
-            lambda vectors: (
-                vectors.search(
-                    self._query_vector(query), limit=vec_candidate_limit, folder=folder
-                )
-                if vectors.count
-                else []
-            ),
+            lambda vectors: self._search_store(
+                vectors, query, vec_candidate_limit, folder
+            )
         )
         vec_filtered = self._post_filter_semantic_rows(
             vec_raw, filters=filters, okf_filters=okf_filters

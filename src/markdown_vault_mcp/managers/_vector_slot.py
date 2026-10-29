@@ -388,6 +388,53 @@ class VectorStoreSlot:
             self._text_format,
         )
 
+    def for_query(
+        self,
+        store: EmbeddingStore,
+        dimension: int,
+        *,
+        rebuild: Callable[[], object] | None,
+    ) -> EmbeddingStore:
+        """Return a store that answers a query vector of *dimension* (#1904).
+
+        A read opens the store at its stored dimension without asking the
+        provider (#1504), so a model that changed only its dimension shows
+        first in the length of the query vector. An owned store is rebuilt
+        then, as for a model change; without a rebuild, or on an injected
+        store, the mismatch is refused.
+
+        Args:
+            store: The populated store the search read.
+            dimension: The length of the query vector.
+            rebuild: Rebuilds the store, installing the result; ``None``
+                forbids it.
+
+        Raises:
+            StoreIncompatibleError: If the dimensions differ and the store
+                may not be rebuilt.
+        """
+        held = store.identity.dimension
+        if held == dimension:
+            return store
+        if rebuild is None or self._injected:
+            raise StoreIncompatibleError(
+                f"The vector store holds vectors of dimension {held}; the "
+                f"provider now embeds {store.identity.model} at dimension "
+                f"{dimension}.",
+                backend=self.backend_name,
+                location=str(self._location) if self._location else ":memory:",
+            )
+        logger.warning(
+            "vector_store_rebuild_started location=%s reason=%s",
+            self._location,
+            "dimension",
+        )
+        self._run_rebuild(rebuild)
+        installed = self._store
+        if installed is None:  # pragma: no cover - the read installed one
+            raise RuntimeError("The vector store did not install.")
+        return installed
+
     def writable_current(self) -> EmbeddingStore | None:
         """Return the installed store if this provider may write to it, else ``None``.
 

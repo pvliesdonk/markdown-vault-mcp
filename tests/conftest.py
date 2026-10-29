@@ -94,13 +94,15 @@ def _meta_stale(result: Any) -> bool | None:
 class MockEmbeddingProvider(EmbeddingProvider):
     """Deterministic provider for testing. Returns hash-based vectors."""
 
-    def __init__(self, dim: int = 32) -> None:
+    def __init__(self, dim: int = 32, model: str | None = None) -> None:
         """Initialise with a fixed vector dimension.
 
         Args:
             dim: Embedding dimension. Defaults to 32.
+            model: The model name; ``None`` names it after the dimension.
         """
         self._dim = dim
+        self._model = model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return deterministic hash-based vectors for each text.
@@ -138,7 +140,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
 
     @property
     def model_name(self) -> str:
-        return f"mock-dim-{self._dim}"
+        return self._model or f"mock-dim-{self._dim}"
 
 
 _VAULT_FIXTURE_EXCLUDED = {"invalid_utf8.md"}

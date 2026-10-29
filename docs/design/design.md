@@ -4357,7 +4357,12 @@ the dimension from the stored files, because `provider.dimension` is a
 network probe for several providers: stored vectors stay readable with
 the provider down. The writer path, which needs the provider anyway,
 checks the dimension before writing; a read that finds nothing stored
-installs nothing, so the writer always sets the dimension. That read's
+installs nothing, so the writer always sets the dimension. A search
+learns the provider's dimension from its own query vector, at no extra
+call: one of another length than a populated store's (the model changed
+its dimension under the same name) rebuilds an owned store, as a model
+change does, and is a `StoreIncompatibleError` on a store the process
+does not own or was handed (#1904). That read's
 store is kept as provisional and reused by later reads, and the slot
 closes it when a sized store replaces it or the slot closes; `fresh()`
 likewise closes the store it replaces, and does so before opening the
