@@ -97,7 +97,7 @@ class VectorStoreSlot:
         self._injected = store is not None
         self._identity: EmbeddingIdentity | None = None
         # The store a rebuild kept at another dimension than a query's (#1904).
-        self._kept: tuple[EmbeddingStore | None, int] | None = None
+        self._kept: tuple[EmbeddingStore, int] | None = None
         # The store a read opened before the dimension was known (#1504).
         self._provisional: EmbeddingStore | None = None
         # Guards opening, swapping and closing; never held across a rebuild.
@@ -333,6 +333,7 @@ class VectorStoreSlot:
         with self._lock:
             provisional, self._provisional = self._provisional, None
             self._store = store
+            self._kept = None
             self._discard(provisional)
 
     def fresh(self) -> EmbeddingStore:
@@ -364,6 +365,7 @@ class VectorStoreSlot:
             try:
                 old, self._store = self._store, None
                 provisional, self._provisional = self._provisional, None
+                self._kept = None
                 # Closed before the fresh store opens, never after: a numpy
                 # store flushes pending rows on close, which must land before
                 # the rebuild's own first persist, never over it.
