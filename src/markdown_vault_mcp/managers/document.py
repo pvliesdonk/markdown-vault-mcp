@@ -119,8 +119,8 @@ def _submodule_links_hint(sources: list[str]) -> str:
     """The rename hint naming backlinks left in git submodules (#1564)."""
     names = ", ".join(repr(s) for s in sources)
     return (
-        f"The links in {names} still name the old path: those notes are inside "
-        "a git submodule, which this server does not change. Edit them in the "
+        f"The links in {names} still name the old path: they are inside a git "
+        "submodule, which this server does not change. Edit them in the "
         "submodule's own repository."
     )
 

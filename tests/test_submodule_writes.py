@@ -166,15 +166,18 @@ def test_a_failed_listing_keeps_the_last_one_and_warns(
     with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git.submodules"):
         assert guard.submodule_of(source / "sub" / "note.md") == ("sub", True)
     assert [r.msg.split()[0] for r in caplog.records] == ["submodule_list_failed"]
-    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", real)
-    _git(
-        source,
-        *("-c", "protocol.file.allow=always", "submodule", "add", "-q"),
-        str(tmp_path / "upstream"),
-        "later",
-    )
-    # The failure was not cached: the next call lists the index again.
-    assert guard.submodule_of(source / "later" / "x.md") == ("later", True)
+    listings: list[None] = []
+
+    def counting(args: list[str], **kw: Any) -> Any:
+        if "ls-files" in args:
+            listings.append(None)
+        return real(args, **kw)
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", counting)
+    # The failure was not cached: the unchanged index is listed again, once.
+    assert guard.submodule_of(source / "sub" / "note.md") == ("sub", True)
+    guard.submodule_of(source / "sub" / "note.md")
+    assert len(listings) == 1
 
 
 def test_an_index_git_will_not_name_is_listed_on_every_call(
@@ -513,13 +516,22 @@ def test_indexing_a_folder_that_holds_a_submodule_skips_only_the_submodule(
 
 
 def test_converting_links_leaves_submodule_notes_alone(
-    tmp_path: Path, vault_of: Callable[[Path], Vault]
+    tmp_path: Path,
+    vault_of: Callable[[Path], Vault],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     source = make_superproject(tmp_path, note="# Upstream\n\n[[top]]\n")
     (source / "mine.md").write_text("# Mine\n\n[[top]]\n")
     vault = vault_of(source)
     before = (source / "sub" / "note.md").read_bytes()
-    result = vault.writer.okf_convert_links()
+    with caplog.at_level(
+        logging.INFO, logger="markdown_vault_mcp.managers.okf_migrate"
+    ):
+        result = vault.writer.okf_convert_links()
+    skipped = [r for r in caplog.records if r.msg.startswith("okf_convert_links_")]
+    assert [(r.msg.split()[0], r.args) for r in skipped] == [
+        ("okf_convert_links_submodule_notes_skipped", (1,))
+    ]
     assert result.files_changed == 1
     assert "[[top]]" not in (source / "mine.md").read_text()
     assert (source / "sub" / "note.md").read_bytes() == before
