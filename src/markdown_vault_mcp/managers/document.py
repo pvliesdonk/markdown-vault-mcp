@@ -115,7 +115,7 @@ _ATTACHMENT_UPDATE_LINKS_HINT = (
 )
 
 
-def _submodule_links_hint(sources: list[str]) -> str:
+def _submodule_links_text(sources: list[str]) -> str:
     """The rename hint naming backlinks left in git submodules (#1564)."""
     names = ", ".join(repr(s) for s in sources)
     return (
@@ -1306,9 +1306,7 @@ class DocumentManager:
                     self._update_backlinks(old_path, new_path, backlinks)
                 )
                 updated_links = len(backlink_callbacks)
-                in_submodules = [s for s in unrewritten if self.in_submodule(s)]
-                if in_submodules:
-                    hint = _submodule_links_hint(in_submodules)
+                hint = self._submodule_links_hint(unrewritten)
 
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
@@ -1478,6 +1476,11 @@ class DocumentManager:
                 )
                 failed_sources.append(source_path)
         return pending_callbacks, dirty_paths, failed_sources
+
+    def _submodule_links_hint(self, unrewritten: list[str]) -> str | None:
+        """The rename hint for backlinks left in git submodules, if any (#1564)."""
+        in_submodules = [s for s in unrewritten if self.in_submodule(s)]
+        return _submodule_links_text(in_submodules) if in_submodules else None
 
     def _update_backlinks(
         self,
