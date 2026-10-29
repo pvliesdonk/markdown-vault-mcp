@@ -112,6 +112,8 @@ These embed only part of the vault:
 
 `markdown-vault-mcp reindex --force` rebuilds the index only: the embeddings are kept.
 
+A forced rebuild keeps the notes in a folder the server can't read at the time, with their embeddings, and reads them again once it can, so a folder with the wrong permissions costs no second embedding.
+
 ## Log lines to look for
 
 | Event | What it says |

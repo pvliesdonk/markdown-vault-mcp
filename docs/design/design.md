@@ -732,7 +732,17 @@ Two methods manage the index:
   #1785); `scan_directory` reports walk errors instead of swallowing them,
   and the build logs each (`build_index_walk_incomplete`) and returns
   `IndexStats(walk_complete=False)`. `force=True` drops and rebuilds from
-  scratch. When a
+  scratch, except under a directory its walk could not read: those notes and
+  tombstones keep their rows, and so their vectors, since the absence is not
+  authoritative (#1929). The scan runs first, the wipe after it spares every
+  path under a reported directory (an unreadable root spares all), and the
+  kept notes enter the tracker state with an empty hash, so the first scan
+  that reads them re-parses them under the current pipeline and a note
+  deleted meanwhile is deleted. The tracker writes a recorded hash back for
+  every note it keeps under an unreadable directory, so the empty hash
+  survives the reindexes that still cannot read the note, and it keeps the
+  skipped entries there too, so their tombstones and the vectors they hold
+  survive as well. When a
   persistent `index_path` contains documents that now match
   `exclude_patterns`, they are purged from the FTS and vector indexes
   after the scan, but only when a scan actually runs (that is, on a cold

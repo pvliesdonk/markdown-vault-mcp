@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -34,6 +35,7 @@ from markdown_vault_mcp.scanner import (
     scan_directory,
 )
 from markdown_vault_mcp.source_probe import holds_entries
+from markdown_vault_mcp.tracker import is_under, unread_prefixes
 from markdown_vault_mcp.types import (
     IndexStats,
     ParsedNote,
@@ -74,6 +76,26 @@ logger = logging.getLogger(__name__)
 # ~119 ms per checkpoint on a 25k-note vault, 30s is about 0.4% overhead
 # while halving the worst-case redone upsert work versus 60s.
 _CHECKPOINT_INTERVAL_S = 30.0
+
+
+@dataclass
+class _KeptRows:
+    """Rows a forced build kept under directories its walk could not read."""
+
+    notes: list[ParsedNote] = field(default_factory=list)
+    skip_reasons: dict[str, dict[str, str]] = field(default_factory=dict)
+
+
+def _unhashed_state_note(row: dict[str, Any]) -> ParsedNote:
+    """A tracker-state note for a kept row, hash-less so it re-parses (#1929)."""
+    return ParsedNote(
+        path=row["path"],
+        frontmatter={},
+        title=row["title"],
+        chunks=[],
+        content_hash="",
+        modified_at=row["modified_at"],
+    )
 
 
 class IndexManager:
@@ -351,8 +373,9 @@ class IndexManager:
         documents (tombstones included), is what an unmounted volume or an
         empty bind mount looks like: the pass is *unavailable*, so nothing is
         removed and the tracker keeps its state (#1791, #1505). A forced
-        rebuild, the deliberate "I emptied it", wipes the index first and
-        never asks.
+        rebuild, the deliberate "I emptied it", never asks: it wipes every row
+        outside the directories its walk could not read, so a root it could
+        not read at all keeps every row (#1929).
 
         Returns:
             ``True`` when the pass is refused, after one WARNING.
@@ -390,6 +413,44 @@ class IndexManager:
                 self._fts.delete_by_path(row["path"])
                 dropped.append(row["path"])
         return dropped
+
+    def _wipe_for_rebuild(self, keep: tuple[str, ...]) -> _KeptRows:
+        """Delete every row a forced build replaces, sparing unread folders (#1929).
+
+        A directory the walk could not read is not an authoritative absence
+        (#1625, #1785): the notes and tombstones under it keep their rows,
+        and with them their vectors, until a walk can read them again.
+
+        Args:
+            keep: Prefixes from :func:`~markdown_vault_mcp.tracker.unread_prefixes`.
+
+        Returns:
+            The kept notes, as hash-less tracker-state notes, and the kept
+            tombstones' skip reasons.
+        """
+        kept = _KeptRows()
+        for row in self._fts.list_notes():
+            if is_under(row["path"], keep):
+                kept.notes.append(_unhashed_state_note(row))
+            else:
+                self._fts.delete_by_path(row["path"])
+        # list_notes() is live-only, so tombstones need their own wipe;
+        # the scan re-creates one per still-skipped candidate.
+        for row in self._fts.list_tombstones():
+            if is_under(row["path"], keep):
+                kept.skip_reasons[row["path"]] = {
+                    "category": row["skip_category"],
+                    "detail": row["skip_detail"],
+                }
+            else:
+                self._fts.delete_by_path(row["path"])
+        if kept.notes or kept.skip_reasons:
+            logger.warning(
+                "build_index_kept_unread documents=%d tombstones=%d",
+                len(kept.notes),
+                len(kept.skip_reasons),
+            )
+        return kept
 
     def _state_notes_from_index(self) -> list[ParsedNote]:
         """Build tracker-state notes from the index's current contents.
@@ -477,27 +538,24 @@ class IndexManager:
 
         If the index already contains documents and *force* is ``False``,
         this is a no-op.  ``force=True`` drops all existing data and rebuilds
-        from scratch.
+        from scratch, except the rows under a directory the walk could not
+        read, which it keeps until a walk can (#1929).
 
         Note: the caller is responsible for setting any ``_index_built``
         flag after this method returns.
 
         Args:
-            force: When ``True``, drop and rebuild the index unconditionally.
+            force: When ``True``, drop and rebuild the index unconditionally,
+                sparing what the walk could not read.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
             was indexed.
         """
+        self._tracker.clear_carries()
         if force:
             logger.info("build_index_force_rebuild")
             self._vault_root_empty = False
-            for row in self._fts.list_notes():
-                self._fts.delete_by_path(row["path"])
-            # list_notes() is live-only, so tombstones need their own wipe;
-            # the scan below re-creates one per still-skipped candidate.
-            for row in self._fts.list_tombstones():
-                self._fts.delete_by_path(row["path"])
 
         # Checked before the walk: an empty folder has nothing to scan (#1791).
         if not force and self._refuse_empty_root():
@@ -533,6 +591,11 @@ class IndexManager:
             logger.warning(
                 "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
             )
+        kept = (
+            self._wipe_for_rebuild(unread_prefixes(walk_errors, self._source_dir))
+            if force
+            else _KeptRows()
+        )
 
         total_chunks = 0
         errored = 0
@@ -610,9 +673,13 @@ class IndexManager:
                     content_hash=skipped_state[rel_str],
                 )
 
-        # Update tracker state so reindex() knows the baseline.
+        # Update tracker state so reindex() knows the baseline. Kept rows go in
+        # with an empty hash, so the first scan that reads them re-parses them.
+        skipped_state.update(dict.fromkeys(kept.skip_reasons, ""))
         self._tracker.update_state(
-            notes, skipped=skipped_state, skip_reasons=skip_reasons
+            [*kept.notes, *notes],
+            skipped=skipped_state,
+            skip_reasons={**kept.skip_reasons, **skip_reasons},
         )
         self._sync_tombstones()
 
