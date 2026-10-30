@@ -229,8 +229,29 @@ def test_a_run_on_a_throwaway_container_restarts_it_and_cleans_up(
 
 
 def _containers() -> set[str]:
+    """Return the ids of this process's test containers, running or not.
+
+    The harness runs in this process, and the fixture names each container
+    ``mvm-test-pg-{pid}-...``; another test run on the same daemon (#1934)
+    starts and removes its own, which must not change the comparison.
+    """
     listed = subprocess.run(
-        ["docker", "ps", "-a", "-q", "--filter", "name=mvm-test-pg-"],
+        ["docker", "ps", "-a", "-q", "--filter", f"name=mvm-test-pg-{os.getpid()}-"],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
     return set(listed.stdout.split())
+
+
+def test_the_cleanup_check_lists_only_this_process_containers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[list[str]] = []
+
+    def run(args: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        seen.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="a\nb\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert _containers() == {"a", "b"}
+    (args,) = seen
+    assert f"name=mvm-test-pg-{os.getpid()}-" in args
