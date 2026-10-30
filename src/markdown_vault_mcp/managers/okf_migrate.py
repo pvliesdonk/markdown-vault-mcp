@@ -103,6 +103,9 @@ class OkfMigrationManager:
     def convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links.
 
+        Notes inside a git submodule are left out, since a write there would
+        never be committed (#1564).
+
         Args:
             folder: Restrict to this folder subtree; ``None`` covers the
                 whole vault, ``""`` the bundle root only.  Folded through
@@ -113,6 +116,7 @@ class OkfMigrationManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If a note it rewrites exists but cannot be
                 read (#1608). Notes converted before it keep their changes.
             IndexUnavailableError: If the index is not built.
@@ -122,15 +126,21 @@ class OkfMigrationManager:
         self._doc_mgr.ensure_index_current()
         self._require_built()
         folder = normalize_folder(folder)
+        if folder:
+            self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
         files_changed = 0
         converted = 0
         skipped = 0
         scanned = 0
+        in_submodules = 0
         # Every write a transform issues is mechanical: it must not re-stamp
         # provenance or clear a human attestation, whichever entry point
         # called it (#1401).
         with okf_write_suppressed():
             for note in self._search_mgr.list(folder=folder, include_attachments=False):
+                if self._doc_mgr.in_submodule(note.path):
+                    in_submodules += 1
+                    continue
                 scanned += 1
                 outlinks = self._link_mgr.get_outlinks(note.path)
                 if not any(link.link_type == "wikilink" for link in outlinks):
@@ -146,6 +156,10 @@ class OkfMigrationManager:
                 if new_content != note_content.content:
                     self._doc_mgr.write(note.path, new_content, allow_overwrite=True)
                     files_changed += 1
+        if in_submodules:
+            logger.info(
+                "okf_convert_links_submodule_notes_skipped notes=%d", in_submodules
+            )
         return OkfConvertResult(
             files_changed=files_changed,
             links_converted=converted,
@@ -166,7 +180,10 @@ class OkfMigrationManager:
         frontmatter is preserved (the root ``index.md``'s ``okf_version``
         declaration must survive regeneration), and any field the vault
         requires but the file lacks is seeded, so a freshly generated index
-        is not itself excluded from the index that produced it (#1175).
+        is not itself excluded from the index that produced it (#1175). A
+        subfolder inside a git submodule is never given an index, since a
+        write there would never be committed (#1564); it gets a pointer only
+        when it ships its own ``index.md``.
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -180,6 +197,7 @@ class OkfMigrationManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If the folder's ``index.md`` exists but
                 cannot be read; it is left untouched (#1608).
             IndexUnavailableError: If the index is not built.
@@ -191,6 +209,7 @@ class OkfMigrationManager:
         from markdown_vault_mcp.types import NoteInfo
 
         folder = normalize_folder(folder) or ""
+        self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
         prefix = f"{folder}/" if folder else ""
         note_entries: list[tuple[str, str, str | None]] = []
         subfolders: set[str] = set()
@@ -212,12 +231,19 @@ class OkfMigrationManager:
             )
             note_entries.append((note.title, f"/{note.path}", description))
 
+        subfolders = {
+            sub
+            for sub in subfolders
+            if not self._doc_mgr.in_submodule(prefix + sub)
+            or self._has_index(prefix + sub)
+        }
         # Immediate notes first, then a pointer into each subfolder's index.
         entries = note_entries + [
             (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
         ]
         created: list[str] = []
         for sub in sorted(subfolders):
+            # A kept submodule subfolder has an index, so it is never generated.
             if not self._has_index(f"{prefix}{sub}"):
                 child = self.generate_index(folder=f"{prefix}{sub}")
                 created += [child.path, *child.created]
@@ -282,12 +308,14 @@ class OkfMigrationManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If ``log.md`` exists but cannot be read;
                 it is left untouched (#1608).
             FileExistsError: If ``log.md`` already exists in *folder*.
         """
         self._doc_mgr.ensure_writable()
         folder = normalize_folder(folder) or ""
+        self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
         log_path = f"{folder}/log.md" if folder else "log.md"
         if self._doc_mgr.read(log_path) is not None:
             raise FileExistsError(

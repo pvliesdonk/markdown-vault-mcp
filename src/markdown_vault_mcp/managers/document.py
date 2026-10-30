@@ -30,6 +30,7 @@ from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
     NoteTooLargeError,
     ReadOnlyError,
+    SubmodulePathError,
 )
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
 from markdown_vault_mcp.managers._write_notifier import (
@@ -92,6 +93,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
+    from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
@@ -111,6 +113,16 @@ _ATTACHMENT_UPDATE_LINKS_HINT = (
     "are not tracked as links, so none were rewritten. Notes embedding the "
     "old path still name it; edit them to point at the new path."
 )
+
+
+def _submodule_links_text(sources: list[str]) -> str:
+    """The rename hint naming backlinks left in git submodules (#1564)."""
+    names = ", ".join(repr(s) for s in sources)
+    return (
+        f"The links in {names} still name the old path: they are inside a git "
+        "submodule, which this server does not change. Edit them in the "
+        "submodule's own repository."
+    )
 
 
 class DocumentManager:
@@ -154,6 +166,8 @@ class DocumentManager:
         title_field: Frontmatter key consulted first when resolving document
             titles.  Must match the value the index managers use, or
             ``read()`` titles would diverge from search titles.
+        submodule_guard: Refuses a write into a git submodule, which would
+            never be committed (#1564). ``None`` refuses nothing.
     """
 
     def __init__(
@@ -173,6 +187,7 @@ class DocumentManager:
         title_field: str = "title",
         okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
         sync_index: Callable[[], None] | None = None,
+        submodule_guard: SubmoduleGuard | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -188,6 +203,7 @@ class DocumentManager:
             write_lock=write_lock,
             notifier=self._notifier,
             indexed=fts.has_documents,
+            submodule_guard=submodule_guard,
             policy=ArtifactPolicy(
                 attachment_extensions=attachment_extensions,
                 read_only=read_only,
@@ -196,6 +212,7 @@ class DocumentManager:
         )
         self._mark_paths_dirty = mark_paths_dirty
         self._sync_index = sync_index
+        self._submodule_guard = submodule_guard
         self._title_field = title_field
         # OKF enforced-write hook (#964): transforms the final note text
         # (stamp `generated`, clear `verified`) before it lands. None when
@@ -228,6 +245,48 @@ class DocumentManager:
                 "Vault is read-only; write operations are not permitted."
             )
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
+
+    def _refuse_submodule(
+        self, abs_path: Path, argument: str, path: str, *, holding: bool = True
+    ) -> None:
+        """Refuse a write that lies in or holds a git submodule (#1564).
+
+        Call right after validating *path*, before anything touches disk.
+        """
+        if self._submodule_guard is not None:
+            self._submodule_guard.refuse(abs_path, argument, path, holding=holding)
+
+    def refuse_folder_in_submodule(self, folder: str, argument: str) -> None:
+        """Refuse a folder that lies inside a git submodule (#1564).
+
+        For the OKF tools, which write into the folder they are given.
+
+        Args:
+            folder: Vault-relative folder, ``""`` for the root.
+            argument: The tool parameter that carried *folder*.
+
+        Raises:
+            SubmodulePathError: If *folder* is a submodule or lies inside one.
+        """
+        self._refuse_submodule(
+            self._source_dir / folder, argument, folder, holding=False
+        )
+
+    def in_submodule(self, path: str) -> bool:
+        """Whether a vault-relative note or folder lies in a git submodule (#1564).
+
+        Args:
+            path: Vault-relative path.
+
+        Returns:
+            ``True`` when *path* is a submodule or lies inside one; ``False``
+            for a folder that only holds one, and without a guard.
+        """
+        guard = self._submodule_guard
+        if guard is None:
+            return False
+        found = guard.submodule_of(self._source_dir / path)
+        return found is not None and found[1]
 
     @contextlib.contextmanager
     def write_scope(self) -> Iterator[None]:
@@ -710,6 +769,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
+            SubmodulePathError: If *path* lies inside a git submodule (#1564).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash (or the file does not exist).
@@ -720,6 +780,7 @@ class DocumentManager:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self._validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             if not allow_overwrite:
                 self._check_no_clobber(abs_path, path, if_match)
             check_if_match(abs_path, path, if_match)
@@ -823,6 +884,7 @@ class DocumentManager:
             ``True`` only when *create_if_missing* created a new file.
 
         Raises:
+            SubmodulePathError: If *path* lies inside a git submodule (#1564).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the file does not exist and
                 *create_if_missing* is ``False``.
@@ -837,6 +899,7 @@ class DocumentManager:
 
         with self._file_write_lock:
             abs_path = self._validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             existed = is_regular_file(abs_path)
             if not existed and not create_if_missing:
                 raise DocumentNotFoundError.note(path)
@@ -878,6 +941,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
+            SubmodulePathError: If *path* lies inside a git submodule (#1564).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
@@ -935,6 +999,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.EditResult`.
 
         Raises:
+            SubmodulePathError: If *path* lies inside a git submodule (#1564).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the file does not exist.
             ConcurrentModificationError: If *if_match* is provided and does
@@ -968,6 +1033,7 @@ class DocumentManager:
 
         with self._file_write_lock:
             abs_path = self._validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
             if not is_regular_file(abs_path):
                 raise DocumentNotFoundError.note(path)
 
@@ -1122,6 +1188,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
 
         Raises:
+            SubmodulePathError: If *path* lies inside a git submodule (#1564).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the file does not exist.
             ConcurrentModificationError: If *if_match* is provided and does
@@ -1133,6 +1200,7 @@ class DocumentManager:
         with self._file_write_lock:
             if is_note(path):
                 abs_path = self._validate_path(path)
+                self._refuse_submodule(abs_path, "path", path)
                 if not is_regular_file(abs_path):
                     raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
@@ -1185,6 +1253,8 @@ class DocumentManager:
             attachment.
 
         Raises:
+            SubmodulePathError: If either path lies inside a git submodule
+                (#1564).
             ReadOnlyError: If the vault is read-only.
             TimeoutError: If the configured index refresh times out.
             DocumentNotFoundError: If *old_path* does not exist.
@@ -1206,6 +1276,8 @@ class DocumentManager:
             if is_note(old_path):
                 old_abs = self._validate_path(old_path)
                 new_abs = self._validate_path(new_path)
+                self._refuse_submodule(old_abs, "old_path", old_path)
+                self._refuse_submodule(new_abs, "new_path", new_path)
 
                 if not is_regular_file(old_abs):
                     raise DocumentNotFoundError.note(old_path)
@@ -1230,10 +1302,11 @@ class DocumentManager:
 
                 callback_content = _read_text_utf8(new_abs)
 
-                backlink_callbacks, backlink_paths = self._update_backlinks(
-                    old_path, new_path, backlinks
+                backlink_callbacks, backlink_paths, unrewritten = (
+                    self._update_backlinks(old_path, new_path, backlinks)
                 )
                 updated_links = len(backlink_callbacks)
+                hint = self._submodule_links_hint(unrewritten)
 
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
@@ -1351,6 +1424,15 @@ class DocumentManager:
         for source_path, items in by_source.items():
             try:
                 source_abs = self._validate_path(source_path)
+                if self.in_submodule(source_path):
+                    # Expected in a vault with submodules: not degraded.
+                    logger.info(
+                        "link_rewrite_source_skipped op=%s path=%s reason=submodule",
+                        op_name,
+                        source_path,
+                    )
+                    failed_sources.append(source_path)
+                    continue
                 if not is_regular_file(source_abs):
                     logger.warning(
                         "link_rewrite_source_skipped op=%s path=%s reason=not_found",
@@ -1395,12 +1477,17 @@ class DocumentManager:
                 failed_sources.append(source_path)
         return pending_callbacks, dirty_paths, failed_sources
 
+    def _submodule_links_hint(self, unrewritten: list[str]) -> str | None:
+        """The rename hint for backlinks left in git submodules, if any (#1564)."""
+        in_submodules = [s for s in unrewritten if self.in_submodule(s)]
+        return _submodule_links_text(in_submodules) if in_submodules else None
+
     def _update_backlinks(
         self,
         old_path: str,
         new_path: str,
         backlinks: list[dict[str, Any]],
-    ) -> tuple[list[tuple[Path, str]], list[str]]:
+    ) -> tuple[list[tuple[Path, str]], list[str], list[str]]:
         """Rewrite source files that link to *old_path* to point to *new_path*.
 
         Called by :meth:`rename` after the file has already been moved on
@@ -1410,7 +1497,7 @@ class DocumentManager:
         This method must be called while ``_file_write_lock`` is held.  It
         does **not** fire write callbacks or mark paths dirty itself —
         :meth:`rename` is responsible for both, using the returned
-        ``(callbacks, dirty_paths)`` pair.
+        ``callbacks`` and ``dirty_paths``.
 
         Args:
             old_path: Vault-relative path that was renamed (the old location).
@@ -1419,16 +1506,18 @@ class DocumentManager:
                 the rename.
 
         Returns:
-            Tuple ``(callbacks, dirty_paths)``:
+            Tuple ``(callbacks, dirty_paths, failed_sources)``:
 
             * ``callbacks`` — list of ``(abs_path, new_content)`` pairs for
               every source document that was successfully rewritten.
             * ``dirty_paths`` — vault-relative paths of those same source
               documents, for the caller to feed to
               ``mark_paths_dirty``.
+            * ``failed_sources`` — sources left naming *old_path*, such as
+              a note inside a git submodule (#1564).
         """
         if not backlinks:
-            return [], []
+            return [], [], []
 
         by_source: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
         for row in backlinks:
@@ -1437,10 +1526,9 @@ class DocumentManager:
         if old_path in by_source:
             by_source[new_path] = by_source.pop(old_path)
 
-        pending_callbacks, dirty_paths, _failed = self._rewrite_link_sources(
+        return self._rewrite_link_sources(
             by_source, {old_path: new_path}, op_name="_update_backlinks"
         )
-        return pending_callbacks, dirty_paths
 
     def _plan_folder_move(
         self, old_abs: Path, old_dir: str, new_dir: str
@@ -1468,6 +1556,8 @@ class DocumentManager:
         Raises:
             DocumentNotFoundError: If the folder contains no files.
             DocumentExistsError: If any destination file already exists.
+            SubmodulePathError: If a destination lies inside a git submodule,
+                checked before collisions so the refusal names the real cause.
         """
         old_rel = old_dir.strip("/")
         new_rel = new_dir.strip("/")
@@ -1485,6 +1575,7 @@ class DocumentManager:
             old_path = f"{old_rel}/{rel_within}"
             new_path = f"{new_rel}/{rel_within}"
             dst_abs = (self._source_dir / new_path).resolve()
+            self._refuse_move_into_submodule(dst_abs, new_dir, new_path)
             moves.append((src_abs, dst_abs))
             if is_note(old_path):
                 md_map[old_path] = new_path
@@ -1513,6 +1604,18 @@ class DocumentManager:
                 )
 
         return moves, md_map, non_note_moves
+
+    def _refuse_move_into_submodule(
+        self, dst_abs: Path, new_dir: str, new_path: str
+    ) -> None:
+        """Refuse a folder move that would put a file inside a submodule (#1564).
+
+        *new_dir* may hold a submodule; only a destination inside one is lost.
+        """
+        guard = self._submodule_guard
+        found = guard.submodule_of(dst_abs) if guard is not None else None
+        if found is not None and found[1]:
+            raise SubmodulePathError.into("new_dir", new_dir, found[0], new_path)
 
     def _dispatch_move_callbacks(
         self,
@@ -1573,6 +1676,8 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.MoveFolderResult`.
 
         Raises:
+            SubmodulePathError: If *old_dir* lies in or holds a git submodule,
+                or a moved file would land inside one (#1564).
             ReadOnlyError: If the vault is read-only.
             TimeoutError: If the configured index refresh times out.
             DocumentNotFoundError: If *old_dir* is missing, not a directory,
@@ -1594,6 +1699,8 @@ class DocumentManager:
         with self._file_write_lock:
             old_abs = self._validate_dir_path(old_dir)
             new_abs = self._validate_dir_path(new_dir)
+            self._refuse_submodule(old_abs, "old_dir", old_dir)
+            self._refuse_submodule(new_abs, "new_dir", new_dir, holding=False)
 
             if not is_directory(old_abs):
                 raise DocumentNotFoundError.folder(old_dir)

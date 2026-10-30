@@ -419,7 +419,9 @@ class RenameResult:
             counted, because it still names the old path (#1521).
         hint: Why no links were rewritten although ``update_links`` was
             requested — set when the renamed file is an attachment, whose
-            references are not tracked as links (#1338). ``None`` otherwise.
+            references are not tracked as links (#1338) — or which linking
+            notes inside a git submodule still name the old path, since
+            this server does not change them (#1564). ``None`` otherwise.
     """
 
     old_path: str

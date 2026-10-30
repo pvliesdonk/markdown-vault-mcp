@@ -26,6 +26,7 @@ from markdown_vault_mcp.exceptions import (
     StoreCorruptError,
     StoreIncompatibleError,
     StoreUnavailableError,
+    SubmodulePathError,
 )
 
 if TYPE_CHECKING:
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
         EditConflictError("old_text not found"),
         DocumentExistsError("taken"),
         ReadOnlyError("read-only"),
+        SubmodulePathError.inside("path", "sub/a.md", "sub"),
     ],
     ids=lambda e: type(e).__name__,
 )

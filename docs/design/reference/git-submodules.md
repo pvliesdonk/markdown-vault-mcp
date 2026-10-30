@@ -110,12 +110,13 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   submodule; sparse or partial clones; `git mv` across the boundary;
   Windows path forms; isomorphic-git (obsidian-git mobile lists "No
   submodules support", see [obsidian-git](obsidian-git.md)).
-- Depended on by: nothing yet. `src/markdown_vault_mcp/git/bootstrap.py`
+- Depended on by: `src/markdown_vault_mcp/git/submodules.py` (the gitlinks
+  a write is refused under, #1564). `src/markdown_vault_mcp/git/bootstrap.py`
   (clone, root discovery), `git/strategy.py` (staging, pull) and
   `git/query.py` (history, revision reads) will depend on it once the
   submodule epic ([#1561](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1561))
-  lands; `docs/design/design.md` § Write + Git Integration records the
-  current unsupported status.
+  lands; `docs/design/design.md` § Write + Git Integration records what is
+  handled so far.
 
 ## Claims
 
@@ -135,9 +136,11 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
 - A "deinitialized" submodule is a gitlink plus a `.gitmodules` entry with an
   empty working directory. [source: gitsubmodules] That is what a plain
   clone leaves (see below).
+  [pins: tests/test_submodule_writes.py::test_a_deinitialised_submodule_is_still_found, tests/test_submodule_writes.py::test_a_deinitialised_submodule_is_refused_too]
 - `git ls-files --stage` lists a gitlink with mode `160000`, as
   `160000 <sha> 0\tsub`; `git ls-tree HEAD -- sub` prints
-  `160000 commit <sha>\tsub`. [observed: sandbox] git-ls-tree(1) lists
+  `160000 commit <sha>\tsub`. [observed: sandbox]
+  [pins: tests/test_submodule_writes.py::test_a_path_inside_the_submodule_is_found_on_the_first_call] git-ls-tree(1) lists
   `commit` among the object types a tree entry can have. [source: git-ls-tree]
 - Git only recurses into *active* submodules: one whose
   `submodule.<name>.active` is true, whose path matches `submodule.active`,
@@ -171,7 +174,9 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   `fatal: Pathspec 'sub/note.md' is in submodule 'sub'`, exit status 128;
   the `:(literal)` form, `add -u -- <pathspec>` and
   `-c submodule.recurse=true` all fail the same way. git-add(1) does not
-  document the message. [observed: sandbox, git 2.55.0]
+  document the message. [observed: sandbox, git 2.55.0] The write tools
+  therefore refuse such a path before writing it.
+  [pins: tests/test_submodule_writes.py::test_every_write_tool_refuses_and_writes_nothing]
 - git-status(1) states the rule behind it: "modified content or untracked
   files in a submodule cannot be added via `git add` in the superproject to
   prepare a commit". [source: git-status]
