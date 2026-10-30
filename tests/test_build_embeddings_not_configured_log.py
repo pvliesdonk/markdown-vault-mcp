@@ -45,11 +45,10 @@ def test_an_async_build_without_embeddings_logs_no_error(
     vault = Vault(source_dir=tmp_path)
     try:
         vault.index.build_index()
-        with (
-            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp"),
-            pytest.raises(EmbeddingsNotConfiguredError),
-        ):
-            asyncio.run(_await(vault.index.build_embeddings_async()))
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp"):
+            pending = _await(vault.index.build_embeddings_async())
+            with pytest.raises(EmbeddingsNotConfiguredError):
+                asyncio.run(pending)
         status = vault.index.get_index_status()
     finally:
         vault.close()
