@@ -207,7 +207,15 @@ def test_a_run_on_a_throwaway_container_restarts_it_and_cleans_up(
     if not docker_available():
         report_unavailable("needs the Docker CLI and daemon", os.environ)
     monkeypatch.delenv(DSN_ENV, raising=False)  # keeps MVM_TEST_POSTGRES_IMAGE
-    before = _containers()
+    started: list[str] = []
+    start_container = postgres.start_container
+
+    def start(*args: Any, **kwargs: Any) -> tuple[str, str]:
+        container, dsn = start_container(*args, **kwargs)
+        started.append(container)
+        return container, dsn
+
+    monkeypatch.setattr(postgres, "start_container", start)
     out = tmp_path / "out"
     code = cli.main(
         [
@@ -225,12 +233,16 @@ def test_a_run_on_a_throwaway_container_restarts_it_and_cleans_up(
         note.endswith("service restarted, host page cache kept")
         for note in config["latency"]["eviction"].values()
     )
-    assert _containers() == before  # removed, schema and all
+    # Only the run's own container: another run on the daemon starts and
+    # removes containers of its own meanwhile (#1934).
+    (container,) = started
+    assert not _container_exists(container)  # removed, schema and all
 
 
-def _containers() -> set[str]:
+def _container_exists(container: str) -> bool:
+    """Return whether Docker still has ``container``, running or not."""
     listed = subprocess.run(
-        ["docker", "ps", "-a", "-q", "--filter", "name=mvm-test-pg-"],
+        ["docker", "ps", "-a", "-q", "--no-trunc", "--filter", f"id={container}"],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
-    return set(listed.stdout.split())
+    return bool(listed.stdout.split())
