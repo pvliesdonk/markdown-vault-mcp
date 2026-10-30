@@ -2796,7 +2796,7 @@
 <li>the keyword index at <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> (<code>index.db</code>);</li>
 <li>with the <code>sqlite</code> embedding store, the vectors beside it, or at <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> when that is set.</li>
 </ul>
-<p>SQLite writes both in WAL mode, so each database comes with <code>-wal</code> and <code>-shm</code> files while it's open, plus a <code>.lock</code> file the server takes. The vault's notes are plain files and need none of this.</p>
+<p>The server creates any missing folders in either path. SQLite writes both in WAL mode, so each database comes with <code>-wal</code> and <code>-shm</code> files while it's open, plus a <code>.lock</code> file the server takes. The vault's notes are plain files and need none of this.</p>
 <p>Without <code>INDEX_PATH</code> the index lives in memory, is rebuilt at every start, and nothing on this page applies. The Claude Code plugin and the Claude Desktop bundle set no index path, so they run that way unless you set one.</p>
 <h2 id="keep-the-index-on-a-local-disk">Keep the index on a local disk<a class="headerlink" href="#keep-the-index-on-a-local-disk" title="Permanent link">&para;</a></h2>
 <p>WAL needs every process that opens a database to share memory on one machine. In SQLite's words, "WAL does not work over a network filesystem." Put <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code>, and <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> if you set it, on a disk local to the machine running the server, not on NFS, SMB or another network share. The vault itself may live elsewhere. The server doesn't check for this.</p>

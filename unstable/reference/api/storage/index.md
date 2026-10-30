@@ -106,11 +106,11 @@ Open the index at *location*.
 
 Parameters:
 
-| Name         | Type     | Description                                                                                                                                    | Default                                        |
-| ------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `location`   | \`Path   | str                                                                                                                                            | None\`                                         |
-| `identity`   | \`object | None\`                                                                                                                                         | Must be None; a keyword store has no identity. |
-| `owns_files` | `bool`   | False opens a file read-only (#1758) and is ignored for an in-memory index. True on a file takes its writer lock, held until the index closes. | `True`                                         |
+| Name         | Type     | Description                                                                                                                                                                        | Default                                        |
+| ------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `location`   | \`Path   | str                                                                                                                                                                                | None\`                                         |
+| `identity`   | \`object | None\`                                                                                                                                                                             | Must be None; a keyword store has no identity. |
+| `owns_files` | `bool`   | False opens a file read-only (#1758) and is ignored for an in-memory index. True on a file creates its folder when missing and takes its writer lock, held until the index closes. | `True`                                         |
 
 Returns:
 
@@ -120,13 +120,13 @@ Returns:
 
 Raises:
 
-| Type                          | Description                              |
-| ----------------------------- | ---------------------------------------- |
-| `ValueError`                  | If identity is given.                    |
-| `StoreBusyError`              | If another process owns the file.        |
-| `StoreUnavailableError`       | If the file cannot be opened or written. |
-| `StoreCorruptError`           | If the file is not a SQLite database.    |
-| `StoreUnsupportedSchemaError` | If its schema_version is newer.          |
+| Type                          | Description                                                               |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `ValueError`                  | If identity is given.                                                     |
+| `StoreBusyError`              | If another process owns the file.                                         |
+| `StoreUnavailableError`       | If the file cannot be opened or written, or its folder cannot be created. |
+| `StoreCorruptError`           | If the file is not a SQLite database.                                     |
+| `StoreUnsupportedSchemaError` | If its schema_version is newer.                                           |
 
 ## Vector stores
 

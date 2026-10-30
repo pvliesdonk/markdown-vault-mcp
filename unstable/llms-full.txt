@@ -2651,7 +2651,7 @@ With `MARKDOWN_VAULT_MCP_INDEX_PATH` set, the server keeps its search index in S
 - the keyword index at `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index.db`);
 - with the `sqlite` embedding store, the vectors beside it, or at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when that is set.
 
-SQLite writes both in WAL mode, so each database comes with `-wal` and `-shm` files while it's open, plus a `.lock` file the server takes. The vault's notes are plain files and need none of this.
+The server creates any missing folders in either path. SQLite writes both in WAL mode, so each database comes with `-wal` and `-shm` files while it's open, plus a `.lock` file the server takes. The vault's notes are plain files and need none of this.
 
 Without `INDEX_PATH` the index lives in memory, is rebuilt at every start, and nothing on this page applies. The Claude Code plugin and the Claude Desktop bundle set no index path, so they run that way unless you set one.
 
@@ -8712,11 +8712,11 @@ Open the index at *location*.
 
 Parameters:
 
-| Name         | Type     | Description                                                                                                                                    | Default                                        |
-| ------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `location`   | \`Path   | str                                                                                                                                            | None\`                                         |
-| `identity`   | \`object | None\`                                                                                                                                         | Must be None; a keyword store has no identity. |
-| `owns_files` | `bool`   | False opens a file read-only (#1758) and is ignored for an in-memory index. True on a file takes its writer lock, held until the index closes. | `True`                                         |
+| Name         | Type     | Description                                                                                                                                                                        | Default                                        |
+| ------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `location`   | \`Path   | str                                                                                                                                                                                | None\`                                         |
+| `identity`   | \`object | None\`                                                                                                                                                                             | Must be None; a keyword store has no identity. |
+| `owns_files` | `bool`   | False opens a file read-only (#1758) and is ignored for an in-memory index. True on a file creates its folder when missing and takes its writer lock, held until the index closes. | `True`                                         |
 
 Returns:
 
@@ -8726,13 +8726,13 @@ Returns:
 
 Raises:
 
-| Type                          | Description                              |
-| ----------------------------- | ---------------------------------------- |
-| `ValueError`                  | If identity is given.                    |
-| `StoreBusyError`              | If another process owns the file.        |
-| `StoreUnavailableError`       | If the file cannot be opened or written. |
-| `StoreCorruptError`           | If the file is not a SQLite database.    |
-| `StoreUnsupportedSchemaError` | If its schema_version is newer.          |
+| Type                          | Description                                                               |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `ValueError`                  | If identity is given.                                                     |
+| `StoreBusyError`              | If another process owns the file.                                         |
+| `StoreUnavailableError`       | If the file cannot be opened or written, or its folder cannot be created. |
+| `StoreCorruptError`           | If the file is not a SQLite database.                                     |
+| `StoreUnsupportedSchemaError` | If its schema_version is newer.                                           |
 
 ## Vector stores
 

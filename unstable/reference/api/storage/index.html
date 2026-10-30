@@ -4547,8 +4547,9 @@ in-memory index.</p>
             <td>
               <div class="doc-md-description">
                 <p><code>False</code> opens a file read-only (#1758) and is
-ignored for an in-memory index. <code>True</code> on a file takes
-its writer lock, held until the index closes.</p>
+ignored for an in-memory index. <code>True</code> on a file creates its
+folder when missing and takes its writer lock, held until
+the index closes.</p>
               </div>
             </td>
             <td>
@@ -4617,7 +4618,8 @@ its writer lock, held until the index closes.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the file cannot be opened or written.</p>
+                <p>If the file cannot be opened or written, or
+its folder cannot be created.</p>
               </div>
             </td>
           </tr>
