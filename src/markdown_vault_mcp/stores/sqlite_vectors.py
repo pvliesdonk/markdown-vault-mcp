@@ -18,10 +18,12 @@ single-writer use, is recorded in
 ``docs/design/reference/sqlite-wal-durability.md``.
 
 A store from :meth:`SqliteVectorBackend.open_fresh` reads nothing at its
-location. Before its first write it removes a file that is not a vector
-store or whose pages are damaged, whatever that write's outcome; the write
-then empties a usable database inside its own transaction, so a conflict
-or an interrupt keeps the old rows. Until then a reader still opens them.
+location. Before its first write it moves aside a file that is not a vector
+store or whose pages are damaged, with its ``-wal`` and ``-shm``
+(``<name>.corrupt-<UTC time>``, never deleted, #1505), whatever that
+write's outcome; the write then empties a usable database inside its own
+transaction, so a conflict or an interrupt keeps the old rows. Until then
+a reader still opens them.
 
 Reachable open outcomes: *unavailable* (a parent that is not a directory,
 a refused open), *corrupt* (not a database, not a vector store, a vector
