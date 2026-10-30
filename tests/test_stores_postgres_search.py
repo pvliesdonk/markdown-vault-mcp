@@ -370,11 +370,12 @@ def test_a_read_finding_no_free_connection_waits_once_and_is_not_retried(
         with pool.connection():  # the only connection, held
             # Count the read's checkouts instead of timing them: a loaded
             # runner stretches one wait past any wall-clock bound (#1889).
-            checkouts: list[object] = []
+            checkouts = 0
             checkout = pool.connection
 
             def counted(*args: object, **kwargs: object) -> object:
-                checkouts.append(args)
+                nonlocal checkouts
+                checkouts += 1
                 return checkout(*args, **kwargs)  # type: ignore[arg-type]
 
             monkeypatch.setattr(pool, "connection", counted)
@@ -388,7 +389,7 @@ def test_a_read_finding_no_free_connection_waits_once_and_is_not_retried(
             monkeypatch.undo()
     finally:
         busy.close()
-    assert len(checkouts) == 1  # one wait, not two
+    assert checkouts == 1  # one wait, not two
     assert not [
         r
         for r in caplog.records
