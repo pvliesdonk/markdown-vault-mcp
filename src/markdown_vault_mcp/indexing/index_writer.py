@@ -14,7 +14,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
-from markdown_vault_mcp.exceptions import StoreUnavailableError
+from markdown_vault_mcp.exceptions import InvalidRequestError, StoreUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -490,13 +490,18 @@ def run_flush_dirty_embeddings(
 
 
 def _log_job_failure(kind: str, exc: Exception) -> None:
-    """Log a failed job: a store that is unavailable for now is a WARNING.
+    """Log a failed job at the level of who has to act on it.
 
-    A store that cannot be reached, or that another process is writing
-    (#1505), heals itself once it is back or that process exits; anything
-    else is a fault, logged with its traceback.
+    A request the vault cannot serve as sent (embeddings it does not have,
+    a note that is not there) is the caller's outcome to report, so it is
+    DEBUG here, without a traceback (#1733). A store that cannot be reached,
+    or that another process is writing (#1505), heals itself once it is
+    back or that process exits: a WARNING. Anything else is a fault, logged
+    with its traceback.
     """
-    if isinstance(exc, StoreUnavailableError):
+    if isinstance(exc, InvalidRequestError):
+        logger.debug("writer_job_refused kind=%s err=%s", kind, exc)
+    elif isinstance(exc, StoreUnavailableError):
         logger.warning("writer_job_unavailable kind=%s err=%s", kind, exc)
     else:
         logger.exception("writer_job_failed kind=%s", kind)
