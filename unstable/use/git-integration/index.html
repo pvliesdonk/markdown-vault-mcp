@@ -1458,6 +1458,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#submodules-in-the-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Submodules in the vault
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#git-lfs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3059,6 +3070,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#submodules-in-the-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Submodules in the vault
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#git-lfs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3508,6 +3530,15 @@ it.</p>
 <li>GitLab: <code>oauth2</code></li>
 <li>Bitbucket: account username</li>
 </ul>
+<h2 id="submodules-in-the-vault">Submodules in the vault<a class="headerlink" href="#submodules-in-the-vault" title="Permanent link">&para;</a></h2>
+<p>A git submodule inside the vault is read-only. Its notes are indexed and searchable like any folder, but git refuses to commit a change inside a submodule from the vault's own repository, so a change there would be lost. In managed and commit-only mode every write tool refuses a path inside a submodule and names it, and nothing is written. This applies to <code>write</code>, <code>append</code>, <code>edit</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, the attachment writes and the OKF tools.</p>
+<ul>
+<li>Change those files in the repository the submodule comes from instead.</li>
+<li><code>move_folder</code> refuses to move a folder that holds a submodule, but you can move a folder next to one.</li>
+<li>A <code>rename</code> or <code>move_folder</code> that would rewrite links inside a submodule leaves those notes as they are and reports them: in <code>hint</code> for a rename, in <code>failed_links</code> for a folder move.</li>
+<li>A submodule whose folder is empty (never initialised) is refused too.</li>
+</ul>
+<p>In no-git mode nothing is committed, so nothing is refused.</p>
 <h2 id="git-lfs">Git LFS<a class="headerlink" href="#git-lfs" title="Permanent link">&para;</a></h2>
 <p>If your vault tracks large files (PDFs, images) with <a href="https://git-lfs.com">Git LFS</a>, the server runs <code>git lfs pull</code> on startup to resolve LFS pointers into actual file content. This is enabled by default.</p>
 <p>Set <code>MARKDOWN_VAULT_MCP_GIT_LFS=false</code> to skip the LFS pull. Use this when:</p>

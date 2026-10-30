@@ -539,6 +539,7 @@ Raises:
 
 | Type                          | Description                                                                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `SubmodulePathError`          | If path lies inside a git submodule (#1564).                                                                                  |
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
@@ -572,6 +573,7 @@ Raises:
 
 | Type                          | Description                                         |
 | ----------------------------- | --------------------------------------------------- |
+| `SubmodulePathError`          | If path lies inside a git submodule (#1564).        |
 | `EditConflictError`           | If old_text is not found or appears more than once. |
 | `ReadOnlyError`               | If the vault is read-only.                          |
 | `ConcurrentModificationError` | If if_match is provided and does not match.         |
@@ -604,6 +606,7 @@ Raises:
 
 | Type                          | Description                                                |
 | ----------------------------- | ---------------------------------------------------------- |
+| `SubmodulePathError`          | If path lies inside a git submodule (#1564).               |
 | `ReadOnlyError`               | If the vault is read-only.                                 |
 | `DocumentNotFoundError`       | If the file does not exist and create_if_missing is False. |
 | `ConcurrentModificationError` | If if_match is provided and does not match.                |
@@ -630,11 +633,12 @@ Returns:
 
 Raises:
 
-| Type                          | Description                                 |
-| ----------------------------- | ------------------------------------------- |
-| `ReadOnlyError`               | If the vault is read-only.                  |
-| `ConcurrentModificationError` | If if_match is provided and does not match. |
-| `DocumentNotFoundError`       | If path does not exist.                     |
+| Type                          | Description                                  |
+| ----------------------------- | -------------------------------------------- |
+| `SubmodulePathError`          | If path lies inside a git submodule (#1564). |
+| `ReadOnlyError`               | If the vault is read-only.                   |
+| `ConcurrentModificationError` | If if_match is provided and does not match.  |
+| `DocumentNotFoundError`       | If path does not exist.                      |
 
 ### `rename(old_path, new_path, if_match=None, *, update_links=False)`
 
@@ -661,6 +665,7 @@ Raises:
 
 | Type                          | Description                                           |
 | ----------------------------- | ----------------------------------------------------- |
+| `SubmodulePathError`          | If either path lies inside a git submodule (#1564).   |
 | `ReadOnlyError`               | If the vault is read-only.                            |
 | `ConcurrentModificationError` | If if_match is provided and does not match.           |
 | `DocumentNotFoundError`       | If old_path does not exist.                           |
@@ -692,6 +697,7 @@ Raises:
 
 | Type                    | Description                                                                                                                                                                                                                                         |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SubmodulePathError`    | If old_dir lies in or holds a git submodule, or a moved file would land inside one (#1564).                                                                                                                                                         |
 | `ReadOnlyError`         | If the vault is read-only.                                                                                                                                                                                                                          |
 | `DocumentNotFoundError` | If old_dir is missing, not a directory, or empty.                                                                                                                                                                                                   |
 | `DocumentExistsError`   | If any destination file already exists.                                                                                                                                                                                                             |
@@ -714,6 +720,7 @@ Raises:
 
 | Type                          | Description                                                                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `SubmodulePathError`          | If path lies inside a git submodule (#1564).                                                                                  |
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |

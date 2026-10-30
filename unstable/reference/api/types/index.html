@@ -5918,7 +5918,9 @@ counted, because it still names the old path (#1521).</p>
               <div class="doc-md-description">
                 <p>Why no links were rewritten although <code>update_links</code> was
 requested — set when the renamed file is an attachment, whose
-references are not tracked as links (#1338). <code>None</code> otherwise.</p>
+references are not tracked as links (#1338) — or which linking
+notes inside a git submodule still name the old path, since
+this server does not change them (#1564). <code>None</code> otherwise.</p>
               </div>
             </td>
           </tr>
