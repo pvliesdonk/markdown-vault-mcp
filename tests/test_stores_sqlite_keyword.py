@@ -91,8 +91,9 @@ class TestOpenOutcomes:
         self, tmp_path: Path
     ) -> None:
         location = tmp_path / "missing" / "index.db"
+        backend = SqliteKeywordBackend()
         with pytest.raises(StoreUnavailableError):
-            SqliteKeywordBackend().open(location, owns_files=False)
+            backend.open(location, owns_files=False)
         assert not location.parent.exists()
 
     def test_a_parent_that_is_a_file_is_unavailable(self, tmp_path: Path) -> None:
