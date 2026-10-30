@@ -10,7 +10,7 @@ With `MARKDOWN_VAULT_MCP_INDEX_PATH` set, the server keeps its search index in S
 - the keyword index at `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index.db`);
 - with the `sqlite` embedding store, the vectors beside it, or at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when that is set.
 
-The server creates a missing folder on the way to either path. SQLite writes both in WAL mode, so each database comes with `-wal` and `-shm` files while it's open, plus a `.lock` file the server takes. The vault's notes are plain files and need none of this.
+The server creates any missing folders in either path. SQLite writes both in WAL mode, so each database comes with `-wal` and `-shm` files while it's open, plus a `.lock` file the server takes. The vault's notes are plain files and need none of this.
 
 Without `INDEX_PATH` the index lives in memory, is rebuilt at every start, and nothing on this page applies. The Claude Code plugin and the Claude Desktop bundle set no index path, so they run that way unless you set one.
 

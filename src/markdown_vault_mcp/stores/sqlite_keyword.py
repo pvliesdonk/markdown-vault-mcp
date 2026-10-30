@@ -3,8 +3,8 @@
 Reachable outcomes: *busy* (another process owns the file: an owning open
 holds ``{index}.lock`` beside it until the index closes, #1890),
 *unavailable* (the file cannot be opened: a parent that
-is not a directory, a refused permission, a read-only file on a writable
-open), *corrupt* (the bytes are not a SQLite database) and *unsupported
+is not a directory, a folder that cannot be created, a refused permission,
+a read-only file on a writable open), *corrupt* (the bytes are not a SQLite database) and *unsupported
 schema* (a ``schema_version`` above what this code reads, raised by
 ``FTSIndex`` itself). *Not configured* cannot happen, because no location
 means an in-memory index, and *incompatible identity* cannot either, because
@@ -80,8 +80,9 @@ class SqliteKeywordBackend:
                 in-memory index.
             identity: Must be ``None``; a keyword store has no identity.
             owns_files: ``False`` opens a file read-only (#1758) and is
-                ignored for an in-memory index. ``True`` on a file takes
-                its writer lock, held until the index closes.
+                ignored for an in-memory index. ``True`` on a file creates its
+                folder when missing and takes its writer lock, held until
+                the index closes.
 
         Returns:
             The open :class:`~markdown_vault_mcp.fts_index.FTSIndex`.
@@ -89,7 +90,8 @@ class SqliteKeywordBackend:
         Raises:
             ValueError: If *identity* is given.
             StoreBusyError: If another process owns the file.
-            StoreUnavailableError: If the file cannot be opened or written.
+            StoreUnavailableError: If the file cannot be opened or written, or
+                its folder cannot be created.
             StoreCorruptError: If the file is not a SQLite database.
             StoreUnsupportedSchemaError: If its ``schema_version`` is newer.
         """
