@@ -4053,7 +4053,12 @@ raises the same class), so it is reported as unavailable and never rebuilds;
 an index-writer job that meets an unavailable store (busy, or a PostgreSQL
 that is down) logs `writer_job_unavailable kind=%s err=%s` at WARNING without
 a traceback, since it heals itself, and the async build's own line drops to
-DEBUG, so the failure is logged once.
+DEBUG, so the failure is logged once. A job the vault refuses as a request
+(an `InvalidRequestError`, such as `build_embeddings` on a vault without
+embeddings) logs `writer_job_refused kind=%s err=%s` at DEBUG, and the async
+`build_embeddings` callback records it for `get_index_status` at DEBUG too:
+the caller handles it, the CLI by skipping the step silently and a tool by
+reporting it at INFO (#1733).
 The operating system drops the lock when the holder dies, so a killed server
 leaves none; the file is never deleted, and the pid it names is cleared on
 the last release. The store's directory is created at the writer's open, so

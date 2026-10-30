@@ -614,6 +614,34 @@ def test_a_busy_store_is_a_warning_not_a_traceback(
     assert (record.levelname, record.exc_info) == ("WARNING", None)
 
 
+def test_a_refused_job_is_the_callers_to_report_not_a_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
+    def refusing_runner(job, ctx):  # noqa: ARG001
+        raise EmbeddingsNotConfiguredError("Embeddings are not enabled.")
+
+    writer = IndexWriter(runners={"build_index": refusing_runner}, ctx=None)
+    writer.start()
+    try:
+        pending = writer.submit(BuildIndex())
+        with (
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.indexing"),
+            pytest.raises(EmbeddingsNotConfiguredError),
+        ):
+            pending.result(timeout=5)
+    finally:
+        writer.close(timeout=5)
+    # A request the vault cannot serve is the caller's outcome to report
+    # (#1733): the writer logs it at DEBUG, without a traceback.
+    (record,) = [r for r in caplog.records if r.msg.startswith("writer_job_")]
+    assert record.msg.startswith("writer_job_refused ")
+    assert (record.levelname, record.exc_info) == ("DEBUG", None)
+
+
 def test_close_reports_a_never_started_writer_stopped():
     writer = IndexWriter(runners={"build_index": _identity_runner}, ctx=None)
     assert writer.close(timeout=5) is True
