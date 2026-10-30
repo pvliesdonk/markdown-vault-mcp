@@ -14,6 +14,7 @@ from markdown_vault_mcp.exceptions import (
 )
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.interfaces import StoreBackend
+from markdown_vault_mcp.stores import _writer_lock
 from markdown_vault_mcp.stores.sqlite_keyword import SqliteKeywordBackend
 from markdown_vault_mcp.types import ParsedNote
 from tests.fixtures.store_contract import StoreLifecycleContract
@@ -69,6 +70,30 @@ class TestOpenOutcomes:
         backend = SqliteKeywordBackend()
         with pytest.raises(ValueError, match="identity"):
             backend.open(tmp_path / "index.db", identity={"x": "y"})
+
+    @pytest.mark.parametrize("lock", ["flock", "no_flock"])
+    def test_an_index_in_a_new_folder_creates_the_folder(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lock: str
+    ) -> None:
+        # Where no lock can be taken (no fcntl: Windows), nothing else
+        # creates the folder before SQLite opens the file (#1730).
+        if lock == "no_flock":
+            monkeypatch.setattr(_writer_lock, "fcntl", None)
+        location = tmp_path / "missing" / "deeper" / "index.db"
+        store = SqliteKeywordBackend().open(location)
+        try:
+            store.upsert_note(_note())
+        finally:
+            store.close()
+        assert location.is_file()
+
+    def test_a_read_only_open_in_a_missing_folder_creates_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        location = tmp_path / "missing" / "index.db"
+        with pytest.raises(StoreUnavailableError):
+            SqliteKeywordBackend().open(location, owns_files=False)
+        assert not location.parent.exists()
 
     def test_a_parent_that_is_a_file_is_unavailable(self, tmp_path: Path) -> None:
         blocker = tmp_path / "blocker"

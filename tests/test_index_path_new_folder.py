@@ -1,10 +1,8 @@
 """An index path inside a folder that does not exist yet (#1730).
 
-Nothing at the database layer creates the folder: the keyword store takes
-its writer lock beside the index before ``FTSIndex`` opens it, and opening
-the lock file creates the folder (#1868). A change to where or whether
-that lock is taken must keep this working, the way ``EMBEDDINGS_PATH`` and
-``STATE_PATH`` already do.
+The keyword store creates the folder at an owning open, as the vector
+stores and the state file do; the store's own tests cover the platforms
+without a writer lock. This pins it end to end through the vault.
 """
 
 from __future__ import annotations

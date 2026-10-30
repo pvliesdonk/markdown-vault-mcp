@@ -98,6 +98,8 @@ class SqliteKeywordBackend:
         db_path: Path | str = ":memory:" if location is None else location
         is_memory = str(db_path) == ":memory:"
         read_only = not owns_files and not is_memory
+        if not (read_only or is_memory):
+            self._create_folder(Path(db_path))
         # Taken before FTSIndex runs any DDL, so a refused open writes nothing.
         share = None if read_only or is_memory else _hold(Path(db_path))
         try:
@@ -121,6 +123,27 @@ class SqliteKeywordBackend:
             # does; after close() the share is already back and this is a no-op.
             weakref.finalize(index, release_from_finalizer, share)
         return index
+
+    def _create_folder(self, db_path: Path) -> None:
+        """Create the folder of an owned index file, as the vector stores do.
+
+        SQLite creates the file but not its folder, and the writer lock,
+        whose file would create it, is not taken where ``flock`` is missing
+        (#1730).
+
+        Raises:
+            StoreUnavailableError: If the folder cannot be created, for
+                example because a parent is a file or is not writable.
+        """
+        try:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise StoreUnavailableError(
+                f"Index at {db_path} cannot be opened: its folder cannot be "
+                f"created: {exc}",
+                backend=self.name,
+                location=str(db_path),
+            ) from exc
 
     def _classify(self, exc: sqlite3.DatabaseError, location: str) -> StoreOpenError:
         """Map a SQLite error at open to the contract's outcome."""
