@@ -3469,7 +3469,9 @@ class Vault:
 **Constructor defaults** (identical on `VaultSettings` and the legacy
 kwargs):
 - `index_path=None`: index is created in-memory (`:memory:` SQLite). If
-  provided, persisted to disk.
+  provided, persisted to disk; the keyword store creates a missing folder at
+  its owning open rather than relying on the writer lock's file, which is
+  skipped without `flock` (#1730).
 - `embeddings_path=None`: the store's files default to `{index name}-embeddings`,
   the name's dots made dashes (`index-db-embeddings.sqlite3` beside `index.db`,
   or `index-db-embeddings.v2.json` with `embedding_store="numpy"`)
