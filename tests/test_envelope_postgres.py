@@ -207,7 +207,15 @@ def test_a_run_on_a_throwaway_container_restarts_it_and_cleans_up(
     if not docker_available():
         report_unavailable("needs the Docker CLI and daemon", os.environ)
     monkeypatch.delenv(DSN_ENV, raising=False)  # keeps MVM_TEST_POSTGRES_IMAGE
-    before = _containers()
+    started: list[str] = []
+    start_container = postgres.start_container
+
+    def start(*args: Any, **kwargs: Any) -> tuple[str, str]:
+        container, dsn = start_container(*args, **kwargs)
+        started.append(container)
+        return container, dsn
+
+    monkeypatch.setattr(postgres, "start_container", start)
     out = tmp_path / "out"
     code = cli.main(
         [
@@ -225,33 +233,16 @@ def test_a_run_on_a_throwaway_container_restarts_it_and_cleans_up(
         note.endswith("service restarted, host page cache kept")
         for note in config["latency"]["eviction"].values()
     )
-    assert _containers() == before  # removed, schema and all
+    # Only the run's own container: another run on the daemon starts and
+    # removes containers of its own meanwhile (#1934).
+    (container,) = started
+    assert not _container_exists(container)  # removed, schema and all
 
 
-def _containers() -> set[str]:
-    """Return the ids of this process's test containers, running or not.
-
-    The harness runs in this process, and the fixture names each container
-    ``mvm-test-pg-{pid}-...``; another test run on the same daemon (#1934)
-    starts and removes its own, which must not change the comparison.
-    """
+def _container_exists(container: str) -> bool:
+    """Return whether Docker still has ``container``, running or not."""
     listed = subprocess.run(
-        ["docker", "ps", "-a", "-q", "--filter", f"name=mvm-test-pg-{os.getpid()}-"],
+        ["docker", "ps", "-a", "-q", "--no-trunc", "--filter", f"id={container}"],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
-    return set(listed.stdout.split())
-
-
-def test_the_cleanup_check_lists_only_this_process_containers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    seen: list[list[str]] = []
-
-    def run(args: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
-        seen.append(args)
-        return subprocess.CompletedProcess(args, 0, stdout="a\nb\n", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", run)
-    assert _containers() == {"a", "b"}
-    (args,) = seen
-    assert f"name=mvm-test-pg-{os.getpid()}-" in args
+    return bool(listed.stdout.split())
