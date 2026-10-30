@@ -396,10 +396,6 @@ class IndexWriteCoordinator:
         except CancelledError:
             # Cancellation (writer-shutdown drain) is not a failure — don't record (#584).
             logger.debug("async_reindex_cancelled")
-        except InvalidRequestError as exc:
-            # The caller reports a refused request; the writer logged it (#1733).
-            self._last_reindex_error = exc
-            logger.debug("async_reindex_job_refused err=%s", exc)
         except BaseException as exc:
             # Record, never propagate — escaping strands the writer (#584).
             self._last_reindex_error = exc

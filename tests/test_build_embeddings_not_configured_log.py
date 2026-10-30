@@ -54,6 +54,9 @@ def test_an_async_build_without_embeddings_logs_no_error(
     finally:
         vault.close()
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+    events = {r.msg.split()[0]: r.levelname for r in caplog.records}
+    assert events["async_build_embeddings_job_refused"] == "DEBUG"
+    assert events["writer_job_refused"] == "DEBUG"
     assert "not enabled" in str(status["last_build_embeddings_error"])
 
 
