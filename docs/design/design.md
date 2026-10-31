@@ -1271,12 +1271,19 @@ the one file that triggered it.
 a stdio host usually swallows. `OfflineChanges` (`indexing/offline_changes.py`)
 counts every scan that compares the index with the files: a build that is
 not a warm short-circuit (`BuildLifecycle` reports each one it queues) and
-every reindex, sync or async, whoever asked. It reads `"reconciled"` once one
+every reindex this process runs, sync or async (the tool, the watcher, a
+pull). A `markdown-vault-mcp reindex` from the command line runs in another
+process: it updates the shared index but not this status. A scan counts as
+soon as its future is done, which is before a waiter on it wakes, so a caller
+reads the outcome of the reindex it just waited on. It reads `"reconciled"` once one
 of them has succeeded in this process, `"reconciling"` while one is queued or
 running, and `"not_reconciled"` otherwise. A scan that did not see the whole
-vault folder does not count: a build whose walk was incomplete keeps the
-notes of folders it could not read (#1785), and an empty vault folder leaves
-the index untouched (#1791). The value comes from what ran, not from the
+vault folder does not count: a build or reindex whose walk was incomplete
+keeps the notes of folders it could not read (#1785, #1625; both results
+carry `walk_complete`), and an empty vault folder leaves the index untouched
+(#1791). Until #1965, a non-forced build triggered by a provenance change
+keeps the rows of notes deleted while no server ran, and counts as
+reconciled. The value comes from what ran, not from the
 switch, so a library caller that opens a warm index without reindexing sees
 `"not_reconciled"` too. Once reconciled it stays so: a later failed reindex is
 reported by `last_reindex_error`, and changes made while the server runs

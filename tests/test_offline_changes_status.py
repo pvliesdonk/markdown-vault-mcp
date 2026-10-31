@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, cast
+from unittest.mock import patch
+
+import pytest
 
 from markdown_vault_mcp.indexing.offline_changes import OfflineChanges
 from markdown_vault_mcp.types import IndexStats, ReindexResult
@@ -78,6 +82,23 @@ class TestOfflineChanges:
         scan.set_result(_stats(walk_complete=False))
         assert tracker.state() == "not_reconciled"
 
+    def test_a_reindex_that_could_not_walk_every_folder_does_not(self) -> None:
+        tracker = OfflineChanges()
+        scan: Future[ReindexResult] = Future()
+        tracker.track(scan)
+        scan.set_result(_reindexed(walk_complete=False))
+        assert tracker.state() == "not_reconciled"
+
+    def test_a_done_scan_counts_before_its_callbacks_run(self) -> None:
+        # CPython wakes result() waiters before it runs done-callbacks, so
+        # a caller that just waited on its reindex must read its outcome
+        # from the future itself (docs/design/reference/python-futures.md).
+        tracker = OfflineChanges()
+        scan: Future[ReindexResult] = Future()
+        tracker._pending.add(scan)  # tracked, callback not yet run
+        scan.set_result(_reindexed())
+        assert tracker.state() == "reconciled"
+
     def test_reconciled_stays_reconciled_through_a_later_scan(self) -> None:
         tracker = OfflineChanges()
         first: Future[ReindexResult] = Future()
@@ -127,3 +148,55 @@ class TestCoordinatorReportsIt:
             assert warm.get_index_status()["offline_changes"] == "reconciled"
         finally:
             warm.close(timeout=5)
+
+    def test_a_build_whose_submission_fails_is_not_reconciled(
+        self, tmp_path: Path
+    ) -> None:
+        coord = make_coordinator(tmp_path)
+        try:
+            with (
+                patch.object(
+                    coord.writer, "submit", side_effect=RuntimeError("writer closed")
+                ),
+                pytest.raises(RuntimeError),
+            ):
+                coord.build_index_async()
+            assert coord.get_index_status()["offline_changes"] == "not_reconciled"
+        finally:
+            coord.close(timeout=5)
+
+    def test_a_queued_build_cancelled_before_it_runs_is_not_reconciled(
+        self, tmp_path: Path
+    ) -> None:
+        coord = make_coordinator(tmp_path)
+        queued: Future[object] = Future()
+        try:
+            with patch.object(coord.writer, "submit", return_value=queued):
+                build = coord.build_index_async()
+            assert coord.get_index_status()["offline_changes"] == "reconciling"
+            queued.cancel()
+            assert build.cancelled()
+            assert coord.get_index_status()["offline_changes"] == "not_reconciled"
+        finally:
+            coord.close(timeout=5)
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root ignores permission bits",
+)
+def test_a_reindex_reports_an_unreadable_folder(tmp_path: Path) -> None:
+    coord = make_coordinator(tmp_path)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "c.md").write_text("# C\n\ncharlie\n", encoding="utf-8")
+    try:
+        coord.build_index()
+        sub.chmod(0)
+        try:
+            result = coord.reindex()
+        finally:
+            sub.chmod(0o755)
+        assert result.walk_complete is False
+    finally:
+        coord.close(timeout=5)

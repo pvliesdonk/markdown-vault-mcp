@@ -93,6 +93,7 @@ def test_build_index_makes_queryable(tmp_path: Path) -> None:
         assert status["status"] == "queryable"
         assert set(status) >= {
             "status",
+            "offline_changes",
             "documents_indexed",
             "documents_indexed_error",
             "error",
