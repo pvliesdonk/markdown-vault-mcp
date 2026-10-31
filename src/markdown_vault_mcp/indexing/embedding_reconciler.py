@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import ReadOnlyError
+from markdown_vault_mcp.interfaces import ReadsMetadataInBatches
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
@@ -89,6 +90,10 @@ def stored_inputs(
 #: publish (one matrix copy and one file write) replaces the per-document
 #: replaces, each of which copies the whole matrix (#1768).
 _BULK_RETOKEN = 64
+
+# Documents whose stored metadata one read fetches, from a store that reads
+# in batches (#1937): few round trips, and memory bounded by the batch.
+_METADATA_BATCH = 500
 
 _METADATA_KEYS = ("path", "title", "folder", "heading", "content", "start_line")
 
@@ -178,6 +183,19 @@ class _Pass:
     stored: dict[str, RevisionToken | None]
     result: ReconcileResult
     site: str
+
+
+def _stored_metadata(
+    store: EmbeddingStore, paths: list[str]
+) -> dict[str, list[dict[str, Any]]] | None:
+    """*paths*' stored metadata in one read, or ``None`` from a store that reads per document.
+
+    A store without :class:`ReadsMetadataInBatches` serves each document's
+    rows from this process, so reading them one at a time costs little.
+    """
+    if isinstance(store, ReadsMetadataInBatches):
+        return store.metadata_for(paths)
+    return None
 
 
 def _signature(rows: Collection[dict[str, Any]]) -> Counter[tuple[Any, ...]]:
@@ -306,9 +324,14 @@ class EmbeddingReconciler:
         state = _Pass(store, stored, ReconcileResult(), site)
         self._remove_unbacked(state, sorted(held - set(docs)))
         retoken: list[_Document] = []
-        for path in sorted(docs):
-            if self._reconcile_document(state, docs[path]):
-                retoken.append(docs[path])
+        ordered = sorted(docs)
+        for start in range(0, len(ordered), _METADATA_BATCH):
+            batch = ordered[start : start + _METADATA_BATCH]
+            current = _stored_metadata(store, batch)
+            for path in batch:
+                held_rows = None if current is None else current.get(path, [])
+                if self._reconcile_document(state, docs[path], held_rows):
+                    retoken.append(docs[path])
         self._retoken(state, retoken)
         return state.result
 
@@ -369,14 +392,20 @@ class EmbeddingReconciler:
             return
         state.result.removed += removed
 
-    def _reconcile_document(self, state: _Pass, doc: _Document) -> bool:
+    def _reconcile_document(
+        self, state: _Pass, doc: _Document, current: list[dict[str, Any]] | None
+    ) -> bool:
         """Remove, embed or keep *doc*; return whether a re-token is pending.
 
-        A re-token is returned rather than written, so the pass can write
-        them together (:meth:`_retoken`).
+        *current* is the stored rows' metadata, read in a batch; ``None``
+        reads the rows here. Vectors are read only for an embed, which
+        reuses them. A re-token is returned rather than written, so the pass
+        can write them together (:meth:`_retoken`).
         """
-        stored = state.store.rows_for(doc.path)
-        current = [dict(r.metadata) for r in stored]
+        stored = None
+        if current is None:
+            stored = state.store.rows_for(doc.path)
+            current = [dict(r.metadata) for r in stored]
         if not doc.texts:
             if current:
                 self._remove(state, doc.path)
@@ -386,6 +415,8 @@ class EmbeddingReconciler:
                 state.result.up_to_date += len(doc.texts)
                 return False
             return True
+        if stored is None:
+            stored = state.store.rows_for(doc.path) if current else []
         self._embed_and_publish(state, doc, stored)
         return False
 

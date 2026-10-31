@@ -503,6 +503,27 @@ class VectorReader(Protocol):
 
 
 @runtime_checkable
+class ReadsMetadataInBatches(Protocol):
+    """A vector store that reads many documents' row metadata at once (#1937); optional.
+
+    A store whose every read is a round trip implements it, so a reconcile
+    pass compares what it holds without one read per document, and without
+    reading vectors it does not need.
+    """
+
+    def metadata_for(self, paths: Collection[str]) -> dict[str, list[dict[str, Any]]]:
+        """Return each of *paths*' row metadata in storage order, without vectors.
+
+        Args:
+            paths: The documents to read.
+
+        Returns:
+            The metadata by path; a path with no rows is left out.
+        """
+        ...
+
+
+@runtime_checkable
 class DescribesStore(Protocol):
     """A store that says where it lives, for ``embeddings_status`` (#1504); optional."""
 

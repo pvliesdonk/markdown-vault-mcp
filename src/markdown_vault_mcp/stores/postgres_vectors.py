@@ -79,6 +79,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     reset_tables,
     stored_bytes,
     stored_count,
+    stored_metadata,
     stored_rows,
     stored_tokens,
     token_conflicts,
@@ -89,7 +90,7 @@ from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily, StoreResources
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Collection, Iterable, Sequence
     from pathlib import Path
 
     from psycopg_pool import ConnectionPool
@@ -227,6 +228,15 @@ class PostgresVectorStore:
         """*path*'s rows, vectors normalised, in storage order (a query)."""
         return self._reading(
             lambda conn, _meta: stored_rows(conn, schema=self._schema, path=path), []
+        )
+
+    def metadata_for(self, paths: Collection[str]) -> dict[str, list[dict[str, Any]]]:
+        """*paths*' row metadata, no vectors, in one query (see :meth:`_reading` for errors)."""
+        return self._reading(
+            lambda conn, _meta: stored_metadata(
+                conn, schema=self._schema, paths=list(paths)
+            ),
+            {},
         )
 
     def search(

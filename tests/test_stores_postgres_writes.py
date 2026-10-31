@@ -94,6 +94,7 @@ def test_reads_of_an_empty_store(postgres_schema: PostgresSchema) -> None:
     try:
         assert store.tokens() == {}
         assert store.rows_for("a.md") == []
+        assert store.metadata_for(["a.md"]) == {}
         assert store.count == 0
     finally:
         store.close()
@@ -124,6 +125,22 @@ def test_the_first_write_creates_the_tables(
     (row,) = store.rows_for("a.md")
     assert row.vector == pytest.approx([0.6, 0.8, 0.0])
     assert row.metadata == {"folder": "", "content": "a.md#0", "path": "a.md"}
+
+
+def test_metadata_for_reads_many_documents_without_vectors(store: Any) -> None:
+    store.replace_document(
+        _doc("b.md", [[1, 0, 0], [0, 1, 0]]), expected_token=ANY_TOKEN
+    )
+    store.replace_document(_doc("a.md", [[0, 0, 1]]), expected_token=ANY_TOKEN)
+    store.replace_document(_doc("c.md", [[0, 1, 0]]), expected_token=ANY_TOKEN)
+    assert store.metadata_for(["b.md", "a.md", "gone.md"]) == {
+        "a.md": [{"folder": "", "content": "a.md#0", "path": "a.md"}],
+        "b.md": [
+            {"folder": "", "content": "b.md#0", "path": "b.md"},
+            {"folder": "", "content": "b.md#1", "path": "b.md"},
+        ],
+    }
+    assert store.metadata_for([]) == {}
 
 
 def test_replace_swaps_a_documents_rows(store: Any) -> None:

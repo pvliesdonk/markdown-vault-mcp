@@ -181,6 +181,65 @@ class TestDecisions:
         assert sorted(metadata_by_path(store)) == ["b.md"]
 
 
+class _BatchedMetadata:
+    """A store that reads row metadata in batches, counting its reads (#1937)."""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.batches: list[list[str]] = []
+        self.rows_read: list[str] = []
+
+    def metadata_for(self, paths: Any) -> dict[str, list[dict[str, Any]]]:
+        self.batches.append(list(paths))
+        found = {p: [dict(r.metadata) for r in self._inner.rows_for(p)] for p in paths}
+        return {p: rows for p, rows in found.items() if rows}
+
+    def rows_for(self, path: str) -> list[VectorRow]:
+        self.rows_read.append(path)
+        return self._inner.rows_for(path)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+class TestBatchedMetadata:
+    def test_a_converged_pass_reads_metadata_and_no_vectors(self, tmp_path):
+        _, _provider, store, rec = _setup(tmp_path, NOTES)
+        rec.reconcile(store, site="test")
+        batched = _BatchedMetadata(store)
+        result = rec.reconcile(batched, site="test")
+        assert result.up_to_date == 2
+        assert batched.batches == [["a.md", "b.md"]]
+        assert batched.rows_read == []
+
+    def test_documents_are_read_in_batches(self, tmp_path, monkeypatch):
+        notes = {**NOTES, "c.md": "# C\n\nCherries.\n"}
+        _, _provider, store, rec = _setup(tmp_path, notes)
+        rec.reconcile(store, site="test")
+        monkeypatch.setattr(
+            "markdown_vault_mcp.indexing.embedding_reconciler._METADATA_BATCH", 2
+        )
+        batched = _BatchedMetadata(store)
+        assert rec.reconcile(batched, site="test").up_to_date == 3
+        assert batched.batches == [["a.md", "b.md"], ["c.md"]]
+
+    def test_only_a_changed_document_reads_its_vectors(self, tmp_path):
+        fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        rec.reconcile(store, site="test")
+        (tmp_path / "a.md").write_text("# A\n\nQuinces.\n")
+        fts.upsert_note(parse_note(tmp_path / "a.md", tmp_path, HeadingChunker()))
+        batched = _BatchedMetadata(store)
+        result = rec.reconcile(batched, site="test")
+        assert (result.embedded, result.up_to_date) == (1, 1)
+        assert batched.rows_read == ["a.md"]
+
+    def test_a_new_document_reads_no_rows(self, tmp_path):
+        _, _provider, store, rec = _setup(tmp_path, NOTES)
+        batched = _BatchedMetadata(store)
+        assert rec.reconcile(batched, site="test").embedded == 2
+        assert batched.rows_read == []
+
+
 class TestFailures:
     def test_a_provider_failure_keeps_the_old_rows_and_the_pass_continues(
         self, tmp_path

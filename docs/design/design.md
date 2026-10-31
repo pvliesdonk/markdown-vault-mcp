@@ -1007,6 +1007,16 @@ order) now converges the difference instead of skipping because vectors
 exist. Embedding work scales with the size of the drift, not the size of
 the vault, so a steady-state boot does zero embedding work.
 
+The comparison needs only each document's stored metadata; vectors matter
+only for an embed, which reuses them. A store whose every read is a round
+trip (PostgreSQL) implements the optional `ReadsMetadataInBatches`
+protocol: the pass reads the metadata of 500 documents per read, without
+vectors, and calls `rows_for` only for a document it re-embeds (#1937).
+Reading each document's rows in its own transaction had made a PostgreSQL
+restart several times slower than a local store's. The local stores serve
+`rows_for` from the process and keep the per-document read. The bulk
+re-token and a rebuild reusing own rows still read per document (#1970).
+
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
