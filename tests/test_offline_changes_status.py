@@ -32,9 +32,14 @@ def _warm_coordinator(tmp_path: Path) -> IndexWriteCoordinator:
     """A coordinator over an index an earlier one built and closed."""
     first = make_coordinator(tmp_path)
     first.build_index()
-    first.close(timeout=5)
-    cast("FTSIndex", first._fts).close()
+    _close(first)
     return make_coordinator(tmp_path)
+
+
+def _close(coord: IndexWriteCoordinator) -> None:
+    """Stop the writer, then close the index the coordinator does not own."""
+    coord.close(timeout=5)
+    cast("FTSIndex", coord._fts).close()
 
 
 class TestOfflineChanges:
@@ -99,6 +104,22 @@ class TestOfflineChanges:
         scan.set_result(_reindexed())
         assert tracker.state() == "reconciled"
 
+    def test_a_result_of_another_kind_does_not(self) -> None:
+        tracker = OfflineChanges()
+        scan: Future[int] = Future()
+        tracker.track(scan)
+        scan.set_result(3)
+        assert tracker.state() == "not_reconciled"
+
+    def test_a_scan_read_before_its_callback_is_counted_once(self) -> None:
+        tracker = OfflineChanges()
+        scan: Future[ReindexResult] = Future()
+        tracker._pending.add(scan)
+        scan.set_result(_reindexed())
+        assert tracker.state() == "reconciled"
+        tracker._absorb(scan)  # the late callback finds it settled
+        assert tracker.state() == "reconciled"
+
     def test_reconciled_stays_reconciled_through_a_later_scan(self) -> None:
         tracker = OfflineChanges()
         first: Future[ReindexResult] = Future()
@@ -118,7 +139,7 @@ class TestCoordinatorReportsIt:
             coord.build_index()
             assert coord.get_index_status()["offline_changes"] == "reconciled"
         finally:
-            coord.close(timeout=5)
+            _close(coord)
 
     def test_a_warm_start_is_not_reconciled_until_a_reindex(
         self, tmp_path: Path
@@ -130,7 +151,7 @@ class TestCoordinatorReportsIt:
             warm.reindex()
             assert warm.get_index_status()["offline_changes"] == "reconciled"
         finally:
-            warm.close(timeout=5)
+            _close(warm)
 
     def test_an_async_reindex_reconciles_a_warm_start(self, tmp_path: Path) -> None:
         warm = _warm_coordinator(tmp_path)
@@ -139,7 +160,7 @@ class TestCoordinatorReportsIt:
             warm.reindex_async().result(timeout=10)
             assert warm.get_index_status()["offline_changes"] == "reconciled"
         finally:
-            warm.close(timeout=5)
+            _close(warm)
 
     def test_a_forced_build_reconciles_a_warm_start(self, tmp_path: Path) -> None:
         warm = _warm_coordinator(tmp_path)
@@ -147,7 +168,7 @@ class TestCoordinatorReportsIt:
             warm.build_index(force=True)
             assert warm.get_index_status()["offline_changes"] == "reconciled"
         finally:
-            warm.close(timeout=5)
+            _close(warm)
 
     def test_a_build_whose_submission_fails_is_not_reconciled(
         self, tmp_path: Path
@@ -163,7 +184,7 @@ class TestCoordinatorReportsIt:
                 coord.build_index_async()
             assert coord.get_index_status()["offline_changes"] == "not_reconciled"
         finally:
-            coord.close(timeout=5)
+            _close(coord)
 
     def test_a_queued_build_cancelled_before_it_runs_is_not_reconciled(
         self, tmp_path: Path
@@ -178,7 +199,7 @@ class TestCoordinatorReportsIt:
             assert build.cancelled()
             assert coord.get_index_status()["offline_changes"] == "not_reconciled"
         finally:
-            coord.close(timeout=5)
+            _close(coord)
 
 
 @pytest.mark.skipif(
