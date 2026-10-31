@@ -8,8 +8,9 @@ FROM debian:trixie-slim
 
 # What a `python:*-slim` image carried and a bare Debian lacks: CA roots for
 # TLS (git over HTTPS, outbound clients), /etc/services, and zoneinfo data.
+# Plus tini, the init the ENTRYPOINT below runs as PID 1.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates netbase tzdata \
+        ca-certificates netbase tini tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Here, between the two apt RUNs, so neither merges into the other: the
@@ -97,7 +98,13 @@ EXPOSE 5678
 VOLUME ["/data/vault", "/data/state"]
 # DOCKERFILE-VOLUMES-END
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# tini is PID 1 and reaps every orphan re-parented to it.  The server would
+# reap only the children it waits on, so a subprocess that detaches (git's
+# `maintenance run --auto --detach`, for one) would stay a zombie until the
+# container's pids limit stops every fork (template#840).  `-s` keeps tini
+# reaping when it is not PID 1, under `docker run --init` or compose's
+# `init: true`, instead of warning on every start.
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/docker-entrypoint.sh"]
 # Liveness for a bare `docker run`: the same `GET /health` probe compose.yml
 # declares, so a container reports health with or without Compose (a compose
 # `healthcheck:` overrides this one where both exist).  Assumes the
