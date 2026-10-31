@@ -54,8 +54,8 @@ _email_claim: str | None = None
 _warned_absent_claims: set[tuple[str, str]] = set()
 
 #: Claims that carry the requesting client's ID: RFC 9068's ``client_id``,
-#: OIDC's ``azp`` and Okta's ``cid``. A ``sub`` equal to one of them names the
-#: application itself, so no end user is involved (#1480).
+#: OIDC's ``azp`` and Okta's ``cid``. A ``sub`` equal to one of them is the
+#: issuer naming the application itself as the subject (#1480).
 _CLIENT_ID_CLAIMS = ("client_id", "azp", "cid")
 
 #: ``(claim, value)`` pairs an issuer puts only in a token issued to an
@@ -204,13 +204,15 @@ def _claim_state(claims: dict[str, Any], key: str) -> str:
 
 
 def _is_application_token(claims: dict[str, Any]) -> bool:
-    """Return whether the issuer marks *claims* as issued to an application.
+    """Return whether *claims* belong to an application rather than a person.
 
-    The check needs no knowledge of the issuer. A ``sub`` equal to the
-    client's ID can still be a person's where an issuer lets client and user
-    IDs collide, which RFC 9700 tells it to prevent. Tokens without a marker, including the service
-    accounts some issuers mint, stay human (#1480; the issuer survey is in
-    ``docs/design/reference/authenticated-subjects.md``).
+    True without a usable ``sub`` (the client-ID fallback), and when the
+    issuer marks the token as an application's. The check needs no
+    knowledge of the issuer. A ``sub`` equal to the client's ID can still be
+    a person's where an issuer lets client and user IDs collide, which
+    RFC 9700 tells it to prevent. Tokens without a marker, including the
+    service accounts some issuers mint, stay human (#1480; the issuer survey
+    is in ``docs/design/reference/authenticated-subjects.md``).
     """
     sub = _claim_value(claims, "sub")
     if sub is None:
