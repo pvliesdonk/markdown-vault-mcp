@@ -106,8 +106,9 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   Read before changing `_transfer_sink.py` error handling or transfer retry
   guidance.
 - [Authenticated subjects and human attribution](authenticated-subjects.md) —
-  bearer client identifiers, token claims, and the limits of OAuth identity for
-  OKF provenance. Read before changing `_identity.py`.
+  bearer client identifiers, token claims, the limits of OAuth identity for
+  OKF provenance, and how eight issuers mark an application's access token.
+  Read before changing `_identity.py`.
 - [Python Future completion and cancellation](python-futures.md) — result
   publication, callback ordering, cancellation and executor lock ownership.
   Read before changing the index build lifecycle or writer cancellation.

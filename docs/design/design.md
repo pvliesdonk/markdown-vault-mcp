@@ -3851,7 +3851,8 @@ Only the resolution site can distinguish an unusable configured claim from
 an intentionally static author identity.
 
 `resolve_mcp_principal()` is the **only** place the subject rules live
-(#1231, #1463). A usable token `sub` retains `human:<subject>` attribution;
+(#1231, #1463). A usable token `sub` retains `human:<subject>` attribution
+unless the issuer marks the token as an application's (below);
 a subject obtained only from the client-ID fallback is a `service` principal
 that retains its identifier but stamps the tool actor. This covers single,
 custom and mapped bearer credentials, including their use alongside OIDC.
@@ -3860,9 +3861,14 @@ A real token `sub` spelled `local` is distinct from the no-auth sentinel.
 `resolve_human_subject()` checks the kind, so `trust-auth` refuses service
 credentials; an affirmative elicitation instead records `human:local`.
 The external contract is in [authenticated subjects](reference/authenticated-subjects.md).
-OAuth `sub` can also identify a service: retaining human attribution for that
-claim is an existing application assumption, with issuer-aware classification
-tracked separately in #1480. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
+OAuth `sub` can also identify a service. A token with a `sub` is a `service`
+principal when the issuer marks it as an application's in a way the check
+can read without knowing the issuer: `sub` equals the `client_id`, `azp` or `cid` claim, or the
+token carries Entra ID's `idtyp: app` or Auth0's `gty: client-credentials`
+(#1480). Every other `sub` keeps human attribution, an application
+assumption, as is the marker check itself where client and user IDs share a
+namespace (RFC 9700 §4.15.1 makes avoiding that the issuer's job). Keycloak, authentik and Zitadel issue client-credentials tokens
+to a service account with no marker, and those are recorded as human. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
 read `get_subject()` itself; it now resolves a `Principal` instead, so the
 rules cannot drift between two copies. The dead `resolve_write_actor()` went
 with that branch: since #1160 the write tools stamp
