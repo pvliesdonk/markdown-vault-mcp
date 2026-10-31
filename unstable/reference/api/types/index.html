@@ -6083,7 +6083,7 @@ changed nothing and every count is 0 (#1791).</p>
 
 
 <h2 id="markdown_vault_mcp.types.ReindexResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ReindexResult</span><span class="p">(</span><span class="n">added</span><span class="p">,</span> <span class="n">modified</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">unchanged</span><span class="p">,</span> <span class="n">skipped</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">vault_root_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">ReindexResult</span><span class="p">(</span><span class="n">added</span><span class="p">,</span> <span class="n">modified</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">unchanged</span><span class="p">,</span> <span class="n">skipped</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">vault_root_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">walk_complete</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -6177,6 +6177,18 @@ they were last skipped (#665).</p>
                 <p>The vault folder held no entries while the index
 held notes, as when its volume is not mounted, so the pass changed
 nothing and every count is 0 (#1791).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.ReindexResult.walk_complete">walk_complete</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>False</code> when a directory could not be read, so the
+notes indexed under it were kept as they were (#1625).</p>
               </div>
             </td>
           </tr>
@@ -6379,7 +6391,7 @@ nothing and every count is 0 (#1791).</p>
 
 
 <h2 id="markdown_vault_mcp.types.ChangeSet" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ChangeSet</span><span class="p">(</span><span class="n">added</span><span class="p">,</span> <span class="n">modified</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">unchanged</span><span class="p">,</span> <span class="n">skipped_unchanged</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">ChangeSet</span><span class="p">(</span><span class="n">added</span><span class="p">,</span> <span class="n">modified</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">unchanged</span><span class="p">,</span> <span class="n">skipped_unchanged</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">walk_complete</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -6459,6 +6471,18 @@ nothing and every count is 0 (#1791).</p>
                 <p>Count of files previously recorded as skipped
 (never indexed) whose content has not changed since; they appear
 in no other bucket and need no re-evaluation (#665).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.ChangeSet.walk_complete">walk_complete</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>False</code> when a directory could not be read, so the
+notes indexed under it were kept as they were (#1625).</p>
               </div>
             </td>
           </tr>

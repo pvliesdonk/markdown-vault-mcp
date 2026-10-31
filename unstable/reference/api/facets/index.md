@@ -972,9 +972,9 @@ Block until :meth:`IndexFacet.is_drained`; `True` if drained, `False` on timeout
 
 ### `get_index_status()`
 
-Return a non-blocking twelve-key snapshot of build + writer state.
+Return a non-blocking thirteen-key snapshot of build + writer state.
 
-Keys: `status` (`"queryable"` | `"building"` | `"failed"`), `documents_indexed`, `documents_indexed_error`, `error`, `last_reindex_error`, `last_build_embeddings_error`, plus `queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`, `write_generation` merged from the writer, and `skipped_files` — a list of `{path, category, detail}` dicts for files dropped from the index for a surfaced deterministic reason (parse / encoding / missing-frontmatter / internal-error), read from tracker state (#775, #802). A captured build error appears in `error` as diagnostic context without demoting a `queryable` status; `documents_indexed_error` carries a SQLite read failure (`documents_indexed` stays `0`) (#583).
+Keys: `status` (`"queryable"` | `"building"` | `"failed"`), `offline_changes` (`"reconciled"` | `"reconciling"` | `"not_reconciled"`: whether a build or reindex in this process has compared the index with every file, #1542), `documents_indexed`, `documents_indexed_error`, `error`, `last_reindex_error`, `last_build_embeddings_error`, plus `queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`, `write_generation` merged from the writer, and `skipped_files` — a list of `{path, category, detail}` dicts for files dropped from the index for a surfaced deterministic reason (parse / encoding / missing-frontmatter / internal-error), read from tracker state (#775, #802). A captured build error appears in `error` as diagnostic context without demoting a `queryable` status; `documents_indexed_error` carries a SQLite read failure (`documents_indexed` stays `0`) (#583).
 
 ### `wait_until_queryable(timeout=None)`
 

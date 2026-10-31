@@ -2885,6 +2885,17 @@ and when the store does not report them.</p>
 <ul>
 <li>status (str): <code>"queryable"</code>, <code>"building"</code>, or
   <code>"failed"</code>.</li>
+<li><code>offline_changes</code> (str): Whether files changed while no server
+  was running have reached the index. <code>"reconciled"</code> once a
+  build or reindex since this server started has compared the
+  index with every file; <code>"reconciling"</code> while one is queued or
+  running; <code>"not_reconciled"</code> when none has, as after a start
+  that skips the startup reindex. A scan that could not read a
+  folder, or found the vault folder empty, does not count. Until
+  it is <code>"reconciled"</code>, search can miss or return stale notes for
+  files changed outside the server; call <code>reindex</code> to reconcile
+  them. Once <code>"reconciled"</code> it stays so; a later failure shows in
+  <code>error</code> or <code>last_reindex_error</code>.</li>
 <li><code>documents_indexed</code> (int): Count of documents committed to
   the FTS index right now (rises during <code>"building"</code>).
   <code>0</code> both for an empty index and when the count could not

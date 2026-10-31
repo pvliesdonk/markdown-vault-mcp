@@ -309,7 +309,7 @@ Attributes:
 | `walk_complete`     | `bool` | False when a directory could not be read, so the scan may have missed notes; the keyword index records it, and no empty cold embedding build trusts that build (#1785). |
 | `vault_root_empty`  | `bool` | The vault folder held no entries while the index held notes, as when its volume is not mounted, so the build changed nothing and every count is 0 (#1791).              |
 
-## `ReindexResult(added, modified, deleted, unchanged, skipped=0, vault_root_empty=False)`
+## `ReindexResult(added, modified, deleted, unchanged, skipped=0, vault_root_empty=False, walk_complete=True)`
 
 Result of :meth:`~markdown_vault_mcp.facets.index.IndexFacet.reindex`.
 
@@ -323,6 +323,7 @@ Attributes:
 | `unchanged`        | `int`  | Documents with no changes.                                                                                                                                                                                              |
 | `skipped`          | `int`  | Files present on disk that were deliberately not indexed (missing required frontmatter, matching an exclude pattern, or unparseable), whether newly skipped this scan or unchanged since they were last skipped (#665). |
 | `vault_root_empty` | `bool` | The vault folder held no entries while the index held notes, as when its volume is not mounted, so the pass changed nothing and every count is 0 (#1791).                                                               |
+| `walk_complete`    | `bool` | False when a directory could not be read, so the notes indexed under it were kept as they were (#1625).                                                                                                                 |
 
 ## `VaultStats(document_count, chunk_count, folder_count, semantic_search_available, indexed_frontmatter_fields=list(), attachment_extensions=list(), link_count=0, broken_link_count=0, orphan_count=0)`
 
@@ -342,7 +343,7 @@ Attributes:
 | `broken_link_count`          | `int`       | Number of links whose target does not exist.           |
 | `orphan_count`               | `int`       | Number of documents with no inbound or outbound links. |
 
-## `ChangeSet(added, modified, deleted, unchanged, skipped_unchanged=0)`
+## `ChangeSet(added, modified, deleted, unchanged, skipped_unchanged=0, walk_complete=True)`
 
 Documents that changed since the last index build.
 
@@ -355,6 +356,7 @@ Attributes:
 | `deleted`           | `list[str]` | Paths of documents that no longer exist on disk.                                                                                                                    |
 | `unchanged`         | `int`       | Count of documents with no changes (not listed individually).                                                                                                       |
 | `skipped_unchanged` | `int`       | Count of files previously recorded as skipped (never indexed) whose content has not changed since; they appear in no other bucket and need no re-evaluation (#665). |
+| `walk_complete`     | `bool`      | False when a directory could not be read, so the notes indexed under it were kept as they were (#1625).                                                             |
 
 ## Attachment Types
 

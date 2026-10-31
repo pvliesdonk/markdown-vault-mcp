@@ -997,7 +997,7 @@
       "label": "Boot Reindex",
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_BOOT_REINDEX",
-      "help": "Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp reindex'). Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault.",
+      "help": "Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp reindex'). `get_index_status` reports `offline_changes` as `not_reconciled` until the server itself runs one; a reindex from the command line updates the index but not that status. Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault.",
       "advancedGroup": "Change detection"
     },
     {

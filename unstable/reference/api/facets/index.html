@@ -9708,9 +9708,11 @@ detect a write cycle inside a read window.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Return a non-blocking twelve-key snapshot of build + writer state.</p>
+        <p>Return a non-blocking thirteen-key snapshot of build + writer state.</p>
 <p>Keys: <code>status</code> (<code>"queryable"</code> | <code>"building"</code> | <code>"failed"</code>),
-<code>documents_indexed</code>, <code>documents_indexed_error</code>, <code>error</code>,
+<code>offline_changes</code> (<code>"reconciled"</code> | <code>"reconciling"</code> |
+<code>"not_reconciled"</code>: whether a build or reindex in this process has
+compared the index with every file, #1542), <code>documents_indexed</code>, <code>documents_indexed_error</code>, <code>error</code>,
 <code>last_reindex_error</code>, <code>last_build_embeddings_error</code>, plus
 <code>queue_depth</code>, <code>in_flight</code>, <code>dirty_paths</code>, <code>dirty_embeddings</code>,
 <code>write_generation</code> merged from the writer, and <code>skipped_files</code> — a
@@ -9847,7 +9849,7 @@ changes require <code>force=True</code> to apply (see issue #525).</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ReindexResult(added, modified, deleted, unchanged, skipped=0, vault_root_empty=False)
+                  <code><a class="autorefs autorefs-internal" title="ReindexResult(added, modified, deleted, unchanged, skipped=0, vault_root_empty=False, walk_complete=True)
 
   
       dataclass

@@ -4368,7 +4368,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_BOOT_REINDEX</code></td>
 <td><code>true</code></td>
 <td>No</td>
-<td>Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp reindex'). Note that <code>index_stale</code> reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault.</td>
+<td>Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp reindex'). <code>get_index_status</code> reports <code>offline_changes</code> as <code>not_reconciled</code> until the server itself runs one; a reindex from the command line updates the index but not that status. Note that <code>index_stale</code> reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</code></td>
