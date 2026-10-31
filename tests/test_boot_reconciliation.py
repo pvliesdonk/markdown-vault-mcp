@@ -98,6 +98,7 @@ class TestWarmBootReconciliation:
         status, added_paths, modified_paths = asyncio.run(_run())
         # 3 originals - 1 deleted + 1 added = 3 documents.
         assert status["documents_indexed"] == 3
+        assert status["offline_changes"] == "reconciled"  # #1542
         assert "offline_added.md" in added_paths
         assert "note_1.md" in modified_paths
 
@@ -326,8 +327,11 @@ class TestBootReindexDisabled:
         # Boot left the prebuilt 3 alone: the offline addition is invisible.
         assert before_status["documents_indexed"] == 3
         assert "offline_added.md" not in before_paths
+        # ...and the status says so (#1542).
+        assert before_status["offline_changes"] == "not_reconciled"
         # And the reindex tool recovers it, so the switch is opt-out, not a trap.
         assert after_status["documents_indexed"] == 4
+        assert after_status["offline_changes"] == "reconciled"
         assert "offline_added.md" in after_paths
 
     def test_cold_boot_still_builds_with_boot_reindex_disabled(

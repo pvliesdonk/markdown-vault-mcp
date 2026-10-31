@@ -93,10 +93,12 @@ class IndexFacet:
         return self._coordinator.wait_for_drain(timeout)
 
     def get_index_status(self) -> dict[str, Any]:
-        """Return a non-blocking twelve-key snapshot of build + writer state.
+        """Return a non-blocking thirteen-key snapshot of build + writer state.
 
         Keys: ``status`` (``"queryable"`` | ``"building"`` | ``"failed"``),
-        ``documents_indexed``, ``documents_indexed_error``, ``error``,
+        ``offline_changes`` (``"reconciled"`` | ``"reconciling"`` |
+        ``"not_reconciled"``: whether a build or reindex in this process has
+        compared the index with every file, #1542), ``documents_indexed``, ``documents_indexed_error``, ``error``,
         ``last_reindex_error``, ``last_build_embeddings_error``, plus
         ``queue_depth``, ``in_flight``, ``dirty_paths``, ``dirty_embeddings``,
         ``write_generation`` merged from the writer, and ``skipped_files`` — a

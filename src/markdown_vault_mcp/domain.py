@@ -360,7 +360,9 @@ class Service:
             # reindex runs — either the `reindex` tool or the
             # `markdown-vault-mcp reindex` CLI command.  Accepting the index
             # at the boot HEAD keeps that trade: later pulls that move HEAD
-            # still reindex.
+            # still reindex.  This records the git HEAD the index is taken
+            # to reflect; get_index_status still reports offline_changes as
+            # not reconciled, because nothing compared the index with disk.
             vault.mark_index_reconciled(head_at_boot)
             logger.info("boot_reindex_disabled reason=config")
 

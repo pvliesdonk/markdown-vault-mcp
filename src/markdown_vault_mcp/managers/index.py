@@ -856,6 +856,7 @@ class IndexManager:
             deleted=len(changes.deleted),
             unchanged=changes.unchanged,
             skipped=changes.skipped_unchanged + len(newly_skipped),
+            walk_complete=changes.walk_complete,
         )
 
     def _parse_changed_notes(

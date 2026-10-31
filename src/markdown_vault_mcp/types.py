@@ -496,6 +496,8 @@ class ReindexResult:
         vault_root_empty: The vault folder held no entries while the index
             held notes, as when its volume is not mounted, so the pass changed
             nothing and every count is 0 (#1791).
+        walk_complete: ``False`` when a directory could not be read, so the
+            notes indexed under it were kept as they were (#1625).
     """
 
     added: int
@@ -504,6 +506,7 @@ class ReindexResult:
     unchanged: int
     skipped: int = 0
     vault_root_empty: bool = False
+    walk_complete: bool = True
 
 
 @dataclass
@@ -587,6 +590,8 @@ class ChangeSet:
         skipped_unchanged: Count of files previously recorded as skipped
             (never indexed) whose content has not changed since; they appear
             in no other bucket and need no re-evaluation (#665).
+        walk_complete: ``False`` when a directory could not be read, so the
+            notes indexed under it were kept as they were (#1625).
     """
 
     added: list[str]
@@ -594,6 +599,7 @@ class ChangeSet:
     deleted: list[str]
     unchanged: int
     skipped_unchanged: int = 0
+    walk_complete: bool = True
 
 
 @dataclass

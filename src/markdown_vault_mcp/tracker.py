@@ -275,6 +275,7 @@ class ChangeTracker:
             deleted=deleted,
             unchanged=unchanged,
             skipped_unchanged=skipped_unchanged,
+            walk_complete=not unreadable_dirs,
         )
 
     def _merge_state(
