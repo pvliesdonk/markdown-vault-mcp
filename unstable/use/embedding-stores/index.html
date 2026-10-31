@@ -2864,7 +2864,7 @@
 <tr>
 <td><code>postgres</code></td>
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres</code> and its settings</td>
-<td>a team that already runs PostgreSQL with pgvector, or wants the vectors off the server's disk, at the cost of a separate service of about half a gigabyte and slower restarts. <a href="../postgresql/">PostgreSQL embedding store</a> covers running it.</td>
+<td>a team that already runs PostgreSQL with pgvector, or wants the vectors off the server's disk, at the cost of a separate service of about half a gigabyte. <a href="../postgresql/">PostgreSQL embedding store</a> covers running it.</td>
 </tr>
 </tbody>
 </table>
@@ -2878,7 +2878,7 @@
 </ul>
 <p>A streamed search reads the vectors from the database in batches of <code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB</code> (1 MiB by default) instead of holding them all. The workspace bounds one batch of a search, not the server's memory. <code>postgres</code> is always streamed and scores in the database; <code>numpy</code> is always resident. <code>numpy</code> with <code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed</code>, or <code>postgres</code> with <code>resident</code>, refuses to start. The <code>embeddings_status</code> tool reports the mode the store runs in, its workspace, the size of its files (<code>stored_bytes</code>) and the bytes of vectors it holds in memory (<code>resident_vector_bytes</code>). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.</p>
 <h2 id="what-each-store-costs">What each store costs<a class="headerlink" href="#what-each-store-costs" title="Permanent link">&para;</a></h2>
-<p>The figures below come from running the whole server on one host at two vault sizes, twice each (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899">#1899</a>); <code>numpy</code>'s peak memory at the larger size is from a later run, after <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936">#1936</a> stopped it copying its vectors when it opens. Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.</p>
+<p>The figures below come from running the whole server on one host at two vault sizes, twice each (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899">#1899</a>); <code>numpy</code>'s peak memory at the larger size is from a later run, after <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936">#1936</a> stopped it copying its vectors when it opens, and <code>postgres</code>'s restart is from a later measurement too, after <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1937">#1937</a> stopped it reading every note's vectors at each start. Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.</p>
 <table>
 <thead>
 <tr>
@@ -2935,7 +2935,7 @@
 <td>Restart until search works</td>
 <td>2.3 s</td>
 <td>1.8 to 1.9 s</td>
-<td>10 s</td>
+<td>2.0 to 2.1 s, measured on its own</td>
 </tr>
 <tr>
 <td><strong>32,520 notes, 227,640 sections</strong></td>
@@ -2983,7 +2983,7 @@
 <td>Restart until search works</td>
 <td>13.6 s</td>
 <td>10.7 to 11.0 s</td>
-<td>81 to 89 s</td>
+<td>7.3 to 8.3 s, measured on its own</td>
 </tr>
 </tbody>
 </table>
@@ -2992,14 +2992,14 @@
 <li><strong>Memory.</strong> A streamed store's search memory barely moves with the vault. <code>numpy</code> keeps every vector in memory, beside each section's text and metadata, so its memory grows with sections × dimensions. At the larger size that came to about 1.25 GB above the server's own memory, 0.93 GB of it vectors. The PostgreSQL service itself used about 530 MB at rest at the smaller size and 580 MB at the larger, on top of the server.</li>
 <li><strong>Speed.</strong> Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. <code>postgres</code> streams too, but scores in the database. In these runs the <code>sqlite</code> store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.</li>
 <li><strong>Edits.</strong> <code>sqlite</code>'s figure counts the edited note's pages and the keyword index together; <code>postgres</code> writes its WAL in the database and the keyword index locally; <code>numpy</code> rewrites the whole store on every save.</li>
-<li><strong>Restarts.</strong> No store embeds an unchanged note again after a restart or a crash. <code>postgres</code> takes four to eight times as long as a local store to come back; <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1937">#1937</a> looks into why.</li>
+<li><strong>Restarts.</strong> No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; <code>postgres</code> reads what it holds for 500 notes at a time, so it comes back in a time comparable to a local store's. Its figures come from restarts measured on their own, not in a whole run, so they are not directly comparable with the other columns. A database across a network adds a round trip to each of those reads.</li>
 <li><strong>The first build.</strong> Building the index and every vector from nothing peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938">#1938</a>). Size the server's memory for the first build, plus an in-process provider's own memory (<a href="../embeddings/#fastembed">FastEmbed</a> takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.</li>
 </ul>
 <p><code>sqlite</code>, resident was not measured. It holds the vectors in memory as <code>numpy</code> does and writes each edit as streamed <code>sqlite</code> does, so its memory and search time are probably close to <code>numpy</code>'s, with <code>sqlite</code>'s writes.</p>
 <h2 id="what-these-figures-do-not-cover">What these figures do not cover<a class="headerlink" href="#what-these-figures-do-not-cover" title="Permanent link">&para;</a></h2>
 <p>The figures are a measured envelope, not a guarantee:</p>
 <ul>
-<li>one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs, and a third for <code>numpy</code>'s peak memory at the larger size, written to a memory-backed folder; a few percent between runs is within what another run could move;</li>
+<li>one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs, a third for <code>numpy</code>'s peak memory at the larger size, written to a memory-backed folder, and two restarts of <code>postgres</code> at each size measured on their own, not in a whole run; a few percent between runs is within what another run could move;</li>
 <li>a stand-in embedding provider that makes no network calls, so the build figures, time and memory alike, leave out the real provider, which dominates a real build;</li>
 <li>PostgreSQL in a container on the same host; a database across a network adds a round trip to every search and every restart check;</li>
 <li>a uniform synthetic vault (six sections a note); real vaults vary note size and folder shape;</li>
