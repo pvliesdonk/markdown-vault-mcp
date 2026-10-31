@@ -1010,6 +1010,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#init-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Init process
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#remote-debugging" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3097,6 +3108,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#init-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Init process
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#remote-debugging" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3497,6 +3519,8 @@ nothing, and <code>/etc/markdown-vault-mcp/env</code> carries the choice.</p>
 <h2 id="uidgid">UID/GID<a class="headerlink" href="#uidgid" title="Permanent link">&para;</a></h2>
 <p>Set <code>PUID</code> and <code>PGID</code> in your <code>.env</code> file to match the owner of bind-mounted
 directories (default 1000/1000).</p>
+<h2 id="init-process">Init process<a class="headerlink" href="#init-process" title="Permanent link">&para;</a></h2>
+<p>The image runs <a href="https://github.com/krallin/tini"><code>tini</code></a> as PID 1, with the server as its child. <code>tini</code> reaps the zombie processes that a detached child process leaves behind, so they do not pile up over a long uptime. You do not need <code>init: true</code> in Compose or <code>docker run --init</code>; both still work, because <code>tini</code> keeps reaping when another init is PID 1. If you replace the entrypoint with <code>--entrypoint</code>, nothing reaps those processes unless your replacement does.</p>
 <h2 id="remote-debugging">Remote debugging<a class="headerlink" href="#remote-debugging" title="Permanent link">&para;</a></h2>
 <p>Production images ship without <code>debugpy</code> to keep the image lean. To attach a remote Python debugger from VS Code or PyCharm:</p>
 <ol>
