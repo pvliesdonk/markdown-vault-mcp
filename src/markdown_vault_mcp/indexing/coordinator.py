@@ -35,6 +35,7 @@ from markdown_vault_mcp.indexing.index_writer import (
     run_process_dirty_paths,
     run_reindex_all,
 )
+from markdown_vault_mcp.indexing.offline_changes import OfflineChanges
 from markdown_vault_mcp.indexing.readiness import ReadinessState
 
 if TYPE_CHECKING:
@@ -98,7 +99,13 @@ class IndexWriteCoordinator:
         # Canonical form ("" for the default set, else a sorted JSON list).
         self._attachment_extensions = attachment_extensions
         self._readiness = ReadinessState()
-        self._builds = BuildLifecycle(fts, self._readiness, self._can_warm_start)
+        self._offline_changes = OfflineChanges()
+        self._builds = BuildLifecycle(
+            fts,
+            self._readiness,
+            self._can_warm_start,
+            on_scan=self._offline_changes.track,
+        )
         # Per-async-variant error capture (#561), surfaced via get_index_status.
         self._last_reindex_error: BaseException | None = None
         self._last_build_embeddings_error: BaseException | None = None
@@ -159,7 +166,7 @@ class IndexWriteCoordinator:
         self._readiness.require_built()
 
     def get_index_status(self) -> dict[str, Any]:
-        """Return a non-blocking snapshot of build + writer state (eleven keys)."""
+        """Return a non-blocking snapshot of build + writer state (twelve keys)."""
         fields = self._readiness.status_fields()
         documents_indexed_error: str | None = None
         try:
@@ -171,6 +178,7 @@ class IndexWriteCoordinator:
             documents_indexed_error = str(exc)
         result = {
             "status": fields["status"],
+            "offline_changes": self._offline_changes.state(),
             "documents_indexed": documents_indexed,
             "documents_indexed_error": documents_indexed_error,
             "error": fields["error"],
@@ -343,8 +351,9 @@ class IndexWriteCoordinator:
             IndexUnavailableError: If :meth:`build_index` has not been called.
         """
         self._readiness.require_built()
-        result: ReindexResult = self._writer.submit(ReindexAll()).result()
-        return result
+        fut: Future[ReindexResult] = self._writer.submit(ReindexAll())
+        self._offline_changes.track(fut)
+        return fut.result()
 
     def build_embeddings(self, *, force: bool = False) -> int:
         """Build the vector index from all chunks currently in the FTS index.
@@ -428,7 +437,8 @@ class IndexWriteCoordinator:
         The writer's FIFO queue guarantees any earlier BuildIndex job runs
         first, so this does not require :meth:`build_index` up front.
         """
-        fut = self._writer.submit(ReindexAll())
+        fut: Future[ReindexResult] = self._writer.submit(ReindexAll())
+        self._offline_changes.track(fut)
         fut.add_done_callback(self._on_reindex_done)
         return fut
 

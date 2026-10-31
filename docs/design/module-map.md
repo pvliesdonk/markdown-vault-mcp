@@ -65,6 +65,7 @@ src/markdown_vault_mcp/
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
     readiness.py       -- ReadinessState: query-readiness projection and compatibility transitions (#576, #1483)
     build_lifecycle.py -- BuildLifecycle: scheduling, per-attempt outcomes, marker writes and readiness publication; shared by sync/async/legacy entry points (#1483)
+    offline_changes.py -- OfflineChanges: whether a scan of every file has reconciled offline changes, for get_index_status (#1542)
     coordinator.py     -- IndexWriteCoordinator: owns the writer + build/async orchestration (#576)
     head_reconciler.py -- IndexHeadReconciler: reindexes until the index reflects git HEAD, whatever moved it (#1532)
     embedding_reconciler.py -- EmbeddingReconciler: the one writer of embedding rows, built from the keyword index with content_hash tokens; conditional replace, conflicts re-queued (#1768)

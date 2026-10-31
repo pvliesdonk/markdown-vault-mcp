@@ -101,10 +101,13 @@ class BuildLifecycle:
         fts: KeywordIndex,
         readiness: ReadinessState,
         is_warm: Callable[[], bool],
+        on_scan: Callable[[Future[IndexStats]], None] | None = None,
     ) -> None:
         self._fts = fts
         self._readiness = readiness
         self._is_warm = is_warm
+        # Told of every attempt that scans the vault; a warm restart does not.
+        self._on_scan = on_scan
         self._lock = threading.RLock()
         self._latest: BuildAttempt | None = None
         self._legacy_started = False
@@ -129,6 +132,8 @@ class BuildLifecycle:
                 else:
                     self._readiness.begin_sync_build()
                     self._pending.add(attempt)
+                    if self._on_scan is not None:
+                        self._on_scan(attempt.future)
                     queued = writer.submit(_BuildCommand(force=force, attempt=attempt))
                     queued.add_done_callback(
                         lambda future: self._on_dispatch_done(attempt, future)

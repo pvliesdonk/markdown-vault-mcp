@@ -83,6 +83,14 @@ Dict with the following fields:
 
 - status (str): `"queryable"`, `"building"`, or
   `"failed"`.
+- `offline_changes` (str): Whether files changed while no server
+  was running have reached the index. `"reconciled"` once a
+  build or reindex since this server started has compared the
+  index with every file; `"reconciling"` while one is queued or
+  running; `"not_reconciled"` when none has, as after a start
+  that skips the startup reindex. Until it is `"reconciled"`,
+  search can miss or return stale notes for files changed
+  outside the server; call `reindex` to reconcile them.
 - `documents_indexed` (int): Count of documents committed to
   the FTS index right now (rises during `"building"`).
   `0` both for an empty index and when the count could not

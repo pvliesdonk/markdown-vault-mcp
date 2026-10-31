@@ -1256,14 +1256,32 @@ choice about the watcher. On such a deployment, `BOOT_REINDEX=false` leaves
 only pull-triggered reindexes in place, and the startup pull is not one of
 them: `sync_from_remote_before_index()` deliberately runs no reindex of its
 own (see above), so content it just fetched stays unindexed until a later
-pull moves HEAD. Bounded and self-healing, but silent; #1542 tracks the
-observability gap and a proposed refinement (submitting the boot reindex only
-when the startup pull actually moved HEAD). The picture is more forgiving on
+pull moves HEAD. Bounded and self-healing, and no longer silent (below).
+Submitting the boot reindex whenever the startup pull moved HEAD, whatever the
+switch says, was considered in #1542 and not taken: it would change what the
+switch means. The picture is more forgiving on
 a watcher-active deployment (stdio, no git — the regime #1535 was reported
 against): `_on_file_change` (`domain.py`) calls the full incremental
 `reindex()`, not a targeted single-path update, so the first in-session
 filesystem event reconciles every change accumulated while offline, not just
 the one file that triggered it.
+
+**Offline changes in the index status (#1542).** `get_index_status` carries
+`offline_changes`, so the gap above can be seen without the boot log, which
+a stdio host usually swallows. `OfflineChanges` (`indexing/offline_changes.py`)
+counts every scan that compares the index with the files: a build that is
+not a warm short-circuit (`BuildLifecycle` reports each one it queues) and
+every reindex, sync or async, whoever asked. It reads `"reconciled"` once one
+of them has succeeded in this process, `"reconciling"` while one is queued or
+running, and `"not_reconciled"` otherwise. A scan that did not see the whole
+vault folder does not count: a build whose walk was incomplete keeps the
+notes of folders it could not read (#1785), and an empty vault folder leaves
+the index untouched (#1791). The value comes from what ran, not from the
+switch, so a library caller that opens a warm index without reindexing sees
+`"not_reconciled"` too. Once reconciled it stays so: a later failed reindex is
+reported by `last_reindex_error`, and changes made while the server runs
+reach the index through writes, the watcher or pulls, not through this
+reconciliation. `index_stale` keeps its meaning (writes pending).
 
 **File watcher scoping (#823/#828/#830).** When the file watcher is
 active (neither git pull nor a webhook that can deliver on this
