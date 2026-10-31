@@ -124,6 +124,7 @@ def _mcp_env_maximal(_mcp_env_writable: None, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://vault.example")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "sk-test")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +192,32 @@ class TestServerIdentity:
             assert mode[0].role is InstructionRole.INSTANCE
             assert snippets[0] is mode[0], "the mode fact must be composed first"
 
+    def test_a_server_without_the_boot_reindex_says_to_reindex(self) -> None:
+        """#1542: offline changes stay unindexed, so the model is told."""
+        from fastmcp_pvl_core import InstructionRole
+
+        from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+
+        default = _domain_snippets(GuidanceConfig(read_only=False))
+        assert not [s for s in default if "reindex" in s.text]
+
+        snippets = _domain_snippets(GuidanceConfig(read_only=False, boot_reindex=False))
+        (snippet,) = [s for s in snippets if "reindex" in s.text]
+        assert snippet.role is InstructionRole.INSTANCE
+        assert snippet.requires_tools == ("reindex",)
+        assert "'reindex'" in snippet.text
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_the_reindex_sentence_follows_the_tool(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#1542: read-only keeps reindex, so the sentence stays; denying drops it."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+        assert "stay unindexed" in (make_server().instructions or "")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TOOLS_DENY", "reindex")
+        assert "stay unindexed" not in (make_server().instructions or "")
+
     def test_domain_snippets_use_their_normative_roles(self) -> None:
         """Pin the role ownership required by pvl-core's #299 design."""
         from fastmcp_pvl_core import InstructionRole
@@ -237,6 +264,7 @@ class TestServerIdentity:
             "OKF bundle",
             "create_upload_link",
             "get_job_result",
+            "stay unindexed",
         ):
             assert required in text
         assert utf16_code_units(text) <= GENERATED_INSTRUCTIONS_TARGET_UTF16
@@ -293,6 +321,7 @@ class TestServerIdentity:
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
         config = ProjectConfig.from_env()
         assert config.summarize.has_provider(), "fixture must enable the summarize tool"
 
@@ -303,6 +332,7 @@ class TestServerIdentity:
                 conventions_file=config.content.conventions_file,
                 summarize_note_limit=config.summarize.max_notes,
                 okf_mode="on",
+                boot_reindex=config.boot_reindex,
             )
         ):
             assert snippet.text in text, (

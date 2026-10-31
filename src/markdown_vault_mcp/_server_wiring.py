@@ -133,6 +133,7 @@ def _contribute_identity(mcp: FastMCP, config: ProjectConfig) -> None:
             ),
             okf_mode=config.content.okf_mode,
             okf_write=config.content.okf_write,
+            boot_reindex=config.boot_reindex,
         ),
     )
 
