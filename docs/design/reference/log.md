@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-10-30
+
+- `git-staging-and-commits.md`: a section on automatic maintenance added. `fetch`, `pull`, `commit` and `rebase` end with `git maintenance run --auto --detach`, whose detached session leader is re-parented to PID 1; in images up to 5.1.0 the server was PID 1 and never reaped them, which filled the cgroup's `pids.max` after 14 days at a 600 s pull interval (#1959). Sources: git-config(1) (`maintenance.autoDetach`, `gc.autoDetach`) and git-gc(1). Observed one orphan per `fetch` and per `pull` on git 2.47.3 (the published image) and 2.55.0, none with both keys `false`, and none on 2.43.0 in a repository where gc had no work. The `subject_version` gains those versions.
+
 ## 2026-10-28
 
 - `git-history-queries.md`: a `--follow` claim added for #1779. From git 2.56.0, a single-path `--follow` walk crosses a rename made while resolving a merge without printing an `R` record, and walks on past the note's creation into an earlier owner of the old name. Git 2.55.0 printed nothing for the same walk. Source: the 2.56.0 release notes; observed by running both versions' Arch packages against the test's repository. The `subject_version` gains 2.56.0.
