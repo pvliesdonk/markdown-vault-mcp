@@ -41,7 +41,7 @@ The figures below come from running the whole server on one host at two vault si
 | Similar notes, 95 in 100 within | 122 to 126 ms | 53 to 82 ms | 105 to 112 ms |
 | Written per one-note edit, median | 0.27 MB | 106 MB | 0.09 MB of WAL, plus 0.13 MB of keyword index |
 | Disk | 110 MB | 106 MB | 144 MB in the schema |
-| Restart until search works | 2.3 s | 1.8 to 1.9 s | 2.0 to 2.1 s |
+| Restart until search works | 2.3 s | 1.8 to 1.9 s | 2.0 to 2.1 s, measured on its own |
 | **32,520 notes, 227,640 sections** | | | |
 | Peak memory while searching, above keyword search alone | 25 MB | about 1,250 MB | 20 MB, plus the database |
 | Memory the server holds once searching is done | 106 MB | 1,330 MB | 117 MB |
@@ -49,14 +49,14 @@ The figures below come from running the whole server on one host at two vault si
 | Similar notes, 95 in 100 within | 1.06 s | 0.31 to 0.33 s | 0.49 s |
 | Written per one-note edit, median | 0.27 MB | 1,058 MB | 0.11 MB of WAL, plus 0.13 MB of keyword index |
 | Disk | 1,102 MB | 1,058 MB | 1,433 MB in the schema |
-| Restart until search works | 13.6 s | 10.7 to 11.0 s | 7.3 to 8.3 s |
+| Restart until search works | 13.6 s | 10.7 to 11.0 s | 7.3 to 8.3 s, measured on its own |
 
 How to read it:
 
 - **Memory.** A streamed store's search memory barely moves with the vault. `numpy` keeps every vector in memory, beside each section's text and metadata, so its memory grows with sections × dimensions. At the larger size that came to about 1.25 GB above the server's own memory, 0.93 GB of it vectors. The PostgreSQL service itself used about 530 MB at rest at the smaller size and 580 MB at the larger, on top of the server.
 - **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` streams too, but scores in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
 - **Edits.** `sqlite`'s figure counts the edited note's pages and the keyword index together; `postgres` writes its WAL in the database and the keyword index locally; `numpy` rewrites the whole store on every save.
-- **Restarts.** No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; `postgres` reads what it holds for 500 notes at a time, so it comes back about as fast as a local store. A database across a network adds a round trip to each of those reads.
+- **Restarts.** No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; `postgres` reads what it holds for 500 notes at a time, so it comes back in a time comparable to a local store's. Its figures come from restarts measured on their own, not in a whole run, so they are not directly comparable with the other columns. A database across a network adds a round trip to each of those reads.
 - **The first build.** Building the index and every vector from nothing peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](embeddings.md#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.

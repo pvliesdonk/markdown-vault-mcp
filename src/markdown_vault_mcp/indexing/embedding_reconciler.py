@@ -306,9 +306,13 @@ class EmbeddingReconciler:
 
         The store's tokens are read before the keyword index: a revision
         the inputs miss was published after that read, so this pass's write
-        of that document conflicts instead of replacing it (#1786). Removals run
-        first, then each document's re-embed, then the re-tokens, so a bulk
-        re-token publish sees the pass's other writes.
+        of that document conflicts instead of replacing it (#1786). The
+        stored metadata is read after both, one batch of documents at a time
+        from a store that reads in batches (#1937); every write is still
+        conditional on the token read first, so a change landing between
+        the reads conflicts too. Removals run first, then each document's
+        re-embed, then the re-tokens, so a bulk re-token publish sees the
+        pass's other writes.
 
         Args:
             store: The store to write.
@@ -374,9 +378,14 @@ class EmbeddingReconciler:
                 unavailable,
             )
 
-    def _remove(self, state: _Pass, path: str) -> None:
-        """Remove *path*'s rows, conditional on the token observed."""
-        removed = len(state.store.rows_for(path))
+    def _remove(self, state: _Pass, path: str, removed: int | None = None) -> None:
+        """Remove *path*'s rows, conditional on the token observed.
+
+        *removed* is the number of rows held, when the caller knows it;
+        ``None`` counts them with a read.
+        """
+        if removed is None:
+            removed = len(state.store.rows_for(path))
         try:
             outcome = state.store.remove_document(
                 path, expected_token=state.stored.get(path)
@@ -399,7 +408,7 @@ class EmbeddingReconciler:
 
         *current* is the stored rows' metadata, read in a batch; ``None``
         reads the rows here. Vectors are read only for an embed, which
-        reuses them. A re-token is returned rather than written, so the pass
+        reuses them, and for a re-token, which republishes them. A re-token is returned rather than written, so the pass
         can write them together (:meth:`_retoken`).
         """
         stored = None
@@ -408,7 +417,7 @@ class EmbeddingReconciler:
             current = [dict(r.metadata) for r in stored]
         if not doc.texts:
             if current:
-                self._remove(state, doc.path)
+                self._remove(state, doc.path, len(current))
             return False
         if current and _signature(current) == _signature(doc.metadata):
             if state.stored.get(doc.path) == doc.token:

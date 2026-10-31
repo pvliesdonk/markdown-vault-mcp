@@ -9,6 +9,7 @@ import psycopg
 import pytest
 from psycopg import sql
 
+from markdown_vault_mcp.interfaces import ReadsMetadataInBatches
 from markdown_vault_mcp.stores import _postgres as pg
 from markdown_vault_mcp.stores import _postgres_tables as tables
 from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
@@ -128,6 +129,7 @@ def test_the_first_write_creates_the_tables(
 
 
 def test_metadata_for_reads_many_documents_without_vectors(store: Any) -> None:
+    assert isinstance(store, ReadsMetadataInBatches)
     store.replace_document(
         _doc("b.md", [[1, 0, 0], [0, 1, 0]]), expected_token=ANY_TOKEN
     )

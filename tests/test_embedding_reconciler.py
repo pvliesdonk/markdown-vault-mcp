@@ -233,6 +233,31 @@ class TestBatchedMetadata:
         assert (result.embedded, result.up_to_date) == (1, 1)
         assert batched.rows_read == ["a.md"]
 
+    def test_a_body_less_document_is_removed_without_reading_its_rows(self, tmp_path):
+        fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        rec.reconcile(store, site="test")
+        (tmp_path / "a.md").write_text("---\ntitle: A\n---\n")
+        fts.upsert_note(parse_note(tmp_path / "a.md", tmp_path, HeadingChunker()))
+        batched = _BatchedMetadata(store)
+        result = rec.reconcile(batched, site="test")
+        assert (result.removed, result.up_to_date) == (1, 1)
+        assert "a.md" not in metadata_by_path(store)
+        assert batched.rows_read == []
+
+    def test_a_moved_token_is_retokened_from_a_batch(self, tmp_path):
+        fts, provider, store, rec = _setup(tmp_path, NOTES)
+        rec.reconcile(store, site="test")
+        (tmp_path / "a.md").write_text(
+            "---\nmodified: 2026-10-12\n---\n# A\n\nApples.\n"
+        )
+        fts.upsert_note(parse_note(tmp_path / "a.md", tmp_path, HeadingChunker()))
+        provider.texts.clear()
+        batched = _BatchedMetadata(store)
+        result = rec.reconcile(batched, site="test")
+        assert (result.retokened, result.up_to_date, provider.texts) == (1, 1, [])
+        assert batched.batches == [["a.md", "b.md"]]
+        assert batched.rows_read == ["a.md"]
+
     def test_a_new_document_reads_no_rows(self, tmp_path):
         _, _provider, store, rec = _setup(tmp_path, NOTES)
         batched = _BatchedMetadata(store)

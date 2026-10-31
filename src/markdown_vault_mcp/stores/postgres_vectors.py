@@ -231,7 +231,21 @@ class PostgresVectorStore:
         )
 
     def metadata_for(self, paths: Collection[str]) -> dict[str, list[dict[str, Any]]]:
-        """*paths*' row metadata, no vectors, in one query (see :meth:`_reading` for errors)."""
+        """Return *paths*' row metadata in storage order, without vectors, in one query.
+
+        Args:
+            paths: The documents to read.
+
+        Returns:
+            The metadata by path; a path with no rows is left out.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If another process has since published
+                another identity.
+            StoreCorruptError: If the meta row is malformed.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
         return self._reading(
             lambda conn, _meta: stored_metadata(
                 conn, schema=self._schema, paths=list(paths)

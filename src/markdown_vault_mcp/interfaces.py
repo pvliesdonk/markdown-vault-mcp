@@ -15,8 +15,10 @@ The managers depend on these concepts:
   — the vector store contract (#1767): vectors in, nearest rows out, with
   no embedding provider inside the store; :class:`ReportsResources` is the
   optional part a store implements to report its search mode and sizes
-  (#1377), and :class:`DescribesStore` the optional part a store
-  implements to say where it lives (#1504).
+  (#1377), :class:`DescribesStore` the optional part a store
+  implements to say where it lives (#1504), and
+  :class:`ReadsMetadataInBatches` the optional part a store implements to
+  serve many documents' row metadata in one read (#1937).
 
 ``FTSIndex`` implements the first two over one SQLite database and
 ``NumpySidecarStore`` the vector contract over numpy; both satisfy these
@@ -67,6 +69,7 @@ __all__ = [
     "GraphStore",
     "KeywordGraphIndex",
     "KeywordIndex",
+    "ReadsMetadataInBatches",
     "ReportsResources",
     "SourceProbe",
     "StoreBackend",

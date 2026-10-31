@@ -210,7 +210,7 @@ note, each vector sent as text and parsed into Python floats. Of the
 and about 5 s round trips and transaction setup. The check compares only
 the rows' metadata, so the pass now reads the metadata of 500 notes per
 query, without vectors, and reads a note's vectors only when it re-embeds
-that note. The local stores serve the same reads from the process, which
+or re-tokens that note, since both reuse them. The local stores serve the same reads from the process, which
 is why they never showed it.
 
 Measured on their own with a throwaway `tensorchord/vchord-suite:pg17-20260501`
@@ -223,7 +223,11 @@ provider (31 October 2026; before at `b5f82172`, after at `b8d63342`):
 | The boot `build_embeddings`, after | 0.48 / 0.39 s | 4.1 / 4.5 s |
 | Process age when the first semantic search returns, after | 2.1 / 2.0 s | 8.3 / 7.3 s |
 
-The process age is the harness's figure, taken the same way (the build,
+The before figures come from the same probe and spread more than the
+harness's: the growth run's 100.6 s exceeds the 89.2 / 81.1 s the harness
+measured for the whole restart. They show the size of the change, not a
+replacement for the harness's figures. The process age is the harness's
+figure, taken the same way (the build,
 the boot `reindex`, `build_embeddings`, one semantic search), but by a
 probe that ran only the restart, not after the harness's other phases.
 Every restart embedded nothing. PostgreSQL across a network pays a round
