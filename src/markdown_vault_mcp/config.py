@@ -477,10 +477,13 @@ class ProjectConfig:
                 "Comma-separated token sub values that belong to applications, "
                 "not people. A caller whose sub is listed is a service: its OKF "
                 "writes stamp the tool actor instead of human:<sub>, and "
-                "trust-auth verification refuses it. Use it for issuers whose "
+                "okf_verify records its review as local (elicit) or refuses it "
+                "(trust-auth). Entries match the token's sub exactly. Use it "
+                "for issuers whose "
                 "client-credentials tokens carry nothing that marks them as an "
                 "application's, such as a Keycloak, authentik or Zitadel "
-                "service account; list that account's sub."
+                "service account; list that account's sub (for Keycloak, the "
+                "service-account user's ID, not its name)."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},

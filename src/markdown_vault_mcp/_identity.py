@@ -100,6 +100,10 @@ def configure_service_subjects(subjects: Collection[str] | None) -> None:
     """
     global _service_subjects
     _service_subjects = frozenset(subjects or ())
+    if _service_subjects:
+        # The count, never the values: an operator can confirm the list took
+        # effect without subjects reaching the log.
+        logger.info("service_subjects_configured count=%s", len(_service_subjects))
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,8 +235,10 @@ def _is_application_token(claims: dict[str, Any]) -> bool:
     knowledge of the issuer. A ``sub`` equal to the client's ID can still be
     a person's where an issuer lets client and user IDs collide, which
     RFC 9700 tells it to prevent. Tokens without a marker, including the
-    service accounts some issuers mint, stay human (#1480; the issuer survey
-    is in ``docs/design/reference/authenticated-subjects.md``).
+    service accounts some issuers mint, are not application tokens here;
+    :func:`resolve_mcp_principal` still makes them services when
+    :func:`configure_service_subjects` lists their subject (#1480; the
+    issuer survey is in ``docs/design/reference/authenticated-subjects.md``).
     """
     sub = _claim_value(claims, "sub")
     if sub is None:

@@ -484,6 +484,28 @@ class TestDeclaredServiceSubjects:
         assert principal == Principal("4f7e-sa", None, None, "service")
         assert principal.okf_actor("test") == "markdown-vault-mcp/test"
 
+    def test_declared_subject_keeps_git_attribution_claims(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_identity_claims(name_claim="name", email_claim="email")
+        configure_service_subjects(("4f7e-sa",))
+        _patch_context(
+            monkeypatch,
+            subject="4f7e-sa",
+            claims={"sub": "4f7e-sa", "name": "Reports", "email": "r@example.org"},
+        )
+        assert resolve_mcp_principal() == Principal(
+            "4f7e-sa", "Reports", "r@example.org", "service"
+        )
+
+    def test_configuring_logs_the_count_not_the_subjects(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._identity"):
+            configure_service_subjects(("4f7e-sa", "91ab-sa"))
+        assert "service_subjects_configured count=2" in caplog.text
+        assert "4f7e-sa" not in caplog.text
+
     def test_undeclared_subject_stays_human(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

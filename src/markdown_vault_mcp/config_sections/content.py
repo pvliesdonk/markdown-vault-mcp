@@ -56,8 +56,12 @@ class ContentConfig:
         bare ``str``/``bytes`` is rejected (it would otherwise be silently split
         into characters).
 
+        ``service_subjects`` is frozen the same way, each entry stripped and
+        empty entries dropped (``None`` when none remain).
+
         Raises:
-            ConfigurationError: If ``max_attachment_size_mb`` or
+            ConfigurationError: If ``service_subjects`` is a ``str``/``bytes``
+                or holds a non-string entry, or ``max_attachment_size_mb`` or
                 ``max_note_read_bytes`` is negative, or ``attachment_extensions``
                 is a ``str``/``bytes`` instead of a sequence of strings.
         """
@@ -77,10 +81,11 @@ class ContentConfig:
                     "service_subjects must be a sequence of strings, not a "
                     f"single {type(self.service_subjects).__name__}"
                 )
-            if not isinstance(self.service_subjects, tuple):
-                object.__setattr__(
-                    self, "service_subjects", tuple(self.service_subjects)
-                )
+            if not all(isinstance(s, str) for s in self.service_subjects):
+                raise ConfigurationError("service_subjects entries must be strings")
+            # Padded or empty entries would silently never match a sub.
+            stripped = tuple(s.strip() for s in self.service_subjects if s.strip())
+            object.__setattr__(self, "service_subjects", stripped or None)
         if self.max_attachment_size_mb < 0:
             raise ConfigurationError(
                 "max_attachment_size_mb must be >= 0, got "
