@@ -32,7 +32,10 @@ from typing import TYPE_CHECKING, Literal
 
 from fastmcp_pvl_core import parse_bool as _parse_bool
 
-from markdown_vault_mcp._identity import configure_identity_claims
+from markdown_vault_mcp._identity import (
+    configure_identity_claims,
+    configure_service_subjects,
+)
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.utils.fs import is_directory
@@ -438,6 +441,7 @@ def to_vault_instances(config: ProjectConfig) -> VaultInstances:
         name_claim=config.git.commit_name_claim,
         email_claim=config.git.commit_email_claim,
     )
+    configure_service_subjects(config.content.service_subjects)
     git_strategy, git_pull_interval_s = _resolve_git(config)
     return VaultInstances(
         embedding_provider=provider,

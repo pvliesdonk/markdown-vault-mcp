@@ -470,6 +470,22 @@ class ProjectConfig:
             "wizard": {"group": "Content"},
         },
     )
+    service_subjects: Sequence[str] | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Comma-separated token sub values that belong to applications, "
+                "not people. A caller whose sub is listed is a service: its OKF "
+                "writes stamp the tool actor instead of human:<sub>, and "
+                "trust-auth verification refuses it. Use it for issuers whose "
+                "client-credentials tokens carry nothing that marks them as an "
+                "application's, such as a Keycloak, authentik or Zitadel "
+                "service account; list that account's sub."
+            ),
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
     attachment_extensions: Sequence[str] | None = field(
         default=None,
         metadata={
@@ -1202,6 +1218,7 @@ class ProjectConfig:
             okf_mode=self.okf_mode,
             okf_write=self.okf_write,
             okf_verify=self.okf_verify,
+            service_subjects=self.service_subjects,
         )
 
     def _check_embedding_store(self) -> None:
@@ -1412,6 +1429,7 @@ class ProjectConfig:
             okf_verify=(env(_ENV_PREFIX, "OKF_VERIFY", "elicit") or "elicit")
             .strip()
             .lower(),
+            service_subjects=opt_list(env(_ENV_PREFIX, "SERVICE_SUBJECTS")),
             attachment_extensions=resolve_attachment_extensions(
                 env(_ENV_PREFIX, "ATTACHMENT_EXTENSIONS")
             ),

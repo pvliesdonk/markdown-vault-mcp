@@ -222,10 +222,13 @@ as an application's by one of the markers above that the check can read
 without knowing the issuer: `sub` equal to `client_id`, `azp` or `cid`, `idtyp: app`, or
 `gty: client-credentials` (#1480).
 [pins: tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_is_a_service, tests/test_identity.py::TestIssuerServiceMarkers::test_user_token_stays_human, tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_cannot_attest_as_human]
+A token whose `sub` the operator lists in `SERVICE_SUBJECTS` is a service
+principal too.
+[pins: tests/test_identity.py::TestDeclaredServiceSubjects::test_declared_subject_is_a_service]
 Every other token with a usable `sub` is still read as a human subject. That
 is an application assumption, not a consequence of OAuth: Keycloak,
 authentik and Zitadel service accounts carry no such marker and are recorded
-as human. Name/email claims remain independent inputs for Git attribution.
+as human unless listed. Name/email claims remain independent inputs for Git attribution.
 
 ## Not covered
 

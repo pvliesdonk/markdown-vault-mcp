@@ -27,8 +27,13 @@ class ContentConfig:
     (only meaningful when ``okf_write`` is on, which gates the tool):
     ``"elicit"`` (default) requires an affirmative MCP elicitation and fails
     closed otherwise, ``"trust-auth"`` attributes to a token's ``sub`` with no
-    confirmation and refuses client-ID-only identities (including static bearer
-    credentials), ``"off"`` hides the tool.
+    confirmation and refuses service principals (client-ID-only identities
+    including static bearer credentials, application-marked tokens, and
+    ``service_subjects``), ``"off"`` hides the tool.
+
+    ``service_subjects`` lists token ``sub`` values the operator declares are
+    applications; the identity layer resolves them to service principals
+    (#1480).
     """
 
     attachment_extensions: Sequence[str] | None = None
@@ -40,6 +45,7 @@ class ContentConfig:
     okf_mode: str = "auto"
     okf_write: bool = False
     okf_verify: str = "elicit"
+    service_subjects: Sequence[str] | None = None
 
     def __post_init__(self) -> None:
         """Validate size limits (#638) and freeze attachment_extensions (#639).
@@ -64,6 +70,16 @@ class ContentConfig:
             if not isinstance(self.attachment_extensions, tuple):
                 object.__setattr__(
                     self, "attachment_extensions", tuple(self.attachment_extensions)
+                )
+        if self.service_subjects is not None:
+            if isinstance(self.service_subjects, (str, bytes)):
+                raise ConfigurationError(
+                    "service_subjects must be a sequence of strings, not a "
+                    f"single {type(self.service_subjects).__name__}"
+                )
+            if not isinstance(self.service_subjects, tuple):
+                object.__setattr__(
+                    self, "service_subjects", tuple(self.service_subjects)
                 )
         if self.max_attachment_size_mb < 0:
             raise ConfigurationError(

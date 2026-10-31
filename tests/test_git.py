@@ -5451,6 +5451,23 @@ class TestGitClaimConfig:
             _identity.configure_identity_claims(name_claim=None, email_claim=None)
 
 
+class TestServiceSubjectsRegistration:
+    def test_service_subjects_registered_by_to_vault_instances(
+        self, tmp_path: Path
+    ) -> None:
+        """The assembly registers the declared service subjects (#1480)."""
+        from markdown_vault_mcp import _identity
+        from markdown_vault_mcp.config import ProjectConfig
+        from markdown_vault_mcp.config_sections._assembly import to_vault_instances
+
+        config = ProjectConfig(source_dir=tmp_path, service_subjects=["4f7e-sa"])
+        try:
+            to_vault_instances(config)
+            assert _identity._service_subjects == frozenset({"4f7e-sa"})
+        finally:
+            _identity.configure_service_subjects(None)
+
+
 class TestStageAndCommitAuthorSplit:
     """_stage_and_commit sets --author separately from the committer when provided."""
 

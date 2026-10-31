@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Collection, Iterator
     from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,11 @@ _email_claim: str | None = None
 #: and each deserves its own line. Cleared whenever the configured keys
 #: change, so a reconfiguration gets a fresh answer.
 _warned_absent_claims: set[tuple[str, str]] = set()
+
+#: Token subjects the operator declares are applications (#1480), for issuers
+#: whose client-credentials tokens carry no marker. Deployment configuration,
+#: registered once at startup like the claim keys.
+_service_subjects: frozenset[str] = frozenset()
 
 #: Claims that carry the requesting client's ID: RFC 9068's ``client_id``,
 #: OIDC's ``azp`` and Okta's ``cid``. A ``sub`` equal to one of them is the
@@ -83,6 +88,20 @@ def configure_identity_claims(
     _warned_absent_claims.clear()
 
 
+def configure_service_subjects(subjects: Collection[str] | None) -> None:
+    """Register the token subjects the operator declares are applications.
+
+    Called once during config assembly with the ``SERVICE_SUBJECTS``
+    setting. A token whose ``sub`` is listed resolves to a ``"service"``
+    principal in :func:`resolve_mcp_principal`, whatever its claims say.
+
+    Args:
+        subjects: The declared ``sub`` values, or ``None`` for none.
+    """
+    global _service_subjects
+    _service_subjects = frozenset(subjects or ())
+
+
 @dataclass(frozen=True, slots=True)
 class Principal:
     """Who is performing a write, resolved once at the MCP tool edge.
@@ -94,10 +113,11 @@ class Principal:
             ``None`` when the claim is unconfigured or absent.
         email: Email address from the configured email claim, or ``None``.
         kind: ``"human"`` for a usable token ``sub`` the issuer does not
-            mark as an application's; ``"service"`` for
-            a caller identified only by client ID, or whose token the issuer
-            marks as issued to an application (#1480); ``"local"`` without
-            an attributable token.
+            mark as an application's and the operator does not declare one;
+            ``"service"`` for a caller identified only by client ID, whose
+            token the issuer marks as issued to an application, or whose
+            subject the operator declares a service (#1480); ``"local"``
+            without an attributable token.
     """
 
     subject: str | None
@@ -230,7 +250,8 @@ def resolve_mcp_principal() -> Principal:
     A usable token ``sub`` retains human attribution unless the issuer marks
     the token as issued to an application: its ``sub`` equals the client's
     ID, or it carries Entra ID's ``idtyp: app`` or Auth0's
-    ``gty: client-credentials`` (#1480). Such a token, and a client-ID
+    ``gty: client-credentials``, or the operator lists its subject in
+    :func:`configure_service_subjects` (#1480). Such a token, and a client-ID
     fallback (static and mapped bearer credentials), is a service identity.
     Without an attributable token the principal is local. Display name and
     email are read from the token claims using the keys registered via
@@ -257,6 +278,10 @@ def resolve_mcp_principal() -> Principal:
             subject=subject,
             display_name=display_name,
             email=email,
-            kind="service" if _is_application_token(claims) else "human",
+            kind=(
+                "service"
+                if subject in _service_subjects or _is_application_token(claims)
+                else "human"
+            ),
         )
     return Principal(subject=None, display_name=display_name, email=email, kind="local")

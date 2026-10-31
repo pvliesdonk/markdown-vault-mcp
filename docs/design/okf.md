@@ -426,8 +426,9 @@ Tool tags following switches: #1412.
   never touched. Client-ID-only identities, including static and mapped
   bearer credentials, use the tool actor (#1463). So does an OAuth token the
   issuer marks as an application's (`sub` equal to the client ID, `idtyp: app`
-  or `gty: client-credentials`; #1480); an unmarked service-account token
-  still stamps `human:<subject>`. See
+  or `gty: client-credentials`; #1480), and so does a token whose `sub` the
+  operator lists in `SERVICE_SUBJECTS`; an unmarked, unlisted service-account
+  token still stamps `human:<subject>`. See
   [authenticated subjects](reference/authenticated-subjects.md).
 
   A stamp is written *into* the note's frontmatter, so content whose block
@@ -474,7 +475,7 @@ Tool tags following switches: #1412.
   - **`trust-auth`**: attribute to the token's `sub` with no elicitation;
     refuses (`ToolError`) without auth, with a client-ID-only identity,
     including static bearer credentials (#1463), or with a token the issuer
-    marks as an application's (#1480).
+    marks as an application's or whose `sub` is in `SERVICE_SUBJECTS` (#1480).
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
 
