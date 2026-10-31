@@ -201,6 +201,10 @@ Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myserv
 Set `PUID` and `PGID` in your `.env` file to match the owner of bind-mounted
 directories (default 1000/1000).
 
+## Init process
+
+The image runs [`tini`](https://github.com/krallin/tini) as PID 1, with the server as its child. `tini` reaps the zombie processes that a detached child process leaves behind, so they do not pile up over a long uptime. You do not need `init: true` in Compose or `docker run --init`; both still work, because `tini` keeps reaping when another init is PID 1. If you replace the entrypoint with `--entrypoint`, nothing reaps those processes unless your replacement does.
+
 ## Remote debugging
 
 Production images ship without `debugpy` to keep the image lean. To attach a remote Python debugger from VS Code or PyCharm:
