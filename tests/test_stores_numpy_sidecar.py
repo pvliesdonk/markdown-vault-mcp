@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import tracemalloc
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -272,6 +273,29 @@ class TestOpenOutcomes:
                 backend.open(base, IDENT)
         finally:
             json_path.chmod(0o644)
+
+
+class TestOpenMemory:
+    def test_an_open_holds_one_copy_of_the_matrix(self, tmp_path: Path) -> None:
+        # The open's peak was twice the matrix: it copied the matrix it had
+        # just loaded (#1936).
+        wide = EmbeddingIdentity(
+            provider="fake", model="m", variant="", text_format="v1", dimension=4096
+        )
+        base = _base(tmp_path)
+        store = NumpySidecarBackend().open(base, wide)
+        vectors = np.random.default_rng(0).standard_normal((256, 4096)).tolist()
+        store.replace_document(doc("a.md", vectors), expected_token=ANY_TOKEN)
+        store.close()
+        matrix_bytes = 256 * 4096 * 4
+        tracemalloc.start()
+        try:
+            reopened = NumpySidecarBackend().open(base, wide, owns_files=False)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert reopened.count == 256
+        assert peak < 1.5 * matrix_bytes
 
 
 class TestLegacySidecar:
