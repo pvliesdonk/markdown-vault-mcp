@@ -14,7 +14,7 @@ With an [embedding provider](embeddings.md) configured, the server keeps one vec
 | `sqlite`, streamed | nothing: the default | most vaults. Search memory stays flat as the vault grows, and an edit writes only the changed note, never the whole store. |
 | `sqlite`, resident | `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=resident` | a vault whose server has memory to spare and wants faster searches, keeping per-note writes. |
 | `numpy` | `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy` | a small vault that is rarely edited. It is the fastest to search, but it holds every vector in memory and rewrites all of them at each save. |
-| `postgres` | `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres` and its settings | a team that already runs PostgreSQL with pgvector, or wants the vectors off the server's disk, at the cost of a separate service of about half a gigabyte and slower restarts. [PostgreSQL embedding store](postgresql.md) covers running it. |
+| `postgres` | `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres` and its settings | a team that already runs PostgreSQL with pgvector, or wants the vectors off the server's disk, at the cost of a separate service of about half a gigabyte. [PostgreSQL embedding store](postgresql.md) covers running it. |
 
 Streamed and resident search give the same results, apart from the order of notes with equal scores. Without `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`, `sqlite` and `numpy` keep the vectors in memory, searched resident, and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
 
@@ -30,7 +30,7 @@ A streamed search reads the vectors from the database in batches of `MARKDOWN_VA
 
 ## What each store costs
 
-The figures below come from running the whole server on one host at two vault sizes, twice each ([#1899](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899)); `numpy`'s peak memory at the larger size is from a later run, after [#1936](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936) stopped it copying its vectors when it opens. Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.
+The figures below come from running the whole server on one host at two vault sizes, twice each ([#1899](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899)); `numpy`'s peak memory at the larger size is from a later run, after [#1936](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936) stopped it copying its vectors when it opens, and `postgres`'s restart is from a later measurement too, after [#1937](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1937) stopped it reading every note's vectors at each start. Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.
 
 | | `sqlite`, streamed | `numpy` | `postgres` |
 |---|---|---|---|
@@ -41,7 +41,7 @@ The figures below come from running the whole server on one host at two vault si
 | Similar notes, 95 in 100 within | 122 to 126 ms | 53 to 82 ms | 105 to 112 ms |
 | Written per one-note edit, median | 0.27 MB | 106 MB | 0.09 MB of WAL, plus 0.13 MB of keyword index |
 | Disk | 110 MB | 106 MB | 144 MB in the schema |
-| Restart until search works | 2.3 s | 1.8 to 1.9 s | 10 s |
+| Restart until search works | 2.3 s | 1.8 to 1.9 s | 2.0 to 2.1 s |
 | **32,520 notes, 227,640 sections** | | | |
 | Peak memory while searching, above keyword search alone | 25 MB | about 1,250 MB | 20 MB, plus the database |
 | Memory the server holds once searching is done | 106 MB | 1,330 MB | 117 MB |
@@ -49,14 +49,14 @@ The figures below come from running the whole server on one host at two vault si
 | Similar notes, 95 in 100 within | 1.06 s | 0.31 to 0.33 s | 0.49 s |
 | Written per one-note edit, median | 0.27 MB | 1,058 MB | 0.11 MB of WAL, plus 0.13 MB of keyword index |
 | Disk | 1,102 MB | 1,058 MB | 1,433 MB in the schema |
-| Restart until search works | 13.6 s | 10.7 to 11.0 s | 81 to 89 s |
+| Restart until search works | 13.6 s | 10.7 to 11.0 s | 7.3 to 8.3 s |
 
 How to read it:
 
 - **Memory.** A streamed store's search memory barely moves with the vault. `numpy` keeps every vector in memory, beside each section's text and metadata, so its memory grows with sections × dimensions. At the larger size that came to about 1.25 GB above the server's own memory, 0.93 GB of it vectors. The PostgreSQL service itself used about 530 MB at rest at the smaller size and 580 MB at the larger, on top of the server.
 - **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` streams too, but scores in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
 - **Edits.** `sqlite`'s figure counts the edited note's pages and the keyword index together; `postgres` writes its WAL in the database and the keyword index locally; `numpy` rewrites the whole store on every save.
-- **Restarts.** No store embeds an unchanged note again after a restart or a crash. `postgres` takes four to eight times as long as a local store to come back; [#1937](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1937) looks into why.
+- **Restarts.** No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; `postgres` reads what it holds for 500 notes at a time, so it comes back about as fast as a local store. A database across a network adds a round trip to each of those reads.
 - **The first build.** Building the index and every vector from nothing peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](embeddings.md#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.
@@ -65,7 +65,7 @@ How to read it:
 
 The figures are a measured envelope, not a guarantee:
 
-- one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs, and a third for `numpy`'s peak memory at the larger size, written to a memory-backed folder; a few percent between runs is within what another run could move;
+- one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs, a third for `numpy`'s peak memory at the larger size, written to a memory-backed folder, and two restarts of `postgres` at each size measured on their own, not in a whole run; a few percent between runs is within what another run could move;
 - a stand-in embedding provider that makes no network calls, so the build figures, time and memory alike, leave out the real provider, which dominates a real build;
 - PostgreSQL in a container on the same host; a database across a network adds a round trip to every search and every restart check;
 - a uniform synthetic vault (six sections a note); real vaults vary note size and folder shape;
