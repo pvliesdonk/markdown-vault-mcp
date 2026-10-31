@@ -65,7 +65,7 @@ How to read it:
 
 The figures are a measured envelope, not a guarantee:
 
-- one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs; a few percent between runs is within what another run could move;
+- one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs, and a third for `numpy`'s peak memory at the larger size, written to a memory-backed folder; a few percent between runs is within what another run could move;
 - a stand-in embedding provider that makes no network calls, so the build figures, time and memory alike, leave out the real provider, which dominates a real build;
 - PostgreSQL in a container on the same host; a database across a network adds a round trip to every search and every restart check;
 - a uniform synthetic vault (six sections a note); real vaults vary note size and folder shape;

@@ -40,6 +40,3 @@
 | Configuration | Until search works | Texts embedded | Texts embedded after a kill | Beyond the edit in progress | Store moved aside (restart / after a kill) |
 |---|---|---|---|---|---|
 | numpy (resident) | 1.87 s | 0 | 1 | 0 | no / no |
-
-warning: --out is on a memory-backed filesystem, so cold latency is not cold; choose a folder on disk
-wrote /tmp/claude-1000/-mnt-code-mcp-servers-markdown-vault-mcp--claude-worktrees-bridge-cse-01M3q9Ko7NoqoAWM51JWDHSE/d85b9cfa-4e64-54e6-b0f5-1d08ef79c407/scratchpad/env1936/growth/1d51e7a1-growth-20261031T104836034600Z.json

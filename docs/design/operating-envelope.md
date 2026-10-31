@@ -133,7 +133,7 @@ edits. After the 200 edits, PostgreSQL's schema was 152.7 MB and 1,446.2 MB
 
 | Proposed on #1506 | What the measurements show |
 |---|---|
-| Memory semantic search adds: ≤ 150 MB at both sizes | A flat figure fits only the streamed stores, and they use far less (15–25 MB at both sizes). numpy's grows with the vault: 165–205 MB deployed, about 2.1 GB at growth, so it scales with chunks × dimensions. About 0.85 GB of the growth figure was a copy of the matrix while the store opened, removed in #1936; growth now adds 1.25 GB ([after #1936](#after-1936-the-numpy-stores-memory)). |
+| Memory semantic search adds: ≤ 150 MB at both sizes | A flat figure fits only the streamed stores, and they use far less (15–25 MB at both sizes). numpy's grows with the vault: 165–205 MB deployed, about 2.1 GB at growth, so it scales with chunks × dimensions. About 0.81–0.85 GB of the growth figure was a copy of the matrix while the store opened, removed in #1936; growth now adds 1.25 GB ([after #1936](#after-1936-the-numpy-stores-memory)). |
 | Unfiltered search p95: ≤ 100 ms deployed, ≤ 1 s growth | Semantic, hybrid and similar-note search are all unfiltered. Deployed, only numpy is under 100 ms for all three (at most 82 ms). The streamed stores' p95 is 105–159 ms across the three, and their semantic median 98–117 ms. #1502's prototype took about 39 ms per search; it scanned vectors without the server's metadata and result work. At growth, sqlite's semantic and hybrid p95 sit at the 1 s line (1,035 / 1,000 and 1,072 / 987 ms) and its similar-note p95 is above it in both runs (1,055 / 1,063 ms). postgres is at 0.49–0.60 s for all three, and numpy's similar-note search at 0.31–0.33 s. |
 | Filtered p95 below the unfiltered figure | It holds for sqlite and postgres at both sizes, by a wide margin. For numpy it held in one run of each size and not the other (deployed 65 vs 45 ms, then 32 vs 39 ms; growth 102 vs 107 ms, then 96 vs 81 ms). Resident filtered search is about as fast as unfiltered, not reliably faster. |
 | A one-note edit writes on the order of that note's vectors, never the whole store | postgres writes up to 145 KB of WAL, about five times the note's 29 KB of vectors. sqlite's store file grows by at most 78 KB (median 0), since pages are rewritten in place. The bytes sqlite's process writes, keyword index included, are 0.27 MB median (about nine times the note's vectors) and at most 3.7 MB deployed and 2.5 MB at growth. Neither rewrites its store. numpy rewrites its whole store on every edit: 106 MB deployed, 1.06 GB at growth. The sidecar is written as one file, so this follows from its design. |
@@ -186,7 +186,9 @@ fix uncommitted in the tree), in decimal MB:
 | Memory warm searches add | 162 (runs 1 and 2: 165 / 205) | 1,247 (runs 1 and 2: 2,093 / 2,060) |
 | Process anonymous memory after the searches | 248 (247) | 1,331 (1,330 / 1,331) |
 
-At deployed size the harness's figure barely moves, though the direct
+Runs 1 and 2 were at an earlier commit, on disk; the direct measurement
+above is what isolates the fix from other changes since. At deployed size
+the harness's figure barely moves, though the direct
 measurement above shows the copy there too. The harness samples memory at an
 interval, and a copy of a 93 MB matrix lasts too short a time for it to be
 seen reliably, which is also why runs 1 and 2 differ there. The run wrote to a
