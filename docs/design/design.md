@@ -6851,7 +6851,7 @@ real release runs. No committed manifest bump is needed for the bundle.
 | Risk | Mitigation |
 |-|-|
 | VRAM contention (Ollama on RTX 4060 8 GB) | `cpu_only` mode, batch embeddings |
-| Vault scale (numpy in-memory) | Fine for thousands of documents. If tens of thousands, evaluate Qdrant behind the embedding store contract (`interfaces.py`, #1767). |
+| Vault scale (embedding store) | Grows with chunks (12 to 42 per note in the deployed vaults, #1370) and the model's width: 4 × chunks × dimensions bytes of vectors. Memory binds the resident numpy store; search time binds the streamed ones, SQLite (streamed by default since #1900) and PostgreSQL. Figures: [operating-envelope.md](operating-envelope.md); `embeddings_status` reports `stored_bytes` and `resident_vector_bytes`. Mitigations: a streamed store rather than numpy, then PostgreSQL or another backend behind the embedding store contract (`interfaces.py`, #1767); narrower vectors (float16, int8) are not implemented. |
 | Concurrent writes (Obsidian + MCP) | Use git as sync layer. MCP server should not write directly to live Obsidian vault without git in between. |
 | FastMCP breaking changes | Pin `>=3.0,<4`. Monitor for 4.0 migration. |
 | `Vault` API doesn't fit ifcraftcorpus | Validate in Phase 1 before building MCP server. |
