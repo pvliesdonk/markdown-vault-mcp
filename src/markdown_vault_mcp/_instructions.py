@@ -134,9 +134,9 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     server regenerates a written folder's ``index.md``, so telling the agent
     to edit that file invites work the next write replaces (#1431).
     With ``boot_reindex`` off, files changed while no server ran stay out of
-    the index until a reindex, and only the model can run one in-session, so
-    the sentence names the tool (#1542); a deployment that keeps the default
-    pays nothing.
+    the index until a reindex runs, and nothing else prompts the model to run
+    one, so the sentence names the tool (#1542); a deployment that keeps the
+    default pays nothing.
 
     Args:
         config: The configuration the fragments below branch on.
@@ -207,9 +207,8 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     if not config.boot_reindex:
         snippets.append(
             Snippet(
-                "This instance does not reindex at startup, so search misses "
-                "changes made to files while it was stopped; call 'reindex' "
-                "first when those matter.",
+                "Files changed while this instance was stopped stay unindexed; "
+                "call 'reindex' first when they matter.",
                 InstructionRole.INSTANCE,
                 ("reindex",),
             )

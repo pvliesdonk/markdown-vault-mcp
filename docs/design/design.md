@@ -5376,11 +5376,12 @@ otherwise it describes write tool semantics — which signals capability
 status to clients and reduces irrelevant prompting.
 
 With `MARKDOWN_VAULT_MCP_BOOT_REINDEX=false` an `INSTANCE` sentence tells the
-model that search misses changes made while the server was stopped and to
-call `reindex` first when they matter (#1542). Under stdio the boot log that
-says the same is usually swallowed, and the `reindex` tool's own description
-says it is for files changed outside the server, which on such a deployment
-is the normal state, so nothing else prompts the model to run it. The
+model that files changed while the server was stopped stay unindexed, so
+search, listings and link queries miss them, and to call `reindex` first when
+they matter (#1542). The boot log (`boot_reindex_disabled`) reaches operators,
+not the model, and the `reindex` tool's own description says it is for files
+changed outside the server, which on such a deployment is the normal state,
+so nothing else prompts the model to run it. The
 sentence declares `reindex` in `requires_tools`, and a deployment that keeps
 the default pays nothing for it.
 
