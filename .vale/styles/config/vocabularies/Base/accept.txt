@@ -7,9 +7,12 @@
 
 # --- Identity providers and auth-stack tooling ---
 Authelia
+Cognito
+Entra
 Keycloak
 OAuth
 OIDC
+Okta
 Traefik
 
 # --- Agentic-client terminology (#1035) ---
@@ -81,10 +84,6 @@ async
 asyncio
 Atlassian
 Authentik
-Cognito
-Entra
-Okta
-Zitadel
 automations
 backlink
 backlinks
@@ -266,6 +265,7 @@ wikilinks
 workspace
 write_attachment
 Zettelkasten
+Zitadel
 Zotero
 
 # --- Fonts / typography ---

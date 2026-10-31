@@ -10,6 +10,8 @@ generated:
 verified:
   - by: process:researching-references-refute
     at: 2026-09-14T05:33:32Z
+  - by: process:researching-references-refute
+    at: 2026-10-31T13:00:00Z
 stale_after: 2027-04-30
 status: stable
 sources:
@@ -45,6 +47,10 @@ sources:
     title: Authelia OIDC session subject at 2eb6cb8c
     resource: https://github.com/authelia/authelia/blob/2eb6cb8c/internal/oidc/session.go
     accessed: 2026-10-31
+  - id: authelia-const
+    title: Authelia OIDC claim-name constants at 2eb6cb8c
+    resource: https://github.com/authelia/authelia/blob/2eb6cb8c/internal/oidc/const.go
+    accessed: 2026-10-31
   - id: authelia-clients
     title: Authelia — OpenID Connect clients configuration
     resource: https://www.authelia.com/configuration/identity-providers/openid-connect/clients/
@@ -66,16 +72,32 @@ sources:
     resource: https://learn.microsoft.com/en-us/entra/identity-platform/claims-validation
     accessed: 2026-10-31
   - id: keycloak-grant
-    title: Keycloak client credentials grant and subject mapper at a79e6657
+    title: Keycloak client credentials grant at a79e6657
     resource: https://github.com/keycloak/keycloak/blob/a79e6657/services/src/main/java/org/keycloak/protocol/oidc/grants/ClientCredentialsGrantType.java
     accessed: 2026-10-31
-  - id: authentik-token
-    title: authentik OAuth2 token view and access-token claims at 88786996
-    resource: https://github.com/goauthentik/authentik/blob/88786996/authentik/providers/oauth2/views/token.py
+  - id: keycloak-constants
+    title: Keycloak service-account constants at a79e6657
+    resource: https://github.com/keycloak/keycloak/blob/a79e6657/common/src/main/java/org/keycloak/common/constants/ServiceAccountConstants.java
+    accessed: 2026-10-31
+  - id: keycloak-scope
+    title: Keycloak service_account client scope (addServiceAccountClientScope) at a79e6657
+    resource: https://github.com/keycloak/keycloak/blob/a79e6657/services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocolFactory.java
+    accessed: 2026-10-31
+  - id: keycloak-sub
+    title: Keycloak subject mapper at a79e6657
+    resource: https://github.com/keycloak/keycloak/blob/a79e6657/services/src/main/java/org/keycloak/protocol/oidc/mappers/SubMapper.java
+    accessed: 2026-10-31
+  - id: authentik-cc
+    title: authentik client credentials grant at 88786996
+    resource: https://github.com/goauthentik/authentik/blob/88786996/authentik/providers/oauth2/token/client_credentials.py
+    accessed: 2026-10-31
+  - id: authentik-id-token
+    title: authentik token claims (sub, azp) at 88786996
+    resource: https://github.com/goauthentik/authentik/blob/88786996/authentik/providers/oauth2/id_token.py
     accessed: 2026-10-31
   - id: zitadel-cc
-    title: Zitadel client credentials token at 0c0ee1da
-    resource: https://github.com/zitadel/zitadel/blob/0c0ee1da/internal/api/oidc/token_client_credentials.go
+    title: Zitadel client credentials client at 0c0ee1da
+    resource: https://github.com/zitadel/zitadel/blob/0c0ee1da/internal/api/oidc/client_credentials.go
     accessed: 2026-10-31
 ---
 
@@ -131,18 +153,23 @@ makes. [source: jwt-profile-2] The issuers differ:
   [pins: tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_is_a_service]
 - **Authelia:** the subject falls back to the client ID for the client
   credentials flow, and the token carries a `client_id` claim with the same
-  value. [source: authelia-session] Its access tokens are JWTs only when a
-  client sets `access_token_signed_response_alg`; the default is opaque.
+  value (the claim is added in every flow). [source: authelia-session]
+  [source: authelia-const] Access tokens are encoded as RFC 9068 JWTs only
+  when a client sets `access_token_signed_response_alg` to something other
+  than its default `none`, or sets `access_token_signed_response_key_id`.
   [source: authelia-clients]
 - **Okta (custom authorization server):** `cid` is the client ID and `uid`
   is absent when no user is bound to the token. [source: okta-oauth] The
   default `sub` claim is the client ID when there is no user
   (`(appuser != null) ? appuser.userName : app.clientId`), and an admin can
-  change it. [unverified: read in a recorded API response in Okta's SDK
-  tests, not in Okta's documentation]
+  change it. [unverified: read in a recorded API response under
+  `tests/integration/cassettes/test_auth_server_it/` in okta/okta-sdk-python,
+  not in Okta's documentation; Okta documenting the custom authorization
+  server's default `sub` expression would verify it]
   [pins: tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_is_a_service]
-- **Auth0:** a machine-to-machine `sub` identifies the application, shown as
-  `<client_id>@clients`; in the Auth0 token profile, `gty` is present for
+- **Auth0:** a machine-to-machine `sub` identifies the application, typically
+  `<client_id>@clients` (an agent-linked client's `sub` is its `agent_id`,
+  without the suffix); in the Auth0 token profile, `gty` is present for
   `client-credentials`, `password` and `refresh_token`, while the RFC 9068
   profile does not use `gty`. [source: auth0-profiles]
   [pins: tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_is_a_service]
@@ -152,25 +179,35 @@ makes. [source: jwt-profile-2] The issuers differ:
   configure. [source: entra-optional] For app-only permissions an API can
   instead check that `scp` is absent. [source: entra-claims-validation]
   [pins: tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_is_a_service]
-- **Keycloak:** a client-credentials token belongs to a service-account user
-  named `service-account-<clientId>`, and `sub` is that user's ID, not the
-  client ID. A `client_id` claim is added only in this grant, through the
-  `service_account` client scope, but RFC 9068 tokens from other issuers
-  carry `client_id` too, so it is not a marker that holds across issuers.
-  [source: keycloak-grant]
-- **authentik:** client credentials authenticate as a user, often a
-  generated service account; `sub` is that user's subject and nothing in the
-  token marks it as an application's. [source: authentik-token]
-- **Zitadel:** the subject is the machine user's ID, distinct from the
-  client ID; access tokens are opaque unless the service account selects
-  JWT. [source: zitadel-cc] No marker claim was found. [unverified: absence
-  in the code read, not a documented statement]
+- **Keycloak:** a client-credentials token belongs to the client's
+  service-account user, whose name has the prefix `service-account-`.
+  [source: keycloak-grant] [source: keycloak-constants] `sub` is the session
+  user's ID, so here the service account's, not the client ID.
+  [source: keycloak-sub] The `service_account` client scope maps a
+  `client_id` claim from a user-session note that the client-credentials
+  grant sets; no other grant was seen setting it. [source: keycloak-scope]
+  [source: keycloak-grant] RFC 9068 tokens from other issuers carry
+  `client_id` in every token, so its presence is not a marker across issuers.
+- **authentik:** client credentials authenticate as a user. With the
+  provider's own secret, authentik creates a service account named
+  `ak-<provider>-client_credentials`; with a username and password it uses
+  that existing user. [source: authentik-cc] `sub` is that user's subject per
+  the provider's `sub_mode`, and `azp` is the provider's client ID in every
+  access token, so neither marks an application's token.
+  [source: authentik-id-token]
+- **Zitadel:** the token's user is the machine user's ID and its client ID is
+  the machine user's username, so the two differ; the token type follows the
+  machine user's access-token setting. [source: zitadel-cc] No marker claim
+  was found. [unverified: absence in the code read, not a documented
+  statement; reading the JWT access-token claim builder would verify it]
 
 `sub == client_id` can also be wrong the other way: where client IDs and user
 identifiers share a namespace, RFC 9700 §4.15.1 tells the issuer not to let a
 client choose an ID that collides with a user's, and to give the resource
 server another way to tell the tokens apart where it cannot avoid that.
-[source: oauth-security]
+[source: oauth-security] authentik is one place this matters: `azp` is the
+client ID in every access token, so a `sub_mode` that yields usernames makes
+`sub == azp` depend on account naming. [source: authentik-id-token]
 
 ## Where this project departs from the subject
 
@@ -181,8 +218,8 @@ can confirm a human review without identifying the person; that review uses
 `human:local`. `trust-auth` requires a human principal.
 
 A token with a usable `sub` is a service principal when the issuer marks it
-as an application's by one of the markers above that holds wherever it
-appears: `sub` equal to `client_id`, `azp` or `cid`, `idtyp: app`, or
+as an application's by one of the markers above that the check can read
+without knowing the issuer: `sub` equal to `client_id`, `azp` or `cid`, `idtyp: app`, or
 `gty: client-credentials` (#1480).
 [pins: tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_is_a_service, tests/test_identity.py::TestIssuerServiceMarkers::test_user_token_stays_human, tests/test_identity.py::TestIssuerServiceMarkers::test_application_token_cannot_attest_as_human]
 Every other token with a usable `sub` is still read as a human subject. That

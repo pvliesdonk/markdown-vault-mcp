@@ -445,7 +445,7 @@ class TestIssuerServiceMarkers:
             pytest.param(
                 {"sub": "user-7", "azp": "app-1", "idtyp": "user"}, id="entra-user"
             ),
-            pytest.param({"sub": "user-7", "client_id": 7}, id="non-string-client"),
+            pytest.param({"sub": "user-7", "idtyp": ["app"]}, id="non-string-marker"),
         ],
     )
     def test_user_token_stays_human(

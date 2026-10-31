@@ -93,7 +93,8 @@ class Principal:
         display_name: Human-readable name from the configured name claim, or
             ``None`` when the claim is unconfigured or absent.
         email: Email address from the configured email claim, or ``None``.
-        kind: ``"human"`` for a usable token ``sub``; ``"service"`` for
+        kind: ``"human"`` for a usable token ``sub`` the issuer does not
+            mark as an application's; ``"service"`` for
             a caller identified only by client ID, or whose token the issuer
             marks as issued to an application (#1480); ``"local"`` without
             an attributable token.
@@ -205,8 +206,9 @@ def _claim_state(claims: dict[str, Any], key: str) -> str:
 def _is_application_token(claims: dict[str, Any]) -> bool:
     """Return whether the issuer marks *claims* as issued to an application.
 
-    Each marker means "no end user" wherever it appears, so the check needs
-    no knowledge of the issuer. Tokens without one, including the service
+    The check needs no knowledge of the issuer. A ``sub`` equal to the
+    client's ID can still be a person's where an issuer lets client and user
+    IDs collide, which RFC 9700 tells it to prevent. Tokens without a marker, including the service
     accounts some issuers mint, stay human (#1480; the issuer survey is in
     ``docs/design/reference/authenticated-subjects.md``).
     """
