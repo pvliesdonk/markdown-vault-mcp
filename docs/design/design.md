@@ -3860,9 +3860,13 @@ A real token `sub` spelled `local` is distinct from the no-auth sentinel.
 `resolve_human_subject()` checks the kind, so `trust-auth` refuses service
 credentials; an affirmative elicitation instead records `human:local`.
 The external contract is in [authenticated subjects](reference/authenticated-subjects.md).
-OAuth `sub` can also identify a service: retaining human attribution for that
-claim is an existing application assumption, with issuer-aware classification
-tracked separately in #1480. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
+OAuth `sub` can also identify a service. A token with a `sub` is a `service`
+principal when the issuer marks it as an application's in a way that holds
+for every issuer: `sub` equals the `client_id`, `azp` or `cid` claim, or the
+token carries Entra ID's `idtyp: app` or Auth0's `gty: client-credentials`
+(#1480). Every other `sub` keeps human attribution, an application
+assumption: Keycloak, authentik and Zitadel issue client-credentials tokens
+to a service account with no marker, and those are recorded as human. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
 read `get_subject()` itself; it now resolves a `Principal` instead, so the
 rules cannot drift between two copies. The dead `resolve_write_actor()` went
 with that branch: since #1160 the write tools stamp

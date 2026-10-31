@@ -1,5 +1,16 @@
 # Reference research log
 
+## 2026-10-31
+
+- Extended [Authenticated subjects and human attribution](authenticated-subjects.md)
+  for #1480: how Amazon Cognito, Authelia, Okta, Auth0, Microsoft Entra ID,
+  Keycloak, authentik and Zitadel shape a client-credentials access token.
+  No standard claim marks one. `sub == client_id` holds for Cognito, Authelia
+  and Okta's default; Auth0 marks it with `gty: client-credentials` and Entra
+  ID with `idtyp: app`; Keycloak, authentik and Zitadel issue it to a service
+  account with no marker. Sources: vendor documentation and pinned issuer
+  source. Next review: 2027-04-30.
+
 ## 2026-10-28
 
 - `git-history-queries.md`: a `--follow` claim added for #1779. From git 2.56.0, a single-path `--follow` walk crosses a rename made while resolving a merge without printing an `R` record, and walks on past the note's creation into an earlier owner of the old name. Git 2.55.0 printed nothing for the same walk. Source: the 2.56.0 release notes; observed by running both versions' Arch packages against the test's repository. The `subject_version` gains 2.56.0.

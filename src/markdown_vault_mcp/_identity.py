@@ -53,6 +53,15 @@ _email_claim: str | None = None
 #: change, so a reconfiguration gets a fresh answer.
 _warned_absent_claims: set[tuple[str, str]] = set()
 
+#: Claims that carry the requesting client's ID: RFC 9068's ``client_id``,
+#: OIDC's ``azp`` and Okta's ``cid``. A ``sub`` equal to one of them names the
+#: application itself, so no end user is involved (#1480).
+_CLIENT_ID_CLAIMS = ("client_id", "azp", "cid")
+
+#: ``(claim, value)`` pairs an issuer puts only in a token issued to an
+#: application: Entra ID's ``idtyp`` and Auth0's grant type ``gty`` (#1480).
+_APPLICATION_TOKEN_MARKERS = (("idtyp", "app"), ("gty", "client-credentials"))
+
 
 def configure_identity_claims(
     *, name_claim: str | None, email_claim: str | None
@@ -85,9 +94,9 @@ class Principal:
             ``None`` when the claim is unconfigured or absent.
         email: Email address from the configured email claim, or ``None``.
         kind: ``"human"`` for a usable token ``sub``; ``"service"`` for
-            a caller identified only by client ID; ``"local"`` without an
-            attributable token. OAuth service subjects remain a known
-            limitation (#1480).
+            a caller identified only by client ID, or whose token the issuer
+            marks as issued to an application (#1480); ``"local"`` without
+            an attributable token.
     """
 
     subject: str | None
@@ -193,16 +202,33 @@ def _claim_state(claims: dict[str, Any], key: str) -> str:
     return "empty" if claims[key] == "" else "not_a_string"
 
 
+def _is_application_token(claims: dict[str, Any]) -> bool:
+    """Return whether the issuer marks *claims* as issued to an application.
+
+    Each marker means "no end user" wherever it appears, so the check needs
+    no knowledge of the issuer. Tokens without one, including the service
+    accounts some issuers mint, stay human (#1480; the issuer survey is in
+    ``docs/design/reference/authenticated-subjects.md``).
+    """
+    sub = _claim_value(claims, "sub")
+    if sub is None:
+        return True
+    if any(_claim_value(claims, key) == sub for key in _CLIENT_ID_CLAIMS):
+        return True
+    return any(claims.get(key) == value for key, value in _APPLICATION_TOKEN_MARKERS)
+
+
 def resolve_mcp_principal() -> Principal:
     """Resolve the caller's :class:`Principal` from the MCP request context.
 
     Call inside a tool handler (it reads the request context). Subject rules
     retain the authenticated identifier from ``fastmcp_pvl_core.get_subject``.
-    A usable token ``sub`` retains human attribution; a client-ID fallback
-    is a service identity, including static and mapped bearer credentials.
-    Without an attributable token the principal is local. OAuth service
-    tokens carrying ``sub`` remain a known limitation (#1480), since OAuth
-    does not universally distinguish people from applications. Display name and
+    A usable token ``sub`` retains human attribution unless the issuer marks
+    the token as issued to an application: its ``sub`` equals the client's
+    ID, or it carries Entra ID's ``idtyp: app`` or Auth0's
+    ``gty: client-credentials`` (#1480). Such a token, and a client-ID
+    fallback (static and mapped bearer credentials), is a service identity.
+    Without an attributable token the principal is local. Display name and
     email are read from the token claims using the keys registered via
     :func:`configure_identity_claims` (non-empty strings only); a configured
     claim an authenticated caller's token does not carry is reported once
@@ -227,6 +253,6 @@ def resolve_mcp_principal() -> Principal:
             subject=subject,
             display_name=display_name,
             email=email,
-            kind="human" if _claim_value(claims, "sub") else "service",
+            kind="service" if _is_application_token(claims) else "human",
         )
     return Principal(subject=None, display_name=display_name, email=email, kind="local")
