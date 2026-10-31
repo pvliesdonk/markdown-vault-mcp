@@ -79,6 +79,8 @@ class GuidanceConfig:
         okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
         okf_write: Whether the enforced-write layer maintains the reserved
             files, which decides whether the agent is asked to.
+        boot_reindex: Whether startup reconciles changes made while no
+            server ran; when it does not, the agent is told to reindex.
     """
 
     read_only: bool
@@ -86,6 +88,7 @@ class GuidanceConfig:
     summarize_note_limit: int | None = None
     okf_mode: str = "off"
     okf_write: bool = False
+    boot_reindex: bool = True
 
 
 def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
@@ -130,6 +133,10 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     layer nobody else keeps ``log.md`` / ``index.md`` current, and with it the
     server regenerates a written folder's ``index.md``, so telling the agent
     to edit that file invites work the next write replaces (#1431).
+    With ``boot_reindex`` off, files changed while no server ran stay out of
+    the index until a reindex, and only the model can run one in-session, so
+    the sentence names the tool (#1542); a deployment that keeps the default
+    pays nothing.
 
     Args:
         config: The configuration the fragments below branch on.
@@ -195,6 +202,16 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
                 f"{upkeep} Use root-relative Markdown links, "
                 "%20 for spaces.",
                 InstructionRole.INSTANCE,
+            )
+        )
+    if not config.boot_reindex:
+        snippets.append(
+            Snippet(
+                "This instance does not reindex at startup, so search misses "
+                "changes made to files while it was stopped; call 'reindex' "
+                "first when those matter.",
+                InstructionRole.INSTANCE,
+                ("reindex",),
             )
         )
     if not config.read_only:

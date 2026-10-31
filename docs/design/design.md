@@ -5375,12 +5375,21 @@ mode — when `read_only=True` the text states this is a read-only instance,
 otherwise it describes write tool semantics — which signals capability
 status to clients and reduces irrelevant prompting.
 
+With `MARKDOWN_VAULT_MCP_BOOT_REINDEX=false` an `INSTANCE` sentence tells the
+model that search misses changes made while the server was stopped and to
+call `reindex` first when they matter (#1542). Under stdio the boot log that
+says the same is usually swallowed, and the `reindex` tool's own description
+says it is for files changed outside the server, which on such a deployment
+is the normal state, so nothing else prompts the model to run it. The
+sentence declares `reindex` in `requires_tools`, and a deployment that keeps
+the default pays nothing for it.
+
 Two mechanisms decide what a client actually sees, and they are not
 interchangeable:
 
 - **Python conditionals in `_domain_snippets()`** gate on configuration
   (`read_only`, a configured conventions file, an OKF mode, a summarize
-  backend). These are the only gate that works for this server's
+  backend, the boot reindex switch). These are the only gate that works for this server's
   `mcp.disable(tags=...)` calls, which pvl-core deliberately does not model:
   a disabled-but-registered tool still counts as exposed at finalize.
 - **The `requires_tools` declaration on a snippet** gates on the operator's
