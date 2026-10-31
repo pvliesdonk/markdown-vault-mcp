@@ -30,7 +30,7 @@ A streamed search reads the vectors from the database in batches of `MARKDOWN_VA
 
 ## What each store costs
 
-The figures below come from running the whole server on one host at two vault sizes, twice each ([#1899](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899)). Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.
+The figures below come from running the whole server on one host at two vault sizes, twice each ([#1899](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899)); `numpy`'s peak memory at the larger size is from a later run, after [#1936](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936) stopped it copying its vectors when it opens. Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.
 
 | | `sqlite`, streamed | `numpy` | `postgres` |
 |---|---|---|---|
@@ -43,7 +43,7 @@ The figures below come from running the whole server on one host at two vault si
 | Disk | 110 MB | 106 MB | 144 MB in the schema |
 | Restart until search works | 2.3 s | 1.8 to 1.9 s | 10 s |
 | **32,520 notes, 227,640 sections** | | | |
-| Peak memory while searching, above keyword search alone | 25 MB | about 2,100 MB | 20 MB, plus the database |
+| Peak memory while searching, above keyword search alone | 25 MB | about 1,250 MB | 20 MB, plus the database |
 | Memory the server holds once searching is done | 106 MB | 1,330 MB | 117 MB |
 | Semantic search, 95 in 100 within | 1.00 to 1.04 s | 81 to 107 ms | 0.51 to 0.53 s |
 | Similar notes, 95 in 100 within | 1.06 s | 0.31 to 0.33 s | 0.49 s |
@@ -53,7 +53,7 @@ The figures below come from running the whole server on one host at two vault si
 
 How to read it:
 
-- **Memory.** A streamed store's search memory barely moves with the vault. `numpy`'s peak while searching is about twice its vectors' size, which grows with sections × dimensions, and it keeps the vectors themselves afterwards ([#1936](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936) asks where the rest goes). The PostgreSQL service itself used about 530 MB at rest at the smaller size and 580 MB at the larger, on top of the server.
+- **Memory.** A streamed store's search memory barely moves with the vault. `numpy` keeps every vector in memory, beside each section's text and metadata, so its memory grows with sections × dimensions. At the larger size that came to about 1.25 GB above the server's own memory, 0.93 GB of it vectors. The PostgreSQL service itself used about 530 MB at rest at the smaller size and 580 MB at the larger, on top of the server.
 - **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` streams too, but scores in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
 - **Edits.** `sqlite`'s figure counts the edited note's pages and the keyword index together; `postgres` writes its WAL in the database and the keyword index locally; `numpy` rewrites the whole store on every save.
 - **Restarts.** No store embeds an unchanged note again after a restart or a crash. `postgres` takes four to eight times as long as a local store to come back; [#1937](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1937) looks into why.
@@ -65,7 +65,7 @@ How to read it:
 
 The figures are a measured envelope, not a guarantee:
 
-- one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs; a few percent between runs is within what another run could move;
+- one host (an 8-core Intel desktop with about 130 GB of memory and a local ext4 disk), two runs, and a third for `numpy`'s peak memory at the larger size, written to a memory-backed folder; a few percent between runs is within what another run could move;
 - a stand-in embedding provider that makes no network calls, so the build figures, time and memory alike, leave out the real provider, which dominates a real build;
 - PostgreSQL in a container on the same host; a database across a network adds a round trip to every search and every restart check;
 - a uniform synthetic vault (six sections a note); real vaults vary note size and folder shape;

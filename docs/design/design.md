@@ -4975,7 +4975,8 @@ SQLite store:
   index) where numpy rewrites its whole store, 106 MB deployed and 1.06 GB
   at growth;
 - adds 20–25 MB to the process for searching, where numpy adds 165–205 MB
-  deployed and about 2.1 GB at growth, about twice its vector matrix;
+  deployed and about 2.1 GB at growth, about twice its vector matrix
+  (1.25 GB at growth since #1936 removed a copy of the matrix at open);
 - pays in latency: semantic p95 is 140–159 ms deployed against numpy's
   39–45 ms, and 1.0 s at growth against 0.08–0.11 s; similar-note search at
   growth is 1.06 s.
