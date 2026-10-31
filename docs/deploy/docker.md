@@ -268,4 +268,6 @@ This server keeps its search index (`index.db`), its embeddings and the FastEmbe
 ### Git
 
 The image includes `git` and `git-lfs`. For a vault that commits and pushes the changes made through the server, set the variables in [Git integration](../use/git-integration.md#managed-mode-recommended-for-containerized-deployments). An empty vault folder plus `MARKDOWN_VAULT_MCP_GIT_REPO_URL` is cloned at the first start.
+
+After a fetch, pull or commit, git's automatic maintenance detaches into the background, and the [init process](#init-process) reaps it once it exits. Images up to 5.1.0 have no init: there each pull left one zombie `git` process, until the container could start no more processes. If you run 5.1.0 or earlier with git sync on, add `init: true` to the service in `compose.yml`, or `--init` to `docker run`.
 <!-- DOMAIN-DOCKER-EXTRA-END -->
