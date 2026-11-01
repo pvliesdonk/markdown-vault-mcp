@@ -519,6 +519,16 @@ class TestOpenOutcomes:
         with pytest.raises(StoreCorruptError, match="bytes"):
             backend.open(base, IDENT)
 
+    def test_metadata_that_will_not_decode_is_corrupt(self, tmp_path: Path) -> None:
+        # Damaged pages can leave bytes that are not UTF-8 in a text column;
+        # Python reports that as an OperationalError with no SQLite error
+        # name, which must not read as merely unavailable (#1881).
+        _seed(tmp_path)
+        _sql(tmp_path, "UPDATE chunks SET metadata = CAST(x'ff' AS TEXT)")
+        backend, base = SqliteVectorBackend(), _base(tmp_path)
+        with pytest.raises(StoreCorruptError, match="decode"):
+            backend.open(base, IDENT)
+
     def test_metadata_that_is_not_an_object_is_corrupt(self, tmp_path: Path) -> None:
         _seed(tmp_path)
         _sql(tmp_path, "UPDATE chunks SET metadata = '[1, 2]'")

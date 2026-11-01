@@ -123,6 +123,11 @@ _MEMORY = ":memory:"
 _TABLES = frozenset({"meta", "documents", "chunks"})
 _CORRUPT_ERRORNAMES = frozenset({"SQLITE_NOTADB", "SQLITE_CORRUPT"})
 
+#: How Python's sqlite3 reports a text cell that is not UTF-8. It carries no
+#: SQLite error name: the bytes read, but damaged pages left them unreadable
+#: as the text the store wrote (#1881).
+_UNDECODABLE = "Could not decode to UTF-8"
+
 _SCHEMA = (
     "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     "CREATE TABLE documents (path TEXT PRIMARY KEY, token TEXT)",
@@ -213,12 +218,23 @@ def _outcome(kind: type[StoreOpenError], message: str, where: str) -> StoreOpenE
 def _classified(
     exc: sqlite3.Error, where: str, action: str = "opened"
 ) -> StoreOpenError:
-    """Return the outcome a SQLite error stands for, for an open or a read."""
+    """Return the outcome a SQLite error stands for, for an open or a read.
+
+    Damage is corrupt: a file SQLite does not recognise, pages it reports
+    corrupt, or a text cell that no longer decodes. Anything else, such as a
+    refused permission or an I/O error, is unavailable.
+    """
     name = getattr(exc, "sqlite_errorname", "")
     if name in _CORRUPT_ERRORNAMES or "not a database" in str(exc):
         return _outcome(
             StoreCorruptError,
             f"Vector store at {where} is not a SQLite database: {exc}",
+            where,
+        )
+    if str(exc).startswith(_UNDECODABLE):
+        return _outcome(
+            StoreCorruptError,
+            f"Vector store at {where} holds text that will not decode: {exc}",
             where,
         )
     return _outcome(

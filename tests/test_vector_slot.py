@@ -817,6 +817,34 @@ class TestTheSlotAfterReview:
 
 
 class TestCorruptRecovery:
+    def test_a_sqlite_store_that_will_not_decode_is_moved_aside_and_rebuilt(
+        self, tmp_path: Path
+    ) -> None:
+        import sqlite3
+
+        from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
+
+        base = tmp_path / "vec"
+        store = SqliteVectorBackend().open(base, IDENTITY)
+        store.replace_document(doc("a.md", [[1.0, 0.0, 0.0]]), expected_token=ANY_TOKEN)
+        store.close()
+        conn = sqlite3.connect(base.with_suffix(".sqlite3"))
+        conn.execute("UPDATE chunks SET metadata = CAST(x'ff' AS TEXT)")
+        conn.commit()
+        conn.close()
+        slot = VectorStoreSlot(
+            backend=SqliteVectorBackend(),
+            location=base,
+            provider=PROVIDER,
+            text_format="v1",
+        )
+
+        rebuilt = slot.get(rebuild=slot.fresh)
+
+        assert rebuilt.count == 0
+        assert len(list(tmp_path.glob("vec.sqlite3.corrupt-*"))) == 1
+        slot.close()
+
     def test_a_stale_corrupt_failure_moves_nothing_aside(self, tmp_path: Path) -> None:
         # Another thread already moved the store aside and rebuilt it: a
         # failure seen before that must not rename the healthy store (#1505).

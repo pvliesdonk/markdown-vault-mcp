@@ -4160,7 +4160,12 @@ later truncate, at the next generation or at close. No file exists before the fi
 write; a first write that cannot create the database raises *unavailable*,
 logged like any failed write. A writable open holds the `{base}.lock`
 writer lock above but takes no SQLite write lock on an existing store and changes nothing in a database that is not a vector
-store before refusing it. A store that fails its open as corrupt has its
+store before refusing it. An open or a read classes a SQLite error as
+*corrupt* when SQLite does not recognise the file or reports damaged pages
+(`SQLITE_NOTADB`, `SQLITE_CORRUPT`). It does the same when a text cell no
+longer decodes as UTF-8, which Python reports with no SQLite error name and
+which is how a damaged page often shows (#1881). A refused permission or an
+I/O error stays *unavailable*. A store that fails its open as corrupt has its
 `.sqlite3`, `-wal` and `-shm` renamed aside by its `quarantine` before a
 rebuild (§ Embedding transitions and recovery, below). `open_fresh` reads and checks nothing: before its
 first write it moves a file that is not a vector store, or whose pages
