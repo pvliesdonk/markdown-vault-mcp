@@ -15,7 +15,7 @@ connection turns ``idle_session_timeout`` off, since it is idle between
 writes by design, and carries the store's statement and lock timeouts.
 Every write is also row-locked and token-conditional (#1504 child 5), so
 the lease is policy, not the only guard. What this relies on in PostgreSQL
-is in ``docs/design/reference/postgresql-pgvector.md``.
+is in ``docs/design/reference/postgresql-writes.md``.
 """
 
 from __future__ import annotations
