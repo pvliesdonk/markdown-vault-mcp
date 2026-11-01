@@ -6,7 +6,8 @@
   corrected for #1802. `VectorStoreSlot.fresh()` has closed the store it
   replaces since #1832, so the old store keeps no idle connections, and a
   write through it raises. The verdict still holds. Source: this project's
-  code and tests; no SQLite claim changed.
+  code and tests; no SQLite claim changed. Next review unchanged:
+  2027-04-15.
 
 ## 2026-10-31
 

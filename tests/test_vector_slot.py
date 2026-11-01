@@ -22,6 +22,8 @@ from tests.fixtures.vector_store_contract import doc
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.interfaces import VectorBackend
+
 PROVIDER = MockEmbeddingProvider(dim=3)
 IDENTITY = EmbeddingIdentity.of(PROVIDER, "v1")
 
@@ -884,7 +886,7 @@ class TestCorruptRecovery:
         assert not (tmp_path / "vec.v2.json").exists()  # nothing put back
 
 
-def _backend(name: str) -> Any:
+def _backend(name: str) -> VectorBackend:
     from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
 
     if name == "numpy":
@@ -906,10 +908,20 @@ class TestASupersededStore:
             text_format="v1",
         )
         old = slot.writable(rebuild=None)
+        # A write first, so a SQLite store holds open connections when replaced.
+        old.replace_document(doc("early.md", [[0, 1, 0]]), expected_token=None)
         rebuilt = slot.fresh()
+        # Published before the refused write: a publish afterwards would
+        # overwrite a late row that had reached the file, hiding it.
+        rebuilt.publish_generation(IDENTITY, [doc("new.md", [[0, 0, 1]])])
+        with pytest.raises(RuntimeError, match="closed"):
+            old.replace_document(doc("late.md", [[1, 0, 0]]), expected_token=None)
+        slot.close()
+        # The file holds only the rebuild. For numpy this cannot see a late
+        # write either way (an old store that wrote would never persist it);
+        # the raise above is what pins it there.
+        reopened = _backend(backend).open(tmp_path / "vec", IDENTITY)
         try:
-            with pytest.raises(RuntimeError, match="closed"):
-                old.replace_document(doc("late.md", [[1, 0, 0]]), expected_token=None)
-            assert "late.md" not in set(rebuilt.tokens())
+            assert set(reopened.tokens()) == {"new.md"}
         finally:
-            slot.close()
+            reopened.close()

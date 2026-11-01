@@ -4467,7 +4467,8 @@ store is kept as provisional and reused by later reads, and the slot
 closes it when a sized store replaces it or the slot closes; `fresh()`
 likewise closes the store it replaces, and does so before opening the
 fresh one, so a numpy store's pending rows land before the rebuild's
-first persist, never over it. A search learns the provider's dimension
+first persist, never over it; a write through the old store then raises
+(#1802). A search learns the provider's dimension
 from its own query vector, at no extra call: one of another length than a
 populated store's (the model changed its dimension under the same name)
 rebuilds an owned store once, as a model change does, and a rebuild that
