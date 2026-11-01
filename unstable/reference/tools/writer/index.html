@@ -3302,7 +3302,7 @@ notes follow it.</p>
 <td><code>if_match</code></td>
 <td><code>string \| null</code></td>
 <td><code>null</code></td>
-<td>Etag from read of <code>old_path</code>; omit when renaming several linked notes together.</td>
+<td>Etag from read of <code>old_path</code>; still accepted when the only changes since are link rewrites the server made.</td>
 </tr>
 <tr>
 <td><code>update_links</code></td>
@@ -3318,21 +3318,34 @@ counting the number of source documents whose links were updated.
 Carries hint (str) only when <code>update_links</code> was requested for an
 attachment, saying why nothing was rewritten.</p>
 <ul>
-<li>remote (dict, optional): present only while the vault's git clone
+<li>
+<p><code>link_rewrites_since_etag</code> (int, optional): present only when
+  <code>if_match</code> was accepted although the server had since rewritten links
+  in the note; counts those rewrites, which the rename kept.</p>
+</li>
+<li>
+<p>remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
-  change is committed locally only.</li>
+  change is committed locally only.</p>
+</li>
 </ul>
 <p><strong>Outcomes and errors</strong></p>
 <ul>
 <li>DocumentNotFoundError: If <code>old_path</code> does not exist.</li>
 <li>DocumentExistsError: If <code>new_path</code> already exists.</li>
 <li>ValueError: If the path fails traversal validation.</li>
-<li><code>MCPError</code>: If <code>if_match</code> is provided and the file has been modified (ConcurrentModificationError).</li>
+<li><code>MCPError</code>: If <code>if_match</code> is provided and the file has changed since, other than through link rewrites the server made (ConcurrentModificationError).</li>
 <li>TimeoutError: With <code>update_links</code> on a note, if writes queued before the call have not reached the index within 60 seconds; nothing is changed.</li>
 <li>IndexUnavailableError: With <code>update_links</code> on a note, if the index build failed; nothing is changed.</li>
 </ul>
 <!-- DOMAIN-EXAMPLE-rename-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
+<p>Two renames sent together, each with the etag from one earlier read, where <code>ideas/b.md</code> links to <code>ideas/a.md</code>:</p>
+<div class="highlight"><pre><span></span><code>rename(old_path="ideas/a.md", new_path="projects/a.md", if_match=&lt;etag of a&gt;, update_links=true)
+rename(old_path="ideas/b.md", new_path="projects/b.md", if_match=&lt;etag of b&gt;, update_links=true)
+</code></pre></div>
+<p>The first rename rewrites the link inside <code>ideas/b.md</code>, so the second call's etag no longer matches the file. The server recorded that rewrite, so it still accepts the etag. It moves the note with the rewritten link and returns <code>link_rewrites_since_etag: 1</code>.</p>
+<p>The etag is accepted only when every change since it is a link rewrite the server made in the last five minutes, by <code>rename</code> or <code>move_folder</code>. Any other edit, or a server restart in between, makes the rename fail on the etag as before, and the client reads the note again.</p>
 <!-- DOMAIN-EXAMPLE-rename-END -->
 
 <h2 id="move_folder"><code>move_folder</code><a class="headerlink" href="#move_folder" title="Permanent link">&para;</a></h2>

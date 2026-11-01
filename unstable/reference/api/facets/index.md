@@ -640,7 +640,7 @@ Raises:
 | `ConcurrentModificationError` | If if_match is provided and does not match.  |
 | `DocumentNotFoundError`       | If path does not exist.                      |
 
-### `rename(old_path, new_path, if_match=None, *, update_links=False)`
+### `rename(old_path, new_path, if_match=None, *, update_links=False, tolerate_link_rewrites=False)`
 
 Rename or move a document or attachment.
 
@@ -648,12 +648,13 @@ Moves the file on disk and updates the FTS / vector indices. When *update_links*
 
 Parameters:
 
-| Name           | Type   | Description                                                                                    | Default                                                                |
-| -------------- | ------ | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `old_path`     | `str`  | Current relative path of the document or attachment.                                           | *required*                                                             |
-| `new_path`     | `str`  | Desired relative path after the move.                                                          | *required*                                                             |
-| `if_match`     | \`str  | None\`                                                                                         | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
-| `update_links` | `bool` | When True, rewrite internal links across the vault to reflect the new path. Defaults to False. | `False`                                                                |
+| Name                     | Type   | Description                                                                                                                                                                                                        | Default                                                                |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `old_path`               | `str`  | Current relative path of the document or attachment.                                                                                                                                                               | *required*                                                             |
+| `new_path`               | `str`  | Desired relative path after the move.                                                                                                                                                                              | *required*                                                             |
+| `if_match`               | \`str  | None\`                                                                                                                                                                                                             | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
+| `update_links`           | `bool` | When True, rewrite internal links across the vault to reflect the new path. Defaults to False.                                                                                                                     | `False`                                                                |
+| `tolerate_link_rewrites` | `bool` | When True, accept a note's stale if_match when every change since it is a link rewrite this vault made (#1492); the result's link_rewrites_since_etag counts them. Defaults to False, the strict whole-file check. | `False`                                                                |
 
 Returns:
 
@@ -663,14 +664,14 @@ Returns:
 
 Raises:
 
-| Type                          | Description                                           |
-| ----------------------------- | ----------------------------------------------------- |
-| `SubmodulePathError`          | If either path lies inside a git submodule (#1564).   |
-| `ReadOnlyError`               | If the vault is read-only.                            |
-| `ConcurrentModificationError` | If if_match is provided and does not match.           |
-| `DocumentNotFoundError`       | If old_path does not exist.                           |
-| `DocumentExistsError`         | If new_path already exists.                           |
-| `InvalidRequestError`         | If old_path or new_path escapes the source directory. |
+| Type                          | Description                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| `SubmodulePathError`          | If either path lies inside a git submodule (#1564).                                        |
+| `ReadOnlyError`               | If the vault is read-only.                                                                 |
+| `ConcurrentModificationError` | If if_match is provided and does not match, and tolerate_link_rewrites does not accept it. |
+| `DocumentNotFoundError`       | If old_path does not exist.                                                                |
+| `DocumentExistsError`         | If new_path already exists.                                                                |
+| `InvalidRequestError`         | If old_path or new_path escapes the source directory.                                      |
 
 ### `move_folder(old_dir, new_dir)`
 

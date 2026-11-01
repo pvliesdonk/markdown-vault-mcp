@@ -5848,7 +5848,7 @@ same contract as :attr:<code>WriteResult.unresolved_links</code>.</p>
 
 
 <h2 id="markdown_vault_mcp.types.RenameResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">RenameResult</span><span class="p">(</span><span class="n">old_path</span><span class="p">,</span> <span class="n">new_path</span><span class="p">,</span> <span class="n">updated_links</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">hint</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">RenameResult</span><span class="p">(</span><span class="n">old_path</span><span class="p">,</span> <span class="n">new_path</span><span class="p">,</span> <span class="n">updated_links</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">hint</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">link_rewrites_since_etag</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -5921,6 +5921,20 @@ requested — set when the renamed file is an attachment, whose
 references are not tracked as links (#1338) — or which linking
 notes inside a git submodule still name the old path, since
 this server does not change them (#1564). <code>None</code> otherwise.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.RenameResult.link_rewrites_since_etag">link_rewrites_since_etag</span></code></td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>How many link rewrites the server made to
+the note since the caller's <code>if_match</code> etag, when the rename
+accepted that etag across them (#1492). <code>None</code> when the etag
+matched outright or none was passed.</p>
               </div>
             </td>
           </tr>

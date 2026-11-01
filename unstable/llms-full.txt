@@ -1510,9 +1510,9 @@ A failed sign-in names its cause: `invalid_client` is a client ID or secret that
 
 ### Claims this server reads
 
-This server reads claims for one thing: the author of a git commit. With `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` and `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` set (to `name` and `email`, say), a commit made for a signed-in user names that user as its author. The committer stays the server's own identity. In `oidc-proxy` mode the claims come from the provider's ID token by default (from the access token with `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true`), and in `remote` mode from the access token. The provider must put them in the token the server reads. A missing claim falls back to the server's identity, with one warning in the log. The scopes that carry these claims (`profile`, `email`) go in `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`.
+This server reads claims for two things: the author of a git commit, and whether a caller is a person or an application. With `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` and `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` set (to `name` and `email`, say), a commit made for a signed-in user names that user as its author. The committer stays the server's own identity. In `oidc-proxy` mode the claims come from the provider's ID token by default (from the access token with `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true`), and in `remote` mode from the access token. The provider must put them in the token the server reads. A missing claim falls back to the server's identity, with one warning in the log. The scopes that carry these claims (`profile`, `email`) go in `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`.
 
-For Open Knowledge Format provenance, a signed-in user counts as a person; [OKF](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/index.md) explains what that changes.
+For Open Knowledge Format provenance, a token counts as a person unless the provider marks it as an application's (its `sub` equals the client ID, or it carries `idtyp: app` or `gty: client-credentials`) or its `sub` is listed in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS`. Keycloak's client-credentials tokens carry no such mark: their `sub` is the client's service-account user, so list that user's ID there. [OKF](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/index.md) explains what the difference changes.
 
 # Reverse proxy
 
@@ -3299,7 +3299,7 @@ The steps above keep a bundle conformant by convention. The enforced write layer
 
 With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
 
-- **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the instant of the write, in UTC (`2026-09-07T05:32:29Z`), as the OKF spec requires of every timestamp. `by` is `human:<subject>` when the token carries a usable `sub` claim the issuer does not mark as an application's, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its `sub` equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries `gty: client-credentials` (Auth0) or `idtyp: app` (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark, so those tokens still receive human attribution. It records who called the write, which is not the same as who wrote the words, so an agent writing under your token stamps your identity. Any existing `generated` value is replaced, including one another tool wrote. The field tracks the last write this server saw rather than the note's history.
+- **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the instant of the write, in UTC (`2026-09-07T05:32:29Z`), as the OKF spec requires of every timestamp. `by` is `human:<subject>` when the token carries a usable `sub` claim the issuer does not mark as an application's, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its `sub` equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries `gty: client-credentials` (Auth0) or `idtyp: app` (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark. List those accounts' `sub` values in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` so their writes use the tool actor too; an unlisted one receives human attribution. It records who called the write, which is not the same as who wrote the words, so an agent writing under your token stamps your identity. Any existing `generated` value is replaced, including one another tool wrote. The field tracks the last write this server saw rather than the note's history.
 - **Invalidates prior review.** A content change means an earlier human review no longer describes the current note, so the server clears `verified`. This fires on any content-changing write, including an edit that touches only a frontmatter line. A `rename` moves the file without changing its content, so it leaves both fields alone. Clearing is one-way. The entries are removed rather than archived, and a write that changes nothing of substance clears them just the same.
 
 Both fields describe what this server observed on its own write path. A note changed by anything else (a teammate's editor, a git pull, a script) carries whatever its author left there, and the layer neither notices nor corrects that.
@@ -3314,9 +3314,9 @@ Enabling the layer also exposes the [`okf_verify`](https://pvliesdonk.github.io/
 
 One subtlety is worth understanding before you rely on the `human-reviewed` tier. The authenticated subject is *whose token* made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to `human-reviewed` on its own, and the tier would mean nothing. `MARKDOWN_VAULT_MCP_OKF_VERIFY` controls how the tool guards against that. It applies only when `OKF_WRITE` is on. Setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would have no effect.
 
-- **`elicit`** (the default) makes `okf_verify` ask you to confirm the review through an MCP [elicitation](https://gofastmcp.com/servers/elicitation), a prompt your client shows you, and it writes the `verified` entry only when you answer yes. It fails closed. On modern MCP connections the tool returns an input request and your client repeats the call with your answer; on older handshake connections it uses server-initiated elicitation. When your client cannot show the prompt or you decline it, the call fails and writes nothing. Use a client whose elicitation handler actually presents the question to a person: an automatically affirmative handler would defeat the human-review gate. The recorded subject is your token's `sub` when it identifies a person, or `local` when you use a service credential, a token the issuer marks as an application's, or no auth.
+- **`elicit`** (the default) makes `okf_verify` ask you to confirm the review through an MCP [elicitation](https://gofastmcp.com/servers/elicitation), a prompt your client shows you, and it writes the `verified` entry only when you answer yes. It fails closed. On modern MCP connections the tool returns an input request and your client repeats the call with your answer; on older handshake connections it uses server-initiated elicitation. When your client cannot show the prompt or you decline it, the call fails and writes nothing. Use a client whose elicitation handler actually presents the question to a person: an automatically affirmative handler would defeat the human-review gate. The recorded subject is your token's `sub` when it identifies a person, or `local` when you use a service credential, a token the issuer marks as an application's, a token whose `sub` is listed in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS`, or no auth.
 - **`off`** hides the tool entirely. Use this when reviews are recorded only by tooling outside the server (a CLI step, a git hook, or a CI job that writes `verified` directly) and you want no in-session path to the tier at all.
-- **`trust-auth`** attributes to a token's `sub` with no confirmation. It refuses static bearer credentials, other client-ID-only identities, OAuth tokens the issuer marks as an application's (see above), and callers without auth. Choose it only when the sole caller of `okf_verify` is a human-driven interface rather than an agent.
+- **`trust-auth`** attributes to a token's `sub` with no confirmation. It refuses static bearer credentials, other client-ID-only identities, OAuth tokens the issuer marks as an application's or whose `sub` is listed in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` (see above), and callers without auth. Choose it only when the sole caller of `okf_verify` is a human-driven interface rather than an agent.
 
 **Upgrading bearer-based review clients:** deployments that used `trust-auth` with a static or mapped bearer token must switch `MARKDOWN_VAULT_MCP_OKF_VERIFY` to `elicit` and use a client that presents the confirmation to a person. Existing provenance and verification entries are not rewritten.
 
@@ -5066,6 +5066,7 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 | `MARKDOWN_VAULT_MCP_OKF_MODE`               | `auto`            | No       | OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `MARKDOWN_VAULT_MCP_OKF_WRITE`              | `false`           | No       | OKF (Open Knowledge Format) enforced write layer. When true on an OKF-active vault, the server stamps generated provenance on each write and clears any verified attestation when a note's content changes. It also keeps each written folder's log.md and index.md current, and exposes the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default.                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `MARKDOWN_VAULT_MCP_OKF_VERIFY`             | `elicit`          | No       | How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error. |
+| `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS`       | (none)            | No       | Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: its OKF writes stamp the tool actor instead of human:, and okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name).                                                                                                                                                                                                                                                                   |
 | `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS`  | (none)            | No       | Comma-separated allowed attachment extensions (such as pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist. A link whose target has a listed extension is not part of the link graph; changing the list rebuilds the index once.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0`             | No       | Maximum attachment size in MB returned by read / accepted by write; 0 disables the limit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`    | `262144`          | No       | Maximum bytes returned by a full-document read of a note; use `read(path, section=…)` for partial reads. 0 disables the limit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -6139,13 +6140,14 @@ For a note, always pass `update_links`=True. Parent folders are created as neede
 | -------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `old_path`     | `string`         | required | Current path, such as `"drafts/idea.md"` or `"assets/old.png"`.                                                                                         |
 | `new_path`     | `string`         | required | New path, such as `"projects/idea.md"`, where nothing exists yet.                                                                                       |
-| `if_match`     | `string \| null` | `null`   | Etag from read of `old_path`; omit when renaming several linked notes together.                                                                         |
+| `if_match`     | `string \| null` | `null`   | Etag from read of `old_path`; still accepted when the only changes since are link rewrites the server made.                                             |
 | `update_links` | `boolean`        | `false`  | Rewrite links to `old_path` in other notes so they point at `new_path`; attachment references are not tracked. Default false; pass true for every note. |
 
 **Returns**
 
 Dict with `old_path` (str), `new_path` (str), and `updated_links` (int) counting the number of source documents whose links were updated. Carries hint (str) only when `update_links` was requested for an attachment, saying why nothing was rewritten.
 
+- `link_rewrites_since_etag` (int, optional): present only when `if_match` was accepted although the server had since rewritten links in the note; counts those rewrites, which the rename kept.
 - remote (dict, optional): present only while the vault's git clone cannot reach its remote, with state, reason, since and detail; the change is committed locally only.
 
 **Outcomes and errors**
@@ -6153,9 +6155,20 @@ Dict with `old_path` (str), `new_path` (str), and `updated_links` (int) counting
 - DocumentNotFoundError: If `old_path` does not exist.
 - DocumentExistsError: If `new_path` already exists.
 - ValueError: If the path fails traversal validation.
-- `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
+- `MCPError`: If `if_match` is provided and the file has changed since, other than through link rewrites the server made (ConcurrentModificationError).
 - TimeoutError: With `update_links` on a note, if writes queued before the call have not reached the index within 60 seconds; nothing is changed.
 - IndexUnavailableError: With `update_links` on a note, if the index build failed; nothing is changed.
+
+Two renames sent together, each with the etag from one earlier read, where `ideas/b.md` links to `ideas/a.md`:
+
+```
+rename(old_path="ideas/a.md", new_path="projects/a.md", if_match=<etag of a>, update_links=true)
+rename(old_path="ideas/b.md", new_path="projects/b.md", if_match=<etag of b>, update_links=true)
+```
+
+The first rename rewrites the link inside `ideas/b.md`, so the second call's etag no longer matches the file. The server recorded that rewrite, so it still accepts the etag. It moves the note with the rewritten link and returns `link_rewrites_since_etag: 1`.
+
+The etag is accepted only when every change since it is a link rewrite the server made in the last five minutes, by `rename` or `move_folder`. Any other edit, or a server restart in between, makes the rename fail on the etag as before, and the client reads the note again.
 
 ## `move_folder`
 
@@ -8159,7 +8172,7 @@ Raises:
 | `ConcurrentModificationError` | If if_match is provided and does not match.  |
 | `DocumentNotFoundError`       | If path does not exist.                      |
 
-### `rename(old_path, new_path, if_match=None, *, update_links=False)`
+### `rename(old_path, new_path, if_match=None, *, update_links=False, tolerate_link_rewrites=False)`
 
 Rename or move a document or attachment.
 
@@ -8167,12 +8180,13 @@ Moves the file on disk and updates the FTS / vector indices. When *update_links*
 
 Parameters:
 
-| Name           | Type   | Description                                                                                    | Default                                                                |
-| -------------- | ------ | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `old_path`     | `str`  | Current relative path of the document or attachment.                                           | *required*                                                             |
-| `new_path`     | `str`  | Desired relative path after the move.                                                          | *required*                                                             |
-| `if_match`     | \`str  | None\`                                                                                         | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
-| `update_links` | `bool` | When True, rewrite internal links across the vault to reflect the new path. Defaults to False. | `False`                                                                |
+| Name                     | Type   | Description                                                                                                                                                                                                        | Default                                                                |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `old_path`               | `str`  | Current relative path of the document or attachment.                                                                                                                                                               | *required*                                                             |
+| `new_path`               | `str`  | Desired relative path after the move.                                                                                                                                                                              | *required*                                                             |
+| `if_match`               | \`str  | None\`                                                                                                                                                                                                             | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
+| `update_links`           | `bool` | When True, rewrite internal links across the vault to reflect the new path. Defaults to False.                                                                                                                     | `False`                                                                |
+| `tolerate_link_rewrites` | `bool` | When True, accept a note's stale if_match when every change since it is a link rewrite this vault made (#1492); the result's link_rewrites_since_etag counts them. Defaults to False, the strict whole-file check. | `False`                                                                |
 
 Returns:
 
@@ -8182,14 +8196,14 @@ Returns:
 
 Raises:
 
-| Type                          | Description                                           |
-| ----------------------------- | ----------------------------------------------------- |
-| `SubmodulePathError`          | If either path lies inside a git submodule (#1564).   |
-| `ReadOnlyError`               | If the vault is read-only.                            |
-| `ConcurrentModificationError` | If if_match is provided and does not match.           |
-| `DocumentNotFoundError`       | If old_path does not exist.                           |
-| `DocumentExistsError`         | If new_path already exists.                           |
-| `InvalidRequestError`         | If old_path or new_path escapes the source directory. |
+| Type                          | Description                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| `SubmodulePathError`          | If either path lies inside a git submodule (#1564).                                        |
+| `ReadOnlyError`               | If the vault is read-only.                                                                 |
+| `ConcurrentModificationError` | If if_match is provided and does not match, and tolerate_link_rewrites does not accept it. |
+| `DocumentNotFoundError`       | If old_path does not exist.                                                                |
+| `DocumentExistsError`         | If new_path already exists.                                                                |
+| `InvalidRequestError`         | If old_path or new_path escapes the source directory.                                      |
 
 ### `move_folder(old_dir, new_dir)`
 
@@ -9657,7 +9671,7 @@ Keep collaborator overrides on the corresponding `Vault` keyword arguments.
 
 ## API Reference
 
-## `ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, report_unresolved_links=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, embedding_store='sqlite', embedding_search='', embedding_search_workspace_mb=1, embedding_postgres_dsn=None, embedding_postgres_schema=None, embedding_postgres_pool_size=4, embedding_postgres_statement_timeout_s=30.0, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
+## `ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, report_unresolved_links=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, embedding_store='sqlite', embedding_search='', embedding_search_workspace_mb=1, embedding_postgres_dsn=None, embedding_postgres_schema=None, embedding_postgres_pool_size=4, embedding_postgres_statement_timeout_s=30.0, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', service_subjects=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
 
 Domain config for Markdown Vault MCP. Compose — don't inherit.
 
@@ -10460,18 +10474,19 @@ Attributes:
 | ------ | ----- | ----------------------------------------------- |
 | `path` | `str` | Relative path of the document that was deleted. |
 
-## `RenameResult(old_path, new_path, updated_links=0, hint=None)`
+## `RenameResult(old_path, new_path, updated_links=0, hint=None, link_rewrites_since_etag=None)`
 
 Result of a rename operation.
 
 Attributes:
 
-| Name            | Type  | Description                                                                                                                                                           |
-| --------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `old_path`      | `str` | Original relative path.                                                                                                                                               |
-| `new_path`      | `str` | New relative path after the rename.                                                                                                                                   |
-| `updated_links` | `int` | Number of source documents whose links were actually rewritten. A source the rewrite left byte-identical is not counted, because it still names the old path (#1521). |
-| `hint`          | \`str | None\`                                                                                                                                                                |
+| Name                       | Type  | Description                                                                                                                                                           |
+| -------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old_path`                 | `str` | Original relative path.                                                                                                                                               |
+| `new_path`                 | `str` | New relative path after the rename.                                                                                                                                   |
+| `updated_links`            | `int` | Number of source documents whose links were actually rewritten. A source the rewrite left byte-identical is not counted, because it still names the old path (#1521). |
+| `hint`                     | \`str | None\`                                                                                                                                                                |
+| `link_rewrites_since_etag` | \`int | None\`                                                                                                                                                                |
 
 ## `IndexStats(documents_indexed, chunks_indexed, skipped, walk_complete=True, vault_root_empty=False)`
 

@@ -4176,6 +4176,12 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td>How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error.</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS</code></td>
+<td>(none)</td>
+<td>No</td>
+<td>Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: its OKF writes stamp the tool actor instead of human:<sub>, and okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name).</td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS</code></td>
 <td>(none)</td>
 <td>No</td>

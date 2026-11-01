@@ -7947,7 +7947,7 @@ not match.</p>
 
 
 <h3 id="markdown_vault_mcp.facets.writer.WriterFacet.rename" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">rename</span><span class="p">(</span><span class="n">old_path</span><span class="p">,</span> <span class="n">new_path</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">update_links</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">rename</span><span class="p">(</span><span class="n">old_path</span><span class="p">,</span> <span class="n">new_path</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">update_links</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">tolerate_link_rewrites</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.writer.WriterFacet.rename" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -8039,6 +8039,26 @@ vault to reflect the new path.  Defaults to <code>False</code>.</p>
                   <code>False</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>tolerate_link_rewrites</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, accept a note's stale
+<em>if_match</em> when every change since it is a link rewrite
+this vault made (#1492); the result's
+<code>link_rewrites_since_etag</code> counts them.  Defaults to
+<code>False</code>, the strict whole-file check.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -8054,7 +8074,7 @@ vault to reflect the new path.  Defaults to <code>False</code>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="RenameResult(old_path, new_path, updated_links=0, hint=None)
+                  <code><a class="autorefs autorefs-internal" title="RenameResult(old_path, new_path, updated_links=0, hint=None, link_rewrites_since_etag=None)
 
   
       dataclass
@@ -8107,7 +8127,7 @@ vault to reflect the new path.  Defaults to <code>False</code>.</p>
             <td>
               <div class="doc-md-description">
                 <p>If <em>if_match</em> is provided and does
-not match.</p>
+not match, and <em>tolerate_link_rewrites</em> does not accept it.</p>
               </div>
             </td>
           </tr>

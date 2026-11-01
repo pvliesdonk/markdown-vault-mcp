@@ -282,18 +282,19 @@ Attributes:
 | ------ | ----- | ----------------------------------------------- |
 | `path` | `str` | Relative path of the document that was deleted. |
 
-## `RenameResult(old_path, new_path, updated_links=0, hint=None)`
+## `RenameResult(old_path, new_path, updated_links=0, hint=None, link_rewrites_since_etag=None)`
 
 Result of a rename operation.
 
 Attributes:
 
-| Name            | Type  | Description                                                                                                                                                           |
-| --------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `old_path`      | `str` | Original relative path.                                                                                                                                               |
-| `new_path`      | `str` | New relative path after the rename.                                                                                                                                   |
-| `updated_links` | `int` | Number of source documents whose links were actually rewritten. A source the rewrite left byte-identical is not counted, because it still names the old path (#1521). |
-| `hint`          | \`str | None\`                                                                                                                                                                |
+| Name                       | Type  | Description                                                                                                                                                           |
+| -------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old_path`                 | `str` | Original relative path.                                                                                                                                               |
+| `new_path`                 | `str` | New relative path after the rename.                                                                                                                                   |
+| `updated_links`            | `int` | Number of source documents whose links were actually rewritten. A source the rewrite left byte-identical is not counted, because it still names the old path (#1521). |
+| `hint`                     | \`str | None\`                                                                                                                                                                |
+| `link_rewrites_since_etag` | \`int | None\`                                                                                                                                                                |
 
 ## `IndexStats(documents_indexed, chunks_indexed, skipped, walk_complete=True, vault_root_empty=False)`
 
