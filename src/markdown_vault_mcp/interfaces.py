@@ -77,6 +77,7 @@ __all__ = [
     "VectorBackend",
     "VectorPublisher",
     "VectorReader",
+    "VerifiesStore",
 ]
 
 StoreT_co = TypeVar("StoreT_co", covariant=True)
@@ -537,6 +538,21 @@ class DescribesStore(Protocol):
             RuntimeError: If the store is closed.
             StoreOpenError: If a live detail cannot be read (*unavailable*),
                 or the store's location is gone (*not configured*).
+        """
+        ...
+
+
+@runtime_checkable
+class VerifiesStore(Protocol):
+    """A store that can re-read itself for damage after it opened (#1881); optional."""
+
+    def verify(self) -> None:
+        """Read the whole store again to find damage that arrived after the open.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreCorruptError: If the store is damaged.
+            StoreUnavailableError: If the store cannot be read.
         """
         ...
 

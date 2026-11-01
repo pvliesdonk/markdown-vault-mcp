@@ -9,9 +9,10 @@ fresh generation through the caller's ``rebuild``. A corrupt built-in store
 is first moved aside, every file of it renamed to ``.corrupt-<UTC time>``
 through its backend's ``quarantine``, so nothing is rebuilt over it; a
 rename that is refused leaves it unavailable (#1505). A store that opened
-and finds its damage later is moved aside the same way, through
-:meth:`VectorStoreSlot.condemn`: when a read meets it, or when a full
-rebuild's :meth:`VectorStoreSlot.rebuild_target` checks it first (#1881).
+and finds its damage later is moved aside the same way, by
+:meth:`VectorStoreSlot.condemn` on the writer thread: a read that meets it
+marks it suspect for the rebuild to condemn, and a full rebuild's
+:meth:`VectorStoreSlot.rebuild_target` verifies the store first (#1881).
 Without a rebuild (a
 process that does not own the files) the store's own
 :class:`~markdown_vault_mcp.exceptions.StoreCorruptError` or
@@ -39,7 +40,11 @@ from markdown_vault_mcp.exceptions import (
     StoreIncompatibleError,
     StoreOpenError,
 )
-from markdown_vault_mcp.interfaces import DescribesStore, ReportsResources
+from markdown_vault_mcp.interfaces import (
+    DescribesStore,
+    ReportsResources,
+    VerifiesStore,
+)
 from markdown_vault_mcp.types import EmbeddingIdentity
 
 if TYPE_CHECKING:
@@ -110,6 +115,9 @@ class VectorStoreSlot:
         # Serializes moving a corrupt store aside across threads; the
         # writer lock in the backend only excludes other processes (#1505).
         self._recovery = threading.Lock()
+        # The store a read found damaged after it opened, for the rebuild on
+        # the writer thread to condemn (#1881).
+        self._suspect: EmbeddingStore | None = None
 
     @property
     def location(self) -> Path | str | None:
@@ -288,80 +296,135 @@ class VectorStoreSlot:
                 self._move_aside()
             return None
 
-    def condemn(self, store: EmbeddingStore) -> bool:
-        """Take an owned store that found itself corrupt out of the slot, moving it aside.
+    def _can_move_aside(self) -> bool:
+        """Whether this slot may rename its store's files: owned, on disk, quarantinable."""
+        return (
+            not self._injected
+            and self._owns_files
+            and self._location is not None
+            and getattr(self._backend, "quarantine", None) is not None
+        )
 
-        For damage that shows after the store opened, which
-        :meth:`_recover_corrupt` cannot confirm by opening it again: a
-        damaged SQLite store still opens. The store is the evidence
-        instead, so only the store still installed is condemned; one
-        another thread already replaced is left alone (#1881).
+    def condemn(self, store: EmbeddingStore) -> bool:
+        """Close an owned store found damaged after it opened, and move its files aside.
+
+        For damage :meth:`_recover_corrupt` cannot confirm by opening the
+        store again, since a damaged SQLite store still opens. The store
+        that raised is the evidence instead, so only the store still
+        installed is condemned; one another thread already replaced is left
+        alone (#1881). The slot's lock and a writer-lock share are held
+        from the close through the rename, so no other thread reopens the
+        damaged files in between and no other process takes them. Called on
+        the writer thread, which alone closes an installed store (#559).
 
         Args:
             store: The store that raised ``StoreCorruptError``.
 
         Returns:
             ``True`` once the store is closed and its files moved aside;
-            ``False`` when it is no longer installed, or is injected or not
-            this process's to replace, and nothing was done.
+            ``False`` when it is no longer installed, or the slot may not
+            rename its files (injected, not owned, in memory, or a backend
+            without ``quarantine`` such as PostgreSQL), and nothing was done.
 
         Raises:
             StoreUnavailableError: If the files cannot be renamed.
         """
-        if self._injected or not self._owns_files:
+        if not self._can_move_aside():
             return False
-        with self._recovery:
-            with self._lock:
-                if self._store is not store:
-                    return False
+        with self._recovery, self._lock:
+            if self._store is not store:
+                return False
+            hold = getattr(self._backend, "hold_writer", None)
+            share = hold(self._location) if hold is not None else None
+            try:
                 self._store, self._kept = None, None
-            # Closed first: the store holds the writer lock its backend's
-            # quarantine takes to rename the files.
-            self._discard(store)
-            self._move_aside()
-        logger.warning(
+                if self._suspect is store:
+                    self._suspect = None
+                # Closed before the rename: no handle stays on a renamed
+                # file, and the WAL is folded into the copy first.
+                self._discard(store)
+                self._move_aside()
+            finally:
+                if share is not None:
+                    share.release()
+        logger.info(
             "vector_store_condemned location=%s reason=damaged_after_open",
             self._location,
         )
         return True
 
-    def rebuilt_after_read(
-        self, store: EmbeddingStore, rebuild: Callable[[], object]
-    ) -> EmbeddingStore:
-        """Rebuild after a read found *store* corrupt; return the store to read now.
+    def condemn_suspect(self) -> bool:
+        """Condemn the store a read marked suspect, if it is still installed.
 
-        The store is condemned and rebuilt, as a store that fails its open
-        is. When another thread already replaced it, that store is returned
-        without a rebuild.
+        The vault's rebuild after a fault calls this first, on the writer
+        thread (#1881).
+
+        Returns:
+            Whether a store was condemned.
 
         Raises:
             StoreUnavailableError: If the files cannot be renamed.
-            ValueError: If the rebuild installs no store.
         """
-        if not self.condemn(store):
-            return self.get(rebuild=rebuild)
+        with self._lock:
+            suspect, self._suspect = self._suspect, None
+        return suspect is not None and self.condemn(suspect)
+
+    def rebuilt_after_read(
+        self, store: EmbeddingStore, rebuild: Callable[[], object]
+    ) -> EmbeddingStore | None:
+        """Have a store a read found damaged rebuilt; return the store to read now.
+
+        The read's thread closes nothing: it marks *store* suspect and runs
+        *rebuild*, which condemns it on the writer thread through
+        :meth:`condemn_suspect` before building a fresh store, as for a
+        store that fails its open (#1881).
+
+        Args:
+            store: The store whose read raised ``StoreCorruptError``.
+            rebuild: Rebuilds the store; it must call :meth:`condemn_suspect`
+                first, as the vault's rebuild after a fault does.
+
+        Returns:
+            The rebuilt store; the store another thread installed in place
+            of *store*, without a rebuild; or ``None`` when the slot may not
+            replace *store* (injected, not owned, in memory, no
+            ``quarantine``) or nothing replaced it, for the caller to raise
+            the read's own error.
+
+        Raises:
+            ValueError: If the rebuild leaves *store* or no store installed.
+        """
+        if not self._can_move_aside():
+            return None
+        with self._lock:
+            if self._store is not store:
+                return self._store
+            self._suspect = store
         self._run_rebuild(rebuild, "StoreCorruptError")
-        if self._store is None:
+        rebuilt = self._store
+        if rebuilt is None or rebuilt is store:
             raise ValueError(
                 "Failed to rebuild the vector store after a read found it damaged."
             )
-        return self._store
+        return rebuilt
 
     def _verified(self, store: EmbeddingStore) -> bool:
         """Check an owned store a rebuild would publish into; condemn a damaged one.
 
         Returns:
-            ``False`` once a damaged store is moved aside; ``True`` otherwise,
-            including for a store with no ``verify`` (only the SQLite store
-            can open with damage it has not read) and an injected one.
+            ``False`` when the store is damaged (condemned, or replaced by
+            another thread meanwhile), so the caller starts a fresh one;
+            ``True`` otherwise, including for a store that cannot check
+            itself (the numpy store's open reads everything) and an injected
+            one.
         """
-        verify = getattr(store, "verify", None)
-        if verify is None or self._injected:
+        if self._injected or not isinstance(store, VerifiesStore):
             return True
         try:
-            verify()
+            store.verify()
         except StoreCorruptError:
-            return not self.condemn(store)
+            self.condemn(store)
+            return False
         return True
 
     def _move_aside(self) -> None:

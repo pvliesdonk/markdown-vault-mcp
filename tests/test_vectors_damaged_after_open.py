@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import TYPE_CHECKING
+import threading
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -71,8 +72,8 @@ def _aside(tmp_path: Path) -> list[Path]:
     return sorted(tmp_path.glob("index-db-embeddings.sqlite3.corrupt-*"))
 
 
-def _built(tmp_path: Path) -> Vault:
-    vault = _vault(tmp_path)
+def _built(tmp_path: Path, **kw: object) -> Vault:
+    vault = _vault(tmp_path, **kw)
     vault.index.build_index()
     vault.index.build_embeddings()
     return vault
@@ -106,10 +107,13 @@ class TestAForcedRebuild:
 
 
 class TestASearch:
+    # Only a streamed store reads the database at a search; a resident one
+    # serves from memory and meets the damage at a full rebuild instead.
+
     def test_moves_a_damaged_store_aside_rebuilds_it_and_answers(
         self, tmp_path: Path
     ) -> None:
-        vault = _built(tmp_path)
+        vault = _built(tmp_path, embedding_search="streamed")
         try:
             _damage(tmp_path)
 
@@ -120,11 +124,23 @@ class TestASearch:
         finally:
             vault.close()
 
+    def test_get_similar_recovers_the_same_way(self, tmp_path: Path) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            _damage(tmp_path)
+
+            similar = vault.reader.get_similar("alpha.md")
+
+            assert [r.path for r in similar] == ["beta.md"]
+            assert len(_aside(tmp_path)) == 1
+        finally:
+            vault.close()
+
     def test_a_process_that_does_not_own_the_files_raises_and_renames_nothing(
         self, tmp_path: Path
     ) -> None:
         _built(tmp_path).close()
-        reader = _vault(tmp_path, owns_index_files=False)
+        reader = _vault(tmp_path, owns_index_files=False, embedding_search="streamed")
         try:
             reader.index.build_index()
             reader.reader.search("apples", mode="semantic")  # opens the store
@@ -182,6 +198,47 @@ class TestCondemn:
             stale.close()
             slot.close()
 
+    def test_no_thread_reopens_the_damaged_files_before_they_move(
+        self, tmp_path: Path
+    ) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        backend = SqliteVectorBackend()
+        slot = VectorStoreSlot(
+            backend=backend, location=base, provider=PROVIDER, text_format="v1"
+        )
+        store = slot.get(rebuild=None)
+        opened: list[Any] = []
+        rival = threading.Thread(target=lambda: opened.append(slot.get(rebuild=None)))
+        real = backend.quarantine
+
+        def quarantine(location: Any, **kw: Any) -> Any:
+            # Another thread asks for the store while the files still exist:
+            # it must wait for the rename, not reopen them.
+            rival.start()
+            rival.join(timeout=0.3)
+            assert rival.is_alive()
+            return real(location, **kw)
+
+        backend.quarantine = quarantine  # type: ignore[method-assign]
+
+        assert slot.condemn(store) is True
+
+        rival.join(timeout=5)
+        assert len(list(tmp_path.glob("vec.sqlite3.corrupt-*"))) == 1
+        (reopened,) = opened
+        assert reopened.count == 0  # a fresh store, not the damaged files
+        slot.close()
+
+    def test_a_slot_in_memory_condemns_nothing(self) -> None:
+        slot = _slot(None)  # type: ignore[arg-type]
+        store = slot.writable(rebuild=None)
+
+        assert slot.condemn(store) is False
+
+        assert slot.current() is store
+        slot.close()
+
     def test_a_slot_that_does_not_own_the_files_condemns_nothing(
         self, tmp_path: Path
     ) -> None:
@@ -203,7 +260,123 @@ class TestCondemn:
         slot.close()
 
 
+class TestRebuiltAfterRead:
+    def test_condemns_on_the_rebuild_and_returns_the_rebuilt_store(
+        self, tmp_path: Path
+    ) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = _slot(base)
+        store = slot.get(rebuild=None)
+
+        def rebuild() -> None:
+            assert slot.condemn_suspect() is True
+            slot.fresh()
+
+        rebuilt = slot.rebuilt_after_read(store, rebuild)
+
+        assert rebuilt is not None and rebuilt is not store
+        assert rebuilt.count == 0
+        assert len(list(tmp_path.glob("vec.sqlite3.corrupt-*"))) == 1
+        slot.close()
+
+    def test_returns_the_store_another_thread_installed(self, tmp_path: Path) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = _slot(base)
+        stale = slot.get(rebuild=None)
+        replacement = slot.fresh()
+
+        assert slot.rebuilt_after_read(stale, lambda: pytest.fail("rebuilt")) is (
+            replacement
+        )
+        slot.close()
+
+    def test_a_slot_that_does_not_own_the_files_returns_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = VectorStoreSlot(
+            backend=SqliteVectorBackend(),
+            location=base,
+            provider=PROVIDER,
+            text_format="v1",
+            owns_files=False,
+        )
+        store = slot.get(rebuild=None)
+
+        assert slot.rebuilt_after_read(store, lambda: pytest.fail("rebuilt")) is None
+        slot.close()
+
+    def test_a_rebuild_that_replaces_nothing_raises(self, tmp_path: Path) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = _slot(base)
+        store = slot.get(rebuild=None)
+
+        with pytest.raises(ValueError, match="damaged"):
+            slot.rebuilt_after_read(store, lambda: None)
+        slot.close()
+
+
+class TestRebuildTarget:
+    def test_a_damaged_store_is_condemned_and_a_fresh_one_returned(
+        self, tmp_path: Path
+    ) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = _slot(base)
+        store = slot.get(rebuild=None)
+        _damage_at(base, "UPDATE chunks SET metadata = CAST(x'ff' AS TEXT)")
+
+        target = slot.rebuild_target()
+
+        assert target is not store and target.count == 0
+        assert len(list(tmp_path.glob("vec.sqlite3.corrupt-*"))) == 1
+        slot.close()
+
+    def test_a_damaged_store_replaced_meanwhile_still_gets_a_fresh_one(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = _slot(base)
+        store = slot.get(rebuild=None)
+        _damage_at(base, "UPDATE chunks SET metadata = CAST(x'ff' AS TEXT)")
+        monkeypatch.setattr(slot, "condemn", lambda _store: False)
+
+        target = slot.rebuild_target()
+
+        assert target is not store
+        slot.close()
+
+
+def _damage_at(base: Path, statement: str) -> None:
+    conn = sqlite3.connect(base.with_suffix(".sqlite3"))
+    conn.execute(statement)
+    conn.commit()
+    conn.close()
+
+
 class TestVerify:
+    def test_a_fresh_store_has_nothing_to_check(self, tmp_path: Path) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        store = SqliteVectorBackend().open_fresh(base, IDENTITY)
+        try:
+            store.verify()
+        finally:
+            store.close()
+
+    def test_a_closed_store_refuses(self, tmp_path: Path) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        store = SqliteVectorBackend().open(base, IDENTITY)
+        store.close()
+        with pytest.raises(RuntimeError, match="closed"):
+            store.verify()
+
     def test_a_healthy_store_passes(self, tmp_path: Path) -> None:
         base = tmp_path / "vec"
         _seeded(base)

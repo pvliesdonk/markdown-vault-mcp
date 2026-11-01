@@ -26,6 +26,10 @@ write's outcome; the write then empties a usable database inside its own
 transaction, so a conflict or an interrupt keeps the old rows. Until then
 a reader still opens them.
 
+:meth:`SqliteVectorStore.verify` reads the whole database again from disk,
+rows and pages, for damage that arrived after the open; a full rebuild runs
+it before publishing into the store (#1881).
+
 Reachable open outcomes: *unavailable* (a parent that is not a directory,
 a refused open), *corrupt* (not a database, not a vector store, a vector
 of the wrong length, metadata that is not an object, text that will not

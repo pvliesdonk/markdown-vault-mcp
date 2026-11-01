@@ -4776,16 +4776,26 @@ another one, and is the explicit switch of choice C.
   (#1881). A SQLite store's open reads every chunk row but not every page,
   and a streamed store keeps no rows resident, so the damage can first show
   at a read, or not until a rebuild writes into the damaged pages.
-  `VectorStoreSlot.condemn(store)` handles it: under the recovery lock, and
-  only while that store is still the installed one, it closes the store and
-  moves its files aside, logging WARNING `vector_store_condemned location=%s
+  `VectorStoreSlot.condemn(store)` handles it, on the writer thread, which
+  alone closes an installed store (#559). Only while that store is still
+  the installed one, it holds the recovery lock, the slot's lock and a
+  writer-lock share from the close through the rename, so no thread reopens
+  the damaged files in between and no other process takes them. The rename
+  logs WARNING `vector_store_moved_aside` (`reason=corrupt`) as for a failed
+  open, and `condemn` adds INFO `vector_store_condemned location=%s
   reason=damaged_after_open`. The store is the evidence here, so it is not
   reopened as `_recover_corrupt` does: a damaged SQLite store still opens.
-  One that another thread already replaced is left alone. Two paths call it:
+  One that another thread already replaced is left alone, and a slot that
+  cannot rename files (injected, not owned, in memory, or PostgreSQL, which
+  has no `quarantine`) condemns nothing. Two paths reach it:
   - A search read (`SearchManager._vector_rows`) that raises
-    `StoreCorruptError` sends the store to `rebuilt_after_read`, which
-    condemns it, runs the same rebuild as a store that fails its open, and
-    hands back the rebuilt store for one more read.
+    `StoreCorruptError` sends the store to `rebuilt_after_read`. The search
+    thread only marks the store suspect and runs the usual rebuild after a
+    fault; on the writer thread, `rebuild_after_fault` first calls
+    `condemn_suspect()` and then cold-builds a fresh store. The rebuilt
+    store gets one more read. Only a streamed store's search reads the
+    database: a resident SQLite store serves searches from memory, so its
+    damage after open is found by a full rebuild, an import or a restart.
   - A full build's `rebuild_target` calls the installed store's `verify()`
     before publishing into it. The SQLite store re-reads every chunk and
     document row and runs `PRAGMA quick_check`, through a read-only
@@ -4796,7 +4806,8 @@ another one, and is the explicit switch of choice C.
 
   A process that does not own the files condemns nothing and raises
   `StoreCorruptError`. A write that meets the damage is not recovered on
-  the writer thread; the next search or full build recovers it (#1976).
+  the writer thread, and an incremental `build_embeddings` runs no
+  `verify`; the next streamed search or full build recovers it (#1976).
 - As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not
