@@ -10,7 +10,7 @@ uses, NaN and infinity refused (``jsonb`` rejects them), and every string
 (PostgreSQL ``text`` and ``jsonb`` cannot hold one) and lone surrogates
 (not valid Unicode). A path or folder longer than a btree index entry can
 hold is refused too. Where this departs from the SQLite store is recorded
-in ``docs/design/reference/postgresql-pgvector.md``.
+in ``docs/design/reference/pgvector-search.md``.
 """
 
 from __future__ import annotations

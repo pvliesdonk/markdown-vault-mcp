@@ -5,7 +5,9 @@ exactly the expected columns count as one; none of the three is an empty
 store, and anything in between is corrupt. The check reads ``pg_catalog``,
 which shows every object whatever the role may select, so a store the role
 cannot read is never mistaken for an empty one. Every name is
-schema-qualified; nothing relies on ``search_path``.
+schema-qualified; nothing relies on ``search_path``. What this relies on in
+PostgreSQL is in ``docs/design/reference/postgresql-writes.md`` and, for
+relation sizes, ``docs/design/reference/postgresql-schema-and-operations.md``.
 """
 
 from __future__ import annotations

@@ -11,7 +11,8 @@ write is one durable transaction under the meta-row lock; a store from
 ``open_fresh`` replaces what the schema holds on its first write.
 PostgreSQL scores and sorts each search (``_postgres_search``). What this relies on in
 PostgreSQL, pgvector and psycopg is in
-``docs/design/reference/postgresql-pgvector.md``.
+``docs/design/reference/postgresql-writes.md`` and
+``docs/design/reference/postgresql-connections.md``.
 """
 
 from __future__ import annotations
