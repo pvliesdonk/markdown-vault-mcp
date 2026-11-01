@@ -4440,8 +4440,10 @@ lease's lock, so a status read never holds up a write. A schema dropped
 under an open store is *not configured* for its reads and its status
 alike: PostgreSQL reports a missing schema and missing tables the same
 way, so a read that finds no meta row looks the schema up. What the store
-relies on in PostgreSQL, pgvector and psycopg
-is in `docs/design/reference/postgresql-pgvector.md`.
+relies on in PostgreSQL, pgvector and psycopg is in four references under
+`docs/design/reference/`: `postgresql-connections.md`,
+`postgresql-writes.md`, `pgvector-search.md` and
+`postgresql-schema-and-operations.md`.
 
 **The vault's slot (#1777).** `Vault` holds its vector store in a
 `VectorStoreSlot` that opens it on first use through the backend

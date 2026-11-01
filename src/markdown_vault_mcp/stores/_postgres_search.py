@@ -5,7 +5,9 @@ the cosine similarity, and a zero vector scores ``0.0`` (cosine distance,
 ``<=>``, gives ``NaN`` there). The distance is computed once, in SQL, and
 negated here. Only metadata and the distance cross the wire. Without a
 predicate the limit is in the query; with one, a server-side cursor in the
-read's transaction yields rows in order until *limit* pass.
+read's transaction yields rows in order until *limit* pass. What this
+relies on in pgvector, PostgreSQL and psycopg is in
+``docs/design/reference/pgvector-search.md``.
 """
 
 from __future__ import annotations

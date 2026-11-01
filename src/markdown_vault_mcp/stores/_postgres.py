@@ -11,7 +11,8 @@ parsed host, port, database, user or a connection option name is hidden,
 because libpq quotes what it fails on, which can be a piece of a mistyped
 password. The DSN never appears in an error, a location or a log line, and
 a :class:`Conninfo` hides itself from a traceback's argument display. What this relies on in PostgreSQL, libpq and
-psycopg is in ``docs/design/reference/postgresql-pgvector.md``.
+psycopg is in ``docs/design/reference/postgresql-connections.md`` and
+``docs/design/reference/postgresql-schema-and-operations.md``.
 """
 
 from __future__ import annotations

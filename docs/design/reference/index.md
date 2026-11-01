@@ -37,12 +37,29 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   (#1350, #1358: the tie-break, aliases never resolving, markdown destinations
   looked up vault-wide, what Obsidian writes). Read before `scanner.py`
   wikilink extraction or `fts_index.py` resolution.
-- [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md) —
-  extension privileges, zero-vector scoring with `<#>` and `<=>`, schemas and
-  `search_path`, snapshots, `DELETE` versus `TRUNCATE`, advisory locks,
-  `synchronous_commit`, SQLSTATEs and connect-time failures in psycopg,
-  cursors, COPY and pooling, connection parameters and schema backups
-  (#1504). Read before changing `stores/postgres_vectors.py`.
+- [pgvector and PostgreSQL behaviour behind vector search and stored rows](pgvector-search.md) —
+  the `vector` type and its limits, zero-vector scoring with `<#>` and `<=>`,
+  `avg`, what `jsonb`, `text` and a btree index refuse, server-side cursors
+  and the psycopg 3.3.0 cursor bug, `starts_with` (#1504). Read before
+  `stores/_postgres_search.py` or `stores/_postgres_rows.py`.
+- [PostgreSQL connections, errors and pooling behind the vector store](postgresql-connections.md) —
+  SQLSTATE classes, connect-time failures and psycopg's password flags,
+  message language, the connection pool and `conninfo_to_dict`, PgBouncer's
+  pooling modes, libpq parameters and password sources (#1504). Read before
+  `stores/_postgres.py`'s connecting and failure classification, or the
+  error handling in `stores/postgres_vectors.py`.
+- [PostgreSQL extension, schema and operations behind the vector store](postgresql-schema-and-operations.md) —
+  who may install pgvector, the supported PostgreSQL and pgvector range,
+  schemas and `search_path`, `pg_dump` of one schema, vacuuming and relation
+  sizes (#1504). Read before `stores/_postgres.py`'s setup checks,
+  `.github/workflows/postgres-range.yml` or `docs/use/postgresql.md`.
+- [PostgreSQL transactions, locks, durability and COPY behind the vector store](postgresql-writes.md) —
+  `REPEATABLE READ` snapshots, `DELETE` against `TRUNCATE` and `DROP`, row
+  and advisory locks, timeouts, `synchronous_commit` and `fsync`, binary
+  `COPY` (#1504). Read before `stores/_postgres_lease.py`,
+  `stores/_postgres_tables.py`, the read snapshots in
+  `stores/postgres_vectors.py`, or the durability and PgBouncer passages of
+  `docs/use/postgresql.md`.
 - [SQLite WAL durability, checkpoints, the WAL-reset bug and backup](sqlite-wal-durability.md) —
   what a WAL commit promises under `synchronous=FULL` and `NORMAL`,
   checkpoint modes and the `-wal`/`-shm` lifetime, `BEGIN IMMEDIATE` and
