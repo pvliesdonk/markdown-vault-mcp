@@ -993,7 +993,7 @@ Raises:
 
 Scan source_dir and build the FTS index.
 
-Warm restarts (existing populated index, `force=False`) are an O(1) no-op keyed on FTS state. `force=True` drops and rebuilds; config changes require `force=True` to apply (see issue #525).
+A warm restart (a complete, populated index whose provenance still matches, `force=False`) is an O(1) no-op keyed on FTS state. An index that cannot be reused (changed provenance, or no completion sentinel) gets a full build that drops the rows its walk did not find (#1965). `force=True` drops and rebuilds unconditionally.
 
 Returns:
 

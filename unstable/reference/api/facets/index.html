@@ -9808,9 +9808,11 @@ was ever scheduled (<code>reason="never_built"</code>).</p>
     <div class="doc doc-contents ">
 
         <p>Scan source_dir and build the FTS index.</p>
-<p>Warm restarts (existing populated index, <code>force=False</code>) are an O(1)
-no-op keyed on FTS state. <code>force=True</code> drops and rebuilds; config
-changes require <code>force=True</code> to apply (see issue #525).</p>
+<p>A warm restart (a complete, populated index whose provenance still
+matches, <code>force=False</code>) is an O(1) no-op keyed on FTS state. An
+index that cannot be reused (changed provenance, or no completion
+sentinel) gets a full build that drops the rows its walk did not find
+(#1965). <code>force=True</code> drops and rebuilds unconditionally.</p>
 
 
     <p><span class="doc-section-title">Returns:</span></p>
