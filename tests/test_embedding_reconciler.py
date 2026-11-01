@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from array import array
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
+import markdown_vault_mcp.indexing.embedding_reconciler as reconciler_module
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.indexing.embedding_reconciler import EmbeddingReconciler
@@ -263,6 +265,82 @@ class TestBatchedMetadata:
         batched = _BatchedMetadata(store)
         assert rec.reconcile(batched, site="test").embedded == 2
         assert batched.rows_read == []
+
+
+class _BatchedRows(_BatchedMetadata):
+    """A store that also reads many documents' rows at once, as PostgreSQL does (#1970)."""
+
+    def __init__(self, inner: Any) -> None:
+        super().__init__(inner)
+        self.row_batches: list[list[str]] = []
+
+    def rows_by_path(self, paths: Any) -> dict[str, list[VectorRow]]:
+        self.row_batches.append(list(paths))
+        found = {
+            p: [
+                VectorRow(array("f", r.vector), r.metadata)
+                for r in self._inner.rows_for(p)
+            ]
+            for p in paths
+        }
+        return {p: rows for p, rows in found.items() if rows}
+
+
+THREE = {**NOTES, "c.md": "# C\n\nCherries.\n"}
+
+
+class TestBatchedRows:
+    def _untokened(self, tmp_path: Path) -> tuple[Any, EmbeddingReconciler]:
+        _fts, _provider, store, rec = _setup(tmp_path, THREE)
+        rec.reconcile(store, site="test")
+        store.publish_generation(
+            store.identity,
+            [DocumentRows(p, None, store.rows_for(p)) for p in sorted(store.tokens())],
+        )
+        return store, rec
+
+    def test_a_bulk_retoken_reads_rows_in_batches(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(reconciler_module, "_BULK_RETOKEN", 2)
+        monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 2)
+        store, rec = self._untokened(tmp_path)
+        before = {p: store.rows_for(p) for p in store.tokens()}
+        batched = _BatchedRows(store)
+        result = rec.reconcile(batched, site="test")
+        assert result.retokened == 3
+        assert batched.rows_read == []
+        assert [len(b) for b in batched.row_batches] == [2, 1]
+        assert sorted(p for b in batched.row_batches for p in b) == sorted(THREE)
+        assert None not in store.tokens().values()
+        for path, rows in before.items():
+            assert np.allclose(
+                [r.vector for r in store.rows_for(path)], [r.vector for r in rows]
+            )
+
+    def test_a_rebuild_reusing_its_own_rows_reads_them_in_batches(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 2)
+        _fts, provider, store, rec = _setup(tmp_path, THREE)
+        rec.rebuild(store, store.identity)
+        provider.texts.clear()
+        batched = _BatchedRows(store)
+        outcome = rec.rebuild(batched, store.identity, reuse_own=True)
+        assert (provider.texts, outcome.embedded, outcome.published) == ([], 0, True)
+        assert batched.rows_read == []
+        assert batched.row_batches == [["a.md", "b.md"], ["c.md"]]
+
+    def test_a_store_without_batches_reads_each_document(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(reconciler_module, "_BULK_RETOKEN", 2)
+        store, rec = self._untokened(tmp_path)
+        read: list[str] = []
+        real = store.rows_for
+        monkeypatch.setattr(store, "rows_for", lambda p: read.append(p) or real(p))
+        assert rec.reconcile(store, site="test").retokened == 3
+        assert set(read) == set(THREE)
 
 
 class TestFailures:

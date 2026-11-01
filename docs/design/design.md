@@ -1015,8 +1015,11 @@ vectors, and calls `rows_for` only for a document it re-embeds or
 re-tokens, whose stored vectors it reuses (#1937).
 Reading each document's rows in its own transaction had made a PostgreSQL
 restart several times slower than a local store's. The local stores serve
-`rows_for` from the process and keep the per-document read. The bulk
-re-token and a rebuild reusing own rows still read per document (#1970).
+`rows_for` from the process and keep the per-document read. The two
+passes that need every document's vectors, the bulk re-token and a rebuild
+reusing its own rows, read them through the optional `ReadsRowsInBatches`
+protocol from such a store: 256 documents per read, the vectors sent in
+binary as float32 rather than as text (#1970).
 
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context

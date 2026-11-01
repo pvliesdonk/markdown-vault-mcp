@@ -30,11 +30,11 @@ from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import ReadOnlyError
-from markdown_vault_mcp.interfaces import ReadsMetadataInBatches
+from markdown_vault_mcp.interfaces import ReadsMetadataInBatches, ReadsRowsInBatches
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Sequence
+    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.indexing.donor import Donor
@@ -94,6 +94,10 @@ _BULK_RETOKEN = 64
 # Documents whose stored metadata one read fetches, from a store that reads
 # in batches (#1937): few round trips, and memory bounded by the batch.
 _METADATA_BATCH = 500
+
+# Documents whose stored rows one read fetches, from a store that reads rows
+# in batches (#1970): vectors make a row far larger than its metadata.
+_ROWS_BATCH = 256
 
 _METADATA_KEYS = ("path", "title", "folder", "heading", "content", "start_line")
 
@@ -546,15 +550,12 @@ class EmbeddingReconciler:
             return
         new_tokens = {doc.path: doc.token for doc in docs}
         try:
+            tokens = state.store.tokens()
             state.store.publish_generation(
                 state.store.identity,
                 [
-                    DocumentRows(
-                        path,
-                        new_tokens.get(path, token),
-                        _float32_rows(state.store, path),
-                    )
-                    for path, token in state.store.tokens().items()
+                    DocumentRows(path, new_tokens.get(path, tokens[path]), rows)
+                    for path, rows in _float32_rows(state.store, list(tokens))
                 ],
             )
         except ReadOnlyError:
@@ -696,8 +697,10 @@ class EmbeddingReconciler:
         own = store if reuse_own and store is not None and store.count > 0 else None
         found: dict[str, dict[int, array[float]]] = {}
         misses: list[tuple[str, RevisionToken, str, dict[str, Any]]] = []
-        for doc in docs:
-            mine = stored_inputs(self._builder, own.rows_for(doc.path)) if own else {}
+        paths = [doc.path for doc in docs]
+        stored = _float32_rows(own, paths) if own else ((p, []) for p in paths)
+        for doc, (_path, rows) in zip(docs, stored, strict=True):
+            mine = stored_inputs(self._builder, rows)
             given = donor.vectors_for(doc.path) if donor is not None else {}
             hits, wanted, from_donor = _split_document(doc, mine, given, dimension)
             if hits:
@@ -818,13 +821,33 @@ def _split_document(
     return found, misses, donated
 
 
-def _float32_rows(store: EmbeddingStore, path: str) -> list[VectorRow]:
-    """*path*'s stored rows with their vectors packed as float32.
+def _float32_rows(
+    store: EmbeddingStore, paths: list[str]
+) -> Iterator[tuple[str, list[VectorRow]]]:
+    """Yield each of *paths* with its stored rows, vectors packed as float32.
 
     A bulk publish holds every row of the store at once; as Python floats
-    that is about ten times the matrix (#1768).
+    that is about ten times the matrix (#1768). A store that reads rows in
+    batches (#1970) serves :data:`_ROWS_BATCH` documents per read; any other
+    serves each document's rows from this process.
+
+    Args:
+        store: The store to read.
+        paths: The documents, yielded in this order.
+
+    Yields:
+        Each path and its rows; empty for a path with none.
     """
-    return [VectorRow(array("f", r.vector), r.metadata) for r in store.rows_for(path)]
+    if not isinstance(store, ReadsRowsInBatches):
+        for path in paths:
+            rows = store.rows_for(path)
+            yield path, [VectorRow(array("f", r.vector), r.metadata) for r in rows]
+        return
+    for start in range(0, len(paths), _ROWS_BATCH):
+        batch = paths[start : start + _ROWS_BATCH]
+        found = store.rows_by_path(batch)
+        for path in batch:
+            yield path, found.get(path, [])
 
 
 def _assemble(
