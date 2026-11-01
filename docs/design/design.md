@@ -742,7 +742,11 @@ Two methods manage the index:
   every note it keeps under an unreadable directory, so the empty hash
   survives the reindexes that still cannot read the note, and it keeps the
   skipped entries there too, so their tombstones and the vectors they hold
-  survive as well. When a
+  survive as well. A build without `force` that runs over existing rows
+  (a cold restart: provenance changed, or the sentinel is missing) deletes
+  the same rows, but spares the notes its walk found, which it rewrites
+  in place, so a note deleted while no server ran leaves the index and
+  the tracker state (#1965). When a
   persistent `index_path` contains documents that now match
   `exclude_patterns`, they are purged from the FTS and vector indexes
   after the scan, but only when a scan actually runs (that is, on a cold
