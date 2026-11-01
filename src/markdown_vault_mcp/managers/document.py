@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
+import posixpath
 import shutil
 import sqlite3
 import stat
@@ -33,7 +35,7 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
     SubmodulePathError,
 )
-from markdown_vault_mcp.hashing import compute_file_hash
+from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.managers._rewrite_ledger import LinkRewriteLedger
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
 from markdown_vault_mcp.managers._write_notifier import (
@@ -81,6 +83,9 @@ from markdown_vault_mcp.utils.links import (
 )
 from markdown_vault_mcp.utils.text import (
     build_position_map as _build_position_map,
+)
+from markdown_vault_mcp.utils.text import (
+    decode_utf8 as _decode_utf8,
 )
 from markdown_vault_mcp.utils.text import (
     find_closest_match as _find_closest_match,
@@ -1374,8 +1379,10 @@ class DocumentManager:
         except ConcurrentModificationError as exc:
             if not tolerate or if_match is None:
                 raise
+            # The ledger keys on the index's spelling of the path, so
+            # "./b.md" must find the entries recorded for "b.md".
             crossed = self._link_rewrites.rewrites_since(
-                path, etag=if_match, current=exc.actual
+                posixpath.normpath(path), etag=if_match, current=exc.actual
             )
             if crossed is None:
                 raise
@@ -1414,8 +1421,11 @@ class DocumentManager:
             count, write back or announce such a source: it still names the
             old target, and saying otherwise is what made #1521 silent.
         """
-        hash_before = compute_file_hash(source_abs)
-        original = _read_text_utf8(source_abs)
+        # One read, hashed as is: a second read could see an external edit
+        # the ledger would then vouch for (#1492). Newlines are normalised
+        # as Path.read_text would, which the rewrite has always relied on.
+        raw = source_abs.read_bytes()
+        original = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
         content = original
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
             new_raw = _compute_new_raw_target(
@@ -1438,9 +1448,12 @@ class DocumentManager:
                 len(rewrites),
             )
             return None
-        atomic_write(source_abs, content)
+        # The bytes a text-mode write would produce, encoded here so the
+        # ledger records the hash of exactly what landed.
+        encoded = content.replace("\n", os.linesep).encode("utf-8")
+        atomic_write(source_abs, encoded)
         self._link_rewrites.record(
-            source_path, hash_before, compute_file_hash(source_abs)
+            source_path, compute_etag(raw), compute_etag(encoded)
         )
         return content
 

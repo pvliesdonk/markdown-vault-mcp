@@ -3439,7 +3439,42 @@ class TestIfMatchParameter:
                 {"old_path": "pair_b2.md", "new_path": "pair_b3.md"},
             )
         assert crossed.data["link_rewrites_since_etag"] == 1
+        assert "(pair_a2.md)" in (vault_path / "pair_b3.md").read_text()
         assert "link_rewrites_since_etag" not in plain.data
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_rename_refuses_an_etag_an_edit_made_stale(
+        self, vault_path: Path
+    ) -> None:
+        """Tolerance never covers a change the server's link rewrites did not make."""
+        from markdown_vault_mcp.hashing import compute_file_hash
+
+        (vault_path / "pair_a.md").write_text("# A\n")
+        (vault_path / "pair_b.md").write_text("# B\n\nSee [A](pair_a.md).\n")
+        etag_b = compute_file_hash(vault_path / "pair_b.md")
+        server = make_server()
+        async with Client(server) as client:
+            await client.call_tool(
+                "rename",
+                {
+                    "old_path": "pair_a.md",
+                    "new_path": "pair_a2.md",
+                    "update_links": True,
+                },
+            )
+            await client.call_tool(
+                "append", {"path": "pair_b.md", "content": "More.\n"}
+            )
+            result = await client.call_tool_mcp(
+                "rename",
+                {
+                    "old_path": "pair_b.md",
+                    "new_path": "pair_b2.md",
+                    "if_match": etag_b,
+                },
+            )
+        assert result.is_error is True
+        assert (vault_path / "pair_b.md").exists()
 
 
 # ---------------------------------------------------------------------------

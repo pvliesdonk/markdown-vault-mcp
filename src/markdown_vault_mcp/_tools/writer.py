@@ -652,7 +652,7 @@ def register(mcp: FastMCP) -> None:
             old_path: Current path, such as `"drafts/idea.md"` or `"assets/old.png"`.
             new_path: New path, such as `"projects/idea.md"`, where nothing exists yet.
             if_match: Etag from read of old_path; still accepted when the only
-                changes since are link rewrites made by other renames.
+                changes since are link rewrites the server made.
             update_links: Rewrite links to old_path in other notes so they point at
                 new_path; attachment references are not tracked. Default false; pass
                 true for every note.
@@ -664,8 +664,8 @@ def register(mcp: FastMCP) -> None:
             attachment, saying why nothing was rewritten.
 
             - link_rewrites_since_etag (int, optional): present only when
-              if_match was accepted although other renames had since rewritten
-              links in the note; counts those rewrites, which the rename kept.
+              if_match was accepted although the server had since rewritten links
+              in the note; counts those rewrites, which the rename kept.
 
             - remote (dict, optional): present only while the vault's git clone
               cannot reach its remote, with state, reason, since and detail; the
@@ -675,7 +675,8 @@ def register(mcp: FastMCP) -> None:
             DocumentNotFoundError: If old_path does not exist.
             DocumentExistsError: If new_path already exists.
             ValueError: If the path fails traversal validation.
-            `MCPError`: If if_match is provided and the file has been modified
+            `MCPError`: If if_match is provided and the file has changed since,
+                other than through link rewrites the server made
                 (ConcurrentModificationError).
             TimeoutError: With update_links on a note, if writes queued before the
                 call have not reached the index within 60 seconds; nothing is

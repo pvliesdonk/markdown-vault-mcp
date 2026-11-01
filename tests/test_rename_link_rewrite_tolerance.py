@@ -70,6 +70,30 @@ class TestLinkRewriteLedger:
         assert ledger.rewrites_since("a.md", etag="h0", current="h1") is None
         assert ledger.rewrites_since("c.md", etag="h0", current="h1") == 1
 
+    def test_a_matching_etag_crosses_nothing(self) -> None:
+        assert LinkRewriteLedger().rewrites_since("b.md", etag="h0", current="h0") == 0
+
+    def test_rerecording_a_result_keeps_the_newer_entry(self) -> None:
+        clock = _Clock()
+        ledger = LinkRewriteLedger(ttl_s=300.0, clock=clock)
+        ledger.record("b.md", "h0", "h1")
+        clock.now += 200.0
+        ledger.record("b.md", "h9", "h1")
+        clock.now += 200.0
+
+        # The older entry is gone; the newer one is still fresh.
+        assert ledger.rewrites_since("b.md", etag="h0", current="h1") is None
+        assert ledger.rewrites_since("b.md", etag="h9", current="h1") == 1
+
+    def test_recording_drops_expired_entries(self) -> None:
+        clock = _Clock()
+        ledger = LinkRewriteLedger(capacity=1, ttl_s=300.0, clock=clock)
+        ledger.record("a.md", "h0", "h1")
+        clock.now += 301.0
+        ledger.record("b.md", "h0", "h1")
+
+        assert ledger.rewrites_since("b.md", etag="h0", current="h1") == 1
+
     def test_a_cycle_ends_without_a_match(self) -> None:
         ledger = LinkRewriteLedger()
         ledger.record("b.md", "h1", "h2")
@@ -143,6 +167,65 @@ class TestTolerantRename:
 
         assert result.link_rewrites_since_etag == 1
 
+    def test_a_source_moved_with_its_folder_is_recorded_at_its_new_path(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "vault"
+        (root / "old").mkdir(parents=True)
+        (root / "old" / "a.md").write_text("# A\n")
+        (root / "old" / "b.md").write_text("# B\n\nSee [A](/old/a.md).\n")
+        vault = Vault(source_dir=root, settings=VaultSettings(read_only=False))
+        vault.index.build_index()
+        etag_b = compute_file_hash(root / "old" / "b.md")
+
+        vault.writer.move_folder("old", "new")
+        result = vault.writer.rename(
+            "new/b.md", "b.md", if_match=etag_b, tolerate_link_rewrites=True
+        )
+
+        assert result.link_rewrites_since_etag == 1
+
+    def test_a_self_link_rewrite_is_recorded_at_the_new_path(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "vault"
+        root.mkdir()
+        (root / "a.md").write_text("# A\n")
+        (root / "b.md").write_text("# B\n\nSee [A](a.md) and [me](b.md).\n")
+        vault = Vault(source_dir=root, settings=VaultSettings(read_only=False))
+        vault.index.build_index()
+        etag_b0 = compute_file_hash(root / "b.md")
+
+        vault.writer.rename("a.md", "a2.md", update_links=True)
+        etag_b1 = compute_file_hash(root / "b.md")
+        vault.writer.rename(
+            "b.md",
+            "b2.md",
+            if_match=etag_b0,
+            update_links=True,
+            tolerate_link_rewrites=True,
+        )
+
+        # The self-link rewrite happened at b2.md, so it is evidence there.
+        result = vault.writer.rename(
+            "b2.md", "b3.md", if_match=etag_b1, tolerate_link_rewrites=True
+        )
+        assert result.link_rewrites_since_etag == 1
+        assert "[me](b2.md)" in (root / "b3.md").read_text()
+
+    def test_a_dotted_path_finds_its_entries(
+        self, linked_pair: tuple[Vault, Path]
+    ) -> None:
+        vault, root = linked_pair
+        etag_b = compute_file_hash(root / "b.md")
+        vault.writer.rename("a.md", "a2.md", update_links=True)
+
+        result = vault.writer.rename(
+            "./b.md", "b2.md", if_match=etag_b, tolerate_link_rewrites=True
+        )
+
+        assert result.link_rewrites_since_etag == 1
+
     def test_a_matching_etag_reports_nothing_crossed(
         self, linked_pair: tuple[Vault, Path]
     ) -> None:
@@ -191,6 +274,33 @@ class TestTolerantRenameRefuses:
         with pytest.raises(ConcurrentModificationError):
             vault.writer.rename(
                 "b.md", "b2.md", if_match=etag_b, tolerate_link_rewrites=True
+            )
+
+    def test_a_delete_and_recreate_with_other_bytes(
+        self, linked_pair: tuple[Vault, Path]
+    ) -> None:
+        vault, root = linked_pair
+        etag_b = compute_file_hash(root / "b.md")
+        vault.writer.rename("a.md", "a2.md", update_links=True)
+        vault.writer.delete("b.md")
+        vault.writer.write("b.md", "# B again\n")
+
+        with pytest.raises(ConcurrentModificationError):
+            vault.writer.rename(
+                "b.md", "b2.md", if_match=etag_b, tolerate_link_rewrites=True
+            )
+
+    def test_entries_stay_with_the_path_they_were_recorded_at(
+        self, linked_pair: tuple[Vault, Path]
+    ) -> None:
+        vault, root = linked_pair
+        etag_b = compute_file_hash(root / "b.md")
+        vault.writer.rename("a.md", "a2.md", update_links=True)
+        vault.writer.rename("b.md", "b2.md")
+
+        with pytest.raises(ConcurrentModificationError):
+            vault.writer.rename(
+                "b2.md", "b3.md", if_match=etag_b, tolerate_link_rewrites=True
             )
 
     def test_an_unrelated_etag(self, linked_pair: tuple[Vault, Path]) -> None:

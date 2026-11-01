@@ -1628,7 +1628,9 @@ All five write methods (`write()`, `edit()`, `delete()`, `rename()`,
 parameter. When provided, the method computes the SHA-256 hex digest of the
 current file **inside `_file_write_lock`** and compares it to `if_match`. If
 the digests differ, `ConcurrentModificationError` is raised and no mutation
-occurs. Passing `if_match=None` (the default) skips the check and preserves
+occurs. The one exception is a `rename()` with `tolerate_link_rewrites`,
+which may accept a stale etag across the server's own link rewrites (#1492,
+below). Passing `if_match=None` (the default) skips the check and preserves
 pre-existing unconditional-write behavior.
 
 The etag used for comparison is the same value returned in the `etag` field of
@@ -1641,10 +1643,10 @@ vault.writer.write("doc.md", new_content, if_match=note.etag)
 
 Model-facing guidance (#1493): every successful mutation changes the etag,
 so calls dispatched together with one etag fail after the first. The `edit`
-and `rename` `if_match` descriptions therefore tell the model when to omit it
-rather than always recommending it: `old_text`-only edits are guarded by their
-anchor, and a rename moves the whole file, so losing the etag check costs
-nothing there. Only edits that carry line numbers stay one call per read,
+`if_match` description therefore tells the model when to omit it rather than
+always recommending it: `old_text`-only edits are guarded by their anchor.
+The `rename` description gave the same advice, since a rename moves the whole
+file, until #1492 made the etag survive the server's own link rewrites. Only edits that carry line numbers stay one call per read,
 because a sibling edit shifts the range silently. The longer-term fixes are
 #1492 (accept conditional renames after provable server rewrites, below) and
 the surface audit #1571.
@@ -1663,15 +1665,21 @@ through recorded link rewrites":
   note's current hash through the entries for that path. It accepts only if
   the walk reaches `if_match`. Any step the ledger cannot explain refuses the
   rename as before: an external edit, a `write`/`edit`/`append`, a delete
-  and recreate, or an expired entry.
+  and recreate with different bytes, or an expired entry. Link rewrites made
+  by `okf_convert_links` go through `write()` and are not recorded, so they
+  refuse too.
 - **What moves.** The note's current bytes move, so the rewrites survive.
   The usual `update_links` pass follows, and an existing destination is
   still an error.
 - **Bounds.** The ledger holds at most 256 entries for 300 seconds each, in
   memory, per vault. Losing an entry to a restart, expiry or eviction can
   only make a rename strict again, never accept one.
-- **Locking.** Both recording and checking run under `_file_write_lock`, so
-  no write can land between the check and the move.
+- **Locking and external edits.** Recording and checking both run under
+  `_file_write_lock`, so no server write lands between the check and the
+  move. External writers do not take that lock, so a rewrite reads the
+  source once and records the hashes of the bytes it read and the bytes it
+  wrote. A second read could see an external edit, and the ledger would
+  then vouch for it.
 - **Content, not provenance.** The check compares content hashes. A later
   write that leaves bytes identical to a recorded rewrite's result passes,
   because the file then really is the old version plus the server's
@@ -1681,7 +1689,10 @@ through recorded link rewrites":
   tolerance on, because the parallel calls that trigger the conflict are a
   model's. Acceptance is visible as `link_rewrites_since_etag` in the
   result: the number of rewrites crossed, absent from the tool response when
-  none were. The `rename` `if_match` description now says the etag survives
+  none were. Operators get no setting to make the tool strict again. The
+  owner chose tolerance by default with no new tool parameter, because the
+  rule never accepts a change the server did not make itself, and the
+  result reports when it applied. The `rename` `if_match` description now says the etag survives
   such rewrites, in place of #1493's advice to omit it.
 
 ### Folder Conventions
