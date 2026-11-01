@@ -80,7 +80,7 @@ _CHECKPOINT_INTERVAL_S = 30.0
 
 @dataclass
 class _KeptRows:
-    """Rows a forced build kept under directories its walk could not read."""
+    """Rows a build kept under directories its walk could not read."""
 
     notes: list[ParsedNote] = field(default_factory=list)
     skip_reasons: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -414,8 +414,10 @@ class IndexManager:
                 dropped.append(row["path"])
         return dropped
 
-    def _wipe_for_rebuild(self, keep: tuple[str, ...]) -> _KeptRows:
-        """Delete every row a forced build replaces, sparing unread folders (#1929).
+    def _wipe_for_rebuild(
+        self, keep: tuple[str, ...], *, spare: set[str] | None = None
+    ) -> _KeptRows:
+        """Delete every row a build replaces, sparing unread folders (#1929).
 
         A directory the walk could not read is not an authoritative absence
         (#1625, #1785): the notes and tombstones under it keep their rows,
@@ -423,6 +425,10 @@ class IndexManager:
 
         Args:
             keep: Prefixes from :func:`~markdown_vault_mcp.tracker.unread_prefixes`.
+            spare: Notes the build is about to rewrite, left in place rather
+                than deleted first, along with excluded notes, which the
+                purge removes with their vectors; ``None`` deletes them too
+                (#1965).
 
         Returns:
             The kept notes, as hash-less tracker-state notes, and the kept
@@ -430,6 +436,8 @@ class IndexManager:
         """
         kept = _KeptRows()
         for row in self._fts.list_notes():
+            if spare is not None and self._spared(row["path"], spare):
+                continue
             if is_under(row["path"], keep):
                 kept.notes.append(_unhashed_state_note(row))
             else:
@@ -451,6 +459,14 @@ class IndexManager:
                 len(kept.skip_reasons),
             )
         return kept
+
+    def _spared(self, path: str, rewritten: set[str]) -> bool:
+        """Whether a non-forced build leaves *path*'s row to another step (#1965).
+
+        A note the build rewrites is replaced in place. An excluded note is
+        left to :meth:`_purge_stale_excluded`, which removes its vectors too.
+        """
+        return path in rewritten or self._is_path_excluded(path)
 
     def _state_notes_from_index(self) -> list[ParsedNote]:
         """Build tracker-state notes from the index's current contents.
@@ -536,17 +552,19 @@ class IndexManager:
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index.
 
-        If the index already contains documents and *force* is ``False``,
-        this is a no-op.  ``force=True`` drops all existing data and rebuilds
-        from scratch, except the rows under a directory the walk could not
-        read, which it keeps until a walk can (#1929).
+        ``force=True`` drops all existing data and rebuilds from scratch,
+        except the rows under a directory the walk could not read, which it
+        keeps until a walk can (#1929). Without it, the notes the walk finds
+        are rewritten in place and every other row is dropped the same way,
+        so a note deleted since the last build leaves the index (#1965).
+        Whether a build runs at all is the coordinator's warm-restart check.
 
         Note: the caller is responsible for setting any ``_index_built``
         flag after this method returns.
 
         Args:
-            force: When ``True``, drop and rebuild the index unconditionally,
-                sparing what the walk could not read.
+            force: When ``True``, drop every row before rewriting, sparing
+                what the walk could not read.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
@@ -591,10 +609,13 @@ class IndexManager:
             logger.warning(
                 "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
             )
-        kept = (
-            self._wipe_for_rebuild(unread_prefixes(walk_errors, self._source_dir))
-            if force
-            else _KeptRows()
+        # A non-forced build runs when the index cannot be reused (its
+        # provenance changed, or the last build never finished): it spares
+        # the notes it is about to rewrite, but a row the walk did not find
+        # goes, as in a forced build (#1965).
+        kept = self._wipe_for_rebuild(
+            unread_prefixes(walk_errors, self._source_dir),
+            spare=None if force else {note.path for note in notes},
         )
 
         total_chunks = 0
