@@ -231,11 +231,12 @@ storage, are on [`sqlite-runtime-by-channel.md`](sqlite-runtime-by-channel.md).
     vault's write jobs one at a time, and each store serialises its writes,
     `checkpoint()` and `close()` under its own lock, including the automatic
     checkpoint a commit runs.
-  - A store object the vault replaces (`VectorStoreSlot.fresh()` drops it
-    without closing it) keeps idle connections to the same file until
-    garbage collection closes them. Only the last connection to close runs a
-    checkpoint (§6) [source: wal-docs], and the replacement store still
-    holds its own connections, so those closes write nothing.
+  - A store `VectorStoreSlot.fresh()` replaces is closed (#1832) while the
+    slot holds a share of the store's writer lock (#1505), before the fresh
+    store opens. That close, which checkpoints and closes every connection
+    the old store holds, finishes before the replacement opens any, and a
+    later write through the old reference raises instead of reaching the
+    file; `tests/test_vector_slot.py::TestASupersededStore` pins this (#1802).
   - So no two connections write or checkpoint at the same instant.
   - Another process opens the file `mode=ro`, and such a connection cannot
     checkpoint [observed above].
