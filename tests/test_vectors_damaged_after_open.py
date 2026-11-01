@@ -290,7 +290,8 @@ class TestRebuiltAfterRead:
 
         rebuilt = slot.rebuilt_after_read(store, rebuild)
 
-        assert rebuilt is not None and rebuilt is not store
+        assert rebuilt is not None
+        assert rebuilt is not store
         assert rebuilt.count == 0
         assert len(list(tmp_path.glob("vec.sqlite3.corrupt-*"))) == 1
         slot.close()
@@ -347,7 +348,8 @@ class TestRebuildTarget:
 
         target = slot.rebuild_target()
 
-        assert target is not store and target.count == 0
+        assert target is not store
+        assert target.count == 0
         assert len(list(tmp_path.glob("vec.sqlite3.corrupt-*"))) == 1
         slot.close()
 
