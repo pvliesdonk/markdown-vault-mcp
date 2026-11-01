@@ -4771,7 +4771,33 @@ another one, and is the explicit switch of choice C.
   it, the one place both rebuild routes meet a store that fails its open as
   corrupt: the automatic rebuild of a store that will not open (`get` with a
   rebuild) and a full build's `rebuild_target` (`build_embeddings(force=True)`,
-  an import). As a fallback, the SQLite store's first write after
+  an import).
+- A store that opened and finds its damage later takes the same route
+  (#1881). A SQLite store's open reads every chunk row but not every page,
+  and a streamed store keeps no rows resident, so the damage can first show
+  at a read, or not until a rebuild writes into the damaged pages.
+  `VectorStoreSlot.condemn(store)` handles it: under the recovery lock, and
+  only while that store is still the installed one, it closes the store and
+  moves its files aside, logging WARNING `vector_store_condemned location=%s
+  reason=damaged_after_open`. The store is the evidence here, so it is not
+  reopened as `_recover_corrupt` does: a damaged SQLite store still opens.
+  One that another thread already replaced is left alone. Two paths call it:
+  - A search read (`SearchManager._vector_rows`) that raises
+    `StoreCorruptError` sends the store to `rebuilt_after_read`, which
+    condemns it, runs the same rebuild as a store that fails its open, and
+    hands back the rebuilt store for one more read.
+  - A full build's `rebuild_target` calls the installed store's `verify()`
+    before publishing into it. The SQLite store re-reads every chunk and
+    document row and runs `PRAGMA quick_check`, through a read-only
+    connection of its own, because its own connection may still cache
+    clean copies of damaged pages. A damaged store is condemned and the
+    rebuild starts from a fresh one. The numpy store has no `verify`,
+    because its open reads everything.
+
+  A process that does not own the files condemns nothing and raises
+  `StoreCorruptError`. A write that meets the damage is not recovered on
+  the writer thread; the next search or full build recovers it (#1976).
+- As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not
   see: a damaged store whose identity still reads is refused as another

@@ -123,6 +123,7 @@ _BACKEND_NAME = "sqlite"
 _SUFFIX = ".sqlite3"
 _MEMORY = ":memory:"
 _TABLES = frozenset({"meta", "documents", "chunks"})
+_SELECT_TOKENS = "SELECT path, token FROM documents"
 _CORRUPT_ERRORNAMES = frozenset({"SQLITE_NOTADB", "SQLITE_CORRUPT"})
 
 #: How Python's sqlite3 reports a text cell that is not UTF-8. It carries no
@@ -458,8 +459,7 @@ def _load(
             return hollow_snapshot(served, generation)
         matrix, rows = _loaded_rows(conn, served.dimension, where)
         tokens: dict[str, RevisionToken | None] = {
-            str(path): token
-            for path, token in conn.execute("SELECT path, token FROM documents")
+            str(path): token for path, token in conn.execute(_SELECT_TOKENS)
         }
     finally:
         with contextlib.suppress(sqlite3.Error):
@@ -653,7 +653,7 @@ def _row_count(conn: sqlite3.Connection, _snap: Snapshot) -> int:
 def _stored_tokens(
     conn: sqlite3.Connection, _snap: Snapshot
 ) -> dict[str, RevisionToken | None]:
-    return {str(p): t for p, t in conn.execute("SELECT path, token FROM documents")}
+    return {str(p): t for p, t in conn.execute(_SELECT_TOKENS)}
 
 
 def _document_rows(
@@ -856,6 +856,40 @@ class SqliteVectorStore(ResidentStore):
             StoreUnavailableError: If a streamed read cannot read the database.
         """
         return self._reading(_row_count, 0) if self._streamed else super().count
+
+    def verify(self) -> None:
+        """Read the whole database again from disk to find damage (#1881).
+
+        The open reads every chunk row but not every page, and a streamed
+        store keeps none resident, so damage can arrive after the open.
+        This repeats the open's row checks, reads every document row (which
+        a streamed open skips), and runs SQLite's ``quick_check``. It reads
+        through a connection of its own, because the store's connection may
+        still hold clean copies of pages that are damaged on disk. It costs
+        a full read; a rebuild runs it before publishing into the store.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreCorruptError: If a page or a row is damaged.
+            StoreUnavailableError: If the database cannot be read.
+        """
+        if self._closed:
+            raise RuntimeError("The vector store is closed.")
+        if self._path is None or self._registry is None or self._reset_pending:
+            return  # nothing on disk is this store's yet
+        dimension = self._current().identity.dimension
+        probe = _registry(self._path, read_only=True)
+        try:
+            conn = probe.conn()
+            conn.execute("BEGIN")
+            _check_pages(conn, self._where)
+            rows = _validated_rows(conn, dimension, self._where)
+            collections.deque(rows, maxlen=0)
+            collections.deque(conn.execute(_SELECT_TOKENS), maxlen=0)
+        except sqlite3.Error as exc:
+            raise _classified(exc, self._where, "read") from exc
+        finally:
+            probe.close()
 
     def tokens(self) -> dict[str, RevisionToken | None]:
         """Return each stored document's token; ``None`` when unknown.

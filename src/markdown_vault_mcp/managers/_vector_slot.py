@@ -8,7 +8,11 @@ store or one holding another identity (a model change) is rebuilt into a
 fresh generation through the caller's ``rebuild``. A corrupt built-in store
 is first moved aside, every file of it renamed to ``.corrupt-<UTC time>``
 through its backend's ``quarantine``, so nothing is rebuilt over it; a
-rename that is refused leaves it unavailable (#1505). Without a rebuild (a
+rename that is refused leaves it unavailable (#1505). A store that opened
+and finds its damage later is moved aside the same way, through
+:meth:`VectorStoreSlot.condemn`: when a read meets it, or when a full
+rebuild's :meth:`VectorStoreSlot.rebuild_target` checks it first (#1881).
+Without a rebuild (a
 process that does not own the files) the store's own
 :class:`~markdown_vault_mcp.exceptions.StoreCorruptError` or
 :class:`~markdown_vault_mcp.exceptions.StoreIncompatibleError` propagates,
@@ -284,6 +288,82 @@ class VectorStoreSlot:
                 self._move_aside()
             return None
 
+    def condemn(self, store: EmbeddingStore) -> bool:
+        """Take an owned store that found itself corrupt out of the slot, moving it aside.
+
+        For damage that shows after the store opened, which
+        :meth:`_recover_corrupt` cannot confirm by opening it again: a
+        damaged SQLite store still opens. The store is the evidence
+        instead, so only the store still installed is condemned; one
+        another thread already replaced is left alone (#1881).
+
+        Args:
+            store: The store that raised ``StoreCorruptError``.
+
+        Returns:
+            ``True`` once the store is closed and its files moved aside;
+            ``False`` when it is no longer installed, or is injected or not
+            this process's to replace, and nothing was done.
+
+        Raises:
+            StoreUnavailableError: If the files cannot be renamed.
+        """
+        if self._injected or not self._owns_files:
+            return False
+        with self._recovery:
+            with self._lock:
+                if self._store is not store:
+                    return False
+                self._store, self._kept = None, None
+            # Closed first: the store holds the writer lock its backend's
+            # quarantine takes to rename the files.
+            self._discard(store)
+            self._move_aside()
+        logger.warning(
+            "vector_store_condemned location=%s reason=damaged_after_open",
+            self._location,
+        )
+        return True
+
+    def rebuilt_after_read(
+        self, store: EmbeddingStore, rebuild: Callable[[], object]
+    ) -> EmbeddingStore:
+        """Rebuild after a read found *store* corrupt; return the store to read now.
+
+        The store is condemned and rebuilt, as a store that fails its open
+        is. When another thread already replaced it, that store is returned
+        without a rebuild.
+
+        Raises:
+            StoreUnavailableError: If the files cannot be renamed.
+            ValueError: If the rebuild installs no store.
+        """
+        if not self.condemn(store):
+            return self.get(rebuild=rebuild)
+        self._run_rebuild(rebuild, "StoreCorruptError")
+        if self._store is None:
+            raise ValueError(
+                "Failed to rebuild the vector store after a read found it damaged."
+            )
+        return self._store
+
+    def _verified(self, store: EmbeddingStore) -> bool:
+        """Check an owned store a rebuild would publish into; condemn a damaged one.
+
+        Returns:
+            ``False`` once a damaged store is moved aside; ``True`` otherwise,
+            including for a store with no ``verify`` (only the SQLite store
+            can open with damage it has not read) and an injected one.
+        """
+        verify = getattr(store, "verify", None)
+        if verify is None or self._injected:
+            return True
+        try:
+            verify()
+        except StoreCorruptError:
+            return not self.condemn(store)
+        return True
+
     def _move_aside(self) -> None:
         """Rename an owned corrupt store's files aside, if its backend can (#1505).
 
@@ -551,7 +631,8 @@ class VectorStoreSlot:
         nothing leaves them. Otherwise :meth:`fresh`: a fresh store over the
         location for an owned slot (the old files survive until the rebuild
         publishes), the injected store emptied in place. A corrupt store is
-        moved aside first (#1505).
+        moved aside first (#1505), including one that opened and whose
+        ``verify`` now finds damage (#1881).
 
         Raises:
             ReadOnlyError: If this process does not own the store's files.
@@ -567,8 +648,9 @@ class VectorStoreSlot:
                 self._recover_corrupt()
             except StoreIncompatibleError:
                 pass
-        if self._store is not None and self.answers(self._store):
-            return self._store
+        store = self._store
+        if store is not None and self.answers(store) and self._verified(store):
+            return store
         return self.fresh()
 
     def describe(self) -> dict[str, Any]:
