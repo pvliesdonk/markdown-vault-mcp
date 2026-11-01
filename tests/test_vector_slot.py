@@ -914,8 +914,9 @@ class TestASupersededStore:
         # Published before the refused write: a publish afterwards would
         # overwrite a late row that had reached the file, hiding it.
         rebuilt.publish_generation(IDENTITY, [doc("new.md", [[0, 0, 1]])])
+        late = doc("late.md", [[1, 0, 0]])
         with pytest.raises(RuntimeError, match="closed"):
-            old.replace_document(doc("late.md", [[1, 0, 0]]), expected_token=None)
+            old.replace_document(late, expected_token=None)
         slot.close()
         # The file holds only the rebuild. For numpy this cannot see a late
         # write either way (an old store that wrote would never persist it);

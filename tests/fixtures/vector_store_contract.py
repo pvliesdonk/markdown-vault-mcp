@@ -317,12 +317,14 @@ class VectorStoreContract:
         store = make_store(IDENT)
         store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
         store.close()
+        late = doc("b.md", [[0, 1, 0]])
+        generation = [doc("c.md", [[0, 0, 1]])]
         with pytest.raises(RuntimeError, match="closed"):
-            store.replace_document(doc("b.md", [[0, 1, 0]]), expected_token=None)
+            store.replace_document(late, expected_token=None)
         with pytest.raises(RuntimeError, match="closed"):
             store.remove_document("a.md", expected_token=ANY_TOKEN)
         with pytest.raises(RuntimeError, match="closed"):
-            store.publish_generation(IDENT, [doc("c.md", [[0, 0, 1]])])
+            store.publish_generation(IDENT, generation)
 
     def test_a_document_with_no_rows_keeps_its_token(
         self, make_store: Callable[..., Any]
