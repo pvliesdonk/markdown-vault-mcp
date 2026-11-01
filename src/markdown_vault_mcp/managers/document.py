@@ -22,6 +22,7 @@ import yaml
 
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
+    ConcurrentModificationError,
     DocumentExistsError,
     DocumentNotFoundError,
     DocumentUnreadableError,
@@ -32,6 +33,8 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
     SubmodulePathError,
 )
+from markdown_vault_mcp.hashing import compute_file_hash
+from markdown_vault_mcp.managers._rewrite_ledger import LinkRewriteLedger
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
 from markdown_vault_mcp.managers._write_notifier import (
     OnWriteCallback,
@@ -218,6 +221,9 @@ class DocumentManager:
         # (stamp `generated`, clear `verified`) before it lands. None when
         # OKF_WRITE is off — zero overhead on the write path.
         self._okf_write_enrich = okf_write_enrich
+        # The link rewrites this manager made, so a rename can accept an
+        # etag that only those rewrites made stale (#1492).
+        self._link_rewrites = LinkRewriteLedger()
 
     # ------------------------------------------------------------------
     # Validation helpers
@@ -1221,6 +1227,7 @@ class DocumentManager:
         if_match: str | None = None,
         *,
         update_links: bool = False,
+        tolerate_link_rewrites: bool = False,
     ) -> RenameResult:
         """Rename or move a document or attachment.
 
@@ -1245,12 +1252,19 @@ class DocumentManager:
             update_links: When ``True``, find all documents that link to
                 *old_path* and rewrite their link targets to point to
                 *new_path*. Only applies to ``.md`` documents.
+            tolerate_link_rewrites: When ``True``, a note's *if_match* that
+                no longer matches is still accepted if every change since
+                it is a link rewrite this manager recorded, such as one a
+                rename made a moment earlier (#1492). The note's current
+                bytes move, so those rewrites are kept. ``False`` (default)
+                keeps the whole-file check strict.
 
         Returns:
             :class:`~markdown_vault_mcp.types.RenameResult` with
             *updated_links* counting source documents successfully updated,
-            and *hint* set when *update_links* was requested for an
-            attachment.
+            *hint* set when *update_links* was requested for an attachment,
+            and *link_rewrites_since_etag* set when *if_match* was accepted
+            across recorded link rewrites.
 
         Raises:
             SubmodulePathError: If either path lies inside a git submodule
@@ -1260,7 +1274,8 @@ class DocumentManager:
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
             ConcurrentModificationError: If *if_match* is provided and does
-                not match the current hash of *old_path*.
+                not match the current hash of *old_path*, and
+                *tolerate_link_rewrites* does not accept it.
             InvalidRequestError: If either path escapes the source directory,
                 or a non-.md path has an extension not in the attachment
                 allowlist.
@@ -1268,6 +1283,7 @@ class DocumentManager:
         self._check_writable()
         updated_links = 0
         hint: str | None = None
+        crossed: int | None = None
         backlink_callbacks: list[tuple[Path, str]] = []
         if update_links and is_note(old_path):
             self.ensure_index_current()
@@ -1286,7 +1302,9 @@ class DocumentManager:
                         f"Target already exists: {new_path!r}. Pass a new_path "
                         "that is free; list_documents shows what exists."
                     )
-                check_if_match(old_abs, old_path, if_match)
+                crossed = self._check_rename_etag(
+                    old_abs, old_path, if_match, tolerate=tolerate_link_rewrites
+                )
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
 
@@ -1327,7 +1345,47 @@ class DocumentManager:
             new_path=new_path,
             updated_links=updated_links,
             hint=hint,
+            link_rewrites_since_etag=crossed,
         )
+
+    def _check_rename_etag(
+        self, abs_path: Path, path: str, if_match: str | None, *, tolerate: bool
+    ) -> int | None:
+        """Check a note's rename etag, crossing recorded link rewrites if allowed.
+
+        Args:
+            abs_path: Absolute path of the note, which exists.
+            path: Vault-relative path of the note.
+            if_match: The caller's etag, or ``None`` for no check.
+            tolerate: Whether a stale etag may be accepted across the link
+                rewrites :attr:`_link_rewrites` holds for *path*.
+
+        Returns:
+            How many recorded rewrites the etag was accepted across, or
+            ``None`` when it matched outright or no check was asked for.
+
+        Raises:
+            ConcurrentModificationError: If *if_match* does not match and
+                the recorded rewrites do not lead from it to the note's
+                current hash.
+        """
+        try:
+            check_if_match(abs_path, path, if_match)
+        except ConcurrentModificationError as exc:
+            if not tolerate or if_match is None:
+                raise
+            crossed = self._link_rewrites.rewrites_since(
+                path, etag=if_match, current=exc.actual
+            )
+            if crossed is None:
+                raise
+            logger.info(
+                "rename_etag_crossed_link_rewrites path=%s rewrites=%d",
+                path,
+                crossed,
+            )
+            return crossed
+        return None
 
     def _rewrite_one_source(
         self,
@@ -1356,6 +1414,7 @@ class DocumentManager:
             count, write back or announce such a source: it still names the
             old target, and saying otherwise is what made #1521 silent.
         """
+        hash_before = compute_file_hash(source_abs)
         original = _read_text_utf8(source_abs)
         content = original
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
@@ -1380,6 +1439,9 @@ class DocumentManager:
             )
             return None
         atomic_write(source_abs, content)
+        self._link_rewrites.record(
+            source_path, hash_before, compute_file_hash(source_abs)
+        )
         return content
 
     def _rewrite_link_sources(

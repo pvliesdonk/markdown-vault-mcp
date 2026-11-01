@@ -218,7 +218,7 @@ For a note, always pass `update_links`=True. Parent folders are created as neede
 |---|---|---|---|
 | `old_path` | `string` | required | Current path, such as `"drafts/idea.md"` or `"assets/old.png"`. |
 | `new_path` | `string` | required | New path, such as `"projects/idea.md"`, where nothing exists yet. |
-| `if_match` | `string \| null` | `null` | Etag from read of `old_path`; omit when renaming several linked notes together. |
+| `if_match` | `string \| null` | `null` | Etag from read of `old_path`; still accepted when the only changes since are link rewrites made by other renames. |
 | `update_links` | `boolean` | `false` | Rewrite links to `old_path` in other notes so they point at `new_path`; attachment references are not tracked. Default false; pass true for every note. |
 
 **Returns**
@@ -227,6 +227,10 @@ Dict with `old_path` (str), `new_path` (str), and `updated_links` (int)
 counting the number of source documents whose links were updated.
 Carries hint (str) only when `update_links` was requested for an
 attachment, saying why nothing was rewritten.
+
+- `link_rewrites_since_etag` (int, optional): present only when
+  `if_match` was accepted although other renames had since rewritten
+  links in the note; counts those rewrites, which the rename kept.
 
 - remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
@@ -243,6 +247,16 @@ attachment, saying why nothing was rewritten.
 
 <!-- DOMAIN-EXAMPLE-rename-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
+Two renames sent together, each with the etag from one earlier read, where `ideas/b.md` links to `ideas/a.md`:
+
+```text
+rename(old_path="ideas/a.md", new_path="projects/a.md", if_match=<etag of a>, update_links=true)
+rename(old_path="ideas/b.md", new_path="projects/b.md", if_match=<etag of b>, update_links=true)
+```
+
+The first rename rewrites the link inside `ideas/b.md`, so the second call's etag no longer matches the file. The server recorded that rewrite, so it still accepts the etag. It moves the note with the rewritten link and returns `link_rewrites_since_etag: 1`.
+
+The etag is accepted only when every change since it is a link rewrite the server made in the last five minutes. Any other edit, or a server restart in between, makes the rename fail on the etag as before, and the client reads the note again.
 <!-- DOMAIN-EXAMPLE-rename-END -->
 
 ## `move_folder`

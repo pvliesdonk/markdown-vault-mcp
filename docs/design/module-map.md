@@ -38,6 +38,7 @@ src/markdown_vault_mcp/
     artifacts.py       -- ArtifactStore: validate/size/read/write/unlink/move for non-.md artifacts over the manager's shared lock + notifier (#1235); internal collaborator, not re-exported
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
     _write_kernel.py   -- atomic_write / check_if_match / umask cache: the pure write primitives both the note and artifact paths use (#1235)
+    _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
     git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)

@@ -1180,7 +1180,7 @@ operator learns why the note was left out.
 | `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()`; `build_embeddings(force=True)` | `read_only=True`; for a forced rebuild, a vault built with `owns_index_files=False`, which never creates or replaces the embedding store's files (#1778) |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
-| `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
+| `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match (for a tolerant `rename()`, nor do recorded link rewrites lead from it; #1492) |
 | `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
 | `SummarizeTimeoutError` | `summarize()` | The summarization backend outran its per-request budget; the caller can ask for less. A subclass of `InvalidRequestError` and of `RuntimeError`, the type a timeout had before (#1608) |
 | `NoteTooLargeError` | `read()` | A whole-note read is over `max_note_read_bytes`; the caller can read by section. A subclass of `InvalidRequestError`, with its own type so `summarize()` can report the skip's reason (#1637) |
@@ -1646,8 +1646,43 @@ rather than always recommending it: `old_text`-only edits are guarded by their
 anchor, and a rename moves the whole file, so losing the etag check costs
 nothing there. Only edits that carry line numbers stay one call per read,
 because a sibling edit shifts the range silently. The longer-term fixes are
-#1492 (accept conditional renames after provable server rewrites) and the
-surface audit #1571.
+#1492 (accept conditional renames after provable server rewrites, below) and
+the surface audit #1571.
+
+**Renames across the server's own link rewrites (#1492).** Two renames sent
+together, where B links to A: renaming A rewrites the link in B, so B's etag
+no longer matches, though only the server changed B. A rename can still
+accept that etag. The rule is "that version became this version solely
+through recorded link rewrites":
+
+- **What is recorded.** `DocumentManager` keeps a `LinkRewriteLedger`
+  (`managers/_rewrite_ledger.py`). Every link rewrite, from `rename` or
+  `move_folder`, records the note's path with the hash of its bytes before
+  and after the rewrite.
+- **When an etag is accepted.** On a mismatch, `rename` walks back from the
+  note's current hash through the entries for that path. It accepts only if
+  the walk reaches `if_match`. Any step the ledger cannot explain refuses the
+  rename as before: an external edit, a `write`/`edit`/`append`, a delete
+  and recreate, or an expired entry.
+- **What moves.** The note's current bytes move, so the rewrites survive.
+  The usual `update_links` pass follows, and an existing destination is
+  still an error.
+- **Bounds.** The ledger holds at most 256 entries for 300 seconds each, in
+  memory, per vault. Losing an entry to a restart, expiry or eviction can
+  only make a rename strict again, never accept one.
+- **Locking.** Both recording and checking run under `_file_write_lock`, so
+  no write can land between the check and the move.
+- **Content, not provenance.** The check compares content hashes. A later
+  write that leaves bytes identical to a recorded rewrite's result passes,
+  because the file then really is the old version plus the server's
+  rewrite.
+- **Who gets it.** The library keeps the strict check by default:
+  `rename(..., tolerate_link_rewrites=False)`. The MCP `rename` tool turns
+  tolerance on, because the parallel calls that trigger the conflict are a
+  model's. Acceptance is visible as `link_rewrites_since_etag` in the
+  result: the number of rewrites crossed, absent from the tool response when
+  none were. The `rename` `if_match` description now says the etag survives
+  such rewrites, in place of #1493's advice to omit it.
 
 ### Folder Conventions
 

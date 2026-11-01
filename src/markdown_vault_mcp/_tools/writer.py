@@ -651,8 +651,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             old_path: Current path, such as `"drafts/idea.md"` or `"assets/old.png"`.
             new_path: New path, such as `"projects/idea.md"`, where nothing exists yet.
-            if_match: Etag from read of old_path; omit when renaming several linked
-                notes together.
+            if_match: Etag from read of old_path; still accepted when the only
+                changes since are link rewrites made by other renames.
             update_links: Rewrite links to old_path in other notes so they point at
                 new_path; attachment references are not tracked. Default false; pass
                 true for every note.
@@ -662,6 +662,10 @@ def register(mcp: FastMCP) -> None:
             counting the number of source documents whose links were updated.
             Carries hint (str) only when update_links was requested for an
             attachment, saying why nothing was rewritten.
+
+            - link_rewrites_since_etag (int, optional): present only when
+              if_match was accepted although other renames had since rewritten
+              links in the note; counts those rewrites, which the rename kept.
 
             - remote (dict, optional): present only while the vault's git clone
               cannot reach its remote, with state, reason, since and detail; the
@@ -689,11 +693,15 @@ def register(mcp: FastMCP) -> None:
                 new_path,
                 if_match=if_match,
                 update_links=update_links,
+                # Parallel renames of linked notes stale each other's etags
+                # through link rewrites alone (#1492).
+                tolerate_link_rewrites=True,
             )
         data = asdict(result)
         # Absent, not null, when there is nothing to say — like `remote`.
-        if data["hint"] is None:
-            del data["hint"]
+        for key in ("hint", "link_rewrites_since_etag"):
+            if data[key] is None:
+                del data[key]
         return attach_remote_health(vault, data)
 
     @mcp.tool(

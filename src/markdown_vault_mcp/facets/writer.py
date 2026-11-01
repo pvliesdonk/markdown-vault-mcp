@@ -376,6 +376,7 @@ class WriterFacet:
         if_match: str | None = None,
         *,
         update_links: bool = False,
+        tolerate_link_rewrites: bool = False,
     ) -> RenameResult:
         """Rename or move a document or attachment.
 
@@ -392,6 +393,11 @@ class WriterFacet:
                 :meth:`WriterFacet.write`.
             update_links: When ``True``, rewrite internal links across the
                 vault to reflect the new path.  Defaults to ``False``.
+            tolerate_link_rewrites: When ``True``, accept a note's stale
+                *if_match* when every change since it is a link rewrite
+                this vault made (#1492); the result's
+                ``link_rewrites_since_etag`` counts them.  Defaults to
+                ``False``, the strict whole-file check.
 
         Returns:
             :class:`~markdown_vault_mcp.types.RenameResult`.
@@ -401,7 +407,7 @@ class WriterFacet:
                 (#1564).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
-                not match.
+                not match, and *tolerate_link_rewrites* does not accept it.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
             InvalidRequestError: If *old_path* or *new_path* escapes the source
@@ -412,6 +418,7 @@ class WriterFacet:
             new_path,
             if_match=if_match,
             update_links=update_links,
+            tolerate_link_rewrites=tolerate_link_rewrites,
         )
         if (
             self._convention_maintainer is not None
