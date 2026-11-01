@@ -24,6 +24,7 @@ from markdown_vault_mcp._identity import (
     Principal,
     bound_principal,
     configure_identity_claims,
+    configure_service_subjects,
     current_principal,
     resolve_mcp_principal,
 )
@@ -37,6 +38,7 @@ def _reset_identity_claims() -> Iterator[None]:
     """Isolate the module-level claim-key registration per test."""
     yield
     configure_identity_claims(name_claim=None, email_claim=None)
+    configure_service_subjects(None)
 
 
 def _patch_context(
@@ -462,5 +464,71 @@ class TestIssuerServiceMarkers:
         _patch_context(
             monkeypatch, subject="app-1", claims={"sub": "app-1", "client_id": "app-1"}
         )
+        with bound_principal(resolve_mcp_principal()):
+            assert resolve_human_subject() is None
+
+
+class TestDeclaredServiceSubjects:
+    """A subject the operator declares is a service, whatever the token says (#1480)."""
+
+    def test_declared_subject_is_a_service(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_service_subjects(("4f7e-sa", "other"))
+        _patch_context(
+            monkeypatch,
+            subject="4f7e-sa",
+            claims={"sub": "4f7e-sa", "azp": "reporting-job"},
+        )
+        principal = resolve_mcp_principal()
+        assert principal == Principal("4f7e-sa", None, None, "service")
+        assert principal.okf_actor("test") == "markdown-vault-mcp/test"
+
+    def test_declared_subject_keeps_git_attribution_claims(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_identity_claims(name_claim="name", email_claim="email")
+        configure_service_subjects(("4f7e-sa",))
+        _patch_context(
+            monkeypatch,
+            subject="4f7e-sa",
+            claims={"sub": "4f7e-sa", "name": "Reports", "email": "r@example.org"},
+        )
+        assert resolve_mcp_principal() == Principal(
+            "4f7e-sa", "Reports", "r@example.org", "service"
+        )
+
+    def test_configuring_logs_the_count_not_the_subjects(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._identity"):
+            configure_service_subjects(("4f7e-sa", "91ab-sa"))
+        assert "service_subjects_configured count=2" in caplog.text
+        assert "4f7e-sa" not in caplog.text
+
+    def test_undeclared_subject_stays_human(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_service_subjects(("4f7e-sa",))
+        _patch_context(
+            monkeypatch, subject="user-7", claims={"sub": "user-7", "azp": "app"}
+        )
+        assert resolve_mcp_principal().kind == "human"
+
+    def test_reconfiguring_replaces_the_list(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_context(monkeypatch, subject="4f7e-sa", claims={"sub": "4f7e-sa"})
+        configure_service_subjects(("4f7e-sa",))
+        configure_service_subjects(None)
+        assert resolve_mcp_principal().kind == "human"
+
+    def test_declared_subject_cannot_attest_as_human(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp._okf_write import resolve_human_subject
+
+        configure_service_subjects(("4f7e-sa",))
+        _patch_context(monkeypatch, subject="4f7e-sa", claims={"sub": "4f7e-sa"})
         with bound_principal(resolve_mcp_principal()):
             assert resolve_human_subject() is None

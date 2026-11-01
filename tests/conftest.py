@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +45,21 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_identity_registration() -> Iterator[None]:
+    """Reset the identity layer's startup registrations after each test.
+
+    ``to_vault_instances`` registers the claim keys and the declared service
+    subjects in module state (#1480); without this, a test that builds a vault
+    from config would leak them into every later principal resolution.
+    """
+    yield
+    from markdown_vault_mcp import _identity
+
+    _identity.configure_identity_claims(name_claim=None, email_claim=None)
+    _identity.configure_service_subjects(None)
 
 
 @pytest.fixture

@@ -2053,6 +2053,35 @@ class TestContentConfigFromEnv:
         cfg = ProjectConfig.from_env().content
         assert cfg.attachment_extensions == ("pdf", "png", "docx")
 
+    def test_service_subjects_list(self, monkeypatch):
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS", "4f7e-sa, 91ab-sa")
+        cfg = ProjectConfig.from_env().content
+        assert cfg.service_subjects == ("4f7e-sa", "91ab-sa")
+
+    def test_service_subjects_unset_is_none(self, monkeypatch):
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS", raising=False)
+        assert ProjectConfig.from_env().content.service_subjects is None
+
+    def test_service_subjects_frozen_and_str_rejected(self):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        assert ContentConfig(service_subjects=["a"]).service_subjects == ("a",)
+        with pytest.raises(ConfigurationError, match="service_subjects"):
+            ContentConfig(service_subjects="a")
+
+    def test_service_subjects_entries_stripped_and_checked(self):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        cfg = ContentConfig(service_subjects=[" a ", "", "b"])
+        assert cfg.service_subjects == ("a", "b")
+        assert ContentConfig(service_subjects=[" "]).service_subjects is None
+        with pytest.raises(ConfigurationError, match="service_subjects"):
+            ContentConfig(service_subjects=["a", 3])  # type: ignore[list-item]
+
+    def test_service_subjects_env_drops_empty_entries(self, monkeypatch):
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS", "a,,b")
+        assert ProjectConfig.from_env().content.service_subjects == ("a", "b")
+
     def test_attachment_extensions_empty_is_none(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "")

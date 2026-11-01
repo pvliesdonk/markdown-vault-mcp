@@ -3911,10 +3911,14 @@ OAuth `sub` can also identify a service. A token with a `sub` is a `service`
 principal when the issuer marks it as an application's in a way the check
 can read without knowing the issuer: `sub` equals the `client_id`, `azp` or `cid` claim, or the
 token carries Entra ID's `idtyp: app` or Auth0's `gty: client-credentials`
-(#1480). Every other `sub` keeps human attribution, an application
+(#1480). The operator can also list subjects in `SERVICE_SUBJECTS`;
+`configure_service_subjects` registers them at assembly, beside the claim
+keys, and a listed `sub` is a `service` principal whatever the token says.
+Every other `sub` keeps human attribution, an application
 assumption, as is the marker check itself where client and user IDs share a
 namespace (RFC 9700 §4.15.1 makes avoiding that the issuer's job). Keycloak, authentik and Zitadel issue client-credentials tokens
-to a service account with no marker, and those are recorded as human. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
+to a service account with no marker, and those are recorded as human unless
+listed. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
 read `get_subject()` itself; it now resolves a `Principal` instead, so the
 rules cannot drift between two copies. The dead `resolve_write_actor()` went
 with that branch: since #1160 the write tools stamp
