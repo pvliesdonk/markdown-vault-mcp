@@ -184,6 +184,21 @@ class TestCondemn:
         assert len(list(tmp_path.glob("vec.sqlite3.corrupt-*"))) == 1
         slot.close()
 
+    def test_condemning_a_suspect_store_directly_clears_the_mark(
+        self, tmp_path: Path
+    ) -> None:
+        # A full rebuild's verify can condemn a store a search marked first.
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = _slot(base)
+        store = slot.get(rebuild=None)
+        slot._suspect = store
+
+        assert slot.condemn(store) is True
+
+        assert slot.condemn_suspect() is False
+        slot.close()
+
     def test_a_store_already_replaced_is_left_alone(self, tmp_path: Path) -> None:
         base = tmp_path / "vec"
         _seeded(base)
