@@ -213,8 +213,9 @@ class TestStreamedBackend:
         [
             "UPDATE chunks SET vector = x'00000000'",
             "UPDATE chunks SET metadata = '[1, 2]'",
+            "UPDATE chunks SET metadata = CAST(x'ff' AS TEXT)",
         ],
-        ids=["vector", "metadata"],
+        ids=["vector", "metadata", "undecodable"],
     )
     def test_open_validates_every_row(self, tmp_path: Path, statement: str) -> None:
         _seed(tmp_path)
@@ -230,6 +231,8 @@ class TestStreamedBackend:
             ("UPDATE chunks SET vector = x'00000000'", "rows_for"),
             ("UPDATE chunks SET metadata = '[1, 2]'", "search"),
             ("UPDATE chunks SET metadata = '[1, 2]'", "rows_for"),
+            ("UPDATE chunks SET metadata = CAST(x'ff' AS TEXT)", "search"),
+            ("UPDATE chunks SET metadata = CAST(x'ff' AS TEXT)", "rows_for"),
         ],
     )
     def test_a_row_damaged_after_open_is_corrupt_at_the_read(
@@ -596,6 +599,24 @@ class TestOpenFresh:
         assert _reopened(tmp_path)[0] == 1
         (copy,) = _aside(tmp_path)
         assert copy.read_bytes() == b"not a database " * 100
+        (line,) = [
+            r for r in caplog.records if r.msg.startswith("vector_store_moved_aside")
+        ]
+        assert line.args[:2] == (str(_base(tmp_path)), "unusable")  # type: ignore[index]
+
+    def test_a_store_whose_meta_will_not_decode_is_moved_aside(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _seed(tmp_path)
+        _sql(tmp_path, "UPDATE meta SET value = CAST(x'ff' AS TEXT)")
+        damaged = _db(tmp_path).read_bytes()
+        fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
+        with caplog.at_level(logging.WARNING):
+            fresh.replace_document(doc("b.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        fresh.close()
+        assert _reopened(tmp_path)[1] == {"b.md": "t1"}
+        copies = [p for p in _aside(tmp_path) if ".sqlite3.corrupt-" in p.name]
+        assert [p.read_bytes() for p in copies] == [damaged]
         (line,) = [
             r for r in caplog.records if r.msg.startswith("vector_store_moved_aside")
         ]

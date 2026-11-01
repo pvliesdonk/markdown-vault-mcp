@@ -225,16 +225,17 @@ def _classified(
     refused permission or an I/O error, is unavailable.
     """
     name = getattr(exc, "sqlite_errorname", "")
-    if name in _CORRUPT_ERRORNAMES or "not a database" in str(exc):
-        return _outcome(
-            StoreCorruptError,
-            f"Vector store at {where} is not a SQLite database: {exc}",
-            where,
-        )
+    # First: the decode message quotes the cell, which may say anything.
     if str(exc).startswith(_UNDECODABLE):
         return _outcome(
             StoreCorruptError,
             f"Vector store at {where} holds text that will not decode: {exc}",
+            where,
+        )
+    if name in _CORRUPT_ERRORNAMES or "not a database" in str(exc):
+        return _outcome(
+            StoreCorruptError,
+            f"Vector store at {where} is not a SQLite database: {exc}",
             where,
         )
     return _outcome(

@@ -4168,8 +4168,8 @@ which is how a damaged page often shows (#1881). A refused permission or an
 I/O error stays *unavailable*. A store that fails its open as corrupt has its
 `.sqlite3`, `-wal` and `-shm` renamed aside by its `quarantine` before a
 rebuild (§ Embedding transitions and recovery, below). `open_fresh` reads and checks nothing: before its
-first write it moves a file that is not a vector store, or whose pages
-`PRAGMA quick_check` finds damaged, aside the same way (`move_aside`, the
+first write it moves a file that is not a vector store, whose own rows do
+not decode, or whose pages `PRAGMA quick_check` finds damaged, aside the same way (`move_aside`, the
 `.sqlite3`, `-wal` and `-shm` under one `.corrupt-<time>` suffix, a refused
 rename raising *unavailable*). That catches damage the open did not see, such
 as a damaged store whose identity still reads, which is refused as another
