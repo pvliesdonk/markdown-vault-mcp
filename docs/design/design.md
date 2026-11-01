@@ -1007,6 +1007,17 @@ order) now converges the difference instead of skipping because vectors
 exist. Embedding work scales with the size of the drift, not the size of
 the vault, so a steady-state boot does zero embedding work.
 
+The comparison needs only each document's stored metadata; vectors matter
+only for an embed, which reuses them. A store whose every read is a round
+trip (PostgreSQL) implements the optional `ReadsMetadataInBatches`
+protocol: the pass reads the metadata of 500 documents per read, without
+vectors, and calls `rows_for` only for a document it re-embeds or
+re-tokens, whose stored vectors it reuses (#1937).
+Reading each document's rows in its own transaction had made a PostgreSQL
+restart several times slower than a local store's. The local stores serve
+`rows_for` from the process and keep the per-document read. The bulk
+re-token and a rebuild reusing own rows still read per document (#1970).
+
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
@@ -3840,7 +3851,8 @@ Only the resolution site can distinguish an unusable configured claim from
 an intentionally static author identity.
 
 `resolve_mcp_principal()` is the **only** place the subject rules live
-(#1231, #1463). A usable token `sub` retains `human:<subject>` attribution;
+(#1231, #1463). A usable token `sub` retains `human:<subject>` attribution
+unless the issuer marks the token as an application's (below);
 a subject obtained only from the client-ID fallback is a `service` principal
 that retains its identifier but stamps the tool actor. This covers single,
 custom and mapped bearer credentials, including their use alongside OIDC.
@@ -3849,9 +3861,14 @@ A real token `sub` spelled `local` is distinct from the no-auth sentinel.
 `resolve_human_subject()` checks the kind, so `trust-auth` refuses service
 credentials; an affirmative elicitation instead records `human:local`.
 The external contract is in [authenticated subjects](reference/authenticated-subjects.md).
-OAuth `sub` can also identify a service: retaining human attribution for that
-claim is an existing application assumption, with issuer-aware classification
-tracked separately in #1480. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
+OAuth `sub` can also identify a service. A token with a `sub` is a `service`
+principal when the issuer marks it as an application's in a way the check
+can read without knowing the issuer: `sub` equals the `client_id`, `azp` or `cid` claim, or the
+token carries Entra ID's `idtyp: app` or Auth0's `gty: client-credentials`
+(#1480). Every other `sub` keeps human attribution, an application
+assumption, as is the marker check itself where client and user IDs share a
+namespace (RFC 9700 §4.15.1 makes avoiding that the issuer's job). Keycloak, authentik and Zitadel issue client-credentials tokens
+to a service account with no marker, and those are recorded as human. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
 read `get_subject()` itself; it now resolves a `Principal` instead, so the
 rules cannot drift between two copies. The dead `resolve_write_actor()` went
 with that branch: since #1160 the write tools stamp
@@ -4975,7 +4992,8 @@ SQLite store:
   index) where numpy rewrites its whole store, 106 MB deployed and 1.06 GB
   at growth;
 - adds 20–25 MB to the process for searching, where numpy adds 165–205 MB
-  deployed and about 2.1 GB at growth, about twice its vector matrix;
+  deployed and about 2.1 GB at growth, about twice its vector matrix
+  (1.25 GB at growth since #1936 removed a copy of the matrix at open);
 - pays in latency: semantic p95 is 140–159 ms deployed against numpy's
   39–45 ms, and 1.0 s at growth against 0.08–0.11 s; similar-note search at
   growth is 1.06 s.

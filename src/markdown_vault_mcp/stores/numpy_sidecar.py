@@ -622,7 +622,9 @@ def _snapshot_from(
     return Snapshot(
         identity,
         stored.generation,
-        frozen(np.array(matrix, dtype=np.float32)),
+        # The matrix was just loaded and nothing else holds it, so it is
+        # frozen in place: a copy doubled the open's peak memory (#1936).
+        frozen(np.asarray(matrix, dtype=np.float32)),
         tuple(stored.rows),
         MappingProxyType(stored.tokens),
     )

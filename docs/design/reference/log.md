@@ -1,5 +1,16 @@
 # Reference research log
 
+## 2026-10-31
+
+- Extended [Authenticated subjects and human attribution](authenticated-subjects.md)
+  for #1480: how Amazon Cognito, Authelia, Okta, Auth0, Microsoft Entra ID,
+  Keycloak, authentik and Zitadel shape a client-credentials access token.
+  No standard claim marks one. `sub == client_id` holds for Cognito, Authelia
+  and Okta's default; Auth0 marks it with `gty: client-credentials` and Entra
+  ID with `idtyp: app`; Keycloak, authentik and Zitadel issue it to a service
+  account with no marker. Sources: vendor documentation and pinned issuer
+  source. Next review: 2027-04-30.
+
 ## 2026-10-30
 
 - `git-staging-and-commits.md`: a section on automatic maintenance added. `fetch`, `pull`, `commit` and `rebase` end with `git maintenance run --auto --detach`, whose detached session leader is re-parented to PID 1; in images up to 5.1.0 the server was PID 1 and never reaped them, which filled the cgroup's `pids.max` after 14 days at a 600 s pull interval (#1959). Sources: git-config(1) (`maintenance.autoDetach`, `gc.autoDetach`) and git-gc(1). Observed one orphan per `fetch` and per `pull` on git 2.47.3 (the published image) and 2.55.0, none with both keys `false`, and none on 2.43.0 in a repository where gc had no work. The `subject_version` gains those versions.

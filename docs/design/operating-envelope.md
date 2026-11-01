@@ -113,6 +113,7 @@ was kept, so its cold figure is warmer than the local stores'.
 | numpy | 1.8 / 1.9 s | 11.0 / 10.7 s |
 | sqlite | 2.3 s | 13.6 s |
 | postgres | 10.0 / 10.1 s | 89.2 / 81.1 s |
+| postgres after #1937 ([below](#after-1937-the-postgresql-restart)) | 2.1 / 2.0 s | 8.3 / 7.3 s |
 | **Texts embedded on a clean restart** (every store) | 0 | 0 |
 | **Texts embedded after a kill, beyond the edit in progress** (every store) | 0 | 0 |
 | **Store moved aside** (every store) | no | no |
@@ -133,12 +134,12 @@ edits. After the 200 edits, PostgreSQL's schema was 152.7 MB and 1,446.2 MB
 
 | Proposed on #1506 | What the measurements show |
 |---|---|
-| Memory semantic search adds: ≤ 150 MB at both sizes | A flat figure fits only the streamed stores, and they use far less (15–25 MB at both sizes). numpy's grows with the vault: 165–205 MB deployed, about 2.1 GB at growth, about twice its vector matrix (#1936), so it scales with chunks × dimensions. |
+| Memory semantic search adds: ≤ 150 MB at both sizes | A flat figure fits only the streamed stores, and they use far less (15–25 MB at both sizes). numpy's grows with the vault: 165–205 MB deployed, about 2.1 GB at growth, so it scales with chunks × dimensions. About 0.81–0.85 GB of the growth figure was a copy of the matrix while the store opened, removed in #1936; growth now adds 1.25 GB ([after #1936](#after-1936-the-numpy-stores-memory)). |
 | Unfiltered search p95: ≤ 100 ms deployed, ≤ 1 s growth | Semantic, hybrid and similar-note search are all unfiltered. Deployed, only numpy is under 100 ms for all three (at most 82 ms). The streamed stores' p95 is 105–159 ms across the three, and their semantic median 98–117 ms. #1502's prototype took about 39 ms per search; it scanned vectors without the server's metadata and result work. At growth, sqlite's semantic and hybrid p95 sit at the 1 s line (1,035 / 1,000 and 1,072 / 987 ms) and its similar-note p95 is above it in both runs (1,055 / 1,063 ms). postgres is at 0.49–0.60 s for all three, and numpy's similar-note search at 0.31–0.33 s. |
 | Filtered p95 below the unfiltered figure | It holds for sqlite and postgres at both sizes, by a wide margin. For numpy it held in one run of each size and not the other (deployed 65 vs 45 ms, then 32 vs 39 ms; growth 102 vs 107 ms, then 96 vs 81 ms). Resident filtered search is about as fast as unfiltered, not reliably faster. |
 | A one-note edit writes on the order of that note's vectors, never the whole store | postgres writes up to 145 KB of WAL, about five times the note's 29 KB of vectors. sqlite's store file grows by at most 78 KB (median 0), since pages are rewritten in place. The bytes sqlite's process writes, keyword index included, are 0.27 MB median (about nine times the note's vectors) and at most 3.7 MB deployed and 2.5 MB at growth. Neither rewrites its store. numpy rewrites its whole store on every edit: 106 MB deployed, 1.06 GB at growth. The sidecar is written as one file, so this follows from its design. |
 | Restart and recovery: no unchanged note is embedded again | Holds on every store at both sizes, in both runs. |
-| Whole-process memory and time until search works: measured, no number yet | Measured above. Two findings. PostgreSQL's restart takes 4–6 times as long as a local store's at deployed size (10 s) and 6–8 times at growth (81–89 s; #1937). Every store's cold build peaks at 2.4–3.6 GB of resident memory at growth, 21 to 34 times the 106–117 MB of anonymous memory a streamed store's process holds once it serves (#1938). |
+| Whole-process memory and time until search works: measured, no number yet | Measured above. Two findings. PostgreSQL's restart took 4–6 times as long as a local store's at deployed size (10 s) and 6–8 times at growth (81–89 s); #1937 removed the per-note reads behind it, and it now takes 2.0–2.1 s and 7.3–8.3 s ([after #1937](#after-1937-the-postgresql-restart)). Every store's cold build peaks at 2.4–3.6 GB of resident memory at growth, 21 to 34 times the 106–117 MB of anonymous memory a streamed store's process holds once it serves (#1938). |
 
 ## What the status reports, against the measurements
 
@@ -150,14 +151,88 @@ edits. After the 200 edits, PostgreSQL's schema was 152.7 MB and 1,446.2 MB
   uses, so the match shows only that every relation is counted.
 - `resident_vector_bytes` is the vector matrix: 93.2 MB and 932.4 MB for
   numpy, 0 for the streamed stores. That is what it is documented to be. The
-  memory numpy's search adds is about twice it, and the operator docs already
-  say the figure leaves out the server's other memory (#1936 asks what that
-  memory is).
+  memory numpy's search added was about twice it, and the operator docs
+  already say the figure leaves out the server's other memory;
+  [after #1936](#after-1936-the-numpy-stores-memory) says what that memory is.
 - `search_mode` matches the store in every run. `search_workspace_bytes` is
   1 MiB for sqlite and empty for the others, as configured.
 
 No status figure disagrees with its measurement, so #1899 needs no status
 correction.
+
+## After #1936: the numpy store's memory
+
+#1936 asked what the memory numpy's search adds holds beyond its matrix. The
+harness's "adds" figure covers opening the store, since the first semantic
+search is what opens it, and that is where the peak was.
+
+- **The peak was a copy.** Opening the store copied the matrix `np.load` had
+  just returned, so the open briefly held two matrices. #1936 freezes the
+  loaded matrix in place instead. Measured directly on a synthetic store of
+  22,764 rows at 1,024 dimensions, the open's peak fell from 203 MB to 115 MB
+  above the process before it; at 100,000 rows, from 895 MB to 505 MB.
+- **Searching adds little.** At 100,000 rows, five semantic and five
+  similar-note searches after the open added about 35 MB.
+- **What stays is the matrix and the rows.** Each row's metadata, which
+  includes the chunk's text, is held beside the matrix. At growth the
+  process holds 1,331 MB once searches settle: the 932 MB matrix, about
+  106 MB a streamed store's process also holds, and about 290 MB of rows.
+
+A third run of the harness, numpy only, after the fix (31 October 2026, the
+growth run at commit `1d51e7a1`; the deployed run at `ec328910` with the
+fix uncommitted in the tree), in decimal MB:
+
+| | Deployed | Growth |
+|---|---|---|
+| Memory warm searches add | 162 (runs 1 and 2: 165 / 205) | 1,247 (runs 1 and 2: 2,093 / 2,060) |
+| Process anonymous memory after the searches | 248 (247) | 1,331 (1,330 / 1,331) |
+
+Runs 1 and 2 were at an earlier commit, on disk; the direct measurement
+above is what isolates the fix from other changes since. At deployed size
+the harness's figure barely moves, though the direct
+measurement above shows the copy there too. The harness samples memory at an
+interval, and a copy of a 93 MB matrix lasts too short a time for it to be
+seen reliably, which is also why runs 1 and 2 differ there. The run wrote to a
+memory-backed folder, so its cold latencies are not cold and are not used
+here. Its JSON and tables are `envelope-runs/run3-numpy-*`.
+
+`embeddings_status` is unchanged: `resident_vector_bytes` is still the
+matrix, and the operator docs still say it leaves the rows out.
+
+## After #1937: the PostgreSQL restart
+
+#1937 asked which boot step made PostgreSQL's restart slow. A profiled
+restart at deployed size (3,252 notes) spent 12.7 of its 13.9 s in the
+boot `build_embeddings`. That pass checks every note against the store,
+and it read each note's rows through `rows_for`: one read transaction per
+note, each vector sent as text and parsed into Python floats. Of the
+12.7 s, about 4.7 s was parsing vectors, about 2.7 s building float lists
+and about 5 s round trips and transaction setup. The check compares only
+the rows' metadata, so the pass now reads the metadata of 500 notes per
+query, without vectors, and reads a note's vectors only when it re-embeds
+or re-tokens that note, since both reuse them. The local stores serve the same reads from the process, which
+is why they never showed it.
+
+Measured on their own with a throwaway `tensorchord/vchord-suite:pg17-20260501`
+container, two restarts per size after a fresh build, with the stand-in
+provider (31 October 2026; before at `b5f82172`, after at `b8d63342`):
+
+| | Deployed | Growth |
+|---|---|---|
+| The boot `build_embeddings`, before | 9.7 / 8.8 s | 100.6 / 77.9 s |
+| The boot `build_embeddings`, after | 0.48 / 0.39 s | 4.1 / 4.5 s |
+| Process age when the first semantic search returns, after | 2.1 / 2.0 s | 8.3 / 7.3 s |
+
+The before figures come from the same probe and spread more than the
+harness's: the growth run's 100.6 s exceeds the 89.2 / 81.1 s the harness
+measured for the whole restart. They show the size of the change, not a
+replacement for the harness's figures. The process age is the harness's
+figure, taken the same way (the build,
+the boot `reindex`, `build_embeddings`, one semantic search), but by a
+probe that ran only the restart, not after the harness's other phases.
+Every restart embedded nothing. PostgreSQL across a network pays a round
+trip per 500 notes instead of per note. The bulk re-token and a rebuild
+that reuses the store's own rows still read per note (#1970).
 
 ## Limits
 
@@ -188,5 +263,8 @@ correction.
 - **#1901** wrote the operator page from this record,
   [`docs/use/embedding-stores.md`](../use/embedding-stores.md); the prototype
   figures `docs/use/embeddings.md` gave (#1501, #1502) were replaced in #1940.
-- **#1936**, **#1937** and **#1938** follow up the numpy memory, the PostgreSQL
-  restart and the cold-build peak.
+- **#1936** explained the numpy memory and removed the copy at open
+  ([above](#after-1936-the-numpy-stores-memory)). **#1937** explained the
+  PostgreSQL restart and removed its per-note reads
+  ([above](#after-1937-the-postgresql-restart)). **#1938** follows up the
+  cold-build peak.

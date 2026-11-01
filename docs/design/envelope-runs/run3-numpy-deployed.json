@@ -1,0 +1,123 @@
+{
+  "chunks": 22764,
+  "configs": [
+    {
+      "backend": "numpy",
+      "build": {
+        "chunks": 22764,
+        "notes": 3252,
+        "peak_anon": 435531776,
+        "peak_resident": 472219648,
+        "seconds": 5.322314874036238,
+        "texts_embedded": 22764
+      },
+      "edits": {
+        "count": 200,
+        "note_vector_bytes": {
+          "max": 28672,
+          "median": 28672
+        },
+        "store_delta": {
+          "max": 2,
+          "median": 0.0
+        },
+        "texts_embedded": {
+          "max": 1,
+          "median": 1.0
+        },
+        "wchar": {
+          "max": 109264192,
+          "median": 105871419.0
+        }
+      },
+      "latency": {
+        "cold": {
+          "filtered": 0.1421967651695013,
+          "hybrid": 0.1126649109646678,
+          "semantic": 0.09458838193677366,
+          "similar": 0.24861793592572212
+        },
+        "eviction": {
+          "filtered": "resident 135421952 bytes",
+          "hybrid": "resident 135421952 bytes",
+          "semantic": "resident 135421952 bytes",
+          "similar": "resident 135421952 bytes"
+        },
+        "warm": {
+          "filtered": {
+            "p50": 0.022326498990878463,
+            "p95": 0.05643426184542477
+          },
+          "hybrid": {
+            "p50": 0.03957826201803982,
+            "p95": 0.07013776316307485
+          },
+          "semantic": {
+            "p50": 0.030818196013569832,
+            "p95": 0.05088583403266966
+          },
+          "similar": {
+            "p50": 0.032859005965292454,
+            "p95": 0.07671337993815541
+          }
+        }
+      },
+      "memory": {
+        "adds_anon": 159506432,
+        "adds_resident": 162308096,
+        "mapped_files": 12987392,
+        "page_cache": 135458816,
+        "process_anon": 247533568,
+        "store_closed_at_baseline": true
+      },
+      "recovery": {
+        "finished_edits": 100,
+        "moved_aside": false,
+        "seconds": 2.1499999999068677,
+        "texts_allowed": 1,
+        "texts_beyond_allowed": 0,
+        "texts_embedded": 1,
+        "wall_seconds": 2.5165963298641145
+      },
+      "restart": {
+        "moved_aside": false,
+        "seconds": 1.8700000001117587,
+        "texts_embedded": 0,
+        "wall_seconds": 2.1776126988697797
+      },
+      "search": "resident",
+      "status": {
+        "measured_store_bytes": 105736806,
+        "resident_vector_bytes": 93241344,
+        "search_mode": "resident",
+        "search_workspace_bytes": null,
+        "stored_bytes": 105736806
+      }
+    }
+  ],
+  "environment": {
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+    "dirty": true,
+    "filesystem": "tmpfs",
+    "git_sha": "ec328910",
+    "kernel": "7.2.9-arch1-1",
+    "memory": "131513556 kB",
+    "numpy": "2.4.6",
+    "psycopg": "3.3.6",
+    "python": "3.14.8",
+    "sqlite": "3.53.1"
+  },
+  "notes": 3252,
+  "settings": {
+    "batch_size": 64,
+    "dim": 1024,
+    "discard": 5,
+    "drain_timeout_s": 600,
+    "edits": 200,
+    "kill_after": 100,
+    "phase_timeout_s": 7200,
+    "queries": 50,
+    "seed": 1506
+  },
+  "size": "deployed"
+}

@@ -15,8 +15,10 @@ The managers depend on these concepts:
   — the vector store contract (#1767): vectors in, nearest rows out, with
   no embedding provider inside the store; :class:`ReportsResources` is the
   optional part a store implements to report its search mode and sizes
-  (#1377), and :class:`DescribesStore` the optional part a store
-  implements to say where it lives (#1504).
+  (#1377), :class:`DescribesStore` the optional part a store
+  implements to say where it lives (#1504), and
+  :class:`ReadsMetadataInBatches` the optional part a store implements to
+  serve many documents' row metadata in one read (#1937).
 
 ``FTSIndex`` implements the first two over one SQLite database and
 ``NumpySidecarStore`` the vector contract over numpy; both satisfy these
@@ -67,6 +69,7 @@ __all__ = [
     "GraphStore",
     "KeywordGraphIndex",
     "KeywordIndex",
+    "ReadsMetadataInBatches",
     "ReportsResources",
     "SourceProbe",
     "StoreBackend",
@@ -499,6 +502,27 @@ class VectorReader(Protocol):
 
     def tokens(self) -> dict[str, RevisionToken | None]:
         """Return each stored document's token; ``None`` when unknown."""
+        ...
+
+
+@runtime_checkable
+class ReadsMetadataInBatches(Protocol):
+    """A vector store that reads many documents' row metadata at once (#1937); optional.
+
+    A store whose every read is a round trip implements it, so a reconcile
+    pass compares what it holds without one read per document, and without
+    reading vectors it does not need.
+    """
+
+    def metadata_for(self, paths: Collection[str]) -> dict[str, list[dict[str, Any]]]:
+        """Return each of *paths*' row metadata in storage order, without vectors.
+
+        Args:
+            paths: The documents to read.
+
+        Returns:
+            The metadata by path; a path with no rows is left out.
+        """
         ...
 
 

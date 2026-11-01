@@ -520,6 +520,29 @@ def stored_rows(
     ]
 
 
+def stored_metadata(
+    conn: psycopg.Connection[Any], *, schema: str, paths: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """*paths*' row metadata in ordinal order, without their vectors (#1937).
+
+    Args:
+        conn: A connection inside a read transaction.
+        schema: The vault schema.
+        paths: The documents.
+
+    Returns:
+        The metadata by path; a path with no rows is left out.
+    """
+    query = sql.SQL(
+        "SELECT path, metadata FROM {}.vector_chunks"
+        " WHERE path = ANY(%s) ORDER BY path, ordinal"
+    ).format(sql.Identifier(schema))
+    found: dict[str, list[dict[str, Any]]] = {}
+    for path, metadata in conn.execute(query, (paths,)):
+        found.setdefault(str(path), []).append(dict(metadata))
+    return found
+
+
 _SIZES = (
     "SELECT coalesce(sum(pg_catalog.pg_total_relation_size(c.oid)), 0)"
     " FROM pg_catalog.pg_class c"
