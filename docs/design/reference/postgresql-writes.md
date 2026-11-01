@@ -2,7 +2,7 @@
 type: Reference
 title: PostgreSQL transactions, locks, durability and COPY behind the vector store
 description: What the PostgreSQL vector store's writes and writer lease rely on in PostgreSQL 17 and psycopg 3 — snapshots under REPEATABLE READ, DELETE against TRUNCATE and DROP, row and advisory locks, lock and statement timeouts, synchronous_commit and fsync, and binary COPY.
-subject_version: "PostgreSQL 17 documentation (isolation, explicit locking, SET, WAL settings, administration functions); psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1"
+subject_version: "PostgreSQL 17 documentation (isolation, explicit locking, SET, WAL settings, administration functions); psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1; binary results observed on tensorchord/vchord-suite:pg17-20260501 (2026-11-01)"
 valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x, psycopg 3.3.x (3.3.1 or later)"
 generated:
   by: process:researching-references
@@ -11,6 +11,8 @@ stale_after: 2027-04-22T15:00:00+02:00
 verified:
   - by: process:researching-references
     at: 2026-10-22T15:00:00+02:00
+  - by: process:researching-references
+    at: 2026-11-01T18:00:00+01:00
 status: stable
 sources:
   - id: pg-explicit-locking
@@ -53,6 +55,14 @@ sources:
     title: Using COPY TO and COPY FROM (psycopg 3)
     resource: https://www.psycopg.org/psycopg3/docs/basic/copy.html
     accessed: 2026-10-18
+  - id: psycopg-binary-results
+    title: Binary parameters and results (psycopg 3)
+    resource: https://www.psycopg.org/psycopg3/docs/basic/params.html#binary-parameters-and-results
+    accessed: 2026-11-01
+  - id: pgvector-python-psycopg
+    title: pgvector-python psycopg adapter (v0.5.1)
+    resource: https://github.com/pgvector/pgvector-python/blob/v0.5.1/pgvector/psycopg/vector.py
+    accessed: 2026-11-01
 ---
 
 # PostgreSQL transactions, locks, durability and COPY behind the vector store
@@ -74,12 +84,13 @@ unchanged, and so are their dates.
 - Covers: snapshots under `REPEATABLE READ`; `SET LOCAL`; `DELETE` against
   `TRUNCATE` and `DROP TABLE`; row and advisory locks; `lock_timeout`
   and `statement_timeout`; `synchronous_commit` and `fsync`; binary
-  `COPY` and the `vector` round trip through pgvector-python.
+  `COPY`, binary results and the `vector` round trip through pgvector-python.
 - Does not cover: streaming replication and replica read-after-write; crash and
   power-loss recovery; how a failed write is reported
   ([PostgreSQL connections](postgresql-connections.md)).
 - Depended on by: `src/markdown_vault_mcp/stores/_postgres_lease.py` (the writer
-  lease), `_postgres_tables.py` (generations, resets, durability),
+  lease), `_postgres_tables.py` (generations, resets, durability, the
+  batched row read),
   `postgres_vectors.py` (read snapshots, the `fsync` warning) and
   `_postgres.py` (each pool connection's `statement_timeout`); the
   operator guide, `docs/use/postgresql.md` (durability, PgBouncer);
@@ -125,11 +136,12 @@ unchanged, and so are their dates.
 - `fsync = off` can cause unrecoverable corruption after a crash or power failure, and is set only in the configuration file or on the command line. [source: pg-wal-config] `ALTER SYSTEM SET fsync = off` followed by `pg_reload_conf()` takes effect for new sessions without a restart. [observed: #1504 child 5b] [pins: tests/test_stores_postgres_vectors.py::test_a_writer_warns_when_postgresql_runs_without_fsync]
 - A role without special privileges can read `fsync` and `synchronous_commit` with `SHOW`. [observed: probe 11]
 
-### Binary COPY
+### Binary COPY and binary results
 
 - Binary `COPY … FROM STDIN` with `write_row()` needs a binary dumper for every type and applies no casts; `Copy.set_types()` names the types. [source: psycopg-copy]
 - After `register_vector(conn)`, binary `COPY` with `set_types(["text", "int4", "vector", "jsonb"])` loads numpy float32 vectors, and a selected `vector` comes back as `pgvector.Vector`, whose `to_numpy()` gives float32. [observed: probe 13, pgvector-python 0.5.1]
 - Binary `COPY` with `set_types(["text", "int4", "text", "vector", "jsonb"])` takes numpy float32 rows and `Jsonb` values with a custom `dumps`; a `vector` column without a typmod takes rows of different dimensions; a foreign-key violation inside `COPY` raises `23503`. [observed: #1504 child 5b probe, 2026-10-19, pgvector 0.8.1-pg17, psycopg 3.3.6] [pins: tests/test_stores_postgres_writes.py::test_a_generation_replaces_everything]
+- A cursor opened with `Connection.cursor(binary=True)` asks for every result column in binary; a type with no loader comes back as an unparsed buffer. [source: psycopg-binary-results] `register_vector` registers a binary loader for `vector` that builds a `pgvector.Vector` from the float32 bytes without parsing text. [source: pgvector-python-psycopg] On such a cursor, `text`, `jsonb` and `vector` columns come back as `str`, `dict` and `Vector`, and reading 22,764 rows of 1,024 dimensions this way, 256 documents per query, took 0.63–0.68 s against 9.2–9.6 s for one text-format query per document. [observed: #1970, `tensorchord/vchord-suite:pg17-20260501`, psycopg 3.3.6, pgvector-python 0.5.1, 2026-11-01] [pins: tests/test_stores_postgres_writes.py::test_rows_by_path_reads_many_documents_as_float32]
 
 ## Probes
 
