@@ -861,6 +861,8 @@ This server keeps its search index (`index.db`), its embeddings and the FastEmbe
 
 The image includes `git` and `git-lfs`. For a vault that commits and pushes the changes made through the server, set the variables in [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/#managed-mode-recommended-for-containerized-deployments). An empty vault folder plus `MARKDOWN_VAULT_MCP_GIT_REPO_URL` is cloned at the first start.
 
+After a fetch, pull or commit, git's automatic maintenance detaches into the background, and the [init process](#init-process) reaps it once it exits. Images up to 5.1.0 have no init: there each pull left one zombie `git` process, until the container could start no more processes. If you run 5.1.0 or earlier with git sync on, add `init: true` to the service in `compose.yml`, or `--init` to `docker run`.
+
 # systemd and the Linux packages
 
 The `.deb` and `.rpm` on the [releases page](https://github.com/pvliesdonk/markdown-vault-mcp/releases) install the server as a systemd service. [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/installation/#linux-packages) has the install commands; this page is what comes after. The unit confines the process, which is defence in depth: authentication stays the boundary, and the [security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/security-model/index.md) says what an authenticated caller then reaches.

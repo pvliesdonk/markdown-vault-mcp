@@ -3584,6 +3584,7 @@ directories (default 1000/1000).</p>
 <p>This server keeps its search index (<code>index.db</code>), its embeddings and the FastEmbed model cache under <code>/data/state</code>, beside the server's own state. It writes nothing to <code>/data/service</code>. The notes live only in the vault: the index and embeddings under <code>/data/state</code> are rebuilt when lost, at the cost of a full reindex. Keep the <code>state-data</code> volume on a local disk, not a network share: the index is SQLite in WAL mode (<a href="../../use/storage/">Index storage and SQLite</a>).</p>
 <h3 id="git">Git<a class="headerlink" href="#git" title="Permanent link">&para;</a></h3>
 <p>The image includes <code>git</code> and <code>git-lfs</code>. For a vault that commits and pushes the changes made through the server, set the variables in <a href="../../use/git-integration/#managed-mode-recommended-for-containerized-deployments">Git integration</a>. An empty vault folder plus <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> is cloned at the first start.</p>
+<p>After a fetch, pull or commit, git's automatic maintenance detaches into the background, and the <a href="#init-process">init process</a> reaps it once it exits. Images up to 5.1.0 have no init: there each pull left one zombie <code>git</code> process, until the container could start no more processes. If you run 5.1.0 or earlier with git sync on, add <code>init: true</code> to the service in <code>compose.yml</code>, or <code>--init</code> to <code>docker run</code>.</p>
 <!-- DOMAIN-DOCKER-EXTRA-END -->
 
 
