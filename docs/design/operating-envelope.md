@@ -232,7 +232,31 @@ the boot `reindex`, `build_embeddings`, one semantic search), but by a
 probe that ran only the restart, not after the harness's other phases.
 Every restart embedded nothing. PostgreSQL across a network pays a round
 trip per 500 notes instead of per note. The bulk re-token and a rebuild
-that reuses the store's own rows still read per note (#1970).
+that reuses the store's own rows still read per note; #1970 followed that
+up ([below](#after-1970-the-postgresql-whole-store-reads)).
+
+## After #1970: the PostgreSQL whole-store reads
+
+Two passes need every note's vectors, not only its metadata: the bulk
+re-token, after a change that moves every token, and a rebuild that reuses
+the store's own rows. Both read each note through `rows_for`, one read
+transaction per note with every vector parsed from text. They now read 256
+notes per query, the vectors sent in binary and kept as float32.
+
+Measured on their own with a throwaway `tensorchord/vchord-suite:pg17-20260501`
+container after a fresh build, with the stand-in provider, timing only the
+read each pass makes, twice per run (1 November 2026; before at `d47e62c8`,
+after at `39d4e106`):
+
+| | Deployed (22,764 rows) | Growth (227,640) |
+|---|---|---|
+| The bulk re-token's read, before | 9.2 / 9.6 s | 90.3 / 98.1 s |
+| The bulk re-token's read, after | 0.68 / 0.63 s | 6.4 / 6.8 s |
+| A rebuild's reuse of its own rows, before | 10.0 / 9.6 s | 101.0 / 102.6 s |
+| A rebuild's reuse of its own rows, after | 0.76 / 0.64 s | 7.6 / 7.9 s |
+
+Every run reused every row and embedded nothing. The writes that follow
+each read (one generation publish) are unchanged and not timed here.
 
 ## Limits
 

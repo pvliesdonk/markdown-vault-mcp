@@ -1011,11 +1011,11 @@ The comparison needs only each document's stored metadata; vectors matter
 only for an embed, which reuses them. A store whose every read is a round
 trip (PostgreSQL) implements the optional `ReadsMetadataInBatches`
 protocol: the pass reads the metadata of 500 documents per read, without
-vectors, and calls `rows_for` only for a document it re-embeds or
-re-tokens, whose stored vectors it reuses (#1937).
+vectors, and calls `rows_for` only for a document it re-embeds, or
+re-tokens below the bulk threshold, whose stored vectors it reuses (#1937).
 Reading each document's rows in its own transaction had made a PostgreSQL
-restart several times slower than a local store's. The local stores serve
-`rows_for` from the process and keep the per-document read. The two
+restart several times slower than a local store's. The local stores read
+each document's rows locally and keep the per-document read. The two
 passes that need every document's vectors, the bulk re-token and a rebuild
 reusing its own rows, read them through the optional `ReadsRowsInBatches`
 protocol from such a store: 256 documents per read, the vectors sent in
@@ -4537,7 +4537,8 @@ conflicts with a flush and hold the paths a provider or a store write
 failed for (a full disk, a lock timeout) for the next one,
 outside the pending work that drain status counts. At or above `_BULK_RETOKEN` (64) re-tokens in one pass, one
 `publish_generation` replaces the per-document replaces (each copies the
-whole matrix), holding every row as float32; that publish has no
+whole matrix), holding every row as float32, read 256 documents at a
+time from a store that implements `ReadsRowsInBatches` (#1970); that publish has no
 per-document token check, which one writer per store makes safe: the numpy
 store's one writer per location, the PostgreSQL store's lease and row lock;
 #1812 holds what more writers would need. If it fails, every

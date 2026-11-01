@@ -568,11 +568,10 @@ def stored_rows_by_path(
     found: dict[str, list[VectorRow]] = {}
     with conn.cursor(binary=True) as cur:
         for path, embedding, metadata in cur.execute(query, (paths,)):
+            # pgvector 0.5+ hands native-endian float32 bytes: no parsing.
+            vector = array("f", embedding.to_numpy().tobytes())
             found.setdefault(str(path), []).append(
-                VectorRow(
-                    vector=array("f", embedding.to_numpy().tobytes()),
-                    metadata=dict(metadata),
-                )
+                VectorRow(vector=vector, metadata=dict(metadata))
             )
     return found
 

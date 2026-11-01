@@ -194,8 +194,8 @@ def _stored_metadata(
 ) -> dict[str, list[dict[str, Any]]] | None:
     """*paths*' stored metadata in one read, or ``None`` from a store that reads per document.
 
-    A store without :class:`ReadsMetadataInBatches` serves each document's
-    rows from this process, so reading them one at a time costs little.
+    A store without :class:`ReadsMetadataInBatches` reads each document's
+    rows locally, so reading them one at a time costs little.
     """
     if isinstance(store, ReadsMetadataInBatches):
         return store.metadata_for(paths)
@@ -522,7 +522,9 @@ class EmbeddingReconciler:
         """Republish *docs*' stored vectors under their new tokens.
 
         Below :data:`_BULK_RETOKEN` each is a conditional replace; at or
-        above it, one generation holding every document's current rows.
+        above it, one generation holding every document's current rows,
+        read :data:`_ROWS_BATCH` documents at a time from a store that
+        reads rows in batches (#1970).
         The bulk publish skips the per-document token check, which is safe
         for a store with one writer per location, as the numpy store is. A
         store write that fails keeps the rows and puts the documents in the
@@ -688,6 +690,9 @@ class EmbeddingReconciler:
     ]:
         """Sort every chunk into a found vector or a miss to embed.
 
+        With *reuse_own*, the store's own rows are read :data:`_ROWS_BATCH`
+        documents at a time from a store that reads rows in batches (#1970).
+
         Returns:
             Per path, chunk index to its found vector; the inputs to embed,
             each once per document; and how many found vectors came from
@@ -829,7 +834,7 @@ def _float32_rows(
     A bulk publish holds every row of the store at once; as Python floats
     that is about ten times the matrix (#1768). A store that reads rows in
     batches (#1970) serves :data:`_ROWS_BATCH` documents per read; any other
-    serves each document's rows from this process.
+    reads each document's rows locally.
 
     Args:
         store: The store to read.

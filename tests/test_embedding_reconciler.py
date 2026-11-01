@@ -312,7 +312,7 @@ class TestBatchedRows:
         assert batched.rows_read == []
         assert [len(b) for b in batched.row_batches] == [2, 1]
         assert sorted(p for b in batched.row_batches for p in b) == sorted(THREE)
-        assert None not in store.tokens().values()
+        assert store.tokens() == {p: d.token for p, d in rec.documents().items()}
         for path, rows in before.items():
             assert np.allclose(
                 [r.vector for r in store.rows_for(path)], [r.vector for r in rows]
@@ -330,6 +330,39 @@ class TestBatchedRows:
         assert (provider.texts, outcome.embedded, outcome.published) == ([], 0, True)
         assert batched.rows_read == []
         assert batched.row_batches == [["a.md", "b.md"], ["c.md"]]
+
+    def test_a_failed_batched_read_retries_every_path(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch, caplog
+    ):
+        monkeypatch.setattr(reconciler_module, "_BULK_RETOKEN", 2)
+        store, rec = self._untokened(tmp_path)
+        batched = _BatchedRows(store)
+
+        def refuse(_paths: Any) -> dict[str, list[VectorRow]]:
+            raise OSError("connection lost")
+
+        monkeypatch.setattr(batched, "rows_by_path", refuse)
+        with caplog.at_level(logging.WARNING):
+            result = rec.reconcile(batched, site="test")
+        assert (result.retry, result.retokened) == (set(THREE), 0)
+        assert set(store.tokens().values()) == {None}
+        assert any(
+            r.msg.startswith("embedding_reconcile_bulk_write_failed")
+            for r in caplog.records
+        )
+
+    def test_a_preview_reads_own_rows_in_batches_past_a_missing_document(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 2)
+        _fts, _provider, store, rec = _setup(tmp_path, THREE)
+        rec.rebuild(store, store.identity)
+        store.remove_document("b.md", expected_token=ANY_TOKEN)
+        batched = _BatchedRows(store)
+        preview = rec.preview(batched, store.identity, reuse_own=True)
+        assert (preview.reusable, preview.to_embed) == (2, 1)
+        assert batched.row_batches == [["a.md", "b.md"], ["c.md"]]
+        assert batched.rows_read == []
 
     def test_a_store_without_batches_reads_each_document(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
