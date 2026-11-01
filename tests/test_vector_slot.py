@@ -882,3 +882,34 @@ class TestCorruptRecovery:
         assert errors == []
         assert len(list(tmp_path.glob("vec.v2.json.corrupt-*"))) == 1
         assert not (tmp_path / "vec.v2.json").exists()  # nothing put back
+
+
+def _backend(name: str) -> Any:
+    from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
+
+    if name == "numpy":
+        return NumpySidecarBackend()
+    return SqliteVectorBackend(search=name.removeprefix("sqlite-"))
+
+
+class TestASupersededStore:
+    """A store ``fresh()`` replaces is closed, so it writes nothing more (#1802)."""
+
+    @pytest.mark.parametrize("backend", ["numpy", "sqlite-resident", "sqlite-streamed"])
+    def test_a_write_through_the_old_reference_is_refused(
+        self, tmp_path: Path, backend: str
+    ) -> None:
+        slot = VectorStoreSlot(
+            backend=_backend(backend),
+            location=tmp_path / "vec",
+            provider=PROVIDER,
+            text_format="v1",
+        )
+        old = slot.writable(rebuild=None)
+        rebuilt = slot.fresh()
+        try:
+            with pytest.raises(RuntimeError, match="closed"):
+                old.replace_document(doc("late.md", [[1, 0, 0]]), expected_token=None)
+            assert "late.md" not in set(rebuilt.tokens())
+        finally:
+            slot.close()
