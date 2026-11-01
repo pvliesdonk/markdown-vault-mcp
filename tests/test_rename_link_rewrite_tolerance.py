@@ -17,6 +17,7 @@ from markdown_vault_mcp.managers._rewrite_ledger import LinkRewriteLedger
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 
@@ -103,7 +104,7 @@ class TestLinkRewriteLedger:
 
 
 @pytest.fixture
-def linked_pair(tmp_path: Path) -> tuple[Vault, Path]:
+def linked_pair(tmp_path: Path) -> Iterator[tuple[Vault, Path]]:
     """A writable vault where b.md and c.md link to a.md."""
     root = tmp_path / "vault"
     root.mkdir()
@@ -112,7 +113,8 @@ def linked_pair(tmp_path: Path) -> tuple[Vault, Path]:
     (root / "c.md").write_text("# C\n\nSee [[a]] and [B](b.md).\n")
     vault = Vault(source_dir=root, settings=VaultSettings(read_only=False))
     vault.index.build_index()
-    return vault, root
+    yield vault, root
+    vault.close()
 
 
 class TestTolerantRename:
