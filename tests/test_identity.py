@@ -400,3 +400,67 @@ class TestServicePrincipals:
         with bound_principal(Principal("service", None, None, "service")):
             assert resolve_human_subject() is None
             assert resolve_verify_subject() == "local"
+
+
+class TestIssuerServiceMarkers:
+    """A token the issuer marks as issued to an application is a service (#1480).
+
+    Claim shapes follow ``docs/design/reference/authenticated-subjects.md``.
+    """
+
+    @pytest.mark.parametrize(
+        "claims",
+        [
+            pytest.param({"sub": "app-1", "client_id": "app-1"}, id="cognito-authelia"),
+            pytest.param({"sub": "app-1", "cid": "app-1"}, id="okta"),
+            pytest.param({"sub": "app-1", "azp": "app-1"}, id="azp"),
+            pytest.param(
+                {"sub": "app-1@clients", "azp": "app-1", "gty": "client-credentials"},
+                id="auth0",
+            ),
+            pytest.param(
+                {"sub": "9f2c", "azp": "app-guid", "idtyp": "app"}, id="entra"
+            ),
+        ],
+    )
+    def test_application_token_is_a_service(
+        self, monkeypatch: pytest.MonkeyPatch, claims: dict[str, Any]
+    ) -> None:
+        _patch_context(monkeypatch, subject=claims["sub"], claims=claims)
+        principal = resolve_mcp_principal()
+        assert principal == Principal(claims["sub"], None, None, "service")
+        assert principal.okf_actor("test") == "markdown-vault-mcp/test"
+
+    @pytest.mark.parametrize(
+        "claims",
+        [
+            pytest.param(
+                {"sub": "user-7", "client_id": "app-1", "azp": "app-1"},
+                id="user-token",
+            ),
+            pytest.param(
+                {"sub": "user-7", "azp": "app-1", "gty": "authorization_code"},
+                id="auth0-user",
+            ),
+            pytest.param(
+                {"sub": "user-7", "azp": "app-1", "idtyp": "user"}, id="entra-user"
+            ),
+            pytest.param({"sub": "user-7", "idtyp": ["app"]}, id="non-string-marker"),
+        ],
+    )
+    def test_user_token_stays_human(
+        self, monkeypatch: pytest.MonkeyPatch, claims: dict[str, Any]
+    ) -> None:
+        _patch_context(monkeypatch, subject="user-7", claims=claims)
+        assert resolve_mcp_principal() == Principal("user-7", None, None, "human")
+
+    def test_application_token_cannot_attest_as_human(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp._okf_write import resolve_human_subject
+
+        _patch_context(
+            monkeypatch, subject="app-1", claims={"sub": "app-1", "client_id": "app-1"}
+        )
+        with bound_principal(resolve_mcp_principal()):
+            assert resolve_human_subject() is None

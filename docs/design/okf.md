@@ -420,12 +420,14 @@ Tool tags following switches: #1412.
 - **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
   example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
-  the token's usable `sub` when available (`human:<subject>`), else
+  the token's usable `sub` when the principal is human (`human:<subject>`), else
   `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
   values are overwritten (it describes the current bytes); `sources` are
   never touched. Client-ID-only identities, including static and mapped
-  bearer credentials, use the tool actor (#1463). OAuth service tokens with
-  `sub` remain a known attribution limitation (#1480); see
+  bearer credentials, use the tool actor (#1463). So does an OAuth token the
+  issuer marks as an application's (`sub` equal to the client ID, `idtyp: app`
+  or `gty: client-credentials`; #1480); an unmarked service-account token
+  still stamps `human:<subject>`. See
   [authenticated subjects](reference/authenticated-subjects.md).
 
   A stamp is written *into* the note's frontmatter, so content whose block
@@ -463,14 +465,16 @@ Tool tags following switches: #1412.
     writes nothing. A model cannot answer an elicitation, so the attestation
     leaves its control by construction; a headless agent (no human) can never
     produce a `human-reviewed` entry. The subject stamped is the token's `sub`
-    when present, else `local` (including service credentials) — the elicitation, not the
+    when the principal is human, else `local` (including service credentials
+    and application-marked tokens) — the elicitation, not the
     token, is the human-presence proof.
   - **`off`**: hides the tool entirely (via the `okf-enforce` tag disable), so
     `verified` is set only by external tooling (CLI / git-hook / CI) beyond the
     model's reach.
   - **`trust-auth`**: attribute to the token's `sub` with no elicitation;
-    refuses (`ToolError`) without auth or with a client-ID-only identity,
-    including static bearer credentials (#1463).
+    refuses (`ToolError`) without auth, with a client-ID-only identity,
+    including static bearer credentials (#1463), or with a token the issuer
+    marks as an application's (#1480).
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
 
