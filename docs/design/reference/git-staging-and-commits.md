@@ -2,7 +2,7 @@
 type: Reference
 title: Git staging, commits and rebase state
 description: "git command-line behaviour that the staging, committing and pull/rebase code in src/markdown_vault_mcp/git/ depends on: pathspec magic, add and check-ignore, partial commits and identity, merge-base and fast-forward, rebase state on disk and conflict markers"
-subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0; push/commit/log/diff/config say 2.55.0); git source at master and v2.43.0; observed on git 2.43.0"
+subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0; push/commit/log/diff/config say 2.55.0); git source at master and v2.43.0; observed on git 2.43.0; auto-maintenance detaching observed on 2.43.0, 2.47.3 and 2.55.0"
 valid_for: "git 2.x"
 generated:
   by: process:researching-references
@@ -85,6 +85,10 @@ sources:
     title: ident.c (master)
     resource: https://raw.githubusercontent.com/git/git/master/ident.c
     accessed: 2026-09-06
+  - id: git-gc
+    title: git-gc(1)
+    resource: https://git-scm.com/docs/git-gc
+    accessed: 2026-10-30
   - id: src-sequencer
     title: sequencer.c (master; also v2.43.0)
     resource: https://raw.githubusercontent.com/git/git/master/sequencer.c
@@ -152,6 +156,11 @@ repositories under `/tmp/gitref/`.
 - `rebase <ref>` commits each replayed change, so it needs a committer identity like `commit` does: with none in repo, global or system config, no `GIT_COMMITTER_*`/`GIT_AUTHOR_*`, and no auto-detectable `user@host` (a container hostname yields `root@<id>.(none)`), it stops at the first replayed commit with `Committer identity unknown`, exit 128, and **no unmerged paths** — `diff --diff-filter=U` is empty, so a resolver that only knows unmerged paths has nothing to act on. Identity is taken from `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, else `user.name`/`user.email`, else `EMAIL`, else the system user name with the outgoing-mail hostname (`/etc/mailname`, falling back to the fully qualified hostname); `user.useConfigOnly=true` disables that final guess so the failure reproduces on a developer machine too, and an identity given via `-c user.*` or the `GIT_*` env still counts. [source: git-commit] (COMMIT INFORMATION) [source: git-config] (`user.useConfigOnly`) [observed: git 2.47.3 in the published container; git 2.55.0 with `user.useConfigOnly`] [pins: tests/test_git_force_methods.py::TestForceMethodsErrorBranches::test_force_pull_rebases_without_any_repo_or_global_identity]
 - `rev-list --count A..B` counts commits in B not A; `log A..B` with an unknown A dies `ambiguous argument`, 128; `fetch origin` against a missing remote dies `does not appear to be a git repository`, 128. [source: git-rev-list] [observed: git 2.43.0] [pins: tests/test_git_force_methods.py::TestForceMethodsErrorBranches::test_force_pull_fetch_failed_when_remote_unreachable]
 - `git lfs pull` is `lfs fetch` + `lfs checkout` for the checked-out ref; without git-lfs, `git lfs` is an unknown command, exit 1. [source: lfs-pull] [observed: git 2.43.0] [pins: tests/test_git.py::TestGitLfsSupport::test_git_lfs_pull_failure_logged_not_raised]
+
+### Automatic maintenance after fetch, pull, commit and rebase
+
+- After writing to the repository, `fetch`, `pull`, `commit` and `rebase` run `git maintenance run --auto`; `GIT_TRACE=1` on `fetch` shows `run_command: git maintenance run --auto --no-quiet --detach`. Whether it detaches is `maintenance.autoDetach`, falling back to `gc.autoDetach`, default true. [source: git-config] (`maintenance.autoDetach`, `gc.autoDetach`) [observed: git 2.55.0]
+- The detached process is a new session leader (`sid == pid`, `ps` state `Zs` once it exits) that outlives the `git` that started it, so it is re-parented to the nearest subreaper or PID 1. On 2.47.3 and 2.55.0 one `fetch` and one `pull` each leave exactly one, in a repository with nothing for gc to do; `-c maintenance.autoDetach=false -c gc.autoDetach=false` leaves none. On 2.43.0 neither command left one in the same repository: there `gc --auto` detaches only when it decides it has work (`--detach` "overrides the gc.autoDetach config"). [source: git-gc] (`--detach`, `--auto`) [observed: git 2.43.0, 2.47.3 in the published container, 2.55.0, with a child-subreaper Python counting the orphans it reaps]
 
 ### Conflicted rebase state (`conflict.py`)
 
