@@ -80,7 +80,7 @@ _CHECKPOINT_INTERVAL_S = 30.0
 
 @dataclass
 class _KeptRows:
-    """Rows a forced build kept under directories its walk could not read."""
+    """Rows a build kept under directories its walk could not read."""
 
     notes: list[ParsedNote] = field(default_factory=list)
     skip_reasons: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -426,7 +426,9 @@ class IndexManager:
         Args:
             keep: Prefixes from :func:`~markdown_vault_mcp.tracker.unread_prefixes`.
             spare: Notes the build is about to rewrite, left in place rather
-                than deleted first; ``None`` deletes them too (#1965).
+                than deleted first, along with excluded notes, which the
+                purge removes with their vectors; ``None`` deletes them too
+                (#1965).
 
         Returns:
             The kept notes, as hash-less tracker-state notes, and the kept
@@ -434,7 +436,7 @@ class IndexManager:
         """
         kept = _KeptRows()
         for row in self._fts.list_notes():
-            if spare is not None and row["path"] in spare:
+            if spare is not None and self._spared(row["path"], spare):
                 continue
             if is_under(row["path"], keep):
                 kept.notes.append(_unhashed_state_note(row))
@@ -457,6 +459,14 @@ class IndexManager:
                 len(kept.skip_reasons),
             )
         return kept
+
+    def _spared(self, path: str, rewritten: set[str]) -> bool:
+        """Whether a non-forced build leaves *path*'s row to another step (#1965).
+
+        A note the build rewrites is replaced in place. An excluded note is
+        left to :meth:`_purge_stale_excluded`, which removes its vectors too.
+        """
+        return path in rewritten or self._is_path_excluded(path)
 
     def _state_notes_from_index(self) -> list[ParsedNote]:
         """Build tracker-state notes from the index's current contents.

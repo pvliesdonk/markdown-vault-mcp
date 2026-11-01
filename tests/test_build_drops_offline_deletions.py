@@ -10,19 +10,20 @@ it deleted.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
+from unittest import mock
 
 import pytest
 
 from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.managers import index as index_module
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import MockEmbeddingProvider
 from tests.fixtures.vectors import metadata_by_path
 from tests.test_index_coordinator import make_coordinator
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from markdown_vault_mcp.indexing.coordinator import IndexWriteCoordinator
 
 
@@ -98,6 +99,51 @@ def test_a_build_keeps_the_notes_of_a_folder_it_cannot_read(tmp_path: Path) -> N
         (tmp_path / "sub").chmod(0o755)
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root ignores permission bits",
+)
+def test_a_deleted_note_beside_a_folder_it_cannot_read_is_dropped(
+    tmp_path: Path,
+) -> None:
+    for rel in ("sub/gamma.md", "other/delta.md"):
+        (tmp_path / rel).parent.mkdir()
+        (tmp_path / rel).write_text("# N\n\nnote\n", encoding="utf-8")
+    coord = make_coordinator(tmp_path)
+    coord.build_index()
+    _close(coord)
+    (tmp_path / "other" / "delta.md").unlink()
+    (tmp_path / "sub").chmod(0)
+    try:
+        coord = make_coordinator(tmp_path, title_field="name")
+        try:
+            coord.build_index()
+            assert _indexed(coord) == ["a.md", "sub/gamma.md"]
+        finally:
+            _close(coord)
+    finally:
+        (tmp_path / "sub").chmod(0o755)
+
+
+def test_a_note_that_fails_to_index_keeps_its_row(tmp_path: Path) -> None:
+    (tmp_path / "c.md").write_text("# C\n\ncharlie\n", encoding="utf-8")
+    _built_then_deleted(tmp_path)
+    real = FTSIndex.upsert_note
+
+    def refuse_c(self: FTSIndex, note: object) -> int:
+        if getattr(note, "path", None) == "c.md":
+            raise ValueError("cannot index")
+        return real(self, note)  # type: ignore[arg-type]
+
+    coord = make_coordinator(tmp_path, title_field="name")
+    try:
+        with mock.patch.object(FTSIndex, "upsert_note", refuse_c):
+            coord.build_index()
+        assert _indexed(coord) == ["a.md", "c.md"]
+    finally:
+        _close(coord)
+
+
 def _vault(
     root: Path,
     tmp_path: Path,
@@ -121,6 +167,7 @@ def _vault(
 
 
 def test_a_build_drops_the_tombstone_of_a_deleted_file(tmp_path: Path) -> None:
+    """A guard: the tracker sync dropped such a tombstone before #1965 too."""
     root = tmp_path / "vault"
     root.mkdir()
     (root / "a.md").write_text("---\ntags: [x]\n---\n# A\n\nbody\n", encoding="utf-8")
@@ -163,5 +210,33 @@ def test_the_embedding_build_after_it_drops_the_deleted_notes_vectors(
         store = second._index_mgr._embeddings._loaded_store()
         assert store is not None
         assert sorted(metadata_by_path(store)) == ["a.md"]
+    finally:
+        second.close()
+
+
+def test_a_tombstone_dropped_on_a_transient_read_error_returns(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "a.md").write_text("---\ntags: [x]\n---\n# A\n\nbody\n", encoding="utf-8")
+    (root / "bad.md").write_text("# Bad\n\nno tags\n", encoding="utf-8")
+    first = _vault(root, tmp_path, "title", required=["tags"])
+    try:
+        first.index.build_index()
+    finally:
+        first.close()
+    real = index_module.compute_file_hash
+
+    def flaky(path: object) -> str:
+        if Path(str(path)).name == "bad.md":
+            raise OSError("transient")
+        return real(path)  # type: ignore[arg-type]
+
+    second = _vault(root, tmp_path, "name", required=["tags"])
+    try:
+        with mock.patch.object(index_module, "compute_file_hash", flaky):
+            second.index.build_index()
+        assert second._fts.list_tombstones() == []
+        second.index.reindex()
+        assert [t["path"] for t in second._fts.list_tombstones()] == ["bad.md"]
     finally:
         second.close()
