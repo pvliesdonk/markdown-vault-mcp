@@ -2,8 +2,8 @@
 type: Reference
 title: PostgreSQL transactions, locks, durability and COPY behind the vector store
 description: What the PostgreSQL vector store's writes and writer lease rely on in PostgreSQL 17 and psycopg 3 — snapshots under REPEATABLE READ, DELETE against TRUNCATE and DROP, row and advisory locks, lock and statement timeouts, synchronous_commit and fsync, and binary COPY.
-subject_version: "PostgreSQL 17 documentation; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1"
-valid_for: "PostgreSQL 15–18, psycopg 3.3.x (3.3.1 or later)"
+subject_version: "PostgreSQL 17 documentation (isolation, explicit locking, SET, WAL settings, administration functions); psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1"
+valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x, psycopg 3.3.x (3.3.1 or later)"
 generated:
   by: process:researching-references
   at: 2026-10-22T15:00:00+02:00
@@ -32,6 +32,10 @@ sources:
   - id: pg-client-config
     title: Client Connection Defaults (PostgreSQL 17)
     resource: https://www.postgresql.org/docs/17/runtime-config-client.html
+    accessed: 2026-10-18
+  - id: pg-set
+    title: SET (PostgreSQL 17)
+    resource: https://www.postgresql.org/docs/17/sql-set.html
     accessed: 2026-10-18
   - id: pg-locks-view
     title: pg_locks (PostgreSQL 17)
@@ -67,17 +71,20 @@ unchanged, and so are their dates.
 
 ## Scope
 
-- Covers: snapshots under `REPEATABLE READ`; `DELETE` against `TRUNCATE` and
-  `DROP TABLE`; row and advisory locks; `lock_timeout` and
-  `statement_timeout`; `synchronous_commit` and `fsync`; binary `COPY`.
+- Covers: snapshots under `REPEATABLE READ`; `SET LOCAL`; `DELETE` against
+  `TRUNCATE` and `DROP TABLE`; row and advisory locks; `lock_timeout`
+  and `statement_timeout`; `synchronous_commit` and `fsync`; binary
+  `COPY` and the `vector` round trip through pgvector-python.
 - Does not cover: streaming replication and replica read-after-write; crash and
   power-loss recovery; how a failed write is reported
   ([PostgreSQL connections](postgresql-connections.md)).
 - Depended on by: `src/markdown_vault_mcp/stores/_postgres_lease.py` (the writer
-  lease), `_postgres_tables.py` (generations, resets, durability) and
-  `postgres_vectors.py` (read snapshots, the `fsync` warning);
+  lease), `_postgres_tables.py` (generations, resets, durability),
+  `postgres_vectors.py` (read snapshots, the `fsync` warning) and
+  `_postgres.py` (each pool connection's `statement_timeout`); the
+  operator guide, `docs/use/postgresql.md` (durability, PgBouncer);
   `docs/design/design.md` § "The storage contract (#1766, #1503)"
-  (decision 34).
+  (the PostgreSQL store paragraphs and decision 34).
 
 ## Claims
 
@@ -90,6 +97,7 @@ unchanged, and so are their dates.
 - `DELETE` takes `ROW EXCLUSIVE`, which does not conflict with the `ACCESS SHARE` a `SELECT` takes. [source: pg-explicit-locking]
 - `TRUNCATE` takes `ACCESS EXCLUSIVE`, which conflicts with every mode, so a reader waits until it commits. [source: pg-explicit-locking] [observed: probe 5, the reader fails with `canceling statement due to lock timeout`]
 - psycopg starts a transaction implicitly on the first statement and needs `commit()`; `isolation_level` and `read_only` can be changed only while no transaction is open on the connection. [source: psycopg-transactions]
+- `SET LOCAL` lasts until the end of the current transaction, committed or not; outside a transaction block it warns and has no effect. [source: pg-set]
 
 ### Locks
 
@@ -128,9 +136,9 @@ unchanged, and so are their dates.
 Every probe started its own throwaway container and removed it afterwards,
 on the images `tensorchord/vchord-suite:pg17-20250620` (PostgreSQL 17.4,
 pgvector 0.8.0) and `pgvector/pgvector:pg16` (PostgreSQL 16.10, pgvector
-0.8.1). Probes 4–6, 9 and 11 ran in the container probes 1–12 shared on
-each image; probes 13 and 14 each started their own. The two images agreed on every
-probe.
+0.8.1). Probes 4–6, 9 and 11 ran in the container probes 1–12
+shared on each image; probes 13 and 14 each started their own. The
+two images agreed on every probe.
 
 - Probes 4–6, 9 and 11: SQL through `psql` inside the container: the
   advisory lock and its holder, `DELETE` and `TRUNCATE` against a
@@ -162,4 +170,7 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
 - Crash and power-loss behaviour, replication and replica read-after-write:
   not probed; the store assumes one primary.
 - The probes above ran on PostgreSQL 16 and 17 only; on 15 and 18 the store's
-  tests, run by the range workflow, are the evidence.
+  tests, run by the range workflow, are the evidence (its claim is in
+  [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md)).
+- The psycopg 3.3.1 floor in `valid_for`: its evidence is the cursor claim
+  in [pgvector search](pgvector-search.md).

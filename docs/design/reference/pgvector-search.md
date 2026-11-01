@@ -64,12 +64,14 @@ unchanged, and so are their dates.
 - Covers: the `vector` type, operators, aggregates and storage; `jsonb` and
   `text` limits and btree key size; server-side cursors; prefix matching.
 - Does not cover: ANN indexes (`hnsw`, `ivfflat`) and their recall;
-  `halfvec`/`sparsevec`/`bit`; binary `COPY`
-  ([PostgreSQL writes](postgresql-writes.md)).
+  `halfvec`/`sparsevec`/`bit`; binary `COPY` and the `vector` round
+  trip through pgvector-python ([PostgreSQL writes](postgresql-writes.md));
+  which pgvector versions the store runs on
+  ([PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md)).
 - Depended on by: `src/markdown_vault_mcp/stores/_postgres_search.py` (search,
   folder scopes, cursors) and `_postgres_rows.py` (which rows PostgreSQL
   can store); `docs/design/design.md` § "The storage contract (#1766,
-  #1503)" (decision 34).
+  #1503)" (the PostgreSQL store paragraphs and decision 34).
 
 ## Claims
 
@@ -84,8 +86,6 @@ unchanged, and so are their dates.
 - Without an index, pgvector performs exact nearest-neighbour search with perfect recall; the 2,000-dimension limit applies only to `hnsw` and `ivfflat` indexes on `vector`. [source: pgvector-readme] (§ Indexing)
 - `avg(vector)` exists since 0.4.0. [source: pgvector-changelog] (0.4.0) The mean of `[1,0]` and `[-1,0]` is `[0,0]`. [observed: probe 2]
 - `avg` over no rows returns `NULL` on 0.8.0 and 0.8.1. [observed: probe 13] [pins: tests/test_stores_postgres_search.py::test_similar_to_a_document_without_rows_is_empty] The 0.8.7 changelog entry "Fixed error with `avg` aggregate when no matching rows" names a case these probes did not hit. [source: pgvector-changelog] (0.8.7) [unverified] Which query shape raised that error is not established; the pgvector commit or issue behind the 0.8.7 entry would settle it. A store that returns `[]` for a path with no rows before calling `avg` does not depend on it.
-- pgvector 0.8.0 dropped Postgres 12 and the README states support for Postgres 13+. [source: pgvector-changelog] (0.8.0) [source: pgvector-readme] (§ Installation)
-- `l2_normalize` exists only from 0.7.0. [source: pgvector-changelog] (0.7.0)
 
 ### JSON and text
 
@@ -112,8 +112,9 @@ unchanged, and so are their dates.
 Every probe started its own throwaway container and removed it afterwards,
 on the images `tensorchord/vchord-suite:pg17-20250620` (PostgreSQL 17.4,
 pgvector 0.8.0) and `pgvector/pgvector:pg16` (PostgreSQL 16.10, pgvector
-0.8.1). Probes 1–3 and 7 ran in the container probes 1–12 shared on each
-image; probe 13 started its own. The two images agreed on every probe.
+0.8.1). Probes 1–3 and 7 ran in the container probes 1–12 shared
+on each image; probe 13 started its own. The two images agreed on
+every probe.
 
 - Probes 1–3 and 7: SQL through `psql` inside the container: zero
   vectors, `avg`, mixed dimensions and `starts_with`.
@@ -136,4 +137,5 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
 
 - Which query shape raised the `avg` error fixed in pgvector 0.8.7.
 - The probes above ran on PostgreSQL 16 and 17 only; on 15 and 18 the store's
-  tests, run by the range workflow, are the evidence.
+  tests, run by the range workflow, are the evidence (its claim is in
+  [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md)).

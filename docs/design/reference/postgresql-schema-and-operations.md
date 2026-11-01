@@ -2,7 +2,7 @@
 type: Reference
 title: PostgreSQL extension, schema and operations behind the vector store
 description: What the PostgreSQL vector store's setup checks and its operator guide rely on in PostgreSQL 17 and pgvector — who may install the extension, the supported range, schemas and search_path, schema privileges, pg_dump of one schema, vacuuming after DELETE and relation sizes.
-subject_version: "PostgreSQL 17 documentation (CREATE EXTENSION, schemas, privileges, SET, pg_dump, vacuuming); PostgreSQL 15.0 release notes; observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16); the range workflow's eight images (2026-10-22)"
+subject_version: "PostgreSQL 17 documentation (CREATE EXTENSION, schemas, privileges, client connection defaults, administration functions, pg_dump, vacuuming); PostgreSQL 15.0 release notes; pgvector 0.8.0 README and changelog; observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16); the range workflow's eight images (2026-10-22)"
 valid_for: "PostgreSQL 15–18, pgvector 0.7–0.8.x (0.7.4 or later on 17, 0.8.7 or later on 18)"
 generated:
   by: process:researching-references
@@ -13,6 +13,14 @@ verified:
     at: 2026-10-22T15:00:00+02:00
 status: stable
 sources:
+  - id: pgvector-readme
+    title: pgvector README (v0.8.0)
+    resource: https://github.com/pgvector/pgvector/blob/v0.8.0/README.md
+    accessed: 2026-10-18
+  - id: pgvector-changelog
+    title: pgvector CHANGELOG
+    resource: https://github.com/pgvector/pgvector/blob/master/CHANGELOG.md
+    accessed: 2026-10-18
   - id: pg-create-extension
     title: CREATE EXTENSION (PostgreSQL 17)
     resource: https://www.postgresql.org/docs/17/sql-createextension.html
@@ -24,10 +32,6 @@ sources:
   - id: pg-client-config
     title: Client Connection Defaults (PostgreSQL 17)
     resource: https://www.postgresql.org/docs/17/runtime-config-client.html
-    accessed: 2026-10-18
-  - id: pg-set
-    title: SET (PostgreSQL 17)
-    resource: https://www.postgresql.org/docs/17/sql-set.html
     accessed: 2026-10-18
   - id: pg-schemas
     title: Schemas (PostgreSQL 17)
@@ -59,13 +63,13 @@ sources:
 
 This page records how PostgreSQL and the pgvector extension behave
 where the PostgreSQL vector store (#1504) checks its database before
-use, and where its operator guide tells an operator what to set up and
-maintain: who may install the extension, which versions the store runs
-on, how `search_path` resolves names, what a schema grants, and how a
-schema is backed up and its space reclaimed. Claims marked
-`[observed: probe N]` were reproduced on throwaway containers of both
-images named in the frontmatter with the probe scripts listed under
-"Probes".
+use. It also records what the store's operator guide tells an operator
+to set up and maintain: who may install the extension, which versions
+the store runs on, how `search_path` resolves names, what a schema
+grants, and how a schema is backed up and its space reclaimed.
+Claims marked `[observed: probe N]` were reproduced on throwaway
+containers of both images named in the frontmatter with the probe
+scripts listed under "Probes".
 
 Split from the former `postgresql-pgvector.md` (#1927); the claims are
 unchanged, and so are their dates.
@@ -73,16 +77,17 @@ unchanged, and so are their dates.
 ## Scope
 
 - Covers: extension installation and privileges; the supported PostgreSQL
-  and pgvector range; schemas, `search_path` and `SET LOCAL`; `pg_dump`
-  of one schema; vacuuming after `DELETE`; relation sizes.
+  and pgvector range; schemas and `search_path`; `pg_dump` of one
+  schema; vacuuming after `DELETE`; relation sizes.
 - Does not cover: pgvector's types and operators
   ([pgvector search](pgvector-search.md)); connection parameters
   ([PostgreSQL connections](postgresql-connections.md)).
 - Depended on by: `src/markdown_vault_mcp/stores/_postgres.py` (the extension,
   version and schema checks, `search_path`) and `_postgres_tables.py`
-  (relation sizes); `.github/workflows/postgres-range.yml`;
+  (relation sizes); `tests/test_postgres_range_workflow.py`;
   `docs/design/design.md` § "The storage contract (#1766, #1503)"
-  (decision 34); and the operator guide, `docs/use/postgresql.md`.
+  (the PostgreSQL store paragraphs and decision 34); and the operator
+  guide, `docs/use/postgresql.md`.
 
 ## Claims
 
@@ -94,6 +99,8 @@ unchanged, and so are their dates.
 - The store's whole PostgreSQL suite passes on PostgreSQL 15 to 18 with pgvector 0.7.0 to 0.8.7 (on 17 from 0.7.4, the first 0.7 built for it; on 18 only 0.8.7, since 0.7 is not built for it), and on `tensorchord/vchord-suite:pg17-20260501`: the images the range workflow pins. [observed: `.github/workflows/postgres-range.yml`, and a local run of each of its eight images on 2026-10-22, the store's 376 PostgreSQL tests passing on each] [pins: tests/test_postgres_range_workflow.py::test_the_lowest_pgvector_tested_is_the_minimum_the_store_accepts, tests/test_postgres_range_workflow.py::test_the_guide_states_the_postgresql_majors_the_workflow_runs]
 - `CREATE EXTENSION IF NOT EXISTS` checks only the name: "there is no guarantee that the existing extension is anything like the one that would have been created". [source: pg-create-extension]
 - The installed version and schema are in `pg_extension.extversion` and `pg_extension.extnamespace`. [observed: probe "versions", `select extversion from pg_extension where extname='vector'` → `0.8.0` / `0.8.1`]
+- pgvector 0.8.0 dropped Postgres 12 and the README states support for Postgres 13+. [source: pgvector-changelog] (0.8.0) [source: pgvector-readme] (§ Installation)
+- `l2_normalize` exists only from 0.7.0. [source: pgvector-changelog] (0.7.0)
 
 ### Schemas and `search_path`
 
@@ -103,7 +110,6 @@ unchanged, and so are their dates.
 - Putting a schema in `search_path` "effectively trusts all users having `CREATE` privilege on that schema". [source: pg-schemas] (§ Secure Schema Usage Patterns)
 - From PostgreSQL 15, new databases no longer grant `CREATE` on `public` to `PUBLIC`; upgraded clusters and restored dumps keep the old grant. [source: pg15-release]
 - `CREATE SCHEMA name AUTHORIZATION role` creates a schema owned by `role`; by default `PUBLIC` has no privileges on a schema, and `CONNECT` and `TEMPORARY` on a database. [source: pg-schemas] [source: pg-privileges]
-- `SET LOCAL` lasts until the end of the current transaction, committed or not; outside a transaction block it warns and has no effect. [source: pg-set]
 
 ### Backup and sizes
 
@@ -120,14 +126,15 @@ unchanged, and so are their dates.
 Every probe started its own throwaway container and removed it afterwards,
 on the images `tensorchord/vchord-suite:pg17-20250620` (PostgreSQL 17.4,
 pgvector 0.8.0) and `pgvector/pgvector:pg16` (PostgreSQL 16.10, pgvector
-0.8.1). Probes 8 and 12 ran in the container probes 1–12 shared on each
-image. The two
-images agreed on every probe.
+0.8.1). Probes 8 and 12 ran in the container probes 1–12 shared
+on each image. The two images agreed on every probe.
 
 - Probes 8 and 12: SQL through `psql` inside the container:
   `search_path` naming a missing schema, and `pg_total_relation_size`.
 - Probes "control" and "versions": pgvector's control file and
-  `pg_extension.extversion`, read inside each container.
+  `pg_extension.extversion`, read on both images (pgvector 0.8.0 and
+  0.8.1). The original page named these probes in its claims only; this
+  entry is drawn from those claims.
 - The range workflow, `.github/workflows/postgres-range.yml`: the store's
   PostgreSQL tests on each pinned image, through the test harness's
   `MVM_TEST_POSTGRES_IMAGE`; first run locally on 2026-10-22.

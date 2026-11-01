@@ -4,15 +4,20 @@
 
 - Split [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
   (41 KB) by the module that reads it, for #1927:
-  [PostgreSQL connections](postgresql-connections.md) (`_postgres.py`),
-  [PostgreSQL writes](postgresql-writes.md) (`_postgres_lease.py`,
-  `_postgres_tables.py`), [pgvector search and stored rows](pgvector-search.md)
+  [PostgreSQL connections](postgresql-connections.md) (`_postgres.py`,
+  `postgres_vectors.py`), [PostgreSQL writes](postgresql-writes.md)
+  (`_postgres_lease.py`, `_postgres_tables.py`, `postgres_vectors.py`),
+  [pgvector search and stored rows](pgvector-search.md)
   (`_postgres_search.py`, `_postgres_rows.py`) and
   [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md)
-  (setup checks, the range workflow, the operator guide). Every claim moved
-  verbatim with its markers; no claim was re-researched, so the dates and
-  sources' access dates are unchanged. The old page is deprecated and maps
-  each section to its new page. Next review unchanged: 2027-04-22.
+  (setup checks, the range workflow's test, the operator guide). Every claim
+  and departure moved verbatim with its markers; no claim was re-researched,
+  so the dates and sources' access dates are unchanged. Two lines are new
+  rather than moved: the old "Pins" line is split between the connections
+  and schema pages, each naming its own documentation-only claims, and the
+  schema page describes the probes "control" and "versions", which the old
+  page named only in its claims. The old page is deprecated and maps each
+  section to its new page. Next review unchanged: 2027-04-22.
 - `sqlite-wal-durability.md`: the verdict's bullet on a replaced store
   corrected for #1802. `VectorStoreSlot.fresh()` has closed the store it
   replaces since #1832, so the old store keeps no idle connections, and a

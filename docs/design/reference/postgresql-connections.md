@@ -98,7 +98,8 @@ unchanged, and so are their dates.
 - Depended on by: `src/markdown_vault_mcp/stores/_postgres.py` (connecting,
   the pool, failure classification) and `postgres_vectors.py` (error
   handling); `docs/design/design.md` § "The storage contract (#1766,
-  #1503)" (decision 34); and the operator guide, `docs/use/postgresql.md`.
+  #1503)" (the PostgreSQL store paragraphs and decision 34); and the
+  operator guide, `docs/use/postgresql.md`.
 
 ## Claims
 
@@ -147,8 +148,8 @@ unchanged, and so are their dates.
 Every probe started its own throwaway container and removed it afterwards,
 on the images `tensorchord/vchord-suite:pg17-20250620` (PostgreSQL 17.4,
 pgvector 0.8.0) and `pgvector/pgvector:pg16` (PostgreSQL 16.10, pgvector
-0.8.1). Probe 10 ran in the container probes 1–12 shared on each image;
-probe 10e started its own. The two images agreed on every probe run on
+0.8.1). Probe 10 ran in the container probes 1–12 shared on each
+image; probe 10e started its own. The two images agreed on every probe run on
 both; probe 10d ran once, on the PostgreSQL 17.4 image.
 
 - Probe 10: SQL through `psql` inside the container: a query on a schema
@@ -187,5 +188,8 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   it with a pool that drops the reply after committing, and does not provoke
   it on PostgreSQL.
 - The probes above ran on PostgreSQL 16 and 17 only; on 15 and 18 the store's
-  tests, run by the range workflow, are the evidence.
+  tests, run by the range workflow, are the evidence (its claim is in
+  [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md)).
+- The psycopg 3.3.1 floor in `valid_for`: its evidence is the cursor claim
+  in [pgvector search](pgvector-search.md).
 - Whether `conninfo_to_dict` ever connects (see its claim).

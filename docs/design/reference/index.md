@@ -57,8 +57,9 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   `REPEATABLE READ` snapshots, `DELETE` against `TRUNCATE` and `DROP`, row
   and advisory locks, timeouts, `synchronous_commit` and `fsync`, binary
   `COPY` (#1504). Read before `stores/_postgres_lease.py`,
-  `stores/_postgres_tables.py` or the read snapshots in
-  `stores/postgres_vectors.py`.
+  `stores/_postgres_tables.py`, the read snapshots in
+  `stores/postgres_vectors.py`, or the durability and PgBouncer passages of
+  `docs/use/postgresql.md`.
 - [SQLite WAL durability, checkpoints, the WAL-reset bug and backup](sqlite-wal-durability.md) —
   what a WAL commit promises under `synchronous=FULL` and `NORMAL`,
   checkpoint modes and the `-wal`/`-shm` lifetime, `BEGIN IMMEDIATE` and

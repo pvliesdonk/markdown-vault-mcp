@@ -162,27 +162,30 @@ sources:
 
 This page was split by the module that reads it (#1927). Its claims moved,
 unchanged and with their dates, to four pages. Nothing was dropped: the
-four pages together carry this page's 78 source, 3 unverified and 27 pin
-markers. [observed: `scripts/check_references.py` before and after the
-split, 2026-11-01]
+four pages together carry this page's 78 source, 41 claim-level observed,
+3 unverified and 27 pin markers. [observed: `scripts/check_references.py`
+before and after the split, 2026-11-01] Each departure and "Not covered"
+line moved with the claims it qualifies.
 
 | Section of this page | Now in |
 | --- | --- |
 | Extension and privileges | [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md) |
 | The `vector` type, operators and aggregates | [pgvector search and stored rows](pgvector-search.md) |
+| The `vector` type, operators and aggregates — the supported Postgres versions and `l2_normalize` | [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md) |
 | Schemas and `search_path` | [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md) |
+| Schemas and `search_path` — `SET LOCAL` | [PostgreSQL writes](postgresql-writes.md) |
 | JSON and text | [pgvector search and stored rows](pgvector-search.md) |
 | Transactions and snapshots | [PostgreSQL writes](postgresql-writes.md) |
 | Locks | [PostgreSQL writes](postgresql-writes.md) |
 | Durability | [PostgreSQL writes](postgresql-writes.md) |
 | Errors | [PostgreSQL connections](postgresql-connections.md) |
-| Client: cursors | [pgvector search and stored rows](pgvector-search.md) |
-| Client: binary `COPY` | [PostgreSQL writes](postgresql-writes.md) |
-| Client: pool and connection strings | [PostgreSQL connections](postgresql-connections.md) |
+| Client: cursors, COPY, pool, connection strings — cursors | [pgvector search and stored rows](pgvector-search.md) |
+| Client: cursors, COPY, pool, connection strings — binary `COPY` | [PostgreSQL writes](postgresql-writes.md) |
+| Client: cursors, COPY, pool, connection strings — pool and connection strings | [PostgreSQL connections](postgresql-connections.md) |
 | Connection poolers | [PostgreSQL connections](postgresql-connections.md) |
 | Connections and passwords | [PostgreSQL connections](postgresql-connections.md) |
 | Backup and sizes | [PostgreSQL extension, schema and operations](postgresql-schema-and-operations.md) |
-| Backup and sizes: `starts_with` | [pgvector search and stored rows](pgvector-search.md) |
+| Backup and sizes — `starts_with` | [pgvector search and stored rows](pgvector-search.md) |
 
 The reference log's entries before 2026-11-01 link here; this page stays
 until nothing does.
