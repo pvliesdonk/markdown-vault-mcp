@@ -422,12 +422,17 @@ class RenameResult:
             references are not tracked as links (#1338) — or which linking
             notes inside a git submodule still name the old path, since
             this server does not change them (#1564). ``None`` otherwise.
+        link_rewrites_since_etag: How many link rewrites the server made to
+            the note since the caller's ``if_match`` etag, when the rename
+            accepted that etag across them (#1492). ``None`` when the etag
+            matched outright or none was passed.
     """
 
     old_path: str
     new_path: str
     updated_links: int = 0
     hint: str | None = None
+    link_rewrites_since_etag: int | None = None
 
 
 @dataclass
