@@ -19,7 +19,8 @@ single-writer use, is recorded in
 
 A store from :meth:`SqliteVectorBackend.open_fresh` reads nothing at its
 location. Before its first write it moves aside a file that is not a vector
-store or whose pages are damaged, with its ``-wal`` and ``-shm``
+store, whose own rows do not decode, or whose pages are damaged, with its
+``-wal`` and ``-shm``
 (``<name>.corrupt-<UTC time>``, never deleted, #1505), whatever that
 write's outcome; the write then empties a usable database inside its own
 transaction, so a conflict or an interrupt keeps the old rows. Until then
@@ -27,7 +28,8 @@ a reader still opens them.
 
 Reachable open outcomes: *unavailable* (a parent that is not a directory,
 a refused open), *corrupt* (not a database, not a vector store, a vector
-of the wrong length, metadata that is not an object), *unsupported schema*
+of the wrong length, metadata that is not an object, text that will not
+decode as UTF-8, #1881), *unsupported schema*
 (a ``format_version`` above :data:`FORMAT_VERSION`) and *incompatible
 identity*. *Not configured* cannot happen: no location means in memory.
 """
@@ -123,6 +125,11 @@ _MEMORY = ":memory:"
 _TABLES = frozenset({"meta", "documents", "chunks"})
 _CORRUPT_ERRORNAMES = frozenset({"SQLITE_NOTADB", "SQLITE_CORRUPT"})
 
+#: How Python's sqlite3 reports a text cell that is not UTF-8. It carries no
+#: SQLite error name: the bytes read, but damaged pages left them unreadable
+#: as the text the store wrote (#1881).
+_UNDECODABLE = "Could not decode to UTF-8"
+
 _SCHEMA = (
     "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     "CREATE TABLE documents (path TEXT PRIMARY KEY, token TEXT)",
@@ -213,8 +220,20 @@ def _outcome(kind: type[StoreOpenError], message: str, where: str) -> StoreOpenE
 def _classified(
     exc: sqlite3.Error, where: str, action: str = "opened"
 ) -> StoreOpenError:
-    """Return the outcome a SQLite error stands for, for an open or a read."""
+    """Return the outcome a SQLite error stands for, for an open or a read.
+
+    Damage is corrupt: a file SQLite does not recognise, pages it reports
+    corrupt, or a text cell that no longer decodes. Anything else, such as a
+    refused permission or an I/O error, is unavailable.
+    """
     name = getattr(exc, "sqlite_errorname", "")
+    # First: the decode message quotes the cell, which may say anything.
+    if str(exc).startswith(_UNDECODABLE):
+        return _outcome(
+            StoreCorruptError,
+            f"Vector store at {where} holds text that will not decode: {exc}",
+            where,
+        )
     if name in _CORRUPT_ERRORNAMES or "not a database" in str(exc):
         return _outcome(
             StoreCorruptError,
