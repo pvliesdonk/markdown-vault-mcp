@@ -2,6 +2,14 @@
 
 ## 2026-11-01
 
+- [PostgreSQL writes](postgresql-writes.md): one claim added for #1970, on
+  binary results. A `binary=True` cursor returns `vector` through
+  pgvector-python's binary loader as float32 bytes, with `text` and
+  `jsonb` decoded as usual; the batched row read relies on it. Sources:
+  psycopg's "Binary parameters and results" and pgvector-python 0.5.1's
+  adapter, both read 2026-11-01, plus a timed read on a throwaway
+  container. No other claim was re-researched. Next review unchanged:
+  2027-04-22.
 - Split [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md)
   (41 KB) by the module that reads it, for #1927:
   [PostgreSQL connections](postgresql-connections.md) (`_postgres.py`,

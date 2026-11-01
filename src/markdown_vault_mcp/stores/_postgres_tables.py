@@ -12,6 +12,7 @@ relation sizes, ``docs/design/reference/postgresql-schema-and-operations.md``.
 
 from __future__ import annotations
 
+from array import array
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import psycopg
@@ -542,6 +543,38 @@ def stored_metadata(
     found: dict[str, list[dict[str, Any]]] = {}
     for path, metadata in conn.execute(query, (paths,)):
         found.setdefault(str(path), []).append(dict(metadata))
+    return found
+
+
+def stored_rows_by_path(
+    conn: psycopg.Connection[Any], *, schema: str, paths: list[str]
+) -> dict[str, list[VectorRow]]:
+    """*paths*' rows in ordinal order, vectors as float32, in one query (#1970).
+
+    The results come back in binary, so each vector arrives as its float32
+    bytes rather than as text to parse.
+
+    Args:
+        conn: A connection inside a read transaction.
+        schema: The vault schema.
+        paths: The documents.
+
+    Returns:
+        The rows by path, each vector an ``array("f")``; a path with no rows
+        is left out.
+    """
+    query = sql.SQL(
+        "SELECT path, embedding, metadata FROM {}.vector_chunks"
+        " WHERE path = ANY(%s) ORDER BY path, ordinal"
+    ).format(sql.Identifier(schema))
+    found: dict[str, list[VectorRow]] = {}
+    with conn.cursor(binary=True) as cur:
+        for path, embedding, metadata in cur.execute(query, (paths,)):
+            # pgvector 0.5+ hands native-endian float32 bytes: no parsing.
+            vector = array("f", embedding.to_numpy().tobytes())
+            found.setdefault(str(path), []).append(
+                VectorRow(vector=vector, metadata=dict(metadata))
+            )
     return found
 
 

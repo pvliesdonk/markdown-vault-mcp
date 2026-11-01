@@ -16,9 +16,11 @@ The managers depend on these concepts:
   no embedding provider inside the store; :class:`ReportsResources` is the
   optional part a store implements to report its search mode and sizes
   (#1377), :class:`DescribesStore` the optional part a store
-  implements to say where it lives (#1504), and
+  implements to say where it lives (#1504),
   :class:`ReadsMetadataInBatches` the optional part a store implements to
-  serve many documents' row metadata in one read (#1937).
+  serve many documents' row metadata in one read (#1937), and
+  :class:`ReadsRowsInBatches` the same for their rows, vectors included
+  (#1970).
 
 ``FTSIndex`` implements the first two over one SQLite database and
 ``NumpySidecarStore`` the vector contract over numpy; both satisfy these
@@ -70,6 +72,7 @@ __all__ = [
     "KeywordGraphIndex",
     "KeywordIndex",
     "ReadsMetadataInBatches",
+    "ReadsRowsInBatches",
     "ReportsResources",
     "SourceProbe",
     "StoreBackend",
@@ -523,6 +526,28 @@ class ReadsMetadataInBatches(Protocol):
 
         Returns:
             The metadata by path; a path with no rows is left out.
+        """
+        ...
+
+
+@runtime_checkable
+class ReadsRowsInBatches(Protocol):
+    """A vector store that reads many documents' rows at once (#1970); optional.
+
+    A store whose every read is a round trip implements it, so a pass that
+    needs the vectors of many documents (a bulk re-token, a rebuild reusing
+    its own rows) reads them without one read per document.
+    """
+
+    def rows_by_path(self, paths: Collection[str]) -> dict[str, list[VectorRow]]:
+        """Return each of *paths*' rows, vectors normalised float32, in storage order.
+
+        Args:
+            paths: The documents to read.
+
+        Returns:
+            The rows by path, each vector an ``array("f")``; a path with no
+            rows is left out.
         """
         ...
 

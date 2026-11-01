@@ -82,6 +82,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     stored_count,
     stored_metadata,
     stored_rows,
+    stored_rows_by_path,
     stored_tokens,
     token_conflicts,
     where,
@@ -249,6 +250,30 @@ class PostgresVectorStore:
         """
         return self._reading(
             lambda conn, _meta: stored_metadata(
+                conn, schema=self._schema, paths=list(paths)
+            ),
+            {},
+        )
+
+    def rows_by_path(self, paths: Collection[str]) -> dict[str, list[VectorRow]]:
+        """Return *paths*' rows, vectors normalised float32, in storage order, in one query.
+
+        Args:
+            paths: The documents to read.
+
+        Returns:
+            The rows by path, each vector an ``array("f")``; a path with no
+            rows is left out.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If another process has since published
+                another identity.
+            StoreCorruptError: If the meta row is malformed.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        return self._reading(
+            lambda conn, _meta: stored_rows_by_path(
                 conn, schema=self._schema, paths=list(paths)
             ),
             {},

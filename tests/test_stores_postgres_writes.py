@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import math
+from array import array
 from typing import TYPE_CHECKING, Any
 
 import psycopg
 import pytest
 from psycopg import sql
 
-from markdown_vault_mcp.interfaces import ReadsMetadataInBatches
+from markdown_vault_mcp.interfaces import ReadsMetadataInBatches, ReadsRowsInBatches
 from markdown_vault_mcp.stores import _postgres as pg
 from markdown_vault_mcp.stores import _postgres_tables as tables
 from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
@@ -96,6 +97,7 @@ def test_reads_of_an_empty_store(postgres_schema: PostgresSchema) -> None:
         assert store.tokens() == {}
         assert store.rows_for("a.md") == []
         assert store.metadata_for(["a.md"]) == {}
+        assert store.rows_by_path(["a.md"]) == {}
         assert store.count == 0
     finally:
         store.close()
@@ -143,6 +145,27 @@ def test_metadata_for_reads_many_documents_without_vectors(store: Any) -> None:
         ],
     }
     assert store.metadata_for([]) == {}
+
+
+def test_rows_by_path_reads_many_documents_as_float32(store: Any) -> None:
+    assert isinstance(store, ReadsRowsInBatches)
+    store.replace_document(
+        _doc("b.md", [[1, 0, 0], [0, 3, 4]]), expected_token=ANY_TOKEN
+    )
+    store.replace_document(_doc("a.md", [[0, 0, 2]]), expected_token=ANY_TOKEN)
+    store.replace_document(_doc("c.md", [[0, 1, 0]]), expected_token=ANY_TOKEN)
+    found = store.rows_by_path(["b.md", "a.md", "gone.md"])
+    assert sorted(found) == ["a.md", "b.md"]
+    assert [r.metadata["content"] for r in found["b.md"]] == ["b.md#0", "b.md#1"]
+    vectors = [r.vector for rows in found.values() for r in rows]
+    assert all(isinstance(v, array) and v.typecode == "f" for v in vectors)
+    assert list(found["b.md"][1].vector) == pytest.approx([0.0, 0.6, 0.8])
+    assert found["a.md"] == [
+        VectorRow(
+            array("f", [0, 0, 1]), {"folder": "", "content": "a.md#0", "path": "a.md"}
+        )
+    ]
+    assert store.rows_by_path([]) == {}
 
 
 def test_replace_swaps_a_documents_rows(store: Any) -> None:
