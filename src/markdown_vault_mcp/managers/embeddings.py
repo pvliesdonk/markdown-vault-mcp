@@ -245,18 +245,22 @@ class EmbeddingsManager:
         opens, is rebuilt with ``force``, re-embedding every chunk. A
         corrupt one, which the slot moved aside, reopens empty and takes the
         ordinary cold build, where a compatible 5.x sidecar donates, so
-        unchanged notes cost no provider call (#1505).
+        unchanged notes cost no provider call (#1505). A store a search
+        found damaged after it opened is condemned first, here on the
+        writer thread, and then takes the same cold build (#1881).
 
         Returns:
             Number of chunks embedded.
 
         Raises:
             EmbeddingsNotConfiguredError: If no embedding provider is configured.
-            StoreOpenError: If the store still will not open.
+            StoreOpenError: If the store still will not open, or a damaged
+                one cannot be moved aside.
         """
         self._require_vectors()
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
+        self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
         except StoreIncompatibleError:

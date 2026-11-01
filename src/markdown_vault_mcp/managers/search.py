@@ -22,6 +22,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     EmbeddingsNotConfiguredError,
     InvalidRequestError,
+    StoreCorruptError,
     StoreOpenError,
 )
 from markdown_vault_mcp.managers._ranking import (
@@ -351,10 +352,15 @@ class SearchManager:
 
         A first build closes the store a read took before any vectors
         existed (#1504). A read that loses that race reads the store the
-        build installed instead of failing; any other failure propagates.
+        build installed instead of failing. A read that finds the store
+        damaged, although it opened, has it moved aside and rebuilt on the
+        writer thread, as a store that fails its open is, and reads the
+        rebuilt one (#1881). Any other failure propagates.
 
         Raises:
             RuntimeError: If the store is closed and was not replaced.
+            StoreCorruptError: If the store is damaged and this manager has
+                no ``rebuild_embeddings``.
         """
         store = self._load_vectors()
         if store is None:
@@ -366,6 +372,16 @@ class SearchManager:
             if replaced is None or replaced is store:
                 raise
             return read(replaced)
+        except StoreCorruptError:
+            if self._rebuild_embeddings is None:
+                raise
+            # The store passed is the one this read opened. A read that
+            # for_query sent to another store and that store failed is
+            # retried once on it here, and recovered at the next search.
+            rebuilt = self._slot.rebuilt_after_read(store, self._rebuild_embeddings)
+            if rebuilt is None:
+                raise
+            return read(rebuilt)
 
     def _search_vectors(
         self, query: str, limit: int, folder: str | None
