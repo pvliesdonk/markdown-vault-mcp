@@ -41,6 +41,7 @@ Skills live under `.agents/skills/`; Claude Code reads them through the `.claude
 - `repository-protection` — before changing rulesets, required checks, or the bootstrap workflow.
 - `authoring-issues-prs` — when filing an issue, sizing a change before coding, or opening a PR.
 - `self-reviewing` — before opening a PR, marking one ready, or pushing further commits to a branch with an open PR: self-review the cumulative diff.
+- `stacking-prs` — when work ships as several dependent PRs (a stack): plan it, run `self-reviewing` on each PR before starting the next, and restack after a squash merge.
 - `applying-template-updates` — when working through the weekly template update PR (`copier/update` branch) or after running `copier update`.
 - `writing-release-notes` — when drafting a `docs/releases/` page.
 - `roadmapping` — when charting, refining or revisiting epics and release packages; before planning work that spans PRs.
@@ -70,6 +71,8 @@ Before you open a PR, and before every later push to its branch, pass every gate
 5. Docs: `README.md` and `docs/**` reflect every user-facing change in the same commit (Documentation Discipline below).
 6. Manifest version lockstep: `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json` and `.claude-plugin/plugin/.mcp.json` carry the same version, the latest stable release. A stable release PR stamps all three; when you touch one by hand, update all three.
 7. Structural quality (diff) passes: new or changed lines add no structural violation (complexity, too-many-*, security); pre-existing code is never blocked. Run `bash scripts/structural_gate.sh` before pushing. It runs `diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --fail-under=100` against the nearest of `origin/main`, `origin/release/*` and `origin/integration/*` (override with `STRUCTURAL_GATE_BASE`). For irreducible new code, add `# noqa: C901` (or the rule that fired) with a one-line justification.
+
+A review from another workflow (a plan executor's reviewer, a code-review skill or command) does not replace the `self-reviewing` skill; run the skill as well.
 
 ## Pre-commit Hooks
 

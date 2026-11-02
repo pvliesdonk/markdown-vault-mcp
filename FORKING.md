@@ -79,8 +79,8 @@ still redeploys canonical `docs/releases/` pages on merge.) The remaining
 template-owned skills under `.agents/skills/` (`applying-template-updates`,
 `authoring-issues-prs`, `config-contract`, `designing-tool-outcomes`, `logging-standard`,
 `releasing`, `repository-protection`, `researching-references`,
-`roadmapping`, `self-reviewing`, `tool-registration`, `writing-documentation`,
-`writing-model-facing-text`, `writing-release-notes`) and
+`roadmapping`, `self-reviewing`, `stacking-prs`, `tool-registration`,
+`writing-documentation`, `writing-model-facing-text`, `writing-release-notes`) and
 their `.claude/skills/<name>`
 symlinks are independent of Claude review wiring; retain or remove each
 according to the detached fork's process — a fork that keeps using Claude

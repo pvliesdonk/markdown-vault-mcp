@@ -338,19 +338,29 @@ def _cli_command(name: str, cmd: Any) -> CliCommand:
     return CliCommand(name, cmd.help or "", arguments, options)
 
 
+def _cli_commands(prefix: str, group: Any) -> list[CliCommand]:
+    """Every visible command under *group*, each group before its members."""
+    out = []
+    for cmd_name, cmd in group.commands.items():
+        if getattr(cmd, "hidden", False):
+            continue
+        path = f"{prefix}{cmd_name}"
+        out.append(_cli_command(path, cmd))
+        if getattr(cmd, "commands", None) is not None:
+            out.extend(_cli_commands(f"{path} ", cmd))
+    return out
+
+
 def _cli(app: typer.Typer, name: str) -> Cli:
     import typer.main
 
     # typer vendors its own click, so duck-type the objects instead of
     # isinstance checks against the click package.
     root = typer.main.get_command(app)
-    members = getattr(root, "commands", None)
-    pairs = members.items() if members is not None else [(root.name, root)]
-    commands = [
-        _cli_command(str(cmd_name), cmd)
-        for cmd_name, cmd in pairs
-        if not getattr(cmd, "hidden", False)
-    ]
+    if getattr(root, "commands", None) is not None:
+        commands = _cli_commands("", root)
+    else:
+        commands = [_cli_command(str(root.name), root)]
     return Cli(name, root.help or "", commands)
 
 
