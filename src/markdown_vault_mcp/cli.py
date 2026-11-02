@@ -830,6 +830,12 @@ from markdown_vault_mcp._cli_query import (  # noqa: E402 -- retained domain com
 
 _register_queries(app)
 
+from markdown_vault_mcp._cli_paths import (  # noqa: E402
+    register as _register_paths,
+)
+
+_register_paths(app)
+
 # DOMAIN-COMMANDS-END
 
 
