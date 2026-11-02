@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any
 from unittest.mock import patch
 
@@ -201,6 +202,7 @@ def test_authenticated_transport_and_unauthorized_diagnostic() -> None:
                 {"query": "x"},
             )
         assert "wrong-secret" not in str(error.value)
+        assert re.search(r"failed \((?!ExceptionGroup)\w+\)", str(error.value))
 
 
 def test_cross_origin_redirect_is_not_followed() -> None:
@@ -362,3 +364,19 @@ def test_interrupt_diagnostic_exits_130() -> None:
             app, ["search", "x", "--server", "https://example.com/mcp"]
         )
     assert result.exit_code == 130
+
+
+def test_failure_kind_names_root_cause_without_text() -> None:
+    from markdown_vault_mcp._cli_remote import _failure_kind
+
+    root = ConnectionRefusedError("secret-bearing text")
+    wrapper = RuntimeError("Client failed to connect")
+    wrapper.__cause__ = root
+    assert _failure_kind(ExceptionGroup("g", [wrapper])) == "ConnectionRefusedError"
+    assert _failure_kind(ExceptionGroup("g", [ValueError(), KeyError()])) == (
+        "ExceptionGroup"
+    )
+    looped = ValueError()
+    looped.__cause__ = KeyError()
+    looped.__cause__.__cause__ = looped
+    assert _failure_kind(looped) == "ValueError"

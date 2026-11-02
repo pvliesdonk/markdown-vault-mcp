@@ -97,6 +97,20 @@ async def _call(
         return _payload(await client.call_tool_mcp(tool, arguments), tool)
 
 
+def _failure_kind(exc: BaseException) -> str:
+    """Name the root exception type, through causes and single-member groups."""
+    seen: set[int] = set()
+    while id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, BaseExceptionGroup) and len(exc.exceptions) == 1:
+            exc = exc.exceptions[0]
+        elif exc.__cause__ is not None:
+            exc = exc.__cause__
+        else:
+            break
+    return type(exc).__name__
+
+
 def call_read(
     settings: ClientSettings, tool: str, arguments: dict[str, Any]
 ) -> RemoteReply:
@@ -126,10 +140,12 @@ def call_read(
         raise ClientError(
             "Remote read timed out; increase --timeout if needed.", 1
         ) from None
-    except Exception:
+    except Exception as exc:
+        # The exception's type names the failure without its text, which may
+        # carry a header or a redirect location.
         raise ClientError(
-            "Remote MCP connection failed. Check the endpoint and bearer authentication; "
-            "interactive login is not supported.",
+            f"Remote MCP connection failed ({_failure_kind(exc)}). Check the "
+            "endpoint and bearer authentication; interactive login is not supported.",
             1,
         ) from None
     finally:
