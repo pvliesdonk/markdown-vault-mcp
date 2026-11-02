@@ -2106,32 +2106,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-index" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        markdown-vault-mcp index
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#markdown-vault-mcp-search" class="md-nav__link">
     <span class="md-ellipsis">
       
         markdown-vault-mcp search
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-reindex" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        markdown-vault-mcp reindex
       
     </span>
   </a>
@@ -2370,10 +2348,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-embeddings" class="md-nav__link">
+  <a href="#markdown-vault-mcp-admin" class="md-nav__link">
     <span class="md-ellipsis">
       
-        markdown-vault-mcp embeddings
+        markdown-vault-mcp admin
       
     </span>
   </a>
@@ -2381,10 +2359,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-embeddings-import" class="md-nav__link">
+  <a href="#markdown-vault-mcp-admin-index" class="md-nav__link">
     <span class="md-ellipsis">
       
-        markdown-vault-mcp embeddings import
+        markdown-vault-mcp admin index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-reindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin reindex
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin embeddings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-embeddings-import" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin embeddings import
       
     </span>
   </a>
@@ -3113,32 +3124,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-index" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        markdown-vault-mcp index
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#markdown-vault-mcp-search" class="md-nav__link">
     <span class="md-ellipsis">
       
         markdown-vault-mcp search
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-reindex" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        markdown-vault-mcp reindex
       
     </span>
   </a>
@@ -3377,10 +3366,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-embeddings" class="md-nav__link">
+  <a href="#markdown-vault-mcp-admin" class="md-nav__link">
     <span class="md-ellipsis">
       
-        markdown-vault-mcp embeddings
+        markdown-vault-mcp admin
       
     </span>
   </a>
@@ -3388,10 +3377,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown-vault-mcp-embeddings-import" class="md-nav__link">
+  <a href="#markdown-vault-mcp-admin-index" class="md-nav__link">
     <span class="md-ellipsis">
       
-        markdown-vault-mcp embeddings import
+        markdown-vault-mcp admin index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-reindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin reindex
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin embeddings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-embeddings-import" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin embeddings import
       
     </span>
   </a>
@@ -3422,7 +3444,7 @@
 
 <h1 id="command-line">Command line<a class="headerlink" href="#command-line" title="Permanent link">&para;</a></h1>
 <!-- DOMAIN-INTRO-START -->
-<p><code>serve</code> runs the server. <code>index</code>, <code>search</code> and <code>reindex</code> work on the vault and its index directly, without a server; <code>search</code> and the reader commands below can also query a hosted MCP endpoint (see <a href="#search-a-hosted-vault">Search a hosted vault</a>). They read the same <code>MARKDOWN_VAULT_MCP_*</code> settings as <code>serve</code>, and <code>--source-dir</code> and <code>--index-path</code> override the vault and index locations. <code>index</code> and <code>reindex</code> also bring the embeddings up to date when an <a href="../../use/embeddings/">embedding provider</a> is configured and an index path, an embeddings path or a <a href="../../use/postgresql/">PostgreSQL store</a> keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or <code>index</code>) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by <code>index.db.lock</code> beside it, so they stop with the same error before writing either store and leave both as they were, as <code>embeddings import</code> does. <code>reindex</code> also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does <code>index</code> without <code>--force</code> when it has to rebuild the index, as after a settings change. <code>embeddings import</code> copies vectors from another store into the configured one (<a href="../../use/embeddings/#moving-vectors-between-stores">Moving vectors between stores</a>). Without an index path, <code>search</code> indexes the vault in memory for that one query and writes no file, not even one <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names, and loads the vectors stored at <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> instead of embedding the vault for the query. With neither path set and no PostgreSQL store, <code>--mode semantic</code> or <code>hybrid</code> with an <a href="../../use/embeddings/">embedding provider</a> configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, <code>search</code> reads the vectors from the database and embeds only the query. With an index path, <code>search</code> only reads the stored index and its vectors, which <code>index</code> and <code>reindex</code> keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the <code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code> stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, <code>--mode semantic</code> or <code>hybrid</code> stops with an error and leaves them as they are.</p>
+<p><code>serve</code> runs the server, and the <code>admin</code> group holds the commands that write: <code>admin index</code>, <code>admin reindex</code> and <code>admin embeddings import</code>. Their former top-level names, <code>index</code>, <code>reindex</code> and <code>embeddings import</code>, still work and name the new form on stderr. Every other command only reads. <code>admin index</code>, <code>admin reindex</code> and <code>search</code> work on the vault and its index directly, without a server; <code>search</code> and the reader commands below can also query a hosted MCP endpoint (see <a href="#search-a-hosted-vault">Search a hosted vault</a>). They read the same <code>MARKDOWN_VAULT_MCP_*</code> settings as <code>serve</code>, and <code>--source-dir</code> and <code>--index-path</code> override the vault and index locations. <code>admin index</code> and <code>admin reindex</code> also bring the embeddings up to date when an <a href="../../use/embeddings/">embedding provider</a> is configured and an index path, an embeddings path or a <a href="../../use/postgresql/">PostgreSQL store</a> keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or <code>admin index</code>) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by <code>index.db.lock</code> beside it, so they stop with the same error before writing either store and leave both as they were, as <code>admin embeddings import</code> does. <code>admin reindex</code> also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does <code>admin index</code> without <code>--force</code> when it has to rebuild the index, as after a settings change. <code>admin embeddings import</code> copies vectors from another store into the configured one (<a href="../../use/embeddings/#moving-vectors-between-stores">Moving vectors between stores</a>). Without an index path, <code>search</code> indexes the vault in memory for that one query and writes no file, not even one <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names, and loads the vectors stored at <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> instead of embedding the vault for the query. With neither path set and no PostgreSQL store, <code>--mode semantic</code> or <code>hybrid</code> with an <a href="../../use/embeddings/">embedding provider</a> configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, <code>search</code> reads the vectors from the database and embeds only the query. With an index path, <code>search</code> only reads the stored index and its vectors, which <code>admin index</code> and <code>admin reindex</code> keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the <code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code> stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, <code>--mode semantic</code> or <code>hybrid</code> stops with an error and leaves them as they are.</p>
 <h3 id="search-a-hosted-vault">Search a hosted vault<a class="headerlink" href="#search-a-hosted-vault" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">"release notes"</span><span class="w"> </span>--server<span class="w"> </span>https://vault.example/proxy/mcp<span class="w"> </span>--json
 </code></pre></div>
@@ -3432,7 +3454,7 @@
 <p><code>--chunks-per-file</code> requires at least one section; <code>--snippet-words</code> accepts zero for full indexed sections. Unset values use the vault's defaults. <code>--wait-for-pending-writes</code> asks a remote server to drain its writer within the client deadline. Local reads have no server writer to wait for and do not claim a fresh shared index.</p>
 <p><code>--json</code> keeps the grouped-result array, including sections, frontmatter and optional OKF annotations. A stale remote result adds a warning on stderr. <code>--agent</code> conflicts with <code>--json</code> and emits one <code>OK search</code> header followed by one escaped JSON record per note. The header includes count, requested mode, actual modes observed in hits, and <code>index_stale=true</code>, <code>false</code> or <code>unknown</code>. Empty results cannot establish an actual mode; local index freshness is unknown. Printable Unicode remains readable and control characters cannot inject terminal commands or extra records. Human output keeps the existing path, score and title layout.</p>
 <p>Older servers can still accept the original search arguments. Requesting an option their tool schema lacks fails explicitly; the client never drops it or retries locally.</p>
-<p>Pass the complete MCP URL, including its path. <code>--server</code> overrides <code>MARKDOWN_VAULT_MCP_SERVER_URL</code>, then the client profile's URL. <code>--local</code> bypasses that selection and conflicts with explicit <code>--server</code>. <code>--source-dir</code> requires local mode. Remote search never opens a local vault or resolves its embedding provider. <code>serve</code>, <code>index</code> and <code>reindex</code> remain local commands and reject <code>--server</code>.</p>
+<p>Pass the complete MCP URL, including its path. <code>--server</code> overrides <code>MARKDOWN_VAULT_MCP_SERVER_URL</code>, then the client profile's URL. <code>--local</code> bypasses that selection and conflicts with explicit <code>--server</code>. <code>--source-dir</code> requires local mode. Remote search never opens a local vault or resolves its embedding provider. <code>serve</code> and the <code>admin</code> commands remain local and reject <code>--server</code>.</p>
 <p>The optional profile is <code>$XDG_CONFIG_HOME/markdown-vault-mcp/client.toml</code>, defaulting to <code>~/.config/markdown-vault-mcp/client.toml</code>. <code>MARKDOWN_VAULT_MCP_CLIENT_CONFIG</code> selects another file; a missing selected file, malformed TOML or unknown field fails. An absent default file is fine.</p>
 <div class="highlight"><pre><span></span><code><span class="k">[remote]</span>
 <span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"https://vault.example/proxy/mcp"</span>
@@ -3534,38 +3556,6 @@ loading vector sidecars. Follow a returned path with <code>read</code>, <code>re
 <td></td>
 <td></td>
 <td>Mount path (http only, default: $<code>MARKDOWN_VAULT_MCP_HTTP_PATH</code> or /mcp).</td>
-</tr>
-</tbody>
-</table>
-<h2 id="markdown-vault-mcp-index"><code>markdown-vault-mcp index</code><a class="headerlink" href="#markdown-vault-mcp-index" title="Permanent link">&para;</a></h2>
-<p>Build the full-text search index.</p>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Env var</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--source-dir</code></td>
-<td></td>
-<td></td>
-<td>Path to markdown vault (overrides $<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>).</td>
-</tr>
-<tr>
-<td><code>--index-path</code></td>
-<td></td>
-<td></td>
-<td>Path to SQLite index file (overrides $<code>MARKDOWN_VAULT_MCP_INDEX_PATH</code>).</td>
-</tr>
-<tr>
-<td><code>--force</code></td>
-<td></td>
-<td>False</td>
-<td>Drop and rebuild the index from scratch.</td>
 </tr>
 </tbody>
 </table>
@@ -3672,38 +3662,6 @@ loading vector sidecars. Follow a returned path with <code>read</code>, <code>re
 <td></td>
 <td></td>
 <td>Remote operation deadline in seconds (default 30).</td>
-</tr>
-</tbody>
-</table>
-<h2 id="markdown-vault-mcp-reindex"><code>markdown-vault-mcp reindex</code><a class="headerlink" href="#markdown-vault-mcp-reindex" title="Permanent link">&para;</a></h2>
-<p>Incrementally reindex the vault.</p>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Env var</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--source-dir</code></td>
-<td></td>
-<td></td>
-<td>Path to markdown vault (overrides $<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>).</td>
-</tr>
-<tr>
-<td><code>--index-path</code></td>
-<td></td>
-<td></td>
-<td>Path to SQLite index file (overrides $<code>MARKDOWN_VAULT_MCP_INDEX_PATH</code>).</td>
-</tr>
-<tr>
-<td><code>--force</code></td>
-<td></td>
-<td>False</td>
-<td>Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust.</td>
 </tr>
 </tbody>
 </table>
@@ -5487,9 +5445,75 @@ loading vector sidecars. Follow a returned path with <code>read</code>, <code>re
 </tr>
 </tbody>
 </table>
-<h2 id="markdown-vault-mcp-embeddings"><code>markdown-vault-mcp embeddings</code><a class="headerlink" href="#markdown-vault-mcp-embeddings" title="Permanent link">&para;</a></h2>
+<h2 id="markdown-vault-mcp-admin"><code>markdown-vault-mcp admin</code><a class="headerlink" href="#markdown-vault-mcp-admin" title="Permanent link">&para;</a></h2>
+<p>Commands that write the index or the stored vectors.</p>
+<h2 id="markdown-vault-mcp-admin-index"><code>markdown-vault-mcp admin index</code><a class="headerlink" href="#markdown-vault-mcp-admin-index" title="Permanent link">&para;</a></h2>
+<p>Build the full-text search index.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Env var</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--source-dir</code></td>
+<td></td>
+<td></td>
+<td>Path to markdown vault (overrides $<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>).</td>
+</tr>
+<tr>
+<td><code>--index-path</code></td>
+<td></td>
+<td></td>
+<td>Path to SQLite index file (overrides $<code>MARKDOWN_VAULT_MCP_INDEX_PATH</code>).</td>
+</tr>
+<tr>
+<td><code>--force</code></td>
+<td></td>
+<td>False</td>
+<td>Drop and rebuild the index from scratch.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="markdown-vault-mcp-admin-reindex"><code>markdown-vault-mcp admin reindex</code><a class="headerlink" href="#markdown-vault-mcp-admin-reindex" title="Permanent link">&para;</a></h2>
+<p>Incrementally reindex the vault.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Env var</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--source-dir</code></td>
+<td></td>
+<td></td>
+<td>Path to markdown vault (overrides $<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>).</td>
+</tr>
+<tr>
+<td><code>--index-path</code></td>
+<td></td>
+<td></td>
+<td>Path to SQLite index file (overrides $<code>MARKDOWN_VAULT_MCP_INDEX_PATH</code>).</td>
+</tr>
+<tr>
+<td><code>--force</code></td>
+<td></td>
+<td>False</td>
+<td>Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="markdown-vault-mcp-admin-embeddings"><code>markdown-vault-mcp admin embeddings</code><a class="headerlink" href="#markdown-vault-mcp-admin-embeddings" title="Permanent link">&para;</a></h2>
 <p>Move embeddings between vector stores.</p>
-<h2 id="markdown-vault-mcp-embeddings-import"><code>markdown-vault-mcp embeddings import</code><a class="headerlink" href="#markdown-vault-mcp-embeddings-import" title="Permanent link">&para;</a></h2>
+<h2 id="markdown-vault-mcp-admin-embeddings-import"><code>markdown-vault-mcp admin embeddings import</code><a class="headerlink" href="#markdown-vault-mcp-admin-embeddings-import" title="Permanent link">&para;</a></h2>
 <p>Copy vectors from another store into the configured one, embedding only what it lacks.</p>
 <table>
 <thead>

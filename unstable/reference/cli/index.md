@@ -1,6 +1,6 @@
 # Command line
 
-`serve` runs the server. `index`, `search` and `reindex` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `embeddings import` does. `reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `index` without `--force` when it has to rebuild the index, as after a settings change. `embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex` and `admin embeddings import`. Their former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
 
 ### Search a hosted vault
 
@@ -20,7 +20,7 @@ markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-fil
 
 Older servers can still accept the original search arguments. Requesting an option their tool schema lacks fails explicitly; the client never drops it or retries locally.
 
-Pass the complete MCP URL, including its path. `--server` overrides `MARKDOWN_VAULT_MCP_SERVER_URL`, then the client profile's URL. `--local` bypasses that selection and conflicts with explicit `--server`. `--source-dir` requires local mode. Remote search never opens a local vault or resolves its embedding provider. `serve`, `index` and `reindex` remain local commands and reject `--server`.
+Pass the complete MCP URL, including its path. `--server` overrides `MARKDOWN_VAULT_MCP_SERVER_URL`, then the client profile's URL. `--local` bypasses that selection and conflicts with explicit `--server`. `--source-dir` requires local mode. Remote search never opens a local vault or resolves its embedding provider. `serve` and the `admin` commands remain local and reject `--server`.
 
 The optional profile is `$XDG_CONFIG_HOME/markdown-vault-mcp/client.toml`, defaulting to `~/.config/markdown-vault-mcp/client.toml`. `MARKDOWN_VAULT_MCP_CLIENT_CONFIG` selects another file; a missing selected file, malformed TOML or unknown field fails. An absent default file is fine.
 
@@ -117,16 +117,6 @@ Run the MCP server.
 | `--port`      |         |         | Bind port (http only; default: $`MARKDOWN_VAULT_MCP_PORT` or 8000).       |
 | `--http-path` |         |         | Mount path (http only, default: $`MARKDOWN_VAULT_MCP_HTTP_PATH` or /mcp). |
 
-## `markdown-vault-mcp index`
-
-Build the full-text search index.
-
-| Option         | Env var | Default | Description                                                             |
-| -------------- | ------- | ------- | ----------------------------------------------------------------------- |
-| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).    |
-| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`). |
-| `--force`      |         | False   | Drop and rebuild the index from scratch.                                |
-
 ## `markdown-vault-mcp search`
 
 Search the local vault or a hosted MCP server.
@@ -150,16 +140,6 @@ Search the local vault or a hosted MCP server.
 | `--server`                  |         |         | Complete hosted MCP endpoint URL.                                    |
 | `--local`                   |         | False   | Use the local vault despite a client profile.                        |
 | `--timeout`                 |         |         | Remote operation deadline in seconds (default 30).                   |
-
-## `markdown-vault-mcp reindex`
-
-Incrementally reindex the vault.
-
-| Option         | Env var | Default | Description                                                                                                                                                                                       |
-| -------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                                                                                                                              |
-| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`).                                                                                                                           |
-| `--force`      |         | False   | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
 
 ## `markdown-vault-mcp read`
 
@@ -578,11 +558,35 @@ Discover exact paths before optional bounded typo matches.
 | `--agent`                   |         | False   | Return escaped agent records.                  |
 | `--wait-for-pending-writes` |         | False   | Wait for the remote server's pending writes.   |
 
-## `markdown-vault-mcp embeddings`
+## `markdown-vault-mcp admin`
+
+Commands that write the index or the stored vectors.
+
+## `markdown-vault-mcp admin index`
+
+Build the full-text search index.
+
+| Option         | Env var | Default | Description                                                             |
+| -------------- | ------- | ------- | ----------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).    |
+| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`). |
+| `--force`      |         | False   | Drop and rebuild the index from scratch.                                |
+
+## `markdown-vault-mcp admin reindex`
+
+Incrementally reindex the vault.
+
+| Option         | Env var | Default | Description                                                                                                                                                                                       |
+| -------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                                                                                                                              |
+| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`).                                                                                                                           |
+| `--force`      |         | False   | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
+
+## `markdown-vault-mcp admin embeddings`
 
 Move embeddings between vector stores.
 
-## `markdown-vault-mcp embeddings import`
+## `markdown-vault-mcp admin embeddings import`
 
 Copy vectors from another store into the configured one, embedding only what it lacks.
 

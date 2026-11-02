@@ -68,4 +68,4 @@ The figures are a measured envelope, not a guarantee:
 
 ## Changing store later
 
-A switch starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp embeddings import` first to copy the vectors across. [Upgrading, switching and restoring embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/index.md) covers the switch, the upgrade from 5.x, backups and recovery; [Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md) covers what the `sqlite` store needs from its disk.
+A switch starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp admin embeddings import` first to copy the vectors across. [Upgrading, switching and restoring embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/index.md) covers the switch, the upgrade from 5.x, backups and recovery; [Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md) covers what the `sqlite` store needs from its disk.

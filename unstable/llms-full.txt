@@ -849,7 +849,7 @@ When the helper is invoked but `debugpy` isn't installed (say, someone sets `DEB
 
 Set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env` to the vault's path on the host. This server's `compose.yml` mounts that path at `/data/vault` and tells the server inside to use `/data/vault`, so the one variable is a host path to Compose and a container path to the server. Left unset, as `.env.example` ships it, Compose mounts `./vault` beside `compose.yml`: an empty vault, enough for a first try. The files under `examples/` carry a host path; replace it with your own.
 
-If the vault's volume is missing when the server starts, Docker gives the server an empty folder at `/data/vault`. A vault folder that holds nothing at all (no notes, and no folder such as `.obsidian/`) while the index holds notes counts as unavailable, logged as `vault_root_empty_removals_refused`. The index and the embeddings are kept, so the server picks up where it left off once the volume is back. Meanwhile it refuses writes, since one file written into the empty folder would make it look like a vault whose notes were deleted. To empty a vault on purpose, stop the server and delete its notes. `markdown-vault-mcp index --force` then rebuilds the index and the embeddings from the empty folder. Deleting the last notes another way leaves their embeddings stored, never shown in search, until a note is added or you run that command.
+If the vault's volume is missing when the server starts, Docker gives the server an empty folder at `/data/vault`. A vault folder that holds nothing at all (no notes, and no folder such as `.obsidian/`) while the index holds notes counts as unavailable, logged as `vault_root_empty_removals_refused`. The index and the embeddings are kept, so the server picks up where it left off once the volume is back. Meanwhile it refuses writes, since one file written into the empty folder would make it look like a vault whose notes were deleted. To empty a vault on purpose, stop the server and delete its notes. `markdown-vault-mcp admin index --force` then rebuilds the index and the embeddings from the empty folder. Deleting the last notes another way leaves their embeddings stored, never shown in search, until a note is added or you run that command.
 
 The write tools are on by default; `MARKDOWN_VAULT_MCP_READ_ONLY=true` makes a search-only server. The server keeps its own state on the `state-data` volume, so the vault mount can be read-only.
 
@@ -2140,9 +2140,9 @@ Regardless of which provider you choose:
 
 - **Setting `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` turns search by meaning on.** Left unset, the provider is auto-detected only when `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is set or the vectors are kept in PostgreSQL (`MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres`).
 - **Which store keeps the vectors, and what it costs.** `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` picks `sqlite` (the default, searched streamed), `numpy` or `postgres`; [Choosing an embedding store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-stores/index.md) says where each keeps its files and what each was measured to cost in memory, disk, search time and restart time. With neither `MARKDOWN_VAULT_MCP_INDEX_PATH` nor `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` set, the vectors are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
-- **One process writes them at a time.** While the server writes the `numpy` or `sqlite` store, it holds a lock on `index-db-embeddings.lock` beside the vectors, so `markdown-vault-mcp index` or `reindex` run against the same files fail with "being written by another process" instead of writing them; stop the server first. A command that only reads the vectors, such as `markdown-vault-mcp search`, is never blocked. The reverse holds too: a server started while such a command writes the vectors cannot write them or search by meaning until that command exits. One lock covers both stores at the same location. The keyword index has a lock of its own, `index.db.lock` beside the index. Those commands stop before writing either store, and a second server started on the same `MARKDOWN_VAULT_MCP_INDEX_PATH` starts with the vault unavailable, every tool saying another process is writing the index, and opens the vault within a few seconds of the first one exiting. The lock is released when the server exits, even if it is killed; the `.lock` file stays and is safe to leave. It is not taken on Windows, and a lock across a network share or a virtual machine's shared folder (NFS, Docker Desktop on macOS) may not hold, so stop the server there yourself. [Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md) covers what the index needs from its disk.
+- **One process writes them at a time.** While the server writes the `numpy` or `sqlite` store, it holds a lock on `index-db-embeddings.lock` beside the vectors, so `markdown-vault-mcp admin index` or `reindex` run against the same files fail with "being written by another process" instead of writing them; stop the server first. A command that only reads the vectors, such as `markdown-vault-mcp search`, is never blocked. The reverse holds too: a server started while such a command writes the vectors cannot write them or search by meaning until that command exits. One lock covers both stores at the same location. The keyword index has a lock of its own, `index.db.lock` beside the index. Those commands stop before writing either store, and a second server started on the same `MARKDOWN_VAULT_MCP_INDEX_PATH` starts with the vault unavailable, every tool saying another process is writing the index, and opens the vault within a few seconds of the first one exiting. The lock is released when the server exits, even if it is killed; the `.lock` file stays and is safe to leave. It is not taken on Windows, and a lock across a network share or a virtual machine's shared folder (NFS, Docker Desktop on macOS) may not hold, so stop the server there yourself. [Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md) covers what the index needs from its disk.
 - **Upgrading from 5.x keeps your vectors.** The first start after the upgrade copies every vector whose note text is unchanged from the files 5.x left beside `index.db`, and embeds only the rest; [Upgrading, switching and restoring embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/#upgrading-from-5x) covers what it costs and how to go back.
-- **Switching between `numpy` and `sqlite` later starts with an empty store**, so every note would be embedded again, which a paid provider bills. Run `markdown-vault-mcp embeddings import` first to copy the vectors across ([Moving vectors between stores](#moving-vectors-between-stores)).
+- **Switching between `numpy` and `sqlite` later starts with an empty store**, so every note would be embedded again, which a paid provider bills. Run `markdown-vault-mcp admin embeddings import` first to copy the vectors across ([Moving vectors between stores](#moving-vectors-between-stores)).
 - **Back up the stored vectors before you risk them:** [Backing up](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/#backing-up) gives the command for each store, and [Restoring](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/#restoring) shows how a restore embeds only the notes changed since.
 - Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
 - **A damaged `numpy` or `sqlite` store is set aside, not overwritten.** When the vectors' files no longer read back, at startup, during a search or before a full rebuild, the server renames them with a `.corrupt-<time>` suffix (such as `index-db-embeddings.v2.json.corrupt-20261024T120000Z`) and builds the vectors again; the log line `vector_store_moved_aside` names the renamed files. If the 5.x files from an upgrade are still there, it copies every vector whose note text is unchanged from them instead of embedding it again. The renamed copies are yours to inspect or delete; the server never touches them again. A store in a read-only folder cannot be renamed: the server leaves it in place, and searches by meaning fail until the folder is writable.
@@ -2169,7 +2169,7 @@ A pip or uv install needs the `postgres` extra (`pip install "markdown-vault-mcp
 What to expect:
 
 - **One server writes a schema at a time.** A second server started on the same schema still serves keyword search, but its semantic and hybrid searches and `embeddings_status` fail, and its log names the server holding the schema (`postgres_vector_store_unavailable reason=lease`).
-- **Switching to `postgres` starts with an empty store**, so every note would be embedded again, which a paid provider bills. Run `markdown-vault-mcp embeddings import` first to copy the vectors across ([Moving vectors between stores](#moving-vectors-between-stores)).
+- **Switching to `postgres` starts with an empty store**, so every note would be embedded again, which a paid provider bills. Run `markdown-vault-mcp admin embeddings import` first to copy the vectors across ([Moving vectors between stores](#moving-vectors-between-stores)).
 - **A database that is down makes semantic and hybrid search fail** rather than answer with nothing; `mode="keyword"` keeps working.
 - **A full rebuild writes the new generation in one transaction**, so searches keep answering from the previous one until it commits.
 
@@ -2190,20 +2190,20 @@ For very large vaults (thousands of notes), the first startup may take several m
 
 ### Moving vectors between stores
 
-`markdown-vault-mcp embeddings import` copies the vectors of another store into the configured one, so a switch between `numpy`, `sqlite` and `postgres`, in any direction, costs a provider call only for the chunks the other store does not hold. Stop the server, set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` and the new store's settings, and run:
+`markdown-vault-mcp admin embeddings import` copies the vectors of another store into the configured one, so a switch between `numpy`, `sqlite` and `postgres`, in any direction, costs a provider call only for the chunks the other store does not hold. Stop the server, set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` and the new store's settings, and run:
 
 ```
 # See what it would do: nothing is written and no embedding is requested.
-markdown-vault-mcp embeddings import --from numpy --dry-run
+markdown-vault-mcp admin embeddings import --from numpy --dry-run
 
 # Copy the vectors, embedding only what the source lacks.
-markdown-vault-mcp embeddings import --from numpy
+markdown-vault-mcp admin embeddings import --from numpy
 ```
 
-The same command works in the other directions. From a `numpy` store into PostgreSQL, set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres` with its schema and connection string, then run `markdown-vault-mcp embeddings import --from numpy --from-path /data/state/index-db-embeddings`: with a `postgres` store configured, the built-in source has no default base path. Back from PostgreSQL into `sqlite`, the schema and connection string default to the configured ones:
+The same command works in the other directions. From a `numpy` store into PostgreSQL, set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres` with its schema and connection string, then run `markdown-vault-mcp admin embeddings import --from numpy --from-path /data/state/index-db-embeddings`: with a `postgres` store configured, the built-in source has no default base path. Back from PostgreSQL into `sqlite`, the schema and connection string default to the configured ones:
 
 ```
-MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite markdown-vault-mcp embeddings import --from postgres
+MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite markdown-vault-mcp admin embeddings import --from postgres
 ```
 
 A source schema other than the configured one takes `--from-schema`, and its connection string comes from the variable `--from-dsn-env` names.
@@ -2232,14 +2232,12 @@ It refuses, changing no vectors, and prints one line saying what to do when:
 | A server is writing the configured store                                 | Stop the server first.                                                                            |
 | The source is the configured store                                       | Name another one with `--from`, `--from-path` or `--from-schema`.                                 |
 | The source holds no vectors                                              | Nothing to import.                                                                                |
-| The source records no model (the oldest sidecar format) or another model | Configure the model that built it, or let `index` embed with yours.                               |
+| The source records no model (the oldest sidecar format) or another model | Configure the model that built it, or let `admin index` embed with yours.                         |
 | The source cannot be read, or the connection string variable is not set  | Fix the source, or set the variable.                                                              |
 | The vault holds no notes                                                 | Check `MARKDOWN_VAULT_MCP_SOURCE_DIR`; an import never empties a store.                           |
 | No provider is configured, or the vectors are kept in memory only        | Configure a provider and `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`. |
 
-Not in the generated CLI reference yet
-
-The [CLI reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/cli/index.md) lists `embeddings` but not its `import` options until the reference generator covers command groups ([fastmcp-server-template#823](https://github.com/pvliesdonk/fastmcp-server-template/issues/823)); `markdown-vault-mcp embeddings import --help` shows them.
+The [CLI reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/cli/#markdown-vault-mcp-admin-embeddings-import) lists every option of `admin embeddings import`.
 
 ### Notes with no body
 
@@ -2360,7 +2358,7 @@ The figures are a measured envelope, not a guarantee:
 
 ## Changing store later
 
-A switch starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp embeddings import` first to copy the vectors across. [Upgrading, switching and restoring embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/index.md) covers the switch, the upgrade from 5.x, backups and recovery; [Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md) covers what the `sqlite` store needs from its disk.
+A switch starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp admin embeddings import` first to copy the vectors across. [Upgrading, switching and restoring embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/index.md) covers the switch, the upgrade from 5.x, backups and recovery; [Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md) covers what the `sqlite` store needs from its disk.
 
 # PostgreSQL embedding store
 
@@ -2540,15 +2538,15 @@ The rule behind every step below: the server keeps a stored vector for as long a
 
 The files sit beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (here `index.db`), or at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when that is set. Under Docker Compose that is `/data/state` on the `state-data` volume.
 
-| File or schema                                                                   | Written by                                                                                                        | Losing it costs                                                                        |
-| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `index.db` (and `index.db-wal`, `index.db-shm` while the server runs)            | the search index                                                                                                  | a rebuild of the index from the notes, with no provider calls                          |
-| `index-db-embeddings.v2.json` and the `index-db-embeddings.v2.m<N>.npy` it names | the `numpy` store                                                                                                 | every note embedded again                                                              |
-| `index-db-embeddings.sqlite3` (and its `-wal`, `-shm` while the server runs)     | the `sqlite` store, the default                                                                                   | every note embedded again                                                              |
-| the schema named by `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA`               | the `postgres` store                                                                                              | every note embedded again                                                              |
-| `index-db-embeddings.lock`                                                       | the server, or `index`, `reindex` and `embeddings import`, while one of them writes the `numpy` or `sqlite` store | nothing; safe to leave or delete while no server runs                                  |
-| `index-db-embeddings.json` and `.npy`                                            | a 5.0 or 5.1 server                                                                                               | nothing once the upgrade below has run; going back to 5.1 then embeds everything again |
-| `*.corrupt-<time>`                                                               | the server, when it set a damaged store aside                                                                     | nothing; they are yours to inspect or delete                                           |
+| File or schema                                                                   | Written by                                                                                                                          | Losing it costs                                                                        |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `index.db` (and `index.db-wal`, `index.db-shm` while the server runs)            | the search index                                                                                                                    | a rebuild of the index from the notes, with no provider calls                          |
+| `index-db-embeddings.v2.json` and the `index-db-embeddings.v2.m<N>.npy` it names | the `numpy` store                                                                                                                   | every note embedded again                                                              |
+| `index-db-embeddings.sqlite3` (and its `-wal`, `-shm` while the server runs)     | the `sqlite` store, the default                                                                                                     | every note embedded again                                                              |
+| the schema named by `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA`               | the `postgres` store                                                                                                                | every note embedded again                                                              |
+| `index-db-embeddings.lock`                                                       | the server, or `admin index`, `admin reindex` and `admin embeddings import`, while one of them writes the `numpy` or `sqlite` store | nothing; safe to leave or delete while no server runs                                  |
+| `index-db-embeddings.json` and `.npy`                                            | a 5.0 or 5.1 server                                                                                                                 | nothing once the upgrade below has run; going back to 5.1 then embeds everything again |
+| `*.corrupt-<time>`                                                               | the server, when it set a damaged store aside                                                                                       | nothing; they are yours to inspect or delete                                           |
 
 ## Upgrading from 5.x
 
@@ -2570,7 +2568,7 @@ Each start logs the old files as unused (`embeddings_legacy_sidecar_unused`, wit
 
 ## Switching stores
 
-A switch between `numpy`, `sqlite` and `postgres` starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp embeddings import` with the server stopped to copy the vectors across first; it embeds only what the old store lacks and never changes the old store. [Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores) has the options and the refusals.
+A switch between `numpy`, `sqlite` and `postgres` starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp admin embeddings import` with the server stopped to copy the vectors across first; it embeds only what the old store lacks and never changes the old store. [Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores) has the options and the refusals.
 
 ## Backing up
 
@@ -2601,7 +2599,7 @@ Stop the server and put the files back where they were. Before you start it, del
 To restore embeddings into another store, or from a backup kept somewhere else, leave the backup where it is and import from it:
 
 ```
-markdown-vault-mcp embeddings import --from sqlite --from-path /backups/index-db-embeddings
+markdown-vault-mcp admin embeddings import --from sqlite --from-path /backups/index-db-embeddings
 ```
 
 `--from-path` is the backup's base path, without the `.sqlite3` or `.v2.json` ending. The import reads the backup and never changes it.
@@ -2624,8 +2622,8 @@ Each of these asks the provider for every section of every note, which a paid pr
 
 - no `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` with a `numpy` or `sqlite` store, so the vectors live in memory and are embedded again at each start;
 - a change of embedding provider, model or dimensions;
-- a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `embeddings import`, which includes leaving it unset on an edge build whose only store is a `numpy` one (`index-db-embeddings.v2.json` with no 5.x files beside it): run `embeddings import --from numpy` first, or set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy`;
-- `markdown-vault-mcp index --force`, or the `build_embeddings` tool with `force`;
+- a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `admin embeddings import`, which includes leaving it unset on an edge build whose only store is a `numpy` one (`index-db-embeddings.v2.json` with no 5.x files beside it): run `embeddings import --from numpy` first, or set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy`;
+- `markdown-vault-mcp admin index --force`, or the `build_embeddings` tool with `force`;
 - deleting the store with no backup, or recreating an empty `postgres` schema;
 - a damaged store set aside when no usable 5.x files remain beside it;
 - 5.x files from another model, or in the oldest layout, at upgrade.
@@ -2637,7 +2635,7 @@ These embed only part of the vault:
 - every note long enough to split, after a change to `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`, `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` or `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS`;
 - every note whose title changes, after a change to `MARKDOWN_VAULT_MCP_TITLE_FIELD`, since a section is embedded with its note's title.
 
-`markdown-vault-mcp reindex --force` rebuilds the index only: the embeddings are kept.
+`markdown-vault-mcp admin reindex --force` rebuilds the index only: the embeddings are kept.
 
 A forced rebuild keeps the notes in a folder the server can't read at the time, with their embeddings, and reads them again once it can, so a folder with the wrong permissions costs no second embedding.
 
@@ -2649,7 +2647,7 @@ A forced rebuild keeps the notes in a folder the server can't read at the time, 
 | `embeddings_donor_used source=… reused=… embedded=… refused_rows=… published=…` | A build or import finished. The fields count the vectors copied, the chunks embedded and the stored rows skipped as unreadable; `published` says whether the result replaced the store.                                                          |
 | `embeddings_donor_refused source=… reason=…`                                    | The files or store offered cannot be reused: `identity_unknown` (no model recorded), `identity_differs` (another model), or a store that is empty, damaged, out of reach or unsupported.                                                         |
 | `embeddings_legacy_sidecar_unused path=… bytes=…`                               | The 5.x files are still there and no longer read. `path` is their shared base, such as `/data/state/index-db-embeddings`, and `bytes` their total size.                                                                                          |
-| `embeddings_import_completed …`                                                 | `embeddings import` finished; `embeddings_import_refused reason=…` says why it stopped instead.                                                                                                                                                  |
+| `embeddings_import_completed …`                                                 | `admin embeddings import` finished; `embeddings_import_refused reason=…` says why it stopped instead.                                                                                                                                            |
 | `vector_store_moved_aside location=… reason=… paths=…`                          | A damaged `numpy` or `sqlite` store was renamed with a `.corrupt-<time>` suffix and is being built again. `location` is the store's base; `reason` is `corrupt`, or `unusable` for a file found in the store's place that is not a usable store. |
 | `vault_root_empty_removals_refused indexed=…`                                   | The vault folder looked empty, so nothing was removed.                                                                                                                                                                                           |
 | `fts_index_checkpoint_incomplete path=… frames=… checkpointed=…`                | At shutdown another process still needed part of `index.db-wal`; copy the `-wal` file with `index.db`.                                                                                                                                           |
@@ -2669,19 +2667,19 @@ Without `INDEX_PATH` the index lives in memory, is rebuilt at every start, and n
 
 WAL needs every process that opens a database to share memory on one machine. In SQLite's words, "WAL does not work over a network filesystem." Put `MARKDOWN_VAULT_MCP_INDEX_PATH`, and `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` if you set it, on a disk local to the machine running the server, not on NFS, SMB or another network share. The vault itself may live elsewhere. The server doesn't check for this.
 
-The keyword index can always be rebuilt from the notes with `markdown-vault-mcp reindex`. Paid embeddings are the part worth keeping on reliable storage ([Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md)).
+The keyword index can always be rebuilt from the notes with `markdown-vault-mcp admin reindex`. Paid embeddings are the part worth keeping on reliable storage ([Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md)).
 
 ## One process writes an index
 
 Only one process at a time writes a given index. While a server has it open, the index has an owner:
 
-- `markdown-vault-mcp index`, `reindex` and `embeddings import` stop before writing anything. They exit with a message asking you to stop the server first, and leave the index unchanged.
+- `markdown-vault-mcp admin index`, `admin reindex` and `admin embeddings import` stop before writing anything. They exit with a message asking you to stop the server first, and leave the index unchanged.
 - A second server started on the same `MARKDOWN_VAULT_MCP_INDEX_PATH` starts with the vault unavailable. Every tool says that another process is writing the index. The second server opens the vault within a few seconds of the first one exiting.
 - `markdown-vault-mcp search` and other commands that only read are never blocked.
 
 The lock is not taken on Windows. A lock across a network share or a virtual machine's shared folder may not hold, so in those setups make sure only one process writes the index yourself.
 
-At shutdown, the server waits up to 30 seconds for indexing work in progress. It doesn't wait for work still running after that: it logs a warning, `index_close_skipped`, leaves the index open to that work, and the work stops when the process exits. What it had committed stays; run `markdown-vault-mcp reindex` if it was a long rebuild.
+At shutdown, the server waits up to 30 seconds for indexing work in progress. It doesn't wait for work still running after that: it logs a warning, `index_close_skipped`, leaves the index open to that work, and the work stops when the process exits. What it had committed stays; run `markdown-vault-mcp admin reindex` if it was a long rebuild.
 
 ## Which SQLite your installation runs
 
@@ -5178,15 +5176,15 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 
 ### Change detection
 
-| Variable                                          | Default | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER`                 | `true`  | No       | Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S`      | `2.0`   | No       | Seconds of quiet after the last filesystem event before reindexing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR`      | `true`  | No       | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files relying on scans.                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `MARKDOWN_VAULT_MCP_BOOT_REINDEX`                 | `true`  | No       | Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp reindex'). `get_index_status` reports `offline_changes` as `not_reconciled` until the server itself runs one; a reindex from the command line updates the index but not that status. Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault. |
-| `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET`        | (none)  | No       | Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN` | (none)  | No       | Signing token for the GitLab push-event webhook (GitLab 19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. GitLab generates this value; copy the `whsec_` token it shows under Generate signing token rather than inventing one. Deliveries are authenticated by HMAC-SHA256 over the webhook id, timestamp and body, and a delivery older than 5 minutes is rejected.                                                                                                                                                                                               |
-| `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN`  | (none)  | No       | Secret token for the GitLab push-event webhook, GitLab's plain-text form and the only one below 19.0; also mounts POST /gitlab-webhook. It proves nothing about the body and cannot expire, so prefer the signing token where the GitLab version offers it. Setting both accepts either, which is how an existing webhook migrates.                                                                                                                                                                                                                                                                                                           |
+| Variable                                          | Default | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER`                 | `true`  | No       | Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S`      | `2.0`   | No       | Seconds of quiet after the last filesystem event before reindexing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR`      | `true`  | No       | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files relying on scans.                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `MARKDOWN_VAULT_MCP_BOOT_REINDEX`                 | `true`  | No       | Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp admin reindex'). `get_index_status` reports `offline_changes` as `not_reconciled` until the server itself runs one; a reindex from the command line updates the index but not that status. Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault. |
+| `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET`        | (none)  | No       | Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN` | (none)  | No       | Signing token for the GitLab push-event webhook (GitLab 19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. GitLab generates this value; copy the `whsec_` token it shows under Generate signing token rather than inventing one. Deliveries are authenticated by HMAC-SHA256 over the webhook id, timestamp and body, and a delivery older than 5 minutes is rejected.                                                                                                                                                                                                     |
+| `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN`  | (none)  | No       | Secret token for the GitLab push-event webhook, GitLab's plain-text form and the only one below 19.0; also mounts POST /gitlab-webhook. It proves nothing about the body and cannot expire, so prefer the signing token where the GitLab version offers it. Setting both accepts either, which is how an existing webhook migrates.                                                                                                                                                                                                                                                                                                                 |
 
 ### Summarize
 
@@ -7271,7 +7269,7 @@ Summarize a folder or a set of notes with your own model, in batches that keep n
 
 # Command line
 
-`serve` runs the server. `index`, `search` and `reindex` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `embeddings import` does. `reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `index` without `--force` when it has to rebuild the index, as after a settings change. `embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex` and `admin embeddings import`. Their former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
 
 ### Search a hosted vault
 
@@ -7291,7 +7289,7 @@ markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-fil
 
 Older servers can still accept the original search arguments. Requesting an option their tool schema lacks fails explicitly; the client never drops it or retries locally.
 
-Pass the complete MCP URL, including its path. `--server` overrides `MARKDOWN_VAULT_MCP_SERVER_URL`, then the client profile's URL. `--local` bypasses that selection and conflicts with explicit `--server`. `--source-dir` requires local mode. Remote search never opens a local vault or resolves its embedding provider. `serve`, `index` and `reindex` remain local commands and reject `--server`.
+Pass the complete MCP URL, including its path. `--server` overrides `MARKDOWN_VAULT_MCP_SERVER_URL`, then the client profile's URL. `--local` bypasses that selection and conflicts with explicit `--server`. `--source-dir` requires local mode. Remote search never opens a local vault or resolves its embedding provider. `serve` and the `admin` commands remain local and reject `--server`.
 
 The optional profile is `$XDG_CONFIG_HOME/markdown-vault-mcp/client.toml`, defaulting to `~/.config/markdown-vault-mcp/client.toml`. `MARKDOWN_VAULT_MCP_CLIENT_CONFIG` selects another file; a missing selected file, malformed TOML or unknown field fails. An absent default file is fine.
 
@@ -7388,16 +7386,6 @@ Run the MCP server.
 | `--port`      |         |         | Bind port (http only; default: $`MARKDOWN_VAULT_MCP_PORT` or 8000).       |
 | `--http-path` |         |         | Mount path (http only, default: $`MARKDOWN_VAULT_MCP_HTTP_PATH` or /mcp). |
 
-## `markdown-vault-mcp index`
-
-Build the full-text search index.
-
-| Option         | Env var | Default | Description                                                             |
-| -------------- | ------- | ------- | ----------------------------------------------------------------------- |
-| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).    |
-| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`). |
-| `--force`      |         | False   | Drop and rebuild the index from scratch.                                |
-
 ## `markdown-vault-mcp search`
 
 Search the local vault or a hosted MCP server.
@@ -7421,16 +7409,6 @@ Search the local vault or a hosted MCP server.
 | `--server`                  |         |         | Complete hosted MCP endpoint URL.                                    |
 | `--local`                   |         | False   | Use the local vault despite a client profile.                        |
 | `--timeout`                 |         |         | Remote operation deadline in seconds (default 30).                   |
-
-## `markdown-vault-mcp reindex`
-
-Incrementally reindex the vault.
-
-| Option         | Env var | Default | Description                                                                                                                                                                                       |
-| -------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                                                                                                                              |
-| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`).                                                                                                                           |
-| `--force`      |         | False   | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
 
 ## `markdown-vault-mcp read`
 
@@ -7849,11 +7827,35 @@ Discover exact paths before optional bounded typo matches.
 | `--agent`                   |         | False   | Return escaped agent records.                  |
 | `--wait-for-pending-writes` |         | False   | Wait for the remote server's pending writes.   |
 
-## `markdown-vault-mcp embeddings`
+## `markdown-vault-mcp admin`
+
+Commands that write the index or the stored vectors.
+
+## `markdown-vault-mcp admin index`
+
+Build the full-text search index.
+
+| Option         | Env var | Default | Description                                                             |
+| -------------- | ------- | ------- | ----------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).    |
+| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`). |
+| `--force`      |         | False   | Drop and rebuild the index from scratch.                                |
+
+## `markdown-vault-mcp admin reindex`
+
+Incrementally reindex the vault.
+
+| Option         | Env var | Default | Description                                                                                                                                                                                       |
+| -------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                                                                                                                              |
+| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`).                                                                                                                           |
+| `--force`      |         | False   | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
+
+## `markdown-vault-mcp admin embeddings`
 
 Move embeddings between vector stores.
 
-## `markdown-vault-mcp embeddings import`
+## `markdown-vault-mcp admin embeddings import`
 
 Copy vectors from another store into the configured one, embedding only what it lacks.
 

@@ -2964,7 +2964,7 @@
 </tr>
 <tr>
 <td><code>index-db-embeddings.lock</code></td>
-<td>the server, or <code>index</code>, <code>reindex</code> and <code>embeddings import</code>, while one of them writes the <code>numpy</code> or <code>sqlite</code> store</td>
+<td>the server, or <code>admin index</code>, <code>admin reindex</code> and <code>admin embeddings import</code>, while one of them writes the <code>numpy</code> or <code>sqlite</code> store</td>
 <td>nothing; safe to leave or delete while no server runs</td>
 </tr>
 <tr>
@@ -2995,7 +2995,7 @@
 </ul>
 <p>Each start logs the old files as unused (<code>embeddings_legacy_sidecar_unused</code>, with their size). Delete <code>index-db-embeddings.json</code>, <code>index-db-embeddings.npy</code> and any <code>index-db-embeddings.m&lt;N&gt;.npy</code> once you no longer want to go back to 5.1.</p>
 <h2 id="switching-stores">Switching stores<a class="headerlink" href="#switching-stores" title="Permanent link">&para;</a></h2>
-<p>A switch between <code>numpy</code>, <code>sqlite</code> and <code>postgres</code> starts the new store empty, so on its own it embeds every note again. Run <code>markdown-vault-mcp embeddings import</code> with the server stopped to copy the vectors across first; it embeds only what the old store lacks and never changes the old store. <a href="../embeddings/#moving-vectors-between-stores">Moving vectors between stores</a> has the options and the refusals.</p>
+<p>A switch between <code>numpy</code>, <code>sqlite</code> and <code>postgres</code> starts the new store empty, so on its own it embeds every note again. Run <code>markdown-vault-mcp admin embeddings import</code> with the server stopped to copy the vectors across first; it embeds only what the old store lacks and never changes the old store. <a href="../embeddings/#moving-vectors-between-stores">Moving vectors between stores</a> has the options and the refusals.</p>
 <h2 id="backing-up">Backing up<a class="headerlink" href="#backing-up" title="Permanent link">&para;</a></h2>
 <p>Back up the embeddings: they cost money to rebuild. The index is optional, since a lost one rebuilds from the notes with no provider calls.</p>
 <table>
@@ -3040,7 +3040,7 @@
 <li><strong>An index older than the embeddings, or no index at all:</strong> the index catches up from the notes, and nothing is embedded.</li>
 </ul>
 <p>To restore embeddings into another store, or from a backup kept somewhere else, leave the backup where it is and import from it:</p>
-<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>embeddings<span class="w"> </span>import<span class="w"> </span>--from<span class="w"> </span>sqlite<span class="w"> </span>--from-path<span class="w"> </span>/backups/index-db-embeddings
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>admin<span class="w"> </span>embeddings<span class="w"> </span>import<span class="w"> </span>--from<span class="w"> </span>sqlite<span class="w"> </span>--from-path<span class="w"> </span>/backups/index-db-embeddings
 </code></pre></div>
 <p><code>--from-path</code> is the backup's base path, without the <code>.sqlite3</code> or <code>.v2.json</code> ending. The import reads the backup and never changes it.</p>
 <h2 id="free-space">Free space<a class="headerlink" href="#free-space" title="Permanent link">&para;</a></h2>
@@ -3058,8 +3058,8 @@
 <ul>
 <li>no <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> or <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> with a <code>numpy</code> or <code>sqlite</code> store, so the vectors live in memory and are embedded again at each start;</li>
 <li>a change of embedding provider, model or dimensions;</li>
-<li>a switch of <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code> without <code>embeddings import</code>, which includes leaving it unset on an edge build whose only store is a <code>numpy</code> one (<code>index-db-embeddings.v2.json</code> with no 5.x files beside it): run <code>embeddings import --from numpy</code> first, or set <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy</code>;</li>
-<li><code>markdown-vault-mcp index --force</code>, or the <code>build_embeddings</code> tool with <code>force</code>;</li>
+<li>a switch of <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code> without <code>admin embeddings import</code>, which includes leaving it unset on an edge build whose only store is a <code>numpy</code> one (<code>index-db-embeddings.v2.json</code> with no 5.x files beside it): run <code>embeddings import --from numpy</code> first, or set <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy</code>;</li>
+<li><code>markdown-vault-mcp admin index --force</code>, or the <code>build_embeddings</code> tool with <code>force</code>;</li>
 <li>deleting the store with no backup, or recreating an empty <code>postgres</code> schema;</li>
 <li>a damaged store set aside when no usable 5.x files remain beside it;</li>
 <li>5.x files from another model, or in the oldest layout, at upgrade.</li>
@@ -3071,7 +3071,7 @@
 <li>every note long enough to split, after a change to <code>MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS</code>, <code>MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS</code> or <code>MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS</code>;</li>
 <li>every note whose title changes, after a change to <code>MARKDOWN_VAULT_MCP_TITLE_FIELD</code>, since a section is embedded with its note's title.</li>
 </ul>
-<p><code>markdown-vault-mcp reindex --force</code> rebuilds the index only: the embeddings are kept.</p>
+<p><code>markdown-vault-mcp admin reindex --force</code> rebuilds the index only: the embeddings are kept.</p>
 <p>A forced rebuild keeps the notes in a folder the server can't read at the time, with their embeddings, and reads them again once it can, so a folder with the wrong permissions costs no second embedding.</p>
 <h2 id="log-lines-to-look-for">Log lines to look for<a class="headerlink" href="#log-lines-to-look-for" title="Permanent link">&para;</a></h2>
 <table>
@@ -3100,7 +3100,7 @@
 </tr>
 <tr>
 <td><code>embeddings_import_completed …</code></td>
-<td><code>embeddings import</code> finished; <code>embeddings_import_refused reason=…</code> says why it stopped instead.</td>
+<td><code>admin embeddings import</code> finished; <code>embeddings_import_refused reason=…</code> says why it stopped instead.</td>
 </tr>
 <tr>
 <td><code>vector_store_moved_aside location=… reason=… paths=…</code></td>
