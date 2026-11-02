@@ -205,6 +205,7 @@ def test_malformed_remote_query_is_refused(
     filter_first=st.booleans(),
     size=st.integers(min_value=1, max_value=1000),
 )
+@example(records=[(False, True, False, "\x85")], scope="all", filter_first=True, size=1)
 @example(
     records=[(False, True, True, "Straße=值"), (False, True, False, "")],
     scope="body",
@@ -250,9 +251,13 @@ def test_generated_corpora_preserve_exact_cli_populations(
             if tag is not None:
                 frontmatter["tags"] = [tag]
             text = "needle repeated" if body else "Unrelated content"
+            dumped = yaml.safe_dump(frontmatter, allow_unicode=True)
+            # YAML need not round-trip a generated tag (it folds a NEL into a
+            # space), and the index holds what the file says, so the oracle does.
+            stored_tag = yaml.safe_load(dumped).get("tags", [None])[0]
             note.write_text(
                 "---\n"
-                + yaml.safe_dump(frontmatter, allow_unicode=True)
+                + dumped
                 + "\n---\n# Heading\n\n"
                 + text
                 + "\n\n## Second\n\n"
@@ -266,7 +271,7 @@ def test_generated_corpora_preserve_exact_cli_populations(
                 if scope == "metadata"
                 else metadata or body
             )
-            if matches and (selected_tag is None or tag == selected_tag):
+            if matches and (selected_tag is None or stored_tag == selected_tag):
                 expected.add(path)
                 expected_folders[folder] = expected_folders.get(folder, 0) + 1
         for key, value in {
