@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+
 
 class ReadPayloadError(ValueError):
     """A malformed command predicate or read payload, without an SDK dependency."""
@@ -131,3 +133,147 @@ def validate_search(data: Any) -> None:
         raise ReadPayloadError(
             "Server returned a non-JSON search payload.", 1
         ) from None
+
+
+def query_request(
+    tool: str, arguments: dict[str, Any]
+) -> tuple[NoteQuery, NoteGrouping | None]:
+    """Validate pure query inputs before any local or remote I/O.
+
+    Args:
+        tool: Query, count or aggregation tool name.
+        arguments: Public wire arguments; presentation and grouping stay distinct.
+
+    Returns:
+        Validated native population and optional bucket projection.
+
+    Raises:
+        ReadPayloadError: A query or grouping input is invalid.
+    """
+    from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+
+    values = dict(arguments)
+    values.pop("wait_for_pending_writes", None)
+    try:
+        grouping = None
+        if tool == "aggregate_documents":
+            grouping = NoteGrouping(
+                by=values.pop("by"),
+                field=values.pop("field", "tags"),
+                limit=values.pop("limit", 50),
+            )
+        return NoteQuery(**values), grouping
+    except ValueError as exc:
+        raise ReadPayloadError(str(exc)) from None
+
+
+def validate_query_payload(
+    tool: str, data: Any, *, remote_meta: dict[str, Any] | None = None
+) -> None:
+    """Refuse malformed query envelopes before emitting a partial response.
+
+    Args:
+        tool: Query, count or aggregation tool name.
+        data: Native payload; extra fields are preserved.
+        remote_meta: Remote freshness observation, or None for local unknown state.
+
+    Raises:
+        ReadPayloadError: Counts, shapes or freshness contradict the native contract.
+    """
+    valid = isinstance(data, dict) and _natural(data.get("total"))
+    if valid and "index_stale" in data:
+        valid = type(data["index_stale"]) is bool
+    if valid and remote_meta is not None:
+        observed = remote_meta.get("index_stale")
+        valid = type(observed) is bool and data.get("index_stale") is observed
+    if valid and tool == "query_documents":
+        valid = _valid_query_page(data)
+    if valid and tool == "aggregate_documents":
+        valid = _valid_query_aggregate(data)
+    if not valid:
+        raise ReadPayloadError("Server returned an invalid query payload.", 1)
+    try:
+        json.dumps(data, allow_nan=False)
+    except (ValueError, TypeError, OverflowError):
+        raise ReadPayloadError("Server returned a non-JSON query payload.", 1) from None
+
+
+def _natural(value: Any) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _number(value: Any) -> bool:
+    return type(value) in (int, float) and abs(value) <= sys.float_info.max
+
+
+def _valid_query_page(data: dict[str, Any]) -> bool:
+    items = data.get("items")
+    if not (
+        _natural(data.get("offset"))
+        and _natural(data.get("limit"))
+        and 1 <= data["limit"] <= 1000
+        and type(data.get("truncated")) is bool
+        and isinstance(items, list)
+        and all(_valid_query_item(item) for item in items)
+    ):
+        return False
+    return (
+        len(items) == min(data["limit"], max(0, data["total"] - data["offset"]))
+        and len({item["path"] for item in items}) == len(items)
+        and data["truncated"] == (data["offset"] + len(items) < data["total"])
+    )
+
+
+def _valid_query_item(item: Any) -> bool:
+    if not (
+        isinstance(item, dict)
+        and all(isinstance(item.get(key), str) for key in ("path", "title", "folder"))
+        and isinstance(item.get("frontmatter"), dict)
+        and _number(item.get("modified_at"))
+        and "score" in item
+        and (item["score"] is None or _number(item["score"]))
+    ):
+        return False
+    return "sections" not in item or (
+        isinstance(item["sections"], list)
+        and all(
+            isinstance(section, dict)
+            and "heading" in section
+            and isinstance(section["heading"], (str, type(None)))
+            and isinstance(section.get("content"), str)
+            and _number(section.get("score"))
+            for section in item["sections"]
+        )
+    )
+
+
+def _valid_query_aggregate(data: dict[str, Any]) -> bool:
+    buckets = data.get("buckets")
+    if not (
+        _natural(data.get("missing"))
+        and data["missing"] <= data["total"]
+        and type(data.get("truncated")) is bool
+        and isinstance(buckets, list)
+        and all(
+            isinstance(bucket, dict)
+            and "key" in bucket
+            and isinstance(bucket["key"], (str, type(None)))
+            and _natural(bucket.get("count"))
+            and bucket["count"] <= data["total"]
+            for bucket in buckets
+        )
+    ):
+        return False
+    counts = {bucket["key"]: bucket["count"] for bucket in buckets}
+    if len(counts) != len(buckets):
+        return False
+    if not buckets:
+        return data["total"] == 0 and not data["truncated"]
+    if data["total"] == 0:
+        return False
+    if (None in counts or not data["truncated"]) and counts.get(None, 0) != data[
+        "missing"
+    ]:
+        return False
+    # Multi-value tags may count a note in several buckets; sums can exceed total.
+    return data["truncated"] is True or sum(counts.values()) >= data["total"]

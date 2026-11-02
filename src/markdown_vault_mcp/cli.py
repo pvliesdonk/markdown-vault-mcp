@@ -824,6 +824,12 @@ from markdown_vault_mcp._cli_graph import (  # noqa: E402
 
 _register_graph(app)
 
+from markdown_vault_mcp._cli_query import (  # noqa: E402 -- retained domain command block
+    register as _register_queries,
+)
+
+_register_queries(app)
+
 # DOMAIN-COMMANDS-END
 
 
