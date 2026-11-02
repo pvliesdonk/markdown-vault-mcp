@@ -119,6 +119,21 @@ def test_reindex_before_build_raises_never_built(tmp_path: Path) -> None:
         coord.close(timeout=5)
 
 
+@pytest.mark.parametrize("drained", [False, True], ids=["writer-active", "never-built"])
+def test_use_existing_index_reasons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drained: bool
+) -> None:
+    """An active writer is a retryable busy index; a missing build is never_built."""
+    coord = make_coordinator(tmp_path)
+    try:
+        monkeypatch.setattr(coord, "is_drained", lambda: drained)
+        with pytest.raises(IndexUnavailableError) as ei:
+            coord.use_existing_index()
+        assert ei.value.reason == ("never_built" if drained else "busy")
+    finally:
+        coord.close(timeout=5)
+
+
 def test_wait_until_queryable_build_failed_when_error(tmp_path: Path) -> None:
     # #586: after a build ran and FAILED (error captured), wait_until_queryable
     # must raise reason="build_failed" — distinct from never_built (a build was

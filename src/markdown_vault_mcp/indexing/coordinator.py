@@ -153,7 +153,7 @@ class IndexWriteCoordinator:
         if not self.is_drained():
             raise IndexUnavailableError(
                 "Cannot adopt an index while its local writer is active.",
-                reason="never_built",
+                reason="busy",
             )
         if not self._fts.is_build_completed():
             raise IndexUnavailableError(
