@@ -291,7 +291,6 @@ def _vectors_kept(config: ProjectConfig, index_path: str | None) -> bool:
     return index is not None and str(index) != ":memory:"
 
 
-@app.command()
 def index(
     source_dir: str | None = typer.Option(
         None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
@@ -310,11 +309,11 @@ def index(
     )
 
     quiet_http_loggers()
-    built = _build_owning_vault("index", source_dir, index_path)
+    built = _build_owning_vault("admin index", source_dir, index_path)
     try:
         stats = built.vault.index.build_index(force=force)
         if stats.vault_root_empty:
-            typer.echo(_empty_root_message("indexed", "index"), err=True)
+            typer.echo(_empty_root_message("indexed", "admin index"), err=True)
             raise typer.Exit(1)
         typer.echo(
             f"Indexed {stats.documents_indexed} documents, "
@@ -329,7 +328,7 @@ def index(
             typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
             raise typer.Exit(1) from exc
     except StoreBusyError as exc:
-        typer.echo(_busy_message(exc, "index"), err=True)
+        typer.echo(_busy_message(exc, "admin index"), err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
@@ -348,7 +347,7 @@ def _empty_root_message(done: str, command: str) -> str:
     return (
         "ERROR: the vault folder is empty while the index holds notes, as "
         f"when its volume is not mounted, so nothing was {done}. Mount it and "
-        f"run {command} again; to empty the vault on purpose, run index --force."
+        f"run {command} again; to empty the vault on purpose, run admin index --force."
     )
 
 
@@ -430,7 +429,7 @@ def _unusable_vectors_message(exc: StoreCorruptError | StoreIncompatibleError) -
         remedy = "Search with the embedding settings that built them"
     else:
         remedy = (
-            "To rebuild them, run index with the settings that built them "
+            "To rebuild them, run admin index with the settings that built them "
             "while no server uses them"
         )
     reason = str(exc).rstrip(".")
@@ -532,101 +531,6 @@ def _local_search(
         built.close()
 
 
-@app.command()
-def search(
-    query: str = typer.Argument(..., help="Search query."),
-    source_dir: str | None = typer.Option(
-        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
-    ),
-    limit: int = typer.Option(10, "-n", "--limit", help="Max results (default: 10)."),
-    mode: str = typer.Option(
-        "keyword",
-        "-m",
-        "--mode",
-        help="keyword / semantic / hybrid / auto (default: keyword).",
-    ),
-    folder: str | None = typer.Option(None, help="Restrict to folder."),
-    json_output: bool = typer.Option(False, "--json", help="Output results as JSON."),
-    agent: bool = typer.Option(
-        False, "--agent", help="Output an agent header and escaped JSON records."
-    ),
-    filters: list[str] | None = typer.Option(
-        None, "--filter", help="Repeat KEY=VALUE frontmatter filters (AND)."
-    ),
-    chunks_per_file: int | None = typer.Option(
-        None, min=1, help="Maximum matching sections per note."
-    ),
-    snippet_words: int | None = typer.Option(
-        None, min=0, help="Snippet width in words; 0 returns full indexed sections."
-    ),
-    wait_for_pending_writes: bool = typer.Option(
-        False, help="Wait for the remote server's pending writes."
-    ),
-    server: str | None = typer.Option(None, help="Complete hosted MCP endpoint URL."),
-    local: bool = typer.Option(
-        False, "--local", help="Use the local vault despite a client profile."
-    ),
-    timeout: float | None = typer.Option(
-        None, help="Remote operation deadline in seconds (default 30)."
-    ),
-) -> None:
-    """Search the local vault or a hosted MCP server."""
-    from markdown_vault_mcp._cli_client import (
-        ClientError,
-        ClientOptions,
-        resolve_settings,
-    )
-    from markdown_vault_mcp._cli_output import output_mode, render_reply
-    from markdown_vault_mcp._cli_read import run_read
-    from markdown_vault_mcp._http_logging import quiet_http_loggers
-    from markdown_vault_mcp._read_payloads import (
-        ReadPayloadError,
-        SearchOptions,
-        parse_filters,
-    )
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
-    quiet_http_loggers()
-    try:
-        if json_output and agent:
-            raise ClientError("--json and --agent cannot be combined.")
-        controls = SearchOptions(
-            mode,
-            parse_filters(filters or []),
-            chunks_per_file,
-            snippet_words,
-            wait_for_pending_writes,
-        )
-        options = ClientOptions(server, local, timeout)
-        settings = resolve_settings(options)
-        if source_dir is not None and settings.url is not None:
-            raise ClientError(
-                "--source-dir conflicts with a remote server; use --local."
-            )
-        arguments = controls.arguments(query, limit, folder)
-        reply = run_read(
-            "search",
-            arguments,
-            options,
-            lambda: _local_search(query, source_dir, arguments),
-            settings=settings,
-        )
-        reply.meta["requested_mode"] = mode
-        render_reply("search", reply, output_mode(json_output, agent))
-    except ClientError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(exc.code) from None
-    except InvalidRequestError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(1) from None
-    except ReadPayloadError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(exc.code) from None
-    except KeyboardInterrupt:
-        raise typer.Exit(130) from None
-
-
-@app.command()
 def reindex(
     source_dir: str | None = typer.Option(
         None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
@@ -652,7 +556,7 @@ def reindex(
     )
 
     quiet_http_loggers()
-    built = _build_owning_vault("reindex", source_dir, index_path)
+    built = _build_owning_vault("admin reindex", source_dir, index_path)
     try:
         # reindex() needs a built index (#525); build_index() is a cheap no-op
         # when the index is already populated (a SQL row-count check, no
@@ -661,7 +565,7 @@ def reindex(
         built.vault.index.build_index(force=force)
         result = built.vault.index.reindex()
         if result.vault_root_empty:
-            typer.echo(_empty_root_message("reindexed", "reindex"), err=True)
+            typer.echo(_empty_root_message("reindexed", "admin reindex"), err=True)
             raise typer.Exit(1)
         typer.echo(
             f"Reindex: {result.added} added, {result.modified} modified, "
@@ -675,16 +579,10 @@ def reindex(
         except EmbeddingsNotConfiguredError:
             pass  # embeddings not configured
     except StoreBusyError as exc:
-        typer.echo(_busy_message(exc, "reindex"), err=True)
+        typer.echo(_busy_message(exc, "admin reindex"), err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
-
-
-embeddings_app = typer.Typer(
-    help="Move embeddings between vector stores.", no_args_is_help=True
-)
-app.add_typer(embeddings_app, name="embeddings")
 
 
 class _SourceKind(enum.StrEnum):
@@ -695,7 +593,6 @@ class _SourceKind(enum.StrEnum):
     postgres = "postgres"
 
 
-@embeddings_app.command("import")
 def embeddings_import(
     source: _SourceKind = typer.Option(
         ...,
@@ -745,7 +642,7 @@ def embeddings_import(
 
     quiet_http_loggers()
     built = _build_owning_vault(
-        "embeddings import", in_memory_vectors=True, scratch_index=dry_run
+        "admin embeddings import", in_memory_vectors=True, scratch_index=dry_run
     )
     wanted = ImportSource(
         source.value,
@@ -810,29 +707,12 @@ def _report_import(report: ImportReport) -> None:
         )
 
 
-from markdown_vault_mcp._cli_discovery import (  # noqa: E402 -- retained domain command block
-    register as _register_discovery,
-)
+from markdown_vault_mcp._cli_admin import register_admin_commands  # noqa: E402
+from markdown_vault_mcp._cli_reader import register_read_commands  # noqa: E402
 
-_register_discovery(app)
-
-from markdown_vault_mcp._cli_graph import (  # noqa: E402
-    register as _register_graph,
-)
-
-_register_graph(app)
-
-from markdown_vault_mcp._cli_query import (  # noqa: E402 -- retained domain command block
-    register as _register_queries,
-)
-
-_register_queries(app)
-
-from markdown_vault_mcp._cli_paths import (  # noqa: E402
-    register as _register_paths,
-)
-
-_register_paths(app)
+# Read commands first, so the help lists them before the admin group (#2005).
+register_read_commands(app)
+register_admin_commands(app, index, reindex, embeddings_import)
 
 # DOMAIN-COMMANDS-END
 

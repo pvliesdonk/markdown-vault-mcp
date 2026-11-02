@@ -31,10 +31,10 @@ def _built(vault: MagicMock) -> _BuiltVault:
 
 
 def test_help_lists_all_subcommands() -> None:
-    """`--help` lists all four subcommands."""
+    """`--help` lists serve, the read commands and the admin group (#2005)."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("serve", "index", "search", "reindex"):
+    for cmd in ("serve", "search", "read", "admin"):
         assert cmd in result.output
 
 
@@ -118,7 +118,7 @@ def test_serve_help_exits_zero() -> None:
 # ``--source-dir`` wraps inside the help box at CI's 80 columns. Option/argument
 # behaviour is covered by the functional tests below.
 def test_index_help_exits_zero() -> None:
-    assert runner.invoke(app, ["index", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index", "--help"]).exit_code == 0
 
 
 def test_search_help_exits_zero() -> None:
@@ -126,7 +126,7 @@ def test_search_help_exits_zero() -> None:
 
 
 def test_reindex_help_exits_zero() -> None:
-    assert runner.invoke(app, ["reindex", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "reindex", "--help"]).exit_code == 0
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ def test_build_vault_valueerror_exits_nonzero() -> None:
         "markdown_vault_mcp.cli._build_vault",
         side_effect=ValueError("SOURCE_DIR not set"),
     ):
-        result = runner.invoke(app, ["index"])
+        result = runner.invoke(app, ["admin", "index"])
     assert result.exit_code != 0
 
 
@@ -583,7 +583,7 @@ def test_index_prints_stats() -> None:
     mock_vault.index.build_index.return_value = mock_stats
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["index"])
+        result = runner.invoke(app, ["admin", "index"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_index.assert_called_once_with(force=False)
@@ -602,7 +602,7 @@ def test_index_force_propagates() -> None:
     mock_vault.index.build_embeddings.return_value = 30
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["index", "--force"])
+        result = runner.invoke(app, ["admin", "index", "--force"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_index.assert_called_once_with(force=True)
@@ -622,7 +622,7 @@ def test_index_closes_the_vault_then_its_collaborators_even_on_failure() -> None
         "markdown_vault_mcp.cli._build_vault",
         return_value=_BuiltVault(mock_vault, instances),
     ):
-        result = runner.invoke(app, ["index"])
+        result = runner.invoke(app, ["admin", "index"])
 
     assert result.exit_code != 0
     assert [c[0] for c in order.mock_calls] == ["vault_close", "instances_close"]
@@ -639,7 +639,7 @@ def test_index_builds_embeddings_when_configured() -> None:
     mock_vault.index.build_embeddings.return_value = 20
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["index"])
+        result = runner.invoke(app, ["admin", "index"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_embeddings.assert_called_once_with(force=False)
@@ -661,7 +661,7 @@ def test_index_swallows_embeddings_not_configured_error() -> None:
     )
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["index"])
+        result = runner.invoke(app, ["admin", "index"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_embeddings.assert_called_once()
@@ -681,7 +681,7 @@ def test_index_surfaces_internal_valueerror_from_embeddings() -> None:
     )
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["index"])
+        result = runner.invoke(app, ["admin", "index"])
 
     assert result.exit_code != 0
 
@@ -834,7 +834,7 @@ def test_reindex_prints_stats() -> None:
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex"])
+        result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code == 0, result.output
     assert "3 added" in result.output
@@ -854,7 +854,7 @@ def test_reindex_calls_build_index_first() -> None:
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex"])
+        result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code == 0, result.output
     # build_index must be called before reindex
@@ -872,7 +872,7 @@ def test_reindex_force_drops_and_rebuilds() -> None:
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex", "--force"])
+        result = runner.invoke(app, ["admin", "reindex", "--force"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_index.assert_called_once_with(force=True)
@@ -888,7 +888,7 @@ def test_reindex_without_force_keeps_warm_restart() -> None:
     mock_vault.index.reindex.return_value = mock_result
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex"])
+        result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_index.assert_called_once_with(force=False)
@@ -906,7 +906,7 @@ def test_reindex_builds_embeddings_when_configured() -> None:
     mock_vault.index.build_embeddings.return_value = 10
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex"])
+        result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_embeddings.assert_called_once_with()
@@ -929,7 +929,7 @@ def test_reindex_swallows_embeddings_not_configured_error() -> None:
     )
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex"])
+        result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_embeddings.assert_called_once()
@@ -950,7 +950,7 @@ def test_reindex_surfaces_internal_valueerror_from_embeddings() -> None:
     )
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex"])
+        result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code != 0
 
@@ -968,7 +968,7 @@ def test_reindex_never_forces_embedding_rebuild() -> None:
     mock_vault.index.build_embeddings.return_value = 4
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["reindex"])
+        result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code == 0, result.output
     # Must be called with no arguments (no force=True)
@@ -994,7 +994,7 @@ def test_reindex_against_real_vault(
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "fts.db"))
     monkeypatch.setenv(f"{_ENV_PREFIX}_STATE_PATH", str(tmp_path / "state.json"))
 
-    result = runner.invoke(app, ["reindex"])
+    result = runner.invoke(app, ["admin", "reindex"])
 
     assert result.exit_code == 0, result.output
     assert "Reindex" in result.output
@@ -1116,7 +1116,7 @@ def test_batch_commands_skip_embeddings_nothing_would_keep(
     """Without an index or embeddings path, embedding would be paid for nothing."""
     counting = _embedding_cli_env(tmp_path, monkeypatch, None)
 
-    result = runner.invoke(app, [command])
+    result = runner.invoke(app, ["admin", command])
 
     assert result.exit_code == 0, result.output
     assert "Embedded" not in result.output
@@ -1156,7 +1156,7 @@ def test_batch_commands_embed_into_a_configured_embeddings_path(
     shared = tmp_path / "shared" / "embeddings"
     counting = _embedding_cli_env(tmp_path, monkeypatch, shared)
 
-    result = runner.invoke(app, [command])
+    result = runner.invoke(app, ["admin", command])
 
     assert result.exit_code == 0, result.output
     assert counting.calls > 0
@@ -1196,7 +1196,7 @@ def test_search_leaves_an_unusable_shared_sidecar_alone(
         monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", str(tmp_path / "emb"))
     else:
         monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     if fault == "corrupt":
         next(tmp_path.glob("*.npy")).write_bytes(b"")
     else:
@@ -1209,7 +1209,7 @@ def test_search_leaves_an_unusable_shared_sidecar_alone(
 
     assert result.exit_code == 1
     assert "ERROR: cannot search by meaning" in result.stderr
-    remedy = "run index" if fault == "corrupt" else "embedding settings"
+    remedy = "run admin index" if fault == "corrupt" else "embedding settings"
     assert remedy in result.stderr
     assert [p.read_bytes() for p in sidecars] == before
 
@@ -1239,7 +1239,7 @@ def test_search_leaves_an_on_disk_index_unchanged(
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(db))
     monkeypatch.setenv(f"{_ENV_PREFIX}_FTS_WEIGHTS", "title:5")
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     if cli_weights is None:
         monkeypatch.delenv(f"{_ENV_PREFIX}_FTS_WEIGHTS")
     else:
@@ -1277,7 +1277,7 @@ def test_search_by_meaning_reads_a_shared_index(
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(db))
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
     monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     before = _index_dump(db)
 
     result = runner.invoke(app, ["search", "--json", "-m", mode, "world"])
@@ -1314,7 +1314,7 @@ def test_search_leaves_a_legacy_state_file_where_it_is(
     (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     state = tmp_path / "index.db.state.json"
     legacy = vault_dir / ".markdown_vault_mcp" / "state.json"
     legacy.parent.mkdir()
@@ -1338,7 +1338,7 @@ def test_search_never_builds_an_on_disk_index(
     (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "fts.db"))
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
 
     calls: list[bool] = []
 
@@ -1415,7 +1415,7 @@ def test_default_level_pins_httpx_httpcore_to_warning(
         with patch(
             "markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)
         ):
-            runner.invoke(app, ["index"])
+            runner.invoke(app, ["admin", "index"])
         assert httpx_log.level == logging.WARNING
         assert httpcore_log.level == logging.WARNING
     finally:
@@ -1476,7 +1476,7 @@ def test_root_handler_added_when_none_exist(monkeypatch: pytest.MonkeyPatch) -> 
         with patch(
             "markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)
         ):
-            runner.invoke(app, ["index"])
+            runner.invoke(app, ["admin", "index"])
         assert len(root.handlers) >= 1
     finally:
         root.handlers[:] = original_handlers
@@ -1487,7 +1487,7 @@ def test_index_refuses_an_absent_source_dir(
 ) -> None:
     """A batch command over a missing directory exits 1 naming the variable."""
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(tmp_path / "absent"))
-    result = runner.invoke(app, ["index"])
+    result = runner.invoke(app, ["admin", "index"])
     assert result.exit_code == 1
     assert "MARKDOWN_VAULT_MCP_SOURCE_DIR" in result.output
 
@@ -1574,6 +1574,6 @@ def test_index_reports_an_unpublished_rebuild() -> None:
         failed_batches=1
     )
     with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
-        result = runner.invoke(app, ["index", "--force"])
+        result = runner.invoke(app, ["admin", "index", "--force"])
     assert result.exit_code == 1
     assert "kept" in result.output

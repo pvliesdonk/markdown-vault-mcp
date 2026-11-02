@@ -181,7 +181,7 @@ def test_index_force_is_the_deliberate_way_to_empty_a_vault(
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
     for name in NOTES:
         (built / name).unlink()
-    result = CliRunner().invoke(app, ["index", "--force"])
+    result = CliRunner().invoke(app, ["admin", "index", "--force"])
     assert result.exit_code == 0, result.output
     vault = _vault(tmp_path)
     try:
@@ -283,7 +283,7 @@ def test_the_reindex_command_fails_over_an_empty_vault_folder(
     monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", raising=False)
     for name in NOTES:
         (built / name).unlink()
-    result = CliRunner().invoke(app, ["reindex"])
+    result = CliRunner().invoke(app, ["admin", "reindex"])
     assert result.exit_code == 1
     assert "vault folder is empty" in result.stderr
     assert "Reindex:" not in result.stdout
@@ -302,10 +302,10 @@ def test_the_index_command_fails_over_an_empty_vault_folder(
     monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", raising=False)
     for name in NOTES:
         (built / name).unlink()
-    result = CliRunner().invoke(app, ["index"])
+    result = CliRunner().invoke(app, ["admin", "index"])
     assert result.exit_code == 1
     assert "vault folder is empty" in result.stderr
-    assert "run index again" in result.stderr
+    assert "run admin index again" in result.stderr
     assert "Indexed" not in result.stdout
 
 

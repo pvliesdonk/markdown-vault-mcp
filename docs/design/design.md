@@ -5912,6 +5912,8 @@ The `search-path` CLI maps a validated literal query, optional fuzzy flag, folde
 
 Path JSON and human output retain the native object. Agent output emits one object record with `count=1`, independent of the item population. Only string `coverage` and Boolean `truncated` are also projected into the header using escaped JSON values; absent or malformed receipts are not projected. The object retains all fields, including coverage reasons. Approximate coverage and known-match output truncation remain separate native observations.
 
+The CLI separates reading from writing (#2005). `register_read_commands` in `_cli_reader` registers `search` and every read-only command, and nothing it reaches writes the index, the stored vectors or the vault. The `admin` group in `_cli_admin` holds `index`, `reindex` and `embeddings import`; their former top-level names stay as hidden aliases that run the same command and name the new form on stderr. `serve` stays top-level because the template owns it and the image, compose file and unit call it. A client-only script (#2000) can mount the read registration alone; `tests/test_cli_structure.py` checks that it reaches no write command and that `_cli_reader` imports neither `_cli_admin` nor `cli` at load time. The local-vault helpers the read commands share are still imported lazily from `cli`.
+
 ## Configuration
 
 ### The config import floor (#1259)

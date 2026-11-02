@@ -141,6 +141,6 @@ def test_cli_names_an_unreadable_source_dir(
     from markdown_vault_mcp.cli import app
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(shut / "inner"))
-    result = CliRunner().invoke(app, ["index"])
+    result = CliRunner().invoke(app, ["admin", "index"])
     assert result.exit_code == 1
     assert "cannot be accessed" in result.output
