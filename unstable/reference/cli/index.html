@@ -2380,6 +2380,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-embeddings-import" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp embeddings import
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3370,6 +3381,17 @@
     <span class="md-ellipsis">
       
         markdown-vault-mcp embeddings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-embeddings-import" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp embeddings import
       
     </span>
   </a>
@@ -5467,6 +5489,50 @@ loading vector sidecars. Follow a returned path with <code>read</code>, <code>re
 </table>
 <h2 id="markdown-vault-mcp-embeddings"><code>markdown-vault-mcp embeddings</code><a class="headerlink" href="#markdown-vault-mcp-embeddings" title="Permanent link">&para;</a></h2>
 <p>Move embeddings between vector stores.</p>
+<h2 id="markdown-vault-mcp-embeddings-import"><code>markdown-vault-mcp embeddings import</code><a class="headerlink" href="#markdown-vault-mcp-embeddings-import" title="Permanent link">&para;</a></h2>
+<p>Copy vectors from another store into the configured one, embedding only what it lacks.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Env var</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--from</code></td>
+<td></td>
+<td></td>
+<td>The store to copy vectors from: numpy, sqlite or postgres.</td>
+</tr>
+<tr>
+<td><code>--from-path</code></td>
+<td></td>
+<td></td>
+<td>Base path of a numpy or sqlite source (default: the configured embeddings base).</td>
+</tr>
+<tr>
+<td><code>--from-schema</code></td>
+<td></td>
+<td></td>
+<td>Schema of a postgres source (default: the configured schema).</td>
+</tr>
+<tr>
+<td><code>--from-dsn-env</code></td>
+<td></td>
+<td></td>
+<td>Environment variable holding a postgres source's connection string (default: $<code>MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN</code>).</td>
+</tr>
+<tr>
+<td><code>--dry-run</code></td>
+<td></td>
+<td>False</td>
+<td>Count what would be copied and embedded; write nothing.</td>
+</tr>
+</tbody>
+</table>
 
 
 
