@@ -21,6 +21,7 @@ from markdown_vault_mcp.exceptions import (
     ConfigurationError,
     DocumentNotFoundError,
     EmbeddingsNotConfiguredError,
+    ExactQueriesNotSupportedError,
     InvalidRequestError,
     StoreCorruptError,
     StoreOpenError,
@@ -90,11 +91,22 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordGraphIndex
+    from markdown_vault_mcp.interfaces import (
+        EmbeddingStore,
+        KeywordGraphIndex,
+        RunsExactQueries,
+    )
     from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.managers.link import LinkManager
     from markdown_vault_mcp.okf import OkfDetector
     from markdown_vault_mcp.providers import EmbeddingProvider
+    from markdown_vault_mcp.query_types import (
+        NoteAggregate,
+        NoteCount,
+        NoteGrouping,
+        NoteQuery,
+        NoteQueryPage,
+    )
     from markdown_vault_mcp.types import FTSResult
 
 logger = logging.getLogger(__name__)
@@ -785,6 +797,70 @@ class SearchManager:
     # ------------------------------------------------------------------
     # Search
     # ------------------------------------------------------------------
+
+    def _exact_queries(self) -> RunsExactQueries:
+        """Return the index's exact-query capability, or refuse without one.
+
+        Raises:
+            ExactQueriesNotSupportedError: The keyword index does not implement
+                :class:`~markdown_vault_mcp.interfaces.RunsExactQueries`.
+        """
+        from markdown_vault_mcp.interfaces import RunsExactQueries
+
+        if not isinstance(self._fts, RunsExactQueries):
+            raise ExactQueriesNotSupportedError(
+                "This vault's keyword index does not support exact queries. "
+                "Call search for ranked matches instead."
+            )
+        return self._fts
+
+    def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
+        """Return a bounded page of the exhaustive indexed population.
+
+        Args:
+            spec: Validated predicates and page presentation.
+
+        Returns:
+            Exact total and bounded note items from one read view.
+
+        Raises:
+            InvalidRequestError: An equality field is not an indexed exact field,
+                or the keyword index does not support exact queries.
+        """
+        return self._exact_queries().query_documents(spec)
+
+    def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
+        """Count the exhaustive indexed population without reading snippets.
+
+        Args:
+            spec: Validated indexed predicates.
+
+        Returns:
+            Exact number of matching notes.
+
+        Raises:
+            InvalidRequestError: An equality field is not an indexed exact field,
+                or the keyword index does not support exact queries.
+        """
+        return self._exact_queries().count_documents_matching(spec)
+
+    def aggregate_documents(
+        self, spec: NoteQuery, grouping: NoteGrouping
+    ) -> NoteAggregate:
+        """Group the exhaustive indexed population into bounded buckets.
+
+        Args:
+            spec: Validated indexed predicates.
+            grouping: Folder, tag or UTC-month grouping and bucket limit.
+
+        Returns:
+            Exact population total and bounded bucket counts.
+
+        Raises:
+            InvalidRequestError: A predicate or grouping field is not indexed,
+                or the keyword index does not support exact queries.
+        """
+        return self._exact_queries().aggregate_documents(spec, grouping)
 
     def search(
         self,

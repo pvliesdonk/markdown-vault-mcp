@@ -33,8 +33,23 @@ vault.index.reindex()
 
 ## ReaderFacet
 
-Search, read, listing, table-of-contents, similarity, context, history/diff,
-revision reads, and attachment reads.
+Search, exact queries, read, listing, table-of-contents, similarity, context,
+history/diff, revision reads, and attachment reads. Exact query methods check
+library index readiness and raise `IndexUnavailableError` if unavailable; an
+unavailable index is never an exact zero. They accept the [query types](types.md#exact-query-types)
+and return the same projections as the [keyword backend](storage.md#exact-keyword-queries).
+
+```python { .fragment }
+from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+
+request = NoteQuery(query="release", scope="body", limit=20)
+page = vault.reader.query_documents(request)
+count = vault.reader.count_documents_matching(request)
+grouped = vault.reader.aggregate_documents(request, NoteGrouping(by="folder"))
+```
+
+Invalid indexed fields raise `InvalidRequestError`. Existing ranked search
+continues to support computed OKF filters.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet

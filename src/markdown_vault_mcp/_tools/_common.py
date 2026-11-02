@@ -252,6 +252,9 @@ def _staleness_result(
     block, which is the documented path for non-content-block payloads (it is
     not the ``# type: ignore`` target — that is solely the ``-> _T`` bridge).
 
+    Object payloads opt into a matching freshness field by providing the reserved
+    ``index_stale`` key; it is filled from the same observation as response metadata.
+
     ``force_result_wrap``: pass ``True`` for union-return tools (e.g.
     ``list | dict``) whose output schema requires the ``{"result": ...}``
     envelope for every branch, overriding the default dict-passthrough.
@@ -261,6 +264,9 @@ def _staleness_result(
         or (vault.index.write_generation() != gen_before)
         or (not vault.index.is_drained())
     )
+    # A reserved payload key opts new object-shaped tools into the same observation.
+    if isinstance(data, dict) and "index_stale" in data:
+        data["index_stale"] = index_stale
     structured = (
         {"result": data}
         if force_result_wrap
