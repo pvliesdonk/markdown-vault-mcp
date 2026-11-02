@@ -77,7 +77,7 @@ human's reply adopts it.
 ## Pull requests
 
 Follow `AGENTS.md` for issue linking ("PR Discipline"), the gates and
-self-review before every push ("Hard PR Acceptance Gates"), and the
+the `self-reviewing` skill before every push ("Hard PR Acceptance Gates"), and the
 breaking-change policy, and fill every section of
 `.github/PULL_REQUEST_TEMPLATE.md`. Squash-merge issue and feature PRs;
 merge an integration branch's final PR with a merge commit.
