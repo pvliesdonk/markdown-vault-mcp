@@ -644,3 +644,160 @@ Informational rules, not deviations:
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-okf_validate-END -->
+
+## `query_documents`
+
+**Query Notes.** Read-only. Idempotent.
+
+Page through all matching indexed notes with an exact total.
+
+Queries with text rank by keyword score then path; blank queries rank by
+modification time descending then path. Pages are live views, so concurrent
+writes can move notes between pages. Use read to retrieve full note content.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `query` | `string` | `""` | FTS5 expression; blank selects all indexed notes. Malformed syntax matches its literal words. |
+| `scope` | `all \| metadata \| body` | `"all"` | Indexed columns to match: metadata (path, title, headings, summary), body, or all. Terms must match within one indexed section. |
+| `path` | `string \| null` | `null` | Case-sensitive exact vault-relative path, including .md. |
+| `folder` | `string \| null` | `null` | Restrict to this folder and descendants; empty selects root notes. |
+| `pattern` | `string \| null` | `null` | Case-sensitive path glob; *, ? and bracket classes are wildcards. |
+| `filters` | `object \| null` | `null` | AND equality over fields in `indexed_frontmatter_fields` from stats. List fields match a member; computed OKF fields use search instead. |
+| `modified_after` | `string \| null` | `null` | Inclusive RFC3339 modification instant with timezone. |
+| `modified_before` | `string \| null` | `null` | Exclusive RFC3339 modification instant with timezone. |
+| `offset` | `integer` | `0` | Notes to skip in this live view, at least 0. |
+| `limit` | `integer` | `20` | Maximum returned notes, 1-1000; total is independent of this cap. |
+| `chunks_per_file` | `integer` | `2` | Maximum matching sections per note, at least 1. |
+| `snippet_words` | `integer` | `200` | Excerpt width in words, at least 0; 0 returns whole sections. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Exact total, items, offset, limit, truncation and `index_stale`. Metadata
+scope omits sections; body/all include bounded snippets. Active OKF
+bundles annotate each item. `index_stale` mirrors response _meta.
+
+<!-- DOMAIN-EXAMPLE-query_documents-START -->
+Page through notes tagged `release`, with metadata only:
+
+```json
+{"scope": "metadata", "filters": {"tags": "release"}, "offset": 20, "limit": 20}
+```
+
+Use the returned `total` and `truncated` to decide whether to request another page.
+<!-- DOMAIN-EXAMPLE-query_documents-END -->
+
+## `count_documents`
+
+**Count Notes.** Read-only. Idempotent.
+
+Count every matching indexed note without fetching content.
+
+The exact total is independent of search result caps and counts each note once.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `query` | `string` | `""` | FTS5 expression; blank selects all indexed notes. Malformed syntax matches its literal words. |
+| `scope` | `all \| metadata \| body` | `"all"` | Indexed columns to match: metadata (path, title, headings, summary), body, or all. Terms must match within one indexed section. |
+| `path` | `string \| null` | `null` | Case-sensitive exact vault-relative path, including .md. |
+| `folder` | `string \| null` | `null` | Restrict to this folder and descendants; empty selects root notes. |
+| `pattern` | `string \| null` | `null` | Case-sensitive path glob; *, ? and bracket classes are wildcards. |
+| `filters` | `object \| null` | `null` | AND equality over fields in `indexed_frontmatter_fields` from stats. List fields match a member; computed OKF fields use search instead. |
+| `modified_after` | `string \| null` | `null` | Inclusive RFC3339 modification instant with timezone. |
+| `modified_before` | `string \| null` | `null` | Exclusive RFC3339 modification instant with timezone. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Exact total and `index_stale`, also present in response _meta.
+
+<!-- DOMAIN-EXAMPLE-count_documents-START -->
+Count all body matches under a folder without fetching note content:
+
+```json
+{"query": "release", "scope": "body", "folder": "projects"}
+```
+<!-- DOMAIN-EXAMPLE-count_documents-END -->
+
+## `aggregate_documents`
+
+**Aggregate Notes.** Read-only. Idempotent.
+
+Group every matching indexed note into bounded frequency buckets.
+
+Counts cover the whole population. Multi-value tag buckets can sum above
+total; missing counts notes without a tag value. UTC months use YYYY-MM.
+Buckets rank by count descending then `key.casefold()` and raw key.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `by` | `folder \| tag \| month` | required | Group by folder, configured tag field or UTC modification month. |
+| `query` | `string` | `""` | FTS5 expression; blank selects all indexed notes. Malformed syntax matches its literal words. |
+| `scope` | `all \| metadata \| body` | `"all"` | Indexed columns to match: metadata (path, title, headings, summary), body, or all. Terms must match within one indexed section. |
+| `path` | `string \| null` | `null` | Case-sensitive exact vault-relative path, including .md. |
+| `folder` | `string \| null` | `null` | Restrict to this folder and descendants; empty selects root notes. |
+| `pattern` | `string \| null` | `null` | Case-sensitive path glob; *, ? and bracket classes are wildcards. |
+| `filters` | `object \| null` | `null` | AND equality over fields in `indexed_frontmatter_fields` from stats. List fields match a member; computed OKF fields use search instead. |
+| `modified_after` | `string \| null` | `null` | Inclusive RFC3339 modification instant with timezone. |
+| `modified_before` | `string \| null` | `null` | Exclusive RFC3339 modification instant with timezone. |
+| `field` | `string` | `"tags"` | Indexed field for tag grouping; ignored for folder/month. |
+| `limit` | `integer` | `50` | Maximum returned buckets, 1-1000; never caps the input population. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Exact total, buckets, missing, truncation and `index_stale`, which also
+appears in response _meta. Null tag buckets represent missing values.
+
+<!-- DOMAIN-EXAMPLE-aggregate_documents-START -->
+Count the full body-match population by tag, returning at most ten buckets:
+
+```json
+{"by": "tag", "field": "tags", "query": "release", "scope": "body", "limit": 10}
+```
+
+The bucket cap limits output, while `total` still describes every matching note.
+<!-- DOMAIN-EXAMPLE-aggregate_documents-END -->
+
+## `search_paths`
+
+**Discover Note Paths.** Read-only. Idempotent.
+
+Discover note paths with direct matches before optional typo matches.
+
+Returns metadata without bodies. Exact paths rank first, then case-insensitive
+literal prefix matches, followed by other literal matches and approximate matches. Coverage describes
+the approximate scan; truncated independently describes omitted results.
+Use read with a returned path to retrieve its content.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `query` | `string` | required | Literal path text, 1-256 Unicode code points; whitespace alone is empty. Surrounding whitespace is ignored; wildcard characters are literal. |
+| `folder` | `string \| null` | `null` | Restrict to this folder and descendants; empty selects root notes. |
+| `filters` | `object \| null` | `null` | AND equality over `indexed_frontmatter_fields` from stats; list fields match a member. Use search for computed OKF filters. |
+| `fuzzy` | `boolean` | `false` | Try ASCII alphanumeric tokens of length 3-64 within one edit; transposition costs two edits. Non-ASCII queries use direct matching. The approximate pass evaluates at most 10,000 candidates in 200 ms. |
+| `limit` | `integer` | `100` | Maximum returned metadata items, 1-1000. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Items, coverage (complete, limited or `not_run`), reasons, truncated and
+`index_stale`, also present in response metadata.
+
+<!-- DOMAIN-EXAMPLE-search_paths-START -->
+```json
+{"query": "releaze", "fuzzy": true, "folder": "projects", "limit": 10}
+```
+
+Read `items[].path` with `read` for content. A `limited` receipt means
+approximation stopped early; inspect `reasons` before concluding no note exists.
+`truncated` only describes known matches omitted from the output.
+<!-- DOMAIN-EXAMPLE-search_paths-END -->

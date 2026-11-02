@@ -33,8 +33,38 @@ vault.index.reindex()
 
 ## ReaderFacet
 
-Search, read, listing, table-of-contents, similarity, context, history/diff,
-revision reads, and attachment reads.
+Search, exact queries, read, listing, table-of-contents, similarity, context,
+history/diff, revision reads, and attachment reads. Exact query methods check
+library index readiness and raise `IndexUnavailableError` if unavailable; an
+unavailable index is never an exact zero. They accept the [query types](types.md#exact-query-types)
+and return the same projections as the [keyword backend](storage.md#exact-keyword-queries).
+
+```python { .fragment }
+from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+
+request = NoteQuery(query="release", scope="body", limit=20)
+page = vault.reader.query_documents(request)
+count = vault.reader.count_documents_matching(request)
+grouped = vault.reader.aggregate_documents(request, NoteGrouping(by="folder"))
+```
+
+Path discovery uses the same indexed metadata and readiness gate. It reports
+approximate coverage separately from output truncation:
+
+```python { .fragment }
+from markdown_vault_mcp.query_types import PathQuery
+
+paths = vault.reader.search_paths(PathQuery(query="releaze", fuzzy=True))
+# Inspect paths.coverage and paths.reasons before treating an empty list as absence.
+```
+
+Exact paths rank first. Literal prefix matches rank ahead of matches within a path;
+both tiers use `str.casefold()` before comparing. Typo matches follow those tiers.
+Approximation is ASCII-only, bounded to 10,000 candidates and 200 ms; output
+defaults to 100 items (maximum 1000). Unicode retains direct matching with `str.casefold()`.
+
+Invalid indexed fields raise `InvalidRequestError`. Existing ranked search
+continues to support computed OKF filters.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet

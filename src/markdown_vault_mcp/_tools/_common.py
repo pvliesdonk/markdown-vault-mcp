@@ -172,10 +172,11 @@ async def attach_okf_to_results(
     Returns:
         *results*, each with an ``okf`` key when active.
     """
-    if await okf_active(vault):
-        for hit in results:
-            hit["okf"] = derive_annotation(hit.get("frontmatter") or {})
-    return results
+    from markdown_vault_mcp._read_payloads import annotate_hits
+
+    return annotate_hits(
+        results, derive_annotation if await okf_active(vault) else None
+    )
 
 
 def _resolve_drain_timeout() -> float:
@@ -251,6 +252,9 @@ def _staleness_result(
     block, which is the documented path for non-content-block payloads (it is
     not the ``# type: ignore`` target — that is solely the ``-> _T`` bridge).
 
+    Object payloads opt into a matching freshness field by providing the reserved
+    ``index_stale`` key; it is filled from the same observation as response metadata.
+
     ``force_result_wrap``: pass ``True`` for union-return tools (e.g.
     ``list | dict``) whose output schema requires the ``{"result": ...}``
     envelope for every branch, overriding the default dict-passthrough.
@@ -260,6 +264,9 @@ def _staleness_result(
         or (vault.index.write_generation() != gen_before)
         or (not vault.index.is_drained())
     )
+    # A reserved payload key opts new object-shaped tools into the same observation.
+    if isinstance(data, dict) and "index_stale" in data:
+        data["index_stale"] = index_stale
     structured = (
         {"result": data}
         if force_result_wrap

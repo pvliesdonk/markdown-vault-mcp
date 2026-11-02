@@ -49,6 +49,18 @@ sources:
     title: fastmcp-pvl-core task-backend assembly at commit f2b264439
     resource: https://github.com/pvliesdonk/fastmcp-pvl-core/blob/f2b2644395b55368ca339b07e75d3b68d2c66883/src/fastmcp_pvl_core/_tasks.py
     accessed: 2026-09-13
+  - id: client-transports
+    title: FastMCP client transports
+    resource: https://gofastmcp.com/clients/transports
+    accessed: 2026-10-21
+  - id: client-tools
+    title: FastMCP calling tools
+    resource: https://gofastmcp.com/clients/tools
+    accessed: 2026-10-21
+  - id: client-lifecycle
+    title: FastMCP client lifecycle
+    resource: https://gofastmcp.com/clients/client
+    accessed: 2026-10-21
 ---
 
 # FastMCP 4 protocol and server behaviour
@@ -172,3 +184,12 @@ does not attempt to catalogue the rest of FastMCP's API.
 
 - FastMCP's full Apps composition and late-bound name-rewrite protocol are
   outside this server's direct low-level SPA integration.
+
+## HTTP read client
+
+The hosted CLI additionally depends on these client APIs, checked with FastMCP 4.1.3 and MCP SDK 2.2.0 on 2026-10-21. The current vendor documentation describes explicit HTTP transport selection, discovery schemas and context-managed cleanup: [client transports](https://gofastmcp.com/clients/transports), [calling tools](https://gofastmcp.com/clients/tools), and [client lifecycle](https://gofastmcp.com/clients/client).
+
+- `StreamableHttpTransport` preserves the supplied endpoint path; explicit transport selection avoids interpreting a path as a subprocess. [observed: installed fastmcp/client/transports/http.py constructor; vendor client-transports page] [pins: tests/test_cli_remote.py::test_remote_search_uses_server_with_invalid_local_env]
+- `list_tools()` returns schemas as `input_schema`; `call_tool_mcp()` retains raw `structured_content`, `is_error`, content and `meta`. Both APIs use SDK v2 snake_case. [observed: installed fastmcp/client/mixins/tools.py and mcp/types.py] [pins: tests/test_cli_remote.py::test_remote_result_and_freshness]
+- SDK 2.2's streamable HTTP uses origin-restricted request helpers, independently of the HTTP client's follow-redirects setting. [observed: installed mcp/client/streamable_http.py and mcp/shared/_httpx_utils.py] [pins: tests/test_cli_remote.py::test_cross_origin_redirect_is_not_followed]
+- A context-managed Client closes transport resources on exit; a supplied bearer header does not start an interactive OAuth acquisition flow. [observed: installed StreamableHttpTransport.connect_session and _set_auth] [pins: tests/test_cli_remote.py::test_remote_deadline_bounds_slow_tool, tests/test_cli_remote.py::test_authenticated_transport_and_unauthorized_diagnostic]

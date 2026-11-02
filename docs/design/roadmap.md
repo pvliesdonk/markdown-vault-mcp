@@ -45,6 +45,23 @@ that later curation relies on can be trusted. Git reliability supports both;
 an alternate backend is one possible improvement, not a prerequisite for OKF.
 These are preferences for selecting work, not a total order over all issues.
 
+### Hosted terminal discovery
+
+`evidenced` — [Proposal #1829](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1829) records the missing hosted CLI workflow: main's search constructs a local vault even when the data already lives behind MCP. It arrived as an outside contribution of nine pull requests.
+
+`derived` — Nine incremental slices follow the dependencies: hosted search, existing search controls, note retrieval, graph traversal, structured keyword storage, reader/MCP query exposure, population CLI queries, bounded approximate paths, and path CLI. Hosted search and structured storage queries are independent main-based proposals. The reader/MCP query slice follows storage; CLI controls and discovery follow hosted search. Population and path CLI commands wait for both of their real upstream prerequisites. Prepared fork branches do not count as upstream submissions. The refinement and feature issues currently use ordinary cross-links because this contributor cannot create native sub-issue relationships.
+
+`stated` — The owner adopted the contribution as package `016` and asked for
+every pull request to be reviewed and merged into an integration branch, ready
+for after `015` (2 November 2026). The maintainers carry the review work
+themselves and keep the contributor's authorship.
+
+`derived` — The children landed on `integration/1829-vault-cli`, and the epic
+reaches the trunk as one merge-commit pull request ([#1990][1990]). Exact queries
+became an optional keyword-index capability rather than new required
+`KeywordIndex` methods, so the epic adds no break; whether they join the
+required contract is a library question for `020`.
+
 ### Sustainable embedding storage and search
 
 `evidenced` — [Epic #1499][1499] freezes the outcome: "An operator can sustain
@@ -421,6 +438,11 @@ the library changes already on the trunk since v5.1.0 carry `!`, and the
 default-store change asks nothing of an operator ([#1900][1900]). § Sustainable embedding storage and search has the
 argument.
 
+`stated` — **[016 Query a hosted vault from the terminal](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/21)
+(minor)** ships epic [#1829][1829] after `015`: the hosted terminal workflow,
+reviewed child by child on its integration branch (2 November 2026).
+§ Hosted terminal discovery has the argument.
+
 `stated` — **[020 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**
 delivers the owner's selected next outcome: supported library use with proper
 documentation, centered on [#1436][1436]. Research and refinement belong to this
@@ -703,6 +725,13 @@ means for it: the change asks nothing of an operator, so it adds no break,
 and knope cuts the kind from the commits. § Packages and the envelope
 question now say so. The order inside `015` is unchanged.
 
+### 2 November 2026 — adopt the hosted terminal contribution as `016`
+
+`stated` — The owner made epic #1829 package `016`, to be merged after `015`
+was released, and asked for each pull request to be reviewed onto an
+integration branch first. § Hosted terminal discovery and § Packages now
+say so. `015` shipped as 6.0.0 the same day.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -780,9 +809,11 @@ question now say so. The order inside `015` is unchanged.
 [1750]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1750
 [1753]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1753
 [1754]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1754
+[1829]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1829
 [1895]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1895
 [1896]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1896
 [1899]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899
 [1900]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1900
+[1990]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1990
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31

@@ -23,6 +23,15 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
     from markdown_vault_mcp.okf import OkfAuditReport
+    from markdown_vault_mcp.query_types import (
+        NoteAggregate,
+        NoteCount,
+        NoteGrouping,
+        NoteQuery,
+        NoteQueryPage,
+        PathQuery,
+        PathSearchResult,
+    )
     from markdown_vault_mcp.types import (
         AttachmentContent,
         AttachmentInfo,
@@ -86,6 +95,57 @@ class ReaderFacet:
         if self._okf_audit is None:
             raise RuntimeError("okf_validate requires a wired audit callable")
         return self._okf_audit()
+
+    def search_paths(self, request: PathQuery) -> PathSearchResult:
+        """Discover indexed paths with bounded optional typo matching.
+
+        Args:
+            request: Literal query, population predicates and output cap.
+
+        Returns:
+            Metadata matches with separate approximate coverage and truncation.
+        """
+        self._require_built()
+        return self._search_mgr.search_paths(request)
+
+    def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
+        """Return a bounded exact query page after index readiness.
+
+        Args:
+            spec: Indexed predicates and page presentation.
+
+        Returns:
+            Page items and the exhaustive matching-note total.
+        """
+        self._require_built()
+        return self._search_mgr.query_documents(spec)
+
+    def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
+        """Count all matching notes after index readiness.
+
+        Args:
+            spec: Indexed predicates.
+
+        Returns:
+            Exact matching-note total.
+        """
+        self._require_built()
+        return self._search_mgr.count_documents_matching(spec)
+
+    def aggregate_documents(
+        self, spec: NoteQuery, grouping: NoteGrouping
+    ) -> NoteAggregate:
+        """Group all matching notes after index readiness.
+
+        Args:
+            spec: Indexed predicates.
+            grouping: Grouping axis, field and bounded bucket presentation.
+
+        Returns:
+            Exact population total and bounded bucket counts.
+        """
+        self._require_built()
+        return self._search_mgr.aggregate_documents(spec, grouping)
 
     def search(
         self,

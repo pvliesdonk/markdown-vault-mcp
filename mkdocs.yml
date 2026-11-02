@@ -185,6 +185,7 @@ nav:
       - PARA: use/para.md
       - Zettelkasten: use/zettelkasten.md
       - Research workflows: use/research-workflows.md
+      - Query a vault from the terminal: use/terminal.md
       # PROJECT-NAV-USE-END
   # Reference is generated from the code by scripts/gen_reference.py; a fact
   # on these pages changes at its source (docstring, annotation, CLI help).

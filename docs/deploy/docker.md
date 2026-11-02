@@ -261,6 +261,10 @@ If the vault's volume is missing when the server starts, Docker gives the server
 
 The write tools are on by default; `MARKDOWN_VAULT_MCP_READ_ONLY=true` makes a search-only server. The server keeps its own state on the `state-data` volume, so the vault mount can be read-only.
 
+### Looking things up from the host
+
+The image carries the `markdown-vault-mcp` command, so you can search and read the running vault with `docker exec`, as the `appuser` user. [Query a vault from the terminal](../use/terminal.md#inside-the-servers-docker-container) has the command and an alias.
+
 ### What `/data/state` holds
 
 This server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](../use/storage.md)).

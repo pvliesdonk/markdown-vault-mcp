@@ -21,7 +21,9 @@ from markdown_vault_mcp.interfaces import (
     GraphStore,
     KeywordGraphIndex,
     KeywordIndex,
+    RunsExactQueries,
 )
+from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery, PathQuery
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -40,8 +42,8 @@ class TestFTSIndexConformance:
 
     @pytest.mark.parametrize(
         "protocol",
-        [KeywordIndex, GraphStore, KeywordGraphIndex],
-        ids=["keyword", "graph", "combined"],
+        [KeywordIndex, GraphStore, KeywordGraphIndex, RunsExactQueries],
+        ids=["keyword", "graph", "combined", "exact-queries"],
     )
     def test_satisfies_facet(self, fts: FTSIndex, protocol: type) -> None:
         """One SQLite backend answers both concepts today."""
@@ -86,6 +88,7 @@ class TestFacetsAreIndependent:
         """The runtime checks are real checks."""
         assert not isinstance(object(), KeywordIndex)
         assert not isinstance(object(), GraphStore)
+        assert not isinstance(object(), RunsExactQueries)
 
 
 class TestManagersAcceptAnyConformingStore:
@@ -142,3 +145,25 @@ def test_interfaces_module_imports_nothing_at_runtime() -> None:
     assert runtime_imports == [], (
         f"interfaces.py gained runtime imports: {runtime_imports}"
     )
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda m, q: m.query_documents(q),
+        lambda m, q: m.count_documents_matching(q),
+        lambda m, q: m.aggregate_documents(q, NoteGrouping(by="folder")),
+        lambda m, _q: m.search_paths(PathQuery(query="note")),
+    ],
+    ids=["page", "count", "aggregate", "paths"],
+)
+def test_exact_queries_refuse_on_an_index_without_them(call: Any) -> None:
+    """An index lacking the optional capability refuses, pointing at search."""
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers.search import SearchManager
+
+    manager = SearchManager.__new__(SearchManager)
+    manager._fts = _GraphOnlyStore()  # type: ignore[assignment]
+    query = NoteQuery()
+    with pytest.raises(InvalidRequestError, match="does not support exact queries"):
+        call(manager, query)
