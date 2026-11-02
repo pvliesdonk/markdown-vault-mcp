@@ -421,3 +421,12 @@ def test_field_refusals_have_a_deliberate_request_type(
     ):
         with pytest.raises(InvalidRequestError):
             operation()
+
+
+def test_query_functions_follow_a_replaced_thread_connection(index: FTSIndex) -> None:
+    """A thread whose registry connection is replaced still has query_casefold."""
+    add_note(index, "Alpha.md")
+    request = NoteQuery(pattern="alp", pattern_mode="prefix")
+    assert index.count_documents_matching(request).total == 1
+    index._registry.local.conn = None  # the registry opens a fresh connection
+    assert index.count_documents_matching(request).total == 1

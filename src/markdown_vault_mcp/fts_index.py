@@ -1050,9 +1050,11 @@ class FTSIndex:
             sqlite3.ProgrammingError: If ``close()`` has been called.
         """
         conn = self._registry.conn()
-        if not getattr(self._query_tls, "registered", False):
+        # Functions belong to a connection, not a thread: re-register when
+        # the registry hands this thread a different connection.
+        if getattr(self._query_tls, "conn", None) is not conn:
             register_functions(conn)
-            self._query_tls.registered = True
+            self._query_tls.conn = conn
         return conn
 
     @_retry_on_locked
