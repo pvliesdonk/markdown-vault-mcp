@@ -87,6 +87,7 @@
 - [5.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.0/index.md): Release notes for the 5.0 series, with the steps to upgrade to it.
 - [5.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.1/index.md): Release notes for the 5.1 series, with the steps to upgrade to it.
 - [6.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/6.0/index.md): Release notes for the 6.0 series, with the steps to upgrade to it.
+- [6.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/6.1/index.md): Release notes for the 6.1 series, with the steps to upgrade to it.
 
 ## Contribute
 
