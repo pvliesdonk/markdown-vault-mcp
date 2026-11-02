@@ -19,7 +19,7 @@ from markdown_vault_mcp.query_types import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from markdown_vault_mcp.interfaces import KeywordIndex
+    from markdown_vault_mcp.interfaces import RunsExactQueries
 
 _CANDIDATES = 10_000
 _SECONDS = 0.2
@@ -62,7 +62,7 @@ def _matches(tokens: tuple[str, ...], path: str) -> bool:
 
 
 def _direct(
-    index: KeywordIndex, spec: NoteQuery
+    index: RunsExactQueries, spec: NoteQuery
 ) -> tuple[dict[str, tuple[int, NoteQueryItem]], bool]:
     matches: dict[str, tuple[int, NoteQueryItem]] = {}
     truncated = False
@@ -81,7 +81,7 @@ def _direct(
 
 
 def _approximate(
-    index: KeywordIndex,
+    index: RunsExactQueries,
     spec: NoteQuery,
     tokens: tuple[str, ...],
     matches: dict[str, tuple[int, NoteQueryItem]],
@@ -109,14 +109,14 @@ def _approximate(
 
 
 def search_paths(
-    index: KeywordIndex,
+    index: RunsExactQueries,
     request: PathQuery,
     clock: Callable[[], float] = monotonic,
 ) -> PathSearchResult:
     """Discover indexed paths with direct tiers before bounded approximation.
 
     Args:
-        index: Keyword backend providing typed metadata queries.
+        index: Keyword backend's exact-query capability.
         request: Validated literal query, population filters and output limit.
         clock: Monotonic seconds source; candidate retrieval counts toward 200 ms.
 

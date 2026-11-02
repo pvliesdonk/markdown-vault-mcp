@@ -825,8 +825,12 @@ class SearchManager:
 
         Returns:
             Metadata matches with separate approximate coverage and truncation.
+
+        Raises:
+            ExactQueriesNotSupportedError: The keyword index does not support
+                exact queries, which path discovery is built on.
         """
-        return search_paths(self._fts, request)
+        return search_paths(self._exact_queries(), request)
 
     def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
         """Return a bounded page of the exhaustive indexed population.

@@ -23,7 +23,7 @@ from markdown_vault_mcp.interfaces import (
     KeywordIndex,
     RunsExactQueries,
 )
-from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery, PathQuery
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -153,8 +153,9 @@ def test_interfaces_module_imports_nothing_at_runtime() -> None:
         lambda m, q: m.query_documents(q),
         lambda m, q: m.count_documents_matching(q),
         lambda m, q: m.aggregate_documents(q, NoteGrouping(by="folder")),
+        lambda m, _q: m.search_paths(PathQuery(query="note")),
     ],
-    ids=["page", "count", "aggregate"],
+    ids=["page", "count", "aggregate", "paths"],
 )
 def test_exact_queries_refuse_on_an_index_without_them(call: Any) -> None:
     """An index lacking the optional capability refuses, pointing at search."""
