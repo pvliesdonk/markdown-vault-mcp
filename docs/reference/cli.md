@@ -32,7 +32,7 @@ Inject the bearer token into the named environment variable before running the c
 
 `--timeout` overrides the profile's positive finite deadline, default 30 seconds, including connection initialization. Interrupts close the transport and exit 130. Invalid options exit 2; connection, capability and server failures exit 1. A failed remote read never falls back locally. URLs must use HTTP(S). User information and query strings are refused, as are fragments. Certificate verification stays enabled and credentials stay on the endpoint's origin. See the [security model](../security-model.md).
 
-Search keeps keyword mode and the bare JSON result array by default. Unknown server arguments fail explicitly rather than dropping filters. For property tests, install the `property-tests` extra; CI installs it through `--all-extras`.
+Search keeps keyword mode and the bare JSON result array by default. Unknown server arguments fail explicitly rather than dropping filters.
 
 <!-- DOMAIN-INTRO-END -->
 
