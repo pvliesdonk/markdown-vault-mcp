@@ -605,3 +605,15 @@ Discover exact paths before optional bounded typo matches.
 ## `markdown-vault-mcp embeddings`
 
 Move embeddings between vector stores.
+
+## `markdown-vault-mcp embeddings import`
+
+Copy vectors from another store into the configured one, embedding only what it lacks.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--from` |  |  | The store to copy vectors from: numpy, sqlite or postgres. |
+| `--from-path` |  |  | Base path of a numpy or sqlite source (default: the configured embeddings base). |
+| `--from-schema` |  |  | Schema of a postgres source (default: the configured schema). |
+| `--from-dsn-env` |  |  | Environment variable holding a postgres source's connection string (default: $`MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`). |
+| `--dry-run` |  | False | Count what would be copied and embedded; write nothing. |
