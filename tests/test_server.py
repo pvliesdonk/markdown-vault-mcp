@@ -792,6 +792,7 @@ class TestToolManifest:
             "read",
             "rename",
             "search",
+            "search_paths",
             "stats",
             "write",
         ]

@@ -327,6 +327,36 @@ bucket limits never narrow input. Values retain their case-sensitive identity,
 ordered by count descending, casefolded key then raw key. Multi-value bucket
 sums can exceed the note total. No stored derivation or index migration changes.
 
+### Bounded path discovery
+
+`PathQuery` and `ReaderFacet.search_paths` expose indexed metadata discovery;
+MCP `search_paths` uses the same implementation and freshness/OKF envelope.
+No filesystem walk, body retrieval or index migration is involved. Folder
+and indexed equality filters apply to every tier; computed OKF fields remain
+unsupported here. Database and stored JSON faults remain server failures.
+
+Queries contain 1-256 Unicode codepoints before trimming surrounding whitespace;
+blank and NUL queries are rejected. Exact case-sensitive paths rank first,
+then literal casefolded prefixes, substrings and optional approximate matches.
+Each tier sorts by `path.casefold()`, then raw path. Wildcards are literal.
+Direct lookups cover the whole eligible index before approximate candidate caps.
+
+Approximation is opt-in, with a 200ms monotonic work budget including candidate
+retrieval and at most 10,000 candidates in raw path order. It splits query and
+path on slash, whitespace, underscore, hyphen and dot; ASCII alphanumeric tokens
+of length 3-64 are eligible. Every eligible query token must match some path
+token at Levenshtein distance at most one; transposition is two edits. A query
+containing non-ASCII text or no eligible token skips approximation. Unicode
+still receives literal casefolded direct matching; no transliteration is used.
+
+Results contain metadata `items`, `coverage`, `reasons` and `truncated`. Coverage
+is `complete` only when the approximate population finishes, `limited` for
+`candidate_limit` or `time_limit`, and `not_run` for `fuzzy_disabled` or
+`ineligible_query`. Output defaults to 100 items (maximum 1000); truncation
+records known matches omitted by this cap independently of approximate coverage.
+A limited empty result cannot prove absence. Reads across tiers/pages are live;
+concurrent writes can shift candidates, with MCP freshness indicating that race.
+
 ### Search Ranking and Snippet Truncation
 
 Four complementary mechanisms improve result diversity and bound LLM context cost:

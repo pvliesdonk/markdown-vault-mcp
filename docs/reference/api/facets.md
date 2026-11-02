@@ -48,6 +48,21 @@ count = vault.reader.count_documents_matching(request)
 grouped = vault.reader.aggregate_documents(request, NoteGrouping(by="folder"))
 ```
 
+Path discovery uses the same indexed metadata and readiness gate. It reports
+approximate coverage separately from output truncation:
+
+```python { .fragment }
+from markdown_vault_mcp.query_types import PathQuery
+
+paths = vault.reader.search_paths(PathQuery(query="releaze", fuzzy=True))
+# Inspect paths.coverage and paths.reasons before treating an empty list as absence.
+```
+
+Exact paths rank first. Literal prefix matches rank ahead of matches within a path;
+both tiers use `str.casefold()` before comparing. Typo matches follow those tiers.
+Approximation is ASCII-only, bounded to 10,000 candidates and 200 ms; output
+defaults to 100 items (maximum 1000). Unicode retains direct matching with `str.casefold()`.
+
 Invalid indexed fields raise `InvalidRequestError`. Existing ranked search
 continues to support computed OKF filters.
 
