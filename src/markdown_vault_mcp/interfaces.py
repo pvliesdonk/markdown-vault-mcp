@@ -3,7 +3,9 @@
 The managers depend on these concepts:
 
 - :class:`KeywordIndex` — the relational document store plus full-text search
-  and the build-state bookkeeping the indexing pipeline keeps.
+  and the build-state bookkeeping the indexing pipeline keeps;
+  :class:`RunsExactQueries` is the optional part an index implements to
+  answer exact population queries (#1842).
 - :class:`GraphStore` — the link graph.  Distinct from search because it
   answers a different question: *structure* (what links to what) rather than
   *relevance* (what matches a query).
@@ -81,6 +83,7 @@ __all__ = [
     "ReadsMetadataInBatches",
     "ReadsRowsInBatches",
     "ReportsResources",
+    "RunsExactQueries",
     "SourceProbe",
     "StoreBackend",
     "StoreLifecycle",
@@ -125,20 +128,6 @@ class KeywordIndex(Protocol):
         Returns:
             The matching chunks, ranked.
         """
-        ...
-
-    def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
-        """Return a bounded note page with its exhaustive population total."""
-        ...
-
-    def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
-        """Count matching notes without materializing their content."""
-        ...
-
-    def aggregate_documents(
-        self, spec: NoteQuery, grouping: NoteGrouping
-    ) -> NoteAggregate:
-        """Group the exhaustive note population into bounded buckets."""
         ...
 
     # -- reads ----------------------------------------------------------
@@ -373,6 +362,30 @@ class KeywordGraphIndex(KeywordIndex, GraphStore, Protocol):
     combination keeps those annotations honest without collapsing the two
     concepts, so a backend that separates them stays expressible.
     """
+
+
+@runtime_checkable
+class RunsExactQueries(Protocol):
+    """A keyword index that answers exact population queries (#1842); optional.
+
+    A store without it still serves ranked search; the exact-query reads
+    refuse on it instead of failing. Whether it joins :class:`KeywordIndex`'s
+    required contract is the library milestone's decision.
+    """
+
+    def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
+        """Return a bounded note page with its exhaustive population total."""
+        ...
+
+    def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
+        """Count matching notes without materializing their content."""
+        ...
+
+    def aggregate_documents(
+        self, spec: NoteQuery, grouping: NoteGrouping
+    ) -> NoteAggregate:
+        """Group the exhaustive note population into bounded buckets."""
+        ...
 
 
 @runtime_checkable

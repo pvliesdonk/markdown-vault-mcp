@@ -90,7 +90,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordGraphIndex
+    from markdown_vault_mcp.interfaces import (
+        EmbeddingStore,
+        KeywordGraphIndex,
+        RunsExactQueries,
+    )
     from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.managers.link import LinkManager
     from markdown_vault_mcp.okf import OkfDetector
@@ -793,6 +797,22 @@ class SearchManager:
     # Search
     # ------------------------------------------------------------------
 
+    def _exact_queries(self) -> RunsExactQueries:
+        """Return the index's exact-query capability, or refuse without one.
+
+        Raises:
+            InvalidRequestError: The keyword index does not implement
+                :class:`~markdown_vault_mcp.interfaces.RunsExactQueries`.
+        """
+        from markdown_vault_mcp.interfaces import RunsExactQueries
+
+        if not isinstance(self._fts, RunsExactQueries):
+            raise InvalidRequestError(
+                "This vault's keyword index does not support exact queries. "
+                "Call search for ranked matches instead."
+            )
+        return self._fts
+
     def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
         """Return a bounded page of the exhaustive indexed population.
 
@@ -803,9 +823,10 @@ class SearchManager:
             Exact total and bounded note items from one read view.
 
         Raises:
-            InvalidRequestError: An equality field is not an indexed exact field.
+            InvalidRequestError: An equality field is not an indexed exact field,
+                or the keyword index does not support exact queries.
         """
-        return self._fts.query_documents(spec)
+        return self._exact_queries().query_documents(spec)
 
     def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
         """Count the exhaustive indexed population without reading snippets.
@@ -817,9 +838,10 @@ class SearchManager:
             Exact number of matching notes.
 
         Raises:
-            InvalidRequestError: An equality field is not an indexed exact field.
+            InvalidRequestError: An equality field is not an indexed exact field,
+                or the keyword index does not support exact queries.
         """
-        return self._fts.count_documents_matching(spec)
+        return self._exact_queries().count_documents_matching(spec)
 
     def aggregate_documents(
         self, spec: NoteQuery, grouping: NoteGrouping
@@ -834,9 +856,10 @@ class SearchManager:
             Exact population total and bounded bucket counts.
 
         Raises:
-            InvalidRequestError: A predicate or grouping field is not indexed.
+            InvalidRequestError: A predicate or grouping field is not indexed,
+                or the keyword index does not support exact queries.
         """
-        return self._fts.aggregate_documents(spec, grouping)
+        return self._exact_queries().aggregate_documents(spec, grouping)
 
     def search(
         self,

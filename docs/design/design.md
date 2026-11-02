@@ -4103,13 +4103,15 @@ gone.
 
 ### `interfaces.py`: Storage Protocols (#1230)
 
-The exact query reader requires `KeywordIndex.query_documents`,
-`count_documents_matching` and `aggregate_documents`. Custom keyword backends
-must add these three methods returning the dedicated query result dataclasses;
-`FTSIndex` implements them. This expands the structural protocol shipped in
-v5.1.0 and is a library interface migration. Query types are imported only for
-type checking in `interfaces.py`; the protocol retains its typing-only runtime
-import boundary.
+The exact query reader uses `query_documents`, `count_documents_matching` and
+`aggregate_documents` through the optional `RunsExactQueries` protocol, not
+`KeywordIndex`, so a custom keyword backend written against an earlier release
+keeps working. `FTSIndex` implements it. On an index without it the reader
+raises `InvalidRequestError`, which the tools report as a request to use
+`search` instead. Whether the three methods join `KeywordIndex`'s required
+contract is left to the library milestone (020). Query types are imported only
+for type checking in `interfaces.py`, keeping its typing-only runtime import
+boundary.
 
 
 Two concepts, three protocols, mirroring the move already
