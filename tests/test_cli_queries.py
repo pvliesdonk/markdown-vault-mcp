@@ -44,7 +44,8 @@ def test_local_query_commands_use_exact_native_population(
     if args[0] == "search-metadata":
         assert all("sections" not in item for item in data["items"])
     if args[0] == "search-in":
-        assert data["offset"] == 0 and data["limit"] == 1
+        assert data["offset"] == 0
+        assert data["limit"] == 1
     if args[0] == "aggregate":
         assert data["buckets"] == [
             {"key": "shared", "count": 2},
@@ -145,7 +146,8 @@ def test_query_commands_over_real_http() -> None:
             assert data["total"] == expected
             assert data["index_stale"] is False
             if arguments[0] == "search-body":
-                assert data["offset"] == 1 and data["limit"] == 1
+                assert data["offset"] == 1
+                assert data["limit"] == 1
                 assert len(data["items"]) == 1
                 assert all(len(item["sections"]) == 1 for item in data["items"])
                 assert all(
@@ -307,7 +309,8 @@ def test_generated_corpora_preserve_exact_cli_populations(
                 ]
             )
             assert page["total"] == len(expected)
-            assert page["offset"] == offset and page["limit"] == size
+            assert page["offset"] == offset
+            assert page["limit"] == size
             assert page["truncated"] == (offset + len(page["items"]) < len(expected))
             paths.extend(item["path"] for item in page["items"])
         assert len(paths) == len(set(paths)) == len(expected)
@@ -470,7 +473,8 @@ def test_completed_local_query_index_is_never_rebuilt(
         result = CliRunner().invoke(app, [*arguments, "--local", "--agent"])
         assert result.exit_code == 0, result.output
         header, record = result.stdout.splitlines()
-        assert "count=1" in header and "index_stale=unknown" in header
+        assert "count=1" in header
+        assert "index_stale=unknown" in header
         data = json.loads(record)
         assert data["total"] == 2
         assert "index_stale" not in data
@@ -511,7 +515,8 @@ def test_query_populations_exceed_page_and_bucket_caps(query_notes: Path) -> Non
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["total"] == 27
     page, _, groups = [json.loads(result.stdout) for result in results]
-    assert len(page["items"]) == 1 and page["truncated"] is True
+    assert len(page["items"]) == 1
+    assert page["truncated"] is True
     assert groups["buckets"] == [{"key": "many", "count": 25}]
     assert groups["truncated"] is True
 
@@ -670,7 +675,8 @@ def test_query_okf_annotations_are_optional_pages_only(
             result = CliRunner().invoke(
                 app, ["count", "--filter", field + "=value", *connection, "--json"]
             )
-            assert result.exit_code == 1 and result.stdout == "", result.output
+            assert result.exit_code == 1, result.output
+            assert result.stdout == ""
 
 
 def test_hosted_query_never_loads_local_configuration(
@@ -738,7 +744,8 @@ def test_old_query_server_refuses_without_local_fallback(
                 "--json",
             ],
         )
-    assert result.exit_code == 1 and result.stdout == "", result.output
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
     assert "upgrade" in result.stderr
     assert called == []
 
@@ -776,7 +783,8 @@ def test_query_deadline_and_interrupt_have_no_partial_payload(
                 "--json",
             ],
         )
-    assert result.exit_code == 1 and result.stdout == "", result.output
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
     assert "timed out" in result.stderr
 
     def interrupt(*_a: object, **_kw: object) -> None:
@@ -784,7 +792,8 @@ def test_query_deadline_and_interrupt_have_no_partial_payload(
 
     monkeypatch.setattr("markdown_vault_mcp._cli_query.run_read", interrupt)
     interrupted = CliRunner().invoke(app, ["count", "--local", "--json"])
-    assert interrupted.exit_code == 130 and interrupted.stdout == ""
+    assert interrupted.exit_code == 130
+    assert interrupted.stdout == ""
 
 
 @pytest.mark.parametrize("output", ["text", "json", "agent"])
@@ -822,7 +831,8 @@ def test_query_output_preserves_receipts_and_escapes_controls(
     assert "\x1b" not in result.stdout
     if output == "agent":
         header, record = result.stdout.splitlines()
-        assert "count=1" in header and "index_stale=unknown" in header
+        assert "count=1" in header
+        assert "index_stale=unknown" in header
         assert "\u2028" not in record
         observed = json.loads(record)
     else:
@@ -842,7 +852,8 @@ def test_query_payload_non_json_values_fail_before_output(
         lambda *_a, **_kw: RemoteReply({"total": 0, "extra": value}),
     )
     result = CliRunner().invoke(app, ["count", "--local", "--json"])
-    assert result.exit_code == 1 and result.stdout == "", result.output
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
     assert "payload" in result.stderr
 
 
@@ -866,7 +877,8 @@ def test_remote_source_override_conflicts_before_dispatch(
             "--json",
         ],
     )
-    assert result.exit_code == 2 and result.stdout == "", result.output
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""
     assert "--source-dir" in result.stderr
 
 
@@ -938,7 +950,8 @@ def test_matching_stale_remote_receipts_remain_successful(
     assert result.exit_code == 0, result.output
     if output == "agent":
         header, record = result.stdout.splitlines()
-        assert "index_stale=true" in header and "count=1" in header
+        assert "index_stale=true" in header
+        assert "count=1" in header
         assert json.loads(record) == data
     else:
         assert json.loads(result.stdout) == data

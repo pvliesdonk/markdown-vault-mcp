@@ -82,8 +82,9 @@ def test_filters_folders_and_exact_path(index: FTSIndex) -> None:
     assert index.count_documents_matching(spec).total == 1
     assert index.count_documents_matching(replace(spec, path="DOCS/a.md")).total == 0
     for key in ["unknown", "status", "stale", "trust_tier"]:
+        invalid = NoteQuery(filters={key: "x"})
         with pytest.raises(ValueError):
-            index.count_documents_matching(NoteQuery(filters={key: "x"}))
+            index.count_documents_matching(invalid)
 
 
 def test_literal_path_modes_and_order(index: FTSIndex) -> None:
@@ -110,14 +111,17 @@ def test_group_population_and_missing(index: FTSIndex) -> None:
     result = index.aggregate_documents(
         NoteQuery(limit=1, offset=100), NoteGrouping(by="tag")
     )
-    assert result.total == 3 and result.missing == 1
+    assert result.total == 3
+    assert result.missing == 1
     assert [(b["key"], b["count"]) for b in result.buckets] == [
         ("one", 2),
         (None, 1),
         ("two", 1),
     ]
     limited = index.aggregate_documents(NoteQuery(), NoteGrouping(by="tag", limit=1))
-    assert limited.total == 3 and limited.missing == 1 and limited.truncated
+    assert limited.total == 3
+    assert limited.missing == 1
+    assert limited.truncated
 
 
 def test_time_and_fractional_month(index: FTSIndex) -> None:
@@ -154,7 +158,9 @@ def test_sections_snapshot_and_huge_offset(index: FTSIndex) -> None:
     conn = index._conn()
     conn.execute("BEGIN")
     page = index.query_documents(NoteQuery(offset=2**100))
-    assert page.total == 1 and page.items == [] and page.offset == 2**100
+    assert page.total == 1
+    assert page.items == []
+    assert page.offset == 2**100
     assert conn.in_transaction
     conn.rollback()
 
@@ -169,7 +175,8 @@ def test_malformed_fallback_and_blank_population(index: FTSIndex) -> None:
             == 1
         )
     page = index.query_documents(NoteQuery(path="empty.md"))
-    assert page.total == 1 and page.items[0]["sections"] == []
+    assert page.total == 1
+    assert page.items[0]["sections"] == []
     assert index.query_documents(NoteQuery(path="missing.md")).items == []
 
 
@@ -256,8 +263,9 @@ def test_persisted_empty_fields_override_constructor(
         "INSERT OR REPLACE INTO meta VALUES ('indexed_frontmatter_fields', '')"
     )
     index._conn().commit()
+    unconfigured = NoteQuery(filters={field: "x"})
     with pytest.raises(ValueError, match="not configured"):
-        index.count_documents_matching(NoteQuery(filters={field: "x"}))
+        index.count_documents_matching(unconfigured)
 
 
 def test_failure_preserves_outer_transaction_and_backend_errors(
@@ -270,13 +278,15 @@ def test_failure_preserves_outer_transaction_and_backend_errors(
     conn = index._conn()
     conn.execute("BEGIN")
     conn.execute("UPDATE documents SET title='pending' WHERE path='a.md'")
+    invalid = NoteQuery(filters={"unknown": "x"})
     with pytest.raises(ValueError):
-        index.query_documents(NoteQuery(filters={"unknown": "x"}))
+        index.query_documents(invalid)
     assert conn.in_transaction
     assert conn.execute("SELECT title FROM documents").fetchone()[0] == "pending"
     conn.execute("DROP TABLE notes_fts")
+    search = NoteQuery(query="target")
     with pytest.raises(sqlite3.OperationalError, match="no such table"):
-        index.query_documents(NoteQuery(query="target"))
+        index.query_documents(search)
     assert conn.in_transaction
     conn.rollback()
     assert index.count_documents_matching(NoteQuery(query="target")).total == 1
@@ -294,9 +304,8 @@ def test_tombstones_excluded_and_full_sections(index: FTSIndex) -> None:
     )
     spec = NoteQuery(snippet_words=0, chunks_per_file=2**100)
     page = index.query_documents(spec)
-    assert (
-        page.total == 1 and len(page.items[0]["sections"][0]["content"].split()) == 300
-    )
+    assert page.total == 1
+    assert len(page.items[0]["sections"][0]["content"].split()) == 300
     assert index.aggregate_documents(spec, NoteGrouping(by="folder")).total == 1
     assert index.query_documents(replace(spec, offset=1)).items == []
 
@@ -371,7 +380,9 @@ def test_population_exceeds_maximum_output_page(index: FTSIndex) -> None:
         add_note(index, f"{i}.md", frontmatter={"tags": ["same"]})
     spec = NoteQuery(scope="metadata", limit=1000)
     page = index.query_documents(spec)
-    assert page.total == 1003 and len(page.items) == 1000 and page.truncated
+    assert page.total == 1003
+    assert len(page.items) == 1000
+    assert page.truncated
     assert index.count_documents_matching(spec).total == 1003
     grouped = index.aggregate_documents(spec, NoteGrouping(by="tag", limit=1))
     assert grouped.buckets == [{"key": "same", "count": 1003}]

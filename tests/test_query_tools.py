@@ -75,8 +75,9 @@ def test_reader_delegates_exact_population(query_vault: Vault) -> None:
     assert query_vault.reader.count_documents_matching(spec).total == 1
     grouped = query_vault.reader.aggregate_documents(spec, NoteGrouping(by="tag"))
     assert grouped.buckets == [{"key": "one", "count": 1}, {"key": "two", "count": 1}]
+    invalid = NoteQuery(filters={"unknown": "x"})
     with pytest.raises(InvalidRequestError):
-        query_vault.reader.count_documents_matching(NoteQuery(filters={"unknown": "x"}))
+        query_vault.reader.count_documents_matching(invalid)
 
 
 async def test_exact_queries_over_real_http(query_server: FastMCP) -> None:
@@ -88,8 +89,11 @@ async def test_exact_queries_over_real_http(query_server: FastMCP) -> None:
             "query_documents", {**args, "limit": 7, "offset": 7, "snippet_words": 1}
         )
         page = reply.structured_content
-        assert page["total"] == 25 and len(page["items"]) == 7 and page["truncated"]
-        assert page["offset"] == 7 and page["limit"] == 7
+        assert page["total"] == 25
+        assert len(page["items"]) == 7
+        assert page["truncated"]
+        assert page["offset"] == 7
+        assert page["limit"] == 7
         assert all(
             len(s["content"].split()) <= 1 for x in page["items"] for s in x["sections"]
         )
@@ -100,10 +104,8 @@ async def test_exact_queries_over_real_http(query_server: FastMCP) -> None:
             "aggregate_documents", {**args, "by": "tag", "limit": 1}
         )
         assert grouped.structured_content["buckets"] == [{"key": "common", "count": 25}]
-        assert (
-            grouped.structured_content["total"] == 25
-            and grouped.structured_content["truncated"]
-        )
+        assert grouped.structured_content["total"] == 25
+        assert grouped.structured_content["truncated"]
         metadata = await client.call_tool(
             "query_documents", {"query": "bodyterm", "scope": "metadata"}
         )
@@ -125,8 +127,10 @@ async def test_schema_hides_internal_path_seams(query_server: FastMCP) -> None:
             )
             assert "total" in tool.output_schema["properties"]
             assert "index_stale" in tool.output_schema["properties"]
-            assert tool.annotations.read_only_hint and tool.annotations.idempotent_hint
-            assert tool.annotations.title and tool.icons
+            assert tool.annotations.read_only_hint
+            assert tool.annotations.idempotent_hint
+            assert tool.annotations.title
+            assert tool.icons
 
 
 async def test_invalid_indexed_fields_are_request_outcomes(
@@ -216,7 +220,8 @@ def test_freshness_is_one_shared_observation(
         == expected
     )
     assert json.loads(result.content[0].text)["index_stale"] == expected
-    assert index.write_generation.call_count <= 1 and index.is_drained.call_count <= 1
+    assert index.write_generation.call_count <= 1
+    assert index.is_drained.call_count <= 1
     legacy = {"total": 3}
     wrapped = _staleness_result(
         vault, legacy, drained_on_request=True, gen_before=generation
@@ -245,8 +250,9 @@ def test_corrupt_frontmatter_remains_a_server_fault(query_vault: Vault) -> None:
     """Malformed stored JSON is not disguised as caller validation."""
     query_vault._fts._conn().execute("UPDATE documents SET frontmatter_json = '{'")
     query_vault._fts._conn().commit()
+    query = NoteQuery()
     with pytest.raises(json.JSONDecodeError):
-        query_vault.reader.query_documents(NoteQuery())
+        query_vault.reader.query_documents(query)
 
 
 async def test_query_freshness_over_http(
@@ -368,8 +374,9 @@ def test_stored_integer_decode_failures_are_not_request_errors(
             "UPDATE documents SET frontmatter_json = ?", (payload,)
         )
         query_vault._fts._conn().commit()
+        query = NoteQuery()
         with pytest.raises(ValueError) as failure:
-            query_vault.reader.query_documents(NoteQuery())
+            query_vault.reader.query_documents(query)
         assert not isinstance(failure.value, InvalidRequestError)
     finally:
         sys.set_int_max_str_digits(previous)

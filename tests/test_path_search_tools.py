@@ -53,8 +53,10 @@ async def test_path_tool_over_http_and_reader(path_server: FastMCP) -> None:
                 "search_paths", {"query": "target", "fuzzy": True, "limit": 1}
             )
         data = reply.structured_content
-        assert data["items"][0]["path"] == "target.md" and data["truncated"]
-        assert data["coverage"] == "limited" and data["reasons"] == ["time_limit"]
+        assert data["items"][0]["path"] == "target.md"
+        assert data["truncated"]
+        assert data["coverage"] == "limited"
+        assert data["reasons"] == ["time_limit"]
         assert data["items"][0]["frontmatter"]["tags"] == ["keep"]
         assert data["items"][0]["okf"]["status"] == "stable"
         assert "sections" not in data["items"][0]
@@ -84,11 +86,9 @@ async def test_schema_and_request_refusals(path_server: FastMCP) -> None:
             "truncated",
             "index_stale",
         }
-        assert (
-            tool.annotations.read_only_hint
-            and tool.annotations.idempotent_hint
-            and tool.icons
-        )
+        assert tool.annotations.read_only_hint
+        assert tool.annotations.idempotent_hint
+        assert tool.icons
         for args in [
             {"query": " "},
             {"query": "x" * 257},
@@ -120,8 +120,9 @@ def test_reader_requires_index(tmp_path: Path) -> None:
     """Unbuilt readers never return false empty path matches."""
     vault = Vault(source_dir=tmp_path)
     try:
+        query = PathQuery(query="abc")
         with pytest.raises(IndexUnavailableError):
-            vault.reader.search_paths(PathQuery(query="abc"))
+            vault.reader.search_paths(query)
     finally:
         vault.close()
 
@@ -139,4 +140,5 @@ async def test_stale_receipt_keeps_path_coverage(path_server: FastMCP) -> None:
         data = reply.structured_content
         assert data["index_stale"] == reply.meta["index_stale"] is True
         assert json.loads(reply.content[0].text) == data
-        assert data["coverage"] == "not_run" and data["reasons"] == ["fuzzy_disabled"]
+        assert data["coverage"] == "not_run"
+        assert data["reasons"] == ["fuzzy_disabled"]

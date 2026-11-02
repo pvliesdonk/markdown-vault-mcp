@@ -164,5 +164,6 @@ def test_exact_queries_refuse_on_an_index_without_them(call: Any) -> None:
 
     manager = SearchManager.__new__(SearchManager)
     manager._fts = _GraphOnlyStore()  # type: ignore[assignment]
+    query = NoteQuery()
     with pytest.raises(InvalidRequestError, match="does not support exact queries"):
-        call(manager, NoteQuery())
+        call(manager, query)

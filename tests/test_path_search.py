@@ -61,7 +61,8 @@ def test_direct_tiers_and_literal_unicode_order(index: FTSIndex) -> None:
         "STRASSE[*]%.md",
         "strasse[*]%.mdx",
     ]
-    assert result.truncated and result.coverage == "not_run"
+    assert result.truncated
+    assert result.coverage == "not_run"
     assert all("sections" not in x and x["score"] is None for x in result.items)
 
 
@@ -85,7 +86,8 @@ def test_folder_and_filters(index: FTSIndex) -> None:
         "docs/target.md",
         "docs/nested/targat.md",
     ]
-    assert result.coverage == "complete" and not result.truncated
+    assert result.coverage == "complete"
+    assert not result.truncated
     assert [
         x["path"]
         for x in search_paths(index, PathQuery(query="target", folder="")).items
@@ -145,7 +147,8 @@ def test_candidate_cap_cannot_hide_exact_or_prefix(index: FTSIndex) -> None:
         index, PathQuery(query="z/target.md", fuzzy=True), clock=lambda: 0
     )
     assert [x["path"] for x in result.items] == ["z/target.md", "z/target.md-extra"]
-    assert result.coverage == "limited" and result.reasons == ["candidate_limit"]
+    assert result.coverage == "limited"
+    assert result.reasons == ["candidate_limit"]
     assert not result.truncated
     for fuzzy in [False, True]:
         direct = search_paths(
@@ -158,9 +161,8 @@ def test_candidate_cap_cannot_hide_exact_or_prefix(index: FTSIndex) -> None:
         PathQuery(query="z/target.md", fuzzy=True, limit=1),
         clock=lambda: next(ticks),
     )
-    assert expired.items[0]["path"] == "z/target.md" and expired.reasons == [
-        "time_limit"
-    ]
+    assert expired.items[0]["path"] == "z/target.md"
+    assert expired.reasons == ["time_limit"]
 
 
 def test_output_cap_is_independent(index: FTSIndex) -> None:
@@ -171,7 +173,9 @@ def test_output_cap_is_independent(index: FTSIndex) -> None:
         index, PathQuery(query="abc", fuzzy=True, limit=1), clock=lambda: 0
     )
     assert [x["path"] for x in result.items] == ["abc.md"]
-    assert result.truncated and result.coverage == "complete" and not result.reasons
+    assert result.truncated
+    assert result.coverage == "complete"
+    assert not result.reasons
 
 
 def test_time_budget_includes_retrieval(index: FTSIndex) -> None:
@@ -181,19 +185,18 @@ def test_time_budget_includes_retrieval(index: FTSIndex) -> None:
     result = search_paths(
         index, PathQuery(query="abc", fuzzy=True), clock=lambda: next(times)
     )
-    assert (
-        result.coverage == "limited"
-        and result.reasons == ["time_limit"]
-        and not result.items
-    )
+    assert result.coverage == "limited"
+    assert result.reasons == ["time_limit"]
+    assert not result.items
 
 
 def test_faults_propagate(index: FTSIndex) -> None:
     """Database/decoding errors never turn into an empty success."""
     backend = Mock(wraps=index)
     backend.query_documents.side_effect = ValueError("corrupt JSON")
+    query = PathQuery(query="abc")
     with pytest.raises(ValueError, match="corrupt JSON"):
-        search_paths(backend, PathQuery(query="abc"))
+        search_paths(backend, query)
 
 
 def test_deadline_after_last_candidate_never_claims_complete(index: FTSIndex) -> None:
@@ -203,7 +206,8 @@ def test_deadline_after_last_candidate_never_claims_complete(index: FTSIndex) ->
     result = search_paths(
         index, PathQuery(query="abc", fuzzy=True), clock=lambda: next(times)
     )
-    assert result.coverage == "limited" and result.reasons == ["time_limit"]
+    assert result.coverage == "limited"
+    assert result.reasons == ["time_limit"]
 
 
 def test_approximate_token_splitting_and_two_edit_rejection(index: FTSIndex) -> None:
@@ -298,7 +302,8 @@ def test_time_budget_stops_between_candidate_evaluations(index: FTSIndex) -> Non
     result = search_paths(
         index, PathQuery(query="abc", fuzzy=True), clock=lambda: next(ticks)
     )
-    assert result.coverage == "limited" and result.reasons == ["time_limit"]
+    assert result.coverage == "limited"
+    assert result.reasons == ["time_limit"]
     assert [x["path"] for x in result.items] == ["abd.md"]
 
 

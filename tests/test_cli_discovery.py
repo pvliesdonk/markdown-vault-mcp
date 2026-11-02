@@ -45,7 +45,8 @@ def test_reader_command_values(
         )
     assert result.exit_code == 0, result.output
     if output == "text" and arguments[0] == "read":
-        assert "# Alpha\n" in result.stdout and "Details here." in result.stdout
+        assert "# Alpha\n" in result.stdout
+        assert "Details here." in result.stdout
         return
     if output == "agent":
         header, *records = result.stdout.splitlines()
@@ -260,7 +261,8 @@ def test_note_cap_keeps_section_escape_hatch(
         section = CliRunner().invoke(
             app, ["read", "alpha.md", "--section", "Detail", *connection, "--json"]
         )
-    assert full.exit_code == 1 and full.stdout == "", full.output
+    assert full.exit_code == 1, full.output
+    assert full.stdout == ""
     assert section.exit_code == 0, section.output
     assert json.loads(section.stdout)["content"].strip() == "Details here."
 
@@ -287,7 +289,8 @@ def test_historical_read_retains_revision_shape(
     data = json.loads(result.stdout)
     assert "Details here." in data["content"]
     assert data["revision"] == revision
-    assert "etag" not in data and "okf" not in data
+    assert "etag" not in data
+    assert "okf" not in data
 
 
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
@@ -445,7 +448,8 @@ def test_local_read_diagnostic_escapes_untrusted_path(discovery_source: Path) ->
     result = CliRunner().invoke(app, ["read", path, "--local"])
     assert result.exit_code == 1
     assert "ERROR:" in result.stderr
-    assert "\x1b" not in result.stderr and "\x07" not in result.stderr
+    assert "\x1b" not in result.stderr
+    assert "\x07" not in result.stderr
 
 
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
@@ -539,11 +543,9 @@ def test_reader_optional_scopes(remote: bool) -> None:
         context = read(
             ["context", "alpha.md", "--similar-limit", "0", "--link-limit", "0"]
         )
-        assert (
-            context["backlinks"] == []
-            and context["outlinks"] == []
-            and context["similar"] == []
-        )
+        assert context["backlinks"] == []
+        assert context["outlinks"] == []
+        assert context["similar"] == []
         linked = read(
             ["context", "alpha.md", "--similar-limit", "0", "--link-limit", "1"]
         )
@@ -663,7 +665,8 @@ def test_native_diagnostic_is_terminal_safe(path: str) -> None:
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr("markdown_vault_mcp._cli_discovery.local_read", unreadable)
         result = CliRunner().invoke(app, ["read", "note.md", "--local"])
-    assert result.exit_code == 1 and result.stdout == ""
+    assert result.exit_code == 1
+    assert result.stdout == ""
     assert "invalid UTF8" in result.stderr
     assert all(
         char == "\n"
@@ -746,7 +749,8 @@ def test_disk_readers_refuse_unready_index(
             index.close()
     before = stored_reader_index.read_bytes()
     result = CliRunner().invoke(app, ["toc", "alpha.md", "--local", "--json"])
-    assert result.exit_code == 1 and result.stdout == ""
+    assert result.exit_code == 1
+    assert result.stdout == ""
     assert ("writer is active" if busy else "no completed build") in result.stderr
     assert stored_reader_index.read_bytes() == before
 
@@ -793,8 +797,10 @@ def test_local_read_missing_source_is_explicit(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app, ["read", "alpha.md", "--source-dir", str(missing), "--local", "--json"]
     )
-    assert result.exit_code == 1 and result.stdout == ""
-    assert "ERROR:" in result.stderr and "does not exist" in result.stderr
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "ERROR:" in result.stderr
+    assert "does not exist" in result.stderr
     assert not missing.exists()
 
 
@@ -806,7 +812,8 @@ def test_reader_interrupt_is_exit_130(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("markdown_vault_mcp._cli_discovery.local_read", interrupted)
     result = CliRunner().invoke(app, ["read", "alpha.md", "--local", "--json"])
-    assert result.exit_code == 130 and result.stdout == ""
+    assert result.exit_code == 130
+    assert result.stdout == ""
 
 
 @pytest.mark.usefixtures("discovery_source")
@@ -826,7 +833,8 @@ def test_context_omits_refused_optional_conventions(
     )
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
-    assert data["path"] == "alpha.md" and data["frontmatter"]["tags"] == ["shared"]
+    assert data["path"] == "alpha.md"
+    assert data["frontmatter"]["tags"] == ["shared"]
     assert "conventions" not in data
 
 
@@ -849,7 +857,8 @@ def test_unserializable_yaml_has_safe_read_failure(
                 *([] if output == "text" else ["--" + output]),
             ],
         )
-    assert result.exit_code == 1 and result.stdout == ""
+    assert result.exit_code == 1
+    assert result.stdout == ""
     assert "ERROR:" in result.stderr
     assert "Traceback" not in result.stderr
 
@@ -868,7 +877,8 @@ def test_unknown_wire_value_is_serialization_failure(
         },
     )
     result = CliRunner().invoke(app, ["read", "alpha.md", "--local", "--json"])
-    assert result.exit_code == 1 and result.stdout == ""
+    assert result.exit_code == 1
+    assert result.stdout == ""
     assert "ERROR: Read payload is not JSON-compatible." in result.stderr
 
 
