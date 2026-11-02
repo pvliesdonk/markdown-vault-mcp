@@ -22,6 +22,26 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 6.1.0 (2026-11-02)
+
+### Features
+
+- query a hosted vault (#1837)
+- execute structured note queries (#1839)
+- expose search controls (#1844)
+- serve structured note queries (#1846)
+- retrieve note context (#1845)
+- discover approximate note paths (#1848)
+- traverse note links (#1847)
+- query matching note populations (#1851)
+- discover approximate note paths (#1849)
+- separate the commands that read from the ones that write (#2006)
+- group the link and exact-query commands (#2007)
+
+### Bug Fixes
+
+- retry notes after failed builds (#1991)
+
 ## 6.1.0-rc.0 (2026-11-02)
 
 ### Features
