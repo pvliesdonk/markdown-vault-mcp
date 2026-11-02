@@ -45,6 +45,7 @@
 - [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/para/index.md): Run a PARA vault (Projects, Areas, Resources, Archive) with this server: folders, frontmatter, prompts and the capture-to-archive loop.
 - [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/zettelkasten/index.md): Run a Zettelkasten with this server: atomic notes, links, and finding connections.
 - [Research workflows](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/research-workflows/index.md): Use the vault and Claude for research: seed, ground, absorb, interconnect and produce.
+- [Query a vault from the terminal](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/terminal/index.md): Search and read a running vault from a terminal, on another machine or inside the server's Docker container.
 
 ## Reference
 

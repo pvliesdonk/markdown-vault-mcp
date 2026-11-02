@@ -26,7 +26,29 @@ vault.index.reindex()
 
 ## ReaderFacet
 
-Search, read, listing, table-of-contents, similarity, context, history/diff, revision reads, and attachment reads.
+Search, exact queries, read, listing, table-of-contents, similarity, context, history/diff, revision reads, and attachment reads. Exact query methods check library index readiness and raise `IndexUnavailableError` if unavailable; an unavailable index is never an exact zero. They accept the [query types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/types/#exact-query-types) and return the same projections as the [keyword backend](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/#exact-keyword-queries).
+
+```
+from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+
+request = NoteQuery(query="release", scope="body", limit=20)
+page = vault.reader.query_documents(request)
+count = vault.reader.count_documents_matching(request)
+grouped = vault.reader.aggregate_documents(request, NoteGrouping(by="folder"))
+```
+
+Path discovery uses the same indexed metadata and readiness gate. It reports approximate coverage separately from output truncation:
+
+```
+from markdown_vault_mcp.query_types import PathQuery
+
+paths = vault.reader.search_paths(PathQuery(query="releaze", fuzzy=True))
+# Inspect paths.coverage and paths.reasons before treating an empty list as absence.
+```
+
+Exact paths rank first. Literal prefix matches rank ahead of matches within a path; both tiers use `str.casefold()` before comparing. Typo matches follow those tiers. Approximation is ASCII-only, bounded to 10,000 candidates and 200 ms; output defaults to 100 items (maximum 1000). Unicode retains direct matching with `str.casefold()`.
+
+Invalid indexed fields raise `InvalidRequestError`. Existing ranked search continues to support computed OKF filters.
 
 ## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None)`
 
@@ -61,6 +83,71 @@ Raises:
 | Type           | Description                                                                              |
 | -------------- | ---------------------------------------------------------------------------------------- |
 | `RuntimeError` | If no audit callable was wired (direct facet construction without the composition root). |
+
+### `search_paths(request)`
+
+Discover indexed paths with bounded optional typo matching.
+
+Parameters:
+
+| Name      | Type        | Description                                          | Default    |
+| --------- | ----------- | ---------------------------------------------------- | ---------- |
+| `request` | `PathQuery` | Literal query, population predicates and output cap. | *required* |
+
+Returns:
+
+| Type               | Description                                                         |
+| ------------------ | ------------------------------------------------------------------- |
+| `PathSearchResult` | Metadata matches with separate approximate coverage and truncation. |
+
+### `query_documents(spec)`
+
+Return a bounded exact query page after index readiness.
+
+Parameters:
+
+| Name   | Type        | Description                               | Default    |
+| ------ | ----------- | ----------------------------------------- | ---------- |
+| `spec` | `NoteQuery` | Indexed predicates and page presentation. | *required* |
+
+Returns:
+
+| Type            | Description                                        |
+| --------------- | -------------------------------------------------- |
+| `NoteQueryPage` | Page items and the exhaustive matching-note total. |
+
+### `count_documents_matching(spec)`
+
+Count all matching notes after index readiness.
+
+Parameters:
+
+| Name   | Type        | Description         | Default    |
+| ------ | ----------- | ------------------- | ---------- |
+| `spec` | `NoteQuery` | Indexed predicates. | *required* |
+
+Returns:
+
+| Type        | Description                |
+| ----------- | -------------------------- |
+| `NoteCount` | Exact matching-note total. |
+
+### `aggregate_documents(spec, grouping)`
+
+Group all matching notes after index readiness.
+
+Parameters:
+
+| Name       | Type           | Description                                           | Default    |
+| ---------- | -------------- | ----------------------------------------------------- | ---------- |
+| `spec`     | `NoteQuery`    | Indexed predicates.                                   | *required* |
+| `grouping` | `NoteGrouping` | Grouping axis, field and bounded bucket presentation. | *required* |
+
+Returns:
+
+| Type            | Description                                       |
+| --------------- | ------------------------------------------------- |
+| `NoteAggregate` | Exact population total and bounded bucket counts. |
 
 ### `search(query, *, limit=10, mode=None, filters=None, folder=None, chunks_per_file=None, snippet_words=None)`
 
@@ -988,6 +1075,16 @@ Raises:
 | Type                    | Description                                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `IndexUnavailableError` | timeout expired (reason="timeout"), a build ran and failed (reason="build_failed"), or no build was ever scheduled (reason="never_built"). |
+
+### `use_existing_index()`
+
+Adopt a completed shared index for reads without scanning or writing.
+
+Raises:
+
+| Type                    | Description                                       |
+| ----------------------- | ------------------------------------------------- |
+| `IndexUnavailableError` | The writer is active or no complete build exists. |
 
 ### `build_index(*, force=False)`
 

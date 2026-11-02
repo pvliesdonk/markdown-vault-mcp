@@ -1,6 +1,6 @@
 # Types
 
-All data types returned by the `Vault` API are importable from the `markdown_vault_mcp.types` module.
+The existing `Vault` result types are importable from `markdown_vault_mcp.types`. Exact keyword query requests and results live in `markdown_vault_mcp.query_types`.
 
 ```
 from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, NoteContext
@@ -447,3 +447,99 @@ Arguments received by the callback:
 | `path`    | `Path`           | Absolute path of the modified file                                 |
 | `content` | `str`            | New file content (empty string for binary attachments and deletes) |
 | `op`      | `WriteOperation` | Which write operation fired (see `WriteOperation` above)           |
+
+## Exact query types
+
+## `NoteQuery(query='', scope='all', path=None, folder=None, pattern=None, filters=dict(), modified_after=None, modified_before=None, offset=0, limit=20, chunks_per_file=2, snippet_words=200, order='auto', pattern_mode='glob')`
+
+One exhaustive keyword population with bounded page presentation.
+
+Attributes:
+
+| Name              | Type                | Description                                                    |
+| ----------------- | ------------------- | -------------------------------------------------------------- |
+| `query`           | `str`               | FTS5 expression; malformed syntax falls back to literal terms. |
+| `scope`           | `QueryScope`        | Indexed all, metadata or body columns.                         |
+| `path`            | \`str               | None\`                                                         |
+| `folder`          | \`str               | None\`                                                         |
+| `pattern`         | \`str               | None\`                                                         |
+| `filters`         | `Mapping[str, str]` | AND equality predicates over configured indexed fields.        |
+| `modified_after`  | \`str               | None\`                                                         |
+| `modified_before` | \`str               | None\`                                                         |
+| `offset`          | `int`               | Nonnegative live-view page offset.                             |
+| `limit`           | `int`               | Page size,1-1000.                                              |
+| `chunks_per_file` | `int`               | Maximum sections per body/all item, at least1.                 |
+| `snippet_words`   | `int`               | Maximum excerpt words;0 returns the full section.              |
+| `order`           | `QueryOrder`        | Internal storage ordering; not an MCP/CLI query parameter.     |
+| `pattern_mode`    | `PatternMode`       | Internal literal lookup seam; not an MCP/CLI parameter.        |
+
+## `NoteQueryPage(items, total, offset, limit, truncated)`
+
+Distinct-note page and exact population size from one backend read view.
+
+## `NoteQueryItem`
+
+Bases: `TypedDict`
+
+Note metadata; body/all projections additionally supply sections.
+
+## `NoteSection`
+
+Bases: `TypedDict`
+
+A bounded physical indexed section with its keyword score.
+
+## `NoteCount(total)`
+
+Exact distinct-note population size, independent of presentation limits.
+
+## `NoteGrouping(by, field='tags', limit=50)`
+
+Bucket projection; limit bounds output buckets, never input notes.
+
+Attributes:
+
+| Name    | Type                                | Description                                          |
+| ------- | ----------------------------------- | ---------------------------------------------------- |
+| `by`    | `Literal['folder', 'tag', 'month']` | Folder, indexed tag value or UTC modification month. |
+| `field` | `str`                               | Configured indexed field for tag grouping.           |
+| `limit` | `int`                               | Maximum output buckets,1-1000.                       |
+
+## `NoteAggregate(total, buckets, missing, truncated)`
+
+Buckets over the full population; multi-value bucket sums may exceed total.
+
+## `NoteBucket`
+
+Bases: `TypedDict`
+
+Distinct-note count for one value; null represents missing tags.
+
+## Path discovery types
+
+## `PathQuery(query, folder=None, filters=dict(), fuzzy=False, limit=100)`
+
+Indexed path discovery with optional bounded ASCII approximation.
+
+Attributes:
+
+| Name      | Type                | Description                                                  |
+| --------- | ------------------- | ------------------------------------------------------------ |
+| `query`   | `str`               | Nonblank literal path text, at most 256 Unicode codepoints.  |
+| `folder`  | \`str               | None\`                                                       |
+| `filters` | `Mapping[str, str]` | AND equality over configured indexed frontmatter fields.     |
+| `fuzzy`   | `bool`              | Evaluate eligible ASCII tokens at Levenshtein distance \<=1. |
+| `limit`   | `int`               | Maximum returned metadata items, 1-1000.                     |
+
+## `PathSearchResult(items, coverage, reasons, truncated)`
+
+Metadata matches; approximate coverage is independent of output truncation.
+
+Attributes:
+
+| Name        | Type                  | Description                                                       |
+| ----------- | --------------------- | ----------------------------------------------------------------- |
+| `items`     | `list[NoteQueryItem]` | Exact, folded prefix, folded substring, then approximate matches. |
+| `coverage`  | `PathCoverage`        | Whether the optional approximate population was evaluated.        |
+| `reasons`   | `list[PathReason]`    | Stable reasons for limited or not-run coverage.                   |
+| `truncated` | `bool`                | More known matches exist than fit the output limit.               |

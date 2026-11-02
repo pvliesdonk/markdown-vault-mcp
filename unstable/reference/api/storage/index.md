@@ -537,3 +537,67 @@ Raises:
 | Type         | Description                                                         |
 | ------------ | ------------------------------------------------------------------- |
 | `ValueError` | If present comes without a token, or another status comes with one. |
+
+## Exact keyword queries
+
+An open `FTSIndex` can query the entire matching note population without semantic retrieval or a top-k approximation. Its page size bounds output; counts and aggregates always describe the full filtered population.
+
+```
+from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+
+request = NoteQuery(query="release", scope="body", folder="projects", limit=20)
+page = index.query_documents(request)
+count = index.count_documents_matching(request)
+by_tag = index.aggregate_documents(request, NoteGrouping(by="tag", field="tags"))
+```
+
+Only configured indexed frontmatter fields support exact filters and tag grouping; invalid fields raise `InvalidRequestError`, also a `ValueError`. Computed OKF filters require existing ranked search. Modification bounds are RFC3339 instants with a timezone, inclusive `modified_after` and exclusive `modified_before`. Metadata scope omits body sections. A lexical query containing NUL is invalid; other malformed FTS expressions fall back to literal terms within the same scope. See [query types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/types/#exact-query-types) for defaults and bounds. This library surface reads indexed data only. The three methods below form the optional `RunsExactQueries` protocol, and `FTSIndex` has all three. A custom keyword backend without them keeps working for search; the exact-query reader methods raise `InvalidRequestError` on it. The MCP tools and reader methods share these predicates; internal `order` and `pattern_mode` switches are available only to typed library callers.
+
+## `query_documents(spec)`
+
+Read distinct notes and an exact total from one consistent read view.
+
+Parameters:
+
+| Name   | Type        | Description                                       | Default    |
+| ------ | ----------- | ------------------------------------------------- | ---------- |
+| `spec` | `NoteQuery` | Validated exhaustive population and page request. | *required* |
+
+Returns:
+
+| Type            | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `NoteQueryPage` | Bounded typed page; metadata scope omits section content. |
+
+## `count_documents_matching(spec)`
+
+Count all distinct matching live notes without fetching excerpts.
+
+Parameters:
+
+| Name   | Type        | Description                                              | Default    |
+| ------ | ----------- | -------------------------------------------------------- | ---------- |
+| `spec` | `NoteQuery` | Validated population; page/excerpt controls are ignored. | *required* |
+
+Returns:
+
+| Type        | Description            |
+| ----------- | ---------------------- |
+| `NoteCount` | Exact population size. |
+
+## `aggregate_documents(spec, grouping)`
+
+Group all matching notes without limiting the input population.
+
+Parameters:
+
+| Name       | Type           | Description                                              | Default    |
+| ---------- | -------------- | -------------------------------------------------------- | ---------- |
+| `spec`     | `NoteQuery`    | Validated population; page/excerpt controls are ignored. | *required* |
+| `grouping` | `NoteGrouping` | Bucket axis, indexed field and output limit.             | *required* |
+
+Returns:
+
+| Type            | Description                                                   |
+| --------------- | ------------------------------------------------------------- |
+| `NoteAggregate` | Exact total, missing count and bounded distinct-note buckets. |

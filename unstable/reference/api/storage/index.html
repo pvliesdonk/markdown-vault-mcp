@@ -1418,6 +1418,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/terminal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Query a vault from the terminal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2795,6 +2823,50 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#exact-keyword-queries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exact keyword queries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.fts_index.FTSIndex.query_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        query_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.fts_index.FTSIndex.count_documents_matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        count_documents_matching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.fts_index.FTSIndex.aggregate_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aggregate_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3946,6 +4018,50 @@
     <span class="md-ellipsis">
       
         SourceState
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exact-keyword-queries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exact keyword queries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.fts_index.FTSIndex.query_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        query_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.fts_index.FTSIndex.count_documents_matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        count_documents_matching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.fts_index.FTSIndex.aggregate_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aggregate_documents
       
     </span>
   </a>
@@ -6933,6 +7049,292 @@ comes with one.</p>
 
 
   </div>
+
+    </div>
+
+</div><!-- vale on -->
+
+<h2 id="exact-keyword-queries">Exact keyword queries<a class="headerlink" href="#exact-keyword-queries" title="Permanent link">&para;</a></h2>
+<p>An open <code>FTSIndex</code> can query the entire matching note population without
+semantic retrieval or a top-k approximation. Its page size bounds output;
+counts and aggregates always describe the full filtered population.</p>
+<div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.query_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">NoteGrouping</span><span class="p">,</span> <span class="n">NoteQuery</span>
+
+<span class="n">request</span> <span class="o">=</span> <span class="n">NoteQuery</span><span class="p">(</span><span class="n">query</span><span class="o">=</span><span class="s2">"release"</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">"body"</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="s2">"projects"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">page</span> <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">query_documents</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+<span class="n">count</span> <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">count_documents_matching</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+<span class="n">by_tag</span> <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">aggregate_documents</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">NoteGrouping</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">"tag"</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="s2">"tags"</span><span class="p">))</span>
+</code></pre></div>
+<p>Only configured indexed frontmatter fields support exact filters and tag
+grouping; invalid fields raise <code>InvalidRequestError</code>, also a <code>ValueError</code>. Computed OKF filters require existing ranked search. Modification
+bounds are RFC3339 instants with a timezone, inclusive <code>modified_after</code> and
+exclusive <code>modified_before</code>. Metadata scope omits body sections. A lexical
+query containing NUL is invalid; other malformed FTS expressions fall back to
+literal terms within the same scope. See <a href="../types/#exact-query-types">query types</a>
+for defaults and bounds. This library surface reads indexed data only. The three methods below form the
+optional <code>RunsExactQueries</code> protocol, and <code>FTSIndex</code> has all three. A custom
+keyword backend without them keeps working for search; the exact-query reader
+methods raise <code>InvalidRequestError</code> on it.
+The MCP tools and reader methods share these predicates; internal <code>order</code> and
+<code>pattern_mode</code> switches are available only to typed library callers.</p>
+<!-- vale off -->
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="markdown_vault_mcp.fts_index.FTSIndex.query_documents" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">query_documents</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.fts_index.FTSIndex.query_documents" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Read distinct notes and an exact total from one consistent read view.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spec</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQuery(query='', scope='all', path=None, folder=None, pattern=None, filters=dict(), modified_after=None, modified_before=None, offset=0, limit=20, chunks_per_file=2, snippet_words=200, order='auto', pattern_mode='glob')
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQuery)" href="../types/#markdown_vault_mcp.query_types.NoteQuery">NoteQuery</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Validated exhaustive population and page request.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQueryPage(items, total, offset, limit, truncated)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQueryPage)" href="../types/#markdown_vault_mcp.query_types.NoteQueryPage">NoteQueryPage</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Bounded typed page; metadata scope omits section content.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="markdown_vault_mcp.fts_index.FTSIndex.count_documents_matching" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">count_documents_matching</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.fts_index.FTSIndex.count_documents_matching" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Count all distinct matching live notes without fetching excerpts.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spec</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQuery(query='', scope='all', path=None, folder=None, pattern=None, filters=dict(), modified_after=None, modified_before=None, offset=0, limit=20, chunks_per_file=2, snippet_words=200, order='auto', pattern_mode='glob')
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQuery)" href="../types/#markdown_vault_mcp.query_types.NoteQuery">NoteQuery</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Validated population; page/excerpt controls are ignored.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteCount(total)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteCount)" href="../types/#markdown_vault_mcp.query_types.NoteCount">NoteCount</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Exact population size.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="markdown_vault_mcp.fts_index.FTSIndex.aggregate_documents" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">aggregate_documents</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="n">grouping</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.fts_index.FTSIndex.aggregate_documents" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Group all matching notes without limiting the input population.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spec</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQuery(query='', scope='all', path=None, folder=None, pattern=None, filters=dict(), modified_after=None, modified_before=None, offset=0, limit=20, chunks_per_file=2, snippet_words=200, order='auto', pattern_mode='glob')
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQuery)" href="../types/#markdown_vault_mcp.query_types.NoteQuery">NoteQuery</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Validated population; page/excerpt controls are ignored.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>grouping</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteGrouping(by, field='tags', limit=50)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteGrouping)" href="../types/#markdown_vault_mcp.query_types.NoteGrouping">NoteGrouping</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Bucket axis, indexed field and output limit.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteAggregate(total, buckets, missing, truncated)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteAggregate)" href="../types/#markdown_vault_mcp.query_types.NoteAggregate">NoteAggregate</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Exact total, missing count and bounded distinct-note buckets.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
 
     </div>
 

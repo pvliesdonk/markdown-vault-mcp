@@ -211,6 +211,14 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 | `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60`    | No       | Maximum seconds an index-backed tool or resource waits for the FTS index to become queryable during a cold-start background build before raising IndexUnavailableError(reason="timeout"). Increase for large vaults.                  |
 | `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60`    | No       | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with wait_for_pending_writes=true. On timeout the tool answers from the current index and reports index_stale=true in the response \_meta. |
 
+### Client
+
+| Variable                           | Default | Required | Description                                                                                                                                                                    |
+| ---------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_SERVER_URL`    | (none)  | No       | Hosted MCP endpoint for CLI reads. The explicit server option overrides it. Local mode bypasses it.                                                                            |
+| `MARKDOWN_VAULT_MCP_CLIENT_CONFIG` | (none)  | No       | Client TOML profile path; defaults to XDG_CONFIG_HOME/markdown-vault-mcp/client.toml.                                                                                          |
+| `MARKDOWN_VAULT_MCP_CLIENT_TOKEN`  | (none)  | No       | Optional CLI bearer token. A nonempty value overrides the profile-selected token environment source; an empty value leaves that source in effect. Never stored in client TOML. |
+
 ### MCP Apps
 
 | Variable                             | Default | Required | Description                                                                                                                   |

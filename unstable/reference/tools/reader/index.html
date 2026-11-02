@@ -1418,6 +1418,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/terminal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Query a vault from the terminal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1815,6 +1843,50 @@
     <span class="md-ellipsis">
       
         okf_validate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#query_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        query_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#count_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        count_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aggregate_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aggregate_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search_paths
       
     </span>
   </a>
@@ -2974,6 +3046,50 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#query_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        query_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#count_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        count_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aggregate_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aggregate_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search_paths
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3832,6 +3948,361 @@ up to 20 <code>examples</code> (list[str] of paths).</p>
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-okf_validate-END -->
+
+<h2 id="query_documents"><code>query_documents</code><a class="headerlink" href="#query_documents" title="Permanent link">&para;</a></h2>
+<p><strong>Query Notes.</strong> Read-only. Idempotent.</p>
+<p>Page through all matching indexed notes with an exact total.</p>
+<p>Queries with text rank by keyword score then path; blank queries rank by
+modification time descending then path. Pages are live views, so concurrent
+writes can move notes between pages. Use read to retrieve full note content.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>FTS5 expression; blank selects all indexed notes. Malformed syntax matches its literal words.</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td><code>all \| metadata \| body</code></td>
+<td><code>"all"</code></td>
+<td>Indexed columns to match: metadata (path, title, headings, summary), body, or all. Terms must match within one indexed section.</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Case-sensitive exact vault-relative path, including .md.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Restrict to this folder and descendants; empty selects root notes.</td>
+</tr>
+<tr>
+<td><code>pattern</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Case-sensitive path glob; *, ? and bracket classes are wildcards.</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td><code>object \| null</code></td>
+<td><code>null</code></td>
+<td>AND equality over fields in <code>indexed_frontmatter_fields</code> from stats. List fields match a member; computed OKF fields use search instead.</td>
+</tr>
+<tr>
+<td><code>modified_after</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Inclusive RFC3339 modification instant with timezone.</td>
+</tr>
+<tr>
+<td><code>modified_before</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Exclusive RFC3339 modification instant with timezone.</td>
+</tr>
+<tr>
+<td><code>offset</code></td>
+<td><code>integer</code></td>
+<td><code>0</code></td>
+<td>Notes to skip in this live view, at least 0.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>integer</code></td>
+<td><code>20</code></td>
+<td>Maximum returned notes, 1-1000; total is independent of this cap.</td>
+</tr>
+<tr>
+<td><code>chunks_per_file</code></td>
+<td><code>integer</code></td>
+<td><code>2</code></td>
+<td>Maximum matching sections per note, at least 1.</td>
+</tr>
+<tr>
+<td><code>snippet_words</code></td>
+<td><code>integer</code></td>
+<td><code>200</code></td>
+<td>Excerpt width in words, at least 0; 0 returns whole sections.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Exact total, items, offset, limit, truncation and <code>index_stale</code>. Metadata
+scope omits sections; body/all include bounded snippets. Active OKF
+bundles annotate each item. <code>index_stale</code> mirrors response _meta.</p>
+<!-- DOMAIN-EXAMPLE-query_documents-START -->
+<p>Page through notes tagged <code>release</code>, with metadata only:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"scope"</span><span class="p">:</span><span class="w"> </span><span class="s2">"metadata"</span><span class="p">,</span><span class="w"> </span><span class="nt">"filters"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="s2">"release"</span><span class="p">},</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">}</span>
+</code></pre></div>
+<p>Use the returned <code>total</code> and <code>truncated</code> to decide whether to request another page.</p>
+<!-- DOMAIN-EXAMPLE-query_documents-END -->
+
+<h2 id="count_documents"><code>count_documents</code><a class="headerlink" href="#count_documents" title="Permanent link">&para;</a></h2>
+<p><strong>Count Notes.</strong> Read-only. Idempotent.</p>
+<p>Count every matching indexed note without fetching content.</p>
+<p>The exact total is independent of search result caps and counts each note once.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>FTS5 expression; blank selects all indexed notes. Malformed syntax matches its literal words.</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td><code>all \| metadata \| body</code></td>
+<td><code>"all"</code></td>
+<td>Indexed columns to match: metadata (path, title, headings, summary), body, or all. Terms must match within one indexed section.</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Case-sensitive exact vault-relative path, including .md.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Restrict to this folder and descendants; empty selects root notes.</td>
+</tr>
+<tr>
+<td><code>pattern</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Case-sensitive path glob; *, ? and bracket classes are wildcards.</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td><code>object \| null</code></td>
+<td><code>null</code></td>
+<td>AND equality over fields in <code>indexed_frontmatter_fields</code> from stats. List fields match a member; computed OKF fields use search instead.</td>
+</tr>
+<tr>
+<td><code>modified_after</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Inclusive RFC3339 modification instant with timezone.</td>
+</tr>
+<tr>
+<td><code>modified_before</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Exclusive RFC3339 modification instant with timezone.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Exact total and <code>index_stale</code>, also present in response _meta.</p>
+<!-- DOMAIN-EXAMPLE-count_documents-START -->
+<p>Count all body matches under a folder without fetching note content:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"release"</span><span class="p">,</span><span class="w"> </span><span class="nt">"scope"</span><span class="p">:</span><span class="w"> </span><span class="s2">"body"</span><span class="p">,</span><span class="w"> </span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"projects"</span><span class="p">}</span>
+</code></pre></div>
+<!-- DOMAIN-EXAMPLE-count_documents-END -->
+
+<h2 id="aggregate_documents"><code>aggregate_documents</code><a class="headerlink" href="#aggregate_documents" title="Permanent link">&para;</a></h2>
+<p><strong>Aggregate Notes.</strong> Read-only. Idempotent.</p>
+<p>Group every matching indexed note into bounded frequency buckets.</p>
+<p>Counts cover the whole population. Multi-value tag buckets can sum above
+total; missing counts notes without a tag value. UTC months use YYYY-MM.
+Buckets rank by count descending then <code>key.casefold()</code> and raw key.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>by</code></td>
+<td><code>folder \| tag \| month</code></td>
+<td>required</td>
+<td>Group by folder, configured tag field or UTC modification month.</td>
+</tr>
+<tr>
+<td><code>query</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>FTS5 expression; blank selects all indexed notes. Malformed syntax matches its literal words.</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td><code>all \| metadata \| body</code></td>
+<td><code>"all"</code></td>
+<td>Indexed columns to match: metadata (path, title, headings, summary), body, or all. Terms must match within one indexed section.</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Case-sensitive exact vault-relative path, including .md.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Restrict to this folder and descendants; empty selects root notes.</td>
+</tr>
+<tr>
+<td><code>pattern</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Case-sensitive path glob; *, ? and bracket classes are wildcards.</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td><code>object \| null</code></td>
+<td><code>null</code></td>
+<td>AND equality over fields in <code>indexed_frontmatter_fields</code> from stats. List fields match a member; computed OKF fields use search instead.</td>
+</tr>
+<tr>
+<td><code>modified_after</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Inclusive RFC3339 modification instant with timezone.</td>
+</tr>
+<tr>
+<td><code>modified_before</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Exclusive RFC3339 modification instant with timezone.</td>
+</tr>
+<tr>
+<td><code>field</code></td>
+<td><code>string</code></td>
+<td><code>"tags"</code></td>
+<td>Indexed field for tag grouping; ignored for folder/month.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>integer</code></td>
+<td><code>50</code></td>
+<td>Maximum returned buckets, 1-1000; never caps the input population.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Exact total, buckets, missing, truncation and <code>index_stale</code>, which also
+appears in response _meta. Null tag buckets represent missing values.</p>
+<!-- DOMAIN-EXAMPLE-aggregate_documents-START -->
+<p>Count the full body-match population by tag, returning at most ten buckets:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tag"</span><span class="p">,</span><span class="w"> </span><span class="nt">"field"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tags"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"release"</span><span class="p">,</span><span class="w"> </span><span class="nt">"scope"</span><span class="p">:</span><span class="w"> </span><span class="s2">"body"</span><span class="p">,</span><span class="w"> </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">}</span>
+</code></pre></div>
+<p>The bucket cap limits output, while <code>total</code> still describes every matching note.</p>
+<!-- DOMAIN-EXAMPLE-aggregate_documents-END -->
+
+<h2 id="search_paths"><code>search_paths</code><a class="headerlink" href="#search_paths" title="Permanent link">&para;</a></h2>
+<p><strong>Discover Note Paths.</strong> Read-only. Idempotent.</p>
+<p>Discover note paths with direct matches before optional typo matches.</p>
+<p>Returns metadata without bodies. Exact paths rank first, then case-insensitive
+literal prefix matches, followed by other literal matches and approximate matches. Coverage describes
+the approximate scan; truncated independently describes omitted results.
+Use read with a returned path to retrieve its content.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Literal path text, 1-256 Unicode code points; whitespace alone is empty. Surrounding whitespace is ignored; wildcard characters are literal.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Restrict to this folder and descendants; empty selects root notes.</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td><code>object \| null</code></td>
+<td><code>null</code></td>
+<td>AND equality over <code>indexed_frontmatter_fields</code> from stats; list fields match a member. Use search for computed OKF filters.</td>
+</tr>
+<tr>
+<td><code>fuzzy</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Try ASCII alphanumeric tokens of length 3-64 within one edit; transposition costs two edits. Non-ASCII queries use direct matching. The approximate pass evaluates at most 10,000 candidates in 200 ms.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>integer</code></td>
+<td><code>100</code></td>
+<td>Maximum returned metadata items, 1-1000.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Items, coverage (complete, limited or <code>not_run</code>), reasons, truncated and
+<code>index_stale</code>, also present in response metadata.</p>
+<!-- DOMAIN-EXAMPLE-search_paths-START -->
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"releaze"</span><span class="p">,</span><span class="w"> </span><span class="nt">"fuzzy"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"projects"</span><span class="p">,</span><span class="w"> </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">}</span>
+</code></pre></div>
+<p>Read <code>items[].path</code> with <code>read</code> for content. A <code>limited</code> receipt means
+approximation stopped early; inspect <code>reasons</code> before concluding no note exists.
+<code>truncated</code> only describes known matches omitted from the output.</p>
+<!-- DOMAIN-EXAMPLE-search_paths-END -->
 
 
 

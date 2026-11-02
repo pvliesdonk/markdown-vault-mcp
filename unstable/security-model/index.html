@@ -1564,6 +1564,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../use/terminal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Query a vault from the terminal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2946,7 +2974,8 @@
 <li><strong>PostgreSQL.</strong> With <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres</code>, the server connects to the database in <code>MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN</code> and keeps the vault's embeddings in one schema there, creating and changing only its own tables in it. Each embedding is stored with its chunk's text, title and path, so the database and its backups hold a copy of every embedded note, and that text crosses the network to the database, guaranteed encrypted only when the connection string <a href="../use/postgresql/#connect-securely">requires verified TLS</a> (<code>sslmode=verify-full</code>); libpq's default tries TLS and falls back to plain text. What the database role may do is the server's whole reach there: give it <a href="../use/postgresql/#provision-the-database">only its own schema</a>.</li>
 <li><strong>Git.</strong> With a remote configured, the server pushes to it after writes and pulls from it on a timer, and <code>git_sync</code> lets a caller start either direction.</li>
 </ul>
-<p>Callers never pass credentials to these tools. The server uses its own: <code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code> for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.</p>
+<p>Callers never pass credentials to these tools. The server uses its own: <code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code> for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.
+The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the <a href="../reference/cli/#search-a-hosted-vault">CLI reference</a>.</p>
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
 
 <h2 id="what-answers-without-a-credential">What answers without a credential<a class="headerlink" href="#what-answers-without-a-credential" title="Permanent link">&para;</a></h2>

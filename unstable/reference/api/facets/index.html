@@ -1418,6 +1418,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/terminal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Query a vault from the terminal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2181,6 +2209,50 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.search_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search_paths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.query_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        query_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.count_documents_matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        count_documents_matching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.aggregate_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aggregate_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.search" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2731,6 +2803,17 @@
     <span class="md-ellipsis">
       
         wait_until_queryable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.index.IndexFacet.use_existing_index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        use_existing_index
       
     </span>
   </a>
@@ -3429,6 +3512,50 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.search_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search_paths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.query_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        query_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.count_documents_matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        count_documents_matching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.aggregate_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        aggregate_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.search" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3986,6 +4113,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.index.IndexFacet.use_existing_index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        use_existing_index
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.index.IndexFacet.build_index" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4123,8 +4261,31 @@ reached through the <code>reader</code> / <code>writer</code> / <code>graph</cod
 <span class="n">vault</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">reindex</span><span class="p">()</span>
 </code></pre></div>
 <h2 id="readerfacet">ReaderFacet<a class="headerlink" href="#readerfacet" title="Permanent link">&para;</a></h2>
-<p>Search, read, listing, table-of-contents, similarity, context, history/diff,
-revision reads, and attachment reads.</p>
+<p>Search, exact queries, read, listing, table-of-contents, similarity, context,
+history/diff, revision reads, and attachment reads. Exact query methods check
+library index readiness and raise <code>IndexUnavailableError</code> if unavailable; an
+unavailable index is never an exact zero. They accept the <a href="../types/#exact-query-types">query types</a>
+and return the same projections as the <a href="../storage/#exact-keyword-queries">keyword backend</a>.</p>
+<div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.query_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">NoteGrouping</span><span class="p">,</span> <span class="n">NoteQuery</span>
+
+<span class="n">request</span> <span class="o">=</span> <span class="n">NoteQuery</span><span class="p">(</span><span class="n">query</span><span class="o">=</span><span class="s2">"release"</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">"body"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">page</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">query_documents</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+<span class="n">count</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">count_documents_matching</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+<span class="n">grouped</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">aggregate_documents</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">NoteGrouping</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">"folder"</span><span class="p">))</span>
+</code></pre></div>
+<p>Path discovery uses the same indexed metadata and readiness gate. It reports
+approximate coverage separately from output truncation:</p>
+<div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.query_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">PathQuery</span>
+
+<span class="n">paths</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search_paths</span><span class="p">(</span><span class="n">PathQuery</span><span class="p">(</span><span class="n">query</span><span class="o">=</span><span class="s2">"releaze"</span><span class="p">,</span> <span class="n">fuzzy</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+<span class="c1"># Inspect paths.coverage and paths.reasons before treating an empty list as absence.</span>
+</code></pre></div>
+<p>Exact paths rank first. Literal prefix matches rank ahead of matches within a path;
+both tiers use <code>str.casefold()</code> before comparing. Typo matches follow those tiers.
+Approximation is ASCII-only, bounded to 10,000 candidates and 200 ms; output
+defaults to 100 items (maximum 1000). Unicode retains direct matching with <code>str.casefold()</code>.</p>
+<p>Invalid indexed fields raise <code>InvalidRequestError</code>. Existing ranked search
+continues to support computed OKF filters.</p>
 <!-- vale off -->
 
 
@@ -4321,6 +4482,346 @@ the "should I declare?" tool of the migration ratchet).</p>
               <div class="doc-md-description">
                 <p>If no audit callable was wired (direct facet
 construction without the composition root).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.search_paths" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">search_paths</span><span class="p">(</span><span class="n">request</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.search_paths" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Discover indexed paths with bounded optional typo matching.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>request</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PathQuery(query, folder=None, filters=dict(), fuzzy=False, limit=100)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.PathQuery)" href="../types/#markdown_vault_mcp.query_types.PathQuery">PathQuery</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Literal query, population predicates and output cap.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PathSearchResult(items, coverage, reasons, truncated)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.PathSearchResult)" href="../types/#markdown_vault_mcp.query_types.PathSearchResult">PathSearchResult</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Metadata matches with separate approximate coverage and truncation.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.query_documents" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">query_documents</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.query_documents" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return a bounded exact query page after index readiness.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spec</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQuery(query='', scope='all', path=None, folder=None, pattern=None, filters=dict(), modified_after=None, modified_before=None, offset=0, limit=20, chunks_per_file=2, snippet_words=200, order='auto', pattern_mode='glob')
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQuery)" href="../types/#markdown_vault_mcp.query_types.NoteQuery">NoteQuery</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Indexed predicates and page presentation.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQueryPage(items, total, offset, limit, truncated)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQueryPage)" href="../types/#markdown_vault_mcp.query_types.NoteQueryPage">NoteQueryPage</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Page items and the exhaustive matching-note total.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.count_documents_matching" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">count_documents_matching</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.count_documents_matching" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Count all matching notes after index readiness.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spec</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQuery(query='', scope='all', path=None, folder=None, pattern=None, filters=dict(), modified_after=None, modified_before=None, offset=0, limit=20, chunks_per_file=2, snippet_words=200, order='auto', pattern_mode='glob')
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQuery)" href="../types/#markdown_vault_mcp.query_types.NoteQuery">NoteQuery</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Indexed predicates.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteCount(total)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteCount)" href="../types/#markdown_vault_mcp.query_types.NoteCount">NoteCount</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Exact matching-note total.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.aggregate_documents" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">aggregate_documents</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="n">grouping</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.aggregate_documents" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Group all matching notes after index readiness.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spec</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteQuery(query='', scope='all', path=None, folder=None, pattern=None, filters=dict(), modified_after=None, modified_before=None, offset=0, limit=20, chunks_per_file=2, snippet_words=200, order='auto', pattern_mode='glob')
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteQuery)" href="../types/#markdown_vault_mcp.query_types.NoteQuery">NoteQuery</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Indexed predicates.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>grouping</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteGrouping(by, field='tags', limit=50)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteGrouping)" href="../types/#markdown_vault_mcp.query_types.NoteGrouping">NoteGrouping</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Grouping axis, field and bounded bucket presentation.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoteAggregate(total, buckets, missing, truncated)
+
+  
+      dataclass
+   (markdown_vault_mcp.query_types.NoteAggregate)" href="../types/#markdown_vault_mcp.query_types.NoteAggregate">NoteAggregate</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Exact population total and bounded bucket counts.</p>
               </div>
             </td>
           </tr>
@@ -9785,6 +10286,47 @@ root's <code>_require_built</code> instead, which raises immediately.</p>
                 <p>timeout expired (<code>reason="timeout"</code>), a
 build ran and failed (<code>reason="build_failed"</code>), or no build
 was ever scheduled (<code>reason="never_built"</code>).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.index.IndexFacet.use_existing_index" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">use_existing_index</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.facets.index.IndexFacet.use_existing_index" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Adopt a completed shared index for reads without scanning or writing.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The writer is active or no complete build exists.</p>
               </div>
             </td>
           </tr>
