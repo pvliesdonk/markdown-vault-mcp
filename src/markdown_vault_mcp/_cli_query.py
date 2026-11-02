@@ -16,7 +16,7 @@ from markdown_vault_mcp._cli_options import (
     Timeout,
     WaitForPendingWrites,
 )
-from markdown_vault_mcp._cli_output import render_reply, terminal_text
+from markdown_vault_mcp._cli_output import output_mode, render_reply, terminal_text
 from markdown_vault_mcp._cli_read import local_read, run_read
 from markdown_vault_mcp._read_payloads import (
     ReadPayloadError,
@@ -115,8 +115,8 @@ def _run(ctx: typer.Context, tool: str, params: dict[str, Any]) -> None:
             reply.data,
             remote_meta=reply.meta if settings.url is not None else None,
         )
-        output: Literal["text", "json", "agent"] = (
-            "json" if params["json_output"] else "agent" if params["agent"] else "text"
+        output: Literal["text", "json", "agent"] = output_mode(
+            params["json_output"], params["agent"]
         )
         render_reply(ctx.info_name or tool, reply, output)
     except (ClientError, ReadPayloadError) as exc:

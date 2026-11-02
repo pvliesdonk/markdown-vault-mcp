@@ -93,19 +93,30 @@ def _approximate(
         if clock() >= deadline:
             return False, ["time_limit"]
         page = index.query_documents(replace(spec, offset=offset))
-        if clock() >= deadline:
-            return False, ["time_limit"]
-        for item in page.items:
-            if clock() >= deadline:
-                return False, ["time_limit"]
-            if _matches(tokens, item["path"]):
-                matches.setdefault(item["path"], (3, item))
-        if clock() >= deadline:
+        if not _scan_page(page.items, tokens, matches, clock, deadline):
             return False, ["time_limit"]
         offset += len(page.items)
         if offset >= page.total:
             return True, []
     return False, ["candidate_limit"]
+
+
+def _scan_page(
+    items: list[NoteQueryItem],
+    tokens: tuple[str, ...],
+    matches: dict[str, tuple[int, NoteQueryItem]],
+    clock: Callable[[], float],
+    deadline: float,
+) -> bool:
+    """Add the page's approximate matches; False when the deadline passed."""
+    if clock() >= deadline:
+        return False
+    for item in items:
+        if clock() >= deadline:
+            return False
+        if _matches(tokens, item["path"]):
+            matches.setdefault(item["path"], (3, item))
+    return clock() < deadline
 
 
 def search_paths(

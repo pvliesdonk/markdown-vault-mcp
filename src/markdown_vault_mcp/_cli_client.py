@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from fastmcp_pvl_core import env
 
 _PREFIX = "MARKDOWN_VAULT_MCP"
+_TIMEOUT_MESSAGE = "Timeout must be a positive finite number of seconds."
 
 
 class ClientError(ValueError):
@@ -79,15 +80,13 @@ def _profile() -> dict[str, object]:
 
 def _timeout(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (float, int)):
-        raise ClientError("Timeout must be a positive finite number of seconds.")
+        raise ClientError(_TIMEOUT_MESSAGE)
     try:
         result = float(value)
     except OverflowError:
-        raise ClientError(
-            "Timeout must be a positive finite number of seconds."
-        ) from None
+        raise ClientError(_TIMEOUT_MESSAGE) from None
     if not math.isfinite(result) or result <= 0:
-        raise ClientError("Timeout must be a positive finite number of seconds.")
+        raise ClientError(_TIMEOUT_MESSAGE)
     return result
 
 
