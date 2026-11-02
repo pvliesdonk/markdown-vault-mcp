@@ -189,6 +189,18 @@ class EmbeddingsNotConfiguredError(InvalidRequestError):
     """
 
 
+class ExactQueriesNotSupportedError(InvalidRequestError):
+    """Raised when an exact query runs on a keyword index without the capability.
+
+    Exact queries are an optional part of the keyword index contract
+    (:class:`~markdown_vault_mcp.interfaces.RunsExactQueries`, #1842), so an
+    index without them is a deployment that lacks the feature, not a broken
+    one: the caller must change the request (ranked ``search`` instead), hence
+    an :class:`InvalidRequestError`. Its message is complete as it stands, so
+    the tools pass it through without the field-configuration hint.
+    """
+
+
 class EmbeddingsNotPublishedError(MarkdownMCPError, RuntimeError):
     """Raised when a full embedding build kept a populated store unchanged.
 

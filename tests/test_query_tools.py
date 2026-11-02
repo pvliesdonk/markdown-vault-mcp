@@ -146,6 +146,35 @@ async def test_invalid_indexed_fields_are_request_outcomes(
         ]
 
 
+async def test_unsupported_index_refusal_passes_through_unchanged(
+    query_server: FastMCP,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A store without exact queries points at search, without the field hint."""
+    from markdown_vault_mcp.exceptions import ExactQueriesNotSupportedError
+    from markdown_vault_mcp.managers.search import SearchManager
+
+    message = "This vault's keyword index does not support exact queries."
+
+    def refuse(_self: SearchManager) -> None:
+        raise ExactQueriesNotSupportedError(message)
+
+    monkeypatch.setattr(SearchManager, "_exact_queries", refuse)
+    async with Client(query_server) as client:
+        await wait_for_mcp_writer_drain(client)
+        caplog.clear()
+        for tool, args in [
+            ("query_documents", {}),
+            ("count_documents", {}),
+            ("aggregate_documents", {"by": "folder"}),
+        ]:
+            with pytest.raises(ToolError) as error:
+                await client.call_tool(tool, args)
+            assert str(error.value) == message
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
 @pytest.mark.parametrize("query_server", [True], indirect=True)
 async def test_query_items_retain_okf_annotations(query_server: FastMCP) -> None:
     """Exact queries annotate returned notes while keeping their population unchanged."""

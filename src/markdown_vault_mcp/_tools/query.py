@@ -22,7 +22,10 @@ from markdown_vault_mcp._tools._common import (
 )
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.domain import get_vault
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import (
+    ExactQueriesNotSupportedError,
+    InvalidRequestError,
+)
 from markdown_vault_mcp.query_types import (
     NoteAggregate,
     NoteCount,
@@ -103,6 +106,8 @@ async def _run(
     generation = vault.index.write_generation()
     try:
         result = await asyncio.to_thread(operation)
+    except ExactQueriesNotSupportedError:
+        raise
     except InvalidRequestError as exc:
         raise InvalidRequestError(
             f"{tool_name}: {exc}. Call stats for indexed_frontmatter_fields; "

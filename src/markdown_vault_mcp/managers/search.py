@@ -21,6 +21,7 @@ from markdown_vault_mcp.exceptions import (
     ConfigurationError,
     DocumentNotFoundError,
     EmbeddingsNotConfiguredError,
+    ExactQueriesNotSupportedError,
     InvalidRequestError,
     StoreCorruptError,
     StoreOpenError,
@@ -801,13 +802,13 @@ class SearchManager:
         """Return the index's exact-query capability, or refuse without one.
 
         Raises:
-            InvalidRequestError: The keyword index does not implement
+            ExactQueriesNotSupportedError: The keyword index does not implement
                 :class:`~markdown_vault_mcp.interfaces.RunsExactQueries`.
         """
         from markdown_vault_mcp.interfaces import RunsExactQueries
 
         if not isinstance(self._fts, RunsExactQueries):
-            raise InvalidRequestError(
+            raise ExactQueriesNotSupportedError(
                 "This vault's keyword index does not support exact queries. "
                 "Call search for ranked matches instead."
             )
