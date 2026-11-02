@@ -1,6 +1,6 @@
 # Next release
 
-<!-- notes-range-end: e6edeece907af9eccc42998b46e7271ceade0400 -->
+<!-- notes-range-end: 550922f6be474bff6520bf990a5edbd6ed16e793 -->
 
 <!-- RELEASE-SUMMARY NEXT START -->
 This release brings the vault to the terminal. The `markdown-vault-mcp`
@@ -8,14 +8,21 @@ command can now search, read and explore a vault that a server publishes over
 MCP, with a bearer token and no copy of the vault or its index on the machine
 you type on; the same commands still work against a local vault. Clients and
 scripts also get exact answers ranked search could not give, from the number
-of notes that match to the path a mistyped filename meant. A build that fails
-to index a note now retries it on the next run. Nothing needs to change on
-upgrade; see [Upgrading](#upgrading).
+of notes that match to the path a mistyped filename meant. The commands that
+write the index move under `admin`, and their old names keep working. A build
+that fails to index a note now retries it on the next run. Nothing needs to
+change on upgrade; see [Upgrading](#upgrading).
 <!-- RELEASE-SUMMARY NEXT END -->
 
 ## Upgrading
 
 No step is required. The new commands, tools and settings are additions.
+
+- **If a script, cron job or unit runs `markdown-vault-mcp index`, `reindex` or
+  `embeddings import`:** it keeps working, and prints a note on stderr naming the
+  new command. Switch it to `admin index`, `admin reindex` or
+  `admin embeddings import` when convenient
+  ([#2005](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2005)).
 
 **Clients:** nothing beyond reconnecting. Clients discover four new read-only
 tools: `query_documents`, `count_documents`, `aggregate_documents` and
@@ -73,11 +80,11 @@ The read commands, all of which accept the connection options above:
   [#1844](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1844));
 - `read`, `list`, `folders`, `tags`, `stats`, `recent`, `toc`, `similar` and
   `context` ([#1845](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1845));
-- `backlinks`, `outlinks`, `broken-links`, `orphans`, `hubs` and `connection`
-  ([#1847](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1847));
-- `search-metadata`, `search-body`, `search-in`, `count` and `aggregate`
-  ([#1851](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1851));
-- `search-path`, with `--fuzzy` for a one-letter typo
+- `links to`, `links from`, `links broken`, `links orphans`, `links hubs` and
+  `links path` ([#1847](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1847));
+- `query metadata`, `query body`, `query note`, `query count` and
+  `query aggregate` ([#1851](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1851));
+- `query path`, with `--fuzzy` for a one-letter typo
   ([#1849](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1849)).
 
 Output is plain text, `--json` for scripts, or `--agent` for one escaped
@@ -139,13 +146,22 @@ A failed note is now recorded so that the next build indexes it again
 ([#1991](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1991), by
 [@tstotzer](https://github.com/tstotzer)).
 
-## The command reference covers `embeddings import`
+## Commands that write move under `admin`
 
-The [command reference](../reference/cli.md) listed the `embeddings` command
-group with its description only, so `markdown-vault-mcp embeddings import` and
-its options were missing from it. The reference now has a section for the
-command and every option. The fix comes from the project template's reference
-generator, which now walks a command group's sub-commands
+`index`, `reindex` and `embeddings import` change the shared index or the
+stored vectors, and they now sit in one group: `admin index`, `admin reindex`
+and `admin embeddings import`. Every other command except `serve` only reads,
+so the help screen shows what can change a vault. The old names still run the
+same commands and name the new form on stderr
+([#2005](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2005),
+[#2006](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2006),
+[#2007](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2007)).
+
+The [command reference](../reference/cli.md#markdown-vault-mcp-admin-embeddings-import)
+now documents `admin embeddings import` with every option. Before, it listed
+the `embeddings` group's description only. The fix comes from the project
+template's reference generator, which now walks a command group's
+sub-commands
 ([fastmcp-server-template#823](https://github.com/pvliesdonk/fastmcp-server-template/issues/823),
 [fastmcp-server-template#850](https://github.com/pvliesdonk/fastmcp-server-template/pull/850),
 [#1998](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1998)).
