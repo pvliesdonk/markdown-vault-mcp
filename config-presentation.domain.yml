@@ -90,6 +90,27 @@ vars:
     tags: [timeouts]
     wizard: {group: Timeouts}
 
+  - name: "{PREFIX}_SERVER_URL"
+    type_name: "str"
+    default: null
+    help: "Hosted MCP endpoint for CLI reads. The explicit server option overrides it. Local mode bypasses it."
+    tags: [domain]
+    wizard: {control: none, group: Client}
+
+  - name: "{PREFIX}_CLIENT_CONFIG"
+    type_name: "str"
+    default: null
+    help: "Client TOML profile path; defaults to XDG_CONFIG_HOME/markdown-vault-mcp/client.toml."
+    tags: [domain]
+    wizard: {control: none, group: Client}
+
+  - name: "{PREFIX}_CLIENT_TOKEN"
+    type_name: "str"
+    default: null
+    help: "Optional CLI bearer token. A nonempty value overrides the profile-selected token environment source; an empty value leaves that source in effect. Never stored in client TOML."
+    tags: [domain]
+    wizard: {control: none, group: Client, secret: true}
+
 # Extra wizard questions specific to this project.
 wizard_routing: []
 

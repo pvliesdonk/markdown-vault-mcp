@@ -5799,6 +5799,12 @@ loop backstop: at ``WARNING`` for a user prompt (in ``register_domain_prompts``)
 and at ``ERROR`` for a built-in (in ``register_prompts``), since a broken
 first-party prompt is a packaging defect.
 
+### Hosted CLI reads (#1831)
+
+The CLI selects its backend before evaluating server configuration. A nonsecret TOML profile, client environment and explicit command options select the complete MCP HTTP endpoint; `--local` chooses the existing local index behavior. `serve`, `index` and `reindex` remain local. Credentials resolve only after remote selection. A nonempty client-token variable takes precedence; an empty value leaves the profile's named token source in effect, and that selected source must be nonempty. The client never borrows inbound-server or provider credentials.
+
+Remote search uses the installed native MCP client with function-local imports, tool/schema discovery once per invocation, the original search array and out-of-band freshness metadata. One deadline bounds initialization and the read. Errors never trigger local execution or disclose transport exception text. `_cli_read` is the stable import seam for lazy read dispatch, currently implemented beside the transport. Local disk-index freshness is unknown. The [SDK reference](reference/fastmcp-4.md#http-read-client) records the external APIs this depends on. Client environment fields are declared in the presentation contract because they are independent of ProjectConfig.
+
 ## Configuration
 
 ### The config import floor (#1259)
