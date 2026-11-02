@@ -34,6 +34,18 @@ def terminal_text(value: str) -> str:
     )
 
 
+def command_label(ctx: typer.Context) -> str:
+    """Name a command by its path below the program, such as ``links to``.
+
+    Args:
+        ctx: The invoked command's context.
+
+    Returns:
+        The command's words after the program name; its own name at worst.
+    """
+    return " ".join(ctx.command_path.split()[1:]) or (ctx.info_name or "")
+
+
 def output_mode(json_output: bool, agent: bool) -> Literal["text", "json", "agent"]:
     """Pick the output form from the mutually exclusive --json and --agent flags.
 
@@ -152,7 +164,7 @@ def _agent_records(
     )
     requested = terminal_text(str(reply.meta.get("requested_mode", "unknown")))
     header = f"OK {command} count={len(items)} requested_mode={requested} actual_mode={','.join(actual) or 'unknown'} index_stale={str(stale).lower()}"
-    if command == "search-path" and isinstance(reply.data, dict):
+    if command == "query path" and isinstance(reply.data, dict):
         for key, kind in (("coverage", str), ("truncated", bool)):
             value = reply.data.get(key)
             if isinstance(value, kind):

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
-import click
 import pytest
 import typer
 from typer.main import get_command
@@ -18,11 +18,16 @@ from markdown_vault_mcp.cli import app
 _WRITES = {"admin", "index", "reindex", "embeddings", "serve"}
 
 
-def _command_names(group: click.Group, prefix: str = "") -> set[str]:
+def _command_names(group: Any, prefix: str = "") -> set[str]:
+    """Every command path below *group*, sub-commands included.
+
+    Typer's groups are not ``click.Group`` instances in every Typer release, so
+    a group is recognised by its ``commands`` mapping.
+    """
     names: set[str] = set()
     for name, command in group.commands.items():
         names.add(prefix + name)
-        if isinstance(command, click.Group):
+        if hasattr(command, "commands"):
             names |= _command_names(command, f"{prefix}{name} ")
     return names
 
@@ -35,6 +40,27 @@ def test_read_commands_alone_reach_no_write_command() -> None:
     assert "search" in names
     assert "read" in names
     assert not {name.split()[0] for name in names} & _WRITES
+
+
+def test_lookups_are_grouped_under_links_and_query() -> None:
+    """The graph and exact-query commands sit in their two groups (#2005)."""
+    reader = typer.Typer()
+    register_read_commands(reader)
+    names = _command_names(get_command(reader))  # type: ignore[arg-type]
+    assert {
+        f"links {leaf}" for leaf in ("to", "from", "broken", "orphans", "hubs", "path")
+    } <= names
+    assert {
+        f"query {leaf}"
+        for leaf in ("metadata", "body", "note", "count", "aggregate", "path")
+    } <= names
+    assert not names & {
+        "backlinks",
+        "connection",
+        "search-metadata",
+        "search-path",
+        "count",
+    }
 
 
 def test_read_module_imports_no_write_command_at_load() -> None:

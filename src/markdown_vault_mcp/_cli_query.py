@@ -16,7 +16,12 @@ from markdown_vault_mcp._cli_options import (
     Timeout,
     WaitForPendingWrites,
 )
-from markdown_vault_mcp._cli_output import output_mode, render_reply, terminal_text
+from markdown_vault_mcp._cli_output import (
+    command_label,
+    output_mode,
+    render_reply,
+    terminal_text,
+)
 from markdown_vault_mcp._cli_read import local_read, run_read
 from markdown_vault_mcp._read_payloads import (
     ReadPayloadError,
@@ -83,9 +88,9 @@ def _arguments(
     )
     arguments = {name: params[name] for name in names if params.get(name) is not None}
     arguments["filters"] = parse_filters(params["filters"] or [])
-    if command in {"search-metadata", "search-body", "search-in"}:
-        arguments["scope"] = "metadata" if command == "search-metadata" else "body"
-    if command == "search-in":
+    if command in {"metadata", "body", "note"}:
+        arguments["scope"] = "metadata" if command == "metadata" else "body"
+    if command == "note":
         arguments.update(offset=0, limit=1)
     query_request(tool, arguments)
     if params["wait_for_pending_writes"]:
@@ -118,7 +123,7 @@ def _run(ctx: typer.Context, tool: str, params: dict[str, Any]) -> None:
         output: Literal["text", "json", "agent"] = output_mode(
             params["json_output"], params["agent"]
         )
-        render_reply(ctx.info_name or tool, reply, output)
+        render_reply(command_label(ctx) or tool, reply, output)
     except (ClientError, ReadPayloadError) as exc:
         typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
         raise typer.Exit(exc.code) from None
@@ -142,7 +147,7 @@ def register(app: typer.Typer) -> None:
         app: Domain CLI receiving the commands.
     """
 
-    @app.command("search-metadata")
+    @app.command("metadata")
     def search_metadata(  # noqa: PLR0913, RUF100 -- flat CLI options expose native query controls
         ctx: typer.Context,
         query: str = typer.Argument(
@@ -167,7 +172,7 @@ def register(app: typer.Typer) -> None:
         """Query indexed note metadata without body excerpts."""
         _run(ctx, "query_documents", locals())
 
-    @app.command("search-body")
+    @app.command("body")
     def search_body(  # noqa: PLR0913, RUF100 -- flat CLI options expose native query controls
         ctx: typer.Context,
         query: str = typer.Argument(..., help="Body keyword expression."),
@@ -192,7 +197,7 @@ def register(app: typer.Typer) -> None:
         """Query note bodies with bounded matching sections."""
         _run(ctx, "query_documents", locals())
 
-    @app.command("search-in")
+    @app.command("note")
     def search_in(  # noqa: PLR0913, RUF100 -- flat CLI options expose native query controls
         ctx: typer.Context,
         path: str = typer.Argument(..., help="Case-sensitive exact note path."),

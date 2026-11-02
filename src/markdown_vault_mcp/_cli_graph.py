@@ -41,15 +41,13 @@ def register(app: typer.Typer) -> None:
         wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """List links to or from an indexed note."""
-        tool = "get_backlinks" if ctx.info_name == "backlinks" else "get_outlinks"
+        tool = "get_backlinks" if ctx.info_name == "to" else "get_outlinks"
         _run(ctx, tool, locals(), ("path", "limit"))
 
-    app.command("backlinks", help="List notes linking to an exact note path.")(links)
-    app.command("outlinks", help="List a note's links, including missing targets.")(
-        links
-    )
+    app.command("to", help="List notes linking to an exact note path.")(links)
+    app.command("from", help="List a note's links, including missing targets.")(links)
 
-    @app.command("broken-links")
+    @app.command("broken")
     def broken_links(  # noqa: PLR0913, RUF100 -- native folder plus shared CLI connection/output options
         ctx: typer.Context,
         folder: str | None = typer.Option(
@@ -97,7 +95,7 @@ def register(app: typer.Typer) -> None:
         """List the notes with the most inbound links."""
         _run(ctx, "get_most_linked", locals(), ("limit",))
 
-    @app.command("connection")
+    @app.command("path")
     def connection(  # noqa: PLR0913, RUF100 -- exact endpoints/depth plus shared CLI connection/output options
         ctx: typer.Context,
         source: str = typer.Argument(

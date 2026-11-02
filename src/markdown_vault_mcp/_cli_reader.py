@@ -28,9 +28,18 @@ def register_read_commands(app: typer.Typer) -> None:
 
     app.command()(search)
     register_discovery(app)
-    register_graph(app)
-    register_queries(app)
-    register_paths(app)
+    links = typer.Typer(
+        help="Follow and audit the links between notes.", no_args_is_help=True
+    )
+    register_graph(links)
+    app.add_typer(links, name="links")
+    query = typer.Typer(
+        help="Exact queries over every matching note, without ranking.",
+        no_args_is_help=True,
+    )
+    register_queries(query)
+    register_paths(query)
+    app.add_typer(query, name="query")
 
 
 def search(  # noqa: PLR0913, RUF100 -- one CLI option per search control
