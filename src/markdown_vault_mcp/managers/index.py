@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -557,6 +557,8 @@ class IndexManager:
         keeps until a walk can (#1929). Without it, the notes the walk finds
         are rewritten in place and every other row is dropped the same way,
         so a note deleted since the last build leaves the index (#1965).
+        A note that fails to index keeps an empty tracker hash so the next
+        reindex retries it, even if its file has not changed (#1982).
         Whether a build runs at all is the coordinator's warm-restart check.
 
         Note: the caller is responsible for setting any ``_index_built``
@@ -620,7 +622,7 @@ class IndexManager:
 
         total_chunks = 0
         errored = 0
-        for note in notes:
+        for i, note in enumerate(notes):
             try:
                 total_chunks += self._fts.upsert_note(note)
             except sqlite3.OperationalError:
@@ -632,6 +634,7 @@ class IndexManager:
                 raise
             except Exception:
                 errored += 1
+                notes[i] = replace(note, content_hash="")
                 logger.warning(
                     "build_index_index_failed path=%s",
                     note.path,
