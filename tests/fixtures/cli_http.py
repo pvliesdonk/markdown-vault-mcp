@@ -53,6 +53,8 @@ def cli_client_profile(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     """Prevent test commands from discovering a developer's hosted profile."""
+    for name in ("SERVER_URL", "CLIENT_CONFIG", "CLIENT_TOKEN"):
+        monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{name}", raising=False)
     monkeypatch.setenv(
         "XDG_CONFIG_HOME", str(tmp_path_factory.getbasetemp() / "client-config")
     )
