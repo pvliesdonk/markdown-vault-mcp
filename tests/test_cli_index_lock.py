@@ -74,7 +74,9 @@ def _embeddings_on(monkeypatch: pytest.MonkeyPatch, on: bool) -> None:
 
 @pytest.mark.parametrize("embeddings", [False, True], ids=["keyword", "embeddings"])
 @pytest.mark.parametrize(
-    "args", [["index"], ["index", "--force"], ["reindex"]], ids=" ".join
+    "args",
+    [["admin", "index"], ["admin", "index", "--force"], ["admin", "reindex"]],
+    ids=" ".join,
 )
 def test_index_refuses_while_a_server_owns_the_index(
     env: Path,
@@ -84,7 +86,7 @@ def test_index_refuses_while_a_server_owns_the_index(
     embeddings: bool,
 ) -> None:
     _embeddings_on(monkeypatch, embeddings)
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     (env / "vault" / "alpha.md").write_text(NOTES["alpha.md"] + "\nEdited.\n")
     server()
     before = _sums(env)
@@ -92,7 +94,7 @@ def test_index_refuses_while_a_server_owns_the_index(
     assert result.exit_code == 1, result.output
     assert (
         "is being written by another process. Stop the server first, "
-        f"then run {args[0]} again." in result.stderr
+        f"then run {args[0]} {args[1]} again." in result.stderr
     )
     assert "Traceback" not in result.output
     assert _sums(env) == before
@@ -103,7 +105,7 @@ def test_embeddings_import_refuses_while_a_server_owns_the_index(
 ) -> None:
     _embeddings_on(monkeypatch, True)
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_STORE", "sqlite")
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     for suffix in (".json", ".npy"):
         shutil.copy(FIXTURE / f"index-db-embeddings{suffix}", env / f"released{suffix}")
     server()
@@ -111,6 +113,7 @@ def test_embeddings_import_refuses_while_a_server_owns_the_index(
     result = runner.invoke(
         app,
         [
+            "admin",
             "embeddings",
             "import",
             "--from",
@@ -120,14 +123,17 @@ def test_embeddings_import_refuses_while_a_server_owns_the_index(
         ],
     )
     assert result.exit_code == 1, result.output
-    assert "Stop the server first, then run embeddings import again." in result.stderr
+    assert (
+        "Stop the server first, then run admin embeddings import again."
+        in result.stderr
+    )
     assert _sums(env) == before
 
 
 def test_search_reads_while_a_server_owns_the_index(
     server: Callable[[], Holder],
 ) -> None:
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     server()
     result = runner.invoke(app, ["search", "alpha"])
     assert result.exit_code == 0, result.output
@@ -136,7 +142,7 @@ def test_search_reads_while_a_server_owns_the_index(
 
 def test_index_runs_once_the_server_stops(server: Callable[[], Holder]) -> None:
     held = server()
-    assert runner.invoke(app, ["index"]).exit_code == 1
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 1
     held.stop()
-    result = runner.invoke(app, ["index"])
+    result = runner.invoke(app, ["admin", "index"])
     assert result.exit_code == 0, result.output

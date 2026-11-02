@@ -19,7 +19,7 @@ The files sit beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (here `index.db`), or at `M
 | `index-db-embeddings.v2.json` and the `index-db-embeddings.v2.m<N>.npy` it names | the `numpy` store | every note embedded again |
 | `index-db-embeddings.sqlite3` (and its `-wal`, `-shm` while the server runs) | the `sqlite` store, the default | every note embedded again |
 | the schema named by `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA` | the `postgres` store | every note embedded again |
-| `index-db-embeddings.lock` | the server, or `index`, `reindex` and `embeddings import`, while one of them writes the `numpy` or `sqlite` store | nothing; safe to leave or delete while no server runs |
+| `index-db-embeddings.lock` | the server, or `admin index`, `admin reindex` and `admin embeddings import`, while one of them writes the `numpy` or `sqlite` store | nothing; safe to leave or delete while no server runs |
 | `index-db-embeddings.json` and `.npy` | a 5.0 or 5.1 server | nothing once the upgrade below has run; going back to 5.1 then embeds everything again |
 | `*.corrupt-<time>` | the server, when it set a damaged store aside | nothing; they are yours to inspect or delete |
 
@@ -43,7 +43,7 @@ Each start logs the old files as unused (`embeddings_legacy_sidecar_unused`, wit
 
 ## Switching stores
 
-A switch between `numpy`, `sqlite` and `postgres` starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp embeddings import` with the server stopped to copy the vectors across first; it embeds only what the old store lacks and never changes the old store. [Moving vectors between stores](embeddings.md#moving-vectors-between-stores) has the options and the refusals.
+A switch between `numpy`, `sqlite` and `postgres` starts the new store empty, so on its own it embeds every note again. Run `markdown-vault-mcp admin embeddings import` with the server stopped to copy the vectors across first; it embeds only what the old store lacks and never changes the old store. [Moving vectors between stores](embeddings.md#moving-vectors-between-stores) has the options and the refusals.
 
 ## Backing up
 
@@ -74,7 +74,7 @@ Stop the server and put the files back where they were. Before you start it, del
 To restore embeddings into another store, or from a backup kept somewhere else, leave the backup where it is and import from it:
 
 ```bash
-markdown-vault-mcp embeddings import --from sqlite --from-path /backups/index-db-embeddings
+markdown-vault-mcp admin embeddings import --from sqlite --from-path /backups/index-db-embeddings
 ```
 
 `--from-path` is the backup's base path, without the `.sqlite3` or `.v2.json` ending. The import reads the backup and never changes it.
@@ -97,8 +97,8 @@ Each of these asks the provider for every section of every note, which a paid pr
 
 - no `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` with a `numpy` or `sqlite` store, so the vectors live in memory and are embedded again at each start;
 - a change of embedding provider, model or dimensions;
-- a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `embeddings import`, which includes leaving it unset on an edge build whose only store is a `numpy` one (`index-db-embeddings.v2.json` with no 5.x files beside it): run `embeddings import --from numpy` first, or set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy`;
-- `markdown-vault-mcp index --force`, or the `build_embeddings` tool with `force`;
+- a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `admin embeddings import`, which includes leaving it unset on an edge build whose only store is a `numpy` one (`index-db-embeddings.v2.json` with no 5.x files beside it): run `embeddings import --from numpy` first, or set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy`;
+- `markdown-vault-mcp admin index --force`, or the `build_embeddings` tool with `force`;
 - deleting the store with no backup, or recreating an empty `postgres` schema;
 - a damaged store set aside when no usable 5.x files remain beside it;
 - 5.x files from another model, or in the oldest layout, at upgrade.
@@ -110,7 +110,7 @@ These embed only part of the vault:
 - every note long enough to split, after a change to `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`, `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` or `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS`;
 - every note whose title changes, after a change to `MARKDOWN_VAULT_MCP_TITLE_FIELD`, since a section is embedded with its note's title.
 
-`markdown-vault-mcp reindex --force` rebuilds the index only: the embeddings are kept.
+`markdown-vault-mcp admin reindex --force` rebuilds the index only: the embeddings are kept.
 
 A forced rebuild keeps the notes in a folder the server can't read at the time, with their embeddings, and reads them again once it can, so a folder with the wrong permissions costs no second embedding.
 
@@ -122,7 +122,7 @@ A forced rebuild keeps the notes in a folder the server can't read at the time, 
 | `embeddings_donor_used source=… reused=… embedded=… refused_rows=… published=…` | A build or import finished. The fields count the vectors copied, the chunks embedded and the stored rows skipped as unreadable; `published` says whether the result replaced the store. |
 | `embeddings_donor_refused source=… reason=…` | The files or store offered cannot be reused: `identity_unknown` (no model recorded), `identity_differs` (another model), or a store that is empty, damaged, out of reach or unsupported. |
 | `embeddings_legacy_sidecar_unused path=… bytes=…` | The 5.x files are still there and no longer read. `path` is their shared base, such as `/data/state/index-db-embeddings`, and `bytes` their total size. |
-| `embeddings_import_completed …` | `embeddings import` finished; `embeddings_import_refused reason=…` says why it stopped instead. |
+| `embeddings_import_completed …` | `admin embeddings import` finished; `embeddings_import_refused reason=…` says why it stopped instead. |
 | `vector_store_moved_aside location=… reason=… paths=…` | A damaged `numpy` or `sqlite` store was renamed with a `.corrupt-<time>` suffix and is being built again. `location` is the store's base; `reason` is `corrupt`, or `unusable` for a file found in the store's place that is not a usable store. |
 | `vault_root_empty_removals_refused indexed=…` | The vault folder looked empty, so nothing was removed. |
 | `fts_index_checkpoint_incomplete path=… frames=… checkpointed=…` | At shutdown another process still needed part of `index.db-wal`; copy the `-wal` file with `index.db`. |

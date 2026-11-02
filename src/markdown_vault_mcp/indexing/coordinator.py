@@ -157,7 +157,7 @@ class IndexWriteCoordinator:
             )
         if not self._fts.is_build_completed():
             raise IndexUnavailableError(
-                "Stored index has no completed build. Run index from its owning process.",
+                "Stored index has no completed build. Run admin index from its owning process.",
                 reason="never_built",
             )
         self._readiness.mark_built()

@@ -928,7 +928,7 @@ class ProjectConfig:
                 "without paying a full filesystem scan per server start; "
                 "changes made while no server was running are then invisible "
                 "until a reindex runs (the reindex tool, or "
-                "'markdown-vault-mcp reindex'). `get_index_status` reports "
+                "'markdown-vault-mcp admin reindex'). `get_index_status` reports "
                 "`offline_changes` as `not_reconciled` until the server itself "
                 "runs one; a reindex from the command line updates the index "
                 "but not that status. Note that "

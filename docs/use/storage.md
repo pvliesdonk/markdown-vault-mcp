@@ -18,19 +18,19 @@ Without `INDEX_PATH` the index lives in memory, is rebuilt at every start, and n
 
 WAL needs every process that opens a database to share memory on one machine. In SQLite's words, "WAL does not work over a network filesystem." Put `MARKDOWN_VAULT_MCP_INDEX_PATH`, and `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` if you set it, on a disk local to the machine running the server, not on NFS, SMB or another network share. The vault itself may live elsewhere. The server doesn't check for this.
 
-The keyword index can always be rebuilt from the notes with `markdown-vault-mcp reindex`. Paid embeddings are the part worth keeping on reliable storage ([Embeddings](embeddings.md)).
+The keyword index can always be rebuilt from the notes with `markdown-vault-mcp admin reindex`. Paid embeddings are the part worth keeping on reliable storage ([Embeddings](embeddings.md)).
 
 ## One process writes an index
 
 Only one process at a time writes a given index. While a server has it open, the index has an owner:
 
-- `markdown-vault-mcp index`, `reindex` and `embeddings import` stop before writing anything. They exit with a message asking you to stop the server first, and leave the index unchanged.
+- `markdown-vault-mcp admin index`, `admin reindex` and `admin embeddings import` stop before writing anything. They exit with a message asking you to stop the server first, and leave the index unchanged.
 - A second server started on the same `MARKDOWN_VAULT_MCP_INDEX_PATH` starts with the vault unavailable. Every tool says that another process is writing the index. The second server opens the vault within a few seconds of the first one exiting.
 - `markdown-vault-mcp search` and other commands that only read are never blocked.
 
 The lock is not taken on Windows. A lock across a network share or a virtual machine's shared folder may not hold, so in those setups make sure only one process writes the index yourself.
 
-At shutdown, the server waits up to 30 seconds for indexing work in progress. It doesn't wait for work still running after that: it logs a warning, `index_close_skipped`, leaves the index open to that work, and the work stops when the process exits. What it had committed stays; run `markdown-vault-mcp reindex` if it was a long rebuild.
+At shutdown, the server waits up to 30 seconds for indexing work in progress. It doesn't wait for work still running after that: it logs a warning, `index_close_skipped`, leaves the index open to that work, and the work stops when the process exits. What it had committed stays; run `markdown-vault-mcp admin reindex` if it was a long rebuild.
 
 ## Which SQLite your installation runs
 

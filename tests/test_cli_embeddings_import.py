@@ -72,12 +72,12 @@ def _sums(root: Path) -> dict[str, str]:
 
 
 def _import(*args: str) -> Result:
-    return runner.invoke(app, ["embeddings", "import", *args])
+    return runner.invoke(app, ["admin", "embeddings", "import", *args])
 
 
 def _built_with(monkeypatch: pytest.MonkeyPatch, store: str) -> None:
     _store(monkeypatch, store)
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     monkeypatch.setattr(_Counting, "texts", [])
 
 
@@ -289,7 +289,7 @@ def test_index_reports_a_busy_store(
 ) -> None:
     server()
     _store(monkeypatch, "sqlite")
-    result = runner.invoke(app, ["index"])
+    result = runner.invoke(app, ["admin", "index"])
     assert result.exit_code == 1
     assert "Stop the server first" in result.stderr
     assert "Traceback" not in result.output
@@ -391,9 +391,9 @@ def test_reindex_reports_a_busy_store(
     del env
     _built_with(monkeypatch, "sqlite")
     server("numpy")
-    result = runner.invoke(app, ["reindex"])
+    result = runner.invoke(app, ["admin", "reindex"])
     assert result.exit_code == 1
-    assert "Stop the server first, then run reindex again" in result.stderr
+    assert "Stop the server first, then run admin reindex again" in result.stderr
 
 
 @pytest.mark.usefixtures("env")
@@ -412,7 +412,9 @@ def test_a_failed_batch_over_a_populated_store_exits_1(
 ) -> None:
     _built_with(monkeypatch, "numpy")
     _store(monkeypatch, "sqlite")
-    assert runner.invoke(app, ["index"]).exit_code == 0  # sqlite holds rows too
+    assert (
+        runner.invoke(app, ["admin", "index"]).exit_code == 0
+    )  # sqlite holds rows too
     from markdown_vault_mcp.exceptions import EmbeddingsNotPublishedError
     from markdown_vault_mcp.managers import embedding_import
 
@@ -519,7 +521,9 @@ def test_a_newly_excluded_note_does_not_open_the_destination_early(
 ) -> None:
     _built_with(monkeypatch, "numpy")
     _store(monkeypatch, "sqlite")
-    assert runner.invoke(app, ["index"]).exit_code == 0  # sqlite holds rows too
+    assert (
+        runner.invoke(app, ["admin", "index"]).exit_code == 0
+    )  # sqlite holds rows too
     (env / "vault" / "alpha.md").write_text(NOTES["alpha.md"] + "\nEdited.\n")
     monkeypatch.setenv(f"{_ENV_PREFIX}_EXCLUDE", "sub/*")
     monkeypatch.setattr(_Counting, "texts", [])
@@ -592,7 +596,7 @@ def test_a_partly_failed_import_says_what_is_missing(
 def test_an_empty_vault_is_refused(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _built_with(monkeypatch, "numpy")
     _store(monkeypatch, "sqlite")
-    assert runner.invoke(app, ["index"]).exit_code == 0
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
     for name in NOTES:
         (env / "vault" / name).unlink()
     for args in (("--dry-run",), ()):
@@ -608,7 +612,7 @@ def test_the_destinations_own_rows_are_reused(
     _built_with(monkeypatch, "numpy")  # the source: the notes as they were
     (env / "vault" / "alpha.md").write_text(NOTES["alpha.md"] + "\nEdited.\n")
     _store(monkeypatch, "sqlite")
-    assert runner.invoke(app, ["reindex"]).exit_code == 0  # embeds the edit
+    assert runner.invoke(app, ["admin", "reindex"]).exit_code == 0  # embeds the edit
     monkeypatch.setattr(_Counting, "texts", [])
     result = _import("--from", "numpy")
     assert result.exit_code == 0, result.output

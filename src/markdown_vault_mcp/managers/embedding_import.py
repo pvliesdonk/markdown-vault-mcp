@@ -484,13 +484,13 @@ def _donor_message(side: _Side, refused: DonorRefused) -> str:
     if reason == "identity_unknown":
         return (
             f"{side.label} records no embedding identity, so its vectors cannot be "
-            "reused. Run index to embed with the configured provider."
+            "reused. Run admin index to embed with the configured provider."
         )
     detail = str(refused.detail).rstrip(".")
     if reason == "identity_differs":
         return (
             f"{side.label} holds vectors of another embedding model ({detail}). "
-            "Configure that provider to import, or run index to embed with this one."
+            "Configure that provider to import, or run admin index to embed with this one."
         )
     return f"{side.label} cannot be read: {detail}. No vectors were changed."
 
