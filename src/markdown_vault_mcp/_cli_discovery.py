@@ -7,7 +7,16 @@ from typing import Any, Literal
 import typer
 
 from markdown_vault_mcp._cli_client import ClientError, ClientOptions, resolve_settings
-from markdown_vault_mcp._cli_output import render_reply, terminal_text
+from markdown_vault_mcp._cli_options import (
+    Agent,
+    Folder,
+    Local,
+    Server,
+    SourceDir,
+    Timeout,
+    WaitForPendingWrites,
+)
+from markdown_vault_mcp._cli_output import output_mode, render_reply, terminal_text
 from markdown_vault_mcp._cli_read import local_read, run_read
 from markdown_vault_mcp._read_payloads import ReadPayloadError, parse_filters
 from markdown_vault_mcp.exceptions import ConfigurationError, MarkdownMCPError
@@ -40,8 +49,8 @@ def _run(
             lambda: local_read(tool, arguments, source),
             settings=settings,
         )
-        output: Literal["text", "json", "agent"] = (
-            "json" if params["json_output"] else "agent" if params["agent"] else "text"
+        output: Literal["text", "json", "agent"] = output_mode(
+            params["json_output"], params["agent"]
         )
         render_reply(ctx.info_name or tool, reply, output)
     except (ClientError, ReadPayloadError) as exc:
@@ -69,14 +78,10 @@ def register(app: typer.Typer) -> None:
         revision: str | None = typer.Option(
             None, help="Read a historical note revision."
         ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False,
             "--json",
@@ -92,9 +97,7 @@ def register(app: typer.Typer) -> None:
     @app.command("list")
     def documents(  # noqa: PLR0913, RUF100 -- flat CLI options expose native listing predicates
         ctx: typer.Context,
-        folder: str | None = typer.Option(
-            None, help="Folder subtree; empty means root notes."
-        ),
+        folder: Folder = None,
         pattern: str | None = typer.Option(
             None, help="Path glob, such as Journal/*.md."
         ),
@@ -104,21 +107,15 @@ def register(app: typer.Typer) -> None:
         filters: list[str] | None = typer.Option(  # noqa: B008 -- Typer consumes parameter metadata
             None, "--filter", help="Repeat KEY=VALUE predicates (AND)."
         ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return structured metadata."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """List note metadata with optional folder, glob and frontmatter filters."""
         _run(
@@ -130,21 +127,15 @@ def register(app: typer.Typer) -> None:
 
     def simple(  # noqa: PLR0913, RUF100 -- shared CLI connection/output options
         ctx: typer.Context,
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return structured values."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Inspect indexed folders or vault statistics and capabilities."""
         _run(
@@ -162,21 +153,15 @@ def register(app: typer.Typer) -> None:
         field: str = typer.Option(
             "tags", help="Indexed frontmatter field to enumerate."
         ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return structured values."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """List values of an indexed frontmatter field."""
         _run(ctx, "list_tags", locals(), ("field",))
@@ -187,24 +172,16 @@ def register(app: typer.Typer) -> None:
         limit: int = typer.Option(
             20, "--limit", "-n", min=1, help="Maximum notes (default 20)."
         ),
-        folder: str | None = typer.Option(
-            None, help="Folder subtree; empty means root notes."
-        ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        folder: Folder = None,
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return structured metadata."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """List recently modified notes."""
         _run(ctx, "get_recent", locals(), ("limit", "folder"))
@@ -219,21 +196,15 @@ def register(app: typer.Typer) -> None:
         max_notes: int = typer.Option(
             200, min=1, help="Maximum subtree notes (default 200)."
         ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return structured headings and truncation."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Inspect note headings or a bounded folder outline."""
         _run(ctx, "get_toc", locals(), ("path", "max_level", "max_notes"))
@@ -245,30 +216,22 @@ def register(app: typer.Typer) -> None:
         limit: int = typer.Option(
             10, "--limit", "-n", min=1, help="Maximum notes (default 10)."
         ),
-        folder: str | None = typer.Option(
-            None, help="Folder subtree; empty means root notes."
-        ),
+        folder: Folder = None,
         filters: list[str] | None = typer.Option(  # noqa: B008 -- Typer consumes parameter metadata
             None, "--filter", help="Repeat KEY=VALUE predicates (AND)."
         ),
         chunks_per_file: int | None = typer.Option(
             None, min=1, help="Maximum sections per note."
         ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return structured neighbors and sections."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Find neighbors using existing stored vectors; never build embeddings."""
         _run(
@@ -288,21 +251,15 @@ def register(app: typer.Typer) -> None:
         link_limit: int = typer.Option(
             10, min=0, help="Backlink and outlink limits (default 10)."
         ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return the structured context dossier."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Collect note links, neighbors, folder peers and conventions."""
         _run(ctx, "get_context", locals(), ("path", "similar_limit", "link_limit"))

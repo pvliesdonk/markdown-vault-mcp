@@ -94,9 +94,10 @@ class QueryExecutor:
         stored = conn.execute(
             "SELECT value FROM meta WHERE key='indexed_frontmatter_fields'"
         ).fetchone()
-        self.fields = (
-            set(stored[0].split(",") if stored[0] else ()) if stored else set(fields)
-        )
+        if stored is None:
+            self.fields = set(fields)
+        else:
+            self.fields = set(stored[0].split(",")) if stored[0] else set()
 
     def _field(self, key: str) -> None:
         if key in ("status", "stale", "trust_tier"):

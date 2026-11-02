@@ -576,7 +576,7 @@ def search(
         ClientOptions,
         resolve_settings,
     )
-    from markdown_vault_mcp._cli_output import render_reply
+    from markdown_vault_mcp._cli_output import output_mode, render_reply
     from markdown_vault_mcp._cli_read import run_read
     from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp._read_payloads import (
@@ -612,9 +612,7 @@ def search(
             settings=settings,
         )
         reply.meta["requested_mode"] = mode
-        render_reply(
-            "search", reply, "json" if json_output else "agent" if agent else "text"
-        )
+        render_reply("search", reply, output_mode(json_output, agent))
     except ClientError as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(exc.code) from None

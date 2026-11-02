@@ -24,6 +24,7 @@ _GRAPH_TOOLS = frozenset(
         "get_connection_path",
     }
 )
+_QUERY_TOOLS = frozenset({"query_documents", "count_documents", "aggregate_documents"})
 
 
 def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> Any:
@@ -57,7 +58,7 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
                 summarize_openai_api_key=None,
                 summarize_openai_base_url=None,
             )
-    if tool in {"query_documents", "count_documents", "aggregate_documents"}:
+    if tool in _QUERY_TOOLS:
         from dataclasses import replace
 
         # Exact keyword populations need neither model clients nor stored vectors.
@@ -151,16 +152,22 @@ def _build_reader_vault(
 
 
 def _reader_payload(vault: Vault, tool: str, arguments: dict[str, Any]) -> Any:
-    from markdown_vault_mcp.utils.serialization import toc_payload
-
     if tool == "read":
         return read_payload(vault, **arguments)
-    if tool in {"query_documents", "count_documents", "aggregate_documents"}:
+    if tool in _QUERY_TOOLS:
         return _query_payload(vault, tool, arguments)
     if tool == "search_paths":
         return _path_payload(vault, arguments)
     facet = vault.graph if tool in _GRAPH_TOOLS else vault.reader
-    result = getattr(facet, tool)(**arguments)
+    return _facet_payload(vault, tool, arguments, getattr(facet, tool)(**arguments))
+
+
+def _facet_payload(
+    vault: Vault, tool: str, arguments: dict[str, Any], result: Any
+) -> Any:
+    """Shape a reader or graph facet result as its MCP tool returns it."""
+    from markdown_vault_mcp.utils.serialization import toc_payload
+
     if tool == "get_connection_path":
         return {
             "found": result is not None,
@@ -170,15 +177,8 @@ def _reader_payload(vault: Vault, tool: str, arguments: dict[str, Any]) -> Any:
     if tool == "get_toc":
         return toc_payload(result)
     if isinstance(result, list):
-        return [
-            asdict(item) if is_dataclass(item) and not isinstance(item, type) else item
-            for item in result
-        ]
-    data = (
-        asdict(result)
-        if is_dataclass(result) and not isinstance(result, type)
-        else result
-    )
+        return [_plain(item) for item in result]
+    data = _plain(result)
     if tool == "stats":
         okf = vault.reader.okf_stats()
         if okf is not None:
@@ -186,6 +186,12 @@ def _reader_payload(vault: Vault, tool: str, arguments: dict[str, Any]) -> Any:
     if tool == "get_context":
         _context_annotations(vault, data, arguments["path"])
     return data
+
+
+def _plain(value: Any) -> Any:
+    return (
+        asdict(value) if is_dataclass(value) and not isinstance(value, type) else value
+    )
 
 
 def _path_payload(vault: Vault, arguments: dict[str, Any]) -> dict[str, Any]:

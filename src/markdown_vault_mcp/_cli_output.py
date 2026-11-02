@@ -34,6 +34,23 @@ def terminal_text(value: str) -> str:
     )
 
 
+def output_mode(json_output: bool, agent: bool) -> Literal["text", "json", "agent"]:
+    """Pick the output form from the mutually exclusive --json and --agent flags.
+
+    Args:
+        json_output: ``--json`` was given.
+        agent: ``--agent`` was given.
+
+    Returns:
+        The selected output form; plain text when neither flag is set.
+    """
+    if json_output:
+        return "json"
+    if agent:
+        return "agent"
+    return "text"
+
+
 def render_reply(
     command: str, reply: RemoteReply, output: Literal["text", "json", "agent"]
 ) -> None:

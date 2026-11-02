@@ -164,6 +164,7 @@ src/markdown_vault_mcp/
   _cli_query.py        -- exact-population query, count and aggregate CLI commands
   _cli_paths.py        -- bounded native path-discovery CLI registration and common controls
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
+  _cli_options.py      -- shared Typer option aliases (connection, folder, agent, drain) for the read commands
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
 ```

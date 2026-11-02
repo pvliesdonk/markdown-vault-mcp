@@ -5,6 +5,15 @@ from __future__ import annotations
 import typer
 
 from markdown_vault_mcp._cli_discovery import _run
+from markdown_vault_mcp._cli_options import (
+    Agent,
+    Folder,
+    Local,
+    Server,
+    SourceDir,
+    Timeout,
+    WaitForPendingWrites,
+)
 
 
 def _query(value: str) -> str:
@@ -31,9 +40,7 @@ def register(app: typer.Typer) -> None:
             ..., callback=_query, help="Literal path text, 1-256 code points."
         ),
         fuzzy: bool = typer.Option(False, help="Try bounded ASCII typo matching."),
-        folder: str | None = typer.Option(
-            None, help="Folder subtree; empty selects root notes."
-        ),
+        folder: Folder = None,
         filters: list[str] | None = typer.Option(  # noqa: B008 -- Typer consumes parameter metadata
             None, "--filter", help="Indexed frontmatter KEY=VALUE; repeat for AND."
         ),
@@ -45,21 +52,15 @@ def register(app: typer.Typer) -> None:
             max=1000,
             help="Maximum returned notes, 1-1000 (default 100).",
         ),
-        source_dir: str | None = typer.Option(None, help="Local vault directory."),
-        server: str | None = typer.Option(
-            None, help="Complete hosted MCP endpoint URL."
-        ),
-        local: bool = typer.Option(
-            False, help="Override a configured remote endpoint."
-        ),
-        timeout: float | None = typer.Option(None, help="Remote deadline in seconds."),
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: bool = typer.Option(
             False, "--json", help="Return the full native object."
         ),
-        agent: bool = typer.Option(False, help="Return escaped agent records."),
-        wait_for_pending_writes: bool = typer.Option(
-            False, help="Wait for the remote server's pending writes."
-        ),
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Discover exact paths before optional bounded typo matches."""
         _run(
