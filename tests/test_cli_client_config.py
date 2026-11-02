@@ -40,8 +40,9 @@ def test_url_precedence_and_local_override(
     )
     assert (settings.url, settings.timeout) == ("https://flag.example/custom", 2)
     assert resolve_settings(ClientOptions(local=True)).url is None
+    options = ClientOptions(server="https://flag.example/mcp", local=True)
     with pytest.raises(ClientError):
-        resolve_settings(ClientOptions(server="https://flag.example/mcp", local=True))
+        resolve_settings(options)
 
 
 @pytest.mark.parametrize("token", ["secret-value", " secret-value "])
@@ -81,8 +82,9 @@ def test_selected_named_token_is_required(
         '[remote]\nurl="https://example.com/mcp"\ntoken_env="TEST_VAULT_ACCESS"\n'
     )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_CONFIG", str(config))
+    options = ClientOptions()
     with pytest.raises(ClientError):
-        resolve_settings(ClientOptions())
+        resolve_settings(options)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_TOKEN", "override")
     assert resolve_settings(ClientOptions()).token == "override"
 
@@ -117,8 +119,9 @@ def test_invalid_profile_fails_without_echoing_contents(
     config = tmp_path / "client.toml"
     config.write_text(contents)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_CONFIG", str(config))
+    options = ClientOptions()
     with pytest.raises(ClientError) as error:
-        resolve_settings(ClientOptions())
+        resolve_settings(options)
     assert "secret" not in str(error.value)
 
 
@@ -134,8 +137,9 @@ def test_invalid_profile_fails_without_echoing_contents(
     ],
 )
 def test_unsafe_urls_fail_without_echoing_url(url: str) -> None:
+    options = ClientOptions(server=url)
     with pytest.raises(ClientError) as error:
-        resolve_settings(ClientOptions(server=url))
+        resolve_settings(options)
     assert "secret" not in str(error.value)
 
 
@@ -156,8 +160,9 @@ def test_explicit_missing_profile_fails(
     monkeypatch.setenv(
         "MARKDOWN_VAULT_MCP_CLIENT_CONFIG", str(tmp_path / "missing.toml")
     )
+    options = ClientOptions()
     with pytest.raises(ClientError):
-        resolve_settings(ClientOptions())
+        resolve_settings(options)
 
 
 def test_huge_toml_timeout_is_a_client_error(
@@ -166,10 +171,12 @@ def test_huge_toml_timeout_is_a_client_error(
     config = tmp_path / "client.toml"
     config.write_text("[remote]\ntimeout_seconds=" + "1" + "0" * 400 + "\n")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_CONFIG", str(config))
+    options = ClientOptions()
     with pytest.raises(ClientError):
-        resolve_settings(ClientOptions())
+        resolve_settings(options)
 
 
 def test_url_rejects_del_control_character() -> None:
+    options = ClientOptions(server="https://host/mcp\x7f")
     with pytest.raises(ClientError):
-        resolve_settings(ClientOptions(server="https://host/mcp\x7f"))
+        resolve_settings(options)

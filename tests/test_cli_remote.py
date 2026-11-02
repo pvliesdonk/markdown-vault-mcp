@@ -111,15 +111,10 @@ def test_remote_rejects_unsupported_argument_before_call(missing: bool) -> None:
 
     if missing:
         server = FastMCP("no-search-tool")
-    with (
-        serve_http(server.http_app()) as origin,
-        pytest.raises(ClientError, match=r"server.*support"),
-    ):
-        call_read(
-            ClientSettings(origin + "/mcp"),
-            "search",
-            {"query": "x", "filters": {"tags": "x"}},
-        )
+    with serve_http(server.http_app()) as origin:
+        settings = ClientSettings(origin + "/mcp")
+        with pytest.raises(ClientError, match=r"server.*support"):
+            call_read(settings, "search", {"query": "x", "filters": {"tags": "x"}})
 
 
 def test_remote_deadline_bounds_slow_tool() -> None:
@@ -130,13 +125,10 @@ def test_remote_deadline_bounds_slow_tool() -> None:
         await asyncio.sleep(10)
         return []
 
-    with (
-        serve_http(server.http_app()) as origin,
-        pytest.raises(ClientError, match="timed out"),
-    ):
-        call_read(
-            ClientSettings(origin + "/mcp", timeout=0.2), "search", {"query": "x"}
-        )
+    with serve_http(server.http_app()) as origin:
+        settings = ClientSettings(origin + "/mcp", timeout=0.2)
+        with pytest.raises(ClientError, match="timed out"):
+            call_read(settings, "search", {"query": "x"})
 
 
 def test_local_selection_never_imports_remote_transport(
@@ -154,15 +146,13 @@ def test_invalid_remote_scores_fail(score: float | bool) -> None:
 
     from markdown_vault_mcp._cli_remote import _payload
 
+    result = SimpleNamespace(
+        is_error=False,
+        structured_content={"result": [{"path": "a.md", "score": score}]},
+        meta={},
+    )
     with pytest.raises(ClientError):
-        _payload(
-            SimpleNamespace(
-                is_error=False,
-                structured_content={"result": [{"path": "a.md", "score": score}]},
-                meta={},
-            ),
-            "search",
-        )
+        _payload(result, "search")
 
 
 def test_authenticated_transport_and_unauthorized_diagnostic() -> None:
@@ -195,12 +185,9 @@ def test_authenticated_transport_and_unauthorized_diagnostic() -> None:
             ).data
             == HITS
         )
+        settings = ClientSettings(origin + "/mcp", token="wrong-secret")
         with pytest.raises(ClientError, match="bearer authentication") as error:
-            call_read(
-                ClientSettings(origin + "/mcp", token="wrong-secret"),
-                "search",
-                {"query": "x"},
-            )
+            call_read(settings, "search", {"query": "x"})
         assert "wrong-secret" not in str(error.value)
         assert re.search(r"failed \((?!ExceptionGroup)\w+\)", str(error.value))
 
@@ -223,17 +210,12 @@ def test_cross_origin_redirect_is_not_followed() -> None:
         async def redirect(_request: Any) -> RedirectResponse:
             return RedirectResponse(target + "/capture", status_code=307)
 
-        with (
-            serve_http(
-                Starlette(routes=[Route("/mcp", redirect, methods=["GET", "POST"])])
-            ) as origin,
-            pytest.raises(ClientError),
-        ):
-            call_read(
-                ClientSettings(origin + "/mcp", token="never-forward-secret"),
-                "search",
-                {"query": "x"},
-            )
+        with serve_http(
+            Starlette(routes=[Route("/mcp", redirect, methods=["GET", "POST"])])
+        ) as origin:
+            settings = ClientSettings(origin + "/mcp", token="never-forward-secret")
+            with pytest.raises(ClientError):
+                call_read(settings, "search", {"query": "x"})
     assert received == []
 
 
@@ -250,8 +232,9 @@ def test_remote_extra_missing_has_actionable_error(
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", missing)
+    settings = ClientSettings("https://example.com/mcp")
     with pytest.raises(ClientError, match=r"markdown-vault-mcp\[mcp\]"):
-        call_read(ClientSettings("https://example.com/mcp"), "search", {"query": "x"})
+        call_read(settings, "search", {"query": "x"})
     from markdown_vault_mcp._cli_read import run_read
 
     assert run_read("search", {}, ClientOptions(local=True), lambda: HITS).data == HITS
@@ -350,10 +333,12 @@ def test_unusable_content_and_local_only_remote_settings_fail() -> None:
 
     from markdown_vault_mcp._cli_remote import _payload
 
+    result = CallToolResult(content=[])
     with pytest.raises(ClientError):
-        _payload(CallToolResult(content=[]), "search")
+        _payload(result, "search")
+    settings = ClientSettings(None)
     with pytest.raises(ClientError):
-        call_read(ClientSettings(None), "search", {})
+        call_read(settings, "search", {})
 
 
 def test_interrupt_diagnostic_exits_130() -> None:

@@ -66,7 +66,8 @@ def test_agent_header_and_unicode_records(capsys: pytest.CaptureFixture[str]) ->
     )
     assert json.loads(record) == data[0]
     assert "文" in record
-    assert "\x1b" not in output.out and "\u202e" not in output.out
+    assert "\x1b" not in output.out
+    assert "\u202e" not in output.out
     assert output.err == ""
 
 
@@ -189,8 +190,9 @@ def test_invalid_render_payload_fails_before_output(
     from markdown_vault_mcp._read_payloads import ReadPayloadError
 
     for output in ("json", "agent"):
+        reply = RemoteReply([{"value": float("nan")}])
         with pytest.raises(ReadPayloadError) as error:
-            render_reply("search", RemoteReply([{"value": float("nan")}]), output)
+            render_reply("search", reply, output)
         assert error.value.code == 1
         assert capsys.readouterr().out == ""
 
