@@ -748,7 +748,10 @@ Two methods manage the index:
   in place, so a note deleted while no server ran leaves the index and
   the tracker state (#1965). A tombstone whose file the build could not
   hash is not written back, as in a forced build; the next reindex records
-  it again. When a
+  it again. A note whose upsert fails with a per-note error enters the
+  tracker with an empty hash too, so the next reindex retries its unchanged
+  bytes (#1982). Successful notes keep their hashes; database-level errors
+  still fail the build. When a
   persistent `index_path` contains documents that now match
   `exclude_patterns`, they are purged from the FTS and vector indexes
   after the scan (a non-forced build's wipe leaves them to that purge), but
