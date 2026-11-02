@@ -71,7 +71,8 @@ def test_path_receipts_round_trip_without_header_injection(
     value, end = json.JSONDecoder().raw_decode(receipt)
     assert value == coverage
     assert receipt[end:] == f" truncated={str(truncated).lower()}"
-    assert "count=1 " in prefix and "index_stale=unknown" in prefix
+    assert "count=1 " in prefix
+    assert "index_stale=unknown" in prefix
     assert json.loads(record) == data
     assert "\x1b" not in output.getvalue()
 
@@ -187,8 +188,10 @@ def test_invalid_receipts_are_preserved_only_in_payload(
     with redirect_stdout(output):
         render_reply("search-path", RemoteReply(data), "agent")
     header, record = output.getvalue().splitlines()
-    assert "count=1 " in header and "index_stale=unknown" in header
-    assert " coverage=" not in header and " truncated=" not in header
+    assert "count=1 " in header
+    assert "index_stale=unknown" in header
+    assert " coverage=" not in header
+    assert " truncated=" not in header
     assert json.loads(record) == data
 
 
@@ -203,8 +206,10 @@ def test_absent_receipts_and_other_commands_have_no_projection(command: str) -> 
     with redirect_stdout(output):
         render_reply(command, RemoteReply(data, {"index_stale": True}), "agent")
     header, record = output.getvalue().splitlines()
-    assert "count=1 " in header and "index_stale=true" in header
-    assert " coverage=" not in header and " truncated=" not in header
+    assert "count=1 " in header
+    assert "index_stale=true" in header
+    assert " coverage=" not in header
+    assert " truncated=" not in header
     assert json.loads(record) == data
 
 
@@ -304,7 +309,8 @@ def test_old_server_path_capability_is_actionable_without_fallback(
         )
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
-    assert "support" in result.stderr and "upgrade the server" in result.stderr
+    assert "support" in result.stderr
+    assert "upgrade the server" in result.stderr
 
 
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
@@ -367,10 +373,8 @@ def test_search_read_context_graph_path_workflow(
         note = invoke("read", path)
         assert "foo elsewhere" in note["content"]
         section = invoke("read", path, "--section", "B")
-        assert (
-            "foo elsewhere" in section["content"]
-            and "foo third" not in section["content"]
-        )
+        assert "foo elsewhere" in section["content"]
+        assert "foo third" not in section["content"]
         similar = invoke("similar", path, "--limit", "1")
         assert [item["path"] for item in similar] == ["other.md"]
         context = invoke("context", path, "--similar-limit", "1", "--link-limit", "1")
@@ -380,7 +384,8 @@ def test_search_read_context_graph_path_workflow(
         assert {item["path"] for item in invoke("orphans")} == {"multi.md", "other.md"}
         paths = invoke("search-path", "mult", "--fuzzy", "--limit", "1")
         assert [item["path"] for item in paths["items"]] == [path]
-        assert paths["coverage"] == "complete" and paths["truncated"] is False
+        assert paths["coverage"] == "complete"
+        assert paths["truncated"] is False
         discovered = paths["items"][0]["path"]
         assert (
             invoke("read", discovered, "--section", "B")["content"]
