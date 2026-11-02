@@ -2894,10 +2894,10 @@
 <h3 id="look-something-up">Look something up<a class="headerlink" href="#look-something-up" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">"release notes"</span>
 markdown-vault-mcp<span class="w"> </span><span class="nb">read</span><span class="w"> </span><span class="s2">"Projects/plan.md"</span><span class="w"> </span>--section<span class="w"> </span><span class="s2">"Next steps"</span>
-markdown-vault-mcp<span class="w"> </span>backlinks<span class="w"> </span><span class="s2">"Projects/plan.md"</span>
-markdown-vault-mcp<span class="w"> </span>count<span class="w"> </span><span class="s2">"release"</span><span class="w"> </span>--scope<span class="w"> </span>body
-markdown-vault-mcp<span class="w"> </span>aggregate<span class="w"> </span>--by<span class="w"> </span>tag
-markdown-vault-mcp<span class="w"> </span>search-path<span class="w"> </span><span class="s2">"relase plan"</span><span class="w"> </span>--fuzzy
+markdown-vault-mcp<span class="w"> </span>links<span class="w"> </span>to<span class="w"> </span><span class="s2">"Projects/plan.md"</span>
+markdown-vault-mcp<span class="w"> </span>query<span class="w"> </span>count<span class="w"> </span><span class="s2">"release"</span><span class="w"> </span>--scope<span class="w"> </span>body
+markdown-vault-mcp<span class="w"> </span>query<span class="w"> </span>aggregate<span class="w"> </span>--by<span class="w"> </span>tag
+markdown-vault-mcp<span class="w"> </span>query<span class="w"> </span>path<span class="w"> </span><span class="s2">"relase plan"</span><span class="w"> </span>--fuzzy
 </code></pre></div>
 <p>Output is plain text by default. Add <code>--json</code> for the server's structured result, for scripts, or <code>--agent</code> for one escaped record per line. A remote lookup never falls back to a local vault. If the server can't answer, the command says why and exits 1.</p>
 <h2 id="inside-the-servers-docker-container">Inside the server's Docker container<a class="headerlink" href="#inside-the-servers-docker-container" title="Permanent link">&para;</a></h2>
