@@ -72,12 +72,12 @@ markdown-vault-mcp context Journal/today.md --similar-limit 0 --json
 Graph commands use the same connection and output options:
 
 ```bash
-markdown-vault-mcp backlinks Journal/today.md --server https://vault.example/mcp
-markdown-vault-mcp outlinks Journal/today.md --limit 10 --json
-markdown-vault-mcp broken-links --folder Journal --json
-markdown-vault-mcp orphans --agent
-markdown-vault-mcp hubs --limit 10 --json
-markdown-vault-mcp connection Journal/today.md Ideas/topic.md --max-depth 3 --json
+markdown-vault-mcp links to Journal/today.md --server https://vault.example/mcp
+markdown-vault-mcp links from Journal/today.md --limit 10 --json
+markdown-vault-mcp links broken --folder Journal --json
+markdown-vault-mcp links orphans --agent
+markdown-vault-mcp links hubs --limit 10 --json
+markdown-vault-mcp links path Journal/today.md Ideas/topic.md --max-depth 3 --json
 ```
 
 Paths are exact and case-sensitive. Backlinks and outlinks return all links unless limited; hubs default to 10 notes. Broken-link folders select a subtree, while `--folder ""` selects root notes. Connection paths follow links in either direction, with depth clamped to 1 through 10. Disconnected notes return a successful object with `found: false`, an empty `path` and `hops: -1`; missing endpoints fail. All six commands accept `--wait-for-pending-writes` for remote reads.
@@ -85,33 +85,33 @@ Paths are exact and case-sensitive. Backlinks and outlinks return all links unle
 ### Query exact note populations
 
 ```bash
-markdown-vault-mcp search-metadata "release" --server https://vault.example/mcp --limit 20 --offset 20 --json
-markdown-vault-mcp search-body "release" --chunks-per-file 2 --snippet-words 40 --agent
-markdown-vault-mcp search-in Journal/today.md "release" --snippet-words 0 --json
-markdown-vault-mcp count "release" --scope body --filter tags=release --json
-markdown-vault-mcp aggregate "release" --scope body --by tag --field tags --limit 10 --json
+markdown-vault-mcp query metadata "release" --server https://vault.example/mcp --limit 20 --offset 20 --json
+markdown-vault-mcp query body "release" --chunks-per-file 2 --snippet-words 40 --agent
+markdown-vault-mcp query note Journal/today.md "release" --snippet-words 0 --json
+markdown-vault-mcp query count "release" --scope body --filter tags=release --json
+markdown-vault-mcp query aggregate "release" --scope body --by tag --field tags --limit 10 --json
 ```
 
 These commands share the connection, authentication and output options above. They require a server exposing `query_documents`, `count_documents` and `aggregate_documents`. An older server fails explicitly; no remote failure retries against local files.
 
-`search-metadata` matches indexed paths, titles, headings and configured summaries, without body excerpts. Its query can be blank to enumerate notes. `search-body` requires a keyword expression and returns bounded matching sections. `search-in` requires an exact case-sensitive note path and a body expression; it has no document offset or limit. Section limits default to 2, excerpt limits to 200 words; zero words returns the full indexed section. Metadata and body pages default to 20 notes (range 1-1000). Their offset must be nonnegative.
+`query metadata` matches indexed paths, titles, headings and configured summaries, without body excerpts. Its query can be blank to enumerate notes. `query body` requires a keyword expression and returns bounded matching sections. `query note` requires an exact case-sensitive note path and a body expression; it has no document offset or limit. Section limits default to 2, excerpt limits to 200 words; zero words returns the full indexed section. Metadata and body pages default to 20 notes (range 1-1000). Their offset must be nonnegative.
 
 Page envelopes retain `items`, `total`, `offset`, `limit` and `truncated`. Total counts distinct matching notes before pagination, even when several sections match. Pages are live views: concurrent writes can move notes between offsets. Use `read` for the complete note.
 
-`count` and `aggregate` accept a blank query and `--scope all`, `metadata` or `body` (default `all`). Both require keyword mode; semantic and hybrid populations are refused. Their totals cover all matches, independently of output limits. Aggregate `--by folder`, `tag` or `month` groups by folder, indexed field value or UTC modification month. Its limit defaults to 50 buckets and never limits input notes. Tag grouping reports missing values separately and may return a null bucket; multi-value bucket counts can sum above total.
+`query count` and `query aggregate` accept a blank query and `--scope all`, `metadata` or `body` (default `all`). Both require keyword mode; semantic and hybrid populations are refused. Their totals cover all matches, independently of output limits. Aggregate `--by folder`, `tag` or `month` groups by folder, indexed field value or UTC modification month. Its limit defaults to 50 buckets and never limits input notes. Tag grouping reports missing values separately and may return a null bucket; multi-value bucket counts can sum above total.
 
-All five accept `--folder`, `--pattern`, repeated `--filter KEY=VALUE`, and RFC3339 `--modified-after` / `--modified-before` bounds with timezones. The lower bound is inclusive, the upper exclusive. Empty folder selects root notes; patterns use case-sensitive glob wildcards. Page, count and aggregate commands also accept exact `--path`; `search-in` takes its path positionally. Filters require configured indexed fields. Computed OKF fields (`status`, `stale`, `trust_tier`) are refused here; existing ranked `search` keeps its OKF filter behavior.
+All five accept `--folder`, `--pattern`, repeated `--filter KEY=VALUE`, and RFC3339 `--modified-after` / `--modified-before` bounds with timezones. The lower bound is inclusive, the upper exclusive. Empty folder selects root notes; patterns use case-sensitive glob wildcards. Page, count and aggregate commands also accept exact `--path`; `query note` takes its path positionally. Filters require configured indexed fields. Computed OKF fields (`status`, `stale`, `trust_tier`) are refused here; existing ranked `search` keeps its OKF filter behavior.
 
 JSON keeps the original native envelope, including optional OKF page annotations. Text shows escaped JSON. Agent output has one object record and header `count=1`, including when total is zero; matching population remains in that object's `total`. Remote freshness comes from one server observation in both payload and header. Local freshness is unknown and no false freshness value is inserted into the payload. Local queries adopt a configured completed disk index without rebuilding it; with no index path, they build a temporary in-memory keyword index. Exact local queries do not initialize embedding or summarization providers, including when provider settings are present.
 
 Path discovery uses the same local or hosted connection:
 
 ```bash
-markdown-vault-mcp search-path "research/incentves" --fuzzy --server https://vault.example/mcp --agent
-markdown-vault-mcp search-path "topic" --folder research --filter tags=reference --limit 20 --json
+markdown-vault-mcp query path "research/incentves" --fuzzy --server https://vault.example/mcp --agent
+markdown-vault-mcp query path "topic" --folder research --filter tags=reference --limit 20 --json
 ```
 
-`search-path` validates the raw query between 1 and 256 Unicode code points.
+`query path` validates the raw query between 1 and 256 Unicode code points.
 Exact paths precede literal prefixes and matches within a path, using Unicode
 case folding, followed by optional bounded ASCII typo matching. `--folder ""` selects root notes; repeated indexed-field filters use AND.
 Computed OKF fields are refused on this exact metadata surface. See
@@ -323,7 +323,11 @@ Collect note links, neighbors, folder peers and conventions.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp backlinks`
+## `markdown-vault-mcp links`
+
+Follow and audit the links between notes.
+
+## `markdown-vault-mcp links to`
 
 List notes linking to an exact note path.
 
@@ -342,7 +346,7 @@ List notes linking to an exact note path.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp outlinks`
+## `markdown-vault-mcp links from`
 
 List a note's links, including missing targets.
 
@@ -361,7 +365,7 @@ List a note's links, including missing targets.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp broken-links`
+## `markdown-vault-mcp links broken`
 
 List links whose note targets are missing.
 
@@ -376,7 +380,7 @@ List links whose note targets are missing.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp orphans`
+## `markdown-vault-mcp links orphans`
 
 List all notes without inbound or outbound links.
 
@@ -390,7 +394,7 @@ List all notes without inbound or outbound links.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp hubs`
+## `markdown-vault-mcp links hubs`
 
 List the notes with the most inbound links.
 
@@ -405,7 +409,7 @@ List the notes with the most inbound links.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp connection`
+## `markdown-vault-mcp links path`
 
 Find the shortest undirected link path between two notes.
 
@@ -425,7 +429,11 @@ Find the shortest undirected link path between two notes.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp search-metadata`
+## `markdown-vault-mcp query`
+
+Exact queries over every matching note, without ranking.
+
+## `markdown-vault-mcp query metadata`
 
 Query indexed note metadata without body excerpts.
 
@@ -451,7 +459,7 @@ Query indexed note metadata without body excerpts.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp search-body`
+## `markdown-vault-mcp query body`
 
 Query note bodies with bounded matching sections.
 
@@ -479,7 +487,7 @@ Query note bodies with bounded matching sections.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp search-in`
+## `markdown-vault-mcp query note`
 
 Query body sections within exactly one note.
 
@@ -505,7 +513,7 @@ Query body sections within exactly one note.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp count`
+## `markdown-vault-mcp query count`
 
 Count distinct notes across the complete matching population.
 
@@ -531,7 +539,7 @@ Count distinct notes across the complete matching population.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp aggregate`
+## `markdown-vault-mcp query aggregate`
 
 Group the complete matching note population into bounded buckets.
 
@@ -560,7 +568,7 @@ Group the complete matching note population into bounded buckets.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
-## `markdown-vault-mcp search-path`
+## `markdown-vault-mcp query path`
 
 Discover exact paths before optional bounded typo matches.
 

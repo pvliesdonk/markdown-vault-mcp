@@ -16,7 +16,12 @@ from markdown_vault_mcp._cli_options import (
     Timeout,
     WaitForPendingWrites,
 )
-from markdown_vault_mcp._cli_output import output_mode, render_reply, terminal_text
+from markdown_vault_mcp._cli_output import (
+    command_label,
+    output_mode,
+    render_reply,
+    terminal_text,
+)
 from markdown_vault_mcp._cli_read import local_read, run_read
 from markdown_vault_mcp._read_payloads import ReadPayloadError, parse_filters
 from markdown_vault_mcp.exceptions import ConfigurationError, MarkdownMCPError
@@ -52,7 +57,7 @@ def _run(
         output: Literal["text", "json", "agent"] = output_mode(
             params["json_output"], params["agent"]
         )
-        render_reply(ctx.info_name or tool, reply, output)
+        render_reply(command_label(ctx) or tool, reply, output)
     except (ClientError, ReadPayloadError) as exc:
         typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
         raise typer.Exit(exc.code) from None

@@ -40,10 +40,10 @@ The server must accept that token, as a [bearer token server](../deploy/authenti
 ```bash
 markdown-vault-mcp search "release notes"
 markdown-vault-mcp read "Projects/plan.md" --section "Next steps"
-markdown-vault-mcp backlinks "Projects/plan.md"
-markdown-vault-mcp count "release" --scope body
-markdown-vault-mcp aggregate --by tag
-markdown-vault-mcp search-path "relase plan" --fuzzy
+markdown-vault-mcp links to "Projects/plan.md"
+markdown-vault-mcp query count "release" --scope body
+markdown-vault-mcp query aggregate --by tag
+markdown-vault-mcp query path "relase plan" --fuzzy
 ```
 
 Output is plain text by default. Add `--json` for the server's structured result, for scripts, or `--agent` for one escaped record per line. A remote lookup never falls back to a local vault. If the server can't answer, the command says why and exits 1.

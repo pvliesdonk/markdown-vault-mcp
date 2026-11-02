@@ -33,7 +33,7 @@ def register(app: typer.Typer) -> None:
         app: Domain CLI receiving the path command.
     """
 
-    @app.command("search-path")
+    @app.command("path")
     def search_path(  # noqa: PLR0913, RUF100 -- native predicates plus shared CLI connection/output options
         ctx: typer.Context,
         query: str = typer.Argument(

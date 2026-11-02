@@ -27,7 +27,8 @@ def test_path_command_preserves_native_object(remote: bool, mode: str) -> None:
         result = CliRunner().invoke(
             app,
             [
-                "search-path",
+                "query",
+                "path",
                 "alpha.md",
                 *connection,
                 *([] if mode == "text" else ["--" + mode]),
@@ -36,7 +37,7 @@ def test_path_command_preserves_native_object(remote: bool, mode: str) -> None:
     assert result.exit_code == 0, result.output
     if mode == "agent":
         header, record = result.stdout.splitlines()
-        assert header.startswith("OK search-path count=1 ")
+        assert header.startswith("OK query path count=1 ")
         assert 'coverage="not_run" truncated=false' in header
         assert f"index_stale={'false' if remote else 'unknown'}" in header
         data = json.loads(record)
@@ -65,7 +66,7 @@ def test_path_receipts_round_trip_without_header_injection(
     }
     output = io.StringIO()
     with redirect_stdout(output):
-        render_reply("search-path", RemoteReply(data), "agent")
+        render_reply("query path", RemoteReply(data), "agent")
     header, record = output.getvalue().splitlines()
     prefix, receipt = header.split(" coverage=", 1)
     value, end = json.JSONDecoder().raw_decode(receipt)
@@ -111,7 +112,8 @@ def test_path_native_predicates(
         result = CliRunner().invoke(
             app,
             [
-                "search-path",
+                "query",
+                "path",
                 *arguments,
                 *connection,
                 "--json",
@@ -149,7 +151,7 @@ def test_path_native_predicates(
 )
 def test_path_cli_refuses_bad_arguments(arguments: list[str]) -> None:
     """Malformed input is refused before any local vault or network call."""
-    result = CliRunner().invoke(app, ["search-path", *arguments])
+    result = CliRunner().invoke(app, ["query", "path", *arguments])
     assert result.exit_code == 2, (result.output, result.exception)
     assert result.stdout == ""
 
@@ -162,7 +164,15 @@ def test_path_native_filter_refusals(remote: bool, field: str) -> None:
     with reader_backend(remote) as connection:
         result = CliRunner().invoke(
             app,
-            ["search-path", "absent", "--filter", field + "=x", *connection, "--json"],
+            [
+                "query",
+                "path",
+                "absent",
+                "--filter",
+                field + "=x",
+                *connection,
+                "--json",
+            ],
         )
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -186,7 +196,7 @@ def test_invalid_receipts_are_preserved_only_in_payload(
     }
     output = io.StringIO()
     with redirect_stdout(output):
-        render_reply("search-path", RemoteReply(data), "agent")
+        render_reply("query path", RemoteReply(data), "agent")
     header, record = output.getvalue().splitlines()
     assert "count=1 " in header
     assert "index_stale=unknown" in header
@@ -195,7 +205,7 @@ def test_invalid_receipts_are_preserved_only_in_payload(
     assert json.loads(record) == data
 
 
-@pytest.mark.parametrize("command", ["search-path", "other"])
+@pytest.mark.parametrize("command", ["query", "path", "other"])
 def test_absent_receipts_and_other_commands_have_no_projection(command: str) -> None:
     """Absent receipt fields and unrelated object replies preserve the generic header."""
     data = {
@@ -255,7 +265,7 @@ def test_path_shared_index_suppresses_providers_and_preserves_files(
     )
     monkeypatch.setattr("markdown_vault_mcp.summarizer.get_summarizer", forbidden)
     monkeypatch.setattr(type(vault.index), "build_index", forbidden)
-    result = CliRunner().invoke(app, ["search-path", "STRASSE", "--local", "--json"])
+    result = CliRunner().invoke(app, ["query", "path", "STRASSE", "--local", "--json"])
     assert result.exit_code == 0, (result.output, result.exception)
     assert [item["path"] for item in json.loads(result.stdout)["items"]] == [
         "notes/Straße.md"
@@ -267,7 +277,7 @@ def test_path_shared_index_suppresses_providers_and_preserves_files(
 @pytest.mark.usefixtures("stored_reader_index")
 def test_path_completed_empty_index_is_success() -> None:
     """An adopted empty completed snapshot is not an incomplete index."""
-    result = CliRunner().invoke(app, ["search-path", "absent", "--local", "--json"])
+    result = CliRunner().invoke(app, ["query", "path", "absent", "--local", "--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {
         "items": [],
@@ -286,7 +296,7 @@ def test_remote_path_never_uses_poisoned_local_configuration(
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/missing/client/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER", "not-a-provider")
         result = CliRunner().invoke(
-            app, ["search-path", "STRASSE", *connection, "--json"]
+            app, ["query", "path", "STRASSE", *connection, "--json"]
         )
     assert result.exit_code == 0, result.output
     assert [row["path"] for row in json.loads(result.stdout)["items"]] == [
@@ -305,7 +315,7 @@ def test_old_server_path_capability_is_actionable_without_fallback(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/missing/client/vault")
     with serve_http(FastMCP("old-vault").http_app()) as origin:
         result = CliRunner().invoke(
-            app, ["search-path", "alpha", "--server", origin + "/mcp", "--json"]
+            app, ["query", "path", "alpha", "--server", origin + "/mcp", "--json"]
         )
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
@@ -324,7 +334,7 @@ def test_path_metadata_retains_native_okf(discovery_source: Any, remote: bool) -
     )
     with reader_backend(remote) as connection:
         result = CliRunner().invoke(
-            app, ["search-path", "alpha.md", *connection, "--json"]
+            app, ["query", "path", "alpha.md", *connection, "--json"]
         )
     assert result.exit_code == 0, result.output
     item = json.loads(result.stdout)["items"][0]
@@ -380,9 +390,12 @@ def test_search_read_context_graph_path_workflow(
         context = invoke("context", path, "--similar-limit", "1", "--link-limit", "1")
         assert context["path"] == path
         assert [item["path"] for item in context["similar"]] == ["other.md"]
-        assert invoke("outlinks", path) == []
-        assert {item["path"] for item in invoke("orphans")} == {"multi.md", "other.md"}
-        paths = invoke("search-path", "mult", "--fuzzy", "--limit", "1")
+        assert invoke("links", "from", path) == []
+        assert {item["path"] for item in invoke("links", "orphans")} == {
+            "multi.md",
+            "other.md",
+        }
+        paths = invoke("query", "path", "mult", "--fuzzy", "--limit", "1")
         assert [item["path"] for item in paths["items"]] == [path]
         assert paths["coverage"] == "complete"
         assert paths["truncated"] is False
@@ -423,7 +436,7 @@ def test_path_envelope_extensions_survive_agent_output(
     output = io.StringIO()
     with redirect_stdout(output):
         render_reply(
-            "search-path", RemoteReply(data, {"index_stale": freshness}), "agent"
+            "query path", RemoteReply(data, {"index_stale": freshness}), "agent"
         )
     header, record = output.getvalue().splitlines()
     assert "count=1 " in header

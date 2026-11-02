@@ -21,11 +21,11 @@ from tests.fixtures.cli_queries import query_notes as query_notes
 @pytest.mark.parametrize(
     "args,paths,total",
     [
-        (["search-metadata", "bodyword"], {"c.md"}, 1),
-        (["search-body", "bodyword"], {"a.md", "b.md"}, 2),
-        (["search-in", "a.md", "bodyword"], {"a.md"}, 1),
-        (["count", "bodyword", "--scope", "body"], None, 2),
-        (["aggregate", "bodyword", "--scope", "body", "--by", "tag"], None, 2),
+        (["query", "metadata", "bodyword"], {"c.md"}, 1),
+        (["query", "body", "bodyword"], {"a.md", "b.md"}, 2),
+        (["query", "note", "a.md", "bodyword"], {"a.md"}, 1),
+        (["query", "count", "bodyword", "--scope", "body"], None, 2),
+        (["query", "aggregate", "bodyword", "--scope", "body", "--by", "tag"], None, 2),
     ],
 )
 def test_local_query_commands_use_exact_native_population(
@@ -41,12 +41,12 @@ def test_local_query_commands_use_exact_native_population(
     assert "index_stale" not in data  # A local process cannot observe a shared writer.
     if paths is not None:
         assert {item["path"] for item in data["items"]} == paths
-    if args[0] == "search-metadata":
+    if args[1] == "metadata":
         assert all("sections" not in item for item in data["items"])
-    if args[0] == "search-in":
+    if args[1] == "note":
         assert data["offset"] == 0
         assert data["limit"] == 1
-    if args[0] == "aggregate":
+    if args[1] == "aggregate":
         assert data["buckets"] == [
             {"key": "shared", "count": 2},
             {"key": "blue", "count": 1},
@@ -57,29 +57,30 @@ def test_local_query_commands_use_exact_native_population(
 @pytest.mark.parametrize(
     "arguments",
     [
-        ["count", "--mode", "semantic"],
-        ["aggregate", "--by", "folder", "--mode", "hybrid"],
-        ["aggregate", "--by", "unknown"],
-        ["count", "--scope", "unknown"],
-        ["count", "--filter", "a=1", "--filter", "a=2"],
-        ["count", "--filter", "missing-separator"],
-        ["count", "--modified-after", "2026-10-01"],
+        ["query", "count", "--mode", "semantic"],
+        ["query", "aggregate", "--by", "folder", "--mode", "hybrid"],
+        ["query", "aggregate", "--by", "unknown"],
+        ["query", "count", "--scope", "unknown"],
+        ["query", "count", "--filter", "a=1", "--filter", "a=2"],
+        ["query", "count", "--filter", "missing-separator"],
+        ["query", "count", "--modified-after", "2026-10-01"],
         [
+            "query",
             "count",
             "--modified-after",
             "2026-10-02T00:00:00Z",
             "--modified-before",
             "2026-10-01T00:00:00Z",
         ],
-        ["search-body", "word", "--limit", "1001"],
-        ["search-body", "word", "--chunks-per-file", "0"],
-        ["search-body", "word", "--snippet-words", "-1"],
-        ["search-in", "a.md", "word", "--offset", "1"],
-        ["search-in", "a.md", "word", "--limit", "2"],
-        ["search-body"],
-        ["count", "--json", "--agent"],
-        ["search-metadata", "--order", "path"],
-        ["count", "--pattern-mode", "prefix"],
+        ["query", "body", "word", "--limit", "1001"],
+        ["query", "body", "word", "--chunks-per-file", "0"],
+        ["query", "body", "word", "--snippet-words", "-1"],
+        ["query", "note", "a.md", "word", "--offset", "1"],
+        ["query", "note", "a.md", "word", "--limit", "2"],
+        ["query", "body"],
+        ["query", "count", "--json", "--agent"],
+        ["query", "metadata", "--order", "path"],
+        ["query", "count", "--pattern-mode", "prefix"],
     ],
 )
 def test_invalid_query_input_never_opens_a_backend(
@@ -103,10 +104,11 @@ def test_query_commands_over_real_http() -> None:
 
     with reader_backend(True) as connection:
         for arguments, expected in [
-            (["search-metadata", "bodyword", "--limit", "1"], 1),
+            (["query", "metadata", "bodyword", "--limit", "1"], 1),
             (
                 [
-                    "search-body",
+                    "query",
+                    "body",
                     "bodyword",
                     "--limit",
                     "1",
@@ -119,10 +121,11 @@ def test_query_commands_over_real_http() -> None:
                 ],
                 2,
             ),
-            (["search-in", "a.md", "bodyword", "--snippet-words", "0"], 1),
-            (["count", "bodyword", "--scope", "body"], 2),
+            (["query", "note", "a.md", "bodyword", "--snippet-words", "0"], 1),
+            (["query", "count", "bodyword", "--scope", "body"], 2),
             (
                 [
+                    "query",
                     "aggregate",
                     "bodyword",
                     "--scope",
@@ -145,7 +148,7 @@ def test_query_commands_over_real_http() -> None:
             data = json.loads(record)
             assert data["total"] == expected
             assert data["index_stale"] is False
-            if arguments[0] == "search-body":
+            if arguments[1] == "body":
                 assert data["offset"] == 1
                 assert data["limit"] == 1
                 assert len(data["items"]) == 1
@@ -155,20 +158,18 @@ def test_query_commands_over_real_http() -> None:
                     for item in data["items"]
                     for section in item["sections"]
                 )
-            if arguments[0] == "search-in":
+            if arguments[1] == "note":
                 assert data["items"][0]["path"] == "a.md"
                 assert {
                     section["content"].strip()
                     for section in data["items"][0]["sections"]
                 } == {"# Alpha\n\nbodyword one two\n\n## More\n\nbodyword three four"}
-            if arguments[0] == "aggregate":
+            if arguments[1] == "aggregate":
                 assert data["truncated"] is True
                 assert data["buckets"] == [{"key": "shared", "count": 2}]
 
 
-@pytest.mark.parametrize(
-    "tool", ["search-metadata", "search-body", "search-in", "count", "aggregate"]
-)
+@pytest.mark.parametrize("tool", ["metadata", "body", "note", "count", "aggregate"])
 def test_malformed_remote_query_is_refused(
     tool: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -179,10 +180,10 @@ def test_malformed_remote_query_is_refused(
         "markdown_vault_mcp._cli_query.run_read",
         lambda *_args, **_kwargs: RemoteReply({"total": True}),
     )
-    args = [tool]
-    if tool == "search-body":
+    args = ["query", tool]
+    if tool == "body":
         args += ["word"]
-    elif tool == "search-in":
+    elif tool == "note":
         args += ["note.md", "word"]
     elif tool == "aggregate":
         args += ["--by", "folder"]
@@ -291,8 +292,10 @@ def test_generated_corpora_preserve_exact_cli_populations(
             assert result.exit_code == 0, result.output
             return json.loads(result.stdout)
 
-        count = invoke(["count", "needle", "--scope", scope])
-        groups = invoke(["aggregate", "needle", "--scope", scope, "--by", "folder"])
+        count = invoke(["query", "count", "needle", "--scope", scope])
+        groups = invoke(
+            ["query", "aggregate", "needle", "--scope", scope, "--by", "folder"]
+        )
         assert count["total"] == groups["total"] == len(expected)
         assert {
             bucket["key"]: bucket["count"] for bucket in groups["buckets"]
@@ -305,7 +308,8 @@ def test_generated_corpora_preserve_exact_cli_populations(
         for offset in range(0, max(1, len(expected)), size):
             page = invoke(
                 [
-                    "search-" + scope,
+                    "query",
+                    scope,
                     "needle",
                     "--limit",
                     str(size),
@@ -342,7 +346,7 @@ def test_remote_freshness_cannot_be_missing_or_contradictory(
         lambda *_a, **_kw: RemoteReply(payload, metadata),
     )
     result = CliRunner().invoke(
-        app, ["count", "--server", "https://vault.example/mcp", "--agent"]
+        app, ["query", "count", "--server", "https://vault.example/mcp", "--agent"]
     )
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
@@ -366,7 +370,7 @@ def test_backend_fault_is_safe_server_failure(
         raise error
 
     monkeypatch.setattr("markdown_vault_mcp._cli_query.run_read", fail)
-    result = CliRunner().invoke(app, ["count", "--local", "--json"])
+    result = CliRunner().invoke(app, ["query", "count", "--local", "--json"])
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "ERROR:" in result.stderr
@@ -471,9 +475,9 @@ def test_completed_local_query_index_is_never_rebuilt(
 
     monkeypatch.setattr(IndexFacet, "build_index", unexpected)
     for arguments in [
-        ["search-body", "bodyword", "--limit", "1"],
-        ["count", "bodyword", "--scope", "body"],
-        ["aggregate", "bodyword", "--scope", "body", "--by", "tag"],
+        ["query", "body", "bodyword", "--limit", "1"],
+        ["query", "count", "bodyword", "--scope", "body"],
+        ["query", "aggregate", "bodyword", "--scope", "body", "--by", "tag"],
     ]:
         result = CliRunner().invoke(app, [*arguments, "--local", "--agent"])
         assert result.exit_code == 0, result.output
@@ -495,14 +499,15 @@ def test_query_populations_exceed_page_and_bucket_caps(query_notes: Path) -> Non
     runner = CliRunner()
     results = [
         runner.invoke(
-            app, ["search-body", "bodyword", "--local", "--limit", "1", "--json"]
+            app, ["query", "body", "bodyword", "--local", "--limit", "1", "--json"]
         ),
         runner.invoke(
-            app, ["count", "bodyword", "--scope", "body", "--local", "--json"]
+            app, ["query", "count", "bodyword", "--scope", "body", "--local", "--json"]
         ),
         runner.invoke(
             app,
             [
+                "query",
                 "aggregate",
                 "bodyword",
                 "--scope",
@@ -542,6 +547,7 @@ def test_all_groupings_use_complete_population(query_notes: Path, remote: bool) 
             result = CliRunner().invoke(
                 app,
                 [
+                    "query",
                     "aggregate",
                     "--by",
                     by,
@@ -595,9 +601,9 @@ def test_query_predicates_intersect_without_dropping_values(
     ]
     with reader_backend(remote) as connection:
         for command in [
-            ["search-body", "bodyword"],
-            ["count", "bodyword", "--scope", "body"],
-            ["aggregate", "bodyword", "--scope", "body", "--by", "tag"],
+            ["query", "body", "bodyword"],
+            ["query", "count", "bodyword", "--scope", "body"],
+            ["query", "aggregate", "bodyword", "--scope", "body", "--by", "tag"],
         ]:
             result = CliRunner().invoke(
                 app,
@@ -624,6 +630,7 @@ def test_query_predicates_intersect_without_dropping_values(
             excluded = CliRunner().invoke(
                 app,
                 [
+                    "query",
                     "count",
                     "bodyword",
                     "--scope",
@@ -638,7 +645,8 @@ def test_query_predicates_intersect_without_dropping_values(
         wrong_case = CliRunner().invoke(
             app,
             [
-                "search-in",
+                "query",
+                "note",
                 "A.md",
                 "bodyword",
                 *connection,
@@ -662,9 +670,9 @@ def test_query_okf_annotations_are_optional_pages_only(
     )
     with reader_backend(remote) as connection:
         for command in [
-            ["search-body", "bodyword"],
-            ["count", "bodyword", "--scope", "body"],
-            ["aggregate", "bodyword", "--scope", "body", "--by", "tag"],
+            ["query", "body", "bodyword"],
+            ["query", "count", "bodyword", "--scope", "body"],
+            ["query", "aggregate", "bodyword", "--scope", "body", "--by", "tag"],
         ]:
             result = CliRunner().invoke(
                 app, [*command, *connection, "--json", "--wait-for-pending-writes"]
@@ -672,13 +680,14 @@ def test_query_okf_annotations_are_optional_pages_only(
             assert result.exit_code == 0, result.output
             data = json.loads(result.stdout)
             assert data["total"] == 2
-            if command[0] == "search-body":
+            if command[1] == "body":
                 assert all("okf" in item for item in data["items"])
             else:
                 assert "okf" not in data
         for field in ["status", "unknown"]:
             result = CliRunner().invoke(
-                app, ["count", "--filter", field + "=value", *connection, "--json"]
+                app,
+                ["query", "count", "--filter", field + "=value", *connection, "--json"],
             )
             assert result.exit_code == 1, result.output
             assert result.stdout == ""
@@ -700,6 +709,7 @@ def test_hosted_query_never_loads_local_configuration(
         result = CliRunner().invoke(
             app,
             [
+                "query",
                 "count",
                 "bodyword",
                 "--scope",
@@ -740,6 +750,7 @@ def test_old_query_server_refuses_without_local_fallback(
         result = CliRunner().invoke(
             app,
             [
+                "query",
                 "count",
                 "word",
                 "--filter",
@@ -779,6 +790,7 @@ def test_query_deadline_and_interrupt_have_no_partial_payload(
         result = CliRunner().invoke(
             app,
             [
+                "query",
                 "count",
                 "word",
                 "--server",
@@ -796,7 +808,7 @@ def test_query_deadline_and_interrupt_have_no_partial_payload(
         raise KeyboardInterrupt
 
     monkeypatch.setattr("markdown_vault_mcp._cli_query.run_read", interrupt)
-    interrupted = CliRunner().invoke(app, ["count", "--local", "--json"])
+    interrupted = CliRunner().invoke(app, ["query", "count", "--local", "--json"])
     assert interrupted.exit_code == 130
     assert interrupted.stdout == ""
 
@@ -830,7 +842,12 @@ def test_query_output_preserves_receipts_and_escapes_controls(
     )
     result = CliRunner().invoke(
         app,
-        ["search-metadata", "--local", *([] if output == "text" else ["--" + output])],
+        [
+            "query",
+            "metadata",
+            "--local",
+            *([] if output == "text" else ["--" + output]),
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "\x1b" not in result.stdout
@@ -856,7 +873,7 @@ def test_query_payload_non_json_values_fail_before_output(
         "markdown_vault_mcp._cli_query.run_read",
         lambda *_a, **_kw: RemoteReply({"total": 0, "extra": value}),
     )
-    result = CliRunner().invoke(app, ["count", "--local", "--json"])
+    result = CliRunner().invoke(app, ["query", "count", "--local", "--json"])
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
     assert "payload" in result.stderr
@@ -874,6 +891,7 @@ def test_remote_source_override_conflicts_before_dispatch(
     result = CliRunner().invoke(
         app,
         [
+            "query",
             "count",
             "--server",
             "https://vault.example/mcp",
@@ -946,6 +964,7 @@ def test_matching_stale_remote_receipts_remain_successful(
     result = CliRunner().invoke(
         app,
         [
+            "query",
             "count",
             "--server",
             "https://vault.example/mcp",
@@ -1055,6 +1074,7 @@ def test_nondefault_aggregate_field_uses_its_own_values(
         result = CliRunner().invoke(
             app,
             [
+                "query",
                 "aggregate",
                 "--path",
                 "a.md",
@@ -1074,11 +1094,11 @@ def test_nondefault_aggregate_field_uses_its_own_values(
 @pytest.mark.parametrize(
     "command",
     [
-        ["search-metadata", "bodyword"],
-        ["search-body", "bodyword"],
-        ["search-in", "a.md", "bodyword"],
-        ["count", "bodyword", "--scope", "body"],
-        ["aggregate", "bodyword", "--scope", "body", "--by", "tag"],
+        ["query", "metadata", "bodyword"],
+        ["query", "body", "bodyword"],
+        ["query", "note", "a.md", "bodyword"],
+        ["query", "count", "bodyword", "--scope", "body"],
+        ["query", "aggregate", "bodyword", "--scope", "body", "--by", "tag"],
     ],
 )
 def test_keyword_queries_do_not_construct_configured_summarizer(
@@ -1102,7 +1122,7 @@ def test_keyword_queries_do_not_construct_configured_summarizer(
     assert result.exit_code == 0, (result.output, calls)
     assert calls == []
     assert json.loads(result.stdout)["total"] == (
-        1 if command[0] in {"search-metadata", "search-in"} else 2
+        1 if command[1] in {"metadata", "note"} else 2
     )
     assert hashlib.sha256(query_index.read_bytes()).digest() == before
 
@@ -1135,7 +1155,7 @@ def test_keyword_count_does_not_construct_configured_embedding_provider(
         "markdown_vault_mcp.summarizer.get_summarizer", lambda *_a, **_kw: None
     )
     result = CliRunner().invoke(
-        app, ["count", "bodyword", "--scope", "body", "--local", "--json"]
+        app, ["query", "count", "bodyword", "--scope", "body", "--local", "--json"]
     )
     assert result.exit_code == 0, result.output
     assert calls == []

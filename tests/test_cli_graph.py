@@ -23,7 +23,7 @@ def _data(output: str, command: str, mode: str) -> Any:
     assert header.startswith(f"OK {command} ")
     assert "index_stale=" in header
     values = [json.loads(record) for record in records]
-    return values[0] if command == "connection" else values
+    return values[0] if command == "links path" else values
 
 
 @pytest.mark.usefixtures("graph_source")
@@ -33,16 +33,20 @@ def _data(output: str, command: str, mode: str) -> Any:
     ("arguments", "key", "expected"),
     [
         (
-            ["backlinks", "notes/beta.md"],
+            ["links", "to", "notes/beta.md"],
             "source_path",
             ["alpha.md", "notes/deep/delta.md"],
         ),
-        (["outlinks", "alpha.md"], "target_path", ["missing-root.md", "notes/beta.md"]),
-        (["broken-links", "--folder", "notes"], "source_path", ["notes/beta.md"]),
-        (["orphans"], "path", ["island.md"]),
-        (["hubs", "--limit", "1"], "path", ["notes/beta.md"]),
         (
-            ["connection", "notes/deep/delta.md", "notes/ø.md"],
+            ["links", "from", "alpha.md"],
+            "target_path",
+            ["missing-root.md", "notes/beta.md"],
+        ),
+        (["links", "broken", "--folder", "notes"], "source_path", ["notes/beta.md"]),
+        (["links", "orphans"], "path", ["island.md"]),
+        (["links", "hubs", "--limit", "1"], "path", ["notes/beta.md"]),
+        (
+            ["links", "path", "notes/deep/delta.md", "notes/ø.md"],
             "path",
             ["notes/deep/delta.md", "notes/beta.md", "notes/ø.md"],
         ),
@@ -57,14 +61,14 @@ def test_graph_command_values(
             app, [*arguments, *connection, *([] if mode == "text" else ["--" + mode])]
         )
     assert result.exit_code == 0, result.output
-    data = _data(result.stdout, arguments[0], mode)
-    if arguments[0] == "connection":
+    data = _data(result.stdout, " ".join(arguments[:2]), mode)
+    if arguments[1] == "path":
         assert data == {"found": True, "path": expected, "hops": 2}
     else:
         assert sorted(row[key] for row in data) == expected
-        if arguments[0] == "hubs":
+        if arguments[1] == "hubs":
             assert data[0]["backlink_count"] == 2
-        if arguments[0] == "outlinks":
+        if arguments[1] == "from":
             assert {row["target_path"]: row["exists"] for row in data} == {
                 "missing-root.md": False,
                 "notes/beta.md": True,
@@ -76,27 +80,27 @@ def test_graph_command_values(
 @pytest.mark.parametrize(
     ("arguments", "expected"),
     [
-        (["backlinks", "notes/beta.md", "--limit", "1"], 1),
-        (["outlinks", "alpha.md", "--limit", "0"], 0),
-        (["broken-links", "--folder", ""], ["alpha.md"]),
-        (["broken-links", "--folder", "notes/"], ["notes/beta.md"]),
-        (["broken-links", "--folder", "absent"], []),
-        (["backlinks", "island.md"], []),
-        (["outlinks", "island.md"], []),
+        (["links", "to", "notes/beta.md", "--limit", "1"], 1),
+        (["links", "from", "alpha.md", "--limit", "0"], 0),
+        (["links", "broken", "--folder", ""], ["alpha.md"]),
+        (["links", "broken", "--folder", "notes/"], ["notes/beta.md"]),
+        (["links", "broken", "--folder", "absent"], []),
+        (["links", "to", "island.md"], []),
+        (["links", "from", "island.md"], []),
         (
-            ["connection", "alpha.md", "island.md"],
+            ["links", "path", "alpha.md", "island.md"],
             {"found": False, "path": [], "hops": -1},
         ),
         (
-            ["connection", "notes/deep/delta.md", "notes/ø.md", "--max-depth", "1"],
+            ["links", "path", "notes/deep/delta.md", "notes/ø.md", "--max-depth", "1"],
             {"found": False, "path": [], "hops": -1},
         ),
         (
-            ["connection", "notes/ø.md", "alpha.md", "--max-depth", "0"],
+            ["links", "path", "notes/ø.md", "alpha.md", "--max-depth", "0"],
             {"found": True, "path": ["notes/ø.md", "alpha.md"], "hops": 1},
         ),
         (
-            ["connection", "notes/ø.md", "notes/ø.md"],
+            ["links", "path", "notes/ø.md", "notes/ø.md"],
             {"found": True, "path": ["notes/ø.md"], "hops": 0},
         ),
     ],
@@ -124,12 +128,12 @@ def test_graph_native_boundaries(
 @pytest.mark.parametrize(
     "arguments",
     [
-        ["backlinks", "ALPHA.md"],
-        ["outlinks", "missing.md"],
-        ["connection", "missing.md", "alpha.md"],
-        ["connection", "alpha.md", "missing.md"],
-        ["connection", "missing.md", "missing.md"],
-        ["outlinks", "../escape.md"],
+        ["links", "to", "ALPHA.md"],
+        ["links", "from", "missing.md"],
+        ["links", "path", "missing.md", "alpha.md"],
+        ["links", "path", "alpha.md", "missing.md"],
+        ["links", "path", "missing.md", "missing.md"],
+        ["links", "from", "../escape.md"],
     ],
 )
 def test_graph_missing_endpoints_are_errors(remote: bool, arguments: list[str]) -> None:
@@ -152,7 +156,8 @@ def test_connection_upper_depth_clamp(graph_source: Path, remote: bool) -> None:
         found = CliRunner().invoke(
             app,
             [
-                "connection",
+                "links",
+                "path",
                 "chain0.md",
                 "chain10.md",
                 "--max-depth",
@@ -164,7 +169,8 @@ def test_connection_upper_depth_clamp(graph_source: Path, remote: bool) -> None:
         absent = CliRunner().invoke(
             app,
             [
-                "connection",
+                "links",
+                "path",
                 "chain0.md",
                 "chain11.md",
                 "--max-depth",
@@ -211,8 +217,8 @@ def test_graph_directed_edge_property(edges: set[tuple[int, int]], source: int) 
     """Backlink and outlink adapters preserve the fixture's exact directed edges."""
     with TemporaryDirectory() as directory:
         _write_graph(Path(directory), edges)
-        outgoing = _invoke_local(directory, "outlinks", _NAMES[source])
-        incoming = _invoke_local(directory, "backlinks", _NAMES[source])
+        outgoing = _invoke_local(directory, "links", "from", _NAMES[source])
+        incoming = _invoke_local(directory, "links", "to", _NAMES[source])
         assert {row["target_path"] for row in outgoing} == {
             _NAMES[b] for a, b in edges if a == source
         }
@@ -241,8 +247,12 @@ def test_graph_connection_property(
                 )
     with TemporaryDirectory() as directory:
         _write_graph(Path(directory), edges)
-        forward = _invoke_local(directory, "connection", _NAMES[source], _NAMES[target])
-        reverse = _invoke_local(directory, "connection", _NAMES[target], _NAMES[source])
+        forward = _invoke_local(
+            directory, "links", "path", _NAMES[source], _NAMES[target]
+        )
+        reverse = _invoke_local(
+            directory, "links", "path", _NAMES[target], _NAMES[source]
+        )
         distance = distances[source][target]
         if distance == 99:
             assert forward == reverse == {"found": False, "path": [], "hops": -1}
@@ -260,7 +270,7 @@ def test_graph_connection_property(
 
 
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
-@pytest.mark.parametrize("command", ["orphans", "hubs", "broken-links"])
+@pytest.mark.parametrize("command", ["links orphans", "links hubs", "links broken"])
 def test_empty_graph_lists_succeed(
     graph_source: Path, remote: bool, command: str
 ) -> None:
@@ -268,7 +278,7 @@ def test_empty_graph_lists_succeed(
     for note in graph_source.rglob("*.md"):
         note.unlink()
     with reader_backend(remote) as connection:
-        result = CliRunner().invoke(app, [command, *connection, "--json"])
+        result = CliRunner().invoke(app, [*command.split(), *connection, "--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == []
 
@@ -283,7 +293,14 @@ def test_remote_graph_does_not_construct_local_config(
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER", "not-a-provider")
         result = CliRunner().invoke(
             app,
-            ["connection", "notes/deep/delta.md", "notes/ø.md", *connection, "--json"],
+            [
+                "links",
+                "path",
+                "notes/deep/delta.md",
+                "notes/ø.md",
+                *connection,
+                "--json",
+            ],
         )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {
@@ -319,7 +336,7 @@ def test_graph_shared_index_never_initializes_embedding_model(
         "markdown_vault_mcp.providers.get_embedding_provider", forbidden_model
     )
     result = CliRunner().invoke(
-        app, ["backlinks", "notes/beta.md", "--local", "--json"]
+        app, ["links", "to", "notes/beta.md", "--local", "--json"]
     )
     assert result.exit_code == 0, (result.output, result.exception)
     assert [row["source_path"] for row in json.loads(result.stdout)] == [
@@ -341,9 +358,11 @@ def test_graph_preserves_link_rows_and_distinct_hub_sources(
     )
     with reader_backend(remote) as connection:
         outgoing = CliRunner().invoke(
-            app, ["outlinks", "alpha.md", *connection, "--json"]
+            app, ["links", "from", "alpha.md", *connection, "--json"]
         )
-        hubs = CliRunner().invoke(app, ["hubs", "--limit", "1", *connection, "--json"])
+        hubs = CliRunner().invoke(
+            app, ["links", "hubs", "--limit", "1", *connection, "--json"]
+        )
     assert outgoing.exit_code == hubs.exit_code == 0, (outgoing.output, hubs.output)
     assert json.loads(outgoing.stdout) == [
         {
@@ -383,12 +402,16 @@ def test_graph_limit_property(limit: int | None) -> None:
         for i in range(12):
             (root / f"spoke{i}.md").write_text(f"# Spoke {i}\n[Hub](hub.md)\n")
         options = [] if limit is None else ["--limit", str(limit)]
-        for command in ["backlinks", "outlinks", "hubs"]:
-            arguments = [] if command == "hubs" else ["hub.md"]
-            rows = _invoke_local(directory, command, *arguments, *options)
-            population = 13 if command == "hubs" else 12
-            cap = (10 if command == "hubs" else population) if limit is None else limit
+        for command in ["links to", "links from", "links hubs"]:
+            arguments = [] if command == "links hubs" else ["hub.md"]
+            rows = _invoke_local(directory, *command.split(), *arguments, *options)
+            population = 13 if command == "links hubs" else 12
+            cap = (
+                (10 if command == "links hubs" else population)
+                if limit is None
+                else limit
+            )
             assert len(rows) == (population if cap < 0 else min(population, cap))
-            if command == "hubs" and rows:
+            if command == "links hubs" and rows:
                 assert rows[0]["path"] == "hub.md"
                 assert rows[0]["backlink_count"] == 12
