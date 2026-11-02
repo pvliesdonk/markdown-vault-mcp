@@ -210,7 +210,7 @@ List note metadata with optional folder, glob and frontmatter filters.
 
 | Option | Env var | Default | Description |
 |---|---|---|---|
-| `--folder` |  |  | Folder subtree; empty means root notes. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
 | `--pattern` |  |  | Path glob, such as Journal/*.md. |
 | `--include-attachments` |  | False | Include allowed attachment metadata. |
 | `--filter` |  |  | Repeat KEY=VALUE predicates (AND). |
@@ -272,7 +272,7 @@ List recently modified notes.
 | Option | Env var | Default | Description |
 |---|---|---|---|
 | `--limit` |  | 20 | Maximum notes (default 20). |
-| `--folder` |  |  | Folder subtree; empty means root notes. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
 | `--source-dir` |  |  | Local vault directory. |
 | `--server` |  |  | Complete hosted MCP endpoint URL. |
 | `--local` |  | False | Override a configured remote endpoint. |
@@ -312,7 +312,7 @@ Find neighbors using existing stored vectors; never build embeddings.
 | Option | Env var | Default | Description |
 |---|---|---|---|
 | `--limit` |  | 10 | Maximum notes (default 10). |
-| `--folder` |  |  | Folder subtree; empty means root notes. |
+| `--folder` |  |  | Folder subtree; empty selects root notes. |
 | `--filter` |  |  | Repeat KEY=VALUE predicates (AND). |
 | `--chunks-per-file` |  |  | Maximum sections per note. |
 | `--source-dir` |  |  | Local vault directory. |

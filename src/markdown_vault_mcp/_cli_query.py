@@ -7,6 +7,15 @@ from typing import Annotated, Any, Literal
 import typer
 
 from markdown_vault_mcp._cli_client import ClientError, ClientOptions, resolve_settings
+from markdown_vault_mcp._cli_options import (
+    Agent,
+    Folder,
+    Local,
+    Server,
+    SourceDir,
+    Timeout,
+    WaitForPendingWrites,
+)
 from markdown_vault_mcp._cli_output import render_reply, terminal_text
 from markdown_vault_mcp._cli_read import local_read, run_read
 from markdown_vault_mcp._read_payloads import (
@@ -17,20 +26,12 @@ from markdown_vault_mcp._read_payloads import (
 )
 from markdown_vault_mcp.exceptions import ConfigurationError, MarkdownMCPError
 
-_Source = Annotated[str | None, typer.Option(help="Local vault directory.")]
-_Server = Annotated[str | None, typer.Option(help="Complete hosted MCP endpoint URL.")]
-_Local = Annotated[bool, typer.Option(help="Override a configured remote endpoint.")]
-_Timeout = Annotated[float | None, typer.Option(help="Remote deadline in seconds.")]
 _Json = Annotated[
     bool, typer.Option("--json", help="Return the original structured payload.")
 ]
-_Agent = Annotated[bool, typer.Option(help="Return escaped agent records.")]
 _Filters = Annotated[
     list[str] | None,
     typer.Option("--filter", help="Repeat unique KEY=VALUE predicates (AND)."),
-]
-_Folder = Annotated[
-    str | None, typer.Option(help="Folder subtree; empty selects root notes.")
 ]
 _Pattern = Annotated[str | None, typer.Option(help="Case-sensitive path glob.")]
 _Path = Annotated[str | None, typer.Option(help="Case-sensitive exact note path.")]
@@ -49,9 +50,6 @@ _Chunks = Annotated[
 ]
 _Words = Annotated[
     int, typer.Option(min=0, help="Excerpt words; zero returns the full section.")
-]
-_Wait = Annotated[
-    bool, typer.Option(help="Wait for the remote server's pending writes.")
 ]
 _Scope = Annotated[str, typer.Option(help="Lexical population: all, metadata or body.")]
 _Mode = Annotated[
@@ -153,18 +151,18 @@ def register(app: typer.Typer) -> None:
         path: _Path = None,
         offset: _Offset = 0,
         limit: _Limit = 20,
-        folder: _Folder = None,
+        folder: Folder = None,
         pattern: _Pattern = None,
         filters: _Filters = None,
         modified_after: _After = None,
         modified_before: _Before = None,
-        source_dir: _Source = None,
-        server: _Server = None,
-        local: _Local = False,
-        timeout: _Timeout = None,
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: _Json = False,
-        agent: _Agent = False,
-        wait_for_pending_writes: _Wait = False,
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Query indexed note metadata without body excerpts."""
         _run(ctx, "query_documents", locals())
@@ -178,18 +176,18 @@ def register(app: typer.Typer) -> None:
         limit: _Limit = 20,
         chunks_per_file: _Chunks = 2,
         snippet_words: _Words = 200,
-        folder: _Folder = None,
+        folder: Folder = None,
         pattern: _Pattern = None,
         filters: _Filters = None,
         modified_after: _After = None,
         modified_before: _Before = None,
-        source_dir: _Source = None,
-        server: _Server = None,
-        local: _Local = False,
-        timeout: _Timeout = None,
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: _Json = False,
-        agent: _Agent = False,
-        wait_for_pending_writes: _Wait = False,
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Query note bodies with bounded matching sections."""
         _run(ctx, "query_documents", locals())
@@ -201,18 +199,18 @@ def register(app: typer.Typer) -> None:
         query: str = typer.Argument(..., help="Body keyword expression."),
         chunks_per_file: _Chunks = 2,
         snippet_words: _Words = 200,
-        folder: _Folder = None,
+        folder: Folder = None,
         pattern: _Pattern = None,
         filters: _Filters = None,
         modified_after: _After = None,
         modified_before: _Before = None,
-        source_dir: _Source = None,
-        server: _Server = None,
-        local: _Local = False,
-        timeout: _Timeout = None,
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: _Json = False,
-        agent: _Agent = False,
-        wait_for_pending_writes: _Wait = False,
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Query body sections within exactly one note."""
         _run(ctx, "query_documents", locals())
@@ -226,18 +224,18 @@ def register(app: typer.Typer) -> None:
         scope: _Scope = "all",
         mode: _Mode = "keyword",
         path: _Path = None,
-        folder: _Folder = None,
+        folder: Folder = None,
         pattern: _Pattern = None,
         filters: _Filters = None,
         modified_after: _After = None,
         modified_before: _Before = None,
-        source_dir: _Source = None,
-        server: _Server = None,
-        local: _Local = False,
-        timeout: _Timeout = None,
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: _Json = False,
-        agent: _Agent = False,
-        wait_for_pending_writes: _Wait = False,
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Count distinct notes across the complete matching population."""
         _run(ctx, "count_documents", locals())
@@ -261,18 +259,18 @@ def register(app: typer.Typer) -> None:
         scope: _Scope = "all",
         mode: _Mode = "keyword",
         path: _Path = None,
-        folder: _Folder = None,
+        folder: Folder = None,
         pattern: _Pattern = None,
         filters: _Filters = None,
         modified_after: _After = None,
         modified_before: _Before = None,
-        source_dir: _Source = None,
-        server: _Server = None,
-        local: _Local = False,
-        timeout: _Timeout = None,
+        source_dir: SourceDir = None,
+        server: Server = None,
+        local: Local = False,
+        timeout: Timeout = None,
         json_output: _Json = False,
-        agent: _Agent = False,
-        wait_for_pending_writes: _Wait = False,
+        agent: Agent = False,
+        wait_for_pending_writes: WaitForPendingWrites = False,
     ) -> None:
         """Group the complete matching note population into bounded buckets."""
         _run(ctx, "aggregate_documents", locals())
