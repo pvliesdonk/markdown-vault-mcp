@@ -190,8 +190,19 @@ a library free of FastMCP and pvl-core, `markdown-vault-mcp` as the server, and 
 remote client, all at one version with exact pins. That needs template support
 ([fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855)),
 import independence (including [#2016][2016]) and a CLI whose local and remote
-paths are separate. [Refinement #1472][1472] selects that delivery work and
-decides whether the client distribution ships in `020`.
+paths are separate. [Refinement #1472][1472] turned that into features under
+[epic #1471][1471]; GitHub holds them and their dependencies.
+
+`derived` — Order: import independence ([#2018][2018]) comes first because it
+is unblocked, and the #1473 experiment showed it is small. It also proves the
+library can stand alone before anything is renamed. The distribution split
+([#2019][2019]) waits on it and on template support. The declared surface
+([#1436][1436]) and the consumer documentation ([#2021][2021]) follow the split,
+so they describe the library's own import package rather than paths that move.
+The client distribution ([#2000][2000]) stays in `020` because the owner wants
+it thought through together with the library. It ships only if
+[#2016][2016] and template support land in time; the release workflow
+unassigns it otherwise.
 
 `derived` — The announced library removals in [#1225][1225] and [#1236][1236]
 shipped with `010`, so the declared contract in [#1436][1436] describes the
@@ -776,6 +787,10 @@ client, authentication and non-MCP API.
 provisional minor to major, and the resolved unknown is replaced by the template
 and pvl-core question.
 
+`derived` — Refinement [#1472][1472] filed [#2018][2018]–[#2022][2022], moved
+[#1911][1911] and [#2000][2000] under [epic #1471][1471], and committed
+[#2016][2016] to `020` as a prerequisite of the client distribution.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -859,11 +874,16 @@ and pvl-core question.
 [1896]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1896
 [1899]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899
 [1900]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1900
+[1911]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1911
 [1990]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1990
 [1994]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1994
 [2000]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2000
 [2011]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2011
 [2015]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2015
 [2016]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2016
+[2018]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2018
+[2019]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2019
+[2021]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2021
+[2022]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2022
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
