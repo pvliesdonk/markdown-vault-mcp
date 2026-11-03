@@ -60,7 +60,8 @@ themselves and keep the contributor's authorship.
 reaches the trunk as one merge-commit pull request ([#1990][1990]). Exact queries
 became an optional keyword-index capability rather than new required
 `KeywordIndex` methods, so the epic adds no break; whether they join the
-required contract is a library question for `020`.
+required contract is an extender question, deferred with
+[epic #2011][2011] (§ First-class library).
 
 ### Sustainable embedding storage and search
 
@@ -161,19 +162,30 @@ construction; that does not establish complete support for a consumer outside
 the MCP server's lifecycle. The reported downstream indexing/search use case
 provides a concrete consumer for the research.
 
-`derived` — [Research #1473][1473] compares the combined distribution, optional
-MCP dependencies and separate distributions before [refinement #1472][1472]
-selects the delivery work. Installation cost, runtime independence, compatibility
-and release maintenance determine the choice. Separate distributions need not
-mean separate repositories or separate running services. The existing architectural
-studies remain background hypotheses, not an adopted packaging design.
+`stated` — `020` supports **callers**: code that constructs, configures, uses
+and closes a vault on the built-in backends. **Extenders**, who implement the
+backend protocols, come in a later package (3 November 2026). [Epic #2011][2011]
+holds that outcome, and [#1994][1994] moves there with it.
 
-`derived` — Deliver the declared contract in [#1436][1436] after the announced
-library compatibility removals in [#1225][1225] and [#1236][1236], so documentation
-and guarantees describe the supported interface after the major cut. Native
-dependencies record those edges and the research prerequisite. Research can start
-earlier; if it identifies compatibility groundwork that matters before `010`,
-surface that consequence explicitly rather than assuming another major is required.
+`stated` — Making the library async ([#1811][1811]) is deferred, except where
+`020` work has to touch the affected code anyway (3 November 2026).
+
+`stated` — How to organise the package has to be decided anyway; [#2000][2000]
+asks it for the remote terminal user (3 November 2026).
+
+`derived` — So [research #1473][1473] decides how the package is organised for
+three consumers: the Python caller, the MCP server operator and the remote
+terminal user. It does this before [refinement #1472][1472] selects the delivery
+work. The options include one distribution, extras, separate command entry
+points or several distributions. Installation cost, runtime independence,
+compatibility and release maintenance determine the choice. Separate distributions
+need not mean separate repositories or separate running services. The existing
+architectural studies remain background hypotheses, not an adopted packaging design.
+
+`derived` — The announced library removals in [#1225][1225] and [#1236][1236]
+shipped with `010`, so the declared contract in [#1436][1436] describes the
+interface after them. The compatibility baseline is now the latest stable release,
+not the `010` cut.
 
 `derived` — Refinement must cover consumer-oriented installation, a getting-started
 path, configuration and lifecycle guidance, practical examples, API reference,
@@ -527,7 +539,7 @@ verified implementation findings.
 
 | Question | Resolved by | Consequence for order |
 | --- | --- | --- |
-| Does first-class library support require separate vault and MCP PyPI distributions, and would that require a breaking migration? | [Research #1473][1473] | Resolve before library delivery refinement and the final compatibility classification of `020`; flag any necessary groundwork before `010`. |
+| How should the package be organised for the Python caller, the MCP server operator and the remote terminal user, and would that require a breaking migration? | [Research #1473][1473], which also answers [#2000][2000] | Resolve before library delivery refinement and the final compatibility classification of `020`. |
 | What documentation and consumer validation make the library independently adoptable? | [Refinement #1472][1472], using [#1436][1436] and the research verdict | The package must deliver a supported consumer experience, not only a list of public names. |
 | How should Obsidian lookup coexist with source-relative links? | The compatibility decision in [#1383][1383] | Leave this defect outside the cut until its desired semantics are settled; the choice is not supplied by its old priority proposal. |
 | What is the smallest useful bundle-inventory boundary, and which later services can use it? | [#1442][1442] and [refinement #1467][1467] | Answer before committing the foundation package; the adopted outcome remains fixed. |
@@ -732,6 +744,15 @@ was released, and asked for each pull request to be reviewed onto an
 integration branch first. § Hosted terminal discovery and § Packages now
 say so. `015` shipped as 6.0.0 the same day.
 
+### 3 November 2026 — scope `020` to callers
+
+`stated` — The owner scoped `020` to callers, deferred extenders to a later
+package and deferred [#1811][1811] except where `020` has to touch that code anyway.
+They also widened [#1473][1473] to how the package is organised, which takes in
+[#2000][2000]. [Epic #2011][2011] now holds the extender outcome, with
+[#1994][1994] under it; § First-class library and the known unknowns say so. The
+removal of the stale "before `010`" prerequisites is `derived`: `010` has shipped.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -809,11 +830,15 @@ say so. `015` shipped as 6.0.0 the same day.
 [1750]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1750
 [1753]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1753
 [1754]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1754
+[1811]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1811
 [1829]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1829
 [1895]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1895
 [1896]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1896
 [1899]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899
 [1900]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1900
 [1990]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1990
+[1994]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1994
+[2000]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2000
+[2011]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2011
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
