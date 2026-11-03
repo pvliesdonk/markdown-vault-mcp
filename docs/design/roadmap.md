@@ -173,14 +173,25 @@ holds that outcome, and [#1994][1994] moves there with it.
 `stated` — How to organise the package has to be decided anyway; [#2000][2000]
 asks it for the remote terminal user (3 November 2026).
 
-`derived` — So [research #1473][1473] decides how the package is organised for
-three consumers: the Python caller, the MCP server operator and the remote
-terminal user. It does this before [refinement #1472][1472] selects the delivery
-work. The options include one distribution, extras, separate command entry
-points or several distributions. Installation cost, runtime independence,
-compatibility and release maintenance determine the choice. Separate distributions
-need not mean separate repositories or separate running services. The existing
-architectural studies remain background hypotheses, not an adopted packaging design.
+`evidenced` — [Research #1473][1473] found the library usable outside MCP, with
+only two imports tying it to the server stack, while a generic consumer pays 81
+packages and the FastMCP and pvl-core version lock for a library that needs 3
+([verdict](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1473#issuecomment-6611539511);
+[packaging reference](reference/python-packaging-boundaries.md)).
+
+`stated` — The consumer to design for is generic: neither an MCP server nor an
+MCP client. Major releases are acceptable. The distributions stay in full
+lockstep, documentation stays together, and the template is changed to support
+this (3 November 2026). The client depends on MCP only by convenience; a later
+version drops it, leaving shared protocol definitions ([#2015][2015]).
+
+`derived` — So the package splits into separate distributions in one repository:
+a library free of FastMCP and pvl-core, `markdown-vault-mcp` as the server, and a
+remote client, all at one version with exact pins. That needs template support
+([fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855)),
+import independence (including [#2016][2016]) and a CLI whose local and remote
+paths are separate. [Refinement #1472][1472] selects that delivery work and
+decides whether the client distribution ships in `020`.
 
 `derived` — The announced library removals in [#1225][1225] and [#1236][1236]
 shipped with `010`, so the declared contract in [#1436][1436] describes the
@@ -460,12 +471,11 @@ delivers the owner's selected next outcome: supported library use with proper
 documentation, centered on [#1436][1436]. Research and refinement belong to this
 package; implementation membership is completed from their findings.
 
-`derived` — **Minor intent, provisional.** First-class support does not inherently
-require a breaking distribution change. [Research #1473][1473] must establish
-whether a split is warranted and whether existing installations and imports can
-remain compatible. Reclassify the package as major if the chosen transition breaks
-the preceding stable operator or library contract. Do not promise either a split
-or a minor version before that assessment.
+`derived` — **Major intent.** The split chosen in [research #1473][1473] moves the
+library to a new import package, and majors are acceptable to the owner, so plan
+`020` as a major. Its timing depends on template support for several
+distributions
+([fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855)).
 
 `derived` — `020` follows `015` (§ Constraints and direction). The embedding
 research informs its storage, lifecycle and installation expectations without
@@ -539,7 +549,7 @@ verified implementation findings.
 
 | Question | Resolved by | Consequence for order |
 | --- | --- | --- |
-| How should the package be organised for the Python caller, the MCP server operator and the remote terminal user, and would that require a breaking migration? | [Research #1473][1473], which also answers [#2000][2000] | Resolve before library delivery refinement and the final compatibility classification of `020`. |
+| Can the template release several lockstep distributions from one repository, and does pvl-core provide a client, authentication and non-MCP API? | [fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855) | Decides when the split can ship; the import-independence work in `020` does not wait for it. |
 | What documentation and consumer validation make the library independently adoptable? | [Refinement #1472][1472], using [#1436][1436] and the research verdict | The package must deliver a supported consumer experience, not only a list of public names. |
 | How should Obsidian lookup coexist with source-relative links? | The compatibility decision in [#1383][1383] | Leave this defect outside the cut until its desired semantics are settled; the choice is not supplied by its old priority proposal. |
 | What is the smallest useful bundle-inventory boundary, and which later services can use it? | [#1442][1442] and [refinement #1467][1467] | Answer before committing the foundation package; the adopted outcome remains fixed. |
@@ -755,6 +765,17 @@ They also widened [#1473][1473] to how the package is organised, which takes in
 under it; § First-class library and the known unknowns say so. The stale
 "before `010`" prerequisites are removed because `010` has shipped.
 
+### 3 November 2026 — record the [#1473][1473] verdict
+
+`stated` — The owner accepted separate, fully lockstep distributions for library,
+server and client, with documentation kept together, majors allowed and the
+template to change. They also raised a pvl-core-level split with a premade
+client, authentication and non-MCP API.
+
+`derived` — § First-class library now carries the split, `020`'s kind moves from
+provisional minor to major, and the resolved unknown is replaced by the template
+and pvl-core question.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -842,5 +863,7 @@ under it; § First-class library and the known unknowns say so. The stale
 [1994]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1994
 [2000]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2000
 [2011]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2011
+[2015]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2015
+[2016]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2016
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
