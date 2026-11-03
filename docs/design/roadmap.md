@@ -749,9 +749,11 @@ say so. `015` shipped as 6.0.0 the same day.
 `stated` — The owner scoped `020` to callers, deferred extenders to a later
 package and deferred [#1811][1811] except where `020` has to touch that code anyway.
 They also widened [#1473][1473] to how the package is organised, which takes in
-[#2000][2000]. [Epic #2011][2011] now holds the extender outcome, with
-[#1994][1994] under it; § First-class library and the known unknowns say so. The
-removal of the stale "before `010`" prerequisites is `derived`: `010` has shipped.
+[#2000][2000].
+
+`derived` — [Epic #2011][2011] holds the extender outcome, with [#1994][1994]
+under it; § First-class library and the known unknowns say so. The stale
+"before `010`" prerequisites are removed because `010` has shipped.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
