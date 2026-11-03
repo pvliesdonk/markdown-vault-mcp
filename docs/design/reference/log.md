@@ -1,5 +1,15 @@
 # Reference research log
 
+## 2026-11-03
+
+- New: [Python packaging boundaries](python-packaging-boundaries.md), for
+  research #1473. Sources: core metadata 2.6, dependency specifiers,
+  pyproject.toml, entry points, recording installed projects, PEP 771 (Draft),
+  PEP 561, Hatch build docs and PyPI metadata for fastmcp/fastmcp-slim 4.1.6,
+  all read 2026-11-03. Observations: `py.typed` shipping in the wheel, the
+  slim client import, installers on an unknown extra, and five install
+  footprints. Next review: 2027-05-03.
+
 ## 2026-11-01
 
 - [PostgreSQL writes](postgresql-writes.md): one claim added for #1970, on
