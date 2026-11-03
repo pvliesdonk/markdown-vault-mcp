@@ -9,6 +9,9 @@
   all read 2026-11-03. Observations: `py.typed` shipping in the wheel, the
   slim client import, installers on an unknown extra, and five install
   footprints. Next review: 2027-05-03.
+- Same day: added § Version alignment (a PyPI `requires_dist` survey of paired
+  distributions, FastMCP's meta-distribution and console script) and knope's
+  package model, for the account holder's lockstep question on #1473.
 
 ## 2026-11-01
 

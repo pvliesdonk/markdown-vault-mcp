@@ -45,6 +45,14 @@ sources:
     title: Hatch build configuration and wheel builder
     resource: https://hatch.pypa.io/latest/config/build/
     accessed: 2026-11-03
+  - id: knope-packages
+    title: knope — Packages reference, Package concept, Multiple versioned files recipe, Releasing multiple packages tutorial
+    resource: https://knope.tech/reference/config-file/packages/
+    accessed: 2026-11-03
+  - id: pypi-survey
+    title: PyPI JSON metadata (requires_dist) for the paired distributions in § Version alignment
+    resource: https://pypi.org/pypi/<name>/json
+    accessed: 2026-11-03
   - id: pypi-fastmcp
     title: PyPI JSON metadata for fastmcp 4.1.6 and fastmcp-slim 4.1.6
     resource: https://pypi.org/pypi/fastmcp-slim/4.1.6/json
@@ -66,7 +74,7 @@ on it, along with `pyproject.toml`'s `[project.optional-dependencies]` and
 
 ## Scope
 
-- Covers: extras semantics, PEP 771 status and opt-out, entry points and
+- Covers: version alignment between paired distributions and knope's package model, extras semantics, PEP 771 status and opt-out, entry points and
   extras, `py.typed`, overlapping files and uninstall, hatchling's wheel
   contents, and FastMCP's slim distribution.
 - Does not cover: PyPI project renames or redirects, sdist contents, and
@@ -163,6 +171,47 @@ on it, along with `pyproject.toml`'s `[project.optional-dependencies]` and
   client support is not installed. Install `fastmcp` or `fastmcp-slim[client]`",
   and succeeds with `fastmcp-slim[client]`.
   [observed: fresh venvs, uv 0.12.24, Python 3.14, 2026-11-03]
+
+### Version alignment between distributions
+
+Base `Requires-Dist` between paired distributions on PyPI, read 2026-11-03
+[source: pypi-survey]:
+
+| Pattern | Examples |
+| --- | --- |
+| Same version, exact `==` pin | `fastmcp` 4.1.6 → `fastmcp-slim==4.1.6`; `opentelemetry-sdk` 1.45.2 → `opentelemetry-api==1.45.2`; `mcp` 2.3.0 → `mcp-types==2.3.0`; `dagster` 1.13.28 → `dagster-pipes==1.13.28`, `dagster-shared==1.13.28`; `polars` 2.1.0 → `polars-runtime-32==2.1.0`; `apache-airflow` 3.3.2 → `apache-airflow-core==3.3.2` |
+| Own version line, exact `==` pin | `pydantic` 2.14.2 → `pydantic-core==2.50.2`; `apache-airflow` 3.3.2 → `apache-airflow-task-sdk==1.3.2` |
+| Same minor, floor at own patch | `boto3` 1.43.123 → `botocore>=1.43.123,<1.44.0` |
+| Bounded range, own line | `langchain` 1.4.8 → `langchain-core>=1.7.4,<2.0.0`; `llama-index` 0.14.25 → `llama-index-core>=0.14.25,<0.15.0`; `jupyterlab` 4.6.5 → `jupyter-server>=2.19.0,<3` |
+
+- `prefect-client` is a client-only distribution of a server product that
+  shares the server's version numbers (3.9.1). `dagster-pipes` is a companion
+  with no dependencies at all, released in lockstep. [source: pypi-survey]
+- `fastmcp` 4.1.6 is a meta-distribution: its wheel holds only `.dist-info`
+  files, the import package `fastmcp` is shipped by `fastmcp-slim`, and
+  `fastmcp` requires `fastmcp-slim[client,server]==4.1.6`.
+  [observed: `pip download --no-deps fastmcp==4.1.6`, `unzip -l`, 2026-11-03]
+- The `fastmcp` console script comes from `fastmcp-slim`, so a
+  `fastmcp-slim[client]` install still gets it, and running `fastmcp --help`
+  there fails with a traceback. [observed: the wheel's `entry_points.txt`, and
+  running the script in a `fastmcp-slim[client]` venv, 2026-11-03]
+
+knope [source: knope-packages]:
+
+- A `knope.toml` declares one `[package]` or several `[packages.<name>]`.
+  With several, `PrepareRelease` "runs for each package independently", and
+  each has its own changelog and `<name>/v<version>` tags. No page read
+  offers lockstep between separate packages.
+- A single package "has a single version number, though that version number
+  can be in many places": `versioned_files` may list several files, and they
+  must all carry the same version. This is the documented way to version
+  several manifests together.
+- A `versioned_files` entry can update a named dependency for Cargo.toml and
+  package.json, but for pyproject.toml "`dependency` isn't yet supported". A
+  `regex` entry with a named `version` group is the fallback; how it behaves
+  on a dependency pin is not documented.
+- With several packages, the `scopes` option attributes conventional-commit
+  scopes to packages, and unscoped commits apply to every package.
 
 ### Install footprints measured for #1473
 
