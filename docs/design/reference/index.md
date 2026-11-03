@@ -37,6 +37,11 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   (#1350, #1358: the tie-break, aliases never resolving, markdown destinations
   looked up vault-wide, what Obsidian writes). Read before `scanner.py`
   wikilink extraction or `fts_index.py` resolution.
+- [Python packaging boundaries](python-packaging-boundaries.md) — what
+  extras, draft default extras (PEP 771), console-script entry points,
+  `py.typed` and overlapping installed files allow when one project serves a
+  library caller, a server operator and a remote client; with the install
+  footprints measured for #1473.
 - [pgvector and PostgreSQL behaviour behind vector search and stored rows](pgvector-search.md) —
   the `vector` type and its limits, zero-vector scoring with `<#>` and `<=>`,
   `avg`, what `jsonb`, `text` and a btree index refuse, server-side cursors
