@@ -157,6 +157,18 @@ CREATE TABLE IF NOT EXISTS sections (
 
 CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id);
 
+-- Every ATX heading of a note, in document order (#2033). The outline reads
+-- this, never sections: a chunk carries at most one heading and the chunker
+-- drops some, so headings derived from chunks miss part of the note.
+CREATE TABLE IF NOT EXISTS note_headings (
+    document_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    heading TEXT NOT NULL,
+    heading_level INTEGER NOT NULL,
+    PRIMARY KEY (document_id, position),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS document_tags (
     id INTEGER PRIMARY KEY,
     document_id INTEGER NOT NULL,
@@ -458,7 +470,17 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Still one bump: no tag contains the commit that set 10, so all five
 #: changes reach a deployed vault as a single rebuild (``AGENTS.md``, once
 #: per release).
-INDEX_SEMANTICS_VERSION = 10
+#:
+#: Version 11 (#2033) fills ``note_headings``: every ATX heading of a
+#: note, in order, as ``read(path, section=...)`` finds it. ``get_toc``
+#: read headings from ``sections`` since it was added (#97), so it missed
+#: every heading the chunker does not give a chunk: all of them in a note
+#: of 30 lines or fewer, H3 and deeper inside a section within budget, a
+#: heading with no body, and, since the adaptive chunker, a parent heading
+#: re-split at its sub-headings with no text between them. Existing rows
+#: are unchanged; the bump re-parses every note so the new table is filled.
+#: Version 10 shipped in v5.0.0, so this is a new bump, not an extension.
+INDEX_SEMANTICS_VERSION = 11
 
 
 class ChunkingMeta(NamedTuple):
@@ -686,6 +708,8 @@ class FTSIndex:
         )
         self._fts_weights: dict[str, float] = dict(fts_weights or {})
         self._read_only = read_only
+        # Whether note_headings exists; probed once, on first outline read.
+        self._heading_table: bool | None = None
         # SearchConfig validates fts_weights keys, but direct FTSIndex/Vault
         # construction bypasses it; an unknown column is silently ignored by
         # _persist_rank_config (get(col, 1.0)). Warn so a typo'd column
@@ -1210,6 +1234,28 @@ class FTSIndex:
                 (document_id, fts_rowid),
             )
 
+    @staticmethod
+    def _insert_headings(
+        cur: sqlite3.Cursor,
+        document_id: int,
+        note: ParsedNote,
+    ) -> None:
+        """Insert the note's headings into ``note_headings``, in order (#2033).
+
+        Args:
+            cur: Active cursor inside the current transaction.
+            document_id: The ``id`` of the parent document row.
+            note: Parsed document whose headings are to be inserted.
+        """
+        cur.executemany(
+            "INSERT INTO note_headings (document_id, position, heading, "
+            "heading_level) VALUES (?, ?, ?, ?)",
+            [
+                (document_id, position, entry.heading, entry.level)
+                for position, entry in enumerate(note.headings)
+            ],
+        )
+
     def _insert_tags(
         self,
         cur: sqlite3.Cursor,
@@ -1423,6 +1469,7 @@ class FTSIndex:
                 self._delete_document(cur, note.path)
                 doc_id = self._insert_document(cur, note, folder)
                 self._insert_sections(cur, doc_id, note)
+                self._insert_headings(cur, doc_id, note)
                 self._insert_tags(cur, doc_id, note)
                 self._insert_aliases(cur, doc_id, note)
                 self._insert_links(cur, doc_id, note)
@@ -1455,6 +1502,7 @@ class FTSIndex:
             self._delete_document(cur, note.path)
             doc_id = self._insert_document(cur, note, folder)
             self._insert_sections(cur, doc_id, note)
+            self._insert_headings(cur, doc_id, note)
             self._insert_tags(cur, doc_id, note)
             self._insert_aliases(cur, doc_id, note)
             self._insert_links(cur, doc_id, note)
@@ -2194,40 +2242,87 @@ class FTSIndex:
             .fetchall()
         )
 
+    def _has_heading_table(self) -> bool:
+        """True when this index has the ``note_headings`` table (#2033).
+
+        A writable open creates it; a read-only open of an index an older
+        version built has none until a writer opens that index again.
+        """
+        if self._heading_table is None:
+            self._heading_table = (
+                self._conn()
+                .execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type='table' AND name='note_headings'"
+                )
+                .fetchone()
+                is not None
+            )
+            if not self._heading_table:
+                logger.warning(
+                    "toc_heading_table_missing db=%s action=outline_from_chunks",
+                    self._db_path,
+                )
+        return self._heading_table
+
+    def _toc_rows(
+        self, where: str, params: list[object], max_level: int | None
+    ) -> list[sqlite3.Row]:
+        """Return ``(document_id, heading, heading_level)`` rows in note order.
+
+        Reads ``note_headings``, every heading of each note (#2033). On an
+        index without it (see :meth:`_has_heading_table`) it falls back to the
+        headings the chunks carry, which the warning that method logs flags as
+        incomplete.
+
+        Args:
+            where: Code-owned SQL condition on ``document_id``.
+            params: Parameters for the placeholders in *where*.
+            max_level: If set, drop headings with ``level`` greater than this.
+
+        Returns:
+            The rows, ordered by document, then by position within it.
+        """
+        level_clause = "" if max_level is None else "AND heading_level <= ?"
+        all_params = [*params] if max_level is None else [*params, max_level]
+        if self._has_heading_table():
+            sql = f"""
+            SELECT document_id, heading, heading_level FROM note_headings
+            WHERE {where} {level_clause}
+            ORDER BY document_id, position
+            """  # noqa: S608, RUF100 - Code-owned clauses; S608 is gate-only.
+        else:
+            sql = f"""
+            SELECT document_id, heading, heading_level FROM sections
+            WHERE {where} AND heading IS NOT NULL {level_clause}
+            GROUP BY document_id, heading, heading_level
+            ORDER BY document_id, MIN(rowid)
+            """  # noqa: S608, RUF100 - Code-owned clauses; S608 is gate-only.
+        return self._conn().execute(sql, all_params).fetchall()
+
     @_retry_on_locked
     def get_toc(self, path: str, *, max_level: int | None = None) -> list[TocEntry]:
-        """Return headings for a document, ordered by position.
+        """Return every heading of a document, in document order.
 
-        Queries the sections table for distinct non-NULL headings, ordered by
-        the first row that introduces each heading.
+        Reads ``note_headings``, so the outline holds each ATX heading that
+        ``read(path, section=...)`` can address, a repeated heading once per
+        occurrence, however the note was chunked (#2033).
 
         Args:
             path: Relative document path (e.g. ``"Journal/note.md"``).
             max_level: If set, drop headings with ``level`` greater than this.
 
         Returns:
-            List of :class:`~markdown_vault_mcp.types.TocEntry` ordered by first appearance.
+            List of :class:`~markdown_vault_mcp.types.TocEntry` in document order.
             Empty list if the document is not found or has no headings.
         """
-        level_clause = "" if max_level is None else "AND heading_level <= ?"
-        params: list[object] = [path]
-        if max_level is not None:
-            params.append(max_level)
-        cur = self._conn().execute(
-            f"""
-            SELECT heading, heading_level
-            FROM sections
-            WHERE document_id = (SELECT id FROM documents WHERE path = ?)
-              AND heading IS NOT NULL
-              {level_clause}
-            GROUP BY heading, heading_level
-            ORDER BY MIN(rowid)
-            """,
-            params,
+        rows = self._toc_rows(
+            "document_id = (SELECT id FROM documents WHERE path = ?)",
+            [path],
+            max_level,
         )
         return [
-            TocEntry(heading=row["heading"], level=row["heading_level"])
-            for row in cur.fetchall()
+            TocEntry(heading=row["heading"], level=row["heading_level"]) for row in rows
         ]
 
     @_retry_on_locked
@@ -2278,25 +2373,8 @@ class FTSIndex:
 
         ids = [row["id"] for row in doc_rows]
         placeholders = ",".join("?" * len(ids))
-        level_clause = "" if max_level is None else "AND heading_level <= ?"
-        params: list[object] = [*ids]
-        if max_level is not None:
-            params.append(max_level)
-        section_rows = (
-            self._conn()
-            .execute(
-                f"""
-            SELECT document_id, heading, heading_level
-            FROM sections
-            WHERE document_id IN ({placeholders})
-              AND heading IS NOT NULL
-              {level_clause}
-            GROUP BY document_id, heading, heading_level
-            ORDER BY document_id, MIN(rowid)
-            """,
-                params,
-            )
-            .fetchall()
+        section_rows = self._toc_rows(
+            f"document_id IN ({placeholders})", [*ids], max_level
         )
 
         by_doc: dict[int, list[TocEntry]] = {}
