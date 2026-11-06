@@ -708,8 +708,10 @@ class FTSIndex:
         )
         self._fts_weights: dict[str, float] = dict(fts_weights or {})
         self._read_only = read_only
-        # Whether note_headings exists; probed once, on first outline read.
-        self._heading_table: bool | None = None
+        # note_headings seen to exist (cached once true), and whether its
+        # absence was already logged; see _has_heading_table.
+        self._heading_table = False
+        self._heading_table_warned = False
         # SearchConfig validates fts_weights keys, but direct FTSIndex/Vault
         # construction bypasses it; an unknown column is silently ignored by
         # _persist_rank_config (get(col, 1.0)). Warn so a typo'd column
@@ -2246,23 +2248,27 @@ class FTSIndex:
         """True when this index has the ``note_headings`` table (#2033).
 
         A writable open creates it; a read-only open of an index an older
-        version built has none until a writer opens that index again.
+        version built has none until a writer opens that index again. Only a
+        positive answer is cached, so a long-lived read-only reader picks the
+        table up once a writer adds it; the absence is logged once.
         """
-        if self._heading_table is None:
-            self._heading_table = (
-                self._conn()
-                .execute(
-                    "SELECT 1 FROM sqlite_master "
-                    "WHERE type='table' AND name='note_headings'"
-                )
-                .fetchone()
-                is not None
+        if self._heading_table:
+            return True
+        self._heading_table = (
+            self._conn()
+            .execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type='table' AND name='note_headings'"
             )
-            if not self._heading_table:
-                logger.warning(
-                    "toc_heading_table_missing db=%s action=outline_from_chunks",
-                    self._db_path,
-                )
+            .fetchone()
+            is not None
+        )
+        if not self._heading_table and not self._heading_table_warned:
+            self._heading_table_warned = True
+            logger.warning(
+                "toc_heading_table_missing db=%s action=outline_from_chunks",
+                self._db_path,
+            )
         return self._heading_table
 
     def _toc_rows(

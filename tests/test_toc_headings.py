@@ -160,3 +160,28 @@ def test_read_only_index_without_heading_table_falls_back_to_chunks(
         r for r in caplog.records if "toc_heading_table_missing" in r.getMessage()
     ]
     assert len(warnings) == 1
+
+
+def test_read_only_reader_picks_up_heading_table_once_a_writer_adds_it(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "index.db"
+    (tmp_path / "vault").mkdir()
+    note_path = tmp_path / "vault" / "note.md"
+    note_path.write_text("## A\n### A1\nx\n", encoding="utf-8")
+    writer = FTSIndex(db)
+    writer.upsert_note(parse_note(note_path, tmp_path / "vault"))
+    writer.close()
+    conn = sqlite3.connect(db)
+    conn.execute("DROP TABLE note_headings")
+    conn.commit()
+    conn.close()
+
+    reader = FTSIndex(db, read_only=True)
+    assert reader.get_toc("note.md") == []  # short note: one heading-less chunk
+    # A newer writer opens the index, creates the table and re-indexes.
+    writer = FTSIndex(db)
+    writer.upsert_note(parse_note(note_path, tmp_path / "vault"))
+    writer.close()
+    assert reader.get_toc("note.md") == [TocEntry("A", 2), TocEntry("A1", 3)]
+    reader.close()
