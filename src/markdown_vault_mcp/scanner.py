@@ -20,7 +20,13 @@ import frontmatter
 import yaml
 
 from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote, SkippedFile
+from markdown_vault_mcp.types import (
+    Chunk,
+    LinkInfo,
+    ParsedNote,
+    SkippedFile,
+    TocEntry,
+)
 from markdown_vault_mcp.utils.content_kind import (
     effective_attachment_extensions,
     names_attachment,
@@ -2086,6 +2092,12 @@ def parse_note(
     # Measured here rather than summed from `chunks`: overlap duplicates text
     # across chunk boundaries, so a sum would over-count multi-chunk notes.
     content_chars = len(body)
+    # The outline's source (#2033): the same scan read(section=) addresses
+    # sections by, never the chunks, which keep only some headings.
+    headings = [
+        TocEntry(heading=text, level=level)
+        for _, level, text in _scan_headings(body.splitlines(keepends=True))
+    ]
 
     note = ParsedNote(
         path=rel_str,
@@ -2096,6 +2108,7 @@ def parse_note(
         modified_at=modified_at,
         links=links,
         content_chars=content_chars,
+        headings=headings,
     )
     logger.debug(
         "parse_note path=%s title=%r chunks=%d links=%d",
