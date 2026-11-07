@@ -472,8 +472,15 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   Right: 1–6 `#`, whitespace required, `#h` and 7 `#` rejected, CR/CRLF
   fine via `splitlines`. Narrower: a heading indented 1–3 spaces missed; an
   empty `#` missed; a closing `##` run kept in the text; setext headings
-  invisible; `# h` inside a fence counts (deliberate chunker parity, see the
-  module comment). Decided in `docs/design/design.md` § Chunking Strategy.
+  invisible. Right since #2034: a line inside a fence is not a heading, by
+  the §4.5 fence rules above (opener ≤ 3 spaces, 3+ of one character, no
+  backtick in a backtick fence's info string; closer the same character, at
+  least as long, nothing after; unclosed runs to the end), applied by
+  `_unfenced_lines` in the chunker, the section scan and the title alike, so
+  they stay in parity. Fences inside block quotes or list items are not
+  tracked: their `#` lines never start at column 0, so `_HEADING_RE` cannot
+  match them anyway. Decided in `docs/design/design.md` § Chunking Strategy.
+  [pins: tests/test_headings_fenced_code.py]
 - `HeadingChunker._budget_split` — **partial.** A paragraph is a run of
   lines with non-empty `strip()` over `splitlines()`; Python splits on
   `\x0c`, `\x1c`–`\x1e`, `\x85`, U+2028/2029 too and strips NBSP, so its

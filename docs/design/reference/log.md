@@ -1,5 +1,13 @@
 # Reference research log
 
+## 2026-11-07
+
+- [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,
+  `_HEADING_RE`: the fence exception is gone (#2034). The section scan, the
+  chunker and the title now skip lines inside fenced code by the §4.5 claims
+  already on the page. No re-research: the page is within its
+  `stale_after`, and those claims were read again against it.
+
 ## 2026-11-03
 
 - New: [Python packaging boundaries](python-packaging-boundaries.md), for

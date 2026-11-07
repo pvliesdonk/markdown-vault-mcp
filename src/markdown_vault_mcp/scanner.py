@@ -262,7 +262,7 @@ class HeadingChunker:
         split_points: list[tuple[int, int, str]] = []
         max_level = max(levels)
         pat = re.compile(rf"^(#{{1,{max_level}}})\s+(.+)$")
-        for idx, line in enumerate(lines):
+        for idx, line in _unfenced_lines(lines):
             m = pat.match(line.rstrip())
             if m:
                 level = len(m.group(1))
@@ -669,9 +669,69 @@ class HeadingChunker:
 
 # ATX heading detection, matching ``HeadingChunker._split_at_levels``: an
 # ``#``-run of 1-6 followed by whitespace and text, tested against the
-# right-stripped line.  Deliberately *not* code-fence aware, so a section's
-# span here matches the boundaries the chunker used when indexing.
+# right-stripped line. Only lines :func:`_unfenced_lines` yields are tested:
+# fenced code holds no headings (#2034), in the chunker, the section scan and
+# the title alike, so a section's span still matches the chunk boundaries.
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+
+# A fence opener (CommonMark §4.5): at most 3 spaces of indentation, then 3+
+# backticks or 3+ tildes, then an info string. A closer is the same character,
+# at least as long, followed by nothing but spaces or tabs.
+_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_FENCE_CLOSE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+
+
+def _fence_opener(text: str) -> tuple[str, int] | None:
+    """Return the ``(character, length)`` of the fence *text* opens, if any.
+
+    A backtick fence's info string may not contain a backtick (§4.5 Ex. 145):
+    such a line is inline code, not a fence.
+
+    Args:
+        text: One line without its line ending.
+
+    Returns:
+        The fence character and run length, or ``None`` for no opener.
+    """
+    m = _FENCE_OPEN_RE.match(text)
+    if m is None:
+        return None
+    run, info = m.group(1), m.group(2)
+    if run[0] == "`" and "`" in info:
+        return None
+    return run[0], len(run)
+
+
+def _closes_fence(text: str, fence: tuple[str, int]) -> bool:
+    """True when *text* closes *fence*: same character, at least as long."""
+    m = _FENCE_CLOSE_RE.match(text)
+    return m is not None and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1]
+
+
+def _unfenced_lines(lines: list[str]) -> Iterator[tuple[int, str]]:
+    """Yield ``(index, line)`` for every line outside fenced code (#2034).
+
+    The fence lines themselves are skipped too. An unclosed fence runs to the
+    end of *lines*, as CommonMark has it (§4.5 Ex. 127), so nothing after it
+    is yielded. Indented code needs no tracking here: a heading line starts at
+    column 0, which an indented-code line never does.
+
+    Args:
+        lines: Document body lines, line endings kept or not.
+
+    Yields:
+        The index and text of each line not inside a fenced code block.
+    """
+    fence: tuple[str, int] | None = None
+    for idx, line in enumerate(lines):
+        text = line.rstrip("\r\n")
+        if fence is not None:
+            if _closes_fence(text, fence):
+                fence = None
+            continue
+        fence = _fence_opener(text)
+        if fence is None:
+            yield idx, line
 
 
 def normalize_heading(heading: str) -> str:
@@ -695,7 +755,8 @@ def _scan_headings(lines: list[str]) -> list[tuple[int, int, str]]:
     """Return ``(line_index, level, heading_text)`` for each ATX heading.
 
     Heading detection mirrors :meth:`HeadingChunker._split_at_levels` so the
-    section spans derived here line up with how the document was chunked.
+    section spans derived here line up with how the document was chunked. A
+    ``#`` line inside fenced code is code, not a heading (#2034).
 
     Args:
         lines: Document body lines (``splitlines(keepends=True)``).
@@ -704,7 +765,7 @@ def _scan_headings(lines: list[str]) -> list[tuple[int, int, str]]:
         One tuple per heading, in document order.
     """
     out: list[tuple[int, int, str]] = []
-    for idx, line in enumerate(lines):
+    for idx, line in _unfenced_lines(lines):
         m = _HEADING_RE.match(line.rstrip())
         if m:
             out.append((idx, len(m.group(1)), m.group(2).strip()))
@@ -895,11 +956,11 @@ def _resolve_title(
         if title is not None:
             return title
 
-    # 3. First H1 heading in content.
-    for line in content.splitlines():
-        m = re.match(r"^#\s+(.+)$", line.rstrip())
-        if m:
-            return m.group(1).strip()
+    # 3. First H1 heading in content, by the same scan as every other
+    # heading, so a "# comment" in fenced code is never the title (#2034).
+    for _, level, text in _scan_headings(content.splitlines()):
+        if level == 1:
+            return text
 
     # 4. Filename without extension.
     return path.stem
