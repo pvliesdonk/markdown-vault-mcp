@@ -178,7 +178,7 @@ Python 3.13.
   `####### foo` (Ex. 63), `#5 bolt` (Ex. 64), 4-space-indented `#` (Ex. 69)
   are not headings; `#` alone is an empty heading (Ex. 79); `# foo ##` has
   content `foo` (Ex. 71). [source: cm]
-  [pins: tests/test_scanner.py::TestExtractSection::test_fenced_hash_line_acts_as_boundary]
+  [pins: tests/test_scanner.py::TestExtractSection::test_fenced_hash_line_is_not_a_boundary]
 - Heading content is inline-parsed: `intro`/`# See [t](n.md)`/`body` links
   `t`; so does setext text `See [t](n.md)`/`===`. [observed: markdown-it-py
   3.0.0, those inputs]
@@ -487,7 +487,7 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   heading `x`, the scan none; `- a\n  ```\n  # x\n  ```\n# y` both `y`;
   `> ```\n# x\n> ```` both `x`] Decided in `docs/design/design.md`
   § Chunking Strategy.
-  [pins: tests/test_headings_fenced_code.py]
+  [pins: tests/test_headings_fenced_code.py::test_section_scan_skips_fenced_code, tests/test_headings_fenced_code.py::test_scan_agrees_with_a_commonmark_parser, tests/test_scanner.py::TestExtractSection::test_fenced_hash_line_is_not_a_boundary]
 - `HeadingChunker._budget_split` — **partial.** A paragraph is a run of
   lines with non-empty `strip()` over `splitlines()`; Python splits on
   `\x0c`, `\x1c`–`\x1e`, `\x85`, U+2028/2029 too and strips NBSP, so its

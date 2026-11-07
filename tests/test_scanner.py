@@ -694,11 +694,11 @@ class TestExtractSection:
         # (Frontmatter parsing may drop a trailing newline, so compare loosely.)
         assert out.splitlines() == ["last line one.", "last line two."]
 
-    def test_fenced_hash_line_acts_as_boundary(self) -> None:
-        """A '#'-prefixed line inside a code fence ends the span, matching the
-        (deliberately non-code-fence-aware) chunker. Characterises the current
-        contract so a future fence-aware change to one side cannot silently
-        desync extraction from indexing."""
+    def test_fenced_hash_line_is_not_a_boundary(self) -> None:
+        """A '#'-prefixed line inside a code fence is code, not a heading, for
+        extraction and the chunker alike (#2034). Characterises the contract on
+        both sides so a change to one cannot silently desync extraction from
+        indexing."""
         text = (
             "# Title\n"
             "## Section\n"
@@ -712,9 +712,15 @@ class TestExtractSection:
         out = extract_section(text, "Section")
         assert out is not None
         assert "before fence." in out
-        # The fenced '#' line is treated as an H1 boundary, so the span ends
-        # there — content after the fence is not part of this section.
-        assert "after fence." not in out
+        # The fenced '#' line is code, so the span runs past the fence to the
+        # next real heading.
+        assert "# not really a heading" in out
+        assert "after fence." in out
+        assert "next body." not in out
+        # The chunker splits at the same lines: no chunk starts at the comment.
+        # (The bodiless "# Title" gets no chunk; that is chunking, see #2033.)
+        chunks = HeadingChunker(short_doc_lines=0).chunk(text, {})
+        assert [c.heading for c in chunks] == ["Section", "Next"]
 
     def test_empty_section_returns_empty_string_not_none(self) -> None:
         """A present-but-empty section (heading immediately followed by a
