@@ -477,9 +477,16 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   backtick in a backtick fence's info string; closer the same character, at
   least as long, nothing after; unclosed runs to the end), applied by
   `_unfenced_lines` in the chunker, the section scan and the title alike, so
-  they stay in parity. Fences inside block quotes or list items are not
-  tracked: their `#` lines never start at column 0, so `_HEADING_RE` cannot
-  match them anyway. Decided in `docs/design/design.md` § Chunking Strategy.
+  they stay in parity. Containers are not tracked. In a block quote this
+  costs nothing: a `>` line never matches `_HEADING_RE`, and a marker-less
+  `# h` ends the quote and is a heading in both. In a list item it costs one
+  shape: a fence opener indented 1–3 spaces is read as a top-level fence, so
+  a column-0 `# h` inside it, which CommonMark reads as ending the item and
+  so as a heading, is skipped. A list item's code indented with the item
+  agrees. [observed: markdown-it-py 3.0.0, `- a\n\n  ```\n# x\n  ```` has
+  heading `x`, the scan none; `- a\n  ```\n  # x\n  ```\n# y` both `y`;
+  `> ```\n# x\n> ```` both `x`] Decided in `docs/design/design.md`
+  § Chunking Strategy.
   [pins: tests/test_headings_fenced_code.py]
 - `HeadingChunker._budget_split` — **partial.** A paragraph is a run of
   lines with non-empty `strip()` over `splitlines()`; Python splits on
