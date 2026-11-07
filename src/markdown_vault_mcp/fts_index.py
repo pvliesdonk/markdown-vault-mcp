@@ -4,7 +4,8 @@
 of the four surfaced :data:`~markdown_vault_mcp.types.SKIP_CATEGORIES` are
 kept PRESENT in the ``documents`` table as *tombstone* rows — ``skip_category``
 non-NULL, ``chunk_count = 0``, and no child rows (no ``sections``,
-``notes_fts``, ``links``, ``document_tags``, or ``document_aliases`` entries).
+``note_headings``, ``notes_fts``, ``links``, ``document_tags``, or
+``document_aliases`` entries).
 Absence of a ``documents`` row therefore means exactly one thing: the path is
 not an index candidate at all (deleted, non-markdown, or excluded by
 pattern). Every reader query goes through the ``documents_live`` view
@@ -1403,8 +1404,8 @@ class FTSIndex:
             )
 
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
-        """Delete a document row (cascade deletes sections, tags, and the
-        notes_fts rowid bridge entries) and its notes_fts rows.
+        """Delete a document row (cascade deletes sections, headings, tags,
+        and the notes_fts rowid bridge entries) and its notes_fts rows.
 
         Looks up ``document_id`` through the ``documents.path`` unique
         index, then deletes notes_fts rows by an indexed rowid lookup
@@ -1544,9 +1545,9 @@ class FTSIndex:
         Deletes any existing rows for ``skip.path`` (live or tombstone) and
         inserts a bare document row carrying the skip category and detail —
         ``chunk_count = 0``, ``content_chars = 0``, and deliberately **no**
-        child rows (no ``sections``, ``notes_fts``, ``links``,
-        ``document_tags``, or ``document_aliases`` entries), so every reader
-        that joins through a child table sees nothing and ``documents_live``
+        child rows (no ``sections``, ``note_headings``, ``notes_fts``,
+        ``links``, ``document_tags``, or ``document_aliases`` entries), so
+        every reader that joins through a child table sees nothing and ``documents_live``
         hides the row from direct readers. The delete + insert run in one
         transaction, mirroring :meth:`upsert_note`.
 
