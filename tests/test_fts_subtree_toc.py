@@ -12,10 +12,10 @@ from markdown_vault_mcp.types import TocEntry
 
 
 def _build_fts(root: Path) -> FTSIndex:
-    # short_doc_lines=0 disables the short-doc bypass so heading-boundary
-    # splitting fires even on small test fixtures.  max_chunk_words=1 forces
-    # adaptive re-splitting at H3+ so all heading levels appear in sections.
-    chunker = HeadingChunker(short_doc_lines=0, max_chunk_words=1)
+    # The default chunker on purpose: these fixtures are short notes, which it
+    # keeps as one heading-less chunk, and the outline must not depend on that
+    # (#2033). The fixture once forced a split here to hide the dependency.
+    chunker = HeadingChunker()
     fts = FTSIndex(db_path=":memory:")
     for note in scan_directory(root, chunk_strategy=chunker):
         fts.upsert_note(note)

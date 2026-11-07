@@ -107,6 +107,12 @@ class ParsedNote:
             frontmatter parser. Measured before chunking, because
             ``chunk_overlap_words`` duplicates text across chunks and would
             inflate any count summed from :attr:`chunks`.
+        headings: Every ATX heading in the body, in document order, as
+            ``read(path, section=...)`` finds them. Kept apart from
+            :attr:`chunks` because a chunk carries at most one heading and
+            the chunker drops some (a short note, a heading with no body, a
+            parent split at its sub-headings), so an outline read from chunks
+            misses them (#2033).
     """
 
     path: str
@@ -117,6 +123,7 @@ class ParsedNote:
     modified_at: float
     links: list[LinkInfo] = field(default_factory=list)
     content_chars: int = 0
+    headings: list[TocEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -826,8 +833,8 @@ class TocEntry:
     """A single heading in a table of contents.
 
     Attributes:
-        heading: Section heading text; non-empty (NULL headings are filtered
-            at the DB layer).
+        heading: Section heading text, as written after the ``#`` run;
+            non-empty.
         level: Markdown heading depth, 1 (H1) through 6 (H6).
     """
 
