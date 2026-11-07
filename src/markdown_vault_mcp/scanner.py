@@ -860,11 +860,6 @@ def strip_frontmatter_block(text: str) -> str:
     return body.lstrip("\n")
 
 
-# The spaces and tabs ending a run of leading whitespace: the indentation of
-# the first non-blank line, which is all CommonMark counts as indentation.
-_FIRST_LINE_INDENT_RE = re.compile(r"[ \t]*\Z")
-
-
 def _restore_first_indent(text: str, stripped: str) -> str:
     """Give *stripped* back the indentation its first line had in *text*.
 
@@ -881,8 +876,11 @@ def _restore_first_indent(text: str, stripped: str) -> str:
         return stripped
     verbatim = strip_frontmatter_block(text)
     leading = verbatim[: len(verbatim) - len(verbatim.lstrip())]
-    match = _FIRST_LINE_INDENT_RE.search(leading)
-    indent = match.group(0) if match else ""
+    # The spaces and tabs ending the leading whitespace: the first non-blank
+    # line's indentation, all CommonMark counts as indentation. Sliced rather
+    # than matched: a regex search here is quadratic in a long space run
+    # ending in a line break.
+    indent = leading[len(leading.rstrip(" \t")) :]
     return indent + stripped
 
 

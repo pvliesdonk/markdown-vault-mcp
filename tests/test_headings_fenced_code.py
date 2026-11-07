@@ -18,7 +18,6 @@ from markdown_vault_mcp.scanner import (
     HeadingChunker,
     extract_section,
     list_section_headings,
-    parse_frontmatter,
     parse_note,
 )
 from markdown_vault_mcp.types import TocEntry
@@ -133,10 +132,9 @@ def _corpus() -> list[str]:
 def test_scan_agrees_with_a_commonmark_parser() -> None:
     md = pytest.importorskip("markdown_it").MarkdownIt("commonmark")
     for body in _corpus():
-        # The parser reads the body the scan reads: python-frontmatter strips
-        # it, so leading blank lines and a first line's indentation are gone
-        # before any heading or fence is looked for, in the index as well.
-        tokens = md.parse(parse_frontmatter(body).content)
+        # The raw text: since #2036 the scan keeps the first line's
+        # indentation, so it agrees with the parser on the note as written.
+        tokens = md.parse(body)
         theirs = [
             tokens[i + 1].content
             for i, tok in enumerate(tokens)

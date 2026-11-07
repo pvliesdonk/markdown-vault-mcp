@@ -9,6 +9,7 @@ every other note must read exactly as before.
 from __future__ import annotations
 
 import itertools
+import time
 from pathlib import Path  # noqa: TC003
 
 import pytest
@@ -47,6 +48,15 @@ def test_only_spaces_and_tabs_are_restored() -> None:
     # A non-breaking space is content to CommonMark, not indentation; the
     # stripped body is kept as python-frontmatter returns it.
     assert note_body("\u00a0x\n") == parse_frontmatter("\u00a0x\n").content
+
+
+def test_long_leading_whitespace_is_linear() -> None:
+    # 200,000 spaces then a line break: a regex search for the trailing
+    # indentation backtracks quadratically on this (seconds); slicing does not.
+    text = " " * 200_000 + "\n  x\n"
+    start = time.perf_counter()
+    assert note_body(text) == "  x"
+    assert time.perf_counter() - start < 0.5
 
 
 def _unindented_corpus() -> list[str]:
