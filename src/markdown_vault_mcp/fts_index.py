@@ -481,6 +481,14 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: re-split at its sub-headings with no text between them. Existing rows
 #: are unchanged; the bump re-parses every note so the new table is filled.
 #: Version 10 shipped in v5.0.0, so this is a new bump, not an extension.
+#:
+#: Version 11 also covers #2034: a ``#`` line inside fenced code is no
+#: longer a heading. That moves rows three ways for a note with such a line:
+#: its ``note_headings`` lose the code comment, its ``sections`` no longer
+#: split at it (so a chunk keeps its code block whole and its real heading),
+#: and its title, when the comment was the first H1, falls through to the
+#: next real H1 or the filename. Still one bump: no tag contains the commit
+#: that set 11 (``AGENTS.md``, once per release).
 INDEX_SEMANTICS_VERSION = 11
 
 

@@ -612,6 +612,15 @@ class ChunkStrategy(Protocol):
         ...
 ```
 
+**Headings and fenced code (#2034)**: a line inside fenced code (CommonMark
+§4.5: 3+ backticks or tildes indented at most 3 spaces, closed by the same
+character at least as long, unclosed running to the end of the note) is never
+a heading. One scan, `_unfenced_lines`, enforces this for the chunker's split
+points, `_scan_headings` (`read(path, section=...)`, its suggestions and the
+outline) and the first-H1 title, so all three agree on which lines are
+headings. Before it, `# install deps` in a shell block ended the section
+above it and could become the note's title.
+
 **Phase 1 implementations**:
 - `HeadingChunker`: split on H1/H2 boundaries. Short documents stay as single
   chunk. Each chunk inherits the document's frontmatter. Default.

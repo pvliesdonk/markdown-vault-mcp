@@ -178,7 +178,7 @@ Python 3.13.
   `####### foo` (Ex. 63), `#5 bolt` (Ex. 64), 4-space-indented `#` (Ex. 69)
   are not headings; `#` alone is an empty heading (Ex. 79); `# foo ##` has
   content `foo` (Ex. 71). [source: cm]
-  [pins: tests/test_scanner.py::TestExtractSection::test_fenced_hash_line_acts_as_boundary]
+  [pins: tests/test_scanner.py::TestExtractSection::test_fenced_hash_line_is_not_a_boundary]
 - Heading content is inline-parsed: `intro`/`# See [t](n.md)`/`body` links
   `t`; so does setext text `See [t](n.md)`/`===`. [observed: markdown-it-py
   3.0.0, those inputs]
@@ -472,8 +472,22 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   Right: 1–6 `#`, whitespace required, `#h` and 7 `#` rejected, CR/CRLF
   fine via `splitlines`. Narrower: a heading indented 1–3 spaces missed; an
   empty `#` missed; a closing `##` run kept in the text; setext headings
-  invisible; `# h` inside a fence counts (deliberate chunker parity, see the
-  module comment). Decided in `docs/design/design.md` § Chunking Strategy.
+  invisible. Right since #2034: a line inside a fence is not a heading, by
+  the §4.5 fence rules above (opener ≤ 3 spaces, 3+ of one character, no
+  backtick in a backtick fence's info string; closer the same character, at
+  least as long, nothing after; unclosed runs to the end), applied by
+  `_unfenced_lines` in the chunker, the section scan and the title alike, so
+  they stay in parity. Containers are not tracked. In a block quote this
+  costs nothing: a `>` line never matches `_HEADING_RE`, and a marker-less
+  `# h` ends the quote and is a heading in both. In a list item it costs one
+  shape: a fence opener indented 1–3 spaces is read as a top-level fence, so
+  a column-0 `# h` inside it, which CommonMark reads as ending the item and
+  so as a heading, is skipped. A list item's code indented with the item
+  agrees. [observed: markdown-it-py 3.0.0, `- a\n\n  ```\n# x\n  ```` has
+  heading `x`, the scan none; `- a\n  ```\n  # x\n  ```\n# y` both `y`;
+  `> ```\n# x\n> ```` both `x`] Decided in `docs/design/design.md`
+  § Chunking Strategy.
+  [pins: tests/test_headings_fenced_code.py::test_section_scan_skips_fenced_code, tests/test_headings_fenced_code.py::test_scan_agrees_with_a_commonmark_parser, tests/test_scanner.py::TestExtractSection::test_fenced_hash_line_is_not_a_boundary]
 - `HeadingChunker._budget_split` — **partial.** A paragraph is a run of
   lines with non-empty `strip()` over `splitlines()`; Python splits on
   `\x0c`, `\x1c`–`\x1e`, `\x85`, U+2028/2029 too and strips NBSP, so its
