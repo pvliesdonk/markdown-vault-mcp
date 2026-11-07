@@ -860,6 +860,55 @@ def strip_frontmatter_block(text: str) -> str:
     return body.lstrip("\n")
 
 
+# The spaces and tabs ending a run of leading whitespace: the indentation of
+# the first non-blank line, which is all CommonMark counts as indentation.
+_FIRST_LINE_INDENT_RE = re.compile(r"[ \t]*\Z")
+
+
+def _restore_first_indent(text: str, stripped: str) -> str:
+    """Give *stripped* back the indentation its first line had in *text*.
+
+    Args:
+        text: Raw markdown file text (frontmatter included).
+        stripped: The body as python-frontmatter returns it, stripped of
+            whitespace at both ends.
+
+    Returns:
+        *stripped* with the first non-blank line's leading spaces and tabs
+        restored; ``""`` when *stripped* is empty.
+    """
+    if not stripped:
+        return stripped
+    verbatim = strip_frontmatter_block(text)
+    leading = verbatim[: len(verbatim) - len(verbatim.lstrip())]
+    match = _FIRST_LINE_INDENT_RE.search(leading)
+    indent = match.group(0) if match else ""
+    return indent + stripped
+
+
+def note_body(text: str) -> str:
+    """Return a note's body as the index reads it (#2036).
+
+    python-frontmatter strips the body at both ends, which also strips the
+    first line's indentation: a note opening with an indented code block lost
+    it and its ``#`` line became a heading and the title. This keeps the
+    stripped body, so every other note reads byte for byte as before, and
+    restores only that indentation (spaces and tabs). Leading blank lines and
+    trailing whitespace stay dropped; CommonMark ignores both.
+
+    Args:
+        text: Raw markdown file text (frontmatter included).
+
+    Returns:
+        The body, frontmatter removed.
+
+    Raises:
+        yaml.YAMLError: The frontmatter block is present but unreadable (see
+            :func:`parse_frontmatter`).
+    """
+    return _restore_first_indent(text, parse_frontmatter(text).content)
+
+
 def list_section_headings(text: str) -> list[str]:
     """Return the document's ATX heading texts in document order.
 
@@ -872,7 +921,7 @@ def list_section_headings(text: str) -> list[str]:
     Returns:
         Heading strings as written (whitespace not normalised), in order.
     """
-    body = parse_frontmatter(text).content
+    body = note_body(text)
     return [h for _, _, h in _scan_headings(body.splitlines(keepends=True))]
 
 
@@ -899,7 +948,7 @@ def extract_section(text: str, heading: str) -> str | None:
     norm_query = normalize_heading(heading)
     if not norm_query:
         return None
-    body = parse_frontmatter(text).content
+    body = note_body(text)
     lines = body.splitlines(keepends=True)
     headings = _scan_headings(lines)
     for i, (idx, level, htext) in enumerate(headings):
@@ -2140,7 +2189,8 @@ def parse_note(
     # python-frontmatter strips the YAML block and returns the body separately.
     post = parse_frontmatter(text)
     metadata: dict[str, Any] = dict(post.metadata)
-    body: str = post.content
+    # As note_body reads it: the first line keeps its indentation (#2036).
+    body: str = _restore_first_indent(text, post.content)
 
     title = _resolve_title(metadata, body, path, title_field)
 

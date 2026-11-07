@@ -104,7 +104,9 @@ class ParsedNote:
         links: All links extracted from the document body.
         content_chars: Character count of the document body as parsed:
             frontmatter removed and surrounding whitespace normalised by the
-            frontmatter parser. Measured before chunking, because
+            frontmatter parser, except that the first line keeps its
+            indentation (:func:`~markdown_vault_mcp.scanner.note_body`,
+            #2036). Measured before chunking, because
             ``chunk_overlap_words`` duplicates text across chunks and would
             inflate any count summed from :attr:`chunks`.
         headings: Every ATX heading in the body, in document order, as

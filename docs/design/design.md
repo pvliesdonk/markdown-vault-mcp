@@ -164,6 +164,17 @@ Frontmatter is **optional by default**. Documents without frontmatter are
 indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
+**The body the index reads (#2036)**: `scanner.note_body` returns
+python-frontmatter's body, which is stripped at both ends, with one repair:
+the first non-blank line keeps its leading spaces and tabs. Without it, a note
+opening with an indented code block (`    # x`, CommonMark §4.4) lost the
+indentation, and its `#` line became an H1, the title and a chunk boundary.
+Only that indentation is restored, so every other note's body, chunks and
+embedding inputs are byte-identical to before. Leading blank lines and
+trailing whitespace stay dropped, which CommonMark ignores. `parse_note`,
+`list_section_headings`, `extract_section` and the link report all read
+through it.
+
 A `required_frontmatter` configuration option enforces specific fields:
 
 ```python
