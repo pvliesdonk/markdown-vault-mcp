@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from markdown_vault_mcp.scanner import extract_links, parse_frontmatter
+from markdown_vault_mcp.scanner import extract_links, note_body
 from markdown_vault_mcp.utils import validate_path
 from markdown_vault_mcp.utils.content_kind import effective_attachment_extensions
 from markdown_vault_mcp.utils.text import decode_utf8
@@ -87,7 +87,7 @@ class UnresolvedLinkReporter:
         """
         abs_path = validate_path(path, self._source_dir)
         try:
-            body = parse_frontmatter(decode_utf8(abs_path.read_bytes())).content
+            body = note_body(decode_utf8(abs_path.read_bytes()))
         except (OSError, UnicodeDecodeError, yaml.YAMLError):
             return []
         links = extract_links(

@@ -489,6 +489,13 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: and its title, when the comment was the first H1, falls through to the
 #: next real H1 or the filename. Still one bump: no tag contains the commit
 #: that set 11 (``AGENTS.md``, once per release).
+#:
+#: Version 11 also covers #2036: a note whose first non-blank line is
+#: indented now keeps that indentation in its body (``scanner.note_body``).
+#: For a note opening with indented code that holds a ``#`` line, the line
+#: is no longer an H1, the title or a chunk boundary; its chunk and
+#: ``content_chars`` gain the indentation. Every other note's rows are
+#: byte-identical, so no other note's embeddings are recomputed.
 INDEX_SEMANTICS_VERSION = 11
 
 
