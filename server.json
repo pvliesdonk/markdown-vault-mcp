@@ -3,7 +3,7 @@
   "name": "io.github.pvliesdonk/markdown-vault-mcp",
   "title": "Markdown Vault MCP",
   "description": "Generic markdown vault MCP with hybrid search",
-  "version": "6.1.0",
+  "version": "6.1.1",
   "websiteUrl": "https://pvliesdonk.github.io/markdown-vault-mcp/",
   "repository": {
     "url": "https://github.com/pvliesdonk/markdown-vault-mcp",
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "markdown-vault-mcp",
-      "version": "6.1.0",
+      "version": "6.1.1",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -556,7 +556,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/pvliesdonk/markdown-vault-mcp:v6.1.0",
+      "identifier": "ghcr.io/pvliesdonk/markdown-vault-mcp:v6.1.1",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:{--port}/mcp"

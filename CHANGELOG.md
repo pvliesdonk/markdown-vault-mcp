@@ -22,6 +22,14 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 6.1.1 (2026-11-08)
+
+### Bug Fixes
+
+- outline every heading a note has, not only those its chunks carry (#2035)
+- a line inside fenced code is never a heading (#2037)
+- keep the indentation of a note's first line (#2038)
+
 ## 6.1.0 (2026-11-02)
 
 ### Features
