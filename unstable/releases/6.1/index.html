@@ -2731,6 +2731,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v611" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v6.1.1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v6.1.1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrading_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-outline-lists-every-heading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The outline lists every heading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-is-not-a-heading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code is not a heading
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2752,7 +2802,7 @@
 
 
 <h1 id="61">6.1<a class="headerlink" href="#61" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: 550922f6be474bff6520bf990a5edbd6ed16e793 -->
+<!-- notes-range-end: 25db173cd9085b7241bd9d59bebadc77369671fe -->
 
 <!-- RELEASE-SUMMARY v6.1.0 START -->
 <p>This release brings the vault to the terminal. The <code>markdown-vault-mcp</code>
@@ -2897,6 +2947,67 @@ sub-commands
 <a href="https://github.com/pvliesdonk/fastmcp-server-template/pull/850">fastmcp-server-template#850</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1998">#1998</a>).</p>
 <!-- PATCH-RELEASES-START -->
+
+<h2 id="v611">v6.1.1<a class="headerlink" href="#v611" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v6.1.1 START -->
+<p>This release fixes how the server finds the headings in a note. The outline
+that <code>get_toc</code> returns now lists every heading the note has, a <code>#</code> line inside
+fenced code is no longer read as a heading, and a note that opens with
+indented code keeps it as code instead of taking its first line as the title.
+Nothing needs to change on upgrade. The first start rebuilds the text index
+once; the release's Upgrading notes say what that keeps.</p>
+<!-- RELEASE-SUMMARY v6.1.1 END -->
+
+<h3 id="upgrading_1">Upgrading<a class="headerlink" href="#upgrading_1" title="Permanent link">&para;</a></h3>
+<p>No step is required.</p>
+<p><strong>Clients:</strong> nothing beyond reconnecting. No tool, parameter or payload shape
+changes. An outline can list more headings than before, a heading that occurs
+twice in a note is listed twice, and a note whose title came from a <code>#</code> line
+in code gets its real title.</p>
+<p><strong>State:</strong> kept. The first start after upgrading rebuilds the text index once,
+automatically, because this release changes how headings are derived from the
+notes. The embeddings are kept: only a note whose sections came out different
+is embedded again, and only its changed sections. Those are notes with a <code>#</code>
+line inside fenced code and notes whose first line is indented. A reader that
+opens an index read-only, such as the terminal client on a local index, keeps
+the old outline for an index an older version built until the server has
+rebuilt it, and logs <code>toc_heading_table_missing</code> once.</p>
+<p><strong>Security posture:</strong> none.</p>
+<h3 id="the-outline-lists-every-heading">The outline lists every heading<a class="headerlink" href="#the-outline-lists-every-heading" title="Permanent link">&para;</a></h3>
+<p><a href="../../reference/tools/reader/#get_toc"><code>get_toc</code></a> and the
+<code>toc://vault/{path}</code> resource return the heading outline of a note, or of
+every note under a folder. Until this release the outline was read from the
+index's search chunks, and a chunk carries at most one heading. The report in
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2033">#2033</a> was that
+it "omits headings that <code>read</code> returns and that <code>read(path, section=...)</code>
+finds". The outline missed:</p>
+<ul>
+<li>every heading in a note of 30 lines or fewer;</li>
+<li>headings below H2 inside a section short enough to stay one chunk;</li>
+<li>a heading with no text under it;</li>
+<li>in a long section, a heading followed directly by a deeper one.</li>
+</ul>
+<p>The index now stores every heading of a note in document order, found by the
+same scan that <code>read(path, section=...)</code> uses, so each heading the outline
+lists is one a section read accepts, and the other way round
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2035">#2035</a>). Search
+chunks are unchanged.</p>
+<h3 id="code-is-not-a-heading">Code is not a heading<a class="headerlink" href="#code-is-not-a-heading" title="Permanent link">&para;</a></h3>
+<p>A <code>#</code> line inside fenced code is a comment or a prompt, not a heading. As
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2034">#2034</a> put it,
+<code>read(path, section="Setup")</code> "stops at a <code># comment</code> line inside a fenced
+code block". The same line showed in the outline, split a search chunk inside
+the code, and could become the note's title. Lines between an opening and a
+closing fence of three or more backticks or tildes are now never headings,
+for section reads, the outline, chunking and the title alike
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2037">#2037</a>).</p>
+<p>A note that opens with indented code had the same problem one step earlier:
+the body was read with its first line's indentation stripped, so, in the
+words of <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2036">#2036</a>,
+"the code line loses its indentation, and a <code>#</code> line in it becomes the note's
+title and an H1 in the outline". The first line now keeps its indentation;
+every other note reads exactly as before
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2038">#2038</a>).</p>
 <!-- PATCH-RELEASES-END -->
 
 
