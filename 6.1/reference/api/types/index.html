@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.8.1">
     
     
       
@@ -2367,6 +2367,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="ParsedNote">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.ParsedNote--2036-measured-before-chunking-because" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2036). Measured before chunking, because
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3286,6 +3303,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="ParsedNote">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.ParsedNote--2036-measured-before-chunking-because" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2036). Measured before chunking, because
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4164,7 +4198,7 @@ from queries that select a narrower column set.</p>
 
 
 <h2 id="markdown_vault_mcp.types.ParsedNote" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ParsedNote</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">links</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">content_chars</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">ParsedNote</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">links</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">content_chars</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">headings</span><span class="o">=</span><span class="nb">list</span><span class="p">())</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -4284,9 +4318,27 @@ from queries that select a narrower column set.</p>
               <div class="doc-md-description">
                 <p>Character count of the document body as parsed:
 frontmatter removed and surrounding whitespace normalised by the
-frontmatter parser. Measured before chunking, because
-<code>chunk_overlap_words</code> duplicates text across chunks and would
+frontmatter parser, except that the first line keeps its
+indentation (:func:<code>~markdown_vault_mcp.scanner.note_body</code>,</p>
+<h3 id="markdown_vault_mcp.types.ParsedNote--2036-measured-before-chunking-because">2036). Measured before chunking, because<a class="headerlink" href="#markdown_vault_mcp.types.ParsedNote--2036-measured-before-chunking-because" title="Permanent link">&para;</a></h3>
+<p><code>chunk_overlap_words</code> duplicates text across chunks and would
 inflate any count summed from :attr:<code>chunks</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.ParsedNote.headings">headings</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="markdown_vault_mcp.types.TocEntry">TocEntry</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Every ATX heading in the body, in document order, as
+<code>read(path, section=...)</code> finds them. Kept apart from
+:attr:<code>chunks</code> because a chunk carries at most one heading and
+the chunker drops some (a short note, a heading with no body, a
+parent split at its sub-headings), so an outline read from chunks
+misses them (#2033).</p>
               </div>
             </td>
           </tr>
@@ -8278,7 +8330,7 @@ digits under SHA-1, 64 under SHA-256).</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
         <script src="../../../javascripts/config-wizard/wizard.js" type="module"></script>
       
