@@ -19,6 +19,12 @@
     {
       "matchUpdateTypes": ["major"],
       "automerge": false
+    },
+    {
+      "description": "The [build-system] hatchling pin is template-owned: it moves only with a template release paired with a publisher check (see the comment above the pin in pyproject.toml), so a bump here is drift from the template (#839).",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["build-system.requires"],
+      "enabled": false
     }
   ]
 }
