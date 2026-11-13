@@ -60,7 +60,7 @@ gh secret set SONAR_TOKEN
 gh secret set CLAUDE_CODE_OAUTH_TOKEN
 ```
 
-`GITHUB_TOKEN` is provided by GitHub; nothing to configure. Dependency updates come from Renovate (`renovate.yml`), which reuses `RELEASE_TOKEN`, maintains `uv.lock` and merges patch and minor bumps once `CI Success` is green. `bootstrap.yml` enables auto-merge, applies the rulesets under `.github/rulesets/`, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from `pyproject.toml` on the first push; [repository protection](repository-protection.md) has the per-branch posture. GitHub Actions versions are updated in the template and arrive through template updates, not per repository.
+`GITHUB_TOKEN` is provided by GitHub; nothing to configure. Dependency updates come from Renovate (`renovate.yml`), which reuses `RELEASE_TOKEN`, maintains `uv.lock` and merges patch and minor bumps once `CI Success` is green. `bootstrap.yml` enables auto-merge, applies the rulesets under `.github/rulesets/`, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from `pyproject.toml` on the first push; [repository protection](repository-protection.md) has the per-branch posture. GitHub Actions versions and the `hatchling` build-backend bound in `pyproject.toml` are updated in the template and arrive through template updates, not per repository.
 
 ## The other pages here
 

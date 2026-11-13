@@ -82,9 +82,14 @@ class LifespanState(TypedDict):
 
 
 @asynccontextmanager
-async def server_lifespan(_mcp: object) -> AsyncIterator[dict[str, Any]]:
-    """Start the service on startup; stop it on shutdown."""
-    service = Service()
+async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+    """Start the service on startup; stop it on shutdown.
+
+    The service gets the ``ProjectConfig`` ``make_server`` bound, the same
+    object :func:`config_for` hands the registrars, so it never re-reads the
+    environment (pvliesdonk/fastmcp-server-template#727).
+    """
+    service = Service(config_for(mcp))
     await service.start()
     logger.info("service_started")
     try:

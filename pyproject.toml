@@ -48,6 +48,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    # src/<module>/py.typed (PEP 561) ships with the package.
+    "Typing :: Typed",
     # PROJECT-LICENSE-CLASSIFIER-START — kept across copier update; the trove
     # name is not the SPDX id (Apache-2.0 is "Apache Software License"), which
     # is one reason this is a separate edit rather than a derived one.
@@ -216,6 +218,10 @@ dev = [
     # PyYAML ships no inline types, so `import yaml` in tests/test_compose.py
     # is an untyped import that fails `mypy src/ tests/` without these stubs.
     "types-PyYAML>=6",
+    # PROJECT-DEV-DEPS-START — this project's test and tooling dependencies
+    # (respx, hypothesis, ...); kept across copier update.  Never published,
+    # unlike an extra in PROJECT-EXTRAS.
+    # PROJECT-DEV-DEPS-END
 ]
 docs = [
     "mike>=2",
@@ -249,7 +255,14 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # version moves: 1.27 took it to 2.4 and 1.32 took it to 2.5.  A `<2` ceiling
 # would have stopped neither, so it buys the look of a guard without one.
 # Patch releases stay open; a minor bump is a deliberate edit here, paired
+<<<<<<< before updating
 # with a publisher that accepts whatever the new minor emits.
+=======
+# with a publisher that accepts whatever the new minor emits.  1.33 still
+# emits 2.5, which the pinned publisher's twine accepts (#839).  Downstream
+# Renovate is told to leave this line alone (renovate.json), so the minor
+# moves through a template release for every project at once.
+>>>>>>> after updating
 requires = ["hatchling>=1.33,<1.34"]
 build-backend = "hatchling.build"
 
@@ -518,6 +531,9 @@ addopts = ["--strict-markers", "-ra"]
 asyncio_mode = "auto"
 markers = [
     "browser: end-to-end test that drives a headless browser (requires the 'browser' dependency group + 'playwright install chromium')",
+    # PROJECT-MARKERS-START — this project's pytest markers; kept across
+    # copier update.  --strict-markers rejects any marker not declared here.
+    # PROJECT-MARKERS-END
 ]
 
 [tool.coverage.run]
@@ -566,6 +582,14 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = ["jsonschema", "jsonschema.*"]
 ignore_missing_imports = true
+
+# PROJECT-MYPY-OVERRIDES-START — one [[tool.mypy.overrides]] table per untyped
+# third-party library this project imports, setting only
+# ignore_missing_imports = true; kept across copier update.  Prefer a stubs
+# package in PROJECT-DEV-DEPS when one exists.  tests/test_mypy_overrides.py
+# rejects any other setting, and any table that names this project's own
+# package or tests, so neither can loosen `mypy src/ tests/`.
+# PROJECT-MYPY-OVERRIDES-END
 
 [tool.pyright]
 # Point Pyright at the uv-managed venv so editor diagnostics resolve
