@@ -49,6 +49,13 @@ vault becomes another.
    the primary interface; MCP is one consumer, not the only one. Other
    libraries (LangChain, LlamaIndex, and so on) may wrap `Vault` directly.
 
+The installed library advertises its inline annotations with
+`markdown_vault_mcp/py.typed` (#1911). The wheel must let a type checker accept
+a correctly typed `EmbeddingProvider` subclass and reject an incorrect return
+annotation in a consumer outside the source tree. This does not change the
+runtime import surface or split the distribution; the external packaging rule
+is recorded in [Python packaging boundaries](reference/python-packaging-boundaries.md).
+
 ## Shared Infrastructure
 
 Generic FastMCP infrastructure (auth providers, middleware stack, logging
@@ -5064,9 +5071,9 @@ opt-in, since it writes a whole vault into the database it is given.
 `DIR/<git sha>[-dirty]-<size>-<UTC time>.json` and prints the tables.
 
 The harness is strict-typed. Gate 3 (`uv run mypy src/ tests/`) checks it
-through the tests' imports; on its own, check it as a package with the
-source tree on the path, `MYPYPATH=src uv run mypy -p scripts.envelope`,
-since the installed package has no `py.typed` marker yet (#1911).
+through the tests' imports; on its own, check it as a package with
+`uv run mypy -p scripts.envelope`. The installed library exposes its
+annotations through its `py.typed` marker (#1911).
 
 **Inputs.** A seeded synthetic vault (`synth.generate_vault`): notes of six
 H2 sections in a 1,000-word vocabulary, one folder in ten holding the notes
