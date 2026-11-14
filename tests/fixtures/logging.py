@@ -49,11 +49,11 @@ def reader_logging() -> Iterator[StringIO]:
     with StringIO() as destination, preserve_root_logging():
 
         def configure(env_prefix: str, *, verbose: bool = False) -> None:
-            before = {id(handler) for handler in root.handlers}
+            before = set(root.handlers)
             with redirect_stderr(destination):
                 original(env_prefix, verbose=verbose)
                 for handler in root.handlers:
-                    if id(handler) in before:
+                    if handler in before:
                         continue
                     if isinstance(handler, RichHandler):
                         handler.console.file = destination
