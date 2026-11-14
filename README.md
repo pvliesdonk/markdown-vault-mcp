@@ -123,7 +123,7 @@ Every variable the server reads, the shared ones included, is in the [configurat
 - **Tool semantics mirror Claude Code's Read/Write/Edit patterns**, so LLM clients drive the vault with habits they already have.
 - **The library is synchronous**; the MCP layer wraps calls in `asyncio.to_thread()`. File writes return after saving, while index updates run in the background. Index-dependent mutations wait for prior writes; see [index freshness](docs/reference/api/vault.md#index-freshness-after-writes).
 - **Indexing is hash-based**: unchanged files are never re-parsed, and any change to how stored rows derive from a note's bytes bumps `INDEX_SEMANTICS_VERSION` so deployed vaults rebuild themselves once on upgrade.
-- **Skipped-note status follows refreshes**: [`get_index_status`](docs/reference/tools/indexing.md#get_index_status) reports missing required fields and malformed YAML after a write's index refresh, and clears repaired or removed paths.
+- **Skipped-note status follows refreshes**: [`get_index_status`](docs/reference/tools/indexing.md#get_index_status) reports missing required fields and malformed YAML after an index refresh, and clears repaired or removed paths.
 
 The full decision log lives in the [design document](docs/design/design.md).
 <!-- DOMAIN-README-DESIGN-END -->
