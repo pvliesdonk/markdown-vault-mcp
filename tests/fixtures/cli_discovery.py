@@ -11,6 +11,7 @@ import pytest
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.server import make_server
 from tests.fixtures.cli_http import serve_http
+from tests.fixtures.logging import reader_logging
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -48,13 +49,14 @@ def reader_backend(remote: bool) -> Iterator[list[str]]:
     Yields:
         Connection arguments for one CLI invocation.
     """
-    if not remote:
-        yield ["--local"]
-        return
-    config = ProjectConfig.from_env()
-    server = make_server(transport="http", config=config, configure_logging=False)
-    with serve_http(server.http_app()) as origin:
-        yield ["--server", origin + "/mcp"]
+    with reader_logging():
+        if not remote:
+            yield ["--local"]
+            return
+        config = ProjectConfig.from_env()
+        server = make_server(transport="http", config=config, configure_logging=False)
+        with serve_http(server.http_app()) as origin:
+            yield ["--server", origin + "/mcp"]
 
 
 @pytest.fixture
