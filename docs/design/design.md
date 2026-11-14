@@ -5939,6 +5939,13 @@ The exact-query CLI registers `query metadata`, `query body`, `query note`, `que
 
 Query envelopes are validated before output, including native item/section shapes, coherent page counts, bucket counts and remote payload/metadata freshness agreement. Extra native fields remain intact. The generic renderer emits one object record with header count one, retaining native population and pagination receipts inside that object. Local adapters omit unknown freshness. Pure constructor errors exit two; library, transport and unexpected backend faults exit one, with unexpected faults receiving a safe diagnostic; interrupts exit130. No error falls back to another backend. Internal path ordering and literal pattern modes remain library-only.
 
+After successful validation and rendering, truncated `query metadata` and
+`query body` pages emit text/agent guidance on stderr to repeat the same query
+with `--offset` equal to the validated offset plus returned item count, keeping
+all other options unchanged. JSON output and native records remain unchanged;
+there is no additional read. Other commands and empty or untruncated pages have
+no continuation hint. Later pages read the live index, not a retained snapshot.
+
 The `query path` CLI maps a validated literal query, optional fuzzy flag, folder, indexed frontmatter predicates and limit to native `search_paths`. The CLI contains no matching algorithm or SQL. Local path reads disable embedding and summarization setup and ignore vector sidecars; configured indexes retain completed-build adoption and read-only ownership. Local items retain frontmatter and native optional OKF annotations, with unknown freshness. Remote calls retain the complete native envelope and observed freshness without opening a local vault.
 
 Path JSON and human output retain the native object. Agent output emits one object record with `count=1`, independent of the item population. Only string `coverage` and Boolean `truncated` are also projected into the header using escaped JSON values; absent or malformed receipts are not projected. The object retains all fields, including coverage reasons. Approximate coverage and known-match output truncation remain separate native observations.

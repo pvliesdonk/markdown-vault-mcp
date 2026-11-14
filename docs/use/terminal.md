@@ -48,6 +48,12 @@ markdown-vault-mcp query path "relase plan" --fuzzy
 
 Output is plain text by default. Add `--json` for the server's structured result, for scripts, or `--agent` for one escaped record per line. A remote lookup never falls back to a local vault. If the server can't answer, the command says why and exits 1.
 
+When `query metadata` or `query body` returns a truncated page, text and agent
+output add a continuation hint on stderr. Repeat the same query with the suggested
+`--offset`, keeping all other options unchanged. JSON output keeps the native
+pagination fields without a hint. Each page reads the live index; indexing
+between calls can shift later pages.
+
 ## Inside the server's Docker container
 
 The image carries the same command. Run inside the container, it reads the server's own index with the container's settings, so it needs no address and no token, and it never writes to the index or the vault:
