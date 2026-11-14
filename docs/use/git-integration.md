@@ -509,7 +509,7 @@ In no-git mode nothing is committed, so nothing is refused.
 
 `fetch` checks its destination before downloading a URL. A note or attachment
 inside a git submodule is refused before the request starts; choose a path
-outside the submodule or change the file in the submodule's own repository.
+outside the submodule or edit the file in its upstream repository.
 The save still applies the usual overwrite and etag checks.
 
 ## Git LFS
