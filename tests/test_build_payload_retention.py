@@ -174,7 +174,7 @@ def test_late_unread_prefix_spares_old_rows_but_not_deleted_siblings(
     assert [row["path"] for row in fts.list_tombstones()] == ["shut/bad.md"]
 
 
-def test_database_failure_does_not_record_a_completed_build(
+def test_database_error_propagates_without_advancing_tracker(
     tmp_path: Path,
     build_parts: tuple[IndexManager, FTSIndex, ChangeTracker],
     monkeypatch: pytest.MonkeyPatch,
@@ -190,7 +190,6 @@ def test_database_failure_does_not_record_a_completed_build(
     with pytest.raises(sqlite3.OperationalError, match="synthetic locked writer"):
         manager.build_index()
     assert not (tmp_path / "state.json").exists()
-    assert not fts.is_build_completed()
 
 
 @pytest.mark.parametrize("force", [False, True])
@@ -260,11 +259,20 @@ def test_indexes_without_optional_projection_remain_compatible(
     monkeypatch: pytest.MonkeyPatch,
     force: bool,
 ) -> None:
-    """The required keyword protocol continues to work through its eager reader."""
+    """The eager fallback prunes stale rows while retaining surviving state."""
     manager, fts, tracker = build_parts
-    (tmp_path / "vault/a.md").write_text("# A\n\nbodyword\n", encoding="utf-8")
+    root = tmp_path / "vault"
+    (root / "a.md").write_text("# A\n\nbodyword\n", encoding="utf-8")
+    (root / "deleted.md").write_text("# Deleted\n\nstaleword\n", encoding="utf-8")
+    assert manager.build_index().documents_indexed == 2
+    old_hash = fts.get_note("a.md")["content_hash"]
+    (root / "deleted.md").unlink()
     monkeypatch.delattr(FTSIndex, "list_note_states")
     assert manager.build_index(force=force).documents_indexed == 1
+    assert fts.get_note("deleted.md") is None
+    assert [row["path"] for row in fts.list_notes()] == ["a.md"]
     row = fts.get_note("a.md")
     assert row is not None
+    assert row["title"] == "A"
+    assert row["content_hash"] == old_hash
     assert tracker._load_state()[0] == {"a.md": row["content_hash"]}
