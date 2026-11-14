@@ -33,11 +33,7 @@ sources:
 
 # CLI reader test logging lifetimes
 
-This reference covers the synthetic HTTP reader's concurrent logging and command
-capture in `tests/fixtures/logging.py` and `cli_discovery.reader_backend`.
-It makes no claim about the originating handler in historical CI failures.
-
-## Claims
+Synthetic reader capture/logging facts; historical CI handler attribution is unproven.
 
 - pytest's `SysCapture.done` closes its temporary capture stream. A handler
   retaining that stream can outlive capture teardown. [source: pytest]
@@ -55,17 +51,3 @@ It makes no claim about the originating handler in historical CI failures.
   its public setter fixes the destination. Temporary redirection during
   construction alone does not fix subsequent writes. [source: rich]
   [pins: tests/test_cli_logging_lifetime.py::test_reader_logs_render_outside_command_capture]
-
-## Project boundary and observation
-
-The reader harness retains a separate destination through server shutdown,
-uses the real bootstrap, and restores root state before that destination closes.
-The deterministic regression primes a real pytest capture, lets teardown close
-it, then releases the actual binary-YAML writer warning during the second CLI
-capture. On the unchanged base this fails the no-`Traceback` assertion; its
-other output assertions pass. [observed: the regression above, Python 3.14.6]
-
-## Not covered
-
-Other logging registries, production multi-CLI concurrency and historical
-handler attribution are outside this fixture's contract.

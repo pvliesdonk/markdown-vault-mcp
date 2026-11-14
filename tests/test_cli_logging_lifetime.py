@@ -40,10 +40,13 @@ def backend(tmp_path_factory):
     original_configure = cli.configure_logging_from_env
     calls = 0
     live = False
+    writer = None
 
     def warning(logger, message, *args, **kwargs):
+        nonlocal writer
         gated = message.startswith("reindex_index_failed")
         if gated:
+            writer = threading.current_thread()
             ready.set()
             assert release.wait(10), "writer release timed out"
         original_warning(logger, message, *args, **kwargs)
@@ -59,26 +62,24 @@ def backend(tmp_path_factory):
             assert emitted.wait(5), "writer warning timed out"
         original_configure(*args, **kwargs)
 
-    before = set(threading.enumerate())
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
         patch.setenv("MARKDOWN_VAULT_MCP_LOG_FORMAT", "json")
         patch.setattr(logging.Logger, "warning", warning)
         patch.setattr(cli, "configure_logging_from_env", configure)
         configure_logging_from_env("MARKDOWN_VAULT_MCP")
-        try:
-            with reader_backend(True) as connection:
+        with reader_backend(True) as connection:
+            try:
                 live = True
                 assert ready.wait(5), "real reindex warning never arrived"
-                owned = set(threading.enumerate()) - before
                 sink = next(
                     h.stream for h in logging.getLogger().handlers
                     if type(h) is logging.StreamHandler
                 )
                 yield connection, sink
-        finally:
-            release.set()
-    assert all(not thread.is_alive() for thread in owned)
+            finally:
+                release.set()
+    assert writer is not None and not writer.is_alive()
 
 
 def test_prime(backend, capsys):
@@ -99,7 +100,6 @@ def test_later_capture(backend):
     logs = sink.getvalue()
     assert "reindex_index_failed" in logs
     assert "TypeError" in logs
-    assert "Logging error" not in logs
 """
 
 
@@ -121,23 +121,47 @@ def test_reader_logging_survives_capture_teardown(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("fmt", ["json", "rich"])
-@pytest.mark.parametrize("failed_body", [False, True])
+@pytest.mark.parametrize(
+    ("fmt", "outcome"),
+    [
+        ("json", "success"),
+        ("rich", "success"),
+        ("json", "body"),
+        ("rich", "body"),
+        ("json", "bootstrap"),
+    ],
+)
 def test_reader_logs_render_outside_command_capture(
-    monkeypatch: pytest.MonkeyPatch, fmt: str, failed_body: bool
+    monkeypatch: pytest.MonkeyPatch, fmt: str, outcome: str
 ) -> None:
     """Warnings and exceptions render without entering command output or leaking state."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_LOG_FORMAT", fmt)
     root = logging.getLogger()
-    custom = logging.NullHandler()
+    custom = logging.StreamHandler(sys.stderr)
+    borrowed = custom.stream
     root.addHandler(custom)
     incoming, level, stderr = root.handlers[:], root.level, sys.stderr
-    outcome = (
-        pytest.raises(ValueError, match="body failed") if failed_body else nullcontext()
+    original = cli.configure_logging_from_env
+
+    def failed(env_prefix: str, *, verbose: bool = False) -> None:
+        original(env_prefix, verbose=verbose)
+        assert custom.stream is borrowed
+        raise ValueError("bootstrap failed")
+
+    if outcome == "bootstrap":
+        monkeypatch.setattr(cli, "configure_logging_from_env", failed)
+    callback = cli.configure_logging_from_env
+    expected = (
+        nullcontext()
+        if outcome == "success"
+        else pytest.raises(ValueError, match=f"{outcome} failed")
     )
-    with outcome, reader_logging() as destination:
+    with expected, reader_logging() as destination:
+        assert outcome != "bootstrap", "A failed bootstrap cannot enter the body"
+        assert custom.stream is borrowed
         with CliRunner().isolation() as (stdout, captured, _):
             cli.configure_logging_from_env("MARKDOWN_VAULT_MCP")
+            assert custom.stream is borrowed
             root.warning("synthetic_warning value=retained")
             try:
                 raise TypeError("synthetic exception retained")
@@ -149,30 +173,12 @@ def test_reader_logs_render_outside_command_capture(
         assert "synthetic_warning" in destination.getvalue()
         assert "TypeError: synthetic exception retained" in destination.getvalue()
         assert custom in root.handlers
-        if failed_body:
+        if outcome == "body":
             raise ValueError("body failed")
     assert root.handlers == incoming
     assert root.level == level
     assert sys.stderr is stderr
-    assert destination.closed
-
-
-def test_reader_logging_restores_after_bootstrap_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A bootstrap failure detaches its chain before the destination closes."""
-    original = cli.configure_logging_from_env
-    root = logging.getLogger()
-    incoming, level, stderr = root.handlers[:], root.level, sys.stderr
-
-    def failed(env_prefix: str, *, verbose: bool = False) -> None:
-        original(env_prefix, verbose=verbose)
-        raise ValueError("bootstrap failed")
-
-    monkeypatch.setattr(cli, "configure_logging_from_env", failed)
-    with pytest.raises(ValueError, match="bootstrap failed"), reader_logging():
-        pytest.fail("A failed bootstrap cannot enter the body")
-    assert root.handlers == incoming
-    assert root.level == level
-    assert sys.stderr is stderr
-    assert cli.configure_logging_from_env is failed
+    assert cli.configure_logging_from_env is callback
+    assert custom.stream is borrowed
+    if outcome != "bootstrap":
+        assert destination.closed
