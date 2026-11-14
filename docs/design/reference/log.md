@@ -1,5 +1,13 @@
 # Reference research log
 
+## 2026-11-14
+
+- New: [Watchdog event filtering](watchdog-event-filtering.md), for #2045.
+  Tagged observer, inotify and FSEvents sources establish mutation masks and
+  the 4.0.2 minimum; the refutation pass rejects a ninth close-event class and
+  an at-most-one-overflow claim. Pins cover production scheduling, native mask
+  construction and mutation admission. Next review: 2027-05-14.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,

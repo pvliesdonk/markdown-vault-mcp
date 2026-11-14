@@ -18,14 +18,19 @@ Failure modes covered:
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from watchdog.events import (
+    DirCreatedEvent,
+    DirDeletedEvent,
     DirModifiedEvent,
+    DirMovedEvent,
     FileClosedEvent,
     FileClosedNoWriteEvent,
     FileCreatedEvent,
@@ -33,7 +38,9 @@ from watchdog.events import (
     FileModifiedEvent,
     FileMovedEvent,
     FileOpenedEvent,
+    FileSystemEvent,
 )
+from watchdog.observers.api import EventEmitter, EventQueue, ObservedWatch
 
 from markdown_vault_mcp._file_watcher import (
     VaultFileWatcher,
@@ -158,10 +165,129 @@ def test_mutating_events_schedule(tmp_path: Path) -> None:
         FileDeletedEvent(visible),
         FileMovedEvent(visible, str(tmp_path / "renamed.md")),
         DirModifiedEvent(str(tmp_path / "subdir")),
+        DirCreatedEvent(str(tmp_path / "subdir")),
+        DirMovedEvent(str(tmp_path / "subdir"), str(tmp_path / "renamed")),
+        DirDeletedEvent(str(tmp_path / "subdir")),
     ):
         handler, calls = _record_handler(tmp_path)
         handler.on_any_event(event)
         assert calls == [1], f"{type(event).__name__} should schedule a reindex"
+
+
+def _capture_watch_subscriptions(
+    source_dir: Path, root_floor: bool = True
+) -> list[tuple[Path, bool, list[type[FileSystemEvent]] | None]]:
+    """Capture production registrations without starting native observer threads."""
+    for name in ("notes", ".claude", "excluded", "state"):
+        (source_dir / name).mkdir(exist_ok=True)
+    watcher = VaultFileWatcher(
+        source_dir,
+        lambda: None,
+        root_floor=root_floor,
+        exclude_patterns=["excluded/**"],
+        internal_dirs=[source_dir / "state"],
+    )
+    with patch("markdown_vault_mcp._file_watcher.Observer") as observer:
+        try:
+            watcher.start()
+            return [
+                (
+                    Path(call.args[1]),
+                    call.kwargs["recursive"],
+                    call.kwargs.get("event_filter"),
+                )
+                for call in observer.return_value.schedule.call_args_list
+            ]
+        finally:
+            watcher.stop()
+
+
+@pytest.mark.parametrize("root_floor", [True, False])
+def test_start_filters_mutations_on_every_watch(
+    tmp_path: Path, root_floor: bool
+) -> None:
+    """Every kept child and optional floor subscribe only to concrete mutations."""
+    subscriptions = _capture_watch_subscriptions(tmp_path, root_floor)
+    expected_roots = {
+        (tmp_path.resolve() / "notes", True),
+        (tmp_path.resolve() / ".claude", True),
+    }
+    if root_floor:
+        expected_roots.add((tmp_path.resolve(), False))
+    assert {(path, recursive) for path, recursive, _ in subscriptions} == expected_roots
+    for _, _, event_filter in subscriptions:
+        assert event_filter is not None
+        assert len(event_filter) == 8
+        assert set(event_filter) == {
+            FileCreatedEvent,
+            DirCreatedEvent,
+            FileModifiedEvent,
+            DirModifiedEvent,
+            FileMovedEvent,
+            DirMovedEvent,
+            FileDeletedEvent,
+            DirDeletedEvent,
+        }
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="inotify is Linux-only")
+@pytest.mark.parametrize("recursive", [True, False])
+def test_inotify_watch_mask_suppresses_reads(tmp_path: Path, recursive: bool) -> None:
+    """Production subscriptions remove read traffic while retaining mutation bits."""
+    from watchdog.observers.inotify import InotifyEmitter
+    from watchdog.observers.inotify_c import WATCHDOG_ALL_EVENTS, InotifyConstants
+
+    event_filter = next(
+        events
+        for _, recurse, events in _capture_watch_subscriptions(tmp_path)
+        if recurse == recursive
+    )
+    emitter = SimpleNamespace(
+        _event_filter=event_filter, watch=SimpleNamespace(is_recursive=recursive)
+    )
+    mask = InotifyEmitter.get_event_mask_from_filter(emitter)  # type: ignore[arg-type]
+    if mask is None:
+        mask = WATCHDOG_ALL_EVENTS
+    assert not mask & (
+        InotifyConstants.IN_OPEN
+        | InotifyConstants.IN_CLOSE_NOWRITE
+        | InotifyConstants.IN_ACCESS
+    )
+    for bit in (
+        InotifyConstants.IN_MODIFY,
+        InotifyConstants.IN_ATTRIB,
+        InotifyConstants.IN_CREATE,
+        InotifyConstants.IN_DELETE,
+        InotifyConstants.IN_MOVED_FROM,
+        InotifyConstants.IN_MOVED_TO,
+        InotifyConstants.IN_DELETE_SELF,
+        InotifyConstants.IN_CLOSE_WRITE,
+    ):
+        assert mask & bit, f"missing mutation bit {bit:#x}"
+
+
+def test_watch_filter_admits_all_mutations(tmp_path: Path) -> None:
+    """The scheduled policy admits every file and directory mutation to the queue."""
+    event_filter = _capture_watch_subscriptions(tmp_path)[0][2]
+    queue = EventQueue()
+    emitter = EventEmitter(
+        queue, ObservedWatch(str(tmp_path), recursive=True), event_filter=event_filter
+    )
+    visible, renamed = str(tmp_path / "note"), str(tmp_path / "renamed")
+    events = [
+        FileCreatedEvent(visible),
+        DirCreatedEvent(visible),
+        FileModifiedEvent(visible),
+        DirModifiedEvent(visible),
+        FileMovedEvent(visible, renamed),
+        DirMovedEvent(visible, renamed),
+        FileDeletedEvent(visible),
+        DirDeletedEvent(visible),
+    ]
+    for event in events:
+        emitter.queue_event(event)
+    assert [queue.get_nowait()[0] for _ in events] == events
+    assert queue.empty()
 
 
 def test_mutating_event_in_hidden_dir_still_ignored(tmp_path: Path) -> None:

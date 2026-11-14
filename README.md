@@ -83,6 +83,8 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
+
+The file watcher requires watchdog 4.0.2 or later. Its mutation-only subscriptions suppress Linux read-event traffic during indexing while preserving file and directory changes; see the [subscription reference](docs/design/reference/watchdog-event-filtering.md).
 <!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration
