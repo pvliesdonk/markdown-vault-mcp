@@ -7,6 +7,7 @@ tools, and HTML browser view content.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -59,8 +60,9 @@ class TestBrowserHTML:
 
     async def test_search_input(self) -> None:
         html = await get_app_html()
-        assert 'id="browser-search-input"' in html
-        assert "Search vault" in html
+        field = re.search(r'<input\b[^>]*\bid="browser-search-input"[^>]*>', html)
+        assert field is not None
+        assert 'aria-label="Search vault"' in field.group()
 
     async def test_search_clear_button(self) -> None:
         html = await get_app_html()
