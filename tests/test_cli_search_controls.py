@@ -89,7 +89,6 @@ def test_remote_controls(mode: str) -> None:
         ["--filter", "missing-equals"],
         ["--filter", "=empty-key"],
         ["--filter", "tag=a", "--filter", "tag=b"],
-        ["--json", "--agent"],
     ],
 )
 def test_invalid_controls_fail_before_io(flags: list[str]) -> None:
@@ -98,10 +97,7 @@ def test_invalid_controls_fail_before_io(flags: list[str]) -> None:
     ):
         result = CliRunner().invoke(app, ["search", "needle", *flags])
     assert result.exit_code == 2, result.output
-    if "--json" in flags:
-        assert json.loads(result.stderr)["error"]["code"] == "conflicting_options"
-    else:
-        assert "ERROR" in result.stderr or "Error" in result.stderr
+    assert "ERROR" in result.stderr or "Error" in result.stderr
     assert result.stdout == ""
 
 

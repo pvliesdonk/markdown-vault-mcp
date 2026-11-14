@@ -92,9 +92,11 @@ def test_invalid_query_input_never_opens_a_backend(
         pytest.fail("Invalid query opened a backend")
 
     monkeypatch.setattr("markdown_vault_mcp._cli_query.run_read", unexpected)
-    result = CliRunner().invoke(app, [*arguments, "--local"])
+    result = CliRunner().invoke(app, [*arguments, "--local", "--json"])
     assert result.exit_code == 2, result.output
     assert result.stdout == ""
+    if arguments == ["query", "count", "--mode", "semantic"]:
+        assert json.loads(result.stderr)["error"]["code"] == "invalid_request"
 
 
 @pytest.mark.usefixtures("query_notes")

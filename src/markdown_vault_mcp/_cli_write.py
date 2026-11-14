@@ -63,13 +63,13 @@ def _arguments(
             raise ClientError(
                 "--frontmatter must be a JSON object.",
                 reason="invalid_frontmatter",
-                hint="Pass --frontmatter a JSON object containing only finite numeric values.",
+                hint="Pass --frontmatter a JSON object; numeric values must be finite.",
             ) from None
         if not isinstance(arguments["frontmatter"], dict):
             raise ClientError(
                 "--frontmatter must be a JSON object.",
                 reason="invalid_frontmatter",
-                hint="Pass --frontmatter a JSON object containing only finite numeric values.",
+                hint="Pass --frontmatter a JSON object; numeric values must be finite.",
             )
     if "download_timeout" in arguments:
         seconds = arguments.pop("download_timeout")
@@ -123,6 +123,11 @@ def _run(
         )
     except (ClientError, ReadPayloadError) as exc:
         error = diagnostic(exc)
+        if isinstance(exc, ReadPayloadError):
+            error.hint = (
+                f"{error.hint} Check current state before retrying; "
+                "the mutation outcome may be unknown."
+            )
         render_error(
             command_label(ctx),
             error,

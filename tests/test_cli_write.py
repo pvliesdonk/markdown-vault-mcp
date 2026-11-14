@@ -191,35 +191,63 @@ def test_native_wire_mapping(
 
 
 @pytest.mark.parametrize(
-    "options",
+    "options,reason",
     [
-        ["note", "write", "a.md", "x", "--create", "--if-match", "e"],
-        ["note", "write", "a.md", "x", "--frontmatter", "[]"],
-        ["note", "write", "a.md", "x", "--frontmatter", "bad"],
-        ["note", "write", "a.md", "x", "--frontmatter", '{"x":NaN}'],
-        ["note", "write", "a.md", "x", "--frontmatter", '{"x":Infinity}'],
-        ["note", "write", "a.md", "x", "--frontmatter", '{"x":-Infinity}'],
-        ["note", "write", "a.md", "x", "--frontmatter", '{"nested":{"x":[1e999]}}'],
-        ["note", "delete", "a.md", "--if-match", ""],
-        ["fetch", "https://example.com", "a.md", "--download-timeout", "nan"],
-        ["fetch", "https://example.com", "a.md", "--download-timeout", "0"],
-        ["git", "sync", "--direction", "invalid"],
-        ["index", "reindex", "--json", "--agent"],
-        ["note", "append", "a.md", "x", "--local"],
-        ["note", "write", "a.md"],
+        (
+            ["note", "write", "a.md", "x", "--create", "--if-match", "e"],
+            "conflicting_options",
+        ),
+        (["note", "write", "a.md", "x", "--frontmatter", "[]"], "invalid_frontmatter"),
+        (["note", "write", "a.md", "x", "--frontmatter", "bad"], "invalid_frontmatter"),
+        (
+            ["note", "write", "a.md", "x", "--frontmatter", '{"x":NaN}'],
+            "invalid_frontmatter",
+        ),
+        (
+            ["note", "write", "a.md", "x", "--frontmatter", '{"x":Infinity}'],
+            "invalid_frontmatter",
+        ),
+        (
+            ["note", "write", "a.md", "x", "--frontmatter", '{"x":-Infinity}'],
+            "invalid_frontmatter",
+        ),
+        (
+            ["note", "write", "a.md", "x", "--frontmatter", '{"nested":{"x":[1e999]}}'],
+            "invalid_frontmatter",
+        ),
+        (["note", "delete", "a.md", "--if-match", ""], "invalid_if_match"),
+        (
+            ["fetch", "https://example.com", "a.md", "--download-timeout", "nan"],
+            "invalid_download_timeout",
+        ),
+        (
+            ["fetch", "https://example.com", "a.md", "--download-timeout", "0"],
+            "invalid_download_timeout",
+        ),
+        (["git", "sync", "--direction", "invalid"], None),
+        (["index", "reindex", "--json", "--agent"], "conflicting_options"),
+        (["note", "append", "a.md", "x", "--local"], None),
+        (["note", "write", "a.md"], None),
     ],
 )
-def test_invalid_inputs_never_connect(options: list[str]) -> None:
+def test_invalid_inputs_never_connect(options: list[str], reason: str | None) -> None:
     with patch(
         "markdown_vault_mcp._cli_remote.call_write", side_effect=AssertionError("RPC")
     ):
         result = CliRunner().invoke(
-            app, [*options, "--server", "https://example.com/mcp"]
+            app, [*options, "--server", "https://example.com/mcp", "--json"]
         )
     assert result.exit_code == 2, result.output
+    if reason:
+        assert json.loads(result.stderr)["error"]["code"] == reason
 
 
-def test_verify_refuses_before_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "options", [[], ["--agent"], ["--json"], ["--json", "--agent"]]
+)
+def test_verify_refuses_before_configuration(
+    monkeypatch: pytest.MonkeyPatch, options: list[str]
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_CONFIG", "/absent/malformed.toml")
     with (
         patch(
@@ -241,21 +269,42 @@ def test_verify_refuses_before_configuration(monkeypatch: pytest.MonkeyPatch) ->
                 "invalid",
                 "--timeout",
                 "-1",
-                "--json",
+                *options,
             ],
         )
     assert result.exit_code == 1, result.output
+    assert result.stdout == ""
     assert "This CLI cannot ask for human review confirmation" in result.stderr
     assert "Nothing was written." in result.stderr
+    if "--json" in options:
+        assert json.loads(result.stderr)["error"]["code"] == "elicitation_required"
+    elif "--agent" in options:
+        assert result.stderr.startswith(
+            "ERR okf verify operation code=elicitation_required:"
+        )
+    else:
+        assert result.stderr.startswith("ERROR:")
 
 
-def test_missing_remote_selection_never_builds_local() -> None:
-    with patch(
-        "markdown_vault_mcp.cli._build_vault", side_effect=AssertionError("local vault")
+@pytest.mark.parametrize(
+    "command",
+    [["note", "write", "a.md", "x", "--create"], ["note", "append", "a.md", "x"]],
+)
+def test_missing_remote_selection_never_builds_local(command: list[str]) -> None:
+    with (
+        patch(
+            "markdown_vault_mcp.cli._build_vault",
+            side_effect=AssertionError("local vault"),
+        ),
+        patch(
+            "markdown_vault_mcp._cli_remote.call_write",
+            side_effect=AssertionError("RPC"),
+        ),
     ):
-        result = CliRunner().invoke(app, ["note", "write", "a.md", "x", "--create"])
+        result = CliRunner().invoke(app, [*command, "--json"])
     assert result.exit_code == 2
     assert "server" in result.stderr
+    assert json.loads(result.stderr)["error"]["code"] == "server_url_required"
 
 
 def test_writer_forwards_settings_and_agent_mode(

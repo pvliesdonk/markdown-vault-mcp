@@ -19,12 +19,12 @@ from markdown_vault_mcp.cli import app
 
 
 @pytest.mark.parametrize(
-    "command",
+    "command,label",
     [
-        ["search", "x"],
-        ["read", "a.md"],
-        ["query", "count"],
-        ["note", "append", "a.md", "x"],
+        (["search", "x"], "search"),
+        (["read", "a.md"], "read"),
+        (["query", "count"], "query count"),
+        (["note", "append", "a.md", "x"], "note append"),
     ],
 )
 @pytest.mark.parametrize(
@@ -34,16 +34,24 @@ from markdown_vault_mcp.cli import app
         (["--timeout", "0"], "invalid_timeout"),
     ],
 )
-def test_selected_json_configuration_error(
-    command: list[str], options: list[str], reason: str
+@pytest.mark.parametrize("mode", [None, "--agent", "--json"])
+def test_selected_configuration_error(
+    command: list[str], label: str, options: list[str], reason: str, mode: str | None
 ) -> None:
-    result = CliRunner().invoke(app, [*command, *options, "--json"])
+    result = CliRunner().invoke(app, [*command, *options, *([mode] if mode else [])])
     assert result.exit_code == 2
     assert result.stdout == ""
-    diagnostic = json.loads(result.stderr)["error"]
-    assert diagnostic["code"] == reason
-    assert diagnostic["exit_code"] == 2
-    assert diagnostic["hint"]
+    if mode == "--json":
+        diagnostic = json.loads(result.stderr)["error"]
+        assert diagnostic["code"] == reason
+        assert diagnostic["exit_code"] == 2
+        assert diagnostic["hint"]
+    else:
+        first, hint = result.stderr.splitlines()
+        assert first.startswith(
+            f"ERR {label} usage code={reason}:" if mode == "--agent" else "ERROR:"
+        )
+        assert hint.startswith("Hint:" if mode == "--agent" else "hint:")
 
 
 @pytest.fixture(autouse=True)
@@ -232,28 +240,3 @@ def test_unreadable_profile_has_safe_metadata(
         resolve_settings(ClientOptions())
     assert error.value.reason == "invalid_client_config"
     assert str(tmp_path) not in str(error.value)
-
-
-@pytest.mark.parametrize(
-    "command,label",
-    [
-        (["search", "x"], "search"),
-        (["read", "a.md"], "read"),
-        (["query", "count"], "query count"),
-        (["note", "append", "a.md", "x"], "note append"),
-    ],
-)
-@pytest.mark.parametrize("agent", [False, True])
-def test_configuration_error_text_modes(
-    command: list[str], label: str, agent: bool
-) -> None:
-    result = CliRunner().invoke(
-        app, [*command, "--server", "invalid", *(["--agent"] if agent else [])]
-    )
-    assert result.exit_code == 2
-    assert result.stdout == ""
-    first, hint = result.stderr.splitlines()
-    assert first.startswith(
-        f"ERR {label} usage code=invalid_server_url:" if agent else "ERROR:"
-    )
-    assert hint.startswith("Hint:" if agent else "hint:")

@@ -614,6 +614,46 @@ def test_write_protocol_failures_require_state_check(malformed: bool) -> None:
     assert "state before retrying" in (error.value.hint or "")
 
 
+@pytest.mark.parametrize("mode", ["--json", "--agent"])
+def test_late_write_payload_failure_requires_state_check(
+    tmp_path: Path, mode: str
+) -> None:
+    note = tmp_path / "synthetic-note.md"
+    note.write_text("Before")
+    calls: list[tuple[str, str]] = []
+    server = FastMCP("late-invalid-write")
+
+    @server.tool()
+    def append(path: str, content: str) -> ToolResult:
+        calls.append((path, content))
+        note.write_text(note.read_text() + content)
+        return ToolResult(content=[TextContent(type="text", text='{"score": NaN}')])
+
+    with serve_http(server.http_app()) as origin:
+        result = CliRunner().invoke(
+            app,
+            ["note", "append", note.name, "After", "--server", origin + "/mcp", mode],
+        )
+    assert calls == [(note.name, "After")]
+    assert note.read_text() == "BeforeAfter"
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    if mode == "--json":
+        error = json.loads(result.stderr.splitlines()[-1])["error"]
+        assert (error["kind"], error["code"], error["exit_code"]) == (
+            "operation",
+            "invalid_payload",
+            1,
+        )
+        hint = error["hint"]
+    else:
+        assert "ERR note append operation code=invalid_payload:" in result.stderr
+        hint = result.stderr.splitlines()[-1]
+        assert hint.startswith("Hint:")
+    assert "current state before retrying" in hint
+    assert "outcome may be unknown" in hint
+
+
 def test_write_connection_failure_requires_state_check() -> None:
     from markdown_vault_mcp._cli_remote import call_write
 
