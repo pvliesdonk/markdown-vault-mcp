@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from itertools import count
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -12,22 +13,25 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
+from tests.fixtures.cli_http import serve_http
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.server import make_server
-from tests.fixtures.cli_http import serve_http
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+_REQUEST_IDS = count(1)
+
 
 def _rpc(client: httpx.Client, method: str, params: dict[str, Any]) -> dict[str, Any]:
     """Read one JSON-RPC reply, closing the native SSE stream after its event."""
+    request_id = next(_REQUEST_IDS)
     with client.stream(
         "POST",
         "/mcp",
-        json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+        json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
     ) as response:
         response.raise_for_status()
         if session := response.headers.get("mcp-session-id"):
@@ -41,12 +45,12 @@ def _rpc(client: httpx.Client, method: str, params: dict[str, Any]) -> dict[str,
                     data.append(line[5:].lstrip())
                 elif not line and data:
                     reply = json.loads("\n".join(data))
-                    if reply.get("id") == 1:
+                    if reply.get("id") == request_id:
                         break
                     data.clear()
             else:
                 raise AssertionError("No JSON-RPC reply in native HTTP stream")
-        assert reply["jsonrpc"] == "2.0" and reply["id"] == 1
+        assert reply["jsonrpc"] == "2.0" and reply["id"] == request_id
         return dict(reply)
 
 

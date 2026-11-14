@@ -73,14 +73,8 @@ holds the note object. Search includes a Boolean `_meta.index_stale` describing 
 directly. Keep search metadata alongside the hits so a caller can decide
 whether to wait for pending writes.
 
-Check `isError` before using a successful payload. A returned tool failure has
-`isError: true` and explanatory `content`; it can arrive through a successful
-HTTP request without throwing an exception. A transport or JSON-RPC failure
-is a separate outcome. Do not retry a failed mutation automatically.
-
-If `structuredContent` is present, use it even when it is an empty object.
-Otherwise, inspect the text blocks in `content`. Preserve distinct explanatory
-text and `_meta` rather than flattening the result into the note data alone.
+For result fields and error handling, see the
+[MCP tool-result contract](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
 
 The synthetic HTTP contract tests exercise the native vault server and these
 whole-result shapes expected by an Executor caller. They do not establish
