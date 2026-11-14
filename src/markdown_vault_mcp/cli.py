@@ -206,7 +206,8 @@ def _build_vault(
         shared_files: Leave the index files on disk as they are, since a
             running server may own them: an on-disk index opens read-only
             (#1758) and an unusable vector sidecar makes a search raise
-            instead of being rebuilt (#1734).
+            instead of being rebuilt (#1734). Managed Git settings are ignored
+            so a read never bootstraps or synchronizes the server's checkout.
         scratch_index: Keep the keyword index and its state in memory and
             open the configured vector store read-only, where it is
             configured, for a dry run that writes nothing (#1505).
@@ -232,6 +233,11 @@ def _build_vault(
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
     config = ProjectConfig.from_env()
+    if shared_files:
+        # Like the other local readers, search uses the checkout as it is.
+        # Managed bootstrap would reject a service-owned checkout when invoked
+        # as root through docker exec (#1999), or attempt to clone an empty one.
+        config = dataclasses.replace(config, git_repo_url=None, git_token=None)
     # A batch command over an absent or inaccessible directory would index
     # nothing and exit 0; refuse with the reason, the way ``serve`` reports a
     # configuration error (a missing directory names the variable to set).
