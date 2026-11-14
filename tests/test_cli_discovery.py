@@ -938,3 +938,90 @@ def test_skill_read_annotation_preserves_raw_metadata(
         assert section.exit_code == 0, section.output
         assert "okf" not in json.loads(section.stdout)
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_alias_annotations_reach_local_search(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch, active: bool
+) -> None:
+    """Local CLI hit, path, exact and context adapters share resolved authority."""
+    target, alias, raw, expected = alias_note
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on" if active else "off")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type")
+    before = ((tmp_path / target).read_bytes(), (tmp_path / target).stat().st_mtime_ns)
+    for arguments in (
+        ["read", alias],
+        ["context", alias, "--similar-limit", "0"],
+        ["search", "zebra"],
+        ["query", "path", alias],
+        ["query", "metadata", "--filter", "type=Literal"],
+    ):
+        result = CliRunner().invoke(app, [*arguments, "--local", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        if isinstance(data, list):
+            data = next(h for h in data if h["path"] == alias)
+        elif "items" in data:
+            data = next(h for h in data["items"] if h["path"] == alias)
+        assert data["path"] == (target if arguments[0] == "read" else alias)
+        assert data["frontmatter"] == raw
+        assert ("okf" in data) is active
+        if active:
+            annotation = data["okf"]
+            assert annotation["type"] == expected["type"]
+            assert annotation["status"] == expected["status"]
+            assert annotation["stale"] is (expected["type"] == "Runbook")
+            assert annotation["trust_tier"] == (
+                "human-reviewed"
+                if expected["type"] == "Runbook"
+                else "machine-confirmed"
+            )
+            if arguments[0] == "read":
+                assert annotation["generated"] == expected["generated"]
+                assert annotation["sources"] == expected["sources"]
+            else:
+                assert annotation["sources_count"] == len(expected["sources"])
+                assert "generated" not in annotation and "sources" not in annotation
+    assert (
+        (tmp_path / target).read_bytes(),
+        (tmp_path / target).stat().st_mtime_ns,
+    ) == before
+
+
+def test_remote_annotations_never_resolve_server_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote results retain server identity without consulting client paths."""
+    from fastmcp import FastMCP
+
+    from tests.fixtures.cli_http import serve_http
+
+    server = FastMCP("resolved-remote")
+    payload = [
+        {
+            "path": "server/SKILL.md",
+            "title": "Remote",
+            "score": 1.0,
+            "frontmatter": {},
+            "okf": {"type": "RemoteType"},
+        }
+    ]
+
+    @server.tool()
+    def search(
+        query: str, limit: int = 10, folder: str | None = None, mode: str | None = None
+    ) -> list[dict[str, Any]]:
+        assert (query, limit, folder, mode) == ("zebra", 10, None, "keyword")
+        return payload
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("remote annotation must not resolve on client")
+
+    monkeypatch.setattr("markdown_vault_mcp.okf.resolved_okf_metadata", forbidden)
+    with serve_http(server.http_app()) as origin:
+        result = CliRunner().invoke(
+            app, ["search", "zebra", "--server", origin + "/mcp", "--json"]
+        )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == payload

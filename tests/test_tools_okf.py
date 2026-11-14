@@ -598,3 +598,156 @@ class TestOkfMigrationTools:
         async with Client(make_server()) as client:
             names = {t.name for t in await client.list_tools()}
         assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)
+
+
+async def test_alias_annotations_reach_mcp_query(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MCP hits/exact/context project aliases while preserving literal predicates."""
+    target, alias, raw, expected = alias_note
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type")
+    async with Client(make_server()) as client:
+        await wait_for_mcp_writer_drain(client)
+        for tool, args in (
+            ("search", {"query": "zebra"}),
+            ("query_documents", {"filters": {"type": "Literal"}}),
+            ("get_context", {"path": alias, "similar_limit": 0}),
+            ("read", {"path": alias}),
+        ):
+            result = await client.call_tool(tool, args)
+            data = _parse_tool_data(result) if tool == "search" else _structured(result)
+            if isinstance(data, list):
+                data = next(h for h in data if h["path"] == alias)
+            elif "items" in data:
+                data = next(h for h in data["items"] if h["path"] == alias)
+            assert data["path"] == (target if tool == "read" else alias)
+            assert data["frontmatter"] == raw
+            annotation = data["okf"]
+            assert annotation["type"] == expected["type"]
+            assert annotation["status"] == expected["status"]
+            assert annotation["stale"] is (expected["type"] == "Runbook")
+            assert annotation["trust_tier"] == (
+                "human-reviewed"
+                if expected["type"] == "Runbook"
+                else "machine-confirmed"
+            )
+            if tool == "read":
+                assert annotation["generated"] == expected["generated"]
+                assert annotation["sources"] == expected["sources"]
+            else:
+                assert annotation["sources_count"] == len(expected["sources"])
+                assert "sources" not in annotation and "generated" not in annotation
+
+
+async def test_mcp_annotation_resolution_runs_in_worker(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Single and batch attachment resolve held metadata off the event-loop thread."""
+    import threading
+
+    from markdown_vault_mcp import okf
+    from markdown_vault_mcp._tools import _common
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    _, alias, raw, expected = alias_note
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    threads = []
+    probes = 0
+    original = okf.resolved_okf_metadata
+
+    def recorded(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        threads.append(threading.get_ident())
+        return original(*args, **kwargs)
+
+    async def active(_vault: Any) -> bool:
+        nonlocal probes
+        probes += 1
+        return True
+
+    def no_read(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("annotation must use held metadata")
+
+    monkeypatch.setattr(okf, "resolved_okf_metadata", recorded)
+    # The attachment module imports the adapter directly.
+    monkeypatch.setattr(_common, "resolved_okf_metadata", recorded, raising=False)
+    monkeypatch.setattr(_common, "okf_active", active)
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "read_text", no_read)
+    monkeypatch.setattr(Path, "read_bytes", no_read)
+    try:
+        single = await _common.attach_okf(vault, {"path": alias}, raw)
+        batch = await _common.attach_okf_to_results(
+            vault, [{"path": alias, "frontmatter": raw}] * 2
+        )
+        assert single["okf"]["type"] == batch[0]["okf"]["type"] == expected["type"]
+        assert len(threads) == 3 and all(t != threading.get_ident() for t in threads)
+        assert probes == 2
+        fault = PermissionError("synthetic metadata identity refusal")
+
+        def refused(*_args: Any, **_kwargs: Any) -> Any:
+            raise fault
+
+        monkeypatch.setattr(okf, "resolved_okf_metadata", refused)
+        monkeypatch.setattr(_common, "resolved_okf_metadata", refused)
+        for call in (
+            _common.attach_okf(vault, {"path": alias}, raw),
+            _common.attach_okf_to_results(vault, [{"path": alias, "frontmatter": raw}]),
+        ):
+            with pytest.raises(PermissionError) as caught:
+                await call
+            assert caught.value is fault
+    finally:
+        vault.close()
+
+
+def test_indexed_farm_metadata_keeps_native_access_policy(tmp_path: Path) -> None:
+    """Outside-root leaf aliases keep indexed views, without broadening whole reads."""
+    from dataclasses import asdict
+
+    import frontmatter
+
+    from markdown_vault_mcp._cli_read import _path_payload, _query_payload
+    from markdown_vault_mcp._read_payloads import annotate_hits
+    from markdown_vault_mcp.okf import derive_annotation
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.fixtures.okf_skills import NESTED_OKF, ROOT_OKF
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    target = tmp_path / "SKILL.md"
+    raw = {**ROOT_OKF, "metadata": NESTED_OKF}
+    target.write_text(frontmatter.dumps(frontmatter.Post("zebra instructions", **raw)))
+    (source / "farm.md").symlink_to(target)
+    vault = Vault(source_dir=source, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+        hits = vault.reader.search("zebra", mode="keyword", filters={"type": "Runbook"})
+        assert [h.path for h in hits] == ["farm.md"]
+        assert hits[0].frontmatter == raw
+        vault.okf._mode = "off"
+        baseline = vault.reader.search("zebra", mode="keyword")[0].score
+        assert hits[0].score == pytest.approx(baseline * 0.375)
+        vault.okf._mode = "on"
+        assert [
+            n.path for n in vault.reader.list_documents(filters={"type": "Runbook"})
+        ] == ["farm.md"]
+        assert vault.reader.okf_stats()["types"] == {"Runbook": 1}
+        assert vault.graph.get_neighborhood("farm.md").nodes[0].note_type == "Runbook"
+        for payload in (
+            annotate_hits([asdict(hits[0])], derive_annotation, source_dir=source)[0],
+            _path_payload(vault, {"query": "farm"})["items"][0],
+            _query_payload(vault, "query_documents", {"filters": {"type": "Literal"}})[
+                "items"
+            ][0],
+        ):
+            assert payload["path"] == "farm.md" and payload["frontmatter"] == raw
+            assert payload["okf"]["type"] == "Runbook"
+            assert payload["okf"]["sources_count"] == 1
+        assert vault.reader.read("farm.md") is None
+    finally:
+        vault.close()

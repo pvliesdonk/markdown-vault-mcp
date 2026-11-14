@@ -9,7 +9,7 @@ from typing import Annotated, Any, TypeVar
 from fastmcp.tools import ToolResult
 
 from markdown_vault_mcp.git import SyncHealthReporter
-from markdown_vault_mcp.okf import derive_annotation, effective_okf_metadata
+from markdown_vault_mcp.okf import derive_annotation, resolved_okf_metadata
 from markdown_vault_mcp.vault import Vault
 
 logger = logging.getLogger(__name__)
@@ -150,10 +150,13 @@ async def attach_okf(
         *data*, with the ``okf`` key added when active.
     """
     if await okf_active(vault):
-        data["okf"] = derive_annotation(
-            effective_okf_metadata(metadata or {}, path=data.get("path")),
-            include_sources=include_sources,
+        effective = await asyncio.to_thread(
+            resolved_okf_metadata,
+            metadata or {},
+            path=data.get("path"),
+            source_dir=vault.source_dir,
         )
+        data["okf"] = derive_annotation(effective, include_sources=include_sources)
     return data
 
 
@@ -164,7 +167,8 @@ async def attach_okf_to_results(
 
     One detection probe covers the whole batch; each hit's annotation is
     derived from the ``frontmatter`` the hit already carries, so no extra
-    index or disk reads happen per result. Hits are annotated with
+    note-content reads happen per result; identity resolution runs in a worker.
+    Hits are annotated with
     ``sources_count`` rather than the full ``sources`` list.
 
     Args:
@@ -177,8 +181,9 @@ async def attach_okf_to_results(
     """
     from markdown_vault_mcp._read_payloads import annotate_hits
 
-    return annotate_hits(
-        results, derive_annotation if await okf_active(vault) else None
+    annotation = derive_annotation if await okf_active(vault) else None
+    return await asyncio.to_thread(
+        annotate_hits, results, annotation, source_dir=vault.source_dir
     )
 
 

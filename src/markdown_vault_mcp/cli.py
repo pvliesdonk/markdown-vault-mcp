@@ -526,6 +526,7 @@ def _local_search(
         return annotate_hits(
             [asdict(r) for r in results],
             derive_annotation if built.vault.okf.state().active else None,
+            source_dir=built.vault.source_dir,
         )
     finally:
         built.close()

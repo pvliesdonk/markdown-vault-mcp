@@ -205,13 +205,15 @@ def _path_payload(vault: Vault, arguments: dict[str, Any]) -> dict[str, Any]:
         raise ReadPayloadError(str(exc)) from exc
     data = asdict(vault.reader.search_paths(request))
     annotate_hits(
-        data["items"], derive_annotation if vault.okf.state().active else None
+        data["items"],
+        derive_annotation if vault.okf.state().active else None,
+        source_dir=vault.source_dir,
     )
     return data
 
 
 def _context_annotations(vault: Vault, data: dict[str, Any], path: str) -> None:
-    from markdown_vault_mcp.okf import derive_annotation, effective_okf_metadata
+    from markdown_vault_mcp.okf import derive_annotation, resolved_okf_metadata
 
     try:
         conventions = [asdict(entry) for entry in vault.conventions.for_path(path)]
@@ -222,7 +224,9 @@ def _context_annotations(vault: Vault, data: dict[str, Any], path: str) -> None:
         data["conventions"] = conventions
     if vault.okf.state().active:
         data["okf"] = derive_annotation(
-            effective_okf_metadata(data["frontmatter"], path=path)
+            resolved_okf_metadata(
+                data["frontmatter"], path=path, source_dir=vault.source_dir
+            )
         )
 
 
@@ -297,6 +301,8 @@ def _query_payload(
         return asdict(vault.reader.aggregate_documents(query, grouping))
     data = asdict(vault.reader.query_documents(query))
     annotate_hits(
-        data["items"], derive_annotation if vault.okf.state().active else None
+        data["items"],
+        derive_annotation if vault.okf.state().active else None,
+        source_dir=vault.source_dir,
     )
     return data
