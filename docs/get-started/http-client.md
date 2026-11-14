@@ -59,6 +59,35 @@ Whether Claude can also write is the operator's choice: a server in read-only mo
 - `browse_vault` and `show_context` open an interactive view in clients that render [MCP Apps](../deploy/mcp-apps.md); other clients get the same data as text.
 - `create_download_link` and `create_upload_link` return a one-time URL for moving a file out of or into the vault, which works without your credential. See [Transfer links](../deploy/transfer-links.md).
 - `summarize` appears only when the operator configured a language model for it.
+
+### Read a complete HTTP result
+
+When building a client for this vault, discover `search` and `read` through
+`tools/list`. Search with `mode="keyword"` works without an embedding provider;
+pass a returned note's `path` to `read`. The [terminal guide](../use/terminal.md)
+shows the same workflow through the command line.
+
+Keep the complete MCP result when calling these tools. For vault search,
+`structuredContent.result` holds the hit list; for `read`, `structuredContent`
+holds the note object. Both also return text in `content`. Search includes a
+Boolean `_meta.index_stale` describing index freshness; `read` reads the file
+directly. Keep search metadata alongside the hits so a caller can decide
+whether to wait for pending writes.
+
+Check `isError` before using a successful payload. A returned tool failure has
+`isError: true` and explanatory `content`; it can arrive through a successful
+HTTP request without throwing an exception. A transport or JSON-RPC failure
+is a separate outcome. Do not retry a failed mutation automatically.
+
+If `structuredContent` is present, use it even when it is an empty object.
+Otherwise, inspect the text blocks in `content`. Preserve distinct explanatory
+text and `_meta` rather than flattening the result into the note data alone.
+
+The synthetic HTTP contract tests exercise the native vault server and these
+whole-result shapes expected by an Executor caller. They do not establish
+acceptance by an installed Executor runtime or verify a personal connection.
+Use the operator's [authentication instructions](../deploy/authentication.md)
+for credentials; the tests use only disposable fixture tokens and notes.
 <!-- DOMAIN-HTTP-CLIENT-EXTRA-END -->
 
 ## Next
