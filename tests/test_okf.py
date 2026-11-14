@@ -196,6 +196,7 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
         ({"stale_after": "2026-01-01"}, True),
         ({"stale_after": " 2026-01-01 "}, True),
         ({"stale_after": "not-a-date"}, False),
+        ({"stale_after": "2026-02-30"}, False),
         ({"stale_after": 20260101}, False),
         # An instant with an offset is compared as one (OKF v0.2 as amended
         # 2026-08-21: "stale when now >= stale_after"; #1373). NOW is

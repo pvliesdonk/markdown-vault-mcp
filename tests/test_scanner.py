@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,42 @@ from markdown_vault_mcp.types import Chunk
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("frontmatter", "expected"),
+    [
+        ('---\ngenerated: {at: "1970-01-01T00:00:00Z"}\n---\n', 0.0),
+        ("---\ngenerated: {at: 1970-01-01T02:00:00+02:00}\n---\n", 0.0),
+        ('{\n"generated": {"at": "1970-01-01T00:00:00Z"}\n}\n', 0.0),
+        *[
+            (f"---\ngenerated: {generated}\n---\n", 1234567890.0)
+            for generated in [
+                "null",
+                "[]",
+                "nonsense",
+                "true",
+                "{}",
+                "{at: null}",
+                "{at: 12}",
+                "{at: []}",
+                "{at: invalid}",
+                "{at: 2026-11-14}",
+                '{at: "2026-11-14"}',
+                "{at: 2026-11-14T10:00:00}",
+                '{at: "2026-11-14T10:00:00"}',
+            ]
+        ],
+    ],
+)
+def test_generated_instant_overrides_disk_mtime(
+    tmp_path: Path, frontmatter: str, expected: float
+) -> None:
+    """Use the declared instant when usable, otherwise retain disk mtime."""
+    path = tmp_path / "note.md"
+    path.write_text(frontmatter + "# Note\n", encoding="utf-8")
+    os.utime(path, (1234567890, 1234567890))
+    assert parse_note(path, tmp_path).modified_at == expected
 
 
 def _derive_folder(path: str) -> str:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -58,9 +59,10 @@ from markdown_vault_mcp.utils.links import (
     trailing_title_pattern as _RE_TRAILING_TITLE,
 )
 from markdown_vault_mcp.utils.text import decode_utf8
+from markdown_vault_mcp.utils.timestamps import parse_aware_datetime
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -2152,7 +2154,9 @@ def parse_note(
     """Parse a single markdown file into a ParsedNote.
 
     Reads raw bytes for hash computation, decodes as UTF-8, parses frontmatter
-    with ``python-frontmatter``, resolves title, and chunks content.
+    with ``python-frontmatter``, resolves title, and chunks content. An aware
+    ``generated.at`` supplies ``modified_at``; an absent or unusable value
+    falls back to disk mtime, independently of OKF detection mode.
 
     Args:
         path: Absolute path to the markdown file.
@@ -2187,6 +2191,11 @@ def parse_note(
     # python-frontmatter strips the YAML block and returns the body separately.
     post = parse_frontmatter(text)
     metadata: dict[str, Any] = dict(post.metadata)
+    generated = metadata.get("generated")
+    if isinstance(generated, Mapping):
+        instant = parse_aware_datetime(generated.get("at"))
+        if instant is not None:
+            modified_at = instant.timestamp()
     # As note_body reads it: the first line keeps its indentation (#2036).
     body: str = _restore_first_indent(text, post.content)
 

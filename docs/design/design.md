@@ -1909,8 +1909,14 @@ the spec itself says, dated and sourced, in
   spec's single-verifier shorthand requires, at every site that reads
   the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
   `sources_count`. Section reads omit the key (no frontmatter to derive
-  from). When inactive, no payload changes at all — the non-OKF baseline
-  is byte-identical.
+  from). When inactive, the optional `okf` annotation key is absent.
+  Independently of detection mode, every note's `modified_at` uses a parseable
+  offset-aware `generated.at`, falling back to file mtime. The existing SQL
+  recent ordering, limit and exact-query time predicates use that stored float;
+  live reads use the same parser. Index semantics version 12 rebuilds older
+  stored rows even when the note bytes are unchanged (#2057). Byte hashes
+  remain the freshness authority, including when `generated.at` moves backward.
+  Attachments retain file mtime.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
@@ -2333,7 +2339,7 @@ class ParsedNote:
     title: str                        # from frontmatter, first H1, or filename
     chunks: list[Chunk]               # content chunks
     content_hash: str                 # SHA256 of raw file content
-    modified_at: float                # file mtime
+    modified_at: float                # aware generated.at, else file mtime
 
 @dataclass
 class Chunk:
@@ -2553,7 +2559,7 @@ CREATE TABLE IF NOT EXISTS documents (
     folder TEXT NOT NULL DEFAULT '',  -- derived from path parent
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
-    modified_at REAL NOT NULL,        -- file mtime
+    modified_at REAL NOT NULL,        -- aware generated.at, else file mtime
     skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
     skip_detail TEXT NOT NULL DEFAULT ''
 );

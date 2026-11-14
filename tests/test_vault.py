@@ -25,6 +25,7 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
 )
 from markdown_vault_mcp.hashing import compute_file_hash
+from markdown_vault_mcp.query_types import NoteQuery
 from markdown_vault_mcp.types import (
     AttachmentContent,
     AttachmentInfo,
@@ -58,6 +59,77 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("okf_mode", ["off", "on"])
+def test_generated_clock_across_readers_and_incremental_refresh(
+    tmp_path: Path, okf_mode: str
+) -> None:
+    """The declared clock controls the population before recent's limit."""
+    (tmp_path / "notes" / "nested").mkdir(parents=True)
+    for relative, instant, mtime in [
+        ("notes/old.md", "2000-01-01T00:00:00Z", 1800000000),
+        ("notes/nested/new.md", "2020-01-01T00:00:00Z", 1000000000),
+        ("outside.md", "2030-01-01T00:00:00Z", 900000000),
+    ]:
+        path = tmp_path / relative
+        path.write_text(
+            f'---\ngenerated: {{at: "{instant}"}}\n---\n# Note\n\nBody.\n',
+            encoding="utf-8",
+        )
+        os.utime(path, (mtime, mtime))
+    image = tmp_path / "figure.png"
+    image.write_bytes(b"synthetic image")
+    os.utime(image, (1234567890, 1234567890))
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode=okf_mode))
+    try:
+        vault.index.build_index()
+        assert [n.path for n in vault.reader.get_recent(limit=1, folder="notes")] == [
+            "notes/nested/new.md"
+        ]
+        path = "notes/nested/new.md"
+        live = vault.reader.read(path)
+        section = vault.reader.read(path, section="Note")
+        assert live is not None and section is not None
+        listed = next(n for n in vault.reader.list_documents() if n.path == path)
+        context = vault.reader.get_context(path, similar_limit=0)
+        query = vault.reader.query_documents(
+            NoteQuery(
+                path=path,
+                modified_after="2019-01-01T00:00:00Z",
+                modified_before="2021-01-01T00:00:00Z",
+            )
+        )
+        assert query.total == 1
+        assert {
+            live.modified_at,
+            section.modified_at,
+            listed.modified_at,
+            context.modified_at,
+            query.items[0]["modified_at"],
+        } == {1577836800.0}
+        attachment = vault.reader.read_attachment("figure.png")
+        assert attachment is not None and attachment.modified_at == 1234567890.0
+
+        # Only frontmatter changes; its clock moves backward while its hash
+        # still requires a refresh. No wall-clock freshness comparison is valid.
+        before_hash = live.etag
+        note_path = tmp_path / path
+        note_path.write_text(
+            note_path.read_text().replace("2020-01-01", "1990-01-01"), encoding="utf-8"
+        )
+        vault.index.reindex()
+        changed = vault.reader.read(path)
+        assert changed is not None and changed.etag != before_hash
+        assert [n.path for n in vault.reader.get_recent(limit=1, folder="notes")] == [
+            "notes/old.md"
+        ]
+        assert (
+            next(n for n in vault.reader.list_documents() if n.path == path).modified_at
+            == 631152000.0
+        )
+    finally:
+        vault.close()
 
 
 def _make_vault(

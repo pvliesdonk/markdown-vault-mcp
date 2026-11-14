@@ -25,6 +25,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -40,9 +41,9 @@ from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
+from markdown_vault_mcp.utils.timestamps import parse_aware_datetime
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -266,14 +267,6 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _aware_or_none(value: _dt.datetime, raw: Any) -> _dt.datetime | None:
-    """Keep an instant that carries an offset; drop one that does not."""
-    if value.tzinfo is None:
-        logger.debug("okf_stale_after_naive value=%r", raw)
-        return None
-    return value
-
-
 def _parse_stale_after(raw: Any) -> _dt.date | _dt.datetime | None:
     """Read a ``stale_after`` value into the shape its text of v0.2 gives it.
 
@@ -282,23 +275,18 @@ def _parse_stale_after(raw: Any) -> _dt.date | _dt.datetime | None:
     anything else — including a datetime without an offset, which neither
     text allows and the amendment says to ignore (#1373).
     """
-    if isinstance(raw, _dt.datetime):
-        return _aware_or_none(raw, raw)
-    if isinstance(raw, _dt.date):
+    if isinstance(raw, _dt.date) and not isinstance(raw, _dt.datetime):
         return raw
-    if not isinstance(raw, str):
-        return None
-    text = raw.strip()
-    try:
-        parsed = (
-            _dt.date.fromisoformat(text)
-            if _DATE_ONLY_RE.match(text)
-            else _dt.datetime.fromisoformat(text)
-        )
-    except ValueError:
+    if isinstance(raw, str) and _DATE_ONLY_RE.match(raw.strip()):
+        try:
+            return _dt.date.fromisoformat(raw.strip())
+        except ValueError:
+            logger.debug("okf_stale_after_invalid value=%r", raw)
+            return None
+    parsed = parse_aware_datetime(raw)
+    if parsed is None and isinstance(raw, (_dt.datetime, str)):
         logger.debug("okf_stale_after_invalid value=%r", raw)
-        return None
-    return _aware_or_none(parsed, raw) if isinstance(parsed, _dt.datetime) else parsed
+    return parsed
 
 
 def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
@@ -1053,14 +1041,16 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     The enforced-write layer's core transform (design §6). Operates on the final
     file text (frontmatter plus body), so it is uniform across the ``write``
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
-    the current bytes and is overwritten with the instant of this write —
+    the current bytes and receives the instant of this write —
     "the content's last meaningful change" — so it moves on every content
     write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
+    prior attestation. An existing ``generated.by`` is preserved by key
+    presence, including an empty or null value; other provenance keys,
+    ``sources`` and every other field are untouched.
 
     Args:
         text: The full note file text (frontmatter and body).
-        actor: The provenance actor resolved by the caller — ``human:<subject>``
+        actor: Fallback when ``generated.by`` is absent — ``human:<subject>``
             for human attribution, else a tool actor such as
             ``markdown-vault-mcp/<version>``.
         now: The instant of the write, timezone-aware (spelled by
@@ -1074,7 +1064,11 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
-    new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
+    generated = meta.get("generated")
+    stamp = dict(generated) if isinstance(generated, Mapping) else {}
+    stamp.setdefault("by", actor)
+    stamp["at"] = okf_timestamp(now)
+    new_meta["generated"] = stamp
     new_meta.pop("verified", None)
     if new_meta == meta:
         return text

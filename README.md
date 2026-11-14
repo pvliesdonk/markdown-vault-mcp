@@ -25,7 +25,7 @@ Give Claude, or any MCP client, a folder of Markdown notes to search, read and w
 - **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it. A rename still accepts an etag that only the server's own link rewrites made stale. Per-folder `_conventions.md` rules reach the client as it writes.
 - **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/use/git-integration.md).
 - **Links.** Backlinks, outlinks, broken links and the path between two notes, for wikilinks and Markdown links alike, with interactive views in clients that render [MCP Apps](docs/deploy/mcp-apps.md). With `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`, `write`, `edit` and `append` name each link they added that doesn't resolve.
-- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. See [OKF](docs/use/okf.md).
+- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. A note's `generated.at` sets its modification time when it names an instant with a UTC offset; otherwise file modification time applies. Enforced writes preserve a supplied `generated.by`. See [OKF](docs/use/okf.md).
 
 The [tools reference](docs/reference/tools/index.md) lists every tool. The same engine is a Python library: see the [Vault API](docs/reference/api/vault.md).
 <!-- DOMAIN-README-PITCH-END -->
