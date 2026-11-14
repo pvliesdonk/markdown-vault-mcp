@@ -112,7 +112,8 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   on a new note. Read before touching the pull or conflict path in
   `git/strategy.py` / `git/conflict.py` for the other side's behaviour, or
   anything that renders or classifies commits by subject or identity.
-- [Git submodules seen from a superproject](git-submodules.md) — gitlinks and
+- [Git submodules seen from a superproject](git-submodules.md) — plain nested
+  repositories and gitfiles, silent skipped staging, gitlinks and
   `.gitmodules`, enumerating submodules, what superproject-level
   `add`/`ls-files`/`log`/`show` answer for a path inside one (`add` refuses
   it), how `clone`, `submodule update`, `fetch`, `merge --ff-only` and `pull`

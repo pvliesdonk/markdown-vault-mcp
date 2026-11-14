@@ -1,29 +1,35 @@
-"""A write into a git submodule is refused before it touches disk (#1564).
+"""Refuse writes into git submodules and plain nested repositories (#1564, #1949).
 
 The superproject refuses to stage a path inside a submodule
 (``docs/design/reference/git-submodules.md``), so a write there would land on
-disk and never reach git. Every write tool refuses it instead, naming the
-submodule.
+disk and never reach git. The existing write checks refuse it instead, naming the
+protected repository.
 """
 
 from __future__ import annotations
 
+import errno
 import logging
+import os
+import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.exceptions import SubmodulePathError
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.submodules import SubmoduleGuard
 from markdown_vault_mcp.vault import Vault
-from tests.fixtures.git import make_superproject
+from tests.fixtures.git import make_nested_repository, make_superproject
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-    from pathlib import Path
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -133,6 +139,7 @@ def test_a_first_listing_that_fails_refuses_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = make_superproject(tmp_path)
+    _git(source, "submodule", "deinit", "--force", "--quiet", "sub")
     real = subprocess.run
 
     def failing(args: list[str], **kw: Any) -> Any:
@@ -239,18 +246,318 @@ def test_the_refusal_names_the_argument_and_the_submodule(tmp_path: Path) -> Non
     with pytest.raises(SubmodulePathError) as inside:
         guard.refuse(source / "deep" / "sub" / "x.md", "new_path", "deep/sub/x.md")
     assert str(inside.value) == (
-        "new_path 'deep/sub/x.md' is inside the git submodule 'deep/sub'; this "
-        "server does not change files in a submodule, so the change would never "
+        "new_path 'deep/sub/x.md' is inside the git submodule or nested repository 'deep/sub'; this "
+        "server does not change files in these repositories, so the change would never "
         "be committed. Pass a new_path outside 'deep/sub/', or change the file "
-        "in the submodule's own repository."
+        "in its own repository."
     )
     with pytest.raises(SubmodulePathError) as contains:
         guard.refuse(source / "deep", "old_dir", "deep")
     assert str(contains.value) == (
-        "old_dir 'deep' holds the git submodule 'deep/sub'; this server does not "
-        "change files in a submodule, so the change would never be committed. "
-        "Pass an old_dir that holds no submodule."
+        "old_dir 'deep' holds the git submodule or nested repository 'deep/sub'; this server does not "
+        "change files in these repositories, so the change would never be committed. "
+        "Pass an old_dir that holds no submodule or nested repository."
     )
+
+
+@pytest.mark.parametrize(
+    "configured_nested_source",
+    ["plain", "gitfile", "redirected", "unsupported", "foreign-owned"],
+    indirect=True,
+)
+def test_plain_repositories_are_found_inside_and_below(
+    configured_nested_source: Path,
+) -> None:
+    source = configured_nested_source
+    nested = source / "holder/nested"
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(nested / "new/deep.md") == ("holder/nested", True)
+    assert guard.submodule_of(nested) == ("holder/nested", True)
+    assert guard.submodule_of(source / "holder") == ("holder/nested", False)
+    assert guard.submodule_of(source / "holder/nested-neighbor/n.md") is None
+    assert SubmoduleGuard(source / "holder").submodule_of(nested / "note.md") == (
+        "nested",
+        True,
+    )
+    assert SubmoduleGuard(nested).submodule_of(nested / "note.md") is None
+    (source / "alias").symlink_to(nested)
+    assert guard.submodule_of(source / "alias/note.md") == ("holder/nested", True)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pathname spellings")
+@pytest.mark.parametrize(
+    "name", ["nested ", "nested\n", "nested\r", os.fsdecode(b"nested-\xff")]
+)
+@pytest.mark.parametrize("gitfile", [False, True])
+def test_whitespace_and_non_utf8_boundaries_are_preserved(
+    tmp_path: Path, name: str, gitfile: bool
+) -> None:
+    source = make_nested_repository(tmp_path, sub="holder/" + name)
+    nested = source / "holder" / name
+    if gitfile:
+        _git(nested, "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(nested / "new/deep.md") == ("holder/" + name, True)
+    assert guard.submodule_of(source / "holder") == ("holder/" + name, False)
+
+
+def test_inside_only_refusal_does_not_walk_descendants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_nested_repository(tmp_path, sub="b/sub")
+    guard = SubmoduleGuard(source)
+
+    def unexpected(*_args: Any, **_kw: Any) -> Any:
+        pytest.fail("inside-only queries must not inspect unrelated descendants")
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.os.walk", unexpected)
+    guard.refuse(source / "b", "new_dir", "b", holding=False)
+
+
+def test_inside_a_plain_repository_takes_precedence_over_holding_a_gitlink(
+    tmp_path: Path,
+) -> None:
+    source = make_superproject(tmp_path, sub="outer/child")
+    _git(source / "outer", "init", "-q")
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(source / "outer") == ("outer", True)
+    with pytest.raises(SubmodulePathError):
+        guard.refuse(source / "outer", "new_dir", "outer", holding=False)
+
+
+@pytest.mark.parametrize("inert", ["directory", "file", "oversized"])
+def test_inert_markers_do_not_hide_a_real_descendant(
+    tmp_path: Path, inert: str
+) -> None:
+    source = make_nested_repository(tmp_path, sub="holder/nested")
+    marker = source / "holder/.git"
+    if inert == "directory":
+        marker.mkdir()
+    elif inert == "file":
+        marker.write_text("not a gitfile\n")
+    else:
+        with marker.open("wb") as stream:
+            stream.truncate((1 << 20) + 1)
+        marker.chmod(0)  # Git rejects the size before trying to open it.
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(source / "holder") == ("holder/nested", False)
+    assert guard.submodule_of(source / "holder/ordinary.md") is None
+
+
+@pytest.mark.skipif(
+    not Path("/proc/self/statm").exists(), reason="Linux memory accounting"
+)
+@pytest.mark.parametrize("holding", [False, True])
+@pytest.mark.parametrize("grew", [False, True])
+def test_oversized_inert_gitfile_cannot_exhaust_guard_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, holding: bool, grew: bool
+) -> None:
+    resource = pytest.importorskip("resource")
+
+    source = make_nested_repository(tmp_path)
+    marker = source / "sub/.git"
+    shutil.rmtree(marker)
+    with marker.open("wb") as stream:
+        stream.truncate(96 * 1024 * 1024)
+    _git(source, "add", "--", "sub/note.md")
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(source), "diff", "--cached", "--name-only"]
+        )
+        == b"sub/note.md\n"
+    )
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(source / "top.md") is None
+    real_stat = Path.stat
+
+    def before_growth(path: Path, **kw: Any) -> os.stat_result:
+        result = real_stat(path, **kw)
+        if path == marker:
+            fields = list(result)
+            fields[6] = 1 << 20
+            return os.stat_result(fields)
+        return result
+
+    if grew:
+        monkeypatch.setattr(Path, "stat", before_growth)
+    address_space = int(Path("/proc/self/statm").read_text().split()[0]) * os.sysconf(
+        "SC_PAGE_SIZE"
+    )
+    original = resource.getrlimit(resource.RLIMIT_AS)
+    exhausted = False
+    found = None
+    try:
+        resource.setrlimit(
+            resource.RLIMIT_AS, (address_space + (32 << 20), original[1])
+        )
+        try:
+            target = source if holding else source / "sub/note.md"
+            found = guard.submodule_of(target)
+        except MemoryError:
+            exhausted = True
+    finally:
+        resource.setrlimit(resource.RLIMIT_AS, original)
+    assert not exhausted, "guard allocated the whole oversized inert gitfile"
+    assert found is None
+
+
+def test_markers_are_live_even_when_the_outer_index_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    source = make_nested_repository(tmp_path, sub="holder/nested")
+    guard = SubmoduleGuard(source)
+    nested = source / "holder/nested"
+    marker = nested / ".git"
+    hidden = tmp_path / "metadata"
+    for enabled in [True, False, True]:
+        expected = ("holder/nested", True) if enabled else None
+        assert guard.submodule_of(nested / "new/n.md") == expected
+        held = ("holder/nested", False) if enabled else None
+        assert guard.submodule_of(source / "holder") == held
+        if enabled:
+            marker.rename(hidden)
+        else:
+            hidden.rename(marker)
+
+
+def test_plain_repositories_are_found_without_an_outer_index(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    _git(nested, "init", "-q")
+    assert SubmoduleGuard(tmp_path).submodule_of(nested / "n.md") == ("nested", True)
+
+
+def test_a_gitless_vault_stays_inactive_with_a_nested_repository(
+    tmp_path: Path,
+) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    _git(nested, "init", "-q")
+    assert SubmoduleGuard(tmp_path).submodule_of(nested / "n.md") is None
+
+
+def test_marker_discovery_survives_a_failed_index_listing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_nested_repository(tmp_path)
+    real = subprocess.run
+
+    def failing(args: list[str], **kw: Any) -> Any:
+        if "ls-files" in args:
+            raise subprocess.CalledProcessError(128, args)
+        return real(args, **kw)
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", failing)
+    assert SubmoduleGuard(source).submodule_of(source / "sub/note.md") == ("sub", True)
+
+
+def test_file_queries_do_not_walk_or_discover_git_without_a_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_nested_repository(tmp_path)
+    guard = SubmoduleGuard(source)
+    guard.submodule_of(source / "top.md")  # warm only the owning root/index
+
+    def unexpected(*_args: Any, **_kw: Any) -> Any:
+        pytest.fail("ordinary file queries must use only ancestor stats")
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.os.walk", unexpected)
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", unexpected)
+    assert guard.submodule_of(source / "top.md") is None
+    assert guard.submodule_of(source / "ordinary/deep/n.md") is None
+
+
+def test_holder_discovery_stops_before_entering_a_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_nested_repository(tmp_path, sub="holder/nested")
+    (source / "holder/nested/ordinary").mkdir()
+    real_walk = __import__("os").walk
+    visited: list[Path] = []
+
+    def walking(root: Path, **kw: Any) -> Any:
+        for entry in real_walk(root, **kw):
+            visited.append(Path(entry[0]))
+            yield entry
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.os.walk", walking)
+    assert SubmoduleGuard(source).submodule_of(source / "holder") == (
+        "holder/nested",
+        False,
+    )
+    assert visited == [source / "holder", source / "holder/nested"]
+
+
+def test_holder_walk_is_bounded_and_prunes_metadata_and_symlinks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_nested_repository(tmp_path)
+    holder = source / "holder"
+    (holder / ".git").mkdir(parents=True)  # inert metadata is still pruned
+    (holder / "alias").symlink_to(source / "sub")
+    real_walk = __import__("os").walk
+    visited: list[Path] = []
+
+    def walking(root: Path, **kw: Any) -> Any:
+        assert root == holder
+        for entry in real_walk(root, **kw):
+            visited.append(Path(entry[0]))
+            yield entry
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.os.walk", walking)
+    assert SubmoduleGuard(source).submodule_of(holder) is None
+    assert visited == [holder]
+
+
+@pytest.mark.parametrize("fault", ["stat", "walk"])
+def test_denied_boundary_inspection_is_a_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    source = make_nested_repository(tmp_path)
+    holder = source / "holder"
+    holder.mkdir()
+    guard = SubmoduleGuard(source)
+    real_stat = Path.stat
+
+    def denied_stat(path: Path, **kw: Any) -> Any:
+        if path == holder / ".git":
+            raise PermissionError(errno.EACCES, "denied", str(path))
+        return real_stat(path, **kw)
+
+    def denied_walk(root: Path, **kw: Any) -> Any:
+        kw["onerror"](PermissionError(errno.EACCES, "denied", str(root)))
+        return iter(())
+
+    if fault == "stat":
+        monkeypatch.setattr(Path, "stat", denied_stat)
+    else:
+        monkeypatch.setattr("markdown_vault_mcp.git.submodules.os.walk", denied_walk)
+    with pytest.raises(PermissionError):
+        guard.submodule_of(holder)
+
+
+@example(parts=["0"])
+@settings(max_examples=30, deadline=None)
+@given(
+    st.lists(
+        st.text(
+            alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=24
+        ),
+        min_size=1,
+        max_size=4,
+    )
+)
+def test_generated_nested_descendants_and_prefix_neighbors(parts: list[str]) -> None:
+    """Component containment, not a string prefix, defines the write boundary."""
+    with tempfile.TemporaryDirectory() as name:
+        root = Path(name)
+        components = ["p" + part for part in parts]
+        sub = "/".join(components)
+        source = make_nested_repository(root, sub=sub)
+        guard = SubmoduleGuard(source)
+        assert guard.submodule_of(source / sub / "new/deep.md") == (sub, True)
+        assert guard.submodule_of(source / (sub + "-neighbor") / "n.md") is None
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +567,7 @@ def test_the_refusal_names_the_argument_and_the_submodule(tmp_path: Path) -> Non
 
 @pytest.fixture
 def vault_of(tmp_path: Path) -> Iterator[Callable[[Path], Vault]]:
-    opened: list[Vault] = []
+    opened: list[tuple[Vault, GitWriteStrategy | None]] = []
 
     def build(source: Path, *, git: bool = True) -> Vault:
         strategy = (
@@ -274,14 +581,17 @@ def vault_of(tmp_path: Path) -> Iterator[Callable[[Path], Vault]]:
             source_dir=source,
             settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
             git_strategy=strategy,
+            on_write=strategy,
         )
-        opened.append(vault)
+        opened.append((vault, strategy))
         vault.index.build_index()
         return vault
 
     yield build
-    for vault in opened:
+    for vault, strategy in opened:
         vault.close()
+        if strategy is not None:
+            strategy.close()
 
 
 def _snapshot(source: Path) -> dict[str, bytes]:
@@ -290,6 +600,180 @@ def _snapshot(source: Path) -> dict[str, bytes]:
         for p in sorted(source.rglob("*"))
         if p.is_file() and ".git" not in p.relative_to(source).parts
     }
+
+
+@pytest.fixture(params=["plain", "redirected", "unsupported", "foreign-owned"])
+def configured_nested_source(
+    request: pytest.FixtureRequest, tmp_path: Path
+) -> Iterator[Path]:
+    """Build staging boundaries without relying on nested worktree discovery."""
+    source = make_nested_repository(tmp_path, sub="holder/nested")
+    nested = source / "holder/nested"
+    marker = nested / ".git"
+    owners: list[tuple[Path, int]] = []
+    try:
+        if request.param == "gitfile":
+            _git(nested, "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+            assert marker.is_file()
+            with marker.open("ab") as stream:
+                stream.write(b"\n" * ((1 << 20) - marker.stat().st_size))
+        elif request.param == "redirected":
+            alternate = tmp_path / "alternate"
+            alternate.mkdir()
+            _git(nested, "config", "core.worktree", str(alternate))
+        elif request.param == "unsupported":
+            _git(nested, "config", "core.repositoryformatversion", "1")
+            _git(nested, "config", "extensions.futureFormat", "true")
+        elif request.param == "foreign-owned":
+            if os.name != "posix" or shutil.which("sudo") is None:
+                pytest.skip("foreign ownership requires POSIX and noninteractive sudo")
+            if subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode:
+                pytest.skip("noninteractive ownership changes unavailable")
+            foreign = 0 if os.getuid() else 1
+            for target in (nested, marker):
+                owners.append((target, target.stat().st_uid))
+                subprocess.run(
+                    ["sudo", "-n", "chown", str(foreign), str(target)], check=True
+                )
+                assert target.stat().st_uid != os.getuid()
+            assert (
+                subprocess.run(
+                    ["git", "rev-parse", "--resolve-git-dir", str(marker)],
+                    capture_output=True,
+                ).returncode
+                == 0
+            )
+        yield source
+    finally:
+        for target, owner in reversed(owners):
+            subprocess.run(["sudo", "-n", "chown", str(owner), str(target)], check=True)
+            assert target.stat().st_uid == owner
+
+
+def test_a_plain_repository_write_is_refused_before_any_side_effect(
+    configured_nested_source: Path,
+    vault_of: Callable[[Path], Vault],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful outer git-add can stage nothing; do not lose the write."""
+    source = configured_nested_source
+    path = "holder/nested/note.md"
+    _git(source, "add", "--", path)
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(source), "diff", "--cached", "--name-only"]
+        )
+        == b""
+    )
+    vault = vault_of(source)
+    before = _snapshot(source)
+    head = (source / ".git" / "refs" / "heads" / "main").read_bytes()
+    index = (source / ".git" / "index").read_bytes()
+    indexed = vault._fts.get_note(path)
+    assert indexed is not None
+    callbacks: list[object] = []
+    real_fire = vault._doc_mgr._notifier.fire
+
+    def record(*args: Any) -> None:
+        callbacks.append(args)
+        real_fire(*args)
+
+    monkeypatch.setattr(vault._doc_mgr._notifier, "fire", record)
+    with pytest.raises(SubmodulePathError, match="nested repository"):
+        vault.writer.write(path, "# Lost write\n")
+    assert _snapshot(source) == before
+    assert (source / ".git" / "refs" / "heads" / "main").read_bytes() == head
+    assert (source / ".git" / "index").read_bytes() == index
+    assert vault._fts.get_note(path) == indexed
+    assert not callbacks
+    vault.writer.write("outside.md", "# Committed\n")
+    assert vault._write_callback.drain(timeout=5)
+    assert (
+        subprocess.check_output(["git", "-C", str(source), "show", "HEAD:outside.md"])
+        == b"# Committed\n"
+    )
+
+
+def _inject_gitfile_read_fault(monkeypatch: pytest.MonkeyPatch, marker: Path) -> None:
+    """Install an accepted-size gitfile read fault after the first 4 KiB."""
+    real_open = Path.open
+
+    def opening(path: Path, *args: Any, **kw: Any) -> Any:
+        stream = real_open(path, *args, **kw)
+        if path == marker:
+            real_read = stream.read
+
+            def denied_read(size: int = -1) -> bytes:
+                data: bytes = real_read(size)
+                if len(data) > 4096:
+                    raise OSError(
+                        errno.EIO, "synthetic gitfile read failure", str(path)
+                    )
+                return data
+
+            monkeypatch.setattr(stream, "read", denied_read)
+        return stream
+
+    monkeypatch.setattr(Path, "open", opening)
+
+
+@pytest.mark.parametrize("fault", ["read", "launch"])
+@pytest.mark.parametrize("query", ["inside", "holding", "write"])
+def test_candidate_inspection_fault_prevents_mutation(
+    tmp_path: Path,
+    vault_of: Callable[[Path], Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
+    query: str,
+) -> None:
+    source = make_nested_repository(tmp_path, sub="holder/nested")
+    nested = source / "holder/nested"
+    _git(nested, "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+    with (nested / ".git").open("ab") as stream:
+        stream.write(b"\n" * 8192)
+    vault = vault_of(source) if query == "write" else None
+    guard = SubmoduleGuard(source) if vault is None else vault._doc_mgr._submodule_guard
+    assert guard is not None
+    guard.submodule_of(source / "top.md")  # warm owning root/index before injection
+    if vault is not None:
+        before = _snapshot(source)
+        git_state = [
+            (source / ".git" / name).read_bytes()
+            for name in ("index", "refs/heads/main")
+        ]
+        indexed = vault._fts.get_note("holder/nested/note.md")
+        assert indexed is not None
+        monkeypatch.setattr(
+            vault._doc_mgr._notifier,
+            "fire",
+            lambda *_a: pytest.fail("unexpected callback"),
+        )
+    real_run = subprocess.run
+
+    def missing_git(*args: Any, **kw: Any) -> Any:
+        if "--resolve-git-dir" in args[0]:
+            raise FileNotFoundError(errno.ENOENT, "synthetic missing Git")
+        return real_run(*args, **kw)
+
+    if fault == "read":
+        _inject_gitfile_read_fault(monkeypatch, nested / ".git")
+    else:
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.submodules.subprocess.run", missing_git
+        )
+    with pytest.raises(OSError):
+        if vault is not None:
+            vault.writer.write("holder/nested/note.md", "# Must not change\n")
+        else:
+            target = nested / "note.md" if query == "inside" else source / "holder"
+            guard.submodule_of(target)
+    if vault is None:
+        return
+    assert _snapshot(source) == before
+    assert [
+        (source / ".git" / name).read_bytes() for name in ("index", "refs/heads/main")
+    ] == git_state
+    assert vault._fts.get_note("holder/nested/note.md") == indexed
 
 
 REFUSED: dict[str, tuple[Callable[[Vault], object], str]] = {
@@ -343,7 +827,9 @@ def test_every_write_tool_refuses_and_writes_nothing(
     vault = vault_of(source)
     before = _snapshot(source)
     call, argument = REFUSED[case]
-    with pytest.raises(SubmodulePathError, match=rf"^{argument} .*submodule 'sub'"):
+    with pytest.raises(
+        SubmodulePathError, match=rf"^{argument} .*submodule or nested repository 'sub'"
+    ):
         call(vault)
     assert _snapshot(source) == before
     assert not (source / "sub" / "deeper").exists()
@@ -355,7 +841,9 @@ def test_a_deinitialised_submodule_is_refused_too(
     source = make_superproject(tmp_path)
     _git(source, "submodule", "deinit", "--force", "--quiet", "sub")
     vault = vault_of(source)
-    with pytest.raises(SubmodulePathError, match="submodule 'sub'"):
+    with pytest.raises(
+        SubmodulePathError, match="submodule or nested repository 'sub'"
+    ):
         vault.writer.write("sub/note.md", "# Lost\n")
     assert list((source / "sub").iterdir()) == []
 
@@ -382,6 +870,31 @@ def test_a_folder_may_move_beside_a_submodule(
     vault = vault_of(source)
     vault.writer.move_folder("a", "b")
     assert (source / "b" / "x.md").read_text() == "# X\n"
+
+
+def test_move_destination_does_not_inspect_unrelated_private_subtree(
+    tmp_path: Path, vault_of: Callable[[Path], Vault], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_nested_repository(tmp_path)
+    (source / "a").mkdir()
+    (source / "a/x.md").write_text("# Move\n")
+    private = source / "b/private"
+    private.mkdir(parents=True)
+    (private / "unrelated.txt").write_text("untouched\n")
+    vault = vault_of(source)
+    real_walk = os.walk
+
+    def walking(root: Path, **kw: Any) -> Any:
+        if root == source / "b":
+            kw["onerror"](PermissionError(errno.EACCES, "denied", str(private)))
+        yield from real_walk(root, **kw)
+
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.os.walk", walking)
+    vault.writer.move_folder("a", "b")
+    assert not vault._doc_mgr.in_submodule("b")
+    assert (source / "b/x.md").read_text() == "# Move\n"
+    assert not (source / "a").exists()
+    assert (private / "unrelated.txt").read_text() == "untouched\n"
 
 
 def test_a_folder_move_that_lands_a_file_in_a_submodule_is_refused(
@@ -450,6 +963,51 @@ def test_a_rename_says_which_backlinks_it_left_alone(
     assert result.hint is not None
     assert "'sub/note.md' still name the old path" in result.hint
     assert (source / "sub" / "note.md").read_bytes() == before
+
+
+def test_backlink_inspection_fault_does_not_abort_a_completed_rename(
+    tmp_path: Path,
+    vault_of: Callable[[Path], Vault],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = make_nested_repository(tmp_path)
+    (source / "sub/note.md").write_text("# Backlink\n\n[[top]]\n")
+    _git(source / "sub", "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+    with (source / "sub/.git").open("ab") as stream:
+        stream.write(b"\n" * 8192)
+    vault = vault_of(source)
+    assert vault._fts.get_backlinks("top.md")
+    backlink = (source / "sub/note.md").read_bytes()
+    real_fire = vault._doc_mgr._notifier.fire_rename
+    callbacks: list[object] = []
+
+    def record(*args: Any) -> None:
+        callbacks.append(args)
+        real_fire(*args)
+
+    _inject_gitfile_read_fault(monkeypatch, source / "sub/.git")
+    monkeypatch.setattr(vault._doc_mgr._notifier, "fire_rename", record)
+    result = vault.writer.rename("top.md", "renamed.md", update_links=True)
+    assert result.updated_links == 0
+    assert result.hint is None
+    assert (source / "sub/note.md").read_bytes() == backlink
+    assert not (source / "top.md").exists()
+    assert (source / "renamed.md").read_text() == "# Top\n"
+    assert vault.index.wait_for_drain(timeout=5)
+    assert vault._fts.get_note("top.md") is None
+    assert vault._fts.get_note("renamed.md") is not None
+    assert len(callbacks) == 1
+    assert vault._write_callback.drain(timeout=5)
+    assert (
+        subprocess.check_output(["git", "-C", str(source), "show", "HEAD:renamed.md"])
+        == b"# Top\n"
+    )
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(source), "ls-tree", "--name-only", "HEAD", "top.md"]
+        )
+        == b""
+    )
 
 
 def test_a_rename_with_a_vanished_backlink_source_gives_no_submodule_hint(

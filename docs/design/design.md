@@ -1282,7 +1282,7 @@ operator learns why the note was left out.
 |-|-|-|
 | `InvalidRequestError` | The path helpers; `read()`, `get_toc()`, `edit()`, `append()`, `write()` and `move_folder()` arguments; search's `chunks_per_file`; the OKF `stale` filter; `get_diff()`'s ref; revision reads; attachment paths (a `.md` path, an extension off the allowlist); `summarize()` arguments, and paths that hold no note that exists within the read limit | The caller's request cannot be served as sent: an argument out of range or missing, a path outside the vault or of the wrong type, a heading that does not exist. A `ValueError` subclass, so `except ValueError` still catches it (#1608) |
 | `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`/`read_attachment()`/`attachment_size()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
-| `SubmodulePathError` | `write()`, `append()`, `edit()`, `delete()`, `rename()`, `move_folder()`, `write_attachment()`, `okf_convert_links()`, `okf_generate_index()`, `okf_seed_log()` | The path lies in a git submodule, or the folder holds one, so git would never commit the change (#1564). A subclass of `InvalidRequestError` |
+| `SubmodulePathError` | `write()`, `append()`, `edit()`, `delete()`, `rename()`, `move_folder()`, `write_attachment()`, `okf_convert_links()`, `okf_generate_index()`, `okf_seed_log()` | The path lies in a git submodule or plain nested repository, or the folder holds one, so git would never commit the change (#1564, #1949). A subclass of `InvalidRequestError` |
 | `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()`; `build_embeddings(force=True)` | `read_only=True`; for a forced rebuild, a vault built with `owns_index_files=False`, which never creates or replaces the embedding store's files (#1778) |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
@@ -6382,12 +6382,13 @@ framing, identity) is recorded with sources and dates in
 [`reference/git-history-queries.md`](reference/git-history-queries.md); this section records what the
 project does with it and why.
 
-A submodule inside the vault is read-only. The git root is discovered once
-from `SOURCE_DIR`, so a submodule's notes are scanned like any folder while
+A submodule or real nested repository inside the vault is read-only. The git
+root is discovered once from `SOURCE_DIR`, so a submodule's notes are scanned like any folder while
 every git command addresses the superproject, which refuses to stage them and
-reports no history for them. A write there would land on disk and never be
-committed, so the write tools refuse it before touching disk with a
-`SubmodulePathError` naming the argument and the submodule (#1564): `write`,
+reports no history for them. Plain repositories may silently stage nothing.
+A write there would land on disk and never be committed, so the existing
+mutation checks refuse it with a `SubmodulePathError` naming the argument and
+the repository (#1564, #1949): `write`,
 `append`, `edit`, `delete`, `rename` (either path), the attachment writes, and
 `move_folder` when `old_dir` lies in or holds a submodule or a moved file would
 land inside one (a `new_dir` that merely holds one is fine). The OKF tools
@@ -6395,24 +6396,37 @@ refuse a `folder` inside a submodule and otherwise leave submodules out:
 `okf_convert_links` skips their notes (logged
 `okf_convert_links_submodule_notes_skipped`), and `okf_generate_index` never
 writes their `index.md`, pointing at one only when the submodule ships its
-own. The gitlinks in the index (mode `160000`)
-decide, so a deinitialised submodule is refused too; `git/submodules.py`'s
+own. These same refusal and skip rules cover plain nested repositories.
+The gitlinks in the index (mode `160000`)
+identify submodules, so a deinitialised submodule is refused too; `git/submodules.py`'s
 `SubmoduleGuard` reads them again only when the index file changes. When git
 cannot list them it logs `submodule_list_failed`, keeps the submodules it last
-listed and asks again on the next write; a guard that never listed any, or
-whose vault is in no repository (`submodule_guard_inactive`), refuses
-nothing. Paths are compared after `resolve()`, so a symlink
+listed and asks again on the next write. That fallback concerns gitlinks
+only; live marker discovery remains independent of index listing failures.
+Plain repository discovery validates `.git` metadata with native
+`rev-parse --resolve-git-dir`, consuming status only, strictly below the vault
+root. Regular gitfiles up to Git's 1 MiB limit are first read as bytes, with
+bounded allocation if they grow; read and Git launch faults propagate. Larger
+markers and readable invalid markers remain inert. File and inside-only queries
+check ancestors; holding queries walk the target, without
+following directory symlinks or entering `.git` metadata, and stop at the
+first repository. Inert markers do not hide real descendants. No filesystem
+results are cached: marker creation/removal affects the next query even if
+the outer index is unchanged. Containing boundaries precede holding-only
+matches. Denied stat/walk inspection propagates as an I/O fault.
+A vault in no repository (`submodule_guard_inactive`) refuses nothing.
+Paths are compared after `resolve()`, so a symlink
 into a submodule is refused, but case is not folded: on a case-insensitive
 file system a path spelled `SUB/` is not recognised. A rename or folder move
 whose backlinks come from a note inside a submodule goes ahead and leaves that
 note unrewritten, logged at INFO as `link_rewrite_source_skipped
-reason=submodule`; a `rename` names it in `hint`, a `move_folder` in
-`failed_links`. A `move_folder` that would land a file inside a submodule is
+reason=submodule`; a `rename` names it in a best-effort `hint`, a `move_folder` in
+`failed_links`. Hint inspection faults do not interrupt index updates or Git
+notifications. A `move_folder` that would land a file inside a submodule is
 refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
-refuse nothing, since nothing is committed there. A plain repository nested
-in the vault that is not a submodule is not detected (#1949), and upload links,
+refuse nothing, since nothing is committed there. Upload links,
 `fetch` and the OKF index refresh after a folder move reach the refusal only
 after other work (#1950). What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the

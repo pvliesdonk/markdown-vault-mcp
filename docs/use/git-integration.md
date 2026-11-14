@@ -494,14 +494,18 @@ Behavior:
 - GitLab: `oauth2`
 - Bitbucket: account username
 
-## Submodules in the vault
+## Submodules and nested repositories in the vault
 
-A git submodule inside the vault is read-only. Its notes are indexed and searchable like any folder, but git refuses to commit a change inside a submodule from the vault's own repository, so a change there would be lost. In managed and commit-only mode every write tool refuses a path inside a submodule and names it, and nothing is written. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, the attachment writes and the OKF tools.
+A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, attachment writes and OKF tools at their existing write checks.
 
-- Change those files in the repository the submodule comes from instead.
-- `move_folder` refuses to move a folder that holds a submodule, but you can move a folder next to one.
-- A `rename` or `move_folder` that would rewrite links inside a submodule leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
+- Change those files in their own repository instead.
+- `move_folder` refuses to move a folder that holds a protected repository, but you can move a folder next to one.
+- A `rename` or `move_folder` that would rewrite links inside a protected repository leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
 - A submodule whose folder is empty (never initialised) is refused too.
+- Plain repositories need no `gitlink` or `.gitmodules` registration. Both `.git` directories and valid `.git` files are detected, including ones created after startup or with working trees Git cannot open. An unreadable `.git` file up to Git's 1 MiB limit raises an I/O error; larger markers are inert. The vault's own repository is allowed.
+- Bulk OKF link conversion skips protected notes. Index generation can link to their existing `index.md` but does not write it.
+
+These checks do not change the ordering of uploads, fetch downloads or the OKF index refresh after a folder move; those can do other work before reaching the refusal ([#1950](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950)).
 
 In no-git mode nothing is committed, so nothing is refused.
 

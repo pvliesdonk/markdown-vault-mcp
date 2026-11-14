@@ -1,34 +1,45 @@
-"""Which vault paths lie in a git submodule, so a write there is refused (#1564).
+"""Refuse writes hidden inside submodules or nested repositories (#1564, #1949).
 
-Every git command runs in the superproject, which refuses to stage a path
+Writes use the superproject, which refuses to stage a path
 inside a submodule (``fatal: Pathspec ... is in submodule``). A write there
 would land on disk and never reach git, so the write managers ask
 :class:`SubmoduleGuard` first and refuse. What git does is recorded in
 ``docs/design/reference/git-submodules.md``.
 
-The index decides: a gitlink (mode ``160000`` in ``git ls-files --stage``) is
-what makes git refuse, whether the submodule is initialised or not. The list
+For registered submodules, a gitlink (mode ``160000`` in
+``git ls-files --stage``) makes git refuse, whether initialised or not. The list
 is read again only when the index file changes, so an unchanged index costs
 one ``stat``. When git cannot list the index the guard logs it, keeps the
-submodules it last listed, and asks again on the next write; only a guard that
-never listed any refuses nothing then.
+gitlinks it last listed, and asks again on the next write. With no successful
+listing it has no gitlink boundaries; live marker discovery still applies.
+
+Plain nested repositories have no gitlink: check their .git directory or
+gitfile live, confirming metadata through native structural resolution. File
+and inside-only queries inspect ancestors; holding queries walk the requested
+directory, pruning metadata and stopping at the first repository. Filesystem
+inspection and Git launch faults propagate. Regular gitfiles up to Git's 1 MiB
+limit are read strictly as bytes before resolution, with bounded allocation;
+larger markers are inert even when unreadable.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import threading
 from pathlib import Path
 
 from markdown_vault_mcp.exceptions import SubmodulePathError
 from markdown_vault_mcp.git._run import _find_git_root
+from markdown_vault_mcp.utils.fs import file_bytes, is_directory, is_regular_file
 
 __all__ = ["SubmoduleGuard"]
 
 logger = logging.getLogger(__name__)
 
 _GITLINK_MODE = "160000"
+_MAX_GITFILE_BYTES = 1 << 20  # Git's read_gitfile_gently limit.
 
 # (st_mtime_ns, st_ctime_ns, st_size, st_ino) of the index file, or None when
 # it is absent.
@@ -36,7 +47,7 @@ _IndexKey = tuple[int, int, int, int] | None
 
 
 class SubmoduleGuard:
-    """Answer whether a vault path lies in, or holds, a git submodule.
+    """Answer whether a path lies in, or holds, a submodule or nested repository.
 
     The git root is found from the vault directory on the first call and kept,
     found or not, as the git strategy keeps its own; never from the path
@@ -57,49 +68,90 @@ class SubmoduleGuard:
         self._listed = False
         self._gitlinks: tuple[Path, ...] = ()
 
-    def submodule_of(self, abs_path: Path) -> tuple[str, bool] | None:
-        """Return the submodule *abs_path* lies in or holds, or ``None``.
+    def submodule_of(
+        self, abs_path: Path, *, holding: bool = True
+    ) -> tuple[str, bool] | None:
+        """Return the submodule or nested repository *abs_path* lies in or holds.
 
         Args:
             abs_path: An absolute path inside the vault.
+            holding: Also look for repositories below a directory. ``False``
+                checks only the target and its ancestors.
 
         Returns:
-            ``(submodule, inside)``: the submodule's vault-relative POSIX path,
-            and ``True`` when *abs_path* is the submodule or lies inside it,
-            ``False`` when it is a folder holding the submodule. ``None`` when
-            neither holds, or the vault is not in a git repository.
+            ``(repository, inside)``: its vault-relative POSIX path, and
+            ``True`` when *abs_path* is the repository or lies inside it,
+            ``False`` when it is a folder holding the repository. ``None`` when
+            no requested relation holds, or the vault is not in a git repository.
+
+        Raises:
+            OSError: If filesystem inspection is refused.
         """
         target = abs_path.resolve()
-        for gitlink in self._current_gitlinks():
+        gitlinks = self._current_gitlinks()
+        if self._root is None:
+            return None
+        for gitlink in gitlinks:
             if target == gitlink or target.is_relative_to(gitlink):
                 return self._name(gitlink), True
+        # Every containing boundary precedes holding-only matches: an outer
+        # plain repository can itself hold an indexed gitlink (#1949).
+        nested = self._containing_repository(target)
+        if nested is not None:
+            return self._name(nested), True
+        if not holding:
+            return None
+        for gitlink in gitlinks:
             if gitlink.is_relative_to(target):
                 return self._name(gitlink), False
+        nested = self._held_repository(target)
+        return (self._name(nested), False) if nested is not None else None
+
+    def _containing_repository(self, target: Path) -> Path | None:
+        """Find a real repository on the target's ancestry below the vault."""
+        candidate = target
+        while candidate != self._source_dir and candidate.is_relative_to(
+            self._source_dir
+        ):
+            if _is_repository(candidate):
+                return candidate
+            candidate = candidate.parent
+        return None
+
+    def _held_repository(self, target: Path) -> Path | None:
+        """Find the first repository below this directory, without following links."""
+        if not is_directory(target):
+            return None
+        for dirpath, dirnames, _files in os.walk(
+            target, onerror=_raise_walk_error, followlinks=False
+        ):
+            dirnames[:] = [name for name in dirnames if name != ".git"]
+            candidate = Path(dirpath)
+            if candidate != target and _is_repository(candidate):
+                return candidate
         return None
 
     def refuse(
         self, abs_path: Path, argument: str, path: str, *, holding: bool = True
     ) -> None:
-        """Raise when *abs_path* lies in a submodule, or holds one.
+        """Raise when *abs_path* lies in or holds a submodule or nested repository.
 
         Args:
             abs_path: The validated absolute path the write would touch.
             argument: The tool parameter that carried *path*.
             path: The path as the caller sent it.
-            holding: Also refuse a folder that holds a submodule. ``False``
-                for a destination folder, whose submodules a move leaves
+            holding: Also refuse a folder holding a protected repository. ``False``
+                for a destination folder, whose repositories a move leaves
                 alone.
 
         Raises:
-            SubmodulePathError: When :meth:`submodule_of` finds a submodule
+            SubmodulePathError: When :meth:`submodule_of` finds a repository
                 that the arguments refuse.
         """
-        found = self.submodule_of(abs_path)
+        found = self.submodule_of(abs_path, holding=holding)
         if found is None:
             return
         submodule, inside = found
-        if not (inside or holding):
-            return
         build = SubmodulePathError.inside if inside else SubmodulePathError.holds
         raise build(argument, path, submodule)
 
@@ -159,6 +211,36 @@ class SubmoduleGuard:
             if gitlink.is_relative_to(self._source_dir):
                 gitlinks.append(gitlink)
         return tuple(gitlinks)
+
+
+def _is_repository(candidate: Path) -> bool:
+    """Resolve .git metadata structurally, propagating inspection/launch faults."""
+    if not is_directory(candidate):
+        return False
+    marker = candidate / ".git"
+    if not is_directory(marker):
+        if not is_regular_file(marker):
+            return False
+        if file_bytes(marker) > _MAX_GITFILE_BYTES:
+            return False
+        # Read accepted-size files strictly, with bounded allocation if they grow.
+        with marker.open("rb") as stream:
+            if len(stream.read(_MAX_GITFILE_BYTES + 1)) > _MAX_GITFILE_BYTES:
+                return False
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "--resolve-git-dir", str(marker)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def _raise_walk_error(exc: OSError) -> None:
+    """Keep an unreadable subtree from looking like a safe empty directory."""
+    raise exc
 
 
 def _index_file(root: Path) -> Path | None:
