@@ -69,8 +69,7 @@ shows the same workflow through the command line.
 
 Keep the complete MCP result when calling these tools. For vault search,
 `structuredContent.result` holds the hit list; for `read`, `structuredContent`
-holds the note object. Both also return text in `content`. Search includes a
-Boolean `_meta.index_stale` describing index freshness; `read` reads the file
+holds the note object. Search includes a Boolean `_meta.index_stale` describing index freshness; `read` reads the file
 directly. Keep search metadata alongside the hits so a caller can decide
 whether to wait for pending writes.
 
