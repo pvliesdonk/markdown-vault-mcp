@@ -232,6 +232,8 @@ def test_failed_dirty_skip_recording_retries(
     ("spelling", "pattern", "remains"),
     [
         ("note.md", "note.md", False),
+        ("./note.md", "note.md", True),
+        ("./note.md", "./*", True),
         ("sub/../note.md", "note.md", True),
         ("sub/../note.md", "sub/**", True),
     ],
@@ -261,6 +263,25 @@ def test_excluding_dirty_skip_clears_status(
     )
     assert (fts.get_tombstone("note.md") is not None) is remains
     fts.close()
+
+
+@pytest.mark.parametrize(
+    ("pattern", "admitted"), [("blocked.md", True), ("./*", False)]
+)
+def test_writer_dot_prefix_preserves_exclusion(
+    tmp_path: Path, pattern: str, admitted: bool
+) -> None:
+    """Native writes retain the original lexical exclusion decision."""
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, exclude_patterns=[pattern]),
+    )
+    try:
+        vault.writer.write("./blocked.md", "---\ntitle: Written\n---\nbody\n")
+        assert vault.index.wait_for_drain(timeout=5)
+        assert (vault._fts.get_note("blocked.md") is not None) is admitted
+    finally:
+        vault.close()
 
 
 def test_yaml_repaired_before_later_hash_is_reparsed(

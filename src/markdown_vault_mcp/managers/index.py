@@ -1197,7 +1197,6 @@ class IndexManager:
     ) -> None:
         """Refresh one row, propagating any failure that leaves it stale."""
         abs_path = self._source_dir / path
-        path = abs_path.relative_to(self._source_dir).as_posix()
         try:
             if self._is_path_excluded(path):
                 # Excluded paths (e.g. convention files) never enter
@@ -1209,6 +1208,7 @@ class IndexManager:
                 self._fts.delete_by_path(path)
                 self._tracker.update_skip(path, known_skips=known_skips)
                 return
+            path = abs_path.relative_to(self._source_dir).as_posix()
             if ".." in path.split("/"):
                 target = resolve_inside(path, self._source_dir)
                 abs_path = self._source_dir / target.relative_to(
