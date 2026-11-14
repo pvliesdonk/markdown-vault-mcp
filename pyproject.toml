@@ -230,6 +230,7 @@ browser = [
 
 [project.scripts]
 markdown-vault-mcp = "markdown_vault_mcp.cli:main"
+mvmcp = "markdown_vault_mcp.cli:main"
 
 [project.urls]
 Repository = "https://github.com/pvliesdonk/markdown-vault-mcp"
