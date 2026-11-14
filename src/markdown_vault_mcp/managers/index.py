@@ -756,7 +756,8 @@ class IndexManager:
         """Find stored live rows whose resolved identity needs native reconciliation.
 
         Returns:
-            Mismatched or unresolved live spellings; raw hashes stay unchanged.
+            Mismatched or unreadable live spellings; raw hashes stay unchanged.
+            Missing files stay with the change tracker's deletion handling.
         """
         stale = set()
         for path in self._fts.list_document_paths():
@@ -767,6 +768,10 @@ class IndexManager:
                 metadata = parse_frontmatter(
                     decode_utf8(authority.read_bytes())
                 ).metadata
+            except FileNotFoundError:
+                # A missing file is a deletion, not changed metadata. A warm
+                # build must leave it for reindex to reconcile and count.
+                continue
             except (OSError, ValueError, RuntimeError, yaml.YAMLError):
                 stale.add(path)
                 continue

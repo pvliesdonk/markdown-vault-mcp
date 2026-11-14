@@ -100,22 +100,24 @@ def annotate_hits(
     Args:
         results: Serialized hits, mutated in place.
         annotation: Native annotation function, or None for an inactive bundle.
-        source_dir: Vault root for identity and typed skill-family reads.
+        source_dir: Vault root for identity and typed skill-family reads. Without
+            a root, the callback receives held frontmatter without native imports.
 
     Returns:
         Hits with native annotations; ordinary vaults remain unchanged.
     """
     if annotation is not None:
-        from markdown_vault_mcp.okf import resolved_okf_metadata
-
         for hit in results:
-            hit["okf"] = annotation(
-                resolved_okf_metadata(
-                    hit.get("frontmatter") or {},
+            metadata = hit.get("frontmatter") or {}
+            if source_dir is not None:
+                from markdown_vault_mcp.okf import resolved_okf_metadata
+
+                metadata = resolved_okf_metadata(
+                    metadata,
                     path=hit.get("path"),
                     source_dir=source_dir,
                 )
-            )
+            hit["okf"] = annotation(metadata)
     return results
 
 

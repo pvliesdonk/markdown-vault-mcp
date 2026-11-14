@@ -27,7 +27,7 @@ sources:
 - A skill directory contains a file named `SKILL.md`, with YAML frontmatter
   followed by Markdown instructions. [source: specification] (§ Directory
   structure, § SKILL.md format)
-  [pins: tests/test_okf.py::test_skill_metadata_leaves_ordinary_notes_literal]
+  [pins: tests/test_okf.py::test_effective_skill_metadata]
 - The frontmatter table names `name` and `description` as required fields,
   and `license`, `compatibility`, `metadata`, and `allowed-tools` as optional
   fields. Additional properties belong in `metadata`, described as a mapping
@@ -44,7 +44,7 @@ mapping; accepting them does not assert strict Agent Skills producer
 conformance. The [OKF design](../okf.md#skill-metadata-reads) defines this
 read-only projection and its filename-derived `Skill` fallback. Raw YAML and
 file bytes stay literal.
-[pins: tests/test_okf.py::test_effective_skill_metadata, tests/test_okf.py::test_skill_audit_uses_nested_type]
+[pins: tests/test_okf.py::test_effective_skill_metadata, tests/test_okf.py::test_skill_audit_uses_filename_inferred_type]
 
 ## Not covered
 
