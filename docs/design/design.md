@@ -1908,7 +1908,14 @@ the spec itself says, dated and sourced, in
   `unverified`; a bare `verified` mapping is a one-element list, as the
   spec's single-verifier shorthand requires, at every site that reads
   the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
-  `sources_count`. Section reads omit the key (no frontmatter to derive
+  `sources_count`. Both modes add true-only `malformed_sources` and
+  `malformed_generated` flags for present values of the wrong shape:
+  sources must be a list of mappings (empty allowed), generated a mapping
+  containing `by` (key presence only, no required `at`). Absent fields
+  produce no flag; explicit null values do. Mixed source lists remain
+  intact and keep their full count; non-list sources gain no invented
+  list/count. These computed diagnostics change no stored metadata or
+  index semantics. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
@@ -1963,7 +1970,8 @@ the spec itself says, dated and sourced, in
   (missing ``type``, unparseable frontmatter, ``okf_version`` outside the
   bundle root, ``index.md`` frontmatter beyond the root's ``okf_version``
   — generated indexes included, #1396), advisory (unknown ``status``
-  vocabulary, ``log.md`` heading shape, missing root ``index.md``),
+  vocabulary, malformed ``sources`` and ``generated`` shapes using the
+  annotation predicates, ``log.md`` heading shape, missing root ``index.md``),
   informational (wikilink
   usage, missing recommended fields). Reserved files are exempt from the
   ``type`` rule. The tool is registered with an ``okf`` tag and hidden
@@ -1971,6 +1979,10 @@ the spec itself says, dated and sourced, in
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+  The provenance findings count parsed non-reserved notes once per field,
+  leaving ``conformant_notes`` unchanged. They are defaulted fields appended
+  after ``index_frontmatter`` to preserve existing positional construction.
+  Neither reading nor auditing repairs the files.
 - **Migration transforms (phase 4, #963)**: three one-shot write tools
   move a vault toward the bundle conventions, each built on the existing
   ``DocumentManager.write`` path (atomic write, read-only gate, index

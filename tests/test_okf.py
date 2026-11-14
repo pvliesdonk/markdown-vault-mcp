@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING
+from collections import UserDict
+from copy import deepcopy
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -266,27 +269,83 @@ class TestDeriveAnnotation:
         annotation = derive_annotation({"status": "  "}, now=NOW)
         assert annotation["status"] == OKF_STATUS_DEFAULT
 
-    def test_search_mode_counts_sources(self) -> None:
-        annotation = derive_annotation(
+
+_ABSENT = object()
+
+
+@pytest.mark.parametrize(
+    ("metadata", "sources_bad", "generated_bad"),
+    [
+        (
+            {"type": "Note", **({field: value} if value is not _ABSENT else {})},
+            field == "sources" and sources_bad,
+            field == "generated" and generated_bad,
+        )
+        for field in ("sources", "generated")
+        for value, sources_bad, generated_bad in [
+            (_ABSENT, False, False),
+            (None, True, True),
+            (False, True, True),
+            (0, True, True),
+            ("", True, True),
+            ("https://example.com", True, True),
+            ([], False, True),
+            ([{}], False, True),
+            ([{"resource": "https://a"}, {}], False, True),
+            ([{}, "bad"], True, True),
+            ([None], True, True),
+            ({}, True, True),
+            ({"at": "2026-11-14"}, True, True),
+            ({"by": None}, True, False),
+            ({"by": ""}, True, False),
+            ({"by": 7}, True, False),
+            ({"by": "codex", "extension": True}, True, False),
+        ]
+    ]
+    + [
+        ({"sources": []}, False, False),
+        ({"sources": "https://a"}, True, False),
+        ({"sources": [{"resource": "https://a"}, "bad"]}, True, False),
+        # Direct library input: UserDict is not produced by a YAML fixture.
+        ({"sources": [UserDict()], "generated": UserDict({"by": None})}, False, False),
+        (
             {"sources": [{"resource": "https://a"}, {"resource": "https://b"}]},
-            now=NOW,
-        )
-        assert annotation["sources_count"] == 2
-        assert "sources" not in annotation
-
-    def test_read_mode_includes_sources(self) -> None:
-        sources = [{"resource": "https://a", "id": "a"}]
+            False,
+            False,
+        ),
+        ({"sources": [{"resource": "https://a", "id": "a"}]}, False, False),
+    ],
+)
+def test_provenance_shape_matrix(
+    metadata: dict[str, Any], sources_bad: bool, generated_bad: bool
+) -> None:
+    original = deepcopy(metadata)
+    for include_sources in (False, True):
         annotation = derive_annotation(
-            {"sources": sources}, now=NOW, include_sources=True
+            metadata, now=NOW, include_sources=include_sources
         )
-        assert annotation["sources"] == sources
-        assert "sources_count" not in annotation
-
-    def test_empty_or_malformed_sources_omitted(self) -> None:
-        for metadata in ({"sources": []}, {"sources": "https://a"}):
-            annotation = derive_annotation(metadata, now=NOW, include_sources=True)
+        for field, malformed in (
+            ("sources", sources_bad),
+            ("generated", generated_bad),
+        ):
+            flag = f"malformed_{field}"
+            if malformed:
+                assert annotation[flag] is True
+            else:
+                assert flag not in annotation
+        sources = metadata.get("sources")
+        if isinstance(sources, list) and sources:
+            if include_sources:
+                assert annotation["sources"] == sources
+                assert "sources_count" not in annotation
+            else:
+                assert annotation["sources_count"] == len(sources)
+                assert "sources" not in annotation
+        else:
             assert "sources" not in annotation
             assert "sources_count" not in annotation
+        assert "generated" not in annotation
+        assert metadata == original
 
 
 class TestOkfConfig:
@@ -674,6 +733,60 @@ def _build_audit_vault(root: Path) -> None:
 
 
 class TestOkfAudit:
+    def test_provenance_audit_boundaries(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import OkfFinding, audit_bundle
+
+        malformed = "---\ntype: Note\nsources: null\ngenerated: false\n---\n# Note\n"
+        for path in ("z.md", "b.md", "a.md", "index.md", "log.md", "drop-excluded.md"):
+            (tmp_path / path).write_text(malformed, encoding="utf-8")
+        (tmp_path / "b.md").write_text(
+            "---\ntype: Note\nsources: https://example.com\n"
+            "generated: codex at a date\n---\n# Zebra\n",
+            encoding="utf-8",
+        )
+        for path, provenance in (
+            ("sources-only.md", "sources: https://example.com\n"),
+            ("sources-only-2.md", "sources: null\n"),
+            ("generated-only.md", "generated: codex at a date\n"),
+            ("neither.md", ""),
+            ("valid.md", "sources: []\ngenerated: {by: null}\n"),
+        ):
+            (tmp_path / path).write_text(
+                f"---\ntype: Note\n{provenance}---\n# Note\n", encoding="utf-8"
+            )
+        (tmp_path / "broken.md").write_text(
+            "---\nsources: [\ngenerated: false\n---\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path, exclude_patterns=["*excluded*"], example_cap=1)
+        assert report.malformed_sources == OkfFinding(5, ("a.md",))
+        assert report.malformed_generated == OkfFinding(4, ("a.md",))
+        assert report.unparseable_frontmatter == OkfFinding(1, ("broken.md",))
+        assert report.total_notes == 9
+        assert report.conformant_notes == 8
+        assert report.missing_type.count == 0
+        empty = audit_bundle(tmp_path / "missing")
+        assert empty.malformed_sources == empty.malformed_generated == OkfFinding(0, ())
+        no_examples = audit_bundle(
+            tmp_path, exclude_patterns=["*excluded*"], example_cap=0
+        )
+        assert no_examples.malformed_sources == OkfFinding(5, ())
+        assert no_examples.malformed_generated == OkfFinding(4, ())
+        valid = audit_bundle(
+            tmp_path,
+            exclude_patterns=[
+                "a.md",
+                "b.md",
+                "z.md",
+                "sources-only*",
+                "generated-only.md",
+                "broken.md",
+                "*excluded*",
+            ],
+        )
+        assert valid.total_notes == valid.conformant_notes == 2
+        assert valid.unparseable_frontmatter.count == 0
+        assert valid.malformed_sources == valid.malformed_generated == OkfFinding(0, ())
+
     def test_mixed_vault_report(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import OkfDetector, audit_bundle
 
@@ -823,11 +936,39 @@ class TestOkfAudit:
         from markdown_vault_mcp.okf import OkfAuditReport, OkfFinding
 
         none = OkfFinding(count=0, examples=())
+        sentinel = OkfFinding(1, ("index.md",))
         # The v4.1.0 positional signature: every field up to missing_recommended.
-        report = OkfAuditReport(
-            "auto", "0.2", True, 0, 0, none, none, none, none, none, False, none, none
+        legacy = (
+            "auto",
+            "0.2",
+            True,
+            0,
+            0,
+            none,
+            none,
+            none,
+            none,
+            none,
+            False,
+            none,
+            none,
         )
+        report = OkfAuditReport(*legacy)
+        with_index = OkfAuditReport(*legacy, sentinel)
         assert report.index_frontmatter == none
+        assert with_index.index_frontmatter == sentinel
+        for constructed in (report, with_index):
+            assert (
+                constructed.malformed_sources == constructed.malformed_generated == none
+            )
+            assert asdict(constructed)["malformed_sources"] == {
+                "count": 0,
+                "examples": (),
+            }
+            assert asdict(constructed)["malformed_generated"] == {
+                "count": 0,
+                "examples": (),
+            }
 
 
 class TestIndexFrontmatterAudit:

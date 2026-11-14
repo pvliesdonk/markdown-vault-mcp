@@ -105,7 +105,9 @@ def register(mcp: FastMCP) -> None:
               declared), `status` (defaults to `"stable"`), `stale`
               (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
               `"machine-confirmed"` / `"human-reviewed"`), and
-              `sources_count` (when the note cites sources).
+              `sources_count` (when the note cites sources). Optional
+              `malformed_sources` and `malformed_generated` flags appear
+              only when true, identifying malformed provenance shapes.
             - sections (list[dict]): Up to `chunks_per_file` best-matching
               sections, each with:
 
@@ -191,8 +193,9 @@ def register(mcp: FastMCP) -> None:
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
             On an active OKF bundle, whole-document reads also carry
             an 'okf' dict (type, status, stale, trust_tier, and the note's
-            'sources' list when present); section reads omit it because they
-            carry no frontmatter to derive it from.
+            'sources' list when present). Optional `malformed_sources` and
+            `malformed_generated` flags appear only when true; section reads
+            omit the annotation because they carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),
             etag (SHA-256 hex str or null).
@@ -822,7 +825,9 @@ def register(mcp: FastMCP) -> None:
               some folders are self-contained by design.
             - okf (dict, optional): OKF read annotation for this note
               (type, status, stale, trust_tier, sources_count). Present
-              only when the vault is an active OKF bundle.
+              only when the vault is an active OKF bundle. Optional
+              `malformed_sources` and `malformed_generated` flags appear
+              only when true.
 
             Index freshness is reported out-of-band in the response's
             `_meta.index_stale` field: True when the IndexWriter had
@@ -949,6 +954,11 @@ def register(mcp: FastMCP) -> None:
             Advisory rules, tolerated but worth fixing:
 
             - unknown_status: a `status` outside draft, stable and deprecated.
+            - malformed_sources: a present `sources` that is not a list of
+              mappings. An empty list is valid; mixed lists remain intact.
+            - malformed_generated: a present `generated` that is not a mapping
+              containing `by`. Only key presence is checked, with no required
+              `at`. Both provenance findings leave conformant_notes unchanged.
             - log_heading_shape: log.md files whose `##` headings are not
               YYYY-MM-DD dates.
             - root_index_missing (bool): true when the root index.md is absent.

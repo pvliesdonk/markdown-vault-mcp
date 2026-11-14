@@ -42,6 +42,7 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
 - **Trust tier**: derived from the `verified` list (a single entry may be written as a bare mapping, per the spec). A note verified by a person (`by: human:...`) is `human-reviewed`; a note verified only by a process is `machine-confirmed`; an unverified note is `unverified`.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
+- **Provenance shape**: `malformed_sources: true` flags a present `sources` unless it is a list of mappings; an empty list is valid. `malformed_generated: true` flags a present `generated` unless it is a mapping containing `by`. This checks key presence only: a null, empty, or numeric `by` passes, and `at` is optional for this check. Absent fields produce no flag; explicit null values do. Mixed source lists remain intact on reads and keep their full count on hits.
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 
@@ -75,6 +76,8 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
 The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
+
+The advisory findings `malformed_sources` and `malformed_generated` each report a count and example paths for malformed provenance. They leave the conformant count unchanged, and affected notes remain readable and searchable. Reading and auditing preserve your files; they never repair these fields.
 
 ### 2. Declare
 
