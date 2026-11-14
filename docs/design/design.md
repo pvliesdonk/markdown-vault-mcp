@@ -6280,6 +6280,8 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 
 **View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation; keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.
 
+**Accessible names** (#1754): the Vault Browser search input has the persistent name `Search vault`, including when populated. The Context Card starts hidden with a `Context` heading; that nonempty heading remains when the first request reveals the card before its response. Success replaces it with the note title or filename, later pending requests retain the previous title, and null results or failures hide the card.
+
 **Host context updates**: the Graph Explorer calls `app.updateContext(...)` whenever the active note or the visible neighborhood changes, supplying the active path, title, visible node count, and visible link count. The exact wording of the string is an internal detail of the SPA; clients should read the structured fields (path/title/counts) rather than parse the string.
 
 **Vendored dependencies** (bundled inline at build time via `scripts/vendor_spa.py`):

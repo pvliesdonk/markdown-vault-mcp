@@ -10,10 +10,22 @@ import pytest
 
 pytest.importorskip("playwright.sync_api")
 if TYPE_CHECKING:
-    from playwright.sync_api import Frame, Page
+    from collections.abc import Iterator
+
+    from playwright.sync_api import Browser, BrowserType, Frame, Page
 
 pytestmark = pytest.mark.browser
 _ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="module")
+def browser(browser_type: BrowserType) -> Iterator[Browser]:
+    """Use Chromium when installed; keep the optional suite actionable otherwise."""
+    if not Path(browser_type.executable_path).exists():
+        pytest.skip("Browser missing -- run `uv run playwright install chromium`")
+    instance = browser_type.launch()
+    yield instance
+    instance.close()
 
 
 def _open_vault(page: Page) -> Frame:
@@ -21,9 +33,13 @@ def _open_vault(page: Page) -> Frame:
     host = (_ROOT / "tests/fixtures/vault_app_host.html").read_text()
     app = (_ROOT / "src/markdown_vault_mcp/static/app.html").read_text()
     page.route("**/*", lambda route: route.abort())
-    page.route("https://vault.test/**", lambda route: route.fulfill(
-        content_type="text/html", body=app if route.request.url.endswith("/app.html") else host
-    ))
+    page.route(
+        "https://vault.test/**",
+        lambda route: route.fulfill(
+            content_type="text/html",
+            body=app if route.request.url.endswith("/app.html") else host,
+        ),
+    )
     page.goto("https://vault.test/")
     frame = page.frames[1]
     frame.wait_for_function("window.vaultApp?.getHostContext()?.theme === 'light'")
@@ -43,7 +59,10 @@ def test_context_heading_through_tool_lifecycle(page: Page) -> None:
         assert heading.aria_snapshot().strip().startswith('- heading "')
         assert heading.inner_text().strip()
         payload = {"content": [{"type": "text", "text": json.dumps(result)}]}
-        page.evaluate("([result, error]) => window.respond(result, error)", [payload, result == "error"])
+        page.evaluate(
+            "([result, error]) => window.respond(result, error)",
+            [payload, result == "error"],
+        )
         if isinstance(result, dict):
             expected = result.get("title", "example")
             frame.get_by_role("heading", name=expected, exact=True).wait_for()
