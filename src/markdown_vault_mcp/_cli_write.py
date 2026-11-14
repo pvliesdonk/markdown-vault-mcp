@@ -230,7 +230,8 @@ def register_write_commands(app: typer.Typer) -> typer.Typer:  # noqa: C901, RUF
         frontmatter: Frontmatter = None,
         if_match: IfMatch = None,
         download_timeout: float | None = typer.Option(
-            None, help="Server download limit in seconds; separate from --timeout."
+            None,
+            help="Server download limit in seconds; separate from the client deadline.",
         ),
         server: Server = None,
         timeout: Timeout = None,

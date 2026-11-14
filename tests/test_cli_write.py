@@ -278,3 +278,13 @@ def test_writer_forwards_settings_and_agent_mode(
         "https://example.com/mcp", token="fixture-secret", timeout=7
     )
     render.assert_called_once_with("note append", reply, "agent")
+
+
+def test_writer_interrupt_exit_status() -> None:
+    with patch(
+        "markdown_vault_mcp._cli_remote.call_write", side_effect=KeyboardInterrupt
+    ):
+        result = CliRunner().invoke(
+            app, ["index", "reindex", "--server", "https://example.com/mcp"]
+        )
+    assert result.exit_code == 130
