@@ -3282,6 +3282,17 @@ wider alphabet. The departures the pattern carried are carried too: a single
 still indexed as a link, and the leftmost `[[` still wins, so `[[[a]]` links
 `[a`.
 
+**Backtick and title-separator runs (#1749).** Inline-code matching and
+trailing link-title matching start only at the beginning of a backtick or
+space/tab run, respectively. Retrying at each interior character reached the
+same following text after scanning the rest of the run, making an unmatched
+run quadratic. A negative lookbehind after the first character prevents those
+redundant retries while retaining the engine's fast search for that first
+character, without changing the matched spans. The title pattern remains shared
+by extraction and rewriting. Differential tests against the old patterns and
+owner-level time bounds are in `tests/test_links_regex_runs.py`; no stored-row
+semantics change or `INDEX_SEMANTICS_VERSION` bump is needed.
+
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"
 is decided by shape, not by allowlist (#1335): a destination carrying any URI
