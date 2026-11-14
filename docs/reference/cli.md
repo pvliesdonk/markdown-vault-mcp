@@ -128,6 +128,8 @@ loading vector sidecars. Follow a returned path with `read`, `read --section`,
 
 <!-- DOMAIN-INTRO-END -->
 
+Discover commands: markdown-vault-mcp cli search "<what you want to do>"
+
 Generic markdown vault MCP with hybrid search
 
 ## `markdown-vault-mcp serve`
@@ -589,6 +591,23 @@ Discover exact paths before optional bounded typo matches.
 | `--json` |  | False | Return the full native object. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp cli`
+
+Discover commands by describing a task, offline.
+
+## `markdown-vault-mcp cli search`
+
+Find runnable commands by task without opening a vault or connection.
+
+| Argument | Description |
+|---|---|
+| `WORDS` | Describe the task in words. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--limit` |  | 5 | Maximum suggested commands. |
+| `--json` |  | False | Output query and results as JSON. |
 
 ## `markdown-vault-mcp admin`
 
