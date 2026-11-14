@@ -370,7 +370,16 @@ def test_failure_kind_names_root_cause_without_text() -> None:
 
 @pytest.mark.parametrize("etag", ["fresh", None, "", 42])
 def test_write_reads_exact_etag_or_aborts(etag: Any) -> None:
+    from fastmcp import Client
+
     from markdown_vault_mcp._cli_remote import call_write
+
+    original = Client.list_tools
+    discoveries: list[str] = []
+
+    async def discover(self: Any, *args: Any, **kwargs: Any) -> Any:
+        discoveries.append("list_tools")
+        return await original(self, *args, **kwargs)
 
     calls: list[tuple[str, Any]] = []
     server = FastMCP("write-etag")
@@ -387,7 +396,11 @@ def test_write_reads_exact_etag_or_aborts(etag: Any) -> None:
         )
         return {"path": path, "etag": "next"}
 
-    with serve_http(server.http_app()) as origin:
+    with (
+        serve_http(server.http_app()) as origin,
+        patch("fastmcp.Client", wraps=Client) as clients,
+        patch.object(Client, "list_tools", discover),
+    ):
         settings = ClientSettings(origin + "/mcp")
         if etag == "fresh":
             assert call_write(
@@ -396,7 +409,12 @@ def test_write_reads_exact_etag_or_aborts(etag: Any) -> None:
                 {"path": "a.md", "content": ""},
                 read_etag_from="a.md",
             ).data == {"path": "a.md", "etag": "next"}
-            assert calls[-1][1]["if_match"] == etag
+            assert calls == [
+                ("read", "a.md"),
+                ("write", {"path": "a.md", "content": "", "if_match": etag}),
+            ]
+            assert clients.call_count == 1
+            assert discoveries == ["list_tools"]
         else:
             with pytest.raises(ClientError, match="etag"):
                 call_write(
@@ -408,45 +426,82 @@ def test_write_reads_exact_etag_or_aborts(etag: Any) -> None:
             assert calls == [("read", "a.md")]
 
 
-@pytest.mark.parametrize("failure", ["missing", "schema", "read-error", "conflict"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "missing",
+        "schema",
+        "read-missing",
+        "read-schema",
+        "read-error",
+        "conflict-auto",
+        "conflict-explicit",
+    ],
+)
 def test_write_checks_before_calls_and_preserves_errors(failure: str) -> None:
+    from fastmcp import Client
+
     from markdown_vault_mcp._cli_remote import call_write
 
     server = FastMCP("write-failures")
     calls: list[str] = []
+    original = Client.call_tool_mcp
 
-    @server.tool()
-    def read(path: str) -> dict[str, str]:
-        calls.append("read")
-        assert path == "a.md"
-        if failure == "read-error":
-            raise ToolError("Read cap exceeded")
-        return {"etag": "live"}
+    async def submit(
+        self: Any, name: str, arguments: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        calls.append(name)
+        return await original(self, name, arguments, *args, **kwargs)
+
+    if failure == "read-schema":
+
+        @server.tool()
+        def read(other: str) -> dict[str, str]:
+            raise AssertionError(other)
+    elif failure != "read-missing":
+
+        @server.tool()
+        def read(path: str) -> dict[str, str]:
+            assert path == "a.md"
+            if failure == "read-error":
+                raise ToolError("Read cap exceeded")
+            return {"etag": "live"}
 
     if failure != "missing":
 
         @server.tool()
         def write(path: str, content: str, if_match: str | None = None) -> ToolResult:
-            assert path == "a.md" and content == "new" and if_match == "live"
-            calls.append("write")
+            assert path == "a.md" and content == "new"
+            assert if_match == ("stale" if failure == "conflict-explicit" else "live")
             raise ToolError("Conflict: stale etag\x1b[31m")
 
     args = {"path": "a.md", "content": "new"}
     if failure == "schema":
         args["unknown"] = "option"
-    with serve_http(server.http_app()) as origin, pytest.raises(ClientError) as error:
+    if failure == "conflict-explicit":
+        args["if_match"] = "stale"
+    with (
+        serve_http(server.http_app()) as origin,
+        patch.object(Client, "call_tool_mcp", submit),
+        pytest.raises(ClientError) as error,
+    ):
         call_write(
-            ClientSettings(origin + "/mcp"), "write", args, read_etag_from="a.md"
+            ClientSettings(origin + "/mcp"),
+            "write",
+            args,
+            read_etag_from=None if failure == "conflict-explicit" else "a.md",
         )
-    if failure in {"missing", "schema"}:
-        assert "write" in str(error.value)
+    if failure in {"missing", "schema", "read-missing", "read-schema"}:
+        assert ("read" if failure.startswith("read-") else "write") in str(error.value)
         assert calls == []
     elif failure == "read-error":
         assert "Read cap exceeded" in str(error.value)
         assert calls == ["read"]
     else:
         assert "Conflict: stale etag" in str(error.value)
-        assert calls == ["read", "write"]
+        assert calls == (
+            ["write"] if failure == "conflict-explicit" else ["read", "write"]
+        )
 
 
 def test_write_deadline_covers_read_and_submitted_mutation() -> None:
@@ -480,69 +535,3 @@ def test_write_deadline_covers_read_and_submitted_mutation() -> None:
             read_etag_from="a.md",
         )
     assert calls == ["read", "write"]
-
-
-@pytest.mark.parametrize("read_capability", ["missing", "schema"])
-def test_write_checks_read_capability_before_any_rpc(read_capability: str) -> None:
-    from markdown_vault_mcp._cli_remote import call_write
-
-    server = FastMCP("pre-read-capabilities")
-
-    @server.tool()
-    def write(path: str, if_match: str) -> dict[str, str]:
-        raise AssertionError((path, if_match))
-
-    if read_capability == "schema":
-
-        @server.tool()
-        def read(other: str) -> dict[str, str]:
-            raise AssertionError(other)
-
-    with (
-        serve_http(server.http_app()) as origin,
-        pytest.raises(ClientError, match="read"),
-    ):
-        call_write(
-            ClientSettings(origin + "/mcp"),
-            "write",
-            {"path": "a.md"},
-            read_etag_from="a.md",
-        )
-
-
-def test_write_uses_one_client_and_discovery() -> None:
-    from fastmcp import Client
-
-    from markdown_vault_mcp._cli_remote import call_write
-
-    original = Client.list_tools
-    discoveries: list[str] = []
-
-    async def discover(self: Any, *args: Any, **kwargs: Any) -> Any:
-        discoveries.append("list_tools")
-        return await original(self, *args, **kwargs)
-
-    server = FastMCP("one-session")
-
-    @server.tool()
-    def read(path: str) -> dict[str, str]:
-        return {"etag": path}
-
-    @server.tool()
-    def write(path: str, if_match: str) -> dict[str, str]:
-        assert path == if_match
-        return {"path": path}
-
-    with (
-        serve_http(server.http_app()) as origin,
-        patch("fastmcp.Client", wraps=Client) as clients,
-        patch.object(Client, "list_tools", discover),
-    ):
-        assert call_write(
-            ClientSettings(origin + "/mcp"),
-            "write",
-            {"path": "a.md"},
-            read_etag_from="a.md",
-        ).data == {"path": "a.md"}
-    assert clients.call_count == 1
-    assert discoveries == ["list_tools"]

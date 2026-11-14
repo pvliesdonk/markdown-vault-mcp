@@ -68,15 +68,16 @@ async def _call(
     write: bool = False,
     read_etag_from: str | None = None,
 ) -> RemoteReply:
+    operation = "writes" if write else "reads"
     try:
         from fastmcp import Client
         from fastmcp.client.transports import StreamableHttpTransport
     except ImportError:
         raise ClientError(
-            'Install "markdown-vault-mcp[mcp]" to use remote commands.', 1
+            f'Install "markdown-vault-mcp[mcp]" to use remote {operation}.', 1
         ) from None
     if settings.url is None:
-        raise ClientError("Remote commands require a server URL.")
+        raise ClientError(f"Remote {operation} require a server URL.")
     # Passing headers explicitly also disables automatic interactive OAuth.
     headers = {"Authorization": f"Bearer {settings.token}"} if settings.token else {}
     transport = StreamableHttpTransport(settings.url, headers=headers, auth=None)
@@ -87,47 +88,44 @@ async def _call(
         ) as client,
     ):
         tools = {item.name: item for item in await client.list_tools()}
-        if write:
-            requested = dict(arguments)
-            if read_etag_from is not None:
-                requested["if_match"] = ""
-            _write_schema(tools, tool, requested)
-            if read_etag_from is not None:
-                _write_schema(tools, "read", {"path": read_etag_from})
-                reply = _payload(
-                    await client.call_tool_mcp("read", {"path": read_etag_from}),
-                    "read",
-                    write=True,
-                )
-                etag = reply.data.get("etag") if isinstance(reply.data, dict) else None
-                if not isinstance(etag, str) or not etag:
-                    raise ClientError(
-                        "Remote read did not return a nonempty etag; no mutation submitted.",
-                        1,
-                    )
-                arguments = {**arguments, "if_match": etag}
-        else:
-            if tool not in tools:
+        requested = dict(arguments)
+        if read_etag_from is not None:
+            requested["if_match"] = ""
+        _check_schema(tools, tool, requested, write=write)
+        if read_etag_from is not None:
+            _check_schema(tools, "read", {"path": read_etag_from}, write=True)
+            reply = _payload(
+                await client.call_tool_mcp("read", {"path": read_etag_from}),
+                "read",
+                write=True,
+            )
+            etag = reply.data.get("etag") if isinstance(reply.data, dict) else None
+            if not isinstance(etag, str) or not etag:
                 raise ClientError(
-                    "Remote server does not support this read tool; upgrade the server.",
+                    "Remote read did not return a nonempty etag; no mutation submitted.",
                     1,
                 )
-            schema = tools[tool].input_schema
-            if set(arguments) - set(schema.get("properties", {})):
-                raise ClientError(
-                    "Remote server does not support the requested options; upgrade the server.",
-                    1,
-                )
+            arguments = {**arguments, "if_match": etag}
         return _payload(await client.call_tool_mcp(tool, arguments), tool, write=write)
 
 
-def _write_schema(tools: dict[str, Any], tool: str, arguments: dict[str, Any]) -> None:
+def _check_schema(
+    tools: dict[str, Any], tool: str, arguments: dict[str, Any], *, write: bool
+) -> None:
     if tool not in tools:
-        raise ClientError(f"Remote server does not support tool '{tool}'.", 1)
-    if set(arguments) - set(tools[tool].input_schema.get("properties", {})):
-        raise ClientError(
-            f"Remote tool '{tool}' does not support the requested options.", 1
+        message = (
+            f"Remote server does not support tool '{tool}'."
+            if write
+            else "Remote server does not support this read tool; upgrade the server."
         )
+        raise ClientError(message, 1)
+    if set(arguments) - set(tools[tool].input_schema.get("properties", {})):
+        message = (
+            f"Remote tool '{tool}' does not support the requested options."
+            if write
+            else "Remote server does not support the requested options; upgrade the server."
+        )
+        raise ClientError(message, 1)
 
 
 def _failure_kind(exc: BaseException) -> str:

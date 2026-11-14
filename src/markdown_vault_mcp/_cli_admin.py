@@ -22,7 +22,7 @@ def register_admin_commands(
     *,
     index_group: typer.Typer | None = None,
 ) -> None:
-    """Register the ``admin`` group and the hidden aliases for its old names.
+    """Register local administration with aliases and optional hosted index composition.
 
     Args:
         app: The Typer app receiving ``admin`` and the aliases.

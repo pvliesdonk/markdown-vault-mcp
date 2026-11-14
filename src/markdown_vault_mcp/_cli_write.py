@@ -54,8 +54,6 @@ def _arguments(
             raise ClientError("--frontmatter must be a JSON object.") from None
         if not isinstance(arguments["frontmatter"], dict):
             raise ClientError("--frontmatter must be a JSON object.")
-    if tool == "edit":
-        _edit_selector(arguments)
     if "download_timeout" in arguments:
         seconds = arguments.pop("download_timeout")
         if not math.isfinite(seconds) or seconds <= 0:
@@ -64,16 +62,6 @@ def _arguments(
     if tool == "rename":
         arguments["update_links"] = True
     return arguments
-
-
-def _edit_selector(arguments: dict[str, Any]) -> None:
-    start, end = arguments.get("line_start"), arguments.get("line_end")
-    if (start is None) != (end is None):
-        raise ClientError("Supply both --line-start and --line-end.")
-    if start is not None and (start <= 0 or end < start):
-        raise ClientError("Line bounds must be positive and ordered.")
-    if start is None and "old_text" not in arguments:
-        raise ClientError("Supply --old-text or a complete line range.")
 
 
 def _run(

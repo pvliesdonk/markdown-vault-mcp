@@ -61,9 +61,9 @@ markdown-vault-mcp note edit team/status.md --old-text Ready --new-text Approved
 markdown-vault-mcp note edit team/status.md --line-start 1 --line-end 2 --new-text ''
 ```
 
-`CONTENT` and `--new-text` are literal text, including an explicitly empty string. The command does not trim text or read files or stdin. Frontmatter must be a JSON object.
+`CONTENT`, `--old-text` and `--new-text` are literal text. Empty write content and an empty replacement are supported; the server rejects empty append content and empty old-text selectors. The command does not trim text or read files or stdin. Frontmatter must be a JSON object.
 
-By default, `note write` replaces an existing note: it reads the whole live note, then passes its etag to `write`. Every `note edit` does the same. Supply a nonempty `--if-match ETAG` to skip that read. A missing note, a read limit, an unusable etag or another read failure stops the operation before mutation. Edit accepts an old-text selector, an inclusive one-based line pair, or both together; an empty replacement deletes the selection.
+By default, `note write` replaces an existing note: it reads the whole live note, then passes its etag to `write`. Every `note edit` does the same. Supply a nonempty `--if-match ETAG` to skip that read. A missing note, a read limit, an unusable etag or another read failure stops the operation before mutation. Edit forwards an old-text selector, an inclusive one-based line pair, or both together; the server validates selector completeness, bounds and matching. An empty replacement deletes the selection.
 
 `--create` skips the read and sends a native write without an etag. It conflicts with `--if-match`. This is not an atomic create-if-absent guarantee: default server overwrite protection refuses an existing note, but a server allowing blind overwrites can replace it.
 

@@ -91,8 +91,8 @@ def test_read_module_imports_no_write_command_at_load() -> None:
     assert "markdown_vault_mcp.cli" not in modules
 
 
-def test_help_lists_admin_and_hides_the_old_names() -> None:
-    """The help shows the admin group; the shipped names are hidden aliases."""
+def test_help_lists_admin_and_index_with_other_aliases_hidden() -> None:
+    """Help shows admin and index; reindex and embeddings remain hidden aliases."""
     visible = {
         name
         for name, command in get_command(app).commands.items()  # type: ignore[attr-defined]
