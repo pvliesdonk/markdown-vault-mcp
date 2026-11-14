@@ -147,7 +147,7 @@ src/markdown_vault_mcp/
     index.py           -- index/reindex/embeddings-status tool registrations
     git.py             -- git sync/history/diff tool registrations
     summarize.py       -- dual-mode summarize job tool; registered from make_server's DOMAIN-WIRING (#1033)
-  resources.py         -- register_resources: MCP resource registrations
+  resources.py         -- register_resources: MCP resource registrations, including okf://spec from the bundled static/okf/SPEC.md
   prompts.py           -- register_prompts: MCP prompt registrations from static/prompts templates (#609)
   _server_queryable.py -- needs_queryable decorator: MCP-layer wait/block on index readiness (#513)
   _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
