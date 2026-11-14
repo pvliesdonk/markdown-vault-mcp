@@ -1150,41 +1150,29 @@ class TestReindexTool:
     ) -> None:
         """A reindex outliving the soft deadline promotes to a pollable job."""
         import asyncio
-        import threading
-        from concurrent.futures import Future
 
         from markdown_vault_mcp.facets.index import IndexFacet
-        from markdown_vault_mcp.types import ReindexResult
+        from tests.fixtures.reindex import delayed_reindex
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S", "0.15")
-
-        def slow_reindex_async(_self: IndexFacet) -> Future[ReindexResult]:
-            fut: Future[ReindexResult] = Future()
-            threading.Timer(
-                0.5,
-                lambda: fut.set_result(
-                    ReindexResult(added=1, modified=0, deleted=0, unchanged=0)
-                ),
-            ).start()
-            return fut
-
-        monkeypatch.setattr(IndexFacet, "reindex_async", slow_reindex_async)
-        server = make_server()
-        # Legacy mode cannot negotiate FastMCP 4's native task extension, so
-        # this call exercises the jobs fallback.
-        async with Client(server, mode="legacy") as client:
-            res = await client.call_tool("reindex", {})
-            assert res.data["status"] == "working"
-            assert res.data["poll_with"] == "get_job_result"
-            job_id = res.data["job_id"]
-            out: dict[str, Any] = {}
-            for _ in range(40):
-                out = (
-                    await client.call_tool("get_job_result", {"job_id": job_id})
-                ).data
-                if out["status"] != "working":
-                    break
-                await asyncio.sleep(0.1)
+        with delayed_reindex(0.5) as slow_reindex_async:
+            monkeypatch.setattr(IndexFacet, "reindex_async", slow_reindex_async)
+            server = make_server()
+            # Legacy mode cannot negotiate FastMCP 4's native task extension, so
+            # this call exercises the jobs fallback.
+            async with Client(server, mode="legacy") as client:
+                res = await client.call_tool("reindex", {})
+                assert res.data["status"] == "working"
+                assert res.data["poll_with"] == "get_job_result"
+                job_id = res.data["job_id"]
+                out: dict[str, Any] = {}
+                for _ in range(40):
+                    out = (
+                        await client.call_tool("get_job_result", {"job_id": job_id})
+                    ).data
+                    if out["status"] != "working":
+                        break
+                    await asyncio.sleep(0.1)
         assert out["status"] == "completed"
         assert out["result"]["added"] == 1
 

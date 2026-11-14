@@ -142,7 +142,9 @@ def test_graph_missing_endpoints_are_errors(remote: bool, arguments: list[str]) 
         result = CliRunner().invoke(app, [*arguments, *connection, "--json"])
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
-    assert "ERROR:" in result.stderr
+    assert json.loads(result.stderr.splitlines()[-1])["error"]["code"] == (
+        "remote_tool_failed" if remote else "invalid_request"
+    )
 
 
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
