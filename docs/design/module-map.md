@@ -160,6 +160,7 @@ src/markdown_vault_mcp/
   _cli_remote.py       -- lazy native MCP HTTP read transport, capability checks and read dispatch
   _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies
   _cli_discovery.py    -- note, attachment, metadata and context CLI commands
+  _cli_search.py       -- offline task discovery over live native command metadata
   _cli_graph.py        -- backlinks/outlinks/broken-links/orphans/hubs/connection CLI registration; native graph payloads through the shared read runner
   _cli_query.py        -- exact-population query, count and aggregate CLI commands
   _cli_paths.py        -- bounded native path-discovery CLI registration and common controls

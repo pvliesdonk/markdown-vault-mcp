@@ -1,5 +1,12 @@
 # Reference research log
 
+## 2026-11-14
+
+- New: [Typer command discovery](typer-command-discovery.md), verified against
+  locked Typer 0.29.1 source and synthetic runtime probes. Refuted older Click
+  type and metavar assumptions; pinned unparsed contexts, native usage and
+  runnable group metadata. Next review: 2027-05-14.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,

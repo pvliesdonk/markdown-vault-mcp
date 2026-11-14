@@ -5945,6 +5945,37 @@ Path JSON and human output retain the native object. Agent output emits one obje
 
 The CLI separates reading from writing (#2005). `register_read_commands` in `_cli_reader` registers `search` and every read-only command, and nothing it reaches writes the index, the stored vectors or the vault. The `admin` group in `_cli_admin` holds `index`, `reindex` and `embeddings import`; their former top-level names stay as hidden aliases that run the same command and name the new form on stderr. `serve` stays top-level because the template owns it and the image, compose file and unit call it. A client-only script (#2000) can mount the read registration alone; `tests/test_cli_structure.py` checks that it reaches no write command and that `_cli_reader` imports neither `_cli_admin` nor `cli` at load time. The local-vault helpers the read commands share are still imported lazily from `cli`.
 
+### Offline command discovery
+
+`_cli_search.register_search_commands` mounts `cli search` through the domain
+registrar and prepends a root-help pointer. Discovery traverses the invocation's
+live compiled tree, including late registrations. It creates unparsed native
+contexts and preserves leaf usage pieces; it never resolves client/operator
+configuration, evaluates parameter defaults, invokes callbacks or constructs a
+vault. See the pinned [Typer API reference](reference/typer-command-discovery.md).
+
+Hidden/deprecated ancestors prune entire subtrees. Discovery excludes its own
+`cli` subtree, reserved help/completion entries, persistent `serve` and the known
+non-operational `okf verify` path if present. Other groups qualify only with a
+callback, `invoke_without_command` and no `no_args_is_help` behavior. Finite
+administrative leaves remain discoverable without probing their availability.
+
+Unicode word tokens use conservative suffix folding, filler removal, bounded
+field-length normalization and positive smoothed inverse document frequency.
+Leaf names outweigh parents, keywords, first-paragraph summaries and visible
+flag names/help. Prefixes of at least three characters and one-hop synonyms
+receive half weight; each field takes the best alternative. Repeated query
+tokens do not accumulate weight. Positive scores sort descending, then canonical
+command paths ascending. A measured headings-task ambiguity adds only a `toc`
+keyword; supplemental words cannot create commands absent from the live tree.
+
+The command defaults to five results, accepts native limits 1–20 and joins task
+words. Missing/blank tasks and invalid limits exit two on stderr. JSON has only
+`query` and `results`, with `command`, `summary`, `usage` string fields per result.
+Text escapes terminal controls and ends with help for the first result, or root
+help when none match. Empty matches succeed; no scores, state or cache are stored.
+The [terminal guide](../use/terminal.md#find-a-command-by-task) gives examples.
+
 ## Configuration
 
 ### The config import floor (#1259)

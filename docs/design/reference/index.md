@@ -155,3 +155,5 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
 See the [research log](log.md) for completed research passes. Add project
 references here as they are written.
+- [Typer metadata for offline command discovery](typer-command-discovery.md) —
+  vendored command types, unparsed contexts, runnable groups and native usage.
