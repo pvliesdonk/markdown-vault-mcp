@@ -135,6 +135,23 @@ class TestUnsyncedCloneIsReported:
         assert payload["remote"]["reason"] == PUSH_REASON_NON_FAST_FORWARD
         assert "committed locally" in payload["remote"]["detail"]
 
+    async def test_write_reports_uncommitted_startup_work(
+        self, managed_vault: Path
+    ) -> None:
+        """The existing write-result channel carries the startup observation."""
+        leftover = managed_vault / "leftover.md"
+        leftover.write_text("not committed before restart\n")
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "write", {"path": "new.md", "content": "new content"}
+            )
+            payload = _parse_tool_data(result)
+            assert payload["remote"]["reason"] == "uncommitted_changes"
+            assert "not automatically committed" in payload["remote"]["detail"]
+        assert leftover.read_text() == "not committed before restart\n"
+        assert "?? leftover.md" in _run_git(managed_vault, "status", "--porcelain")
+
     @pytest.mark.usefixtures("managed_vault")
     async def test_a_healthy_clone_says_nothing(self) -> None:
         """Absent means "nothing to report" — no key on every ordinary write."""
