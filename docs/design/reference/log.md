@@ -2,6 +2,8 @@
 
 ## 2026-11-14
 
+- `commonmark-gfm.md`: inspected the pinned markdown-it-py 3.0.0 live block coordinates, four-column tab projection, inline recursion/code emission and pre-emphasis delimiter pairing. Extended scope to emphasis and complete HTML image spans; recorded raw-candidate/native-reference separation and owning coordinate/persistence controls for #2061.
+
 - Extended [CommonMark and GFM](commonmark-gfm.md#maintained-block-source-spans)
   with markdown-it-py 3.0.0 public block tokens, source maps and CommonMark/table
   preset, read directly from installed primary source for #2061. Original raw

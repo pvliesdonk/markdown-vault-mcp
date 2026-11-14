@@ -45,6 +45,22 @@ sources:
     title: markdown-it-py 3.0.0 parse and CommonMark preset
     resource: https://github.com/executablebooks/markdown-it-py/tree/v3.0.0/markdown_it
     accessed: 2026-11-14
+  - id: mdit-state
+    title: markdown-it-py 3.0.0 live block coordinate projection
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/rules_block/state_block.py
+    accessed: 2026-11-14
+  - id: mdit-inline
+    title: markdown-it-py 3.0.0 inline parser and maintained rules
+    resource: https://github.com/executablebooks/markdown-it-py/tree/v3.0.0/markdown_it/rules_inline
+    accessed: 2026-11-14
+  - id: mdit-emphasis
+    title: markdown-it-py 3.0.0 emphasis tokenization and paired delimiter processing
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/rules_inline/emphasis.py
+    accessed: 2026-11-14
+  - id: mdit-html
+    title: markdown-it-py 3.0.0 complete HTML tag recognition
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/common/html_re.py
+    accessed: 2026-11-14
   - id: rfc3986
     title: RFC 3986, Uniform Resource Identifier (URI), section 3.1 Scheme
     resource: https://www.rfc-editor.org/rfc/rfc3986#section-3.1
@@ -69,10 +85,10 @@ Python 3.13.
 
 - Covers: §2.1 lines and line endings; §4.1–4.9 leaf blocks and what
   interrupts a paragraph; §5.1–5.3 containers and laziness; §6.1 code spans;
-  §6.3–6.5 links, images, autolinks; §2.4–2.5 escapes and entities;
+  §6.2 emphasis delimiter pairing; §6.3–6.5 links, images, autolinks; §2.4–2.5 escapes and entities;
   §6.6–6.8 raw HTML and line breaks; GFM tables, task lists, strikethrough,
   extended autolinks; GitHub footnotes.
-- Does not cover: emphasis, rendering, Obsidian wikilinks/embeds/callouts.
+- Does not cover: rendering, Obsidian wikilinks/embeds/callouts.
 - Depended on by: `src/markdown_vault_mcp/scanner.py` (`extract_links`,
   `_extract_inline_links`, `_extract_reference_links`, `_strip_fenced_code`,
   `_scan_headings`, `extract_section`, `HeadingChunker._budget_split`),
@@ -100,6 +116,56 @@ Python 3.13.
   [observed: owning paragraph keeper, #2061]
   [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
 
+
+### Maintained inline and container coordinates
+
+The Decisions adapter pins markdown-it-py **3.0.0** because it observes the
+following implementation contracts, inspected from that version's source on
+2026-11-14. These are dependency contracts, not promises about later versions.
+
+- `StateBlock.getLines` slices live `bMarks`/`eMarks` using `blkIndent`,
+  `tShift` and `bsCount`. A tab advances to the next four-column stop; a
+  partially consumed tab emits synthetic spaces. Container rules temporarily
+  adjust these arrays, so a leaf wrapper captures them before restoration.
+  [source: mdit-state]
+  [pins: tests/test_okf_decisions.py::test_source_coordinate_contract]
+- Successful paragraph and setext rules expose their inline input's line
+  map; ATX headings compute their endpoints with markup length and the
+  state's backward space/marker helpers. The adapter projects those spans
+  to original characters, preserving CR/CRLF and Unicode identity in model
+  and write input. Code and fence blocks emit no eligible leaf.
+  [source: mdit-block] [source: mdit-main]
+  [pins: tests/test_okf_decisions.py::test_source_candidates_reject_escaped_paths_and_bad_urls]
+- The maintained inline rules advance `StateInline.pos` over complete links,
+  images and autolinks. Image alt text recursively starts inline parsing;
+  link labels reuse the active state. A backtick rule can succeed without
+  emitting code when no matching closer exists. Consequently, actual
+  `code_inline` emission defines code exclusions; success alone does not.
+  [source: mdit-inline]
+  [pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]
+- Emphasis tokenization records each marker's `Delimiter.token`. After
+  `balance_pairs`, `Delimiter.end` identifies its partner in root or nested
+  delimiter lists; emphasis postprocessing then changes and merges tokens.
+  Recording raw marker offsets before that postprocessing distinguishes a
+  surrounding matched closer from internal or unmatched URI punctuation.
+  [source: mdit-emphasis] [source: mdit-inline]
+  [pins: tests/test_okf_decisions.py::test_source_candidates_reject_escaped_paths_and_bad_urls]
+- `HTML_TAG_RE` recognizes a complete tag, including multiline attributes
+  and quoted greater-than signs. Decisions anchors that maintained matcher
+  at each raw opening angle bracket to exclude a complete image tag.
+  [source: mdit-html]
+  [pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]
+
+The native scanner remains the authority for literal destinations, reference
+availability, attachments and vault links. Its document-wide lower-case,
+last-definition dictionary is passed separately to reference usages. An
+unused definition never becomes candidate text. Recognition-only parser
+reference records cannot supply a persisted URL. Explicit destinations and
+autolinks keep their punctuation; only bare prose URLs receive surrounding
+sentence, quote and matched-emphasis trimming.
+[observed: Decisions adapter contract, #2061]
+[pins: tests/test_okf_decisions.py::test_source_candidates_reject_escaped_paths_and_bad_urls]
+[pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]
 
 ### Lines, line endings, blank lines (§2.1–2.3, §3.1, §4.9)
 

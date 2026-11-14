@@ -1976,7 +1976,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
     { name = "hypothesis", marker = "extra == 'property-tests'", specifier = ">=6" },
-    { name = "markdown-it-py", specifier = ">=3.0" },
+    { name = "markdown-it-py", specifier = "==3.0.0" },
     { name = "numpy", marker = "extra == 'all'" },
     { name = "numpy", marker = "extra == 'embeddings'" },
     { name = "numpy", marker = "extra == 'embeddings-api'" },

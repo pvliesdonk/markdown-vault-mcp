@@ -134,6 +134,12 @@ def test_invalid_profile_fails_without_echoing_contents(
         "https://host/#secret",
         "https:///missing",
         "https://host:bad/mcp",
+        "https://host:65536/mcp",
+        "https://[invalid/mcp",
+        "https://host/mcp?",
+        "https://host/mcp#",
+        "https://host/with\x00control",
+        "https://host/with space",
     ],
 )
 def test_unsafe_urls_fail_without_echoing_url(url: str) -> None:
@@ -180,3 +186,16 @@ def test_url_rejects_del_control_character() -> None:
     options = ClientOptions(server="https://host/mcp\x7f")
     with pytest.raises(ClientError):
         resolve_settings(options)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "HTTPS://Example.invalid/Case",
+        "http://[::1]:8080/base",
+        "https://example.invalid:443/",
+    ],
+)
+def test_base_url_retains_valid_spelling(url: str) -> None:
+    """Neutral validation preserves valid operator URL spelling at the CLI boundary."""
+    assert resolve_settings(ClientOptions(server=url)).url == url

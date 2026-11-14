@@ -41,7 +41,7 @@ src/markdown_vault_mcp/
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
     git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
-    okf_decide.py      -- closed vocabulary/literal candidates, maintained paragraph spans, five-field Decisions policy, filesystem selection and readiness-gated native maintenance (#2061)
+    okf_decide.py      -- closed vocabulary/raw-coordinate candidates, maintained block and inline spans, five-field Decisions policy, filesystem selection and readiness-gated native maintenance (#2061)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
   stores/
@@ -108,7 +108,7 @@ src/markdown_vault_mcp/
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
-  _okf_decisions.py   -- bounded one-request Platform Decisions transport with ordered answer/refusal validation (#2061)
+  _okf_decisions.py   -- bounded one-request Platform Decisions transport with ordered answer/refusal validation; vocabulary owns choice admission (#2061)
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
@@ -122,7 +122,7 @@ src/markdown_vault_mcp/
     __init__.py          -- package aggregator: re-exports the seven section configs (Content/Embeddings/Git/Indexing/Search/Summarize/Sync) + VaultSettings
     _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952); VaultInstances.close() closes the collaborators it built, after the vault (#1765)
     vault_settings.py    -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
-    _helpers.py          -- shared env-reading helpers for the sections' from_env classmethods (no config.py import)
+    _helpers.py          -- shared env-reading helpers and pure HTTP base-URL guard for config/client adapters (no config.py import)
     content.py           -- ContentConfig: attachment/read limits, template/prompt folders, conventions file
     embeddings.py        -- EmbeddingsConfig: provider selection + per-provider and shared embedding knobs
     git.py               -- GitConfig: git auth, identity, sync cadence

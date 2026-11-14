@@ -84,7 +84,8 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   read-only or changing how `FTS_WEIGHTS` is stored.
 - [CommonMark and GitHub Flavored Markdown](commonmark-gfm.md) — line endings,
   paragraph boundaries, link and reference grammar, code spans and fences, the
-  #1334 decision table. Read before any regex in `scanner.py`.
+  #1334 decision table and pinned markdown-it-py 3.0.0 raw-coordinate/inline
+  contracts for Decisions. Read before any regex in `scanner.py`.
 - [Git push, credentials and remotes](git-push-and-remotes.md) — push refusals
   and their wording, `--porcelain`, askpass and `GIT_TERMINAL_PROMPT`, URL
   forms, `safe.directory`, `symbolic-ref` and `origin/HEAD`. Read before

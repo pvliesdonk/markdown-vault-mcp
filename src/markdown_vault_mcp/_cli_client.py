@@ -7,9 +7,10 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from fastmcp_pvl_core import env
+
+from markdown_vault_mcp.config_sections._helpers import validate_http_base_url
 
 _PREFIX = "MARKDOWN_VAULT_MCP"
 _TIMEOUT_MESSAGE = "Timeout must be a positive finite number of seconds."
@@ -92,26 +93,11 @@ def _timeout(value: object) -> float:
 
 def _url(value: str) -> str:
     try:
-        parsed = urlsplit(value)
-        valid = (
-            parsed.scheme in {"http", "https"}
-            and parsed.hostname
-            and parsed.username is None
-            and parsed.password is None
-            and not parsed.query
-            and not parsed.fragment
-            and "?" not in value
-            and "#" not in value
-            and not any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)
-        )
-        _ = parsed.port
+        return validate_http_base_url(value)
     except ValueError:
-        valid = False
-    if not valid:
         raise ClientError(
             "Server URL must be HTTP(S) with a host and no credentials, query or fragment."
-        )
-    return value
+        ) from None
 
 
 def resolve_settings(options: ClientOptions) -> ClientSettings:

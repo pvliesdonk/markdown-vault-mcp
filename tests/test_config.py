@@ -2775,6 +2775,12 @@ def test_decide_config_defaults_and_fallback(monkeypatch: pytest.MonkeyPatch) ->
                 "https://fixture@example.invalid",
                 "https://example.invalid?key=secret",
                 "https://example.invalid#fragment",
+                "https://example.invalid?",
+                "https://example.invalid#",
+                "https://example.invalid:bad",
+                "https://example.invalid:65536",
+                "https://[invalid",
+                "https://example.invalid/with\x7fcontrol",
             ]
         ),
     ],

@@ -22,7 +22,12 @@ from markdown_vault_mcp.managers.okf_decide import (
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
-from tests.fixtures.okf_decisions import accept_answers, vocabulary_text, write_notes
+from tests.fixtures.okf_decisions import (
+    SOURCE_SPAN_CASES,
+    accept_answers,
+    vocabulary_text,
+    write_notes,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,9 +38,12 @@ THRESHOLDS = dict.fromkeys(
 )
 
 
-def test_discovery_uses_filesystem_and_union(tmp_path: Path) -> None:
+@pytest.mark.parametrize("bom", ["none", "vocabulary", "typed-note"])
+def test_discovery_uses_filesystem_and_union(tmp_path: Path, bom: str) -> None:
     """Disk-only notes and filesystem mtime drive selection, once per path."""
-    (tmp_path / "types.md").write_text(vocabulary_text())
+    (tmp_path / "types.md").write_text(
+        ("\ufeff" if bom == "vocabulary" else "") + vocabulary_text()
+    )
     for name, text in {
         "old.md": "---\ntype: Reference\n---\nOld.",
         "fresh.md": "---\ntype: Reference\ngenerated: {at: '2000-01-01T00:00:00Z'}\n---\nFresh.",
@@ -44,7 +52,9 @@ def test_discovery_uses_filesystem_and_union(tmp_path: Path) -> None:
         "log.md": "Log.",
         "excluded.md": "Excluded.",
     }.items():
-        (tmp_path / name).write_text(text)
+        (tmp_path / name).write_text(
+            ("\ufeff" if bom == "typed-note" and name == "old.md" else "") + text
+        )
         os.utime(tmp_path / name, (0, 0))
     os.utime(tmp_path / "fresh.md", (NOW.timestamp(), NOW.timestamp()))
     vault = Vault(
@@ -70,10 +80,120 @@ def test_discovery_uses_filesystem_and_union(tmp_path: Path) -> None:
         vault.close()
 
 
+def _assert_complete_metadata(
+    post: Any,
+    resources: list[str],
+    enforced: bool,
+    graph_evidence: bool,
+    builds: list[int],
+) -> None:
+    """Retain every five-field/provenance assertion for the real writer keeper."""
+    assert post["custom"] == {"nested": "keep"}
+    assert post.get("sources", []) == [{"resource": resource} for resource in resources]
+    if not enforced:
+        assert post["generated"]["at"] == (
+            "2026-11-14T10:05:00Z" if graph_evidence else "2026-11-14T10:00:00Z"
+        )
+    assert post["stale_after"] == (
+        "2026-12-14T10:05:00Z" if enforced or graph_evidence else "2026-12-14T10:00:00Z"
+    )
+    assert len(builds) == int(enforced or graph_evidence)
+    assert post["generated"]["by"] == "process:okf-decide"
+    assert "verified" not in post and "last_edited" not in post
+
+
 @pytest.mark.parametrize("enforced", [False, True])
 @pytest.mark.parametrize(
     "evidence,paragraph",
     [
+        *((evidence, "Exact paragraph.") for evidence in SOURCE_SPAN_CASES),
+        (("[[evidence.custom]]", []), "Exact paragraph."),
+        (("[[evidence.pdf]]", ["evidence.pdf.md"]), "Exact paragraph."),
+        (
+            (
+                "See **https://example.invalid/evidence**.",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "See *https://example.invalid/evidence*.",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "See “https://example.invalid/evidence”.",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "See \u2018https://example.invalid/evidence\u2019.",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+        ),
+        (("    https://example.invalid/code\n", []), "Exact paragraph."),
+        (("    curl https://example.invalid/code", []), "Exact paragraph."),
+        (("~~~\nhttps://example.invalid/code\n", []), "Exact paragraph."),
+        (("```sh\ncurl https://example.invalid/code\n", []), "Exact paragraph."),
+        (("`line one\nhttps://example.invalid/code`", []), "Exact paragraph."),
+        (("`https://example.invalid/hidden\ncontinued`", []), "Exact paragraph."),
+        (("`before\nhttps://example.invalid/hidden`", []), "Exact paragraph."),
+        (("![image](https://example.invalid/a`code`b)", []), "Exact paragraph."),
+        (("![image](<https://example.invalid/a`code`b>)", []), "Exact paragraph."),
+        (('![image](https://example.invalid/a"bad)', []), "Exact paragraph."),
+        (
+            (
+                "See <https://example.invalid/evidence.>",
+                ["https://example.invalid/evidence."],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "See <https://example.invalid/evidence!>",
+                ["https://example.invalid/evidence!"],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "See <https://example.invalid/evidence?>",
+                ["https://example.invalid/evidence?"],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "See <https://example.invalid/evidence)>",
+                ["https://example.invalid/evidence)"],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "See [evidence](https://example.invalid/evidence.)",
+                ["https://example.invalid/evidence."],
+            ),
+            "Exact paragraph.",
+        ),
+        (
+            ("https://example.invalid/a*b", ["https://example.invalid/a*b"]),
+            "Exact paragraph.",
+        ),
+        (
+            (
+                "`unclosed\n\n[Evidence](https://example.invalid/fact)\n\n`",
+                ["https://example.invalid/fact"],
+            ),
+            "Exact paragraph.",
+        ),
+        (("`unclosed\n\n[Evidence](fact.md)\n\n`", ["fact.md"]), "Exact paragraph."),
         (
             ("https://example.invalid/evidence", ["https://example.invalid/evidence"]),
             "Exact paragraph.",
@@ -140,6 +260,8 @@ def test_complete_decide_persists_once_with_etag(
         {
             "types.md": vocabulary_text(),
             "fact.md": "---\ntype: Reference\n---\nContained fact.",
+            "evidence.custom.md": "---\ntype: Reference\n---\nCustom target.",
+            "evidence.pdf.md": "---\ntype: Reference\n---\nPDF note target.",
             "note.md": "---\ncustom: {nested: keep}\nverified: [{by: 'human:fixture', at: '2026-01-01T00:00:00Z'}]\n---\n"
             + original_body,
         },
@@ -159,8 +281,17 @@ def test_complete_decide_persists_once_with_etag(
     )
     vault = Vault(
         source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=enforced),
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_write=enforced,
+            attachment_extensions=(".custom",),
+        ),
     )
+    native_read = vault.reader.read("note.md")
+    assert native_read is not None
+    original_body = strip_frontmatter_block(native_read.content)
+    graph_evidence = source_text == "[[evidence.pdf]]"
     builds: list[int] = []
     original_build = vault.index.build_index
 
@@ -192,18 +323,7 @@ def test_complete_decide_persists_once_with_etag(
         post = fm.load(tmp_path / "note.md")
         assert post["type"] == "Reference" and post["status"] == "draft"
         assert post["description"] == paragraph
-        assert post["custom"] == {"nested": "keep"}
-        assert post.get("sources", []) == [
-            {"resource": resource} for resource in resources
-        ]
-        if not enforced:
-            assert post["generated"]["at"] == "2026-11-14T10:00:00Z"
-        assert post["stale_after"] == (
-            "2026-12-14T10:05:00Z" if enforced else "2026-12-14T10:00:00Z"
-        )
-        assert len(builds) == int(enforced)
-        assert post["generated"]["by"] == "process:okf-decide"
-        assert "verified" not in post and "last_edited" not in post
+        _assert_complete_metadata(post, resources, enforced, graph_evidence, builds)
         assert len(calls) == len(seen) == 1
         assert seen[0]["args"] == ("note.md", original_body)
         assert isinstance(seen[0]["if_match"], str)
@@ -695,6 +815,7 @@ def test_review_bad_metadata_keeps_prior_and_later_reports(
     "case",
     [
         ("Evidence", "note.md", "facts/Evidence.md", []),
+        ("Evidence.pdf", "note.md", "facts/Evidence.pdf.md", []),
         ("Proof", "note.md", "facts/Evidence.md", []),
         ("Proof", "facts/note.md", "facts/Evidence.md", ["Evidence.md"]),
         ("Evidence", "notes/note.md", "x/Evidence.md", ["long/Evidence.md"]),
@@ -739,7 +860,7 @@ def test_native_wikilink_resolution_supplies_decision_evidence(
         okf_mode="on",
         okf_write=enforced,
         required_frontmatter=("operator",) if required else None,
-        attachment_extensions=(".PDF",),
+        attachment_extensions=() if stem.endswith(".pdf") else (".PDF",),
         title_field="name",
     )
     vault = Vault(source_dir=tmp_path, settings=settings)
@@ -767,7 +888,9 @@ def test_native_wikilink_resolution_supplies_decision_evidence(
         assert args[2] is vault._chunk_strategy
         assert kwargs == {
             "title_field": "name",
-            "attachment_extensions": frozenset({"pdf"}),
+            "attachment_extensions": frozenset()
+            if stem.endswith(".pdf")
+            else frozenset({"pdf"}),
         }
         events.append("parsed")
         return original_parse(*args, **kwargs)

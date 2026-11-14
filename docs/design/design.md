@@ -1906,6 +1906,16 @@ with premodel rereads and postadmission expiry clocks preserving native etags.
 See [the OKF design](okf.md#explicit-local-decisions-pass)
 and [operator usage](../use/okf.md#curate-metadata-with-decisions).
 
+The source adapter consumes markdown-it-py 3.0.0's maintained leaf and inline
+rules with raw coordinate projection. Whole code/image spans are excluded;
+explicit destinations and autolinks retain their spelling. Native reference
+availability is a separate dictionary, never appended evidence text. The
+same protected scan and effective attachment policy govern candidate assembly
+and lazy graph demand. Native UTF-8 decoding handles vocabulary/discovery BOMs.
+The pure base-URL guard lives in `config_sections/_helpers.py`; config and
+client adapters retain their own safe exception types without a config-to-CLI
+import. See the [pinned parser contract](reference/commonmark-gfm.md#maintained-inline-and-container-coordinates).
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)

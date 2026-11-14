@@ -756,8 +756,14 @@ first other block must be a paragraph. Original LF source spans preserve
 Unicode separators and continuations before the 280-character limit; an
 incomplete leading pipe row remains an explicit conservative refusal.
 See [the parser contract](reference/commonmark-gfm.md#maintained-block-source-spans).
-Evidence masking preserves token and paragraph boundaries across code and
-image syntax at both vault and external candidate sites. HTTP schemes match
+Evidence uses raw coordinates from maintained block and inline rules, pinned
+to markdown-it-py 3.0.0. Complete code and image spans are excluded without
+joining neighboring text. Native definitions provide availability separately
+from candidate text; unused definitions cannot become evidence. Explicit
+links and autolinks retain literal destination punctuation; only bare prose
+URLs lose surrounding sentence, quote and matched-emphasis delimiters.
+Configured attachment exclusions apply to candidates and graph demand;
+BOM-prefixed vocabulary and discovery notes use the native UTF-8 reader. HTTP schemes match
 without case sensitivity while resources retain their original spelling,
 percent escapes and internal apostrophes; surrounding prose quotes are excluded.
 

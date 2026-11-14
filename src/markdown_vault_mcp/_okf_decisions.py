@@ -55,15 +55,6 @@ def _validate_request(
             "instructions"
         ):
             raise ValueError("Invalid Decisions question.")
-        if question["type"] == "choice":
-            choices = question.get("choices", [])
-            values = [choice.get("value") for choice in choices]
-            if (
-                not 2 <= len(values) <= 255
-                or any(not isinstance(v, str) or not v for v in values)
-                or len(set(values)) != len(values)
-            ):
-                raise ValueError("Decisions requires 2..255 unique string choices.")
     for part in parts:
         if part.get("type") == "input_json":
             _validate_json(part.get("data"))

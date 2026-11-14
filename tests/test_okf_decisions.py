@@ -19,6 +19,7 @@ from tests.fixtures.okf_decisions import (
     ANSWERS,
     PARTS,
     QUESTIONS,
+    SOURCE_SPAN_CASES,
     accept_answers,
     vocabulary_text,
 )
@@ -233,7 +234,6 @@ def test_decisions_error_is_safe(status: int | str, terminal: bool) -> None:
     [
         "empty",
         "questions",
-        "choices",
         "depth",
         "values",
         "bytes",
@@ -253,8 +253,6 @@ def test_input_limits_precede_http(kind: str) -> None:
         questions = []
     elif kind == "questions":
         questions = [{**QUESTIONS[0], "name": f"question-{i}"} for i in range(401)]
-    elif kind == "choices":
-        questions[1]["choices"] = questions[1]["choices"][:1]
     elif kind in {"null-name", "duplicate-name", "instructions", "type"}:
         field, value = {
             "null-name": ("name", None),
@@ -640,13 +638,80 @@ def test_source_outcome_retains_literal_candidate(
 @pytest.mark.parametrize(
     "path,body,expected",
     [
+        *(("note.md", body, resources) for body, resources in SOURCE_SPAN_CASES),
         ("note.md", "[escape](escaped.md) https://[invalid", []),
         (
             "note.md",
-            "[web](https://example.invalid/a`code`b)",
-            ["https://example.invalid/a"],
+            "See **https://example.invalid/evidence**.",
+            ["https://example.invalid/evidence"],
         ),
-        ("note.md", "[web](<https://example.invalid/a`code`b>)", []),
+        (
+            "note.md",
+            "See *https://example.invalid/evidence*.",
+            ["https://example.invalid/evidence"],
+        ),
+        (
+            "note.md",
+            "See “https://example.invalid/evidence”.",
+            ["https://example.invalid/evidence"],
+        ),
+        (
+            "note.md",
+            "See \u2018https://example.invalid/evidence\u2019.",
+            ["https://example.invalid/evidence"],
+        ),
+        ("note.md", "    https://example.invalid/code\n", []),
+        ("note.md", "    curl https://example.invalid/code", []),
+        ("note.md", "~~~\nhttps://example.invalid/code\n", []),
+        ("note.md", "```sh\ncurl https://example.invalid/code\n", []),
+        ("note.md", "`line one\nhttps://example.invalid/code`", []),
+        ("note.md", "`https://example.invalid/hidden\ncontinued`", []),
+        ("note.md", "`before\nhttps://example.invalid/hidden`", []),
+        ("note.md", "![image](https://example.invalid/a`code`b)", []),
+        ("note.md", "![image](<https://example.invalid/a`code`b>)", []),
+        ("note.md", '![image](https://example.invalid/a"bad)', []),
+        (
+            "note.md",
+            "See <https://example.invalid/evidence.>",
+            ["https://example.invalid/evidence."],
+        ),
+        (
+            "note.md",
+            "See <https://example.invalid/evidence!>",
+            ["https://example.invalid/evidence!"],
+        ),
+        (
+            "note.md",
+            "See <https://example.invalid/evidence?>",
+            ["https://example.invalid/evidence?"],
+        ),
+        (
+            "note.md",
+            "See <https://example.invalid/evidence)>",
+            ["https://example.invalid/evidence)"],
+        ),
+        (
+            "note.md",
+            "See [evidence](https://example.invalid/evidence.)",
+            ["https://example.invalid/evidence."],
+        ),
+        ("note.md", "https://example.invalid/a*b", ["https://example.invalid/a*b"]),
+        (
+            "note.md",
+            "`unclosed\n\n[Evidence](https://example.invalid/fact)\n\n`",
+            ["https://example.invalid/fact"],
+        ),
+        ("note.md", "`unclosed\n\n[Evidence](fact.md)\n\n`", ["fact.md"]),
+        (
+            "note.md",
+            "[web](https://example.invalid/a`code`b)",
+            ["https://example.invalid/a`code`b"],
+        ),
+        (
+            "note.md",
+            "[web](<https://example.invalid/a`code`b>)",
+            ["https://example.invalid/a`code`b"],
+        ),
         (
             "note.md",
             '<IMG alt="greater > less"\nsrc="HTTPS://example.invalid/image">',
@@ -733,9 +798,45 @@ def test_source_outcome_retains_literal_candidate(
     ],
 )
 def test_source_candidates_reject_escaped_paths_and_bad_urls(
-    tmp_path: Path, path: str, body: str, expected: list[str]
+    tmp_path: Path,
+    path: str,
+    body: str,
+    expected: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Native candidates exclude images/escapes and preserve literal resource identity."""
+    from markdown_vault_mcp.managers import okf_decide as module
+
+    extract = module.extract_links
+
+    def native_without_definitions(text: str, source: str, **options: Any) -> Any:
+        assert module._collect_reference_definitions(text) == {}
+        links = extract(text, source, **options)
+        assert all(link.link_type != "reference" for link in links)
+        return links
+
+    monkeypatch.setattr(module, "extract_links", native_without_definitions)
+    collect_pairs = module._paired_delimiters
+
+    def observed_pairs(
+        state: Any, markers: dict[tuple[int, int], int], spans: Any
+    ) -> None:
+        lists = [
+            state.delimiters,
+            *(
+                meta["delimiters"]
+                for meta in state.tokens_meta
+                if meta and "delimiters" in meta
+            ),
+        ]
+        for delimiters in lists:
+            for delimiter in delimiters:
+                if delimiter.end >= 0:
+                    assert (id(state), delimiter.token) in markers
+                    assert (id(state), delimiters[delimiter.end].token) in markers
+        collect_pairs(state, markers, spans)
+
+    monkeypatch.setattr(module, "_paired_delimiters", observed_pairs)
     (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
     (tmp_path / "fact.md").write_text("Contained fact.")
     (tmp_path / "nested").mkdir()
@@ -754,7 +855,9 @@ def test_source_candidates_reject_escaped_paths_and_bad_urls(
 
 
 @pytest.mark.parametrize("shape", ["deep", "wide", "set"])
-def test_review_metadata_conversion_is_bounded(tmp_path: Path, shape: str) -> None:
+def test_review_metadata_conversion_is_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str
+) -> None:
     """Metadata conversion enforces the request bounds before expanding aliases."""
     (tmp_path / "types.md").write_text(vocabulary_text())
     value: Any = "leaf"
@@ -765,7 +868,68 @@ def test_review_metadata_conversion_is_bounded(tmp_path: Path, shape: str) -> No
         value = ["leaf"] * 10001
     else:
         value = set(range(10001))
+    import yaml
+
+    from markdown_vault_mcp.managers import okf_decide as module
+
+    converted: list[object] = []
+    monkeypatch.setattr(
+        module, "to_jsonable_python", lambda value: converted.append(value)
+    )
     with pytest.raises(ValueError):
-        build_questions(
-            "note.md", {"custom": value}, "Body.", load_vocabulary(tmp_path, "types.md")
-        )
+        module._raw_metadata("---\n" + yaml.safe_dump({"custom": value}) + "---\nBody.")
+    assert converted == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "> -\t[same](fact.md)\n>   continued [same](fact.md)\n\n# [same](fact.md) ###",
+        "- > [same](fact.md)\r\n  > continued\r\n\r\n[same](fact.md)\r\n===",
+        "-\t>\t[same](fact.md)\n\n> [r]: fact.md\n\n[r]",
+    ],
+)
+def test_source_coordinate_contract(monkeypatch: pytest.MonkeyPatch, body: str) -> None:
+    """Native leaf input and every retained character share exact raw coordinates."""
+    from importlib.metadata import version
+
+    from markdown_vault_mcp.managers import okf_decide as module
+
+    assert version("markdown-it-py") == "3.0.0"
+    native_projection = module._mapped_lines
+    checked: list[str] = []
+
+    def project(state: Any, first: int, last: int, keep_last_lf: bool) -> Any:
+        region = native_projection(state, first, last, keep_last_lf)
+        assert region.text == state.getLines(first, last, state.blkIndent, keep_last_lf)
+        assert len(region.text) == len(region.origins)
+        checked.append(region.text)
+        return region
+
+    monkeypatch.setattr(module, "_mapped_lines", project)
+    regions = module._source_regions(body)
+    assert checked and regions
+    assert any("[same](fact.md)" in region.text for region in regions)
+    for region in regions:
+        assert len(region.text) == len(region.origins)
+        for char, origin in zip(region.text, region.origins, strict=True):
+            if origin is None:
+                assert char == " "
+            else:
+                assert char == ("\n" if body[origin] == "\r" else body[origin])
+
+
+def test_source_partial_tab_projection() -> None:
+    """Partial indentation expansion has synthetic coordinates and cannot join a target."""
+    from markdown_it import MarkdownIt
+    from markdown_it.rules_block import StateBlock
+
+    from markdown_vault_mcp.managers import okf_decide as module
+
+    state = StateBlock("\t[yes](fact.md)\n", MarkdownIt("commonmark"), {}, [])
+    state.blkIndent = 2
+    region = module._mapped_lines(state, 0, 1, False)
+    assert region.text == state.getLines(0, 1, 2, False)
+    assert region.origins[:2] == (None, None)
+    assert region.text[2:] == "[yes](fact.md)"
+    assert module._definition_view(state.src, [region]) == " [yes](fact.md)\n"

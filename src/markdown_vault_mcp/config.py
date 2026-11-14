@@ -1445,7 +1445,7 @@ class ProjectConfig:
         self._check_embedding_store()
         import math
 
-        from markdown_vault_mcp._cli_client import ClientError, _url
+        from markdown_vault_mcp.config_sections._helpers import validate_http_base_url
 
         for key in (
             "type",
@@ -1473,9 +1473,9 @@ class ProjectConfig:
             )
         try:
             if not isinstance(self.okf_decisions_base_url, str):
-                raise ClientError("Invalid URL type.")
-            _url(self.okf_decisions_base_url)
-        except ClientError:
+                raise ValueError("Invalid URL type.")
+            validate_http_base_url(self.okf_decisions_base_url)
+        except ValueError:
             raise ConfigurationError(
                 "OKF_DECISIONS_BASE_URL requires HTTP(S), a host and no credentials, query or fragment."
             ) from None
