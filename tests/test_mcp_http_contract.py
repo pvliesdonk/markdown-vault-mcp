@@ -13,10 +13,10 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
-from tests.fixtures.cli_http import serve_http
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.server import make_server
+from tests.fixtures.cli_http import serve_http
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
