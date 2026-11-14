@@ -19,6 +19,7 @@ from mcp.shared.exceptions import MCPError
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 from tests.conftest import _meta_stale, _parse_tool_data, wait_for_mcp_writer_drain
+from tests.fixtures.git import make_superproject
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -2042,6 +2043,85 @@ class TestFetchTool:
                 body=body, content_type=content_type, final_url=final_url
             )
         )
+
+    @pytest.mark.parametrize("path", ["sub/new.md", "sub/new.png"])
+    async def test_fetch_refuses_submodule_before_download(
+        self,
+        _mcp_env_writable_with_attachments: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        path: str,
+    ) -> None:
+        """A live gitlink refusal precedes fetching; a prefix neighbor still works."""
+        source = make_superproject(tmp_path)
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
+        before = (source / "sub/note.md").read_bytes()
+        mock_fetch = self._fetch_url_returning(
+            b"# Fetched\n", "application/octet-stream"
+        )
+        caplog.set_level(logging.INFO, logger="fastmcp.middleware.requests")
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            async with Client(make_server()) as client:
+                with pytest.raises(
+                    ToolError, match="is inside the git submodule 'sub'"
+                ) as caught:
+                    await client.call_tool(
+                        "fetch", {"url": "https://example.com/source", "path": path}
+                    )
+                assert "Pass a path outside 'sub/'" in str(caught.value)
+                mock_fetch.assert_not_awaited()
+                neighbor = path.replace("sub/", "subway/", 1)
+                result = await client.call_tool(
+                    "fetch", {"url": "https://example.com/source", "path": neighbor}
+                )
+        assert result.data["path"] == neighbor
+        mock_fetch.assert_awaited_once()
+        assert (source / neighbor).read_bytes().endswith(b"# Fetched\n")
+        assert not (source / path).exists()
+        assert (source / "sub/note.md").read_bytes() == before
+        failed = [
+            r for r in caplog.records if r.getMessage().startswith("tool_call_failed")
+        ]
+        assert failed and failed[-1].levelno == logging.INFO
+        assert failed[-1].exc_info is None
+
+    @pytest.mark.parametrize("path", ["../escape.md", "../escape.png", "new.exe"])
+    async def test_fetch_validates_destination_before_download(
+        self, _mcp_env_writable_with_attachments: Path, path: str
+    ) -> None:
+        """Native traversal and extension refusals do not consume a download."""
+        mock_fetch = self._fetch_url_returning(b"body", "application/octet-stream")
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            async with Client(make_server()) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool(
+                        "fetch", {"url": "https://example.com/source", "path": path}
+                    )
+        mock_fetch.assert_not_awaited()
+
+    async def test_fetch_preflight_fault_is_a_server_failure(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """An unexpected guard fault stays a server failure before any download."""
+        from markdown_vault_mcp.managers.document import DocumentManager
+
+        mock_fetch = self._fetch_url_returning(b"body", "text/markdown")
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            async with Client(make_server()) as client:
+                with (
+                    patch.object(
+                        DocumentManager,
+                        "refuse_folder_in_submodule",
+                        side_effect=OSError("guard failed"),
+                    ),
+                    pytest.raises(ToolError, match="request itself was fine"),
+                ):
+                    await client.call_tool(
+                        "fetch",
+                        {"url": "https://example.com/source", "path": "new.md"},
+                    )
+        mock_fetch.assert_not_awaited()
 
     async def test_fetch_markdown_note(
         self, _mcp_env_writable_with_attachments: Path

@@ -5764,6 +5764,12 @@ upstream FastMCP #4952).
   applies (attachment limit vs. uncapped markdown) and the operator-facing
   size-limit message naming `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
 
+  Before calling `fetch_url`, the tool validates the destination through the
+  existing note or attachment path validator and asks the live document
+  manager's submodule guard about `path`. A submodule destination is refused
+  at INFO before a download starts. The final guarded write still checks
+  ownership, overwrite protection and `if_match` when saving the bytes.
+
   **Redirects are followed, and every hop re-runs that chain** (#1116).
   Through 3.1 the primitive refused every 3xx outright; from the 4.11.2
   floor the guard lives in the transport httpx sends each hop through, so a
@@ -6412,9 +6418,9 @@ refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
 refuse nothing, since nothing is committed there. A plain repository nested
-in the vault that is not a submodule is not detected (#1949), and upload links,
-`fetch` and the OKF index refresh after a folder move reach the refusal only
-after other work (#1950). What git does there is recorded in
+in the vault that is not a submodule is not detected (#1949). Issue #1950 tracks
+caller timing for upload-link admission, fetch downloads and OKF refresh after
+folder moves. What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 
