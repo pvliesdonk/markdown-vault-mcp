@@ -6436,8 +6436,8 @@ credential decoding, and its shared eligibility predicate is false, leaving
 the configured file watcher eligible on HTTP/SSE as well as stdio.
 
 Assembly logs `git_mode_resolved mode=off|managed|legacy|commit_only` at INFO.
-`commit_only` names the selected branch, without probing whether a repository
-exists. With git enabled, the existing modes remain:
+`commit_only` identifies the assembly mode, whether or not the vault is a
+repository. With git enabled, the existing modes remain:
 
 1. **Managed mode** (`GIT_REPO_URL` set): server owns git lifecycle.
    Startup clones into `SOURCE_DIR` if empty, or verifies existing `origin`
