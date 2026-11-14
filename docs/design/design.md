@@ -722,6 +722,12 @@ for built-in names, or pass a custom instance.
   `skip_reasons` map and exposed through `get_index_status`'s `skipped_files`
   field, so a dropped note is discoverable via the MCP API rather than only
   the container logs (#775).
+  Dirty-path refreshes also record their existing successful skip outcomes
+  (missing frontmatter and YAML parse errors), and clear the path's skip
+  after repair, deletion, rename/move or exclusion (#1606). Each update
+  preserves unrelated tracker entries and scan carries; ordinary live
+  refreshes leave indexed hashes unchanged. Decode, validation, I/O and
+  unexpected failures keep their existing dirty-job retry behavior.
 
 **Trigger model**: boot reconciliation reindex (submitted by the server
 lifespan behind the initial build job, #665) + explicit `reindex` tool call
@@ -747,8 +753,9 @@ asks that record rather than walking the source.
 tracker's `skip_reasons` registry, which stays authoritative for
 `get_index_status.skipped_files`; the two are kept in lockstep by the three
 skip-recording pipelines (`build_index`, `reindex`/`_parse_changed_notes`,
-`process_dirty_paths`) through the shared `IndexManager._tombstone_skip`
-helper, and by `IndexManager._sync_tombstones`, which garbage-collects
+`process_dirty_paths`). Dirty refreshes persist their per-path registry
+update after the FTS mutation succeeds, before reporting that path refreshed.
+`IndexManager._sync_tombstones` garbage-collects
 tombstones whose path left the registry (a skipped file deleted from disk
 leaves the registry silently — it was never indexed — so its tombstone is
 dropped after each `update_state`).
@@ -5345,6 +5352,8 @@ class ChangeTracker:
                          skipped: dict[str, str] | None = None,
                          skip_reasons: dict[str, dict[str, str]] | None = None) -> None: ...
     def skip_reasons(self) -> dict[str, dict[str, str]]: ...
+    def update_skip(self, path: str, *, content_hash: str | None = None,
+                    reason: dict[str, str] | None = None) -> None: ...
     def reset(self) -> None: ...
 ```
 

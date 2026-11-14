@@ -134,6 +134,11 @@ have caught up once status is `"queryable"`, `queue_depth` is 0,
 
 <!-- DOMAIN-EXAMPLE-get_index_status-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
+With `REQUIRED_FIELDS=title`, an untitled note accepted by a write appears in
+`skipped_files` after its index refresh, without waiting for a full scan.
+Repairing the note removes its entry after refresh. Renaming or deleting it
+removes the old path. Status reads do not wait for pending writes; use the
+queue and dirty counts above to check that the refresh has finished.
 <!-- DOMAIN-EXAMPLE-get_index_status-END -->
 
 ## `reindex`

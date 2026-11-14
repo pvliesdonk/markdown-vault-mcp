@@ -1140,7 +1140,7 @@ class IndexManager:
         A ``yaml.YAMLError`` additionally replaces the note's stale row with
         a ``parse_error`` tombstone, and a note missing required frontmatter
         is tombstoned rather than deleted, so FTS absence keeps meaning
-        "not a candidate" (#1129).
+        "not a candidate" (#1129). Successful refreshes update skip status (#1606).
         When the parse failure stems from the file disappearing between
         the existence check and ``parse_note()``, the stale FTS row
         is deleted so keyword/hybrid search results stay consistent with
@@ -1202,6 +1202,7 @@ class IndexManager:
                 # never indexed and purges stale rows left from
                 # before the exclusion existed.
                 self._fts.delete_by_path(path)
+                self._tracker.update_skip(path)
                 return
             if is_regular_file(abs_path) and is_note(path):
                 note = parse_note(
@@ -1223,19 +1224,26 @@ class IndexManager:
                     # indistinguishable from a deletion. The parsed
                     # note's own hash/mtime cover the exact bytes
                     # that were evaluated (#888 pattern).
+                    skip = SkippedFile(
+                        path=path,
+                        category="missing_frontmatter",
+                        detail=f"missing: {missing}",
+                    )
                     self._fts.upsert_tombstone(
-                        SkippedFile(
-                            path=path,
-                            category="missing_frontmatter",
-                            detail=f"missing: {missing}",
-                        ),
+                        skip,
                         content_hash=note.content_hash,
                         modified_at=note.modified_at,
+                    )
+                    self._tracker.update_skip(
+                        path,
+                        content_hash=note.content_hash,
+                        reason={"category": skip.category, "detail": skip.detail},
                     )
                     return
                 self._fts.upsert_note(note)
             else:
                 self._fts.delete_by_path(path)
+            self._tracker.update_skip(path)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             logger.warning(
                 "dirty_path_read_failed path=%s err=%s",
@@ -1251,6 +1259,7 @@ class IndexManager:
                 vanished = False
             if vanished:
                 self._fts.delete_by_path(path)
+                self._tracker.update_skip(path)
                 return
             raise
         except yaml.YAMLError as exc:
@@ -1263,10 +1272,18 @@ class IndexManager:
             # note edited into unparseable frontmatter must stop
             # serving its last-good content. A transient read failure
             # must propagate so the writer retains its dirty snapshot.
+            skip = SkippedFile(path=path, category="parse_error", detail=str(exc))
+            content_hash = compute_file_hash(abs_path)
             self._tombstone_skip(
-                SkippedFile(path=path, category="parse_error", detail=str(exc)),
+                skip,
                 abs_path,
+                content_hash=content_hash,
                 retry_on_error=True,
+            )
+            self._tracker.update_skip(
+                path,
+                content_hash=content_hash,
+                reason={"category": skip.category, "detail": skip.detail},
             )
             return
 

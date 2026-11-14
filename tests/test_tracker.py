@@ -1028,3 +1028,60 @@ class TestCheckpointState:
 
         state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
         assert state["indexed"] == {"a.md": "hash-a"}
+
+
+@pytest.mark.parametrize("persistent", [False, True])
+def test_dirty_skip_updates_preserve_scan_state(
+    tmp_path: Path, persistent: bool
+) -> None:
+    """Per-path skip transitions preserve unrelated maps, carries and reparse markers."""
+    tracker = ChangeTracker(tmp_path / "state.json" if persistent else None)
+    reason = {"category": "encoding_error", "detail": "unrelated decode failure"}
+    tracker._save_state(
+        {"live.md": "old-live", "pending.md": "", "changed.md": "old-changed"},
+        {"other.md": "other-hash"},
+        {"other.md": reason},
+    )
+    tracker._skipped_carry = {"other.md": "other-hash"}
+    tracker._skip_reasons_carry = {"other.md": reason}
+    tracker._reparse_carry = {"pending.md"}
+    tracker.update_skip(
+        "changed.md",
+        content_hash="skipped-hash",
+        reason={"category": "missing_frontmatter", "detail": "missing: title"},
+    )
+    indexed, skipped, reasons = tracker._load_state()
+    assert indexed == {"live.md": "old-live", "pending.md": ""}
+    assert skipped == {"other.md": "other-hash", "changed.md": "skipped-hash"}
+    assert reasons["other.md"] == reason
+    tracker.update_skip("changed.md")
+    tracker.update_skip("live.md")
+    assert tracker._load_state() == (
+        indexed,
+        {"other.md": "other-hash"},
+        {"other.md": reason},
+    )
+    assert tracker._skipped_carry == {"other.md": "other-hash"}
+    assert tracker._skip_reasons_carry == {"other.md": reason}
+    assert tracker._reparse_carry == {"pending.md"}
+    notes = [_make_note("live.md", "new-live"), _make_note("pending.md", "new-pending")]
+    tracker.checkpoint_state(notes)
+    tracker.update_state(notes)
+    assert tracker._load_state() == (
+        {"live.md": "new-live", "pending.md": ""},
+        {"other.md": "other-hash"},
+        {"other.md": reason},
+    )
+
+
+def test_clearing_absent_skip_does_not_write_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ordinary successful dirty refreshes do not rewrite tracker state."""
+    tracker = ChangeTracker(tmp_path / "state.json")
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("clearing an absent skip must not save state")
+
+    monkeypatch.setattr(tracker, "_save_state", fail)
+    tracker.update_skip("live.md")

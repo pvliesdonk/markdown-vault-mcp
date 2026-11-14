@@ -437,7 +437,7 @@ class ChangeTracker:
 
         Reads the state file fresh on each call (best-effort, non-blocking:
         a missing or malformed file yields ``{}``), so callers see the reasons
-        recorded by the most recent build/reindex even after a restart (#775).
+        recorded by the latest build/reindex/dirty refresh, across restarts.
 
         Returns:
             Mapping of relative POSIX path to a ``{"category", "detail"}`` dict.
@@ -445,6 +445,41 @@ class ChangeTracker:
         """
         _indexed, _skipped, skip_reasons = self._load_state()
         return skip_reasons
+
+    def update_skip(
+        self,
+        path: str,
+        *,
+        content_hash: str | None = None,
+        reason: dict[str, str] | None = None,
+    ) -> None:
+        """Record or clear one dirty path's skip without replacing scan state.
+
+        A recorded skip replaces that path's indexed hash. Clearing a skip
+        leaves indexed hashes unchanged, so successful dirty refreshes keep
+        their existing reindex and embedding lifecycle. Scan carries and
+        pending reparse markers are untouched; the index writer serializes
+        dirty refreshes with scans.
+
+        Args:
+            path: Vault-relative POSIX path successfully refreshed in FTS.
+            content_hash: Hash of the skipped bytes, or ``None`` to clear.
+            reason: Surfaced category/detail for a recorded skip, if any.
+
+        Raises:
+            OSError: If persisting state fails; the dirty job must retry.
+        """
+        indexed, skipped, reasons = self._load_state()
+        if content_hash is None and path not in skipped and path not in reasons:
+            return
+        skipped.pop(path, None)
+        reasons.pop(path, None)
+        if content_hash is not None:
+            indexed.pop(path, None)
+            skipped[path] = content_hash
+            if reason is not None:
+                reasons[path] = reason
+        self._save_state(indexed, skipped, reasons)
 
     # ------------------------------------------------------------------
     # Private helpers
