@@ -1251,7 +1251,7 @@ class IndexManager:
             self._tracker.update_skip(path, known_skips=known_skips)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             logger.warning(
-                "dirty_path_read_failed path=%s err=%s",
+                "dirty_path_refresh_failed path=%s err=%s",
                 path,
                 exc,
             )
