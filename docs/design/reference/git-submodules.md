@@ -170,7 +170,11 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   [source: structural-metadata]
   [observed: synthetic Boat Git 2.43.0 fixtures, 2026-11-14]
   [pins: tests/test_submodule_writes.py::test_a_plain_repository_write_is_refused_before_any_side_effect]
-- Git conservatively treats gitfile open/read failures as repository boundaries;
+- Git rejects gitfiles larger than 1 MiB before opening them; these markers are
+  inert even when unreadable. The project checks that native limit and bounds
+  allocation if the file grows before reading. [source: structural-metadata]
+  [pins: tests/test_submodule_writes.py::test_oversized_inert_gitfile_cannot_exhaust_guard_memory, tests/test_submodule_writes.py::test_inert_markers_do_not_hide_a_real_descendant]
+- For accepted-size gitfiles, Git conservatively treats open/read failures as repository boundaries;
   the native resolver can still fail. Strict binary reading must distinguish
   these faults from readable invalid markers. No recursive directory-metadata
   inspection follows from this exception. [source: structural-metadata]

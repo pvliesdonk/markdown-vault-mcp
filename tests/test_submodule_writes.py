@@ -325,7 +325,7 @@ def test_inside_a_plain_repository_takes_precedence_over_holding_a_gitlink(
         guard.refuse(source / "outer", "new_dir", "outer", holding=False)
 
 
-@pytest.mark.parametrize("inert", ["directory", "file"])
+@pytest.mark.parametrize("inert", ["directory", "file", "oversized"])
 def test_inert_markers_do_not_hide_a_real_descendant(
     tmp_path: Path, inert: str
 ) -> None:
@@ -333,11 +333,72 @@ def test_inert_markers_do_not_hide_a_real_descendant(
     marker = source / "holder/.git"
     if inert == "directory":
         marker.mkdir()
-    else:
+    elif inert == "file":
         marker.write_text("not a gitfile\n")
+    else:
+        with marker.open("wb") as stream:
+            stream.truncate((1 << 20) + 1)
+        marker.chmod(0)  # Git rejects the size before trying to open it.
     guard = SubmoduleGuard(source)
     assert guard.submodule_of(source / "holder") == ("holder/nested", False)
     assert guard.submodule_of(source / "holder/ordinary.md") is None
+
+
+@pytest.mark.skipif(
+    not Path("/proc/self/statm").exists(), reason="Linux memory accounting"
+)
+@pytest.mark.parametrize("holding", [False, True])
+@pytest.mark.parametrize("grew", [False, True])
+def test_oversized_inert_gitfile_cannot_exhaust_guard_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, holding: bool, grew: bool
+) -> None:
+    resource = pytest.importorskip("resource")
+
+    source = make_nested_repository(tmp_path)
+    marker = source / "sub/.git"
+    shutil.rmtree(marker)
+    with marker.open("wb") as stream:
+        stream.truncate(96 * 1024 * 1024)
+    _git(source, "add", "--", "sub/note.md")
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(source), "diff", "--cached", "--name-only"]
+        )
+        == b"sub/note.md\n"
+    )
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(source / "top.md") is None
+    real_stat = Path.stat
+
+    def before_growth(path: Path, **kw: Any) -> os.stat_result:
+        result = real_stat(path, **kw)
+        if path == marker:
+            fields = list(result)
+            fields[6] = 1 << 20
+            return os.stat_result(fields)
+        return result
+
+    if grew:
+        monkeypatch.setattr(Path, "stat", before_growth)
+    address_space = int(Path("/proc/self/statm").read_text().split()[0]) * os.sysconf(
+        "SC_PAGE_SIZE"
+    )
+    original = resource.getrlimit(resource.RLIMIT_AS)
+    exhausted = False
+    found = None
+    try:
+        resource.setrlimit(
+            resource.RLIMIT_AS, (address_space + (32 << 20), original[1])
+        )
+        try:
+            target = source if holding else source / "sub/note.md"
+            found = guard.submodule_of(target)
+        except MemoryError:
+            exhausted = True
+    finally:
+        resource.setrlimit(resource.RLIMIT_AS, original)
+    assert not exhausted, "guard allocated the whole oversized inert gitfile"
+    assert found is None
 
 
 def test_markers_are_live_even_when_the_outer_index_is_unchanged(
@@ -554,6 +615,8 @@ def configured_nested_source(
         if request.param == "gitfile":
             _git(nested, "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
             assert marker.is_file()
+            with marker.open("ab") as stream:
+                stream.write(b"\n" * ((1 << 20) - marker.stat().st_size))
         elif request.param == "redirected":
             alternate = tmp_path / "alternate"
             alternate.mkdir()
@@ -643,6 +706,8 @@ def test_candidate_inspection_fault_prevents_mutation(
     source = make_nested_repository(tmp_path, sub="holder/nested")
     nested = source / "holder/nested"
     _git(nested, "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+    with (nested / ".git").open("ab") as stream:
+        stream.write(b"\n" * 8192)
     vault = vault_of(source) if query == "write" else None
     guard = SubmoduleGuard(source) if vault is None else vault._doc_mgr._submodule_guard
     assert guard is not None
@@ -660,13 +725,24 @@ def test_candidate_inspection_fault_prevents_mutation(
             "fire",
             lambda *_a: pytest.fail("unexpected callback"),
         )
-    real_read = Path.read_bytes
+    real_open = Path.open
     real_run = subprocess.run
 
-    def denied_read(path: Path) -> bytes:
+    def opening(path: Path, *args: Any, **kw: Any) -> Any:
+        stream = real_open(path, *args, **kw)
         if path == nested / ".git":
-            raise OSError(errno.EIO, "synthetic gitfile read failure", str(path))
-        return real_read(path)
+            real_read = stream.read
+
+            def denied_read(size: int = -1) -> bytes:
+                data: bytes = real_read(size)
+                if len(data) > 4096:
+                    raise OSError(
+                        errno.EIO, "synthetic gitfile read failure", str(path)
+                    )
+                return data
+
+            monkeypatch.setattr(stream, "read", denied_read)
+        return stream
 
     def missing_git(*args: Any, **kw: Any) -> Any:
         if "--resolve-git-dir" in args[0]:
@@ -674,7 +750,7 @@ def test_candidate_inspection_fault_prevents_mutation(
         return real_run(*args, **kw)
 
     if fault == "read":
-        monkeypatch.setattr(Path, "read_bytes", denied_read)
+        monkeypatch.setattr(Path, "open", opening)
     else:
         monkeypatch.setattr(
             "markdown_vault_mcp.git.submodules.subprocess.run", missing_git
@@ -891,23 +967,36 @@ def test_backlink_inspection_fault_does_not_abort_a_completed_rename(
     source = make_nested_repository(tmp_path)
     (source / "sub/note.md").write_text("# Backlink\n\n[[top]]\n")
     _git(source / "sub", "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+    with (source / "sub/.git").open("ab") as stream:
+        stream.write(b"\n" * 8192)
     vault = vault_of(source)
     assert vault._fts.get_backlinks("top.md")
     backlink = (source / "sub/note.md").read_bytes()
-    real_read = Path.read_bytes
+    real_open = Path.open
     real_fire = vault._doc_mgr._notifier.fire_rename
     callbacks: list[object] = []
 
-    def denied(path: Path) -> bytes:
+    def opening(path: Path, *args: Any, **kw: Any) -> Any:
+        stream = real_open(path, *args, **kw)
         if path == source / "sub/.git":
-            raise OSError(errno.EIO, "synthetic gitfile read failure", str(path))
-        return real_read(path)
+            real_read = stream.read
+
+            def denied_read(size: int = -1) -> bytes:
+                data: bytes = real_read(size)
+                if len(data) > 4096:
+                    raise OSError(
+                        errno.EIO, "synthetic gitfile read failure", str(path)
+                    )
+                return data
+
+            monkeypatch.setattr(stream, "read", denied_read)
+        return stream
 
     def record(*args: Any) -> None:
         callbacks.append(args)
         real_fire(*args)
 
-    monkeypatch.setattr(Path, "read_bytes", denied)
+    monkeypatch.setattr(Path, "open", opening)
     monkeypatch.setattr(vault._doc_mgr._notifier, "fire_rename", record)
     result = vault.writer.rename("top.md", "renamed.md", update_links=True)
     assert result.updated_links == 0

@@ -17,8 +17,9 @@ Plain nested repositories have no gitlink: check their .git directory or
 gitfile live, confirming metadata through native structural resolution. File
 and inside-only queries inspect ancestors; holding queries walk the requested
 directory, pruning metadata and stopping at the first repository. Filesystem
-inspection and Git launch faults propagate; regular gitfiles are read strictly
-as bytes before resolution, so unreadable metadata never looks inert.
+inspection and Git launch faults propagate. Regular gitfiles up to Git's 1 MiB
+limit are read strictly as bytes before resolution, with bounded allocation;
+larger markers are inert even when unreadable.
 """
 
 from __future__ import annotations
@@ -31,13 +32,14 @@ from pathlib import Path
 
 from markdown_vault_mcp.exceptions import SubmodulePathError
 from markdown_vault_mcp.git._run import _find_git_root
-from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
+from markdown_vault_mcp.utils.fs import file_bytes, is_directory, is_regular_file
 
 __all__ = ["SubmoduleGuard"]
 
 logger = logging.getLogger(__name__)
 
 _GITLINK_MODE = "160000"
+_MAX_GITFILE_BYTES = 1 << 20  # Git's read_gitfile_gently limit.
 
 # (st_mtime_ns, st_ctime_ns, st_size, st_ino) of the index file, or None when
 # it is absent.
@@ -219,7 +221,12 @@ def _is_repository(candidate: Path) -> bool:
     if not is_directory(marker):
         if not is_regular_file(marker):
             return False
-        marker.read_bytes()  # Git conservatively skips unreadable gitfiles.
+        if file_bytes(marker) > _MAX_GITFILE_BYTES:
+            return False
+        # Read accepted-size files strictly, with bounded allocation if they grow.
+        with marker.open("rb") as stream:
+            if len(stream.read(_MAX_GITFILE_BYTES + 1)) > _MAX_GITFILE_BYTES:
+                return False
     return (
         subprocess.run(
             ["git", "rev-parse", "--resolve-git-dir", str(marker)],

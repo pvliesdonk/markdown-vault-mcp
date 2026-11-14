@@ -10,6 +10,8 @@
   equality with native structural resolution and strict gitfile reads, after
   configured/foreign-owned and unreadable-marker counterexamples. Read Git
   v2.55.0 setup.c and early rev-parse handling; pins cover the corrected owner.
+  Follow-up confirms the native 1 MiB gitfile limit before open; memory-capped
+  and unreadable-oversize fixtures pin bounded preliminary reads.
   Other claims and review deadline remain unchanged.
 
 ## 2026-11-07

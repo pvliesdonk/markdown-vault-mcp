@@ -6405,8 +6405,9 @@ listed and asks again on the next write. That fallback concerns gitlinks
 only; live marker discovery remains independent of index listing failures.
 Plain repository discovery validates `.git` metadata with native
 `rev-parse --resolve-git-dir`, consuming status only, strictly below the vault
-root. Regular gitfiles are first read as bytes; read and Git launch faults
-propagate. Readable invalid markers remain inert. File and inside-only queries
+root. Regular gitfiles up to Git's 1 MiB limit are first read as bytes, with
+bounded allocation if they grow; read and Git launch faults propagate. Larger
+markers and readable invalid markers remain inert. File and inside-only queries
 check ancestors; holding queries walk the target, without
 following directory symlinks or entering `.git` metadata, and stop at the
 first repository. Inert markers do not hide real descendants. No filesystem
