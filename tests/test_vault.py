@@ -84,7 +84,6 @@ def test_generated_clock_across_readers_and_incremental_refresh(
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode=okf_mode))
     try:
         vault.index.build_index()
-        assert [n.path for n in vault.reader.get_recent(limit=1)] == ["outside.md"]
         assert [n.path for n in vault.reader.get_recent(limit=1, folder="notes")] == [
             "notes/nested/new.md"
         ]

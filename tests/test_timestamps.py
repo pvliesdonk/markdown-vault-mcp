@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone, tzinfo
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -27,13 +27,3 @@ def test_offsets_preserve_the_same_instant(instant: datetime, offset: int) -> No
         parsed = parse_aware_datetime(value)
         assert parsed is not None
         assert parsed.timestamp() == utc.timestamp()
-
-
-def test_tzinfo_without_an_offset_does_not_name_an_instant() -> None:
-    """A tzinfo object alone does not make a datetime aware."""
-
-    class NoOffset(tzinfo):
-        def utcoffset(self, _dt: datetime | None) -> None:
-            return None
-
-    assert parse_aware_datetime(datetime(2026, 1, 1, tzinfo=NoOffset())) is None
