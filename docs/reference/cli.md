@@ -746,7 +746,7 @@ Refuse review attestation; use a client supporting human elicitation.
 
 ## `markdown-vault-mcp okf generate index`
 
-Generate the hosted index or seed its changelog.
+Generate the hosted OKF index.
 
 | Option | Env var | Default | Description |
 |---|---|---|---|
@@ -760,7 +760,7 @@ Generate the hosted index or seed its changelog.
 
 ## `markdown-vault-mcp okf seed log`
 
-Generate the hosted index or seed its changelog.
+Seed the hosted OKF changelog.
 
 | Option | Env var | Default | Description |
 |---|---|---|---|

@@ -258,8 +258,8 @@ def register_write_commands(app: typer.Typer) -> typer.Typer:  # noqa: C901, RUF
         tool = "okf_generate_index" if ctx.info_name == "index" else "okf_seed_log"
         _run(ctx, tool, locals(), ("folder",))
 
-    generate.command("index")(okf_file)
-    seed.command("log")(okf_file)
+    generate.command("index", help="Generate the hosted OKF index.")(okf_file)
+    seed.command("log", help="Seed the hosted OKF changelog.")(okf_file)
     okf.add_typer(generate, name="generate")
     okf.add_typer(seed, name="seed")
 
