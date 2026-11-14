@@ -115,7 +115,7 @@ Reader and hosted writer commands send errors to stderr. Plain output starts wit
 | `invalid_server_url` | Set a complete HTTP(S) endpoint without credentials, query or fragment. |
 | `invalid_client_token` | Correct the selected bearer token environment variable; line breaks and blank tokens are refused. |
 | `conflicting_options` | Choose compatible backend, source, output or creation options. |
-| `invalid_request` | Correct the request using the command's `--help`; exact queries require keyword mode. |
+| `invalid_request` | Follow the diagnostic and command's `--help`; exact queries use keyword mode. |
 | `configuration_error` | Check the local vault configuration and required settings. |
 | `operation_failed` | A typed library operation failed; check vault state and server logs. |
 | `invalid_payload` | A read result is malformed; check result format and compatibility. |

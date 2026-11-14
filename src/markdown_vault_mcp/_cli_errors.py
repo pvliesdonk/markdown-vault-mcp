@@ -47,7 +47,7 @@ def diagnostic(error: Exception) -> ClientError:
             1,
             kind="usage",
             reason="invalid_request",
-            hint="Check this command's --help and correct the request.",
+            hint="Follow the diagnostic; see this command's --help.",
         )
     return ClientError(
         str(error),
