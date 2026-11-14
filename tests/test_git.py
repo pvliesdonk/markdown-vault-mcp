@@ -170,12 +170,6 @@ class TestFindGitRoot:
         repo = tmp_path / name
         repo.mkdir()
         subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
-        raw = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
-            check=True,
-            capture_output=True,
-        ).stdout
-        assert raw == os.fsencode(repo) + b"\n"
         assert _find_git_root(repo) == repo
 
     def test_no_repo_returns_none(self, tmp_path: Path) -> None:

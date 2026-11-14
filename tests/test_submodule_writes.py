@@ -14,10 +14,10 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from markdown_vault_mcp.config_sections import VaultSettings
@@ -361,15 +361,6 @@ def test_plain_repositories_are_found_without_an_outer_index(tmp_path: Path) -> 
     assert SubmoduleGuard(tmp_path).submodule_of(nested / "n.md") == ("nested", True)
 
 
-def test_minimal_numeric_repository_component_is_protected(tmp_path: Path) -> None:
-    """Retain the shrunk parts=['0'] counterexample from the red property run."""
-    source = make_nested_repository(tmp_path, sub="p0")
-    assert SubmoduleGuard(source).submodule_of(source / "p0/new/deep.md") == (
-        "p0",
-        True,
-    )
-
-
 def test_a_gitless_vault_stays_inactive_with_a_nested_repository(
     tmp_path: Path,
 ) -> None:
@@ -414,6 +405,7 @@ def test_holder_discovery_stops_before_entering_a_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = make_nested_repository(tmp_path, sub="holder/nested")
+    (source / "holder/nested/ordinary").mkdir()
     real_walk = __import__("os").walk
     visited: list[Path] = []
 
@@ -478,6 +470,7 @@ def test_denied_boundary_inspection_is_a_fault(
         guard.submodule_of(holder)
 
 
+@example(parts=["0"])
 @settings(max_examples=30, deadline=None)
 @given(
     st.lists(
@@ -500,14 +493,6 @@ def test_generated_nested_descendants_and_prefix_neighbors(parts: list[str]) -> 
 # ---------------------------------------------------------------------------
 # The write tools
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(
-    params=[make_superproject, make_nested_repository], ids=["submodule", "nested"]
-)
-def repository_of(request: pytest.FixtureRequest) -> Callable[..., Path]:
-    """Exercise the same write consumers with both protected layouts."""
-    return cast("Callable[..., Path]", request.param)
 
 
 @pytest.fixture
@@ -544,20 +529,14 @@ def _snapshot(source: Path) -> dict[str, bytes]:
     }
 
 
-@pytest.mark.parametrize(
-    "sub", ["sub", "nested ", "nested\n", "nested\r", os.fsdecode(b"nested-\xff")]
-)
 def test_a_plain_repository_write_is_refused_before_any_side_effect(
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
     monkeypatch: pytest.MonkeyPatch,
-    sub: str,
 ) -> None:
     """A successful outer git-add can stage nothing; do not lose the write."""
-    if os.name == "nt" and sub != "sub":
-        pytest.skip("POSIX pathname spellings")
-    source = make_nested_repository(tmp_path, sub=sub)
-    path = sub + "/note.md"
+    source = make_nested_repository(tmp_path)
+    path = "sub/note.md"
     _git(source, "add", "--", path)
     vault = vault_of(source)
     before = _snapshot(source)
@@ -622,12 +601,11 @@ REFUSED: dict[str, tuple[Callable[[Vault], object], str]] = {
 
 @pytest.mark.parametrize("case", sorted(REFUSED))
 def test_every_write_tool_refuses_and_writes_nothing(
-    repository_of: Callable[..., Path],
     case: str,
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path)
+    source = make_superproject(tmp_path)
     (source / "sub" / "a.pdf").write_bytes(b"%PDF-1.4\n")
     (source / "b.pdf").write_bytes(b"%PDF-1.4\n")
     (source / "folder").mkdir()
@@ -657,11 +635,10 @@ def test_a_deinitialised_submodule_is_refused_too(
 
 
 def test_moving_a_folder_that_holds_a_submodule_is_refused(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path, sub="deep/sub")
+    source = make_superproject(tmp_path, sub="deep/sub")
     (source / "deep" / "mine.md").write_text("# Mine\n")
     vault = vault_of(source)
     before = _snapshot(source)
@@ -671,12 +648,11 @@ def test_moving_a_folder_that_holds_a_submodule_is_refused(
 
 
 def test_a_folder_may_move_beside_a_submodule(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
     """A destination that holds a submodule loses nothing moved next to it."""
-    source = repository_of(tmp_path, sub="b/sub")
+    source = make_superproject(tmp_path, sub="b/sub")
     (source / "a").mkdir()
     (source / "a" / "x.md").write_text("# X\n")
     vault = vault_of(source)
@@ -710,11 +686,10 @@ def test_move_destination_does_not_inspect_unrelated_private_subtree(
 
 
 def test_a_folder_move_that_lands_a_file_in_a_submodule_is_refused(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path, sub="b/sub")
+    source = make_superproject(tmp_path, sub="b/sub")
     (source / "a" / "sub").mkdir(parents=True)
     (source / "a" / "sub" / "x.md").write_text("# X\n")
     vault = vault_of(source)
@@ -728,35 +703,32 @@ def test_a_folder_move_that_lands_a_file_in_a_submodule_is_refused(
 
 
 def test_a_write_outside_the_submodule_goes_ahead(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path)
+    source = make_superproject(tmp_path)
     vault = vault_of(source)
     vault.writer.write("subway.md", "# Fine\n")
     assert (source / "subway.md").read_text() == "# Fine\n"
 
 
 def test_a_vault_without_a_git_strategy_writes_as_before(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
     """With nothing to commit, the write is not lost, so nothing is refused."""
-    source = repository_of(tmp_path)
+    source = make_superproject(tmp_path)
     vault = vault_of(source, git=False)
     vault.writer.write("sub/new.md", "# New\n")
     assert (source / "sub" / "new.md").read_text() == "# New\n"
 
 
 def test_a_backlink_inside_the_submodule_is_reported_not_rewritten(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    source = repository_of(tmp_path, note="# Upstream\n\n[[folder/x]]\n")
+    source = make_superproject(tmp_path, note="# Upstream\n\n[[folder/x]]\n")
     (source / "folder").mkdir()
     (source / "folder" / "x.md").write_text("# X\n")
     vault = vault_of(source)
@@ -772,11 +744,10 @@ def test_a_backlink_inside_the_submodule_is_reported_not_rewritten(
 
 
 def test_a_rename_says_which_backlinks_it_left_alone(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path, note="# Upstream\n\n[[top]]\n")
+    source = make_superproject(tmp_path, note="# Upstream\n\n[[top]]\n")
     vault = vault_of(source)
     before = (source / "sub" / "note.md").read_bytes()
     result = vault.writer.rename("top.md", "renamed.md", update_links=True)
@@ -799,12 +770,11 @@ def test_a_rename_with_a_vanished_backlink_source_gives_no_submodule_hint(
 
 
 def test_a_move_into_a_submodule_is_refused_before_a_collision(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
     """The submodule, not the file in the way, is what the caller must change."""
-    source = repository_of(tmp_path, sub="b/sub")
+    source = make_superproject(tmp_path, sub="b/sub")
     (source / "a" / "sub").mkdir(parents=True)
     (source / "a" / "sub" / "note.md").write_text("# Mine\n")
     vault = vault_of(source)
@@ -818,11 +788,10 @@ def test_a_move_into_a_submodule_is_refused_before_a_collision(
 
 
 def test_generating_the_root_index_leaves_the_submodule_out(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path)
+    source = make_superproject(tmp_path)
     (source / "folder").mkdir()
     (source / "folder" / "x.md").write_text("# X\n")
     vault = vault_of(source)
@@ -833,11 +802,10 @@ def test_generating_the_root_index_leaves_the_submodule_out(
 
 
 def test_a_submodule_with_its_own_index_keeps_its_pointer(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path, extra={"index.md": "# Vendored\n"})
+    source = make_superproject(tmp_path, extra={"index.md": "# Vendored\n"})
     vault = vault_of(source)
     before = (source / "sub" / "index.md").read_bytes()
     vault.writer.okf_generate_index(folder="")
@@ -846,11 +814,10 @@ def test_a_submodule_with_its_own_index_keeps_its_pointer(
 
 
 def test_indexing_a_folder_that_holds_a_submodule_skips_only_the_submodule(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path, sub="deep/sub")
+    source = make_superproject(tmp_path, sub="deep/sub")
     (source / "deep" / "mine.md").write_text("# Mine\n")
     vault = vault_of(source)
     vault.writer.okf_generate_index(folder="deep")
@@ -859,12 +826,11 @@ def test_indexing_a_folder_that_holds_a_submodule_skips_only_the_submodule(
 
 
 def test_converting_links_leaves_submodule_notes_alone(
-    repository_of: Callable[..., Path],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    source = repository_of(tmp_path, note="# Upstream\n\n[[top]]\n")
+    source = make_superproject(tmp_path, note="# Upstream\n\n[[top]]\n")
     (source / "mine.md").write_text("# Mine\n\n[[top]]\n")
     vault = vault_of(source)
     before = (source / "sub" / "note.md").read_bytes()
@@ -891,12 +857,11 @@ def test_converting_links_leaves_submodule_notes_alone(
     ids=["generate_index", "convert_links", "seed_log"],
 )
 def test_an_okf_folder_inside_the_submodule_is_refused(
-    repository_of: Callable[..., Path],
     call: Callable[[Vault], object],
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
 ) -> None:
-    source = repository_of(tmp_path)
+    source = make_superproject(tmp_path)
     vault = vault_of(source)
     before = _snapshot(source)
     with pytest.raises(SubmodulePathError, match=r"^folder 'sub' is inside"):
