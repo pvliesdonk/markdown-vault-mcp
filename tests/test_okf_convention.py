@@ -512,7 +512,7 @@ def _index_links_broken(vault: Vault) -> list[str]:
 
 
 class TestIndexRefreshOnStructuralChanges:
-    def test_move_folder_skips_submodule_indexes(
+    def test_move_folder_forwards_maintainer_folders(
         self, enforced_vault: Vault, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         enforced_vault.writer.write("guides/sub/child/a.md", "# A\n\nx\n")
