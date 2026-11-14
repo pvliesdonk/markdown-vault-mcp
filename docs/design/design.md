@@ -7132,6 +7132,17 @@ real release runs. No committed manifest bump is needed for the bundle.
 
 ## Testing Strategy
 
+The PostgreSQL fixture normally removes its own disposable container at teardown.
+After a killed pytest process (#1952), the next `start_container` also reclaims
+version-labeled containers only when native Linux initial PID/user namespaces,
+boot, hostname and UID match and signal zero proves the creator PID absent.
+Live/reused PIDs, permission failures, foreign or legacy labels and unsupported
+platforms/namespaces remain untouched. Recovery uses inspected full container
+IDs, has a shared ten-second budget, and never runs on the external-DSN path.
+See [container ownership evidence and limits](reference/test-postgres-container-ownership.md).
+`tests/test_postgres_cleanup.py` covers the guards and a real SIGKILL regression
+in the existing PostgreSQL-range CI; normal startup failure logs remain available.
+
 - **Fixtures**: `tests/fixtures/` directory with sample vault documents in
   several shapes: no frontmatter, minimal frontmatter, full frontmatter,
   malformed YAML, deeply nested headings, unicode, empty files, invalid UTF-8.

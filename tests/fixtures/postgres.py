@@ -9,18 +9,29 @@ except under CI (``CI=true``), where they fail so coverage cannot silently
 drop. Each test gets a schema of its own (``mvm_test_`` and a random suffix),
 dropped afterwards. psycopg is imported lazily, so a checkout without the
 ``postgres`` extra still collects every other test.
+
+On native Linux, the next start also reclaims labeled containers whose owner
+is gone, but only in the initial PID/user namespaces and the same boot/UID.
+Other platforms, nested namespaces and legacy containers are left alone.
+See ``docs/design/reference/test-postgres-container-ownership.md`` (#1952).
 """
 
 from __future__ import annotations
 
 import contextlib
+import errno
 import importlib.util
+import json
+import logging
 import os
+import re
 import secrets
 import shutil
 import subprocess
+import sys
 import time
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import pytest
@@ -41,6 +52,10 @@ _READY_TIMEOUT_S = 90.0
 _DOCKER_TIMEOUT_S = 600.0
 _DROP_LOCK_TIMEOUT_MS = 10_000
 _HIDDEN = "<hidden>"
+_CLEANUP_TIMEOUT_S = 10.0
+_OWNER_LABEL = "io.github.pvliesdonk.markdown-vault-mcp.test-postgres"
+_FULL_CONTAINER_ID = re.compile(r"[0-9a-f]{64}")
+logger = logging.getLogger(__name__)
 
 
 class SecretDsn(str):
@@ -191,6 +206,133 @@ def _remove(container: str) -> None:
     _docker("rm", "-f", container, timeout=60)
 
 
+def _initial_namespace(name: str, inode: int, kind: int) -> str:
+    """Identify a genuine initial namespace handle, or reject the scope."""
+    import fcntl
+
+    # NS_GET_NSTYPE, PID_NS_INIT_INO and USER_NS_INIT_INO: Linux nsfs UAPI.
+    # /proc/self remains correct even with an ancestor namespace's proc mount.
+    with Path(f"/proc/self/ns/{name}").open("rb") as handle:
+        if fcntl.ioctl(handle.fileno(), 0xB703) != kind:
+            raise ValueError("unexpected namespace type")
+        identity = os.fstat(handle.fileno())
+    if identity.st_ino != inode:
+        raise ValueError("not the initial namespace")
+    return f"{identity.st_dev}:{identity.st_ino}"
+
+
+def _owner_scope() -> dict[str, str]:
+    """Return collectable ownership only when Linux identity is unambiguous."""
+    if sys.platform != "linux":
+        return {}
+    try:
+        uid = os.getuid()
+        if uid != os.geteuid():
+            return {}
+        pidns = _initial_namespace("pid", 0xEFFFFFFC, 0x20000000)
+        userns = _initial_namespace("user", 0xEFFFFFFD, 0x10000000)
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        hostname = os.uname().nodename
+        if str(uuid.UUID(boot)) != boot or not hostname:
+            return {}
+    except (OSError, ValueError):
+        return {}
+    return {
+        f"{_OWNER_LABEL}.{key}": value
+        for key, value in {
+            "version": "1",
+            "boot": boot,
+            "host": hostname,
+            "pidns": pidns,
+            "userns": userns,
+            "uid": str(uid),
+        }.items()
+    }
+
+
+def _owner_is_gone(labels: object, scope: Mapping[str, str]) -> bool:
+    """Require matching ownership and ESRCH; reused or inaccessible PIDs stay."""
+    if (
+        not scope
+        or not isinstance(labels, dict)
+        or any(labels.get(key) != value for key, value in scope.items())
+    ):
+        return False
+    pid = labels.get(f"{_OWNER_LABEL}.pid")
+    if not isinstance(pid, str) or re.fullmatch(r"[1-9][0-9]{0,9}", pid) is None:
+        return False
+    if int(pid) > 2**31 - 1:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except OSError as exc:
+        return exc.errno == errno.ESRCH
+    return False
+
+
+def _cleanup_docker(deadline: float, *args: str) -> subprocess.CompletedProcess[str]:
+    """Keep the entire best-effort sweep within one startup budget."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired("docker cleanup", _CLEANUP_TIMEOUT_S)
+    return _docker(*args, timeout=remaining)
+
+
+def _collect_orphan(container: str, scope: Mapping[str, str], deadline: float) -> None:
+    """Recheck immutable metadata and remove only the inspected full ID."""
+    try:
+        inspected = _cleanup_docker(deadline, "inspect", container)
+        if inspected.returncode:
+            return
+        records = json.loads(inspected.stdout)
+        if not isinstance(records, list) or len(records) != 1:
+            return
+        record = records[0]
+        if not isinstance(record, dict) or record.get("Id") != container:
+            return
+        config = record.get("Config")
+        if not isinstance(config, dict) or not _owner_is_gone(
+            config.get("Labels"), scope
+        ):
+            return
+        removed = _cleanup_docker(deadline, "rm", "-f", container)
+        if removed.returncode == 0:
+            logger.info("postgres_orphan_removed container=%s", container)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        # Cleanup is optional: incomplete evidence must never broaden its scope.
+        return
+
+
+def _collect_orphans(scope: Mapping[str, str]) -> None:
+    """Find this harness's containers without sweeping names or other owners."""
+    if not scope:
+        return
+    deadline = time.monotonic() + _CLEANUP_TIMEOUT_S
+    filters = [
+        arg
+        for key, value in scope.items()
+        for arg in ("--filter", f"label={key}={value}")
+    ]
+    try:
+        listed = _cleanup_docker(
+            deadline,
+            "ps",
+            "--all",
+            "--quiet",
+            "--no-trunc",
+            *filters,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    if listed.returncode:
+        return
+    for container in set(listed.stdout.splitlines()):
+        if time.monotonic() >= deadline:
+            break
+        if _FULL_CONTAINER_ID.fullmatch(container):
+            _collect_orphan(container, scope, deadline)
+
+
 def _published_port(container: str) -> str | None:
     """Return the host port mapped to the container's 5432, or ``None``."""
     mapping = _docker("port", container, "5432/tcp", timeout=30)
@@ -262,12 +404,24 @@ def start_container(
         pytest.fail.Exception: If it does not start or answer in time; the
             container is removed first and its last log lines are reported.
     """
+    scope = _owner_scope()
+    _collect_orphans(scope)
+    # Override inherited image labels, including images committed from old runs.
+    labels = (
+        {**scope, f"{_OWNER_LABEL}.pid": str(os.getpid())}
+        if scope
+        else {f"{_OWNER_LABEL}.version": "unsupported"}
+    )
+    label_args = [
+        arg for key, value in labels.items() for arg in ("--label", f"{key}={value}")
+    ]
     password = secrets.token_hex(16)
     name = f"mvm-test-pg-{os.getpid()}-{uuid.uuid4().hex[:6]}"
     # No --rm: a container that exits must keep its logs until they are read.
     run = _docker(
         "run",
         "-d",
+        *label_args,
         "--name",
         name,
         "-p",
