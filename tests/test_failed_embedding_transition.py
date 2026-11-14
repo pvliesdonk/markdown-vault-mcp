@@ -7,12 +7,13 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vector_store_files import stored_vector_files
 
 
 class _DocumentsDown(MockEmbeddingProvider):
@@ -48,20 +49,12 @@ def _vault(root: Path, backend: str, provider: MockEmbeddingProvider) -> Vault:
     )
 
 
-def _stored_files(root: Path) -> dict[str, bytes]:
-    return {
-        path.name: path.read_bytes()
-        for path in root.glob("vectors*")
-        if path.is_file() and not path.name.endswith((".lock", "-wal", "-shm"))
-    }
-
-
 def _assert_failed_transition(
     root: Path,
     backend: str,
     mode: Literal["semantic", "hybrid"],
     providers: tuple[MockEmbeddingProvider, _DocumentsDown],
-    recovery: Literal["read", "build", "reopen"] = "read",
+    recovery: Literal["read", "build", "reopen", "force"] = "read",
 ) -> None:
     previous, current = providers
     first = _vault(root, backend, previous)
@@ -70,15 +63,19 @@ def _assert_failed_transition(
         assert first.index.build_embeddings() == 1
     finally:
         first.close()
-    before = _stored_files(root)
+    before = stored_vector_files(root)
     second = _vault(root, backend, current)
     try:
         second.index.build_index()
         for _ in range(2):
+            if recovery == "force":
+                with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
+                    second.index.build_embeddings(force=True)
             with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
                 second.reader.search("Apples and pears.", mode=mode)
-        assert current.document_calls == 2
-        assert _stored_files(root) == before
+        failed_calls = 4 if recovery == "force" else 2
+        assert current.document_calls == failed_calls
+        assert stored_vector_files(root) == before
         # The preserved vectors still work with their original embedding model.
         original = _vault(root, backend, previous)
         try:
@@ -88,8 +85,8 @@ def _assert_failed_transition(
         finally:
             original.close()
         current.documents_down = False
-        if recovery == "build":
-            second.index.build_embeddings()
+        if recovery in ("build", "force"):
+            second.index.build_embeddings(force=recovery == "force")
         elif recovery == "reopen":
             second.close()
             second = _vault(root, backend, current)
@@ -101,7 +98,7 @@ def _assert_failed_transition(
             == current.dimension
         )
         assert second.reader.search("Apples and pears.", mode=mode)
-        assert current.document_calls == 3
+        assert current.document_calls == failed_calls + 1
     finally:
         second.close()
 
@@ -109,42 +106,22 @@ def _assert_failed_transition(
 @pytest.mark.parametrize("backend", ["numpy", "sqlite"])
 @pytest.mark.parametrize("mode", ["semantic", "hybrid"])
 @pytest.mark.parametrize("same_model", [False, True], ids=["model", "dimension"])
-@pytest.mark.parametrize("recovery", ["read", "build", "reopen"])
-def test_failed_16_to_32_transition_refuses_repeated_reads(
-    tmp_path: Path,
-    backend: str,
-    mode: Literal["semantic", "hybrid"],
-    same_model: bool,
-    recovery: Literal["read", "build", "reopen"],
-) -> None:
-    model = "fixed-model" if same_model else None
-    _assert_failed_transition(
-        tmp_path,
-        backend,
-        mode,
-        (
-            MockEmbeddingProvider(dim=16, model=model),
-            _DocumentsDown(dim=32, model=model),
-        ),
-        recovery,
-    )
-
-
+@pytest.mark.parametrize("recovery", ["read", "build", "reopen", "force"])
 @settings(max_examples=16, deadline=None)
 @given(
-    old_dimension=st.integers(min_value=2, max_value=32),
-    increase=st.integers(min_value=1, max_value=16),
-    backend=st.sampled_from(["numpy", "sqlite"]),
-    mode=st.sampled_from(["semantic", "hybrid"]),
-    same_model=st.booleans(),
+    dimensions=st.tuples(
+        st.integers(min_value=2, max_value=32), st.integers(min_value=1, max_value=16)
+    )
 )
-def test_failed_transitions_refuse_reads_at_other_dimensions(
-    old_dimension: int,
-    increase: int,
+@example(dimensions=(16, 16))
+def test_failed_transition_refuses_repeated_reads(
     backend: str,
     mode: Literal["semantic", "hybrid"],
     same_model: bool,
+    recovery: Literal["read", "build", "reopen", "force"],
+    dimensions: tuple[int, int],
 ) -> None:
+    old_dimension, increase = dimensions
     model = "fixed-model" if same_model else None
     with TemporaryDirectory(prefix="failed-transition-") as directory:
         _assert_failed_transition(
@@ -155,19 +132,24 @@ def test_failed_transitions_refuse_reads_at_other_dimensions(
                 MockEmbeddingProvider(dim=old_dimension, model=model),
                 _DocumentsDown(dim=old_dimension + increase, model=model),
             ),
+            recovery,
         )
 
 
 @pytest.mark.parametrize("backend", ["numpy", "sqlite"])
-@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
 @pytest.mark.parametrize("authoritative", [False, True])
+@pytest.mark.parametrize(
+    "query",
+    [("semantic", False), ("semantic", True), ("hybrid", False), ("hybrid", True)],
+)
 def test_an_empty_model_transition_requires_an_authoritative_index(
     tmp_path: Path,
     backend: str,
-    mode: Literal["semantic", "hybrid"],
+    query: tuple[Literal["semantic", "hybrid"], bool],
     authoritative: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    mode, force = query
     (tmp_path / "vault").mkdir()
     first = _vault(tmp_path, backend, MockEmbeddingProvider(dim=16))
     try:
@@ -182,11 +164,29 @@ def test_an_empty_model_transition_requires_an_authoritative_index(
             monkeypatch.setattr(second._fts, "is_build_walk_complete", lambda: False)
         for _ in range(2):
             if authoritative:
+                if force:
+                    assert second.index.build_embeddings(force=True) == 0
                 assert second.reader.search("Apples", mode=mode) == []
             else:
+                if force:
+                    with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
+                        second.index.build_embeddings(force=True)
                 with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
                     second.reader.search("Apples", mode=mode)
         if authoritative:
-            assert second.index.embeddings_status()["generation"] == 1
+            assert second.index.embeddings_status()["generation"] == (2 if force else 1)
     finally:
         second.close()
+
+
+@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
+def test_force_without_previous_vectors_keeps_the_cold_failure_contract(
+    tmp_path: Path, backend: str
+) -> None:
+    vault = _vault(tmp_path, backend, _DocumentsDown(dim=32))
+    try:
+        vault.index.build_index()
+        assert vault.index.build_embeddings(force=True) == 0
+        assert vault.reader.search("Apples", mode="semantic") == []
+    finally:
+        vault.close()

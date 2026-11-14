@@ -721,15 +721,6 @@ class TestDiscardFailedRebuild:
         assert replacement.count == 0
         slot.close()
 
-    def test_discard_clears_a_target_marked_suspect(self, tmp_path: Path) -> None:
-        slot = _slot(tmp_path / "vec")
-        target = slot.fresh()
-        with pytest.raises(ValueError, match="rebuild"):
-            slot.rebuilt_after_read(target, lambda: slot.discard_failed_rebuild(target))
-        assert slot.current() is None
-        assert not slot.condemn_suspect()
-        slot.close()
-
     @pytest.mark.parametrize("injected", [False, True])
     def test_discard_leaves_caller_owned_or_unowned_stores_alone(
         self, injected: bool

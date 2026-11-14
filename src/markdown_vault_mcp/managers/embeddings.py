@@ -272,8 +272,10 @@ class EmbeddingsManager:
             return self._rebuild_changed_identity()
         return self.build_embeddings()
 
-    def _rebuild_changed_identity(self) -> int:
-        """Require publication when automatically replacing incompatible vectors.
+    def _rebuild_changed_identity(
+        self, *, donor: Donor | None = None, reuse_own: bool = False
+    ) -> int:
+        """Require publication when replacing incompatible vectors.
 
         Unlike an initial cold build, an unpublished replacement cannot
         serve as a successful empty index. Discard its target so a later
@@ -287,11 +289,11 @@ class EmbeddingsManager:
         store = self._slot.rebuild_target()
         try:
             outcome = self._full_build(
-                store, self._slot.identity, donor=None, reuse_own=False
+                store, self._slot.identity, donor=donor, reuse_own=reuse_own
             )
             if not outcome.published:
                 raise RuntimeError(
-                    "The automatic embedding rebuild failed: no compatible embeddings "
+                    "The embedding rebuild failed: no compatible embeddings "
                     "were published. Retry the rebuild after the provider or index recovers."
                 )
             return outcome.embedded
@@ -382,6 +384,7 @@ class EmbeddingsManager:
                 a store that already holds vectors but a provider batch
                 failed: nothing was published and the existing embeddings
                 stay (#1505).
+            RuntimeError: If a forced incompatible rebuild publishes no generation.
         """
         self._require_vectors()
         if self._embedding_provider is None or self._slot is None:
@@ -389,6 +392,17 @@ class EmbeddingsManager:
                 "_require_vectors() must be called before build_embeddings()"
             )
         if force:
+            try:
+                previous = self._slot.get(rebuild=None)
+            except StoreIncompatibleError:
+                return self._rebuild_changed_identity(donor=donor, reuse_own=reuse_own)
+            except StoreCorruptError:
+                pass  # rebuild_target handles existing corruption recovery.
+            else:
+                if previous.identity.dimension and not self._slot.answers(previous):
+                    return self._rebuild_changed_identity(
+                        donor=donor, reuse_own=reuse_own
+                    )
             store = self._slot.rebuild_target()
         else:
             # An owned store that will not open is rebuilt inside _open_store;
