@@ -45,17 +45,26 @@ def test_git_failure_is_a_fault_not_a_refusal(
     assert not isinstance(exc.value, InvalidRequestError)
 
 
-def test_prefix_a_commit_shares_with_a_blob(tmp_path: Path) -> None:
+def test_prefix_a_commit_shares_with_a_blob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # These dates make the two commits share their first four hex digits (#1995).
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "1700097383 +0000")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "1700097383 +0000")
     _init(tmp_path)
     _write(tmp_path, "note.md", "# v1\n")
     first = _commit(tmp_path, "add")
+    _write(tmp_path, "note.md", "# v2\n")
+    _commit(tmp_path, "edit")
+    # Choose the prefix after all commits exist; only the blob should collide.
+    prefix = _git(tmp_path, "rev-parse", "--short=4", first).strip()
     n = 0
     while True:
         body = f"collide {n}\n".encode()
         header = f"blob {len(body)}\0".encode()
         # git's own object id, not a security use.
         blob_id = hashlib.sha1(header + body, usedforsecurity=False).hexdigest()
-        if blob_id.startswith(first[:4]):
+        if blob_id.startswith(prefix):
             break
         n += 1
     subprocess.run(
@@ -64,9 +73,7 @@ def test_prefix_a_commit_shares_with_a_blob(tmp_path: Path) -> None:
         capture_output=True,
         check=True,
     )
-    _write(tmp_path, "note.md", "# v2\n")
-    _commit(tmp_path, "edit")
-    assert _read_at(tmp_path, "note.md", first[:4]).content == "# v1\n"
+    assert _read_at(tmp_path, "note.md", prefix).content == "# v1\n"
 
 
 def _repo_with_history(tmp_path: Path) -> str:
