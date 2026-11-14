@@ -284,14 +284,14 @@ class DocumentManager:
         )
 
     def in_submodule(self, path: str) -> bool:
-        """Whether a vault-relative note or folder lies in a git submodule (#1564).
+        """Whether a note or folder lies in a submodule or nested repository.
 
         Args:
             path: Vault-relative path.
 
         Returns:
-            ``True`` when *path* is a submodule or lies inside one; ``False``
-            for a folder that only holds one, and without a guard.
+            ``True`` when *path* is a protected repository or lies inside one;
+            ``False`` for a folder that only holds one, and without a guard.
         """
         guard = self._submodule_guard
         if guard is None:
@@ -1689,9 +1689,9 @@ class DocumentManager:
     def _refuse_move_into_submodule(
         self, dst_abs: Path, new_dir: str, new_path: str
     ) -> None:
-        """Refuse a folder move that would put a file inside a submodule (#1564).
+        """Refuse a folder move landing in a submodule or nested repository.
 
-        *new_dir* may hold a submodule; only a destination inside one is lost.
+        *new_dir* may hold one; only a destination inside one is lost.
         """
         guard = self._submodule_guard
         found = guard.submodule_of(dst_abs) if guard is not None else None
