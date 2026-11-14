@@ -5764,6 +5764,12 @@ upstream FastMCP #4952).
   applies (attachment limit vs. uncapped markdown) and the operator-facing
   size-limit message naming `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
 
+  Before calling `fetch_url`, the tool validates the destination through the
+  existing note or attachment path validator and asks the live document
+  manager's submodule guard about `path`. A submodule destination is refused
+  at INFO before a download starts. The final guarded write still checks
+  ownership, overwrite protection and `if_match` when saving the bytes.
+
   **Redirects are followed, and every hop re-runs that chain** (#1116).
   Through 3.1 the primitive refused every 3xx outright; from the 4.11.2
   floor the guard lives in the transport httpx sends each hop through, so a

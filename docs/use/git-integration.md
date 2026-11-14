@@ -505,6 +505,13 @@ A git submodule inside the vault is read-only. Its notes are indexed and searcha
 
 In no-git mode nothing is committed, so nothing is refused.
 
+### Fetching into the vault
+
+`fetch` checks its destination before downloading a URL. A note or attachment
+inside a git submodule is refused before the request starts; choose a path
+outside the submodule or change the file in the submodule's own repository.
+The save still applies the usual overwrite and etag checks.
+
 ## Git LFS
 
 If your vault tracks large files (PDFs, images) with [Git LFS](https://git-lfs.com), the server runs `git lfs pull` on startup to resolve LFS pointers into actual file content. This is enabled by default.
