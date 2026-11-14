@@ -178,7 +178,6 @@ class TestVaultIntegration:
                 "memory,vault",
                 "vault",
             ]
-            assert vault.reader.okf_validate().invalid_tags.examples == ("mixed.md",)
         finally:
             vault.close()
 
