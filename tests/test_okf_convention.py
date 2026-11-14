@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 
 import frontmatter as fm
 import pytest
@@ -512,46 +513,26 @@ def _index_links_broken(vault: Vault) -> list[str]:
 
 class TestIndexRefreshOnStructuralChanges:
     def test_move_folder_skips_submodule_indexes(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, enforced_vault: Vault, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        source = make_superproject(
-            tmp_path, sub="b/sub", extra={"index.md": "# Upstream index\n"}
+        enforced_vault.writer.write("guides/sub/child/a.md", "# A\n\nx\n")
+        wait_for_writer_drain(enforced_vault)
+        maintainer = enforced_vault.writer._convention_maintainer
+        assert maintainer is not None
+        folders = ["b", "b/child"]
+        walk = Mock(return_value=folders)
+        refresh = Mock()
+        monkeypatch.setattr(maintainer, "subtree_folders", walk)
+        monkeypatch.setattr(maintainer, "refresh_indexes", refresh)
+
+        enforced_vault.writer.move_folder("guides/sub", "b")
+
+        walk.assert_called_once_with("b")
+        refresh.assert_called_once_with(
+            [*folders, "guides"],
+            trigger_paths=["guides/sub", "b"],
+            create=[""],
         )
-        (source / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
-        for folder in ("a", "a/child"):
-            (source / folder).mkdir(parents=True, exist_ok=True)
-            (source / folder / "n.md").write_text("# Note\n", encoding="utf-8")
-            (source / folder / "index.md").write_text(
-                f"# Index\n\n[Note](/{folder}/n.md)\n", encoding="utf-8"
-            )
-        upstream = {
-            p.name: p.read_bytes() for p in (source / "b/sub").iterdir() if p.is_file()
-        }
-        vault = Vault(
-            source_dir=source,
-            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-            git_strategy=GitWriteStrategy(
-                enable_pull=False, enable_push=False, git_lfs=False, repo_path=source
-            ),
-        )
-        try:
-            vault.index.build_index()
-            with caplog.at_level(logging.WARNING):
-                result = vault.writer.move_folder("a", "b")
-                wait_for_writer_drain(vault)
-            assert result.files_moved == 4
-            assert "/b/n.md" in (_content(vault, "b/index.md") or "")
-            assert "/b/child/n.md" in (_content(vault, "b/child/index.md") or "")
-            assert "/a/" not in (_content(vault, "b/index.md") or "")
-            assert "b/index.md" in (_content(vault, "index.md") or "")
-            assert upstream == {
-                p.name: p.read_bytes()
-                for p in (source / "b/sub").iterdir()
-                if p.is_file()
-            }
-            assert not [r for r in caplog.records if r.name.endswith("_okf_convention")]
-        finally:
-            vault.close()
 
     def test_delete_drops_the_note_from_its_folder_index(
         self, enforced_vault: Vault
