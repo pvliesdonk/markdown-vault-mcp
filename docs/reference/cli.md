@@ -128,7 +128,7 @@ loading vector sidecars. Follow a returned path with `read`, `read --section`,
 
 <!-- DOMAIN-INTRO-END -->
 
-Discover commands: markdown-vault-mcp cli search "count matching notes"
+Discover commands: `markdown-vault-mcp cli search "count matching notes"`
 
 Generic markdown vault MCP with hybrid search
 

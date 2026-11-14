@@ -245,5 +245,7 @@ def register_search_commands(app: typer.Typer) -> None:
         typer.echo(terminal_text(f"Run '{first} --help' for flags and examples."))
 
     app.add_typer(group, name="cli")
-    pointer = 'Discover commands: markdown-vault-mcp cli search "count matching notes"'
+    pointer = (
+        'Discover commands: `markdown-vault-mcp cli search "count matching notes"`'
+    )
     app.info.help = f"{pointer}\n\n{app.info.help or ''}"
