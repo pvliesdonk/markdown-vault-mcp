@@ -35,6 +35,7 @@ import logging
 import sqlite3
 import threading
 from collections import deque
+from collections.abc import Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -284,7 +285,9 @@ _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
 # short-circuit on its own trigger rather than piggybacking on
 # searchable_fields (which only shares its value when SEARCHABLE_FIELDS is
 # left to default to INDEXED_FIELDS).
-_META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
+# A separate JSON key distinguishes complete field-set evidence from legacy
+# comma-joined text, whose field boundaries cannot be recovered unambiguously.
+_META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields_json"
 # Link-extraction provenance: the attachment allowlist in force at build
 # time (#1333). The link graph is notes-only, so a reference whose target
 # carries an allowlisted extension stores no link row — which makes the
@@ -504,9 +507,24 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#2062) adds effective OKF tags alongside literal configured tags,
 #: including SKILL.md nested metadata and filename-inferred Skill type. Raw
 #: frontmatter_json stays literal; unchanged files rebuild both views once.
+#: Complete indexed-field sets use canonical JSON under a distinct meta key;
+#: missing evidence rebuilds once instead of guessing legacy field boundaries.
 #: Version 11 shipped in v6.1.1. Coordinate any unshipped 12 with #2057 rather
 #: than adding a second bump before release.
 INDEX_SEMANTICS_VERSION = 12
+
+
+def canonical_indexed_fields(fields: Collection[str]) -> str:
+    """Encode a complete indexed-field set without losing field boundaries.
+
+    Args:
+        fields: Literal frontmatter field names; order and duplicates do not
+            affect their derived tag-key namespace.
+
+    Returns:
+        A sorted JSON array of distinct names, or ``"[]"`` for no fields.
+    """
+    return json.dumps(sorted(set(fields)))
 
 
 class ChunkingMeta(NamedTuple):
@@ -523,9 +541,9 @@ class ChunkingMeta(NamedTuple):
         searchable_fields: Comma-joined canonical form of the searchable
             frontmatter fields feeding the FTS ``summary`` column (default
             ``""`` — none configured).
-        indexed_frontmatter_fields: Comma-joined canonical form of the
-            frontmatter fields promoted to ``document_tags`` for structured
-            filtering (default ``""`` — none configured).
+        indexed_frontmatter_fields: Canonical JSON set of frontmatter fields
+            promoted to ``document_tags`` for structured filtering (``"[]"``
+            for no fields; ``""`` for missing provenance).
         attachment_extensions: Canonical form of the attachment allowlist
             link extraction consulted (default ``""`` — the built-in set;
             see :data:`_META_ATTACHMENT_EXTENSIONS_KEY`).
@@ -1834,9 +1852,8 @@ class FTSIndex:
                 pre-upgrade index (absent key) reads back as the default.
             searchable_fields: Comma-joined canonical searchable-field list.
                 The default (no fields) is already the empty string.
-            indexed_frontmatter_fields: Comma-joined canonical
-                structured-filter field list. The default (no fields) is
-                already the empty string.
+            indexed_frontmatter_fields: Canonical JSON structured-filter field
+                set. The empty-string default is stored as ``"[]"``.
             attachment_extensions: Canonical attachment allowlist, as
                 rendered by ``utils.canonical_attachment_extensions`` (the
                 default set is the empty string).
@@ -1855,7 +1872,7 @@ class FTSIndex:
                 (_META_MAX_CHUNK_CHARS_OVERRIDE_KEY, override_value),
                 (_META_TITLE_FIELD_KEY, title_value),
                 (_META_SEARCHABLE_FIELDS_KEY, searchable_fields),
-                (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields),
+                (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields or "[]"),
                 (_META_ATTACHMENT_EXTENSIONS_KEY, attachment_extensions),
                 (_META_INDEX_SEMANTICS_KEY, str(INDEX_SEMANTICS_VERSION)),
             ):

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
-from markdown_vault_mcp.fts_index import should_optimize
+from markdown_vault_mcp.fts_index import canonical_indexed_fields, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers.embeddings import (
     _EMBED_KEPT,
@@ -732,7 +732,9 @@ class IndexManager:
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
             searchable_fields=",".join(self._embed_builder.searchable_fields),
-            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            indexed_frontmatter_fields=canonical_indexed_fields(
+                self._indexed_frontmatter_fields
+            ),
             attachment_extensions=canonical_attachment_extensions(
                 self._attachment_extensions
             ),

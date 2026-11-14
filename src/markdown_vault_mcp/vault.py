@@ -42,6 +42,7 @@ from markdown_vault_mcp.facets import (
     SummarizeFacet,
     WriterFacet,
 )
+from markdown_vault_mcp.fts_index import canonical_indexed_fields
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
 from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
@@ -620,7 +621,9 @@ class Vault:
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
             searchable_fields=",".join(self._searchable_frontmatter_fields),
-            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            indexed_frontmatter_fields=canonical_indexed_fields(
+                self._indexed_frontmatter_fields
+            ),
             attachment_extensions=canonical_attachment_extensions(
                 effective_attachment_extensions(self._attachment_extensions)
             ),

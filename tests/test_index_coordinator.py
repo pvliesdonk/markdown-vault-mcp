@@ -6,12 +6,17 @@ import logging
 import sqlite3
 import threading
 from concurrent.futures import CancelledError, Future
+from contextlib import closing
 from typing import TYPE_CHECKING
 
 import pytest
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError, InvalidRequestError
-from markdown_vault_mcp.fts_index import INDEX_SEMANTICS_VERSION, FTSIndex
+from markdown_vault_mcp.fts_index import (
+    INDEX_SEMANTICS_VERSION,
+    FTSIndex,
+    canonical_indexed_fields,
+)
 from markdown_vault_mcp.indexing import IndexWriteCoordinator, ProcessDirtyPaths
 from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.scanner import HeadingChunker
@@ -75,7 +80,7 @@ def make_coordinator(
         max_chunk_chars_override=max_chunk_chars_override,
         title_field=title_field,
         searchable_fields=",".join(searchable_fields),
-        indexed_frontmatter_fields=",".join(indexed_frontmatter_fields),
+        indexed_frontmatter_fields=canonical_indexed_fields(indexed_frontmatter_fields),
         attachment_extensions=canonical_attachment_extensions(
             effective_attachment_extensions(
                 None if attachment_extensions is None else list(attachment_extensions)
@@ -971,7 +976,7 @@ def test_indexed_frontmatter_fields_change_rejects_warm_restart(
     try:
         coord.build_index()
         meta = coord._fts.get_chunking_meta()
-        assert meta.indexed_frontmatter_fields == ""
+        assert meta.indexed_frontmatter_fields == "[]"
     finally:
         coord.close(timeout=5)
 
@@ -984,7 +989,7 @@ def test_indexed_frontmatter_fields_change_rejects_warm_restart(
         assert stats.chunks_indexed > 0  # full build ran, not warm O(1)
         assert (
             coord2._fts.get_chunking_meta().indexed_frontmatter_fields
-            == "tags,category"
+            == '["category", "tags"]'
         )
     finally:
         coord2.close(timeout=5)
@@ -1003,8 +1008,7 @@ def test_absent_provenance_keys_keep_warm_restart_under_defaults(
         conn = coord._fts._conn()
         with conn:
             conn.execute(
-                "DELETE FROM meta WHERE key IN ('title_field', 'searchable_fields', "
-                "'indexed_frontmatter_fields')"
+                "DELETE FROM meta WHERE key IN ('title_field', 'searchable_fields')"
             )
     finally:
         coord.close(timeout=5)
@@ -1018,17 +1022,16 @@ def test_absent_provenance_keys_keep_warm_restart_under_defaults(
         coord2.close(timeout=5)
 
 
-def test_legacy_five_column_db_migrates_and_warm_restarts_via_coordinator(
+def test_legacy_five_column_db_migrates_rebuilds_then_warm_restarts(
     tmp_path: Path,
 ) -> None:
     """A genuine pre-feature on-disk DB opened through the coordinator.
 
     The upgrade correctness relies on two mechanisms firing together — the
-    summary-column migration AND the warm-restart short-circuit — which the
-    bare-FTSIndex migration tests exercise in isolation. Here a real 5-column
-    ``notes_fts`` with no curated-ranking provenance keys must migrate to
-    6-column on open and still stay on the warm O(1) path under defaults, so an
-    upgrade does not trigger a silent full rescan.
+    summary-column migration AND the missing-provenance rebuild — which the
+    bare-FTSIndex migration tests exercise in isolation. A real 5-column
+    ``notes_fts`` without canonical field evidence migrates on open, rebuilds
+    once, then reuses the completed build on its next restart.
     """
     db = tmp_path / "index.db"
     coord = make_coordinator(tmp_path, db=db)
@@ -1040,7 +1043,7 @@ def test_legacy_five_column_db_migrates_and_warm_restarts_via_coordinator(
         with conn:
             conn.execute(
                 "DELETE FROM meta WHERE key IN ('title_field', 'searchable_fields', "
-                "'indexed_frontmatter_fields')"
+                "'indexed_frontmatter_fields', 'indexed_frontmatter_fields_json')"
             )
         conn.execute("BEGIN")
         conn.execute("DROP TABLE notes_fts")
@@ -1067,14 +1070,20 @@ def test_legacy_five_column_db_migrates_and_warm_restarts_via_coordinator(
             .fetchall()
         ]
         assert cols == ["path", "title", "folder", "heading", "content", "summary"]
-        # ...and the warm-restart short-circuit still holds — no silent rescan.
-        assert coord2._chunking_meta_matches() is True
+        # Missing canonical namespace evidence requires one cold rebuild.
+        assert coord2._chunking_meta_matches() is False
         stats = coord2.build_index()
-        assert stats.chunks_indexed == 0
+        assert stats.chunks_indexed > 0
         # Migrated rows remain searchable.
         assert len(coord2._fts.search("body")) >= 1
     finally:
         coord2.close(timeout=5)
+
+    coord3 = make_coordinator(tmp_path, db=db)
+    try:
+        assert coord3.build_index().chunks_indexed == 0
+    finally:
+        coord3.close(timeout=5)
 
 
 @pytest.mark.parametrize(
@@ -1320,3 +1329,227 @@ def test_shared_adoption_preserves_compatible_stored_build(
         assert reader._fts.get_chunking_meta().model == "producer"
     finally:
         reader.close(timeout=5)
+
+
+@pytest.mark.parametrize("duplicate", [False, True], ids=["reordered", "duplicates"])
+@pytest.mark.parametrize("shared", [False, True], ids=["owner", "reader"])
+def test_vault_reuses_equivalent_indexed_field_sets(
+    tmp_path: Path, duplicate: bool, shared: bool
+) -> None:
+    """Field order/duplicates cannot rebuild or refuse the same derived-key namespace."""
+    from markdown_vault_mcp.okf import OKF_INDEXED_FIELDS
+    from markdown_vault_mcp.vault import Vault
+    from tests.fixtures.okf_skills import SKILL
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    skill = root / "SKILL.md"
+    skill.write_text(SKILL)
+    original = (skill.read_bytes(), skill.stat().st_mtime_ns)
+    fields = [*OKF_INDEXED_FIELDS, "__okf__:type", "description"]
+    db = tmp_path / "index.db"
+    settings = VaultSettings(
+        okf_mode="on",
+        index_path=db,
+        indexed_frontmatter_fields=fields,
+        searchable_frontmatter_fields=["description"],
+    )
+    with closing(Vault(source_dir=root, settings=settings)) as owner:
+        assert owner.index.build_index().chunks_indexed > 0
+    reordered = list(reversed(fields))
+    if duplicate:
+        reordered.extend(fields)
+    with sqlite3.connect(db) as conn:
+        before = conn.execute("SELECT key, value FROM meta ORDER BY key").fetchall()
+    with closing(
+        Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                okf_mode="on",
+                index_path=settings.index_path,
+                owns_index_files=not shared,
+                indexed_frontmatter_fields=reordered,
+                searchable_frontmatter_fields=["description"],
+            ),
+        )
+    ) as reopened:
+        if shared:
+            assert isinstance(reopened._fts, FTSIndex)
+            reopened._fts._conn().execute("PRAGMA query_only=ON")
+            reopened.index.use_existing_index()
+        else:
+            assert reopened.index.build_index().chunks_indexed == 0
+        hits = reopened.reader.search(
+            "zebra", mode="keyword", filters={"type": "Skill"}
+        )
+        assert [hit.path for hit in hits] == ["SKILL.md"]
+        with sqlite3.connect(db) as conn:
+            assert (
+                conn.execute("SELECT key, value FROM meta ORDER BY key").fetchall()
+                == before
+            )
+    assert (skill.read_bytes(), skill.stat().st_mtime_ns) == original
+
+
+def test_vault_refuses_comma_colliding_indexed_field_sets(tmp_path: Path) -> None:
+    """Different native key allocations cannot adopt identical comma-joined evidence."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.fixtures.okf_skills import SKILL
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    skill = root / "SKILL.md"
+    skill.write_text(SKILL)
+    original = (skill.read_bytes(), skill.stat().st_mtime_ns)
+    db = tmp_path / "index.db"
+    with closing(
+        Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                okf_mode="on",
+                index_path=db,
+                indexed_frontmatter_fields=["type", "__okf__:type,x"],
+                searchable_frontmatter_fields=["description"],
+            ),
+        )
+    ) as owner:
+        owner.index.build_index()
+    before = db.read_bytes()
+    with (
+        closing(
+            Vault(
+                source_dir=root,
+                settings=VaultSettings(
+                    okf_mode="on",
+                    index_path=db,
+                    owns_index_files=False,
+                    indexed_frontmatter_fields=["type", "__okf__:type", "x"],
+                    searchable_frontmatter_fields=["description"],
+                ),
+            )
+        ) as reader,
+        pytest.raises(InvalidRequestError, match="admin index"),
+    ):
+        reader.index.use_existing_index()
+    assert db.read_bytes() == before
+    assert (skill.read_bytes(), skill.stat().st_mtime_ns) == original
+
+
+@pytest.mark.parametrize(
+    "legacy", [None, "type,status,stale_after", '["stale_after", "status", "type"]', ""]
+)
+def test_vault_rebuilds_missing_canonical_namespace(
+    tmp_path: Path, legacy: str | None
+) -> None:
+    """Missing new evidence refuses shared reads, then rebuilds unchanged bytes once."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.fixtures.okf_skills import SKILL
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    skill = root / "SKILL.md"
+    skill.write_text(SKILL)
+    original = (skill.read_bytes(), skill.stat().st_mtime_ns)
+    db = tmp_path / "index.db"
+    settings = VaultSettings(
+        okf_mode="on",
+        index_path=db,
+        indexed_frontmatter_fields=["type"],
+        searchable_frontmatter_fields=["description"],
+    )
+    with closing(Vault(source_dir=root, settings=settings)) as owner:
+        owner.index.build_index()
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "DELETE FROM meta WHERE key IN ('indexed_frontmatter_fields_json', 'indexed_frontmatter_fields')"
+        )
+        if legacy is not None:
+            conn.execute(
+                "INSERT INTO meta VALUES ('indexed_frontmatter_fields', ?)", (legacy,)
+            )
+    before = db.read_bytes()
+    with (
+        closing(
+            Vault(
+                source_dir=root,
+                settings=VaultSettings(
+                    okf_mode="on",
+                    index_path=db,
+                    owns_index_files=False,
+                    indexed_frontmatter_fields=["type"],
+                    searchable_frontmatter_fields=["description"],
+                ),
+            )
+        ) as reader,
+        pytest.raises(InvalidRequestError, match="admin index"),
+    ):
+        reader.index.use_existing_index()
+    assert db.read_bytes() == before
+    with closing(Vault(source_dir=root, settings=settings)) as owner:
+        assert owner.index.build_index().chunks_indexed > 0
+        assert [
+            hit.path
+            for hit in owner.reader.search(
+                "zebra", mode="keyword", filters={"type": "Skill"}
+            )
+        ] == ["SKILL.md"]
+    with closing(Vault(source_dir=root, settings=settings)) as owner:
+        assert owner.index.build_index().chunks_indexed == 0
+    assert (skill.read_bytes(), skill.stat().st_mtime_ns) == original
+
+
+@pytest.mark.parametrize("legacy", [False, True], ids=["canonical", "legacy-empty"])
+def test_vault_adopts_completed_empty_canonical_namespace(
+    tmp_path: Path, legacy: bool
+) -> None:
+    """An explicit empty set is compatible evidence even with no documents."""
+    from markdown_vault_mcp.vault import Vault
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    db = tmp_path / "index.db"
+    with closing(
+        Vault(source_dir=root, settings=VaultSettings(okf_mode="off", index_path=db))
+    ) as owner:
+        owner.index.build_index()
+    if legacy:
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "DELETE FROM meta WHERE key = 'indexed_frontmatter_fields_json'"
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO meta VALUES ('indexed_frontmatter_fields', '')"
+            )
+        before = db.read_bytes()
+        with (
+            closing(
+                Vault(
+                    source_dir=root,
+                    settings=VaultSettings(
+                        okf_mode="off", index_path=db, owns_index_files=False
+                    ),
+                )
+            ) as reader,
+            pytest.raises(InvalidRequestError, match="admin index"),
+        ):
+            reader.index.use_existing_index()
+        assert db.read_bytes() == before
+        with closing(
+            Vault(
+                source_dir=root, settings=VaultSettings(okf_mode="off", index_path=db)
+            )
+        ) as owner:
+            owner.index.build_index()
+    before = db.read_bytes()
+    with closing(
+        Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                okf_mode="off", index_path=db, owns_index_files=False
+            ),
+        )
+    ) as reader:
+        reader.index.use_existing_index()
+        assert reader._fts.get_chunking_meta().indexed_frontmatter_fields == "[]"
+        assert reader.reader.list_documents() == []
+    assert db.read_bytes() == before

@@ -73,9 +73,11 @@ mutations preserve unrelated fields and literal top-level conflicts; they do
 not save an inferred `type: Skill` into your YAML.
 
 A shared disk index must have the current derivation version and the same
-indexed fields as the reader. An incompatible reader refuses instead of
-returning incomplete filtered results. Use matching reader settings/version,
-and run `admin index` through the index's owning process when a rebuild is needed.
+indexed field set as the reader; order and repeated fields do not matter.
+An incompatible reader or an index without current field-set evidence refuses
+instead of returning incomplete filtered results. Use matching reader settings
+and version. For older indexes, run `admin index` through the owning process
+once to rebuild the field evidence.
 
 ## Frontmatter fields
 

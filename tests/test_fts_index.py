@@ -1310,6 +1310,7 @@ def test_chunking_meta_roundtrip(tmp_path):
     assert idx.get_chunking_meta() == ChunkingMeta(
         model="bge-m3:latest",
         max_chunk_chars_override=5000,
+        indexed_frontmatter_fields="[]",
         semantics_version=INDEX_SEMANTICS_VERSION,
     )
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
@@ -1334,12 +1335,13 @@ def test_chunking_meta_stores_none_as_empty(tmp_path):
     assert idx.get_chunking_meta() == ChunkingMeta(
         model=None,
         max_chunk_chars_override=None,
+        indexed_frontmatter_fields="[]",
         semantics_version=INDEX_SEMANTICS_VERSION,
     )
 
 
 def test_chunking_meta_indexed_frontmatter_fields_roundtrip(tmp_path):
-    """indexed_frontmatter_fields persists and defaults to ``""``."""
+    """Canonical field boundaries persist; missing evidence has a distinct sentinel."""
     from markdown_vault_mcp.fts_index import (
         INDEX_SEMANTICS_VERSION,
         ChunkingMeta,
@@ -1350,16 +1352,31 @@ def test_chunking_meta_indexed_frontmatter_fields_roundtrip(tmp_path):
     idx.set_chunking_meta(
         model=None,
         max_chunk_chars_override=None,
-        indexed_frontmatter_fields="tags,category",
+        indexed_frontmatter_fields='["category", "tags"]',
     )
     assert idx.get_chunking_meta() == ChunkingMeta(
         model=None,
         max_chunk_chars_override=None,
-        indexed_frontmatter_fields="tags,category",
+        indexed_frontmatter_fields='["category", "tags"]',
         semantics_version=INDEX_SEMANTICS_VERSION,
     )
+    with idx._conn() as conn:
+        assert (
+            conn.execute(
+                "SELECT value FROM meta WHERE key = 'indexed_frontmatter_fields_json'"
+            ).fetchone()[0]
+            == '["category", "tags"]'
+        )
+        conn.execute("DELETE FROM meta WHERE key = 'indexed_frontmatter_fields_json'")
+        conn.execute(
+            "INSERT OR REPLACE INTO meta VALUES ('indexed_frontmatter_fields', ?)",
+            ('["category", "tags"]',),
+        )
+    assert idx.get_chunking_meta().indexed_frontmatter_fields == ""
+    idx.close()
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
     assert idx2.get_chunking_meta().indexed_frontmatter_fields == ""
+    idx2.close()
 
 
 # ---------------------------------------------------------------------------
@@ -2116,3 +2133,22 @@ def test_skill_semantics_rebuilds_existing_index(tmp_path: Path) -> None:
     finally:
         vault.close()
     assert (path.read_bytes(), path.stat().st_mtime_ns) == original
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ([], "[]"),
+        (["type", "status", "type"], '["status", "type"]'),
+        (["type", "__okf__:type,x"], '["__okf__:type,x", "type"]'),
+        (["type", "__okf__:type", "x"], '["__okf__:type", "type", "x"]'),
+        (["Type", " type ", "é"], '[" type ", "Type", "\\u00e9"]'),
+    ],
+)
+def test_canonical_indexed_fields_preserves_field_identity(
+    fields: list[str], expected: str
+) -> None:
+    """Canonical set evidence ignores order but preserves every name boundary/byte."""
+    from markdown_vault_mcp.fts_index import canonical_indexed_fields
+
+    assert canonical_indexed_fields(fields) == expected

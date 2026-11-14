@@ -89,8 +89,9 @@ class IndexWriteCoordinator:
         # frontmatter field set, tracked separately from searchable_fields
         # so an INDEXED_FIELDS-only change also rejects the warm-restart
         # short-circuit (#927) even when SEARCHABLE_FIELDS is explicitly
-        # overridden and would otherwise stay unchanged.
-        self._indexed_frontmatter_fields = indexed_frontmatter_fields
+        # overridden and would otherwise stay unchanged. Canonical JSON keeps
+        # complete field boundaries; the default encodes an empty field set.
+        self._indexed_frontmatter_fields = indexed_frontmatter_fields or "[]"
         # Link-extraction provenance: the attachment allowlist decides whether
         # a reference is a link row at all (#1333), so a change to it changes
         # the stored rows of notes whose bytes never moved. Hash-based

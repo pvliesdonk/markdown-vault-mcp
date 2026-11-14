@@ -275,9 +275,12 @@ exact queries retain registration validation. No fields are automatically
 registered when OKF is off; inactive filters/ranking keep existing semantics.
 Index semantics version 12 rebuilds unchanged skills' tags once; no on-disk
 note migration is required. Shared-index adoption refuses absent, older,
-malformed or newer semantics versions and any difference in the complete
-indexed-field namespace. Other stored producer settings remain authoritative;
-no reader rebuild or metadata write occurs.
+malformed or newer semantics versions and requires the same complete indexed
+field set. Canonical sorted JSON preserves field boundaries while ignoring
+order and duplicates. A distinct metadata key separates this evidence from
+legacy comma text, even when that text looks like JSON. Missing evidence
+requires one owning-process rebuild; a shared reader refuses without writing
+or scanning. Other stored producer settings remain authoritative.
 
 Each search or filtered listing captures activation once and reuses it through
 filtering, ranking and snippet selection. The next request probes again.

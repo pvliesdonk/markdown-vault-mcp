@@ -298,17 +298,10 @@ class TestByteIdenticalWhenNotDetected:
 
 
 @pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
-def test_skill_filters_stats_and_ranking_agree(
-    tmp_path: Path, mode: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("constant_embeddings")
+def test_skill_filters_stats_and_ranking_agree(tmp_path: Path, mode: str) -> None:
     """Retrieval and stats interpret nested identity, while results retain raw metadata."""
-    from tests.conftest import MockEmbeddingProvider
     from tests.fixtures.okf_skills import SKILL
-
-    def embed(provider: MockEmbeddingProvider, texts: list[str]) -> list[list[float]]:
-        return [[1.0] * provider.dimension for _ in texts]
-
-    monkeypatch.setattr(MockEmbeddingProvider, "embed", embed)
 
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
     # Conflicting legacy keys must never leak through a skill's effective slot.
@@ -350,18 +343,15 @@ def test_skill_filters_stats_and_ranking_agree(
 
 
 @pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+@pytest.mark.usefixtures("constant_embeddings")
 def test_skill_off_explicit_type_filters_stay_literal(
-    tmp_path: Path, mode: str, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mode: str
 ) -> None:
     """An explicitly indexed type must not change off-mode identity by search channel."""
     from markdown_vault_mcp.vault import Vault
     from tests.conftest import MockEmbeddingProvider
     from tests.fixtures.okf_skills import SKILL
 
-    def embed(provider: MockEmbeddingProvider, texts: list[str]) -> list[list[float]]:
-        return [[1.0] * provider.dimension for _ in texts]
-
-    monkeypatch.setattr(MockEmbeddingProvider, "embed", embed)
     (tmp_path / "SKILL.md").write_text(
         SKILL.replace("name: demo", "type: Wrong\nname: demo").replace(
             "  status:", "  type: Runbook\n  status:"
@@ -484,17 +474,15 @@ def test_skill_keyword_type_filter_retains_prelimit_recall(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     "operation", ["list", "keyword", "semantic", "hybrid", "similar"]
 )
+@pytest.mark.usefixtures("constant_embeddings")
 def test_filtered_requests_use_one_activation_snapshot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
 ) -> None:
     """Candidate/key loops must not reread detection; the next request sees changes."""
-    from tests.conftest import MockEmbeddingProvider
     from tests.fixtures.okf_skills import SKILL
 
-    def embed(provider: MockEmbeddingProvider, texts: list[str]) -> list[list[float]]:
-        return [[1.0] * provider.dimension for _ in texts]
-
-    monkeypatch.setattr(MockEmbeddingProvider, "embed", embed)
     marker = tmp_path / "index.md"
     marker.write_text('---\nokf_version: "0.2"\n---\n# Index\n')
     (tmp_path / "SKILL.md").write_text(SKILL)
