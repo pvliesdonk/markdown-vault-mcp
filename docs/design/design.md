@@ -6403,9 +6403,11 @@ identify submodules, so a deinitialised submodule is refused too; `git/submodule
 cannot list them it logs `submodule_list_failed`, keeps the submodules it last
 listed and asks again on the next write. That fallback concerns gitlinks
 only; live marker discovery remains independent of index listing failures.
-Plain repository discovery checks `.git` directory/file candidates against
-their losslessly decoded Git root, strictly below the vault root. File and
-inside-only queries check ancestors; holding queries walk the target, without
+Plain repository discovery validates `.git` metadata with native
+`rev-parse --resolve-git-dir`, consuming status only, strictly below the vault
+root. Regular gitfiles are first read as bytes; read and Git launch faults
+propagate. Readable invalid markers remain inert. File and inside-only queries
+check ancestors; holding queries walk the target, without
 following directory symlinks or entering `.git` metadata, and stop at the
 first repository. Inert markers do not hide real descendants. No filesystem
 results are cached: marker creation/removal affects the next query even if

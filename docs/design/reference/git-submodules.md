@@ -13,6 +13,18 @@ verified:
 stale_after: 2027-03-23T16:25:10+02:00
 status: stable
 sources:
+  - id: metadata-resolution
+    title: git-rev-parse(1), Git v2.55.0, --resolve-git-dir
+    resource: https://github.com/git/git/blob/v2.55.0/Documentation/git-rev-parse.adoc
+    accessed: 2026-11-14
+  - id: structural-metadata
+    title: Git v2.55.0 setup.c, is_nonbare_repository_dir and read_gitfile_gently
+    resource: https://github.com/git/git/blob/v2.55.0/setup.c
+    accessed: 2026-11-14
+  - id: early-resolution
+    title: Git v2.55.0 builtin/rev-parse.c, resolution before repository setup
+    resource: https://github.com/git/git/blob/v2.55.0/builtin/rev-parse.c
+    accessed: 2026-11-14
   - id: repository-layout
     title: gitrepository-layout(5), Git v2.55.0
     resource: https://github.com/git/git/blob/v2.55.0/Documentation/gitrepository-layout.adoc
@@ -150,10 +162,20 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   `git add -- sub/note.md` exits zero but stages nothing. Status remains
   `?? sub/`. [observed: synthetic Boat sandbox, Git 2.43.0, 2026-11-14]
   [pins: tests/test_submodule_writes.py::test_a_plain_repository_write_is_refused_before_any_side_effect]
-- Marker presence alone is insufficient: an empty `.git` directory or
-  invalid gitfile does not identify a new working-tree root. The guard
-  confirms candidates with `rev-parse --show-toplevel`; a genuine nested
-  repository below an inert marker still has its own root.
+- `rev-parse --resolve-git-dir` validates repository metadata or a gitfile
+  pointing to it, before working-tree discovery/configuration. Its status
+  avoids owner checks, redirected `core.worktree` and unsupported extensions
+  that can defeat working-root equality while outer staging skips the path.
+  [source: metadata-resolution, early-resolution, structural-metadata]
+  [observed: synthetic Boat Git 2.43.0 fixtures, 2026-11-14]
+  [pins: tests/test_submodule_writes.py::test_a_plain_repository_write_is_refused_before_any_side_effect]
+- Git conservatively treats gitfile open/read failures as repository boundaries;
+  the native resolver can still fail. Strict binary reading must distinguish
+  these faults from readable invalid markers. No recursive directory-metadata
+  inspection follows from this exception. [source: structural-metadata]
+  [pins: tests/test_submodule_writes.py::test_candidate_inspection_fault_prevents_mutation]
+- Readable invalid gitfiles and empty `.git` directories remain inert; a real
+  repository below one is still discoverable.
   [observed: synthetic pytest fixtures, Git 2.43.0, 2026-11-14]
   [pins: tests/test_submodule_writes.py::test_inert_markers_do_not_hide_a_real_descendant]
 
@@ -339,9 +361,9 @@ refusal and skip policy.
 
 ## Not covered
 
-- Filesystem metadata that Git's best-effort root discovery cannot validate:
-  a candidate it cannot confirm is not classified as a repository. This is
-  not a replacement for Git's full repository validation.
+- Atomic inspection or marker-replacement races: strict reads and native
+  resolution are separate operations. A nonzero resolver status after successful
+  inspection leaves the candidate unconfirmed; launch/read faults propagate.
 - `git push --recurse-submodules=on-demand` and `=check` outcomes and wording
   when a submodule commit is unpublished: would be settled by a push sandbox
   against a bare remote for both repositories.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import errno
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -497,7 +498,7 @@ def test_generated_nested_descendants_and_prefix_neighbors(parts: list[str]) -> 
 
 @pytest.fixture
 def vault_of(tmp_path: Path) -> Iterator[Callable[[Path], Vault]]:
-    opened: list[Vault] = []
+    opened: list[tuple[Vault, GitWriteStrategy | None]] = []
 
     def build(source: Path, *, git: bool = True) -> Vault:
         strategy = (
@@ -511,14 +512,17 @@ def vault_of(tmp_path: Path) -> Iterator[Callable[[Path], Vault]]:
             source_dir=source,
             settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
             git_strategy=strategy,
+            on_write=strategy,
         )
-        opened.append(vault)
+        opened.append((vault, strategy))
         vault.index.build_index()
         return vault
 
     yield build
-    for vault in opened:
+    for vault, strategy in opened:
         vault.close()
+        if strategy is not None:
+            strategy.close()
 
 
 def _snapshot(source: Path) -> dict[str, bytes]:
@@ -529,15 +533,64 @@ def _snapshot(source: Path) -> dict[str, bytes]:
     }
 
 
+@pytest.fixture(params=["plain", "redirected", "unsupported", "foreign-owned"])
+def configured_nested_source(
+    request: pytest.FixtureRequest, tmp_path: Path
+) -> Iterator[Path]:
+    """Build staging boundaries without relying on nested worktree discovery."""
+    source = make_nested_repository(tmp_path, sub="holder/nested")
+    nested = source / "holder/nested"
+    marker = nested / ".git"
+    owners: list[tuple[Path, int]] = []
+    try:
+        if request.param == "redirected":
+            alternate = tmp_path / "alternate"
+            alternate.mkdir()
+            _git(nested, "config", "core.worktree", str(alternate))
+        elif request.param == "unsupported":
+            _git(nested, "config", "core.repositoryformatversion", "1")
+            _git(nested, "config", "extensions.futureFormat", "true")
+        elif request.param == "foreign-owned":
+            if os.name != "posix" or shutil.which("sudo") is None:
+                pytest.skip("foreign ownership requires POSIX and noninteractive sudo")
+            if subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode:
+                pytest.skip("noninteractive ownership changes unavailable")
+            foreign = 0 if os.getuid() else 1
+            for target in (nested, marker):
+                owners.append((target, target.stat().st_uid))
+                subprocess.run(
+                    ["sudo", "-n", "chown", str(foreign), str(target)], check=True
+                )
+                assert target.stat().st_uid != os.getuid()
+            assert (
+                subprocess.run(
+                    ["git", "rev-parse", "--resolve-git-dir", str(marker)],
+                    capture_output=True,
+                ).returncode
+                == 0
+            )
+        yield source
+    finally:
+        for target, owner in reversed(owners):
+            subprocess.run(["sudo", "-n", "chown", str(owner), str(target)], check=True)
+            assert target.stat().st_uid == owner
+
+
 def test_a_plain_repository_write_is_refused_before_any_side_effect(
-    tmp_path: Path,
+    configured_nested_source: Path,
     vault_of: Callable[[Path], Vault],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A successful outer git-add can stage nothing; do not lose the write."""
-    source = make_nested_repository(tmp_path)
-    path = "sub/note.md"
+    source = configured_nested_source
+    path = "holder/nested/note.md"
     _git(source, "add", "--", path)
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(source), "diff", "--cached", "--name-only"]
+        )
+        == b""
+    )
     vault = vault_of(source)
     before = _snapshot(source)
     head = (source / ".git" / "refs" / "heads" / "main").read_bytes()
@@ -558,6 +611,71 @@ def test_a_plain_repository_write_is_refused_before_any_side_effect(
     assert (source / ".git" / "index").read_bytes() == index
     assert vault.reader.read(path) == indexed
     assert not callbacks
+    guard = SubmoduleGuard(source)
+    assert guard.submodule_of(source / path) == ("holder/nested", True)
+    assert guard.submodule_of(source / "holder") == ("holder/nested", False)
+    vault.writer.write("outside.md", "# Committed\n")
+    assert vault._write_callback.drain(timeout=5)
+    assert (
+        subprocess.check_output(["git", "-C", str(source), "show", "HEAD:outside.md"])
+        == b"# Committed\n"
+    )
+
+
+@pytest.mark.parametrize("fault", ["read", "launch"])
+@pytest.mark.parametrize("query", ["inside", "holding", "write"])
+def test_candidate_inspection_fault_prevents_mutation(
+    tmp_path: Path,
+    vault_of: Callable[[Path], Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
+    query: str,
+) -> None:
+    source = make_nested_repository(tmp_path, sub="holder/nested")
+    nested = source / "holder/nested"
+    _git(nested, "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+    vault = vault_of(source)
+    guard = vault._doc_mgr._submodule_guard
+    assert guard is not None
+    guard.submodule_of(source / "top.md")  # warm owning root/index before injection
+    before = _snapshot(source)
+    git_state = [
+        (source / ".git" / name).read_bytes() for name in ("index", "refs/heads/main")
+    ]
+    indexed = vault.reader.read("holder/nested/note.md")
+    real_read = Path.read_bytes
+    real_run = subprocess.run
+
+    def denied_read(path: Path) -> bytes:
+        if path == nested / ".git":
+            raise OSError(errno.EIO, "synthetic gitfile read failure", str(path))
+        return real_read(path)
+
+    def missing_git(*args: Any, **kw: Any) -> Any:
+        if "--resolve-git-dir" in args[0]:
+            raise FileNotFoundError(errno.ENOENT, "synthetic missing Git")
+        return real_run(*args, **kw)
+
+    monkeypatch.setattr(
+        vault._doc_mgr._notifier, "fire", lambda *_a: pytest.fail("unexpected callback")
+    )
+    if fault == "read":
+        monkeypatch.setattr(Path, "read_bytes", denied_read)
+    else:
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.submodules.subprocess.run", missing_git
+        )
+    with pytest.raises(OSError):
+        if query == "write":
+            vault.writer.write("holder/nested/note.md", "# Must not change\n")
+        else:
+            target = nested / "note.md" if query == "inside" else source / "holder"
+            guard.submodule_of(target)
+    assert _snapshot(source) == before
+    assert [
+        (source / ".git" / name).read_bytes() for name in ("index", "refs/heads/main")
+    ] == git_state
+    assert vault.reader.read("holder/nested/note.md") == indexed
 
 
 REFUSED: dict[str, tuple[Callable[[Vault], object], str]] = {

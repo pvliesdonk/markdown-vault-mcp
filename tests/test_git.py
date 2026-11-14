@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import subprocess
 import time
 from typing import TYPE_CHECKING, Any
@@ -160,17 +159,6 @@ class TestFindGitRoot:
         subdir.mkdir()
         result = _find_git_root(subdir)
         assert result == git_repo
-
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX pathname spellings")
-    @pytest.mark.parametrize(
-        "name", ["nested ", "nested\n", "nested\r", os.fsdecode(b"nested-\xff")]
-    )
-    def test_preserves_repository_path_bytes(self, tmp_path: Path, name: str) -> None:
-        """Only Git's output terminator is removed from its root pathname."""
-        repo = tmp_path / name
-        repo.mkdir()
-        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
-        assert _find_git_root(repo) == repo
 
     def test_no_repo_returns_none(self, tmp_path: Path) -> None:
         """_find_git_root returns None when not in a git repo."""

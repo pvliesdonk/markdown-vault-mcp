@@ -1,6 +1,6 @@
 """Refuse writes hidden inside submodules or nested repositories (#1564, #1949).
 
-Every git command runs in the superproject, which refuses to stage a path
+Writes use the superproject, which refuses to stage a path
 inside a submodule (``fatal: Pathspec ... is in submodule``). A write there
 would land on disk and never reach git, so the write managers ask
 :class:`SubmoduleGuard` first and refuse. What git does is recorded in
@@ -14,10 +14,11 @@ gitlinks it last listed, and asks again on the next write. With no successful
 listing it has no gitlink boundaries; live marker discovery still applies.
 
 Plain nested repositories have no gitlink: check their .git directory or
-gitfile live, confirming each candidate through git root discovery. File
+gitfile live, confirming metadata through native structural resolution. File
 and inside-only queries inspect ancestors; holding queries walk the requested
 directory, pruning metadata and stopping at the first repository. Filesystem
-inspection faults propagate rather than treating an unreadable path as safe.
+inspection and Git launch faults propagate; regular gitfiles are read strictly
+as bytes before resolution, so unreadable metadata never looks inert.
 """
 
 from __future__ import annotations
@@ -211,14 +212,23 @@ class SubmoduleGuard:
 
 
 def _is_repository(candidate: Path) -> bool:
-    """Confirm only directories with a .git directory or gitfile as candidates."""
+    """Resolve .git metadata structurally, propagating inspection/launch faults."""
     if not is_directory(candidate):
         return False
     marker = candidate / ".git"
-    if not (is_directory(marker) or is_regular_file(marker)):
-        return False
-    root = _find_git_root(candidate)
-    return root is not None and root.resolve() == candidate
+    if not is_directory(marker):
+        if not is_regular_file(marker):
+            return False
+        marker.read_bytes()  # Git conservatively skips unreadable gitfiles.
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "--resolve-git-dir", str(marker)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 def _raise_walk_error(exc: OSError) -> None:
