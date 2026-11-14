@@ -25,6 +25,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -42,7 +43,6 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -328,6 +328,24 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     return now.date() >= boundary
 
 
+def _malformed_sources(metadata: dict[str, Any]) -> bool:
+    """Whether a present ``sources`` is not a list of mappings."""
+    if "sources" not in metadata:
+        return False
+    sources = metadata["sources"]
+    return not isinstance(sources, list) or any(
+        not isinstance(entry, Mapping) for entry in sources
+    )
+
+
+def _malformed_generated(metadata: dict[str, Any]) -> bool:
+    """Whether a present ``generated`` is not a mapping containing ``by``."""
+    if "generated" not in metadata:
+        return False
+    generated = metadata["generated"]
+    return not isinstance(generated, Mapping) or "by" not in generated
+
+
 def derive_annotation(
     metadata: dict[str, Any],
     *,
@@ -347,7 +365,10 @@ def derive_annotation(
     Returns:
         The annotation dict: ``status`` (defaulted to ``"stable"``),
         ``stale``, and ``trust_tier`` always; ``type`` only when present
-        and non-empty; sources per *include_sources*.
+        and non-empty; sources per *include_sources*. ``malformed_sources``
+        and ``malformed_generated`` appear only when true: present sources
+        must be a list of mappings, and generated a mapping containing
+        ``by``. These advisory flags leave source projections unchanged.
     """
     now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
@@ -369,6 +390,10 @@ def derive_annotation(
             annotation["sources"] = source_list
     elif source_list:
         annotation["sources_count"] = len(source_list)
+    if _malformed_sources(metadata):
+        annotation["malformed_sources"] = True
+    if _malformed_generated(metadata):
+        annotation["malformed_generated"] = True
     return annotation
 
 
@@ -504,8 +529,13 @@ class OkfAuditReport:
             read by the same parser as every other rule, so JSON frontmatter
             is judged by its keys and its syntax is not checked. A folder
             index declaring ``okf_version`` is also
-            ``misplaced_okf_version``. Declared last and defaulted so earlier
+            ``misplaced_okf_version``. Appended and defaulted so earlier
             positional construction still works.
+        malformed_sources: Notes with a present ``sources`` that is not
+            a list of mappings (advisory; an empty list is valid).
+        malformed_generated: Notes with a present ``generated`` that is
+            not a mapping containing ``by`` (advisory; key presence only).
+            Both provenance findings leave ``conformant_notes`` unchanged.
     """
 
     mode: str
@@ -522,6 +552,8 @@ class OkfAuditReport:
     wikilink_files: OkfFinding
     missing_recommended: OkfFinding
     index_frontmatter: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_sources: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_generated: OkfFinding = OkfFinding(count=0, examples=())
 
 
 class _FindingAccumulator:
@@ -553,6 +585,8 @@ class _AuditCounters:
         self.wikilinks = _FindingAccumulator(cap)
         self.missing_recommended = _FindingAccumulator(cap)
         self.index_frontmatter = _FindingAccumulator(cap)
+        self.malformed_sources = _FindingAccumulator(cap)
+        self.malformed_generated = _FindingAccumulator(cap)
         self.total = 0
         self.conformant = 0
         self.root_index_seen = False
@@ -611,6 +645,10 @@ def _evaluate_note(
         and status.strip() not in OKF_STATUS_VALUES
     ):
         acc.unknown_status.add(rel)
+    if _malformed_sources(metadata):
+        acc.malformed_sources.add(rel)
+    if _malformed_generated(metadata):
+        acc.malformed_generated.add(rel)
     if "[[" in body:
         acc.wikilinks.add(rel)
     if not metadata.get("title") or not metadata.get("description"):
@@ -717,6 +755,8 @@ def audit_bundle(
         wikilink_files=acc.wikilinks.finding(),
         missing_recommended=acc.missing_recommended.finding(),
         index_frontmatter=acc.index_frontmatter.finding(),
+        malformed_sources=acc.malformed_sources.finding(),
+        malformed_generated=acc.malformed_generated.finding(),
     )
 
 

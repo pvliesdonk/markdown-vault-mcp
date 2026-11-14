@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING
+from collections import UserDict
+from copy import deepcopy
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 
 import pytest
+import yaml
 
 from markdown_vault_mcp.vault import VaultSettings
 
@@ -287,6 +291,83 @@ class TestDeriveAnnotation:
             annotation = derive_annotation(metadata, now=NOW, include_sources=True)
             assert "sources" not in annotation
             assert "sources_count" not in annotation
+            assert annotation.get("malformed_sources") is (
+                True if isinstance(metadata["sources"], str) else None
+            )
+
+
+_ABSENT = object()
+
+
+@pytest.mark.parametrize("field", ["sources", "generated"])
+@pytest.mark.parametrize(
+    ("value", "sources_bad", "generated_bad"),
+    [
+        (_ABSENT, False, False),
+        (None, True, True),
+        (False, True, True),
+        (0, True, True),
+        ("", True, True),
+        ("https://example.com", True, True),
+        ([], False, True),
+        ([{}], False, True),
+        ([{"resource": "https://a"}, {}], False, True),
+        ([{}, "bad"], True, True),
+        ([None], True, True),
+        ({}, True, True),
+        ({"at": "2026-11-14"}, True, True),
+        ({"by": None}, True, False),
+        ({"by": ""}, True, False),
+        ({"by": 7}, True, False),
+        ({"by": "codex", "extension": True}, True, False),
+    ],
+)
+def test_provenance_shape_matrix(
+    tmp_path: Path, field: str, value: Any, sources_bad: bool, generated_bad: bool
+) -> None:
+    from markdown_vault_mcp.okf import OkfFinding, audit_bundle
+
+    metadata = {"type": "Note"}
+    if value is not _ABSENT:
+        metadata[field] = value
+    malformed = sources_bad if field == "sources" else generated_bad
+    flag = f"malformed_{field}"
+    for include_sources in (False, True):
+        annotation = derive_annotation(
+            metadata, now=NOW, include_sources=include_sources
+        )
+        assert annotation.get(flag) is (True if malformed else None)
+        assert "generated" not in annotation
+    (tmp_path / "note.md").write_text(
+        f"---\n{yaml.safe_dump(metadata)}---\n# Note\n", encoding="utf-8"
+    )
+    report = audit_bundle(tmp_path)
+    assert getattr(report, flag) == (
+        OkfFinding(1, ("note.md",)) if malformed else OkfFinding(0, ())
+    )
+    assert report.total_notes == report.conformant_notes == 1
+
+
+def test_mixed_sources_keep_projection() -> None:
+    metadata = {"sources": [{"resource": "https://a"}, "bad"]}
+    original = deepcopy(metadata)
+    full = derive_annotation(metadata, now=NOW, include_sources=True)
+    hit = derive_annotation(metadata, now=NOW)
+    assert full["sources"] == [{"resource": "https://a"}, "bad"]
+    assert "sources_count" not in full
+    assert hit["sources_count"] == 2
+    assert "sources" not in hit
+    assert full["malformed_sources"] is hit["malformed_sources"] is True
+    assert metadata == original
+
+
+def test_provenance_accepts_mapping_instances() -> None:
+    annotation = derive_annotation(
+        {"sources": [UserDict()], "generated": UserDict({"by": None})}, now=NOW
+    )
+    assert annotation["sources_count"] == 1
+    assert "malformed_sources" not in annotation
+    assert "malformed_generated" not in annotation
 
 
 class TestOkfConfig:
@@ -674,6 +755,82 @@ def _build_audit_vault(root: Path) -> None:
 
 
 class TestOkfAudit:
+    def test_malformed_provenance_is_advisory(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import OkfFinding, audit_bundle
+
+        (tmp_path / "bad.md").write_text(
+            "---\ntype: Note\nsources: https://example.com\n"
+            "generated: codex at a date\n---\n# Zebra\n",
+            encoding="utf-8",
+        )
+        report = audit_bundle(tmp_path)
+        assert report.malformed_sources == OkfFinding(1, ("bad.md",))
+        assert report.malformed_generated == OkfFinding(1, ("bad.md",))
+        assert report.total_notes == report.conformant_notes == 1
+        assert report.unparseable_frontmatter.count == 0
+
+    def test_provenance_audit_boundaries(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import OkfFinding, audit_bundle
+
+        malformed = "---\ntype: Note\nsources: null\ngenerated: false\n---\n# Note\n"
+        for path in ("z.md", "b.md", "a.md", "index.md", "log.md", "drop-excluded.md"):
+            (tmp_path / path).write_text(malformed, encoding="utf-8")
+        (tmp_path / "broken.md").write_text(
+            "---\nsources: [\ngenerated: false\n---\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path, exclude_patterns=["*excluded*"], example_cap=1)
+        assert report.malformed_sources == OkfFinding(3, ("a.md",))
+        assert report.malformed_generated == OkfFinding(3, ("a.md",))
+        assert report.unparseable_frontmatter == OkfFinding(1, ("broken.md",))
+        assert report.total_notes == 4
+        assert report.conformant_notes == 3
+        assert report.missing_type.count == 0
+        for cap in (0, 20):
+            empty = audit_bundle(tmp_path / "missing", example_cap=cap)
+            assert (
+                empty.malformed_sources
+                == empty.malformed_generated
+                == OkfFinding(0, ())
+            )
+        uncapped = audit_bundle(
+            tmp_path, exclude_patterns=["*excluded*"], example_cap=0
+        )
+        assert (
+            uncapped.malformed_sources
+            == uncapped.malformed_generated
+            == OkfFinding(3, ())
+        )
+
+    def test_provenance_report_positional_compatibility(self) -> None:
+        from markdown_vault_mcp.okf import OkfAuditReport, OkfFinding
+
+        empty = OkfFinding(0, ())
+        sentinel = OkfFinding(1, ("index.md",))
+        legacy = (
+            "auto",
+            "0.2",
+            True,
+            0,
+            0,
+            empty,
+            empty,
+            empty,
+            empty,
+            empty,
+            False,
+            empty,
+            empty,
+        )
+        for report in (
+            OkfAuditReport(*legacy),
+            OkfAuditReport(*legacy, sentinel),
+        ):
+            assert report.malformed_sources == report.malformed_generated == empty
+            assert asdict(report)["malformed_sources"] == {"count": 0, "examples": ()}
+            assert asdict(report)["malformed_generated"] == {"count": 0, "examples": ()}
+        assert OkfAuditReport(*legacy).index_frontmatter == empty
+        assert OkfAuditReport(*legacy, sentinel).index_frontmatter == sentinel
+
     def test_mixed_vault_report(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import OkfDetector, audit_bundle
 
