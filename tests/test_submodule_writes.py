@@ -978,31 +978,14 @@ def test_backlink_inspection_fault_does_not_abort_a_completed_rename(
     vault = vault_of(source)
     assert vault._fts.get_backlinks("top.md")
     backlink = (source / "sub/note.md").read_bytes()
-    real_open = Path.open
     real_fire = vault._doc_mgr._notifier.fire_rename
     callbacks: list[object] = []
-
-    def opening(path: Path, *args: Any, **kw: Any) -> Any:
-        stream = real_open(path, *args, **kw)
-        if path == source / "sub/.git":
-            real_read = stream.read
-
-            def denied_read(size: int = -1) -> bytes:
-                data: bytes = real_read(size)
-                if len(data) > 4096:
-                    raise OSError(
-                        errno.EIO, "synthetic gitfile read failure", str(path)
-                    )
-                return data
-
-            monkeypatch.setattr(stream, "read", denied_read)
-        return stream
 
     def record(*args: Any) -> None:
         callbacks.append(args)
         real_fire(*args)
 
-    monkeypatch.setattr(Path, "open", opening)
+    _inject_gitfile_read_fault(monkeypatch, source / "sub/.git")
     monkeypatch.setattr(vault._doc_mgr._notifier, "fire_rename", record)
     result = vault.writer.rename("top.md", "renamed.md", update_links=True)
     assert result.updated_links == 0
