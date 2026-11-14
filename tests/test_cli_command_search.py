@@ -139,7 +139,7 @@ def test_native_usage_errors(args: list[str]) -> None:
 def test_help_pointer_text_and_no_results() -> None:
     """Text gives an actionable help command, including a successful empty result."""
     runner = CliRunner()
-    assert 'cli search "<what you want to do>"' in runner.invoke(app, ["--help"]).stdout
+    assert 'cli search "count matching notes"' in runner.invoke(app, ["--help"]).stdout
     group_help = runner.invoke(app, ["cli"])
     assert "search" in group_help.output
     found = runner.invoke(
