@@ -50,6 +50,7 @@ def _arguments(
     if "frontmatter" in arguments:
         try:
             arguments["frontmatter"] = json.loads(arguments["frontmatter"])
+            json.dumps(arguments["frontmatter"], allow_nan=False)
         except ValueError:
             raise ClientError("--frontmatter must be a JSON object.") from None
         if not isinstance(arguments["frontmatter"], dict):
