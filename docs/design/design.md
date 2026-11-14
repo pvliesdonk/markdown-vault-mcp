@@ -6419,8 +6419,9 @@ into a submodule is refused, but case is not folded: on a case-insensitive
 file system a path spelled `SUB/` is not recognised. A rename or folder move
 whose backlinks come from a note inside a submodule goes ahead and leaves that
 note unrewritten, logged at INFO as `link_rewrite_source_skipped
-reason=submodule`; a `rename` names it in `hint`, a `move_folder` in
-`failed_links`. A `move_folder` that would land a file inside a submodule is
+reason=submodule`; a `rename` names it in a best-effort `hint`, a `move_folder` in
+`failed_links`. Hint inspection faults do not interrupt index updates or Git
+notifications. A `move_folder` that would land a file inside a submodule is
 refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy

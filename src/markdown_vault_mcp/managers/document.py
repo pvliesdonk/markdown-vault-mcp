@@ -1558,8 +1558,15 @@ class DocumentManager:
         return pending_callbacks, dirty_paths, failed_sources
 
     def _submodule_links_hint(self, unrewritten: list[str]) -> str | None:
-        """The rename hint for backlinks left in protected repositories (#1564, #1949)."""
-        in_submodules = [s for s in unrewritten if self.in_submodule(s)]
+        """Build the protected-backlink hint without aborting a completed rename."""
+        in_submodules = []
+        for source in unrewritten:
+            try:
+                if self.in_submodule(source):
+                    in_submodules.append(source)
+            except OSError:
+                # Diagnostic inspection must not prevent index/Git notification.
+                continue
         return _submodule_links_text(in_submodules) if in_submodules else None
 
     def _update_backlinks(

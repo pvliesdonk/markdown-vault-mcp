@@ -397,7 +397,7 @@ def test_file_queries_do_not_walk_or_discover_git_without_a_marker(
         pytest.fail("ordinary file queries must use only ancestor stats")
 
     monkeypatch.setattr("markdown_vault_mcp.git.submodules.os.walk", unexpected)
-    monkeypatch.setattr("markdown_vault_mcp.git.submodules._find_git_root", unexpected)
+    monkeypatch.setattr("markdown_vault_mcp.git.submodules.subprocess.run", unexpected)
     assert guard.submodule_of(source / "top.md") is None
     assert guard.submodule_of(source / "ordinary/deep/n.md") is None
 
@@ -719,9 +719,7 @@ REFUSED: dict[str, tuple[Callable[[Vault], object], str]] = {
 
 @pytest.mark.parametrize("case", sorted(REFUSED))
 def test_every_write_tool_refuses_and_writes_nothing(
-    case: str,
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    case: str, tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path)
     (source / "sub" / "a.pdf").write_bytes(b"%PDF-1.4\n")
@@ -753,8 +751,7 @@ def test_a_deinitialised_submodule_is_refused_too(
 
 
 def test_moving_a_folder_that_holds_a_submodule_is_refused(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path, sub="deep/sub")
     (source / "deep" / "mine.md").write_text("# Mine\n")
@@ -766,8 +763,7 @@ def test_moving_a_folder_that_holds_a_submodule_is_refused(
 
 
 def test_a_folder_may_move_beside_a_submodule(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     """A destination that holds a submodule loses nothing moved next to it."""
     source = make_superproject(tmp_path, sub="b/sub")
@@ -804,8 +800,7 @@ def test_move_destination_does_not_inspect_unrelated_private_subtree(
 
 
 def test_a_folder_move_that_lands_a_file_in_a_submodule_is_refused(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path, sub="b/sub")
     (source / "a" / "sub").mkdir(parents=True)
@@ -821,8 +816,7 @@ def test_a_folder_move_that_lands_a_file_in_a_submodule_is_refused(
 
 
 def test_a_write_outside_the_submodule_goes_ahead(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path)
     vault = vault_of(source)
@@ -831,8 +825,7 @@ def test_a_write_outside_the_submodule_goes_ahead(
 
 
 def test_a_vault_without_a_git_strategy_writes_as_before(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     """With nothing to commit, the write is not lost, so nothing is refused."""
     source = make_superproject(tmp_path)
@@ -862,8 +855,7 @@ def test_a_backlink_inside_the_submodule_is_reported_not_rewritten(
 
 
 def test_a_rename_says_which_backlinks_it_left_alone(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path, note="# Upstream\n\n[[top]]\n")
     vault = vault_of(source)
@@ -875,9 +867,57 @@ def test_a_rename_says_which_backlinks_it_left_alone(
     assert (source / "sub" / "note.md").read_bytes() == before
 
 
-def test_a_rename_with_a_vanished_backlink_source_gives_no_submodule_hint(
+def test_backlink_inspection_fault_does_not_abort_a_completed_rename(
     tmp_path: Path,
     vault_of: Callable[[Path], Vault],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = make_nested_repository(tmp_path)
+    (source / "sub/note.md").write_text("# Backlink\n\n[[top]]\n")
+    _git(source / "sub", "init", "-q", f"--separate-git-dir={tmp_path / 'metadata'}")
+    vault = vault_of(source)
+    assert vault._fts.get_backlinks("top.md")
+    backlink = (source / "sub/note.md").read_bytes()
+    real_read = Path.read_bytes
+    real_fire = vault._doc_mgr._notifier.fire_rename
+    callbacks: list[object] = []
+
+    def denied(path: Path) -> bytes:
+        if path == source / "sub/.git":
+            raise OSError(errno.EIO, "synthetic gitfile read failure", str(path))
+        return real_read(path)
+
+    def record(*args: Any) -> None:
+        callbacks.append(args)
+        real_fire(*args)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    monkeypatch.setattr(vault._doc_mgr._notifier, "fire_rename", record)
+    result = vault.writer.rename("top.md", "renamed.md", update_links=True)
+    assert result.updated_links == 0
+    assert result.hint is None
+    assert (source / "sub/note.md").read_bytes() == backlink
+    assert not (source / "top.md").exists()
+    assert (source / "renamed.md").read_text() == "# Top\n"
+    assert vault.index.wait_for_drain(timeout=5)
+    assert vault._fts.get_note("top.md") is None
+    assert vault._fts.get_note("renamed.md") is not None
+    assert len(callbacks) == 1
+    assert vault._write_callback.drain(timeout=5)
+    assert (
+        subprocess.check_output(["git", "-C", str(source), "show", "HEAD:renamed.md"])
+        == b"# Top\n"
+    )
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(source), "ls-tree", "--name-only", "HEAD", "top.md"]
+        )
+        == b""
+    )
+
+
+def test_a_rename_with_a_vanished_backlink_source_gives_no_submodule_hint(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path)
     (source / "linker.md").write_text("# Linker\n\n[[top]]\n")
@@ -888,8 +928,7 @@ def test_a_rename_with_a_vanished_backlink_source_gives_no_submodule_hint(
 
 
 def test_a_move_into_a_submodule_is_refused_before_a_collision(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     """The submodule, not the file in the way, is what the caller must change."""
     source = make_superproject(tmp_path, sub="b/sub")
@@ -906,8 +945,7 @@ def test_a_move_into_a_submodule_is_refused_before_a_collision(
 
 
 def test_generating_the_root_index_leaves_the_submodule_out(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path)
     (source / "folder").mkdir()
@@ -920,8 +958,7 @@ def test_generating_the_root_index_leaves_the_submodule_out(
 
 
 def test_a_submodule_with_its_own_index_keeps_its_pointer(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path, extra={"index.md": "# Vendored\n"})
     vault = vault_of(source)
@@ -932,8 +969,7 @@ def test_a_submodule_with_its_own_index_keeps_its_pointer(
 
 
 def test_indexing_a_folder_that_holds_a_submodule_skips_only_the_submodule(
-    tmp_path: Path,
-    vault_of: Callable[[Path], Vault],
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
 ) -> None:
     source = make_superproject(tmp_path, sub="deep/sub")
     (source / "deep" / "mine.md").write_text("# Mine\n")

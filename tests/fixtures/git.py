@@ -156,8 +156,6 @@ def make_nested_repository(
     *,
     vault: str = "",
     sub: str = "sub",
-    note: str = "# Upstream\n",
-    extra: dict[str, str] | None = None,
 ) -> Path:
     """Build a vault holding a plain repository with no gitlink (#1949).
 
@@ -165,8 +163,6 @@ def make_nested_repository(
         tmp_path: A fresh directory to build under.
         vault: The vault's folder within the enclosing repository.
         sub: The plain repository's path within the vault.
-        note: Contents of its note.md.
-        extra: Additional files within the plain repository.
 
     Returns:
         The vault directory, with top.md committed in its enclosing repository.
@@ -176,7 +172,5 @@ def make_nested_repository(
     nested = source / sub
     nested.mkdir(parents=True)
     _run_git(nested, "init", "-q", "--initial-branch=main")
-    (nested / "note.md").write_text(note)
-    for name, text in (extra or {}).items():
-        (nested / name).write_text(text)
+    (nested / "note.md").write_text("# Upstream\n")
     return source
