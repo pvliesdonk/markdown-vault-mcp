@@ -325,7 +325,7 @@ def test_build_records_current_semantics_version(tmp_path: Path) -> None:
         ("target/skill.md", "alias/SKILL.md", "Literal"),
     ],
 )
-def test_older_semantics_version_rejects_warm_restart(
+def test_older_semantics_version_rejects_warm_restart(  # noqa: PLR0915, RUF100 -- one upgrade/rebuild/warm lifecycle; structural-only rule
     tmp_path: Path, target: str, alias: str | None, expected_type: str
 ) -> None:
     """An index built by an older parse pipeline is rebuilt, not short-circuited.
@@ -1631,7 +1631,7 @@ def test_vault_adopts_completed_empty_canonical_namespace(
 @pytest.mark.parametrize(
     "fault_kind", ["sibling-resolve", "sibling-parse", "original-transient"]
 )
-def test_alias_refresh_failure_reexpands_original_dirty_snapshot(
+def test_alias_refresh_failure_reexpands_original_dirty_snapshot(  # noqa: PLR0915, RUF100 -- queued failure/retry is one lifecycle; structural-only rule
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault_kind: str
 ) -> None:
     """Queued partial failures notify healthy rows and retry only the original input set."""

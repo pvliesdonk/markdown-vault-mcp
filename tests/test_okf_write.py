@@ -863,7 +863,7 @@ class TestOkfVerifyTrustAuth:
             )
 
     @pytest.mark.parametrize(
-        ("target", "request_path", "nested"),
+        "case",
         [
             ("guides/playbook.md", "guides/playbook.md", False),
             ("SKILL.md", "SKILL.md", True),
@@ -876,12 +876,11 @@ class TestOkfVerifyTrustAuth:
         self,
         trust_auth_env: Path,
         monkeypatch: pytest.MonkeyPatch,
-        target: str,
-        request_path: str,
-        nested: bool,
+        case: tuple[str, str, bool],
         has_prior: bool,
     ) -> None:
         """Verification counts and preserves entries in the resolved authority slot."""
+        target, request_path, nested = case
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         prior = {"by": "human:alice", "at": _dt.date(2026, 1, 1)}
