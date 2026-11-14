@@ -352,6 +352,12 @@ strict endpoints work: Voyage answers HTTP 400 to `dimensions`, to `user`,
 and to `encoding_format="float"`. An endpoint that requires a
 field outside `model` and `input` cannot be driven this way.
 
+From the response, the server reads each item's `embedding` and puts the
+items back in input order by their `index`. An item with no `index` counts as
+the first one: Gemini's compatibility endpoint,
+`https://generativelanguage.googleapis.com/v1beta/openai/`, leaves the field
+out of the first item of every batch.
+
 The one addition is vendor-specific and reached only through a named provider:
 [`voyage`](#voyage-ai) also sends `input_type`. Driving Voyage through this
 `openai` recipe instead sends no `input_type`, so it does not get the

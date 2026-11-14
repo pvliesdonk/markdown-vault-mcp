@@ -44,15 +44,16 @@ def _install_fake_openai(
     monkeypatch: pytest.MonkeyPatch,
     *,
     vectors: list[list[float]] | None = None,
-    indexed: list[tuple[int, list[float]]] | None = None,
+    indexed: list[tuple[int | None, list[float]]] | None = None,
     raise_error: bool = False,
 ) -> dict[str, Any]:
     """Inject a minimal fake ``openai`` module; return a capture dict.
 
     The capture dict records the constructor's ``api_key`` / ``base_url``
     and a ``create_calls`` list with the kwargs of every
-    ``embeddings.create`` invocation. ``indexed`` supplies out-of-order
-    (index, vector) pairs for the input-order-restoration test.
+    ``embeddings.create`` invocation. ``indexed`` supplies (index, vector)
+    pairs in response order for the input-order-restoration tests; an index
+    of ``None`` stands for an item whose ``index`` the endpoint omitted.
     """
     captured: dict[str, Any] = {"create_calls": []}
 
@@ -60,7 +61,7 @@ def _install_fake_openai(
         pass
 
     class _Item:
-        def __init__(self, index: int, embedding: list[float]) -> None:
+        def __init__(self, index: int | None, embedding: list[float]) -> None:
             self.index = index
             self.embedding = embedding
 
@@ -264,6 +265,31 @@ class TestOpenAIProvider:
         provider = OpenAIProvider(api_key="sk-test")
         result = provider.embed(["first", "second"])
         assert result == [[1.0, 2.0], [9.0, 8.0]]
+
+    def test_embed_treats_missing_first_index_as_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Gemini's compatibility endpoint omits ``index`` on input 0; the
+        # shuffled response checks that the item still sorts first (#2050).
+        _install_fake_openai(
+            monkeypatch,
+            indexed=[(2, [3.0]), (None, [1.0]), (1, [2.0])],
+        )
+        provider = OpenAIProvider(api_key="sk-test")
+        result = provider.embed(["a", "b", "c"])
+        assert result == [[1.0], [2.0], [3.0]]
+
+    def test_embed_keeps_response_order_when_no_index(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Every key is 0, so the stable sort leaves the response order alone.
+        _install_fake_openai(
+            monkeypatch,
+            indexed=[(None, [1.0]), (None, [2.0]), (None, [3.0])],
+        )
+        provider = OpenAIProvider(api_key="sk-test")
+        result = provider.embed(["a", "b", "c"])
+        assert result == [[1.0], [2.0], [3.0]]
 
     def test_embed_maps_sdk_error_to_runtime_error(
         self, monkeypatch: pytest.MonkeyPatch
