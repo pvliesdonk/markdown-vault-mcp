@@ -694,6 +694,31 @@ def test_a_plain_repository_write_is_refused_before_any_side_effect(
     )
 
 
+def _inject_gitfile_read_fault(
+    monkeypatch: pytest.MonkeyPatch, marker: Path
+) -> None:
+    """Install an accepted-size gitfile read fault after the first 4 KiB."""
+    real_open = Path.open
+
+    def opening(path: Path, *args: Any, **kw: Any) -> Any:
+        stream = real_open(path, *args, **kw)
+        if path == marker:
+            real_read = stream.read
+
+            def denied_read(size: int = -1) -> bytes:
+                data: bytes = real_read(size)
+                if len(data) > 4096:
+                    raise OSError(
+                        errno.EIO, "synthetic gitfile read failure", str(path)
+                    )
+                return data
+
+            monkeypatch.setattr(stream, "read", denied_read)
+        return stream
+
+    monkeypatch.setattr(Path, "open", opening)
+
+
 @pytest.mark.parametrize("fault", ["read", "launch"])
 @pytest.mark.parametrize("query", ["inside", "holding", "write"])
 def test_candidate_inspection_fault_prevents_mutation(
@@ -725,24 +750,7 @@ def test_candidate_inspection_fault_prevents_mutation(
             "fire",
             lambda *_a: pytest.fail("unexpected callback"),
         )
-    real_open = Path.open
     real_run = subprocess.run
-
-    def opening(path: Path, *args: Any, **kw: Any) -> Any:
-        stream = real_open(path, *args, **kw)
-        if path == nested / ".git":
-            real_read = stream.read
-
-            def denied_read(size: int = -1) -> bytes:
-                data: bytes = real_read(size)
-                if len(data) > 4096:
-                    raise OSError(
-                        errno.EIO, "synthetic gitfile read failure", str(path)
-                    )
-                return data
-
-            monkeypatch.setattr(stream, "read", denied_read)
-        return stream
 
     def missing_git(*args: Any, **kw: Any) -> Any:
         if "--resolve-git-dir" in args[0]:
@@ -750,7 +758,7 @@ def test_candidate_inspection_fault_prevents_mutation(
         return real_run(*args, **kw)
 
     if fault == "read":
-        monkeypatch.setattr(Path, "open", opening)
+        _inject_gitfile_read_fault(monkeypatch, nested / ".git")
     else:
         monkeypatch.setattr(
             "markdown_vault_mcp.git.submodules.subprocess.run", missing_git
