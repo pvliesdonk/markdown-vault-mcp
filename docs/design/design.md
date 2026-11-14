@@ -5791,7 +5791,7 @@ alongside the `Service` that owns the Vault lifecycle — start/stop orchestrati
 was moved there out of the template-owned `_server_deps.py` scaffold (#902/#910).
 Prompts are pure template functions with no vault dependency.
 
-**Resources**: the server exposes 6 read-only MCP resources:
+**Resources**: the server exposes these read-only MCP resources, among others:
 
 | URI | Source | Description |
 |-|-|-|
@@ -5801,8 +5801,9 @@ Prompts are pure template functions with no vault dependency.
 | ``tags://vault/{field}`` | ``ReaderFacet.list_tags(field)`` | Flat list for one field (template) |
 | ``folders://vault`` | ``ReaderFacet.list_folders()`` | Sorted folder path list |
 | ``toc://vault/{path}`` | ``ReaderFacet.get_toc(path)`` | Document headings (note) or per-note heading outline (folder subtree) |
+| ``okf://spec`` | ``static/okf/SPEC.md`` (package data) | The OKF v0.2 specification text, Markdown; tagged ``okf`` (see `okf.md` §1) |
 
-Resources return JSON (``mime_type="application/json"``). The ToC resource
+Resources return JSON (``mime_type="application/json"``), except ``okf://spec`` (``text/markdown``). The ToC resource
 queries the ``note_headings`` table (no file I/O; decision 38).
 
 **TOC surface** (``get_toc`` tool and ``toc://vault/{path}`` resource): dispatch is by suffix. Paths ending in ``.md`` are note mode; all other paths are folder-prefix mode.

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import functools
+import importlib.resources
 import json
 import logging
 from dataclasses import asdict
@@ -35,6 +36,26 @@ from .domain import get_vault
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+# The Open Knowledge Format specification this server implements, bundled so a
+# client with no web access can read it (#2090). static/okf/README.md records
+# where the file came from and how to replace it; the commit below is the one
+# docs/design/reference/okf-v0.2.md reads, so move the two together.
+_OKF_SPEC_FILE = importlib.resources.files("markdown_vault_mcp").joinpath(
+    "static/okf/SPEC.md"
+)
+_OKF_SPEC_COMMIT = "62432a095456147ee71e70ac6e4dc0d2dea3ac30"
+# Served ahead of the text: Apache-2.0 asks a redistributor to keep the
+# attribution with the work, and a reader needs to know which revision of an
+# unversioned amendment this is.
+_OKF_SPEC_NOTICE = (
+    "> Open Knowledge Format (OKF) specification, Version 0.2 as amended "
+    "2026-08-21, from the GoogleCloudPlatform/knowledge-catalog repository: "
+    "https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/"
+    f"{_OKF_SPEC_COMMIT}/okf/SPEC.md. Reproduced under the Apache License, "
+    "Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0), with trailing "
+    "whitespace removed and no other change.\n\n"
+)
 
 
 def _request_outcomes(
@@ -97,8 +118,17 @@ def _get_config(ctx: Context) -> ProjectConfig:
     return get_config(ctx)
 
 
+def _okf_spec_text() -> str:
+    """Return the bundled Open Knowledge Format specification.
+
+    Returns:
+        The attribution notice followed by the specification's Markdown.
+    """
+    return _OKF_SPEC_NOTICE + _OKF_SPEC_FILE.read_text(encoding="utf-8")
+
+
 def register_resources(mcp: FastMCP) -> None:
-    """Register all 8 MCP resources on *mcp*.
+    """Register all 9 MCP resources on *mcp*.
 
     Args:
         mcp: The :class:`~fastmcp.FastMCP` instance to register resources on.
@@ -258,3 +288,19 @@ def register_resources(mcp: FastMCP) -> None:
             for r in results
         ]
         return _stale_resource(vault, json.dumps(items), gen_before)
+
+    # Tagged "okf" so the pass that hides the OKF tools when the operator
+    # turns the format off hides this with them. It reads package data only,
+    # so it needs no vault and answers before the index is built.
+    @mcp.resource(
+        "okf://spec",
+        mime_type="text/markdown",
+        icons=_TOOL_ICONS["okf_validate"],
+        tags={"okf"},
+    )
+    async def okf_spec() -> ResourceResult:
+        """The Open Knowledge Format specification, version 0.2, that this server follows."""
+        text = await asyncio.to_thread(_okf_spec_text)
+        return ResourceResult(
+            contents=[ResourceContent(text, mime_type="text/markdown")]
+        )

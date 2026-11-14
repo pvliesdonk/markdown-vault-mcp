@@ -66,6 +66,14 @@ verified:
 ---
 ```
 
+## Reading the specification
+
+The server ships the text of the specification it follows, OKF version 0.2 as amended on August 21, 2026, and serves it as the `okf://spec` resource. A client that can't open a web page can read the format there, so the specification doesn't have to live in your vault as a note. The server's instructions name the resource, and it disappears with the OKF tools when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
+Whether an assistant can open a resource by itself depends on the client. Claude Code can; in other clients you may have to attach the resource to the conversation yourself. See [Resources](../reference/resources.md#reading-a-resource).
+
+The specification is published by the [knowledge-catalog](https://github.com/GoogleCloudPlatform/knowledge-catalog) project under the Apache License 2.0, and the resource opens with a notice naming the exact revision.
+
 ## Migrating an existing vault
 
 Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.

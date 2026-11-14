@@ -3024,6 +3024,67 @@ class TestResources:
             assert "notes" in data and data["path"] == "subfolder"
             assert isinstance(data["notes"], list)
 
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_okf_spec_resource_serves_the_bundled_spec(self) -> None:
+        """okf://spec is the spec's Markdown behind its attribution notice."""
+        from markdown_vault_mcp.resources import _OKF_SPEC_COMMIT
+
+        server = make_server()
+        async with Client(server) as client:
+            listed = {str(r.uri): r for r in await client.list_resources()}
+            result = await client.read_resource("okf://spec")
+
+        assert listed["okf://spec"].mime_type == "text/markdown"
+        assert listed["okf://spec"].description
+        assert result[0].mime_type == "text/markdown"
+        notice, _, spec = result[0].text.partition("\n\n")
+        assert notice.startswith("> Open Knowledge Format (OKF) specification")
+        assert _OKF_SPEC_COMMIT in notice
+        assert "Apache License, Version 2.0" in notice
+        assert spec.startswith("# Open Knowledge Format (OKF)\n\n**Version 0.2**")
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_okf_spec_resource_hidden_when_okf_is_off(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The operator's OKF veto removes the spec along with the OKF tools."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
+        server = make_server()
+        async with Client(server) as client:
+            uris = {str(r.uri) for r in await client.list_resources()}
+            with pytest.raises(MCPError):
+                await client.read_resource("okf://spec")
+
+        assert "okf://spec" not in uris
+        assert "config://vault" in uris
+        assert "okf://spec" not in (server.instructions or "")
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_instructions_name_the_okf_spec_resource(self) -> None:
+        """A model that never lists resources still learns the spec's URI."""
+        assert "'okf://spec'" in (make_server().instructions or "")
+
+    def test_bundled_okf_spec_is_the_pinned_revision(self) -> None:
+        """The shipped text is the revision the notice and the reference name.
+
+        The digest is of okf/SPEC.md at ``_OKF_SPEC_COMMIT`` with trailing
+        whitespace stripped (static/okf/README.md). A failure means the file
+        was edited or replaced without moving the commit, the notice and
+        docs/design/reference/okf-v0.2.md with it.
+        """
+        import hashlib
+        import importlib.resources
+
+        okf_dir = importlib.resources.files("markdown_vault_mcp").joinpath("static/okf")
+        spec = okf_dir.joinpath("SPEC.md").read_bytes()
+        assert hashlib.sha256(spec).hexdigest() == (
+            "852d74db823fbd7eb35781bfe643dcf6875897b11300375ee6da05e9a5057d1f"
+        )
+        # Apache-2.0 section 4(a): the licence travels with the work.
+        assert "Apache License" in okf_dir.joinpath("LICENSE").read_text(
+            encoding="utf-8"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Prompts
