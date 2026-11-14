@@ -166,7 +166,7 @@ class RevisionReader(Protocol):
 
 @runtime_checkable
 class SyncHealthReporter(Protocol):
-    """Whether a store's local copy is still reaching the remote it syncs with.
+    """Whether a store reports uncommitted work or unsuccessful remote sync.
 
     Deliberately separate from :class:`Syncer` (#1287): the write path needs
     to *ask* about replication without being able to drive it, and a store
@@ -175,11 +175,12 @@ class SyncHealthReporter(Protocol):
     """
 
     def sync_health(self) -> SyncHealth | None:
-        """Report a local copy that is known not to be reaching its remote.
+        """Report observed uncommitted work or a known remote failure.
 
         Returns:
-            The condition while it holds, or ``None`` when the store is
-            reaching its remote — or has no remote, or has not tried yet.
+            The condition while it holds, or ``None`` when the store
+            has no known local or remote problem. A store without a remote
+            can still report uncommitted work.
             Callers surface the difference between "something is wrong" and
             "nothing to report", never a healthy state object.
         """

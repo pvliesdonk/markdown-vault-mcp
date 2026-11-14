@@ -7,7 +7,8 @@ an agent whose only route to the repository is this server believes it saved
 work it did not save.
 
 :class:`SyncHealthTracker` is the one place that remembers whether the clone
-is reaching its remote.  The git layer feeds it the outcome of every push and
+is reaching its remote and whether startup found uncommitted files. The git
+layer feeds it working-tree observations and the outcome of every push and
 pull; the MCP write path reads :meth:`SyncHealthTracker.snapshot` and, while
 the clone is unsynced, says so on the write's own result.
 
@@ -19,6 +20,7 @@ Two properties matter for how it is used:
   write response block behind a pull.
 * **The log records transitions, not cycles.** Entering the unsynced state
   logs once at ERROR, with the cause git gave, and recovery once at INFO.
+  Startup dirt logs separately at WARNING and its clearance at INFO.
   The repeating per-cycle warning is what let the incident in #1287 run for
   hours unnoticed.  Push attempts that a write, a flush, or startup caused
   are the exception (#1330): each is one attempt per cause, so its rejection
@@ -63,7 +65,9 @@ _PULL_CONDITIONS = frozenset(
     }
 )
 
-_Kind = Literal["push", "pull"]
+_UNCOMMITTED = "uncommitted_changes"
+
+_Kind = Literal["push", "pull", "worktree"]
 
 #: Fragments git prints when a push is rejected because the remote holds
 #: commits the clone has not seen.  Git's wording is stable: both appear in
@@ -109,7 +113,7 @@ def push_failure_reason(stderr: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class SyncHealth:
-    """A clone that is known not to be reaching its remote.
+    """A clone with observed uncommitted work or failed replication.
 
     There is no healthy variant of this type — a healthy clone is reported as
     ``None``, so a caller that sees an instance at all knows something is
@@ -121,10 +125,10 @@ class SyncHealth:
             existence.
         reason: The ``PUSH_REASON_*`` / ``PULL_REASON_*`` code of the outcome
             that opened the condition still in force.  A push failure outranks
-            a pull failure: it is the half that strands the caller's writes.
-        since: When the clone was first observed not reaching its remote, in
-            UTC.  Dates the outage: it does not move when a second condition
-            opens, nor when one of two closes while the other still holds, and
+            a pull failure. ``uncommitted_changes`` outranks both: those
+            files are not safely recorded in a commit in the first place.
+        since: When the first outstanding condition was observed, in UTC.
+            Dates the outage: it does not move when a second condition opens, nor when one of two closes while the other still holds, and
             it restarts only after the clone has actually recovered.
     """
 
@@ -148,8 +152,13 @@ class SyncHealth:
             "reason": self.reason,
             "since": since,
             "detail": (
-                f"This vault's git clone has not reached its remote since {since} "
-                f"({self.reason}). Your content is committed locally only and is "
+                "Uncommitted changes were found in this vault's Git working tree. "
+                "They were not automatically committed or discarded. Inspect "
+                "git status and preserve or commit them before syncing."
+                if self.reason == _UNCOMMITTED
+                else f"This vault's git clone is not reaching its remote "
+                f"({self.reason}). A git health warning has been outstanding "
+                f"since {since}. Your content is committed locally only and is "
                 "not replicated — keep your own copy of anything written "
                 "meanwhile."
             ),
@@ -157,12 +166,13 @@ class SyncHealth:
 
 
 class SyncHealthTracker:
-    """Remember whether pushes and pulls are reaching the remote.
+    """Remember uncommitted startup work and unsuccessful remote sync.
 
     Push and pull are tracked as independent conditions, because recovering
     one does not recover the other: a clone can pull cleanly while every push
     is still rejected, which is exactly the incident in #1287.  The clone is
-    unsynced while either condition holds.
+    unsynced while either condition holds. Uncommitted startup work is a
+    third condition, cleared only by observing a clean working tree.
 
     Every method is safe to call from any thread.  Writers serialise on a
     lock private to this object — never the strategy-wide lock — and readers
@@ -184,9 +194,23 @@ class SyncHealthTracker:
 
         Returns:
             An immutable :class:`SyncHealth`, or ``None`` when the clone is
-            reaching its remote (or has not tried yet).
+            free of startup dirt and known remote failures.
         """
         return self._snapshot
+
+    def worktree_observed(self, *, dirty: bool) -> None:
+        """Record a startup-dirty tree, or a later observation that it is clean.
+
+        A remote success cannot recover uncommitted files. Only a successful
+        working-tree inspection clears this independent condition.
+
+        Args:
+            dirty: Whether the inspected index or working tree has changes.
+        """
+        if dirty:
+            self._open("worktree", _UNCOMMITTED, frozenset({_UNCOMMITTED}))
+        else:
+            self._close("worktree")
 
     def push_failed(self, reason: str, detail: str | None = None) -> None:
         """Record a push that did not reach the remote.
@@ -235,7 +259,7 @@ class SyncHealthTracker:
         """Open the *kind* condition, logging the transition into it once.
 
         Args:
-            kind: ``"push"`` or ``"pull"``.
+            kind: ``"push"``, ``"pull"`` or ``"worktree"``.
             reason: The ``*_REASON_*`` code.
             conditions: The codes that count as an outage for this kind.
             detail: Optional cause text carried onto the transition line.
@@ -249,6 +273,7 @@ class SyncHealthTracker:
                 )
                 return
             was_healthy = not self._reasons
+            remote_was_healthy = not (self._reasons.keys() & {"push", "pull"})
             if was_healthy:
                 # The outage starts here and is not restarted by a second
                 # condition opening, nor by the first one closing while the
@@ -256,7 +281,12 @@ class SyncHealthTracker:
                 self._outage_since = datetime.now(UTC)
             self._reasons[kind] = reason
             self._recompute()
-            if was_healthy:
+            if kind == "worktree":
+                logger.warning(
+                    "git_worktree_dirty reason=uncommitted_changes "
+                    "action=inspect_git_status recovery=manual"
+                )
+            elif remote_was_healthy:
                 # Placed last, where a cause that somehow kept a newline
                 # could not split an earlier field.
                 cause = one_line(detail) if detail else ""
@@ -271,7 +301,7 @@ class SyncHealthTracker:
                 logger.debug("git_remote_unsynced_also kind=%s reason=%s", kind, reason)
 
     def _close(self, kind: _Kind) -> None:
-        """Close the *kind* condition, logging recovery once when it was the last."""
+        """Close *kind*, logging tree and last-remote recovery independently."""
         with self._lock:
             if self._reasons.pop(kind, None) is None:
                 return
@@ -279,7 +309,9 @@ class SyncHealthTracker:
             if not self._reasons:
                 self._outage_since = None
             self._recompute()
-            if self._snapshot is None:
+            if kind == "worktree":
+                logger.info("git_worktree_clean")
+            elif not (self._reasons.keys() & {"push", "pull"}):
                 logger.info(
                     "git_remote_resynced kind=%s unsynced_since=%s",
                     kind,
@@ -294,7 +326,11 @@ class SyncHealthTracker:
         Called under :attr:`_lock`.  Publishes one fully built immutable
         object so a concurrent reader never observes a half-updated state.
         """
-        reason = self._reasons.get("push") or self._reasons.get("pull")
+        reason = (
+            self._reasons.get("worktree")
+            or self._reasons.get("push")
+            or self._reasons.get("pull")
+        )
         if reason is None or self._outage_since is None:
             self._snapshot = None
             return

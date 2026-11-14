@@ -80,15 +80,15 @@ def attach_remote_health(vault: Vault, data: dict[str, Any]) -> dict[str, Any]:
     write tool passes its result through here so that state travels with the
     write that is affected by it.
 
-    The key is **absent** whenever there is nothing to report — no git, no
-    remote, or a clone that is reaching it — so a healthy deployment's
-    responses are unchanged.
+    The key is **absent** whenever there is nothing to report: no git, or
+    no known startup dirt or replication failure. Commit-only vaults can
+    report startup dirt too; healthy deployments' responses are unchanged.
 
     What it can and cannot mean: the commit is dispatched off the request
     thread and the push is deferred behind an idle timer, so this reports the
-    sync health *known at response time*, never the fate of this particular
-    write.  A write made just as the remote broke can still answer clean; the
-    next one warns.
+    sync health *known at response time*, including uncommitted startup work,
+    never the fate of this particular write. A write made just as the remote
+    broke can still answer clean; the next one warns.
 
     Args:
         vault: The vault the write landed in.

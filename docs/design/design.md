@@ -6479,7 +6479,20 @@ what a delete or rename sweeps in; only the commit is shared.
 
 Startup recovery: `GitWriteStrategy` checks for unpushed local commits
 (`git log origin/<branch>..HEAD`) on first invocation and pushes them before
-accepting new writes.
+accepting new writes. Uncommitted files are not safe to recover automatically:
+they may belong to an operator, not the server. At construction with `repo_path`
+or explicit lifecycle startup, the strategy inspects the full repository with
+read-only `git status --porcelain=v1 -z`, including untracked but not ignored
+files. Startup dirt opens an independent `uncommitted_changes` health condition
+and logs `git_worktree_dirty` at WARNING, before a startup pull. Commit-only
+vaults report it too. Successful remote operations cannot clear it; only a
+successful clean status after a commit or during sync does so, logging
+`git_worktree_clean`. Failed inspection leaves the condition untouched and
+logs `git_worktree_check_failed`. Once clean, sampling stops to avoid labeling
+ordinary asynchronous writes as leftover startup work. Health reads remain
+lock-free cached observations; external repair is reflected at the next
+commit/sync check or restart. Direct lazy callbacks without `repo_path` or a
+startup lifecycle call do not claim to have observed the startup tree.
 
 **Deferred push mechanics**: the timer and pending-flag state live in a
 composed `PushScheduler` collaborator (`git/push_scheduler.py`, #893). It
@@ -6512,7 +6525,7 @@ path reports it.
   put a caller back to being told nothing while its commits were stranded.
   Reported on PR #1300; `tests/test_git_health.py` asserts the lock is held
   at each recording.
-- **Push and pull are independent conditions.** Either one holds the clone
+- **Push, pull and startup dirt are independent conditions.** Any one holds the clone
   unsynced, and `since` dates the outage rather than the surviving condition:
   it does not move when the older of two closes while the other still holds
   (also PR #1300). A successful pull does not clear a failed push: reading from the
@@ -6521,6 +6534,9 @@ path reports it.
   send (`push_failed`, `non_fast_forward`) or cannot reconcile
   (`conflict_resolution_failed`, `non_fast_forward_with_conflicts`) count;
   `fetch_failed` and `no_remote` are not evidence of stranded commits.
+  Startup `uncommitted_changes` takes precedence over remote reasons and uses
+  distinct diagnostic prose that never claims the files were committed.
+  Clearing it reveals any remote failure still outstanding.
 - **Reads take no lock.** The snapshot is one immutable object swapped
   atomically. The strategy-wide lock is held across a whole fetch + merge, so
   reading health under it would make every write response block behind a
