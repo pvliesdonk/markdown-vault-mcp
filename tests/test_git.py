@@ -49,43 +49,6 @@ def _write_conflict_files(
 
 
 @pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
-    """Create a minimal git repository for testing."""
-    import subprocess
-
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run(
-        ["git", "-C", str(repo), "init"],
-        capture_output=True,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(repo), "config", "user.email", "test@test.com"],
-        capture_output=True,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(repo), "config", "user.name", "Test"],
-        capture_output=True,
-        check=True,
-    )
-    # Create an initial commit so HEAD exists.
-    (repo / "README.md").write_text("# Test\n")
-    subprocess.run(
-        ["git", "-C", str(repo), "add", "."],
-        capture_output=True,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(repo), "commit", "-m", "init"],
-        capture_output=True,
-        check=True,
-    )
-    return repo
-
-
-@pytest.fixture
 def git_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
     """Create a working repo with a bare remote for push testing."""
     import subprocess
@@ -2077,17 +2040,17 @@ class TestGitSyncOnce:
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """_resolve_rebase_conflicts returns saved content when iteration limit hit."""
+        """Cap exhaustion saves one path and logs its distinct DEBUG event."""
         from types import SimpleNamespace
 
-        call_count = 0
+        continuations = 0
 
         def fake_run(
             cmd: list[str], **_kwargs: object
         ) -> SimpleNamespace | subprocess.CompletedProcess[bytes]:
-            nonlocal call_count
-            call_count += 1
+            nonlocal continuations
             # diff --name-only -z --diff-filter=U: always return a conflicting
             # file, NUL-terminated as the -z stream frames it.
             if "--diff-filter=U" in cmd:
@@ -2107,17 +2070,26 @@ class TestGitSyncOnce:
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
             # rebase --continue: always fail (simulates never-ending conflicts).
             if "rebase" in cmd and "--continue" in cmd:
+                continuations += 1
                 return SimpleNamespace(returncode=1, stdout="", stderr="conflict")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
 
-        result = conflict.resolve_rebase_conflicts(tmp_path, env=None)
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
+            result = conflict.resolve_rebase_conflicts(tmp_path, env=None)
 
         # The same file conflicted in all 50 iterations; deduplication keeps only
         # the last version, so the result is a single unique entry.
         assert len(result) == 1
         assert result[0] == ("README.md", "# MCP content\n")
+        assert continuations == 50
+        messages = [record.getMessage() for record in caplog.records]
+        assert (
+            "git_pull_conflict_resolution_exhausted max_iterations=50 saved_paths=1"
+            in messages
+        )
+        assert not any("git_pull_rebase_no_unmerged_paths" in m for m in messages)
 
     def test_write_conflict_files_commit_failure_returns_none(
         self,
@@ -4331,161 +4303,44 @@ class TestGetFileDiff:
                 summarize_binary=True,
             )
 
+    @pytest.mark.parametrize(
+        ("records", "current", "expected"),
+        [
+            (
+                "M\0other.md\0R092\0old\tname.md\0new\tname.md\0",
+                "new\tname.md",
+                "old\tname.md",
+            ),
+            ("M\0other.md\0A\0added.md\0", "missing.md", None),
+            (
+                "R092\0other_old.md\0other_new.md\0R100\0old.md\0target.md\0",
+                "target.md",
+                "old.md",
+            ),
+        ],
+        ids=["tab-name", "no-match", "skip-unrelated-rename"],
+    )
     def test_resolve_path_at_ref_handles_tab_in_filename(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        records: str,
+        current: str,
+        expected: str | None,
     ) -> None:
-        """_resolve_path_at_ref parses -z NUL output and tolerates tab in path."""
-        old_path = "dir/old\tname.md"
-        new_path = "dir/new\tname.md"
-        # Synthetic `git diff --name-status -z`: status\0path\0 (R adds 2nd path).
-        fake_stdout = f"M\0other.md\0R092\0{old_path}\0{new_path}\0"
+        """Usable NUL records preserve tabs and consume an unrelated rename fully."""
 
         def fake_run(
             *_args: object, **_kw: object
         ) -> subprocess.CompletedProcess[bytes]:
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
-            )
-
-        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
-        result = GitWriteStrategy._resolve_path_at_ref(
-            tmp_path, "deadbeef", new_path, env=None
-        )
-        assert result == old_path
-
-    def test_resolve_path_at_ref_returns_none_when_no_match(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """No rename row matching cur_rel -> None, not a crash."""
-        fake_stdout = "M\0other.md\0A\0added.md\0"
-
-        def fake_run(
-            *_args: object, **_kw: object
-        ) -> subprocess.CompletedProcess[bytes]:
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
-            )
+            return subprocess.CompletedProcess([], 0, records.encode(), b"")
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
         assert (
             GitWriteStrategy._resolve_path_at_ref(
-                tmp_path, "deadbeef", "missing.md", env=None
+                tmp_path, "deadbeef", current, env=None
             )
-            is None
-        )
-
-    def test_resolve_path_at_ref_skips_non_matching_rename(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Non-matching R entry advances i += 3 (does not re-read new-path as status)."""
-        # R row whose new-path is not cur_rel, followed by an M row.  If the
-        # parser advanced by 2 instead of 3 it would treat 'other_new.md' as the
-        # next status token and misread the stream; advancing by 3 lands on 'M'
-        # which doesn't match cur_rel either, so the final answer is None.
-        fake_stdout = "R092\0other_old.md\0other_new.md\0M\0target.md\0"
-
-        def fake_run(
-            *_args: object, **_kw: object
-        ) -> subprocess.CompletedProcess[bytes]:
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
-            )
-
-        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
-        assert (
-            GitWriteStrategy._resolve_path_at_ref(
-                tmp_path, "deadbeef", "target.md", env=None
-            )
-            is None
-        )
-
-    def test_resolve_path_at_ref_skips_copy_entries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """C<score> entries (copies) are skipped and the parser stays in sync.
-
-        A copied file renders as a plain add (git does not emit C* records
-        without ``--find-copies``), so its source path is not recovered.
-        The parser must advance past the three-token C* record (status + old +
-        new) with ``i += 3``, NOT ``i += 2``.
-
-        A single-entry fixture is insufficient: a lone C* record returns None
-        regardless of whether the C-branch exists (the loop just ends).  This
-        two-record fixture — a copy followed by a DIFFERENT rename — requires
-        the correct three-field advance to land on and parse the following R*
-        record.  With a wrong ``i += 2`` advance the loop desyncs and returns
-        None instead of the expected "old.md".
-        """
-        # C* (3 fields) followed immediately by R* (3 fields).
-        # The C* copy must be skipped with i += 3 so the R* is reached.
-        fake_stdout = (
-            "C092\x00copied_src.md\x00copied_dst.md\x00R100\x00old.md\x00wanted.md\x00"
-        )
-
-        def fake_run(
-            *_args: object, **_kw: object
-        ) -> subprocess.CompletedProcess[bytes]:
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
-            )
-
-        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
-        # The copy target ("copied_dst.md") must NOT be resolved.
-        assert (
-            GitWriteStrategy._resolve_path_at_ref(
-                tmp_path, "deadbeef", "copied_dst.md", env=None
-            )
-            is None
-        )
-        # The rename target ("wanted.md") MUST be resolved — only reachable if
-        # the C* record was consumed with the correct i += 3 advance.
-        assert (
-            GitWriteStrategy._resolve_path_at_ref(
-                tmp_path, "deadbeef", "wanted.md", env=None
-            )
-            == "old.md"
-        )
-
-    def test_resolve_path_at_ref_handles_truncated_rename_output(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Truncated R<score>\\0old\\0 (missing new-path) returns None without raising."""
-        fake_stdout = "R092\0old.md\0"
-
-        def fake_run(
-            *_args: object, **_kw: object
-        ) -> subprocess.CompletedProcess[bytes]:
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
-            )
-
-        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
-        assert (
-            GitWriteStrategy._resolve_path_at_ref(
-                tmp_path, "deadbeef", "target.md", env=None
-            )
-            is None
-        )
-
-    def test_resolve_path_at_ref_handles_truncated_else_output(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Truncated M\\0 (missing path) returns None without raising."""
-        fake_stdout = "M\0"
-
-        def fake_run(
-            *_args: object, **_kw: object
-        ) -> subprocess.CompletedProcess[bytes]:
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
-            )
-
-        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
-        assert (
-            GitWriteStrategy._resolve_path_at_ref(
-                tmp_path, "deadbeef", "target.md", env=None
-            )
-            is None
+            == expected
         )
 
     def test_git_log_failure_raises_value_error(self, tmp_path: Path) -> None:
@@ -6427,25 +6282,34 @@ class TestRenameStagingSkipsIgnoredPaths:
     def test_ignored_destination_still_records_the_deletion(
         self, git_repo: Path
     ) -> None:
-        """A tracked file moved *into* an ignored folder is deleted, not added.
+        """An ignored destination drops out without committing bystander work."""
+        from unittest.mock import patch
 
-        Only the ignored half drops out of the pathspec; the old path's
-        disappearance is still recorded, so git does not keep serving content
-        the vault no longer has there.
-        """
         from markdown_vault_mcp.git import _stage_and_commit
+        from tests.fixtures.git import _run_git
 
         self._seed(git_repo)
-
         old_abs = git_repo / "note.md"
         new_abs = git_repo / "cache" / "note.md"
         new_abs.parent.mkdir()
         old_abs.rename(new_abs)
+        bystander = git_repo / "bystander.md"
+        bystander.write_text("staged\n")
+        _run_git(git_repo, "add", "--", bystander.name)
+        bystander.write_text("unstaged\n")
 
-        _stage_and_commit(git_repo, new_abs, "rename", old_path=old_abs)
+        with patch(
+            "markdown_vault_mcp.git.strategy._ignored_paths",
+            return_value={str(new_abs)},
+        ) as probe:
+            _stage_and_commit(git_repo, new_abs, "rename", old_path=old_abs)
 
+        probe.assert_called_once_with(str(git_repo), (old_abs, new_abs))
         assert _commit_files(git_repo) == {"note.md"}
-        assert _worktree_status(git_repo) == set()
+        assert _worktree_status(git_repo) == {"AM bystander.md"}
+        assert _run_git(git_repo, "show", ":bystander.md") == "staged\n"
+        assert bystander.read_text() == "unstaged\n"
+        assert new_abs.exists()
 
     @staticmethod
     def _commit_legacy(repo: Path) -> Path:
@@ -6919,7 +6783,10 @@ class TestTheExcludeProbeIsAskedOnce:
 class TestTheExcludeProbeItself:
     """``_ignored_paths`` reports a subset, keyed by the strings it was given."""
 
-    def test_it_reports_only_the_excluded_paths(self, git_repo: Path) -> None:
+    @pytest.mark.parametrize("marker", ["\r", "\r\n", "\n", "\t", "é", "plain"])
+    def test_it_reports_only_the_excluded_paths(
+        self, git_repo: Path, marker: str
+    ) -> None:
         """A mixed batch comes back as the excluded subset, verbatim."""
         from markdown_vault_mcp.git.strategy import _ignored_paths
 
@@ -6928,8 +6795,8 @@ class TestTheExcludeProbeItself:
             ["git", "-C", str(git_repo), "add", "."], capture_output=True, check=True
         )
 
-        excluded = git_repo / "cache" / "junk.md"
-        kept = git_repo / "note.md"
+        excluded = git_repo / "cache" / f"{marker}note.md"
+        kept = git_repo / "\nnote.md"
 
         assert _ignored_paths(str(git_repo), (excluded, kept)) == {str(excluded)}
 
@@ -7079,21 +6946,33 @@ class TestQuotedPathsInLogReaders:
         # The point of the raw form: a caller can hand it straight back to git.
         assert (repo / entries[0].paths_changed[1]).exists()
 
-    def test_history_survives_a_quote_or_tab_in_the_name(self, tmp_path: Path) -> None:
-        """Names git quotes regardless of ``core.quotePath`` come back intact.
-
-        This is what ``-z`` buys over ``-c core.quotePath=false``, which leaves
-        these three quoted.
-        """
-        repo = self._repo(tmp_path)
-        names = ['quo"te.md', "ta\tb.md", "new\nline.md"]
+    @pytest.mark.parametrize("directory", [False, True])
+    def test_history_survives_a_quote_or_tab_in_the_name(
+        self, git_repo: Path, directory: bool
+    ) -> None:
+        """NUL framing and raw capture keep CR/CRLF distinct from an LF sibling."""
+        repo = git_repo
+        folder = repo / "notes"
+        folder.mkdir()
+        names = [
+            'notes/quo"te.md',
+            "notes/ta\tb.md",
+            "notes/new\nline.md",
+            *[
+                f"notes/{marker}note.md"
+                for marker in ("\r", "\r\n", "\n", "\t", "é", "plain")
+            ],
+        ]
         for name in names:
             (repo / name).write_text("x\n")
-        _commit_all(repo, "add: awkward names")
+        from tests.fixtures.git import _run_git
 
-        strategy = GitWriteStrategy()
-        entries = strategy.get_file_history(repo, path=None, since=None, limit=10)
+        _run_git(repo, "add", "--", *names)
+        _run_git(repo, "commit", "-qm", "add: awkward names")
 
+        entries = GitWriteStrategy().get_file_history(
+            repo, folder if directory else None, None, 10, is_dir=directory
+        )
         assert sorted(entries[0].paths_changed) == sorted(names)
 
     def test_per_commit_diff_of_a_renamed_non_ascii_note_is_not_empty(

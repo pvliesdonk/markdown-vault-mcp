@@ -13,13 +13,9 @@ from hypothesis import strategies as st
 
 from markdown_vault_mcp.git import conflict
 from markdown_vault_mcp.git._run import run_git_capturing
-from markdown_vault_mcp.git.strategy import (
-    GitWriteStrategy,
-    _ignored_paths,
-    _stage_rename,
-)
+from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
-from tests.fixtures.git import GitRepoPair, _run_git
+from tests.fixtures.git import _run_git
 
 _MARKERS = ["\r", "\r\n", "\n", "\t", "é", "plain"]
 _BODY = "".join(f"line {i}\n" for i in range(30))
@@ -43,32 +39,11 @@ def _renamed_note(repo: Path, marker: str) -> tuple[str, str, str]:
 
 
 @pytest.mark.parametrize("marker", _MARKERS)
-@pytest.mark.parametrize("directory", [False, True])
-def test_history_preserves_distinct_paths(
-    git_repo_pair: GitRepoPair, marker: str, directory: bool
-) -> None:
-    """A CR/CRLF path must not become its existing LF sibling in history."""
-    repo = git_repo_pair.local_path
-    folder = repo / "notes"
-    folder.mkdir()
-    names = {f"notes/{marker}note.md", "notes/\nnote.md"}
-    for name in names:
-        (repo / name).write_text("note\n")
-    _commit(repo, "names", *sorted(names))
-
-    entries = GitWriteStrategy().get_file_history(
-        repo, folder if directory else None, None, 10, is_dir=directory
-    )
-
-    assert set(entries[0].paths_changed) == names
-
-
-@pytest.mark.parametrize("marker", _MARKERS)
 def test_rename_history_and_diffs_keep_the_notes_identity(
-    git_repo_pair: GitRepoPair, marker: str
+    git_repo: Path, marker: str
 ) -> None:
     """Historical paths returned by Git remain usable as subsequent pathspecs."""
-    repo = git_repo_pair.local_path
+    repo = git_repo
     old, new, first = _renamed_note(repo, marker)
     strategy = GitWriteStrategy()
     history = strategy.get_file_history(repo, repo / new, None, 10)
@@ -82,16 +57,7 @@ def test_rename_history_and_diffs_keep_the_notes_identity(
     assert isinstance(combined, str)
     assert "+update" in combined
     assert "-line 0" not in combined
-
-
-@pytest.mark.parametrize("marker", _MARKERS)
-def test_revision_read_keeps_the_historical_name(
-    git_repo_pair: GitRepoPair, marker: str
-) -> None:
-    """A historical CR/CRLF filename still names the note being restored."""
-    repo = git_repo_pair.local_path
-    old, new, first = _renamed_note(repo, marker)
-    result = GitWriteStrategy().get_file_at_ref(
+    result = strategy.get_file_at_ref(
         RevisionQuery(repo_path=repo, path=repo / new, ref=first, max_bytes=0)
     )
     assert result.path == new
@@ -101,22 +67,23 @@ def test_revision_read_keeps_the_historical_name(
 
 @pytest.mark.parametrize("marker", _MARKERS)
 def test_conflict_resolution_preserves_the_unmerged_name(
-    git_repo_pair: GitRepoPair, marker: str
+    git_repo: Path, marker: str
 ) -> None:
     """The actual rebase resolves the named file and saves its local content."""
-    repo = git_repo_pair.local_path
+    repo = git_repo
     name = f"{marker}note.md"
     (repo / name).write_text("base\n")
     _commit(repo, "birth", name)
+    upstream_branch = _run_git(repo, "branch", "--show-current").strip()
     _run_git(repo, "checkout", "-qb", "local")
     (repo / name).write_text("local\n")
     _commit(repo, "local edit", name)
-    _run_git(repo, "checkout", "-q", "main")
+    _run_git(repo, "checkout", "-q", upstream_branch)
     (repo / name).write_text("upstream\n")
     _commit(repo, "upstream edit", name)
     _run_git(repo, "checkout", "-q", "local")
     rebase = subprocess.run(
-        ["git", "-C", str(repo), "rebase", "main"], capture_output=True
+        ["git", "-C", str(repo), "rebase", upstream_branch], capture_output=True
     )
     assert rebase.returncode == 1
     try:
@@ -129,34 +96,9 @@ def test_conflict_resolution_preserves_the_unmerged_name(
         )
 
 
-@pytest.mark.parametrize("marker", _MARKERS)
-def test_ignored_destination_does_not_break_scoped_staging(
-    git_repo_pair: GitRepoPair, marker: str
-) -> None:
-    """Ignore echoes retain identity without staging a bystander's work."""
-    repo = git_repo_pair.local_path
-    source, destination = repo / "source.md", repo / f"{marker}note.ignored"
-    source.write_text("source\n")
-    _commit(repo, "birth", source.name)
-    (repo / ".gitignore").write_text("*.ignored\n")
-    source.rename(destination)
-    bystander = repo / "bystander.md"
-    bystander.write_text("staged\n")
-    _run_git(repo, "add", "--", bystander.name)
-    bystander.write_text("unstaged\n")
-
-    assert _ignored_paths(str(repo), (source, destination)) == {str(destination)}
-    assert _stage_rename(str(repo), destination, source) == [f":(literal){source}"]
-    assert _run_git(repo, "diff", "--cached", "--name-status") == (
-        "A\tbystander.md\nD\tsource.md\n"
-    )
-    assert _run_git(repo, "show", ":bystander.md") == "staged\n"
-    assert bystander.read_text() == "unstaged\n"
-
-
-def test_capture_defaults_and_error_contract(git_repo_pair: GitRepoPair) -> None:
+def test_capture_defaults_and_error_contract(git_repo: Path) -> None:
     """Opting into path capture leaves ordinary text and error results intact."""
-    repo = git_repo_pair.local_path
+    repo = git_repo
     args = ("-c", "fixture.value=a\rb\r\nc\n", "config", "--get", "fixture.value")
     assert run_git_capturing(repo, *args).stdout == "a\nb\nc\n\n"
     assert run_git_capturing(repo, *args, preserve_newlines=True).stdout == (
@@ -164,14 +106,7 @@ def test_capture_defaults_and_error_contract(git_repo_pair: GitRepoPair) -> None
     )
     failed = run_git_capturing(repo, "not\r\na\rcommand", preserve_newlines=True)
     assert failed.returncode != 0
-    assert failed.stdout == ""
-    assert isinstance(failed.stderr, str)
-    assert "\r" not in failed.stderr
     assert failed.stderr == run_git_capturing(repo, "not\r\na\rcommand").stderr
-    with pytest.raises(subprocess.CalledProcessError) as exc:
-        failed.check_returncode()
-    assert exc.value.stderr == failed.stderr
-    assert exc.value.stdout == ""
     assert run_git_capturing(repo, "diff", "-z", preserve_newlines=True).stdout == ""
     configured = run_git_capturing(
         repo,

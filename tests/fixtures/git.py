@@ -1,12 +1,13 @@
 """Pytest fixtures for tests that need a real git repository.
 
 Provides:
+- :func:`git_repo`: a function-scoped local repository with one initial commit.
 - :class:`GitRepoPair`: a small named tuple bundling the bare-remote and
   local-clone paths produced by :func:`git_repo_pair`.
 - :func:`git_repo_pair`: a function-scoped fixture creating a fresh bare
   "remote" + local clone with one initial commit on ``main``.
 
-Both pieces are intentionally minimal so they can be reused for any future
+These fixtures are intentionally minimal so they can be reused for any future
 git-tool tests (force-pull, force-push, conflict resolution, etc.).  Every
 invocation gets its own ``tmp_path`` so tests do not pollute each other.
 """
@@ -59,6 +60,43 @@ def _run_git(cwd: Path, *args: str) -> str:
         text=True,
     )
     return result.stdout
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path) -> Path:
+    """Create a minimal git repository for testing."""
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "-C", str(repo), "init"],
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "test@test.com"],
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "Test"],
+        capture_output=True,
+        check=True,
+    )
+    # Create an initial commit so HEAD exists.
+    (repo / "README.md").write_text("# Test\n")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "."],
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "init"],
+        capture_output=True,
+        check=True,
+    )
+    return repo
 
 
 @pytest.fixture
