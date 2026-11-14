@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 import frontmatter as fm
+import yaml
+from pydantic_core import to_jsonable_python
 
-from markdown_vault_mcp._okf_decisions import DecisionError, DecisionsClient, _metric
+from markdown_vault_mcp._okf_decisions import (
+    DecisionError,
+    DecisionsClient,
+    _json_bounds,
+    _metric,
+)
 from markdown_vault_mcp._okf_write import OkfWriteIntent, okf_write_intent
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
@@ -25,7 +32,11 @@ from markdown_vault_mcp.okf import (
     okf_timestamp,
 )
 from markdown_vault_mcp.scanner import (
+    _blank_reference_definitions,
     _collect_reference_definitions,
+    _line_shape,
+    _make_reference_follow,
+    _paragraph_regions,
     _strip_fenced_code,
     _strip_inline_code,
     extract_links,
@@ -35,13 +46,17 @@ from markdown_vault_mcp.scanner import (
 from markdown_vault_mcp.utils import is_path_excluded, validate_path
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 from markdown_vault_mcp.utils.links import (
+    _follow_inline_destination,
     decode_markdown_destination,
-    iter_inline_links,
+    is_pointy_destination,
+    iter_bracket_links,
+    split_markdown_fragment,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from markdown_vault_mcp.types import LinkInfo
     from markdown_vault_mcp.vault import Vault
 
 _KEYS = frozenset({"type", "status", "description", "sources", "stale_after"})
@@ -121,12 +136,15 @@ def load_vocabulary(root: Path, path: str) -> Vocabulary:
         OSError: The vocabulary cannot be read.
     """
     absolute = validate_path(path, root)
-    if Path(path).is_absolute() or absolute.name in {
+    if Path(path).is_absolute() or {Path(path).name, absolute.name} & {
         *OKF_RESERVED_FILENAMES,
         "SKILL.md",
     }:
         raise ValueError("Vocabulary must name an ordinary vault-relative concept.")
-    metadata = parse_frontmatter(absolute.read_text(encoding="utf-8")).metadata
+    try:
+        metadata = parse_frontmatter(absolute.read_text(encoding="utf-8")).metadata
+    except yaml.YAMLError:
+        raise ValueError("Vocabulary YAML is invalid.") from None
     types, statuses = (
         _choices(metadata.get("types")),
         _choices(metadata.get("statuses")),
@@ -160,9 +178,12 @@ def load_vocabulary(root: Path, path: str) -> Vocabulary:
 def _paragraph(body: str) -> str | None:
     lines = body.splitlines()
     while lines:
+        if not lines[0].strip():
+            lines.pop(0)
+            continue
         if _non_prose(lines):
             return None
-        if not lines[0].strip() or re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0]):
+        if re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0]):
             lines.pop(0)
         elif len(lines) > 1 and re.fullmatch(r" {0,3}(?:=+|-+)\s*", lines[1]):
             del lines[:2]
@@ -185,8 +206,59 @@ def _non_prose(lines: list[str]) -> bool:
 
 
 def _first_block(lines: list[str]) -> list[str]:
-    end = next((i for i, line in enumerate(lines) if not line.strip()), len(lines))
-    return lines[:end]
+    for index, line in enumerate(lines):
+        if _line_shape(line, 0)[0] != "continuation" or _non_prose([line]):
+            return lines[:index]
+    return lines
+
+
+def _contained_source(link: LinkInfo, path: str, root: Path) -> str | None:
+    raw = link.raw_target
+    if link.link_type == "wikilink":
+        raw = raw.split("#", 1)[0]
+    else:
+        raw = raw[1:-1] if is_pointy_destination(raw) else raw
+        raw = decode_markdown_destination(split_markdown_fragment(raw)[0])
+    base = root if raw.startswith("/") else root / Path(path).parent
+    (base / raw.removeprefix("/")).resolve().relative_to(root.resolve())
+    resolved = validate_path(link.target_path, root)
+    return resolved.relative_to(root).as_posix() if resolved.is_file() else None
+
+
+def _source_tokens(region: str, definitions: dict[str, str]) -> list[str]:
+    spans: list[tuple[int, int]] = []
+    reference = _make_reference_follow(definitions)
+
+    def follow(text: str, start: int, close: int) -> tuple[str, int] | None:
+        inline = _follow_inline_destination(text, start, close)
+        matched = (inline[0][0], inline[1]) if inline else reference(text, start, close)
+        if matched is not None:
+            spans.append((start, matched[1]))
+        return matched
+
+    values = [
+        decode_markdown_destination(target)
+        for _, _, target, _ in iter_bracket_links(region, follow)
+    ]
+    # Callbacks observe image spans even though the native walker omits images.
+    for start, end in spans:
+        region = region[:start] + " " * (end - start) + region[end:]
+    values.extend(
+        _bare_url(match.group())
+        for match in re.finditer(r'https?://[^\s<>"\x00-\x20]+', region)
+    )
+    return values
+
+
+def _bare_url(value: str) -> str:
+    value = value.rstrip(".,;:!?")
+    pairs = {")": "(", "]": "[", "}": "{"}
+    while value and value[-1] in pairs:
+        closer = value[-1]
+        if value.count(closer) <= value.count(pairs[closer]):
+            break
+        value = value[:-1].rstrip(".,;:!?")
+    return value
 
 
 def _sources(body: str, path: str, root: Path | None) -> list[str]:
@@ -194,51 +266,28 @@ def _sources(body: str, path: str, root: Path | None) -> list[str]:
     if root is not None:
         for link in extract_links(body, path):
             try:
-                resolved = validate_path(link.target_path, root)
-                if resolved.is_file():
-                    candidates.append(resolved.relative_to(root).as_posix())
+                resource = _contained_source(link, path, root)
+                if resource:
+                    candidates.append(resource)
             except ValueError:
                 continue
     clean = _strip_inline_code(_strip_fenced_code(body))
-    links = list(iter_inline_links(clean))
-    external = [
-        decode_markdown_destination(link.raw_target)
-        for link in links
-        if link.open_index == 0 or clean[link.open_index - 1] != "!"
-    ]
-    external.extend(
-        decode_markdown_destination(value)
-        for value in _collect_reference_definitions(clean).values()
-    )
-    # Exclude link/image syntax before recognizing bare prose URL tokens.
-    for inline_link in reversed(links):
-        clean = (
-            clean[: inline_link.open_index]
-            + " " * (inline_link.end - inline_link.open_index)
-            + clean[inline_link.end :]
-        )
-    external.extend(
-        match.group().rstrip(".,;:!?)]}")
-        for match in re.finditer(r'https?://[^\s<>"\x00-\x20]+', clean)
-    )
-    for value in external:
-        try:
-            parsed = urlsplit(value)
-            if parsed.scheme in {"http", "https"} and parsed.hostname:
-                candidates.append(value)
-        except ValueError:
-            continue
+    definitions = _collect_reference_definitions(clean)
+    clean = _blank_reference_definitions(clean)
+    for region in _paragraph_regions(clean):
+        for value in _source_tokens(region, definitions):
+            try:
+                parsed = urlsplit(value)
+                if parsed.scheme in {"http", "https"} and parsed.hostname:
+                    candidates.append(value)
+            except ValueError:
+                continue
     return list(dict.fromkeys(candidates))
 
 
 def _json_value(value: Any) -> Any:
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {str(key): _json_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_value(item) for item in value]
-    return value
+    _json_bounds(value)
+    return to_jsonable_python(value)
 
 
 def _present(value: Any) -> bool:
@@ -558,6 +607,13 @@ def discover_notes(
             continue
         try:
             absolute = validate_path(path, root)
+            canonical = absolute.relative_to(root.resolve()).as_posix()
+            if (
+                absolute.name in {*OKF_RESERVED_FILENAMES, "SKILL.md"}
+                or absolute == (root / vocabulary_path).resolve()
+                or is_path_excluded(canonical, excludes)
+            ):
+                continue
             if guard is not None and guard.submodule_of(absolute):
                 continue
             recent = (
@@ -571,7 +627,7 @@ def discover_notes(
             )
             if recent or missing:
                 paths.add(path)
-        except (OSError, UnicodeError, ValueError):
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
             errors.append(
                 {
                     "path": path,

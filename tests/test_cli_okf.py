@@ -445,3 +445,62 @@ def test_text_decision_report_escapes_terminal_controls(
     assert result.exit_code == 0
     assert "\x1b" not in result.stdout and "0.1" in result.stdout
     assert "meaningful" in result.stdout and "\\u001b" in result.stdout
+
+
+def test_review_malformed_vocabulary_cli_is_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid operator YAML exits two without exposing its source content."""
+    _source(tmp_path, monkeypatch)
+    (tmp_path / "types.md").write_text("---\ntypes: [private-fixture-marker\n---\n")
+    result = runner.invoke(app, ["okf", "decide", "--missing-type", "--json"])
+    assert result.exit_code == 2
+    assert "private-fixture-marker" not in result.output
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_review_preserved_source_date_renders_after_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, json_output: bool
+) -> None:
+    """Reports retain native YAML dates without failing after an applied write."""
+    _source(tmp_path, monkeypatch)
+    (tmp_path / "note.md").write_text(
+        "---\nsources:\n  - resource: https://example.invalid/evidence\n    accessed: 2026-11-01\n---\nExact paragraph."
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    class FixtureClient(DecisionsClient):
+        def __init__(self, base_url: str, api_key: str) -> None:
+            super().__init__(base_url, api_key, transport=httpx.MockTransport(respond))
+
+    monkeypatch.setattr(_cli_okf, "DecisionsClient", FixtureClient)
+    args = ["okf", "decide", "--missing-type"] + (["--json"] if json_output else [])
+    result = runner.invoke(app, args)
+    assert "type: Reference" in (tmp_path / "note.md").read_text()
+    assert result.exit_code == 0
+    if json_output:
+        report = json.loads(result.stdout)
+        assert report["counts"]["written"] == 1
+        assert (
+            report["results"][0]["fields"]["sources"]["proposed"][0]["accessed"]
+            == "2026-11-01"
+        )
+    else:
+        assert '"disposition": "written"' in result.stdout
+        assert "2026-11-01" in result.stdout
+
+
+def test_review_native_invalid_configuration_returns_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The native configuration error class uses the safe invocation boundary."""
+    _source(tmp_path, monkeypatch)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "0")
+    result = runner.invoke(app, ["okf", "decide", "--missing-type", "--json"])
+    assert result.exit_code == 2
+    assert "Invalid Decisions" in result.output

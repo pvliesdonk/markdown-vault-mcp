@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import typer
+from pydantic_core import to_jsonable_python
 
 from markdown_vault_mcp._cli_output import terminal_text
 from markdown_vault_mcp._okf_decisions import DecisionsClient
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.config_sections._assembly import source_dir_problem
+from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git.submodules import SubmoduleGuard
 from markdown_vault_mcp.managers.okf_decide import (
     DecideReport,
@@ -83,10 +85,11 @@ def _policy(
 
 
 def _render(report: DecideReport, json_output: bool) -> NoReturn:
+    data = to_jsonable_python(asdict(report))
     if json_output:
-        typer.echo(json.dumps(asdict(report), ensure_ascii=False))
+        typer.echo(json.dumps(data, ensure_ascii=False))
     else:
-        for result in report.results:
+        for result in data["results"]:
             typer.echo(terminal_text(json.dumps(result, ensure_ascii=False)))
         typer.echo(f"{report.counts} {report.terminal_error or ''}")
     raise typer.Exit(report.exit_code())
@@ -154,7 +157,7 @@ def register_okf_commands(okf: typer.Typer) -> None:
                 _render(report, json_output)
             if not config.okf_decisions_api_key:
                 raise ValueError("Set OKF_DECISIONS_API_KEY or OPENAI_API_KEY.")
-        except (OSError, UnicodeError, ValueError) as error:
+        except (OSError, UnicodeError, ValueError, ConfigurationError) as error:
             raise typer.BadParameter(
                 "Invalid Decisions selection, configuration or vocabulary; check the local source, key and thresholds."
             ) from error

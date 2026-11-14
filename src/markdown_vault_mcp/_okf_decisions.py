@@ -23,15 +23,20 @@ class DecisionError(Exception):
 
 
 def _metric(value: Any) -> bool:
-    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
+    return type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value)
 
 
-def _json_bounds(value: Any, depth: int = 0) -> int:
-    if isinstance(value, (dict, list)):
+def _json_bounds(value: Any, depth: int = 0, budget: list[int] | None = None) -> int:
+    if budget is None:
+        budget = [10000]
+    budget[0] -= 1
+    if budget[0] < 0:
+        raise ValueError("Decisions JSON input exceeds 10,000 values.")
+    if isinstance(value, (dict, list, tuple, set, frozenset)):
         if depth >= 32:
             raise ValueError("Decisions JSON input exceeds 32 container levels.")
         children = value.values() if isinstance(value, dict) else value
-        return 1 + sum(_json_bounds(child, depth + 1) for child in children)
+        return 1 + sum(_json_bounds(child, depth + 1, budget) for child in children)
     return 1
 
 
@@ -65,8 +70,7 @@ def _validate_request(
 
 
 def _validate_json(data: Any) -> None:
-    if _json_bounds(data) > 10000:
-        raise ValueError("Decisions JSON input exceeds 10,000 values.")
+    _json_bounds(data)
     try:
         encoded = json.dumps(
             data, ensure_ascii=False, separators=(",", ":"), allow_nan=False

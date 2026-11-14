@@ -644,3 +644,189 @@ def test_source_candidates_reject_escaped_paths_and_bad_urls(tmp_path: Path) -> 
         ).bindings["sources"]
     finally:
         outside.unlink()
+
+
+@pytest.mark.parametrize(
+    "heading", ["# Next", "   ### Next ###", "- Next", "> Next", "```python"]
+)
+def test_review_paragraph_stops_at_interrupting_heading(
+    tmp_path: Path, heading: str
+) -> None:
+    """An ATX heading terminates the first paragraph without needing a blank."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    decision = build_questions(
+        "note.md",
+        {},
+        "First prose.\n" + heading + "\nLater prose.",
+        load_vocabulary(tmp_path, "types.md"),
+    )
+    assert decision.bindings["description"] == "First prose."
+
+
+@pytest.mark.parametrize("usage", ["![image][r]", "![r][]", "![r]", ""])
+def test_review_image_reference_is_not_source(tmp_path: Path, usage: str) -> None:
+    """Image-only and unused definitions do not become supporting prose URLs."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    decision = build_questions(
+        "note.md",
+        {},
+        usage + "\n\n[r]: https://example.invalid/image",
+        load_vocabulary(tmp_path, "types.md"),
+    )
+    assert decision.bindings["sources"] == {}
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "[escape](../fact.md)",
+        "[escape](%2e%2e/fact.md)",
+        "[[../fact]]",
+        "[escape][r]\n\n[r]: ../fact.md",
+    ],
+)
+def test_review_raw_traversal_is_not_source(tmp_path: Path, link: str) -> None:
+    """A clamped scanner path cannot turn root traversal into real evidence."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    (tmp_path / "fact.md").write_text("Contained fact.")
+    decision = build_questions(
+        "note.md", {}, link, load_vocabulary(tmp_path, "types.md")
+    )
+    assert decision.bindings["sources"] == {}
+
+
+def test_review_bad_vocabulary_yaml_is_value_error(tmp_path: Path) -> None:
+    """Operator YAML syntax errors follow the vocabulary validation boundary."""
+    (tmp_path / "types.md").write_text("---\ntypes: [\n---\n")
+    with pytest.raises(ValueError):
+        load_vocabulary(tmp_path, "types.md")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "![image](https://example.invalid/image)",
+        '![image](<https://example.invalid/image> "Title")',
+    ],
+)
+def test_review_inline_image_is_not_source(tmp_path: Path, body: str) -> None:
+    """Image destinations stay excluded from the later bare URL scan."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    decision = build_questions(
+        "note.md", {}, body, load_vocabulary(tmp_path, "types.md")
+    )
+    assert decision.bindings["sources"] == {}
+
+
+@pytest.mark.parametrize("suffix", [".", ").", "].", "}."])
+def test_review_balanced_bare_url_is_preserved(tmp_path: Path, suffix: str) -> None:
+    """Sentence punctuation is removed without damaging balanced URL syntax."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    decision = build_questions(
+        "note.md",
+        {},
+        "See https://example.invalid/Function_(mathematics)" + suffix,
+        load_vocabulary(tmp_path, "types.md"),
+    )
+    assert decision.bindings["sources"] == {
+        "sources:0": "https://example.invalid/Function_(mathematics)"
+    }
+
+
+@pytest.mark.parametrize("field", ["probability", "confidence", "distribution"])
+def test_review_huge_integer_reply_is_safe(field: str) -> None:
+    """Unbounded JSON integers are rejected without overflowing float coercion."""
+    answers = copy.deepcopy(ANSWERS)
+    if field == "probability":
+        answers[0]["probability"] = 10**1000
+    elif field == "confidence":
+        answers[1]["confidence"] = 10**1000
+    else:
+        answers[1]["probabilities"][0]["probability"] = 10**1000
+    client = DecisionsClient(
+        "https://fixture.invalid/v1",
+        "fixture",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"answers": answers})
+        ),
+    )
+    try:
+        with pytest.raises(DecisionError) as error:
+            client.decide(PARTS, QUESTIONS)
+        assert not error.value.terminal
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize("reserved", ["log.md", "SKILL.md"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_review_vocabulary_alias_cannot_hide_reserved_name(
+    tmp_path: Path, reserved: str, reverse: bool
+) -> None:
+    """Both operator spelling and canonical vocabulary names must be ordinary."""
+    actual, alias = ("types.md", reserved) if reverse else (reserved, "types.md")
+    (tmp_path / actual).write_text(vocabulary_text())
+    (tmp_path / alias).symlink_to(tmp_path / actual)
+    with pytest.raises(ValueError):
+        load_vocabulary(tmp_path, alias)
+
+
+@pytest.mark.parametrize(
+    "link", ["[fact](fact.md)", "[fact](/fact.md)", "[fact](../fact.md)", "[[../fact]]"]
+)
+def test_review_contained_source_controls(tmp_path: Path, link: str) -> None:
+    """Normal and parent-relative paths retain native contained source identity."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    (tmp_path / "fact.md").write_text("Fact.")
+    (tmp_path / "nested").mkdir()
+    body = (
+        link
+        if "../" in link or "/fact" in link
+        else link.replace("fact.md", "../fact.md")
+    )
+    decision = build_questions(
+        "nested/note.md", {}, body, load_vocabulary(tmp_path, "types.md")
+    )
+    assert decision.bindings["sources"] == {"sources:0": "fact.md"}
+
+
+def test_review_image_and_real_reference_control(tmp_path: Path) -> None:
+    """A destination also used as a real reference remains eligible evidence."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    body = "![diagram][r]\n\n[Evidence][r]\n\n[r]: https://example.invalid/evidence"
+    decision = build_questions(
+        "note.md", {}, body, load_vocabulary(tmp_path, "types.md")
+    )
+    assert decision.bindings["sources"] == {
+        "sources:0": "https://example.invalid/evidence"
+    }
+
+
+@pytest.mark.parametrize("shape", ["deep", "wide", "set"])
+def test_review_metadata_conversion_is_bounded(tmp_path: Path, shape: str) -> None:
+    """Metadata conversion enforces the request bounds before expanding aliases."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    value: Any = "leaf"
+    if shape == "deep":
+        for _ in range(33):
+            value = [value]
+    elif shape == "wide":
+        value = ["leaf"] * 10001
+    else:
+        value = set(range(10001))
+    with pytest.raises(ValueError):
+        build_questions(
+            "note.md", {"custom": value}, "Body.", load_vocabulary(tmp_path, "types.md")
+        )
+
+
+def test_review_whitespace_blank_before_first_prose(tmp_path: Path) -> None:
+    """Whitespace-only blank lines precede prose rather than becoming code blocks."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    decision = build_questions(
+        "note.md",
+        {},
+        "    \n\t\n# Title\n\nFirst prose.",
+        load_vocabulary(tmp_path, "types.md"),
+    )
+    assert decision.bindings["description"] == "First prose."

@@ -469,3 +469,73 @@ def test_prerequest_read_failures_keep_discovery_errors(
     finally:
         client.close()
         vault.close()
+
+
+def test_review_discovery_bad_yaml_retains_other_notes(tmp_path: Path) -> None:
+    """Malformed YAML is an observable per-note discovery failure."""
+    (tmp_path / "a.md").write_text("---\ncustom: [\n---\nBroken.")
+    (tmp_path / "b.md").write_text("Good.")
+    paths, errors = module.discover_notes(
+        tmp_path, DecideSelection(missing_type=True), "types.md"
+    )
+    assert paths == ["b.md"]
+    assert len(errors) == 1 and errors[0]["path"] == "a.md"
+
+
+@pytest.mark.parametrize("target", ["types.md", "log.md", "SKILL.md"])
+def test_review_discovery_excludes_canonical_aliases(
+    tmp_path: Path, target: str
+) -> None:
+    """A lexical alias cannot reintroduce vocabulary or reserved content."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    (tmp_path / target).write_text(vocabulary_text())
+    (tmp_path / "alias.md").symlink_to(tmp_path / target)
+    paths, errors = module.discover_notes(
+        tmp_path, DecideSelection(missing_type=True), "types.md"
+    )
+    assert paths == [] and errors == []
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["---\ncustom: [\n---\nBroken.", "---\ncustom: &cycle [*cycle]\n---\nCyclic."],
+)
+def test_review_bad_metadata_keeps_prior_and_later_reports(
+    tmp_path: Path, bad: str
+) -> None:
+    """YAML and cyclic metadata errors stay bounded to their own note."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    for name, text in (("a.md", "First."), ("b.md", bad), ("c.md", "Last.")):
+        (tmp_path / name).write_text(text)
+    submitted: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        submitted.append(payload["input"][0]["content"][0]["text"])
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1", "fixture", transport=httpx.MockTransport(respond)
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        report = OkfDecisionManager(
+            vault,
+            client,
+            DecisionPolicy(THRESHOLDS),
+            load_vocabulary(tmp_path, "types.md"),
+        ).decide(
+            DecideSelection(missing_type=True), discovery=(["a.md", "b.md", "c.md"], [])
+        )
+        assert [r["disposition"] for r in report.results] == [
+            "written",
+            "error",
+            "written",
+        ]
+        assert submitted == ["Path: a.md", "Path: c.md"]
+        assert report.exit_code() == 1
+    finally:
+        client.close()
+        vault.close()
