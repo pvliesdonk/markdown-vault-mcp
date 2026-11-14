@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from markdown_vault_mcp import tracker as tracker_module
 from markdown_vault_mcp.tracker import ChangeTracker
 from markdown_vault_mcp.types import Chunk, ParsedNote
 
@@ -1085,3 +1086,77 @@ def test_clearing_absent_skip_does_not_write_state(
 
     monkeypatch.setattr(tracker, "_save_state", fail)
     tracker.update_skip("live.md")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "{broken",
+        "[]",
+        '{"version": 3, "indexed": {"good.md": "hash"}}',
+        '{"version": 2, "indexed": []}',
+        '{"version": 2, "skipped": {"bad.md": null}}',
+        '{"version": 2, "skip_reasons": []}',
+        '{"version": 2, "skip_reasons": {"old.md": {"category": 7}}}',
+        '{"good.md": null}',
+    ],
+)
+def test_partial_skip_refuses_invalid_snapshot(tmp_path: Path, raw: str) -> None:
+    """A partial writer never replaces a snapshot it cannot preserve."""
+    path = tmp_path / "state.json"
+    path.write_text(raw)
+    tracker = ChangeTracker(path)
+    with pytest.raises(ValueError):
+        tracker.update_skip("new.md", content_hash="hash")
+    assert path.read_text() == raw
+    tracker.skip_reasons()  # Status remains best effort even for malformed state.
+
+
+def test_partial_skip_preserves_legacy_snapshot(tmp_path: Path) -> None:
+    """The valid legacy flat map is still a supported mutation input."""
+    path = tmp_path / "state.json"
+    path.write_text('{"good.md": "hash"}')
+    tracker = ChangeTracker(path)
+    tracker.update_skip("new.md", content_hash="")
+    assert tracker._load_state() == ({"good.md": "hash"}, {"new.md": ""}, {})
+
+
+def test_batch_skip_membership_follows_successful_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Later equivalent paths see transitions, and failed writes retain membership."""
+    tracker = ChangeTracker(tmp_path / "state.json")
+    known = tracker.skipped_paths()
+    tracker.update_skip("note.md", content_hash="", known_skips=known)
+    assert known == {"note.md"}
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise OSError("synthetic save failure")
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(tracker, "_save_state", fail)
+        with pytest.raises(OSError, match="synthetic save"):
+            tracker.update_skip("note.md", known_skips=known)
+    assert known == {"note.md"}
+    tracker.update_skip("note.md", known_skips=known)
+    assert known == set()
+    assert tracker._load_state() == ({}, {}, {})
+
+
+def test_partial_skip_refuses_failed_state_stat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An inaccessible snapshot is not mistaken for an absent first-run file."""
+    path = tmp_path / "state.json"
+    tracker = ChangeTracker(path)
+    tracker._save_state({"good.md": "hash"}, {}, {})
+    before = path.read_bytes()
+
+    def fail(_path: Path) -> bool:
+        raise PermissionError("synthetic state stat failure")
+
+    monkeypatch.setattr(tracker_module, "path_exists", fail)
+    with pytest.raises(PermissionError, match="synthetic state stat"):
+        tracker.update_skip("note.md", content_hash="hash")
+    assert tracker.skip_reasons() == {}
+    assert path.read_bytes() == before

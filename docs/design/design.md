@@ -755,6 +755,13 @@ tracker's `skip_reasons` registry, which stays authoritative for
 skip-recording pipelines (`build_index`, `reindex`/`_parse_changed_notes`,
 `process_dirty_paths`). Dirty refreshes persist their per-path registry
 update after the FTS mutation succeeds, before reporting that path refreshed.
+Dirty paths use the scanner's relative POSIX spelling, including when callers
+use `./note.md`. Missing-frontmatter skips retain the parsed bytes' hash;
+dirty YAML failures use an empty tracker hash to force a scan retry, because
+a later hash could describe repaired bytes. Partial registry writes refuse
+unreadable, malformed or unsupported-version state rather than replace it;
+status reads remain best effort. One strict membership snapshot per dirty
+batch avoids reading the full state for each ordinary successful path.
 `IndexManager._sync_tombstones` garbage-collects
 tombstones whose path left the registry (a skipped file deleted from disk
 leaves the registry silently — it was never indexed — so its tombstone is
@@ -5353,7 +5360,9 @@ class ChangeTracker:
                          skip_reasons: dict[str, dict[str, str]] | None = None) -> None: ...
     def skip_reasons(self) -> dict[str, dict[str, str]]: ...
     def update_skip(self, path: str, *, content_hash: str | None = None,
-                    reason: dict[str, str] | None = None) -> None: ...
+                    reason: dict[str, str] | None = None,
+                    known_skips: set[str] | None = None) -> None: ...
+    def skipped_paths(self) -> set[str]: ...
     def reset(self) -> None: ...
 ```
 

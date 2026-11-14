@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import pytest
 from hypothesis import example, given, settings
@@ -18,6 +19,7 @@ from tests.test_managers_index import _make_index_mgr
 
 if TYPE_CHECKING:
     from os import stat_result
+    from typing import IO, Any
 
 
 @settings(max_examples=40, deadline=None)
@@ -87,7 +89,10 @@ def test_dirty_skip_transitions_match_disk(operations: list[str]) -> None:
                     "category": row["skip_category"],
                     "detail": row["skip_detail"],
                 }
-                assert tracker._load_state()[1][row["path"]] == row["content_hash"]
+                expected_hash = (
+                    "" if row["skip_category"] == "parse_error" else row["content_hash"]
+                )
+                assert tracker._load_state()[1][row["path"]] == expected_hash
             assert tracker._load_state()[0]["good.md"] == unrelated_hash
             assert (
                 ChangeTracker(base / "state.json").skip_reasons()
@@ -238,4 +243,107 @@ def test_excluding_dirty_skip_clears_status(tmp_path: Path) -> None:
     excluded.process_dirty_paths({"note.md"})
     assert excluded.skipped_files() == []
     assert fts.get_tombstone("note.md") is None
+    fts.close()
+
+
+def test_yaml_repaired_before_later_hash_is_reparsed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later digest cannot certify repaired bytes as the earlier parse failure."""
+    path = tmp_path / "note.md"
+    path.write_text("---\ntitle: [unclosed\n---\nbody\n")
+    mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path)
+    original_hash = index_module.compute_file_hash
+
+    def repair_then_hash(item: Path) -> str:
+        item.write_text("---\ntitle: Repaired\n---\nbody\n")
+        return original_hash(item)
+
+    monkeypatch.setattr(index_module, "compute_file_hash", repair_then_hash)
+    mgr.process_dirty_paths({"note.md"})
+    assert mgr.skipped_files()[0].category == "parse_error"
+    mgr.reindex()
+    assert mgr.skipped_files() == []
+    assert fts.get_note("note.md") is not None
+    fts.close()
+
+
+@pytest.mark.parametrize("operation", ["repair", "delete", "rename"])
+def test_equivalent_writer_path_clears_canonical_skip(
+    tmp_path: Path, operation: str
+) -> None:
+    """Native writer operations with ./ use the scanner's status identity."""
+    (tmp_path / "note.md").write_text("untitled\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
+    )
+    try:
+        vault.index.build_index()
+        if operation == "repair":
+            vault.writer.write("./note.md", "---\ntitle: Repaired\n---\nbody\n")
+        elif operation == "delete":
+            vault.writer.delete("./note.md")
+        else:
+            vault.writer.rename("./note.md", "moved.md")
+        assert vault.index.wait_for_drain(timeout=5)
+        expected = ["moved.md"] if operation == "rename" else []
+        status = vault.index.get_index_status()
+        assert [skip["path"] for skip in status["skipped_files"]] == expected
+    finally:
+        vault.close()
+
+
+def test_ordinary_dirty_batch_reads_tracker_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Multiple valid dirty notes share one snapshot and perform no state saves."""
+    tracker = ChangeTracker(tmp_path / "state.json")
+    mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path, tracker=tracker)
+    tracker._save_state(
+        {"unrelated.md": "indexed-hash"}, {"skipped.md": "skip-hash"}, {}
+    )
+    paths = {f"note-{number}.md" for number in range(4)}
+    for path in paths:
+        (tmp_path / path).write_text("# Valid\nbody\n")
+    load = Mock(wraps=tracker._load_state)
+    save = Mock(wraps=tracker._save_state)
+    monkeypatch.setattr(tracker, "_load_state", load)
+    monkeypatch.setattr(tracker, "_save_state", save)
+    mgr.process_dirty_paths(paths)
+    assert load.call_count == 1
+    assert save.call_count == 0
+    fts.close()
+
+
+def test_unreadable_tracker_fails_batch_without_callback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation read failures preserve bytes, retry paths and graph recovery."""
+    path = tmp_path / "state.json"
+    tracker = ChangeTracker(path)
+    tracker._save_state({"good.md": "old-hash"}, {}, {})
+    before = path.read_bytes()
+    (tmp_path / "note.md").write_text("untitled\n")
+    mgr, fts, _ = _make_index_mgr(
+        tmp_path, tmp_path, tracker=tracker, required_frontmatter=["title"]
+    )
+    original_open = Path.open
+
+    def fail_read(item: Path, *args: object, **kwargs: object) -> IO[Any]:
+        if item == path:
+            raise PermissionError("synthetic tracker read failure")
+        return original_open(item, *args, **kwargs)
+
+    recovered = Mock(wraps=fts.resolve_vault_wikilinks)
+    refreshed: list[str] = []
+    monkeypatch.setattr(fts, "resolve_vault_wikilinks", recovered)
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Path, "open", fail_read)
+        with pytest.raises(PermissionError, match="synthetic tracker"):
+            mgr.process_dirty_paths({"note.md"}, on_refreshed=refreshed.append)
+        assert tracker.skip_reasons() == {}
+    assert path.read_bytes() == before
+    assert refreshed == []
+    assert recovered.call_count == 1
     fts.close()
