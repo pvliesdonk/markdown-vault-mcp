@@ -755,8 +755,8 @@ tracker's `skip_reasons` registry, which stays authoritative for
 skip-recording pipelines (`build_index`, `reindex`/`_parse_changed_notes`,
 `process_dirty_paths`). Dirty refreshes persist their per-path registry
 update after the FTS mutation succeeds, before reporting that path refreshed.
-Dirty paths use the scanner's relative POSIX spelling, including when callers
-use `./note.md`. Missing-frontmatter skips retain the parsed bytes' hash;
+Dirty-refresh skip-status entries use the scanner's relative POSIX spelling,
+including when callers use `./note.md`. Missing-frontmatter skips retain the parsed bytes' hash;
 dirty YAML failures use an empty tracker hash to force a scan retry, because
 a later hash could describe repaired bytes. Partial registry writes refuse
 unreadable, malformed or unsupported-version state rather than replace it;
