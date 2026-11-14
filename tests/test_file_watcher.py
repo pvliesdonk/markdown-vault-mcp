@@ -24,8 +24,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from hypothesis import HealthCheck, example, given, settings
+from hypothesis import strategies as st
 from watchdog.events import (
     DirModifiedEvent,
+    DirMovedEvent,
     FileClosedEvent,
     FileClosedNoWriteEvent,
     FileCreatedEvent,
@@ -171,9 +174,109 @@ def test_mutating_event_in_hidden_dir_still_ignored(tmp_path: Path) -> None:
     assert calls == [], "mutations inside hidden dirs must not schedule a reindex"
 
 
+def test_hidden_temp_move_schedules(tmp_path: Path) -> None:
+    """A hidden staging move schedules even when its root event is ignored."""
+    root = tmp_path / "notes"
+    handler, calls = _record_handler(root)
+    handler.on_any_event(
+        FileMovedEvent(str(root / ".save.tmp"), str(root / "today.md"))
+    )
+    handler.on_any_event(DirModifiedEvent(str(root)))
+    assert calls == [1]
+
+
+@pytest.mark.parametrize("event_type", [FileMovedEvent, DirMovedEvent])
+@pytest.mark.parametrize(
+    ("endpoints", "expected"),
+    [
+        (("notes/.save.tmp", "notes/today ü.md"), [1]),
+        (("notes/today ü.md", "notes/.save.tmp"), [1]),
+        (("notes/today ü.md", "notes/renamed.md"), [1]),
+        (("notes/.save.tmp", "notes/.other.tmp"), []),
+        (("notes/.staging/save.tmp", "notes/today ü.md"), [1]),
+        (("notes/.staging/save.tmp", "notes/.hidden/today.md"), []),
+        (("outside/save.tmp", "notes/today ü.md"), [1]),
+        (("notes/today ü.md", "outside/save.tmp"), [1]),
+        (("outside/save.tmp", "outside/today.md"), []),
+        (("", "notes/today ü.md"), [1]),
+        (("notes/today ü.md", ""), [1]),
+        (("", ""), []),
+        (("notes", "notes/.save.tmp"), []),
+        (("notes/.save.tmp", "notes"), []),
+        (("notes", "notes/today ü.md"), [1]),
+    ],
+)
+@settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(
+    visible_name=st.text(
+        alphabet=st.characters(categories=("L", "N"), include_characters=" "),
+        min_size=1,
+        max_size=32,
+    ).map(lambda stem: f"{stem}.md")
+)
+@example(visible_name="today ü.md")
+def test_move_endpoint_relevance(
+    tmp_path: Path,
+    event_type: type[FileMovedEvent] | type[DirMovedEvent],
+    endpoints: tuple[str, str],
+    expected: list[int],
+    visible_name: str,
+) -> None:
+    """Either eligible move endpoint schedules once across visible basenames.
+
+    The tmp_path fixture supplies only an immutable root; each example uses a
+    fresh handler and call log without creating files.
+    """
+    source, destination = (
+        endpoint.replace("today ü.md", visible_name) for endpoint in endpoints
+    )
+    handler, calls = _record_handler(tmp_path / "notes")
+    handler.on_any_event(
+        event_type(
+            str(tmp_path / source) if source else "",
+            str(tmp_path / destination) if destination else "",
+        )
+    )
+    assert calls == expected
+
+
+def test_hidden_temp_move_on_dot_root_schedules(tmp_path: Path) -> None:
+    """A watched dot-root admits visible destinations of hidden staging moves."""
+    root = tmp_path / ".claude"
+    handler, calls = _record_handler(root)
+    handler.on_any_event(
+        FileMovedEvent(str(root / ".save.tmp"), str(root / "today.md"))
+    )
+    assert calls == [1]
+
+
 # ---------------------------------------------------------------------------
 # Core debounce behaviour
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("temp_name", [".save.tmp", "save.tmp"])
+def test_temp_replacement_triggers_on_change(tmp_path: Path, temp_name: str) -> None:
+    """Replacing a note from hidden or visible staging reaches the callback."""
+    vault = tmp_path / "vault"
+    notes = vault / "notes"
+    notes.mkdir(parents=True)
+    target = notes / "today.md"
+    source = notes / temp_name
+    target.write_bytes(b"old note")
+    source.write_bytes(b"replacement note")
+    changed = threading.Event()
+    watcher = VaultFileWatcher(vault, changed.set, debounce_s=0.1)
+    try:
+        watcher.start()
+        source.replace(target)
+        assert target.read_bytes() == b"replacement note"
+        assert changed.wait(timeout=2.0)
+    finally:
+        watcher.stop()
 
 
 def test_file_change_triggers_on_change(tmp_path: Path) -> None:
