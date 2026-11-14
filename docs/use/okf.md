@@ -55,7 +55,9 @@ For a file whose resolved target has the exact name `SKILL.md`, OKF reads take `
 such as `name` and `description` keep their original meaning.
 
 Search filters, `list_tags`, ranking, audit, statistics and graph labels use that same
-identity. Indexed aliases keep their own paths and count as separate rows.
+identity. Interpreted skill metadata is read from the current file to preserve
+YAML value types; malformed or unreadable skills report the native failure.
+Indexed aliases keep their own paths and count as separate rows.
 Whole-note reads expose structured provenance and sources; search
 hits count sources. The original `frontmatter` mapping and file bytes stay
 unchanged. Exact structured queries retain literal YAML paths, so nested
@@ -77,10 +79,14 @@ After a native write, the existing index refresh updates all already indexed
 names for that target, including aliases. Use `wait_for_pending_writes` when a
 query must see that refresh. File replacement and index refresh are asynchronous
 steps, without a transaction spanning both. This adds no watcher for external
-symlink retargeting.
+symlink retargeting. Explicit reindexing and reopening a writable index
+reconcile changed skill authority even when the target bytes are identical.
+This reads and parses live frontmatter; unchanged aliases still reuse a
+compatible index without indexing chunks again.
 
 A shared disk index must have the current derivation version and the same
 indexed field set as the reader; order and repeated fields do not matter.
+Local disk search uses the same adoption check as other disk readers.
 An incompatible reader or an index without current field-set evidence refuses
 instead of returning incomplete filtered results. Use matching reader settings
 and version. For older indexes, run `admin index` through the owning process

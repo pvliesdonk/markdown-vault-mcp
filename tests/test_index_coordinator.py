@@ -1711,3 +1711,60 @@ def test_alias_refresh_failure_reexpands_original_dirty_snapshot(  # noqa: PLR09
         assert coord._fts.get_note("unknown.md") is None
     finally:
         coord.close(timeout=5)
+
+
+@pytest.mark.parametrize("refresh", ["reindex", "reopen"])
+@pytest.mark.parametrize(
+    ("name", "metadata", "expected_type"),
+    [
+        ("ordinary.md", "topics: [2026-01-01]\n", None),
+        ("SKILL.md", "metadata: {type: 2026-01-01}\n", "Skill"),
+        ("SKILL.md", "metadata: {type: '2026-01-01'}\n", "2026-01-01"),
+    ],
+    ids=["list-date", "nested-type-date", "quoted-type-date"],
+)
+def test_unchanged_yaml_types_preserve_native_reuse(
+    tmp_path: Path, refresh: str, name: str, metadata: str, expected_type: str | None
+) -> None:
+    """Serialized dates must not make unchanged derived rows appear stale forever."""
+    from markdown_vault_mcp._cli_read import read_payload
+    from markdown_vault_mcp.vault import Vault
+
+    path = tmp_path / name
+    path.write_text("---\n" + metadata + "---\n# Zebra\n\nzebra instructions\n")
+    settings = VaultSettings(
+        okf_mode="on",
+        index_path=tmp_path / "index.sqlite",
+        indexed_frontmatter_fields=["type", "topics"],
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        vault.index.build_index()
+        before = path.read_bytes(), vault._fts.get_note(name)["content_hash"]
+        if refresh == "reindex":
+            result = vault.index.reindex()
+            assert result.modified == 0
+        else:
+            vault.close()
+            vault = Vault(source_dir=tmp_path, settings=settings)
+            assert vault.index.build_index().chunks_indexed == 0
+        assert (path.read_bytes(), vault._fts.get_note(name)["content_hash"]) == before
+        if expected_type is not None:
+            assert read_payload(vault, name)["okf"]["type"] == expected_type
+            assert {
+                hit.path
+                for hit in vault.reader.search(
+                    "zebra", mode="keyword", filters={"type": expected_type}
+                )
+            } == {name}
+            assert {
+                note.path
+                for note in vault.reader.list_documents(filters={"type": expected_type})
+            } == {name}
+            assert vault.reader.okf_stats()["types"] == {expected_type: 1}
+            assert (
+                vault.graph.get_neighborhood(name, depth=0).nodes[0].note_type
+                == expected_type
+            )
+    finally:
+        vault.close()

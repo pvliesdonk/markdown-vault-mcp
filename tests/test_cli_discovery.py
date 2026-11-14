@@ -1025,3 +1025,64 @@ def test_remote_annotations_never_resolve_server_paths(
         )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == payload
+
+
+@pytest.mark.parametrize("stored", ["legacy11", "namespace12", "compatible"])
+@pytest.mark.parametrize("predicate", ["type=Runbook", "type=Reference"])
+def test_disk_search_adopts_compatible_tag_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stored: str, predicate: str
+) -> None:
+    """Local search refuses unreadable tag namespaces without writing shared files."""
+    import sqlite3
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "SKILL.md").write_text(
+        "---\ntype: Literal\nmetadata: {type: Runbook}\n---\n# Zebra\n\nzebra instructions\n"
+    )
+    (source / "ordinary.md").write_text(
+        "---\ntype: Reference\n---\n# Zebra\n\nzebra reference\n"
+    )
+    index = tmp_path / "index.sqlite"
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(
+            okf_mode="on",
+            index_path=index,
+            indexed_frontmatter_fields=["type"],
+        ),
+    )
+    try:
+        vault.index.build_index()
+    finally:
+        vault.close()
+    if stored == "legacy11":
+        # Reproduce the old producer's literal rows and semantics marker.
+        with sqlite3.connect(index) as conn:
+            conn.execute(
+                "UPDATE meta SET value='11' WHERE key='index_semantics_version'"
+            )
+            conn.execute("DELETE FROM document_tags WHERE tag_key != 'type'")
+            conn.execute("DELETE FROM meta WHERE key='indexed_frontmatter_fields_json'")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
+        "type,__okf__:type" if stored == "namespace12" else "type",
+    )
+    before = index.read_bytes()
+    result = CliRunner().invoke(
+        app, ["search", "zebra", "--local", "--json", "--filter", predicate]
+    )
+    assert index.read_bytes() == before
+    if stored == "compatible":
+        assert result.exit_code == 0, result.output
+        expected = ["SKILL.md"] if predicate == "type=Runbook" else ["ordinary.md"]
+        assert [hit["path"] for hit in json.loads(result.stdout)] == expected
+    else:
+        assert result.exit_code == 1, result.output
+        assert result.stdout == ""
+        assert "admin index" in result.stderr

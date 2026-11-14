@@ -286,6 +286,11 @@ legacy comma text, even when that text looks like JSON. Missing evidence
 requires one owning-process rebuild; a shared reader refuses without writing
 or scanning. Other stored producer settings remain authoritative.
 
+Interpreted skill consumers read and parse current skill frontmatter to retain
+YAML types lost by JSON storage, then project only the six families. Unrelated
+held discovery fields, ordinary notes and inactive reads keep their prior views.
+Native read/parse faults propagate; async annotation reads stay in workers.
+
 Each search or filtered listing captures activation once and reuses it through
 filtering, ranking and snippet selection. The next request probes again.
 
@@ -304,7 +309,13 @@ spellings of their resolved targets. It discovers no new aliases or targets.
 Identity faults preserve original retry input while healthy refreshes still
 notify embeddings; retries recompute the current population. Filesystem writes
 and SQL refresh are asynchronous, not a cross-store transaction. External
-symlink retargeting gains no new watcher policy.
+symlink retargeting gains no new watcher policy. Explicit reindex supplements
+byte changes with a comparison of stored tags against the current resolved
+authority, using the same row derivation as insertion. Warm reuse performs
+that read-only comparison too, reading and parsing current live frontmatter
+to retain YAML value types; mismatches dispatch the native rebuild while
+unchanged aliases retain warm reuse. Raw hashes and etags remain byte-based.
+The dirty population snapshot selects only paths, including tombstones.
 
 ## 4. Layer 2 — query dimensions, and `okf_validate`
 

@@ -100,7 +100,7 @@ def annotate_hits(
     Args:
         results: Serialized hits, mutated in place.
         annotation: Native annotation function, or None for an inactive bundle.
-        source_dir: Vault root for resolved indexed identity; no content reread.
+        source_dir: Vault root for identity and typed skill-family reads.
 
     Returns:
         Hits with native annotations; ordinary vaults remain unchanged.

@@ -68,7 +68,7 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Collection, Iterable, Iterator
 
     from markdown_vault_mcp.query_types import (
         NoteAggregate,
@@ -1323,16 +1323,31 @@ class FTSIndex:
             document_id: The ``id`` of the parent document row.
             note: Parsed document whose frontmatter is to be indexed.
         """
+        for key, value in self._tag_rows(
+            note.frontmatter,
+            note.path,
+            note.okf_authority_path
+            if note.okf_authority_path is not None
+            else note.path,
+        ):
+            cur.execute(
+                "INSERT OR IGNORE INTO document_tags "
+                "(document_id, tag_key, tag_value) VALUES (?, ?, ?)",
+                (document_id, key, value),
+            )
+
+    def _tag_rows(
+        self, frontmatter: dict[str, Any], path: str, authority_path: str
+    ) -> Iterator[tuple[str, str]]:
+        """Derive the same literal/effective scalar rows for insertion and validation."""
         if not self._indexed_fields:
             return
 
         metadata = effective_okf_metadata(
-            note.frontmatter,
-            path=note.okf_authority_path
-            if note.okf_authority_path is not None
-            else note.path,
+            frontmatter,
+            path=authority_path,
         )
-        values = {key: note.frontmatter.get(key) for key in self._indexed_fields}
+        values = {key: frontmatter.get(key) for key in self._indexed_fields}
         values.update(
             {
                 _effective_okf_tag_key(key, self._indexed_fields): metadata.get(key)
@@ -1356,31 +1371,60 @@ class FTSIndex:
                         tag_val = str(item)
                         if tag_val not in seen:
                             seen.add(tag_val)
-                            cur.execute(
-                                """
-                                INSERT OR IGNORE INTO document_tags
-                                    (document_id, tag_key, tag_value)
-                                VALUES (?, ?, ?)
-                                """,
-                                (document_id, key, tag_val),
-                            )
+                            yield key, tag_val
             elif isinstance(value, dict):
                 # Complex type — skip.
                 logger.debug(
                     "complex_frontmatter_value_skipped key=%r path=%s",
                     key,
-                    note.path,
+                    path,
                 )
             else:
                 # Scalar value.
-                cur.execute(
-                    """
-                    INSERT OR IGNORE INTO document_tags
-                        (document_id, tag_key, tag_value)
-                    VALUES (?, ?, ?)
-                    """,
-                    (document_id, key, str(value)),
-                )
+                yield key, str(value)
+
+    @_retry_on_locked
+    def tags_match_authority(
+        self, path: str, authority_path: str, frontmatter: dict[str, Any]
+    ) -> bool:
+        """Check stored tags against raw metadata interpreted at the current authority.
+
+        Args:
+            path: Stored relative document spelling.
+            authority_path: Currently resolved filesystem path.
+            frontmatter: Current parsed YAML mapping, retaining its native value types.
+
+        Returns:
+            Whether all derived rows match; absent/live-less rows have no tags.
+        """
+        row = (
+            self._conn()
+            .execute(
+                "SELECT id FROM documents_live WHERE path = ?",
+                (path,),
+            )
+            .fetchone()
+        )
+        if row is None:
+            return True
+        expected = set(self._tag_rows(frontmatter, path, authority_path))
+        stored = self._conn().execute(
+            "SELECT tag_key, tag_value FROM document_tags WHERE document_id = ?",
+            (row["id"],),
+        )
+        return expected == {tuple(tag) for tag in stored}
+
+    @_retry_on_locked
+    def list_document_paths(self) -> list[str]:
+        """Return ordered known paths, including tombstones, without loading metadata.
+
+        Returns:
+            All stored document spellings, live or skipped.
+        """
+        return [
+            row[0]
+            for row in self._conn().execute("SELECT path FROM documents ORDER BY path")
+        ]
 
     def _insert_aliases(
         self,

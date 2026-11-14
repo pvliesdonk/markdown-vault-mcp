@@ -1908,7 +1908,7 @@ class TestProcessDirtyPaths:
                 native = False
 
         monkeypatch.setattr(mgr, "_process_dirty_path", process_one)
-        for name in ("list_notes", "list_tombstones"):
+        for name in ("list_document_paths",):
             original = getattr(fts, name)
 
             def listed(_name=name, _original=original):
@@ -1922,7 +1922,7 @@ class TestProcessDirtyPaths:
         mgr.process_dirty_paths(inputs, on_refreshed=refreshed.add)
         assert inputs == {alias} and refreshed == {alias}
         assert fts.get_note(target) is fts.get_note("unknown.md") is None
-        assert calls == {"list_notes": 1, "list_tombstones": 1}
+        assert calls == {"list_document_paths": 1}
         assert resolutions == {alias: 1}
         calls.clear()
         mgr.process_dirty_paths(set())
@@ -2913,3 +2913,40 @@ class TestReindexCheckpointing:
 
         assert result.modified == 4
         assert spy.call_count == 2
+
+
+def test_alias_population_sweep_reads_only_paths(tmp_path: Path) -> None:
+    """Known live and tombstone siblings are selected without materializing metadata."""
+    from markdown_vault_mcp.types import SkippedFile
+
+    (tmp_path / "target.md").write_text("# Zebra\n\nzebra\n")
+    for name in ("live.md", "skipped.md", "unknown.md"):
+        (tmp_path / name).symlink_to("target.md")
+    mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path)
+    mgr.build_index()
+    fts.delete_by_path("unknown.md")
+    fts.upsert_tombstone(
+        SkippedFile(
+            path="skipped.md", category="missing_frontmatter", detail="fixture"
+        ),
+        content_hash="fixture",
+        modified_at=0,
+    )
+    queries: list[str] = []
+    fts._conn().set_trace_callback(queries.append)
+    try:
+        selected, fault = mgr._expanded_dirty_paths({"target.md"})
+    finally:
+        fts._conn().set_trace_callback(None)
+    assert fault is None
+    assert selected == {"target.md", "live.md", "skipped.md"}
+    selects = [
+        query.lower()
+        for query in queries
+        if query.lstrip().lower().startswith("select")
+    ]
+    assert selects
+    assert all(
+        "frontmatter_json" not in query and "skip_detail" not in query
+        for query in selects
+    )

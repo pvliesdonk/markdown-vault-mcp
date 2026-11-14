@@ -1296,26 +1296,38 @@ def test_effective_skill_tag_keys_avoid_configured_names() -> None:
     assert _effective_okf_tag_key("type", ["tags"]) == "type"
 
 
-def test_resolved_okf_metadata_uses_held_mapping(
+def test_resolved_okf_metadata_preserves_held_discovery_fields(
     tmp_path: Path, alias_note: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Identity resolution must project the held six families without another note read."""
+    """Skill families retain YAML types while unrelated held discovery stays intact."""
     from copy import deepcopy
 
     from markdown_vault_mcp.okf import OKF_METADATA_FIELDS, resolved_okf_metadata
 
-    _, alias, raw, expected = alias_note
+    target, alias, raw, expected = alias_note
+    raw["name"] = "held discovery"
+    raw["metadata"] = dict.fromkeys(OKF_METADATA_FIELDS, "serialized held")
     before = deepcopy(raw)
+    reads = []
+    read_text = type(tmp_path).read_text
+
+    def read(path: Path, *args: Any, **kwargs: Any) -> str:
+        reads.append(path)
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(tmp_path), "read_text", read)
+    projected = resolved_okf_metadata(raw, path=alias, source_dir=tmp_path)
+    assert {key: projected[key] for key in OKF_METADATA_FIELDS} == expected
+    assert projected["name"] == "held discovery" and raw == before
+    assert projected["metadata"] == raw["metadata"]
+    assert reads == ([tmp_path / target] if target.endswith("/SKILL.md") else [])
 
     def forbid(*_args: Any, **_kwargs: Any) -> Any:
-        raise AssertionError("unexpected note content read")
+        raise AssertionError("unexpected context-free/ordinary content read")
 
     monkeypatch.setattr(type(tmp_path), "read_bytes", forbid)
     monkeypatch.setattr(type(tmp_path), "read_text", forbid)
     monkeypatch.setattr("markdown_vault_mcp.okf.parse_frontmatter", forbid)
-    projected = resolved_okf_metadata(raw, path=alias, source_dir=tmp_path)
-    assert {key: projected[key] for key in OKF_METADATA_FIELDS} == expected
-    assert projected["name"] == "discovery" and raw == before
     assert resolved_okf_metadata(raw, path=None, source_dir=tmp_path) == raw
     assert resolved_okf_metadata(raw, path="ordinary.md") == raw
 
@@ -1382,3 +1394,30 @@ def test_alias_audit_uses_resolved_authority(
     assert report.missing_type.count == (0 if nested else 2)
     assert set(report.missing_type.examples) == (set() if nested else {target, alias})
     assert set(report.unknown_status.examples) == ({target, alias} if nested else set())
+
+
+@pytest.mark.parametrize("fault", ["decode", "parse", "permission"])
+def test_resolved_skill_metadata_propagates_native_read_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    """Typed skill projection propagates native content failures without held fallback."""
+    import yaml
+
+    from markdown_vault_mcp.okf import resolved_okf_metadata
+
+    path = tmp_path / "SKILL.md"
+    path.write_bytes(b"\xff" if fault == "decode" else b"---\nmetadata: [\n---\n")
+    expected: type[Exception] = (
+        UnicodeDecodeError if fault == "decode" else yaml.YAMLError
+    )
+    if fault == "permission":
+        expected = PermissionError
+
+        def denied(*_args: Any, **_kwargs: Any) -> Any:
+            raise PermissionError("synthetic native read refusal")
+
+        monkeypatch.setattr(type(tmp_path), "read_text", denied)
+    with pytest.raises(expected):
+        resolved_okf_metadata(
+            {"metadata": {"type": "Runbook"}}, path="SKILL.md", source_dir=tmp_path
+        )

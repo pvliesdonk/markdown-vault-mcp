@@ -192,7 +192,7 @@ class GraphFacet:
         back to the filename stem for unindexed paths. ``note_type`` is the
         OKF ``type`` frontmatter value and is extracted only when
         *include_type* is set (an active OKF bundle), resolving filesystem
-        identity without rereading note content.
+        identity and reading current typed skill families.
         """
         meta = self._search_mgr.get_metadata(path)
         label = meta.title if meta else path.rsplit("/", 1)[-1].replace(".md", "")

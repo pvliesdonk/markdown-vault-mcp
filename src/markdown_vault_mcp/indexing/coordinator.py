@@ -387,6 +387,7 @@ class IndexWriteCoordinator:
             self._fts.is_build_completed()
             and self._chunking_meta_matches()
             and self._fts.has_documents()
+            and not self._writer_ctx.index_manager.stale_authority_paths()
         )
 
     def build_index(self, *, force: bool = False) -> IndexStats:

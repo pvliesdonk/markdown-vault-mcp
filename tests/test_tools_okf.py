@@ -646,7 +646,7 @@ async def test_alias_annotations_reach_mcp_query(
 async def test_mcp_annotation_resolution_runs_in_worker(
     tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Single and batch attachment resolve held metadata off the event-loop thread."""
+    """Single and batch attachment resolve and read skill metadata off the event loop."""
     import threading
 
     from markdown_vault_mcp import okf
@@ -668,17 +668,23 @@ async def test_mcp_annotation_resolution_runs_in_worker(
         probes += 1
         return True
 
-    def no_read(*_args: Any, **_kwargs: Any) -> Any:
-        pytest.fail("annotation must use held metadata")
+    read_threads = []
+    from pathlib import Path
+
+    native_read = Path.read_text
+
+    def worker_read(path: Path, *args: Any, **kwargs: Any) -> str:
+        read_threads.append(threading.get_ident())
+        assert threading.get_ident() != main_thread
+        return native_read(path, *args, **kwargs)
+
+    main_thread = threading.get_ident()
 
     monkeypatch.setattr(okf, "resolved_okf_metadata", recorded)
     # The attachment module imports the adapter directly.
     monkeypatch.setattr(_common, "resolved_okf_metadata", recorded, raising=False)
     monkeypatch.setattr(_common, "okf_active", active)
-    from pathlib import Path
-
-    monkeypatch.setattr(Path, "read_text", no_read)
-    monkeypatch.setattr(Path, "read_bytes", no_read)
+    monkeypatch.setattr(Path, "read_text", worker_read)
     try:
         single = await _common.attach_okf(vault, {"path": alias}, raw)
         batch = await _common.attach_okf_to_results(
@@ -687,6 +693,7 @@ async def test_mcp_annotation_resolution_runs_in_worker(
         assert single["okf"]["type"] == batch[0]["okf"]["type"] == expected["type"]
         assert len(threads) == 3 and all(t != threading.get_ident() for t in threads)
         assert probes == 2
+        assert len(read_threads) == (3 if expected["type"] == "Runbook" else 0)
         fault = PermissionError("synthetic metadata identity refusal")
 
         def refused(*_args: Any, **_kwargs: Any) -> Any:

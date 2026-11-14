@@ -4191,8 +4191,8 @@ gone.
 
 The exact query reader uses `query_documents`, `count_documents_matching` and
 `aggregate_documents` through the optional `RunsExactQueries` protocol, not
-`KeywordIndex`, so a custom keyword backend written against an earlier release
-keeps working. `FTSIndex` implements it. On an index without it the reader
+`KeywordIndex`, so that optional extension adds no required backend methods.
+`FTSIndex` implements it. On an index without it the reader
 raises `InvalidRequestError`, which the tools report as a request to use
 `search` instead. Whether the three methods join `KeywordIndex`'s required
 contract is left to the library milestone (020). Query types are imported only
@@ -4212,6 +4212,15 @@ feeds (the vector store's contract is below, with the storage contract):
   Consumers needing members from both facets are typed against this, so the
   two concepts stay separable without pretending the current backend
   separates them.
+
+Custom keyword backends must also implement `list_document_paths()` and
+`tags_match_authority(path, authority_path, frontmatter)` (#2062). The former returns ordered
+live and tombstone names without loading metadata. The latter compares stored
+derived tags to the supplied resolved authority and typed YAML mapping using
+the insertion policy;
+absent/live-less rows match. These required methods extend the released protocol,
+so older structural implementations need updating. They support read-only warm
+validation and native reconciliation without changing raw content hashes.
 
 Each protocol carries exactly what its consumers call, not everything the
 current implementation exposes; grow one when a consumer needs more. A

@@ -387,10 +387,10 @@ def effective_okf_metadata(
 def resolved_okf_metadata(
     metadata: dict[str, Any], *, path: str | None, source_dir: Path | None = None
 ) -> dict[str, Any]:
-    """Project held indexed metadata using its resolved filesystem identity.
+    """Project typed skill families while preserving unrelated held metadata.
 
     Args:
-        metadata: Raw metadata already held by the caller; never reread.
+        metadata: Held metadata whose unrelated discovery fields stay unchanged.
         path: Indexed spelling, or ``None`` for ordinary semantics.
         source_dir: Optional index root, including its native symlink population.
 
@@ -398,12 +398,25 @@ def resolved_okf_metadata(
         The pure six-family projection, retaining lexical semantics without a root.
 
     Raises:
-        OSError: If identity resolution fails; no lexical fallback is applied.
+        OSError: If native identity resolution or a skill read fails.
         RuntimeError: If the native resolver reports a symlink loop.
+        ValueError: If current skill bytes cannot be decoded or parsed.
+        yaml.YAMLError: If current skill YAML is malformed.
     """
-    if source_dir is not None and path is not None:
-        path = (source_dir / path).resolve().as_posix()
-    return effective_okf_metadata(metadata, path=path)
+    if source_dir is None or path is None:
+        return effective_okf_metadata(metadata, path=path)
+    authority = (source_dir / path).resolve()
+    result = effective_okf_metadata(metadata, path=authority.as_posix())
+    if authority.name == "SKILL.md":
+        typed = effective_okf_metadata(
+            parse_frontmatter(read_text_utf8(authority)).metadata,
+            path=authority.as_posix(),
+        )
+        for key in OKF_METADATA_FIELDS:
+            result.pop(key, None)
+            if key in typed:
+                result[key] = typed[key]
+    return result
 
 
 def derive_annotation(

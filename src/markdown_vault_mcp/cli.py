@@ -505,6 +505,8 @@ def _local_search(
             # are only read: this shell does not own them.
             if by_meaning and not configured.vector_storage_configured:
                 _embed_in_memory(built.vault)
+        else:
+            built.vault.index.use_existing_index()
         try:
             results = built.vault.reader.search(
                 query,

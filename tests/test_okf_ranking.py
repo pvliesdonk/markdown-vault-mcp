@@ -638,3 +638,94 @@ def test_context_uses_one_activation_snapshot_with_similar_notes(
         assert probes == 0
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("refresh", ["reindex", "reopen"])
+@pytest.mark.parametrize("to_skill", [True, False], ids=["to-skill", "from-skill"])
+@pytest.mark.parametrize("directory_alias", [False, True], ids=["file", "directory"])
+def test_same_byte_retarget_refreshes_authoritative_tags(  # noqa: PLR0915, RUF100 -- one retarget/reopen lifecycle with raw/off controls
+    tmp_path: Path, refresh: str, to_skill: bool, directory_alias: bool
+) -> None:
+    """Native reconciliation must notice authority changes without changing raw hashes."""
+    import sys
+
+    from markdown_vault_mcp.vault import Vault
+
+    if directory_alias and sys.version_info < (3, 13):
+        pytest.skip("Native directory-symlink discovery requires Python 3.13")
+    source = tmp_path / "source"
+    source.mkdir()
+    raw = "---\ntype: Literal\nmetadata: {type: Runbook}\n---\n# Zebra\n\nzebra instructions\n"
+    if directory_alias:
+        for folder in ("ordinary", "skill"):
+            (source / folder).mkdir()
+            (source / folder / "note.md").write_text(raw)
+        # A directory alias can retarget one stored basename to an exact SKILL.md.
+        (source / "skill" / "note.md").unlink()
+        (source / "skill" / "note.md").symlink_to("../SKILL.md")
+        (source / "SKILL.md").write_text(raw)
+        alias = source / "alias"
+        name = "alias/note.md"
+        old_target, new_target = (
+            ("ordinary", "skill") if to_skill else ("skill", "ordinary")
+        )
+    else:
+        (source / "ordinary.md").write_text(raw)
+        (source / "SKILL.md").write_text(raw)
+        alias = source / "alias.md"
+        name = "alias.md"
+        old_target, new_target = (
+            ("ordinary.md", "SKILL.md") if to_skill else ("SKILL.md", "ordinary.md")
+        )
+    alias.symlink_to(old_target, target_is_directory=directory_alias)
+    settings = VaultSettings(
+        okf_mode="on",
+        index_path=tmp_path / "index.sqlite",
+        indexed_frontmatter_fields=["type"],
+    )
+    vault = Vault(source_dir=source, settings=settings)
+    try:
+        vault.index.build_index()
+        before = vault.reader.read(name)
+        assert before is not None
+        stored_hash = vault._fts.get_note(name)["content_hash"]
+        vault.close()
+        vault = Vault(source_dir=source, settings=settings)
+        assert vault.index.build_index().chunks_indexed == 0
+        alias.unlink()
+        alias.symlink_to(new_target, target_is_directory=directory_alias)
+        if refresh == "reindex":
+            vault.index.reindex()
+        else:
+            vault.close()
+            vault = Vault(source_dir=source, settings=settings)
+            vault.index.build_index()
+        expected = "Runbook" if to_skill else "Literal"
+        listed = {
+            note.path
+            for note in vault.reader.list_documents(filters={"type": expected})
+        }
+        assert name in listed
+        assert name in {
+            hit.path
+            for hit in vault.reader.search(
+                "zebra", mode="keyword", filters={"type": expected}
+            )
+        }
+        after = vault.reader.read(name)
+        assert after is not None
+        assert (after.content, after.frontmatter, after.etag) == (
+            before.content,
+            before.frontmatter,
+            before.etag,
+        )
+        assert vault._fts.get_note(name)["content_hash"] == stored_hash
+        vault.okf._mode = "off"
+        assert name in {
+            hit.path
+            for hit in vault.reader.search(
+                "zebra", mode="keyword", filters={"type": "Literal"}
+            )
+        }
+    finally:
+        vault.close()

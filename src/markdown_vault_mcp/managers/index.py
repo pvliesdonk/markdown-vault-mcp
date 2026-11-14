@@ -30,6 +30,7 @@ from markdown_vault_mcp.managers.embeddings import (
 )
 from markdown_vault_mcp.scanner import (
     CategorizedSkip,
+    parse_frontmatter,
     parse_note,
     parse_note_categorized,
     scan_directory,
@@ -53,6 +54,7 @@ from markdown_vault_mcp.utils.fs import (
     is_regular_file,
     iter_markdown_files,
 )
+from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -750,6 +752,28 @@ class IndexManager:
     # Incremental reindex
     # ------------------------------------------------------------------
 
+    def stale_authority_paths(self) -> set[str]:
+        """Find stored live rows whose resolved identity needs native reconciliation.
+
+        Returns:
+            Mismatched or unresolved live spellings; raw hashes stay unchanged.
+        """
+        stale = set()
+        for path in self._fts.list_document_paths():
+            if self._is_path_excluded(path) or self._fts.get_note(path) is None:
+                continue
+            try:
+                authority = (self._source_dir / path).resolve()
+                metadata = parse_frontmatter(
+                    decode_utf8(authority.read_bytes())
+                ).metadata
+            except (OSError, ValueError, RuntimeError, yaml.YAMLError):
+                stale.add(path)
+                continue
+            if not self._fts.tags_match_authority(path, authority.as_posix(), metadata):
+                stale.add(path)
+        return stale
+
     def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.
 
@@ -775,6 +799,10 @@ class IndexManager:
         changes = self._tracker.detect_changes(
             self._source_dir, exclude_patterns=self._exclude_patterns
         )
+        changed = set(changes.added + changes.modified + changes.deleted)
+        stale = self.stale_authority_paths() - changed
+        changes.modified.extend(sorted(stale))
+        changes.unchanged -= len(stale)
         logger.info(
             "reindex_changes_detected added=%d modified=%d deleted=%d "
             "unchanged=%d skipped=%d",
@@ -1125,8 +1153,7 @@ class IndexManager:
         self, paths: set[str]
     ) -> tuple[set[str], Exception | None]:
         """Select original inputs and known in-vault aliases, retaining identity faults."""
-        known = {row["path"] for row in self._fts.list_notes()}
-        known.update(row["path"] for row in self._fts.list_tombstones())
+        known = set(self._fts.list_document_paths())
         root = self._source_dir.resolve()
         identities: dict[str, Path] = {}
         first_error: Exception | None = None
