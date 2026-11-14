@@ -8,7 +8,7 @@ kind: reference
 # Command line
 
 <!-- DOMAIN-INTRO-START -->
-`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex` and `admin embeddings import`. Their former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index path, an embeddings path or a [PostgreSQL store](../use/postgresql.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](../use/embeddings.md#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server, and the `admin` group holds local index administration: `admin index`, `admin reindex` and `admin embeddings import`. Their former top-level names still work and name the new form on stderr. The visible `index` group preserves that local invocation and adds hosted `index reindex`. Hosted writers also expose `note`, `folder move`, `fetch`, `okf generate index`, `okf seed log` and `git sync`; `okf verify` always refuses human review attestation. See [Change the hosted vault](../use/terminal.md#change-the-hosted-vault) for inputs, etags and creation limits. Reader registration remains independently read-only. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index path, an embeddings path or a [PostgreSQL store](../use/postgresql.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](../use/embeddings.md#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
 
 
 ### Search a hosted vault
@@ -323,6 +323,25 @@ Collect note links, neighbors, folder peers and conventions.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
+## `markdown-vault-mcp fetch`
+
+Fetch a URL on the server into a hosted note.
+
+| Argument | Description |
+|---|---|
+| `URL` |  |
+| `PATH` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--frontmatter` |  |  | Frontmatter as a JSON object. |
+| `--if-match` |  |  | Expected note etag; stale values are refused. |
+| `--download-timeout` |  |  | Server download limit in seconds; separate from --timeout. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
 ## `markdown-vault-mcp links`
 
 Follow and audit the links between notes.
@@ -590,6 +609,184 @@ Discover exact paths before optional bounded typo matches.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
+## `markdown-vault-mcp note`
+
+Change hosted notes.
+
+## `markdown-vault-mcp note write`
+
+Replace a note using a live etag, or request native creation.
+
+| Argument | Description |
+|---|---|
+| `PATH` |  |
+| `CONTENT` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--create` |  | False | Skip the etag read for native creation. Servers allowing blind overwrites can replace an existing note. |
+| `--if-match` |  |  | Expected note etag; stale values are refused. |
+| `--frontmatter` |  |  | Frontmatter as a JSON object. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp note edit`
+
+Edit text, an inclusive one-based line range, or text within that range.
+
+| Argument | Description |
+|---|---|
+| `PATH` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--new-text` |  |  | Literal replacement; empty deletes the selection. |
+| `--old-text` |  |  |  |
+| `--line-start` |  |  |  |
+| `--line-end` |  |  |  |
+| `--if-match` |  |  | Expected note etag; stale values are refused. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp note append`
+
+Append literal content to a hosted note.
+
+| Argument | Description |
+|---|---|
+| `PATH` |  |
+| `CONTENT` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--if-match` |  |  | Expected note etag; stale values are refused. |
+| `--create-if-missing` |  | False |  |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp note delete`
+
+Delete a hosted note, optionally checking its etag.
+
+| Argument | Description |
+|---|---|
+| `PATH` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--if-match` |  |  | Expected note etag; stale values are refused. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp note rename`
+
+Rename a hosted note and update links to it.
+
+| Argument | Description |
+|---|---|
+| `OLD_PATH` |  |
+| `NEW_PATH` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--if-match` |  |  | Expected note etag; stale values are refused. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp folder`
+
+Change hosted folders.
+
+## `markdown-vault-mcp folder move`
+
+Move a hosted folder through the server's native policy.
+
+| Argument | Description |
+|---|---|
+| `OLD_DIR` |  |
+| `NEW_DIR` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp okf`
+
+Maintain hosted Open Knowledge Format files.
+
+## `markdown-vault-mcp okf verify`
+
+Refuse review attestation; use a client supporting human elicitation.
+
+| Argument | Description |
+|---|---|
+| `PATH` |  |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp okf generate`
+
+## `markdown-vault-mcp okf generate index`
+
+Generate the hosted index or seed its changelog.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--folder` |  |  |  |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp okf seed`
+
+## `markdown-vault-mcp okf seed log`
+
+Generate the hosted index or seed its changelog.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--folder` |  |  |  |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
+## `markdown-vault-mcp git`
+
+Synchronize hosted Git storage.
+
+## `markdown-vault-mcp git sync`
+
+Synchronize the hosted Git repository.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--direction` |  |  |  |
+| `--dry-run` |  | False |  |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |
+
 ## `markdown-vault-mcp admin`
 
 Commands that write the index or the stored vectors.
@@ -629,3 +826,25 @@ Copy vectors from another store into the configured one, embedding only what it 
 | `--from-schema` |  |  | Schema of a postgres source (default: the configured schema). |
 | `--from-dsn-env` |  |  | Environment variable holding a postgres source's connection string (default: $`MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`). |
 | `--dry-run` |  | False | Count what would be copied and embedded; write nothing. |
+
+## `markdown-vault-mcp index`
+
+Build a local index or request hosted reindexing.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Local vault directory. |
+| `--index-path` |  |  | Local SQLite index file. |
+| `--force` |  | False | Drop and rebuild the local index. |
+
+## `markdown-vault-mcp index reindex`
+
+Request hosted reindexing; a working result is accepted work.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--force` |  | False |  |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the native structured result. |
+| `--agent` |  | False | Return escaped agent records. |

@@ -15,7 +15,18 @@ from markdown_vault_mcp._cli_reader import register_read_commands
 from markdown_vault_mcp.cli import app
 
 # Commands that change the index, the stored vectors or the vault.
-_WRITES = {"admin", "index", "reindex", "embeddings", "serve"}
+_WRITES = {
+    "admin",
+    "index",
+    "reindex",
+    "embeddings",
+    "serve",
+    "note",
+    "folder",
+    "fetch",
+    "okf",
+    "git",
+}
 
 
 def _command_names(group: Any, prefix: str = "") -> set[str]:
@@ -87,8 +98,8 @@ def test_help_lists_admin_and_hides_the_old_names() -> None:
         for name, command in get_command(app).commands.items()  # type: ignore[attr-defined]
         if not command.hidden
     }
-    assert "admin" in visible
-    assert not visible & {"index", "reindex", "embeddings"}
+    assert {"admin", "index"} <= visible
+    assert not visible & {"reindex", "embeddings"}
 
 
 @pytest.mark.parametrize(
@@ -118,3 +129,55 @@ def test_old_name_runs_the_command_and_names_the_new_form(tmp_path: Path) -> Non
     assert result.exit_code == 0, result.output
     assert "Indexed 1 documents" in result.stdout
     assert "markdown-vault-mcp admin index" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--source-dir", "unused"],
+        ["--index-path", "unused"],
+        ["--force"],
+        ["--no-force"],
+    ],
+)
+def test_index_parent_local_options_rejected_with_hosted_child(
+    options: list[str],
+) -> None:
+    from unittest.mock import patch
+
+    with patch(
+        "markdown_vault_mcp.cli._build_vault", side_effect=AssertionError("local")
+    ):
+        result = CliRunner().invoke(
+            app, ["index", *options, "reindex", "--server", "https://example.com/mcp"]
+        )
+    assert result.exit_code == 2, result.output
+    assert "local options" in result.stderr
+
+
+def test_hosted_writer_paths_have_offline_help() -> None:
+    from unittest.mock import patch
+
+    paths = [
+        "note write",
+        "note edit",
+        "note append",
+        "note delete",
+        "note rename",
+        "folder move",
+        "fetch",
+        "okf generate index",
+        "okf seed log",
+        "okf verify",
+        "git sync",
+        "index reindex",
+    ]
+    names = _command_names(get_command(app))
+    assert set(paths) <= names
+    assert not any("convert" in name for name in names)
+    with patch(
+        "markdown_vault_mcp.cli._build_vault", side_effect=AssertionError("local")
+    ):
+        for command in ["index", *paths]:
+            result = CliRunner().invoke(app, [*command.split(), "--help"])
+            assert result.exit_code == 0, result.output

@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-14
+
+- Added [Typer parameter sources](typer-parameter-sources.md) for #2060. Inspected installed Typer 0.29.1 and Click 8.5.1 sources and reproduced the unequal enum members and explicit false option. Refute pass checked source names and the default-value distinction. Next review: 2027-05-14.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,
