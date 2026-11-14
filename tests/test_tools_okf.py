@@ -191,36 +191,74 @@ class TestNonOkfBaseline:
 class TestDeclaredBundle:
     """A declared vault gains annotations on every read surface."""
 
-    async def test_search_hits_carry_annotations(self) -> None:
+    @pytest.mark.parametrize("skill", [False, True])
+    async def test_search_hits_carry_annotations(
+        self, okf_vault: Path, skill: bool
+    ) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+        from tests.fixtures.okf_skills import SKILL
+
+        if skill:
+            (okf_vault / "SKILL.md").write_text(SKILL)
+            (okf_vault / "guides" / "SKILL.md").write_text(
+                SKILL.replace("  status:", "  type: Runbook\n  status:")
+            )
+        path = okf_vault / ("SKILL.md" if skill else "guides/playbook.md")
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
         async with Client(make_server()) as client:
             hits = await _search(client)
         by_path = {hit["path"]: hit for hit in hits}
-        playbook = by_path["guides/playbook.md"]["okf"]
-        assert playbook["type"] == "Playbook"
-        assert playbook["status"] == "deprecated"
-        assert playbook["stale"] is True
-        assert playbook["trust_tier"] == "human-reviewed"
-        assert playbook["sources_count"] == 2
-        assert "sources" not in playbook
-        plain = by_path["guides/plain.md"]["okf"]
-        assert plain == {
-            "status": "stable",
-            "stale": False,
-            "trust_tier": "unverified",
-        }
+        if skill:
+            hit = by_path["SKILL.md"]
+            assert hit["okf"]["type"] == "Skill"
+            assert hit["okf"]["sources_count"] == 1
+            assert "sources" not in hit["okf"] and "generated" not in hit["okf"]
+            assert hit["frontmatter"] == dict(parse_frontmatter(SKILL).metadata)
+            assert by_path["guides/SKILL.md"]["okf"]["type"] == "Runbook"
+        else:
+            playbook = by_path["guides/playbook.md"]["okf"]
+            assert playbook["type"] == "Playbook"
+            assert playbook["status"] == "deprecated"
+            assert playbook["stale"] is True
+            assert playbook["trust_tier"] == "human-reviewed"
+            assert playbook["sources_count"] == 2
+            assert "sources" not in playbook
+            assert by_path["guides/plain.md"]["okf"] == {
+                "status": "stable",
+                "stale": False,
+                "trust_tier": "unverified",
+            }
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
-    async def test_read_includes_full_sources(self) -> None:
+    @pytest.mark.parametrize("skill", [False, True])
+    async def test_read_includes_full_sources(
+        self, okf_vault: Path, skill: bool
+    ) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+        from tests.fixtures.okf_skills import SKILL
+
+        name = "SKILL.md" if skill else "guides/playbook.md"
+        path = okf_vault / name
+        if skill:
+            path.write_text(SKILL)
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
         async with Client(make_server()) as client:
-            read = _structured(
-                await client.call_tool("read", {"path": "guides/playbook.md"})
-            )
+            read = _structured(await client.call_tool("read", {"path": name}))
         okf = read["okf"]
         assert okf["trust_tier"] == "human-reviewed"
-        assert [s["resource"] for s in okf["sources"]] == [
-            "https://example.com/a",
-            "https://example.com/b",
-        ]
         assert "sources_count" not in okf
+        if skill:
+            raw = dict(parse_frontmatter(SKILL).metadata)
+            assert okf["type"] == "Skill"
+            assert okf["generated"] == raw["metadata"]["generated"]
+            assert okf["sources"] == raw["metadata"]["sources"]
+            assert read["frontmatter"] == raw
+        else:
+            assert [s["resource"] for s in okf["sources"]] == [
+                "https://example.com/a",
+                "https://example.com/b",
+            ]
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
     async def test_section_read_omits_annotation(self) -> None:
         async with Client(make_server()) as client:
@@ -233,16 +271,29 @@ class TestDeclaredBundle:
             )
         assert "okf" not in read
 
-    async def test_get_context_carries_annotation(self) -> None:
+    @pytest.mark.parametrize("skill", [False, True])
+    async def test_get_context_carries_annotation(
+        self, okf_vault: Path, skill: bool
+    ) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+        from tests.fixtures.okf_skills import SKILL
+
+        name = "SKILL.md" if skill else "guides/playbook.md"
+        path = okf_vault / name
+        if skill:
+            path.write_text(SKILL)
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             context = _structured(
                 await client.call_tool(
-                    "get_context",
-                    {"path": "guides/playbook.md", "similar_limit": 0},
+                    "get_context", {"path": name, "similar_limit": 0}
                 )
             )
-        assert context["okf"]["type"] == "Playbook"
+        assert context["okf"]["type"] == ("Skill" if skill else "Playbook")
+        if skill:
+            assert context["frontmatter"] == dict(parse_frontmatter(SKILL).metadata)
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
     async def test_stats_okf_section(self) -> None:
         async with Client(make_server()) as client:
@@ -547,39 +598,3 @@ class TestOkfMigrationTools:
         async with Client(make_server()) as client:
             names = {t.name for t in await client.list_tools()}
         assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)
-
-
-@pytest.mark.usefixtures("_okf_env")
-async def test_skill_read_and_search_annotations(okf_vault: Path) -> None:
-    """MCP reads, hits and context share identity while raw skill bytes stay literal."""
-    from markdown_vault_mcp.okf import audit_bundle
-    from markdown_vault_mcp.scanner import parse_frontmatter
-    from tests.fixtures.okf_skills import SKILL
-
-    path = okf_vault / "SKILL.md"
-    path.write_text(SKILL)
-    (okf_vault / "guides" / "SKILL.md").write_text(
-        SKILL.replace("  status:", "  type: Runbook\n  status:")
-    )
-    raw = dict(parse_frontmatter(SKILL).metadata)
-    before = (path.read_bytes(), path.stat().st_mtime_ns)
-    async with Client(make_server()) as client:
-        read = _structured(await client.call_tool("read", {"path": "SKILL.md"}))
-        assert read["okf"]["type"] == "Skill"
-        assert read["okf"]["generated"] == raw["metadata"]["generated"]
-        assert read["okf"]["sources"] == raw["metadata"]["sources"]
-        assert read["frontmatter"] == raw
-        hits = {hit["path"]: hit for hit in await _search(client)}
-        assert hits["SKILL.md"]["okf"]["sources_count"] == 1
-        assert hits["guides/SKILL.md"]["okf"]["type"] == "Runbook"
-        assert "generated" not in hits["SKILL.md"]["okf"]
-        assert hits["SKILL.md"]["frontmatter"] == raw
-        context = _structured(
-            await client.call_tool(
-                "get_context", {"path": "SKILL.md", "similar_limit": 0}
-            )
-        )
-        assert context["okf"]["type"] == "Skill"
-        assert context["frontmatter"] == raw
-    audit_bundle(okf_vault)
-    assert (path.read_bytes(), path.stat().st_mtime_ns) == before

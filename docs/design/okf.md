@@ -285,7 +285,7 @@ or scanning. Other stored producer settings remain authoritative.
 Each search or filtered listing captures activation once and reuses it through
 filtering, ranking and snippet selection. The next request probes again.
 
-Explicit native writes and `okf_verify` use the same authoritative slot. With
+Native writes and `okf_verify` select authority by resolved note identity. With
 `OKF_WRITE` active, content writes replace nested `generated` and clear nested
 `verified`; verification appends there and reports its effective count. The
 mutation copies valid nested mappings, preserves unrelated members and literal

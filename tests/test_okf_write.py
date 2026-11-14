@@ -73,28 +73,48 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 
 class TestApplyOkfWriteStamp:
-    def test_stamps_generated_on_a_note_without_frontmatter(self) -> None:
-        out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", now=_NOW)
-        post = fm.loads(out)
-        assert post.metadata["generated"] == {"by": "a/1", "at": _ISO}
-        assert "Body." in post.content
-
-    def test_clears_verified_on_content_change(self) -> None:
+    @pytest.mark.parametrize(
+        "slot", [None, "", "metadata: null\n", "metadata: wrong\n", "metadata: []\n"]
+    )
+    def test_stamps_generated_on_a_note_without_frontmatter(
+        self, slot: str | None
+    ) -> None:
         text = (
-            "---\n"
-            "verified:\n"
-            "  - by: human:peter\n"
-            "    at: 2026-01-01\n"
-            "title: T\n"
-            "---\n"
-            "# T\n"
+            "# Note\n\nBody.\n"
+            if slot is None
+            else "---\nname: demo\ntype: Literal\n" + slot + "---\nBody.\n"
         )
-        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW)
-        meta = fm.loads(out).metadata
-        assert "verified" not in meta
-        assert meta["generated"] == {"by": "human:x", "at": _ISO}
-        # Unrelated fields survive.
-        assert meta["title"] == "T"
+        out = apply_okf_write_stamp(
+            text, actor="a/1", now=_NOW, path=None if slot is None else "SKILL.md"
+        )
+        post = fm.loads(out)
+        authority = post.metadata if slot is None else post.metadata["metadata"]
+        assert authority["generated"] == {"by": "a/1", "at": _ISO}
+        assert "Body." in post.content
+        if slot is not None:
+            assert post.metadata["name"] == "demo"
+            assert post.metadata["type"] == "Literal"
+            assert set(authority) == {"generated"}
+
+    @pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
+    def test_clears_verified_on_content_change(self, path: str | None) -> None:
+        text = (
+            "---\nverified: [{by: 'human:peter', at: 2026-01-01}]\ntitle: T\ntype: Literal\n"
+            "metadata:\n  custom: keep\n  generated: {by: 'human:original', custom: retained}\n"
+            "  verified: {by: 'human:previous'}\n---\n# T\n"
+        )
+        meta = fm.loads(
+            apply_okf_write_stamp(text, actor="human:x", now=_NOW, path=path)
+        ).metadata
+        slot = meta["metadata"] if path == "SKILL.md" else meta
+        assert "verified" not in slot
+        assert slot["generated"] == {"by": "human:x", "at": _ISO}
+        assert meta["title"] == "T" and meta["type"] == "Literal"
+        assert meta["metadata"]["custom"] == "keep"
+        if path == "SKILL.md":
+            assert meta["verified"] == [
+                {"by": "human:peter", "at": _dt.date(2026, 1, 1)}
+            ]
 
     def test_preserves_sources_and_other_fields(self) -> None:
         text = (
@@ -179,17 +199,28 @@ class TestAppendOkfVerification:
         assert post.metadata["title"] == "T"
         assert "Body line." in post.content
 
-    def test_a_bare_mapping_is_kept_as_the_first_entry(self) -> None:
-        # The spec's single-verifier shorthand is a one-element list; the
-        # existing attestation must survive the append (#1357).
-        text = "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# N\n"
+    @pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
+    def test_a_bare_mapping_is_kept_as_the_first_entry(self, path: str | None) -> None:
+        """The selected shorthand entry survives, with the new attestation appended."""
+        text = (
+            "---\ntype: Literal\nverified: {by: 'human:alice', at: 2026-01-01}\n"
+            "metadata:\n  custom: keep\n  generated: {by: 'human:original', custom: retained}\n"
+            "  verified: {by: 'human:previous'}\n---\n# N\n"
+        )
         meta = fm.loads(
-            append_okf_verification(text, subject="peter", now=_NOW)
+            append_okf_verification(text, subject="peter", now=_NOW, path=path)
         ).metadata
-        assert meta["verified"] == [
-            {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
+        nested = path == "SKILL.md"
+        entries = (meta["metadata"] if nested else meta)["verified"]
+        assert entries == [
+            {"by": "human:previous"}
+            if nested
+            else {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
             {"by": "human:peter", "at": _ISO},
         ]
+        assert meta["type"] == "Literal" and meta["metadata"]["custom"] == "keep"
+        if nested:
+            assert meta["verified"] == {"by": "human:alice", "at": _dt.date(2026, 1, 1)}
 
     def test_scalar_verified_is_replaced(self) -> None:
         # A malformed scalar verified is treated as empty, not crashed on.
@@ -769,24 +800,62 @@ class TestOkfVerifyTrustAuth:
             with pytest.raises(ToolError, match="changed while it was being verified"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
 
+    @pytest.mark.parametrize(
+        ("target", "request_path", "nested"),
+        [
+            ("guides/playbook.md", "guides/playbook.md", False),
+            ("SKILL.md", "SKILL.md", True),
+            ("target/SKILL.md", "alias.md", True),
+            ("target/ordinary.md", "aliases/SKILL.md", False),
+        ],
+    )
+    @pytest.mark.parametrize("has_prior", [True, False])
     async def test_counts_a_bare_mapping_as_one(
-        self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        trust_auth_env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        target: str,
+        request_path: str,
+        nested: bool,
+        has_prior: bool,
     ) -> None:
-        # verified_count is the list length after the append; a bare-mapping
-        # verified is one entry, not zero (#1357).
+        """Verification counts and preserves entries in the resolved authority slot."""
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
-        (trust_auth_env / "guides" / "playbook.md").write_text(
-            "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# P\n",
-            encoding="utf-8",
-        )
+        prior = {"by": "human:alice", "at": _dt.date(2026, 1, 1)}
+        literal = {"verified": ["literal", "conflict"], "custom": "keep"}
+        raw: dict[str, Any] = {"type": "Literal", "metadata": dict(literal)}
+        if nested:
+            raw.update(literal)
+            raw["metadata"] = {"type": "Runbook", "custom": "keep"}
+        slot = raw["metadata"] if nested else raw
+        if has_prior:
+            slot["verified"] = prior
+        destination = trust_auth_env / target
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(fm.dumps(fm.Post("# P\n", **raw)))
+        if request_path != target:
+            alias = trust_auth_env / request_path
+            alias.parent.mkdir(parents=True, exist_ok=True)
+            alias.symlink_to(destination)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
-            )
+            result = await client.call_tool("okf_verify", {"path": request_path})
             await wait_for_mcp_writer_drain(client)
-        assert _parse_tool_data(result)["verified_count"] == 2
+        payload = _parse_tool_data(result)
+        assert payload["path"] == request_path
+        assert payload["verifier"] == "human:peter"
+        assert payload["verified_count"] == (2 if has_prior else 1)
+        persisted = fm.loads(destination.read_text()).metadata
+        entries = (persisted["metadata"] if nested else persisted)["verified"]
+        assert entries[:-1] == ([prior] if has_prior else [])
+        assert entries[-1]["by"] == "human:peter"
+        _assert_recent_utc_stamp(entries[-1]["at"])
+        if nested:
+            assert persisted["verified"] == literal["verified"]
+            assert persisted["type"] == "Literal"
+        else:
+            assert persisted["metadata"] == literal
 
 
 @pytest.mark.usefixtures("enforced_env")
@@ -978,125 +1047,110 @@ class TestServiceTokenOkf:
 @pytest.mark.parametrize(
     "operation", ["body", "frontmatter", "append", "overwrite", "create"]
 )
+@pytest.mark.parametrize(
+    ("target", "request_path"),
+    [
+        ("SKILL.md", "SKILL.md"),
+        ("target/SKILL.md", "alias.md"),
+        ("target/ordinary.md", "aliases/SKILL.md"),
+    ],
+)
 def test_skill_content_edit_invalidates_nested_verification(
-    tmp_path: Path, operation: str
+    tmp_path: Path, operation: str, target: str, request_path: str
 ) -> None:
-    """Edited skill bytes must lose nested trust and expose their new provenance."""
-    from markdown_vault_mcp._cli_read import read_payload
+    """Native mutations forward the resolved target to the two-argument enricher."""
     from tests.fixtures.okf_skills import SKILL
 
-    (tmp_path / "SKILL.md").write_text(SKILL)
-    (tmp_path / "ordinary.md").write_text("# Keep vault mounted\n")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-    )
+    destination = tmp_path / target
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(SKILL)
+    if request_path != target:
+        alias = tmp_path / request_path
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        alias.symlink_to(destination)
+    (tmp_path / "keep.md").write_text("# Keep vault mounted\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         vault.index.build_index()
-        before = read_payload(vault, "SKILL.md")["okf"]
-        assert before["trust_tier"] == "human-reviewed"
+        observed: list[tuple[str, str | None]] = []
+
+        def enrich(text: str, op: Any) -> str:
+            intent = _okf_write.current_okf_intent()
+            observed.append((op, intent.path if intent else None))
+            return text
+
+        vault._doc_mgr._okf_write_enrich = enrich
         if operation == "body":
             vault.writer.edit(
-                "SKILL.md",
+                request_path,
                 old_text="Run the zebra checks.",
                 new_text="Run updated zebra checks.",
             )
         elif operation == "frontmatter":
             vault.writer.edit(
-                "SKILL.md", old_text="name: demo", new_text="name: updated"
+                request_path, old_text="name: demo", new_text="name: updated"
             )
         elif operation == "append":
-            vault.writer.append("SKILL.md", "\nupdated zebra\n")
+            vault.writer.append(request_path, "\nupdated zebra\n")
         else:
             if operation == "create":
-                (tmp_path / "SKILL.md").unlink()
-            vault.writer.write("SKILL.md", SKILL.replace("zebra", "updated zebra"))
-        wait_for_writer_drain(vault)
-        after = read_payload(vault, "SKILL.md")
-        assert "updated" in after["content"]
-        assert after["okf"]["trust_tier"] == "unverified"
-        assert "verified" not in after["frontmatter"]["metadata"]
-        assert after["okf"]["generated"]["by"].startswith("markdown-vault-mcp/")
-        assert after["okf"]["generated"]["at"] != before["generated"]["at"]
-        _assert_recent_utc_stamp(after["okf"]["generated"]["at"])
+                destination.unlink()
+            result = vault.writer.write(
+                request_path, SKILL.replace("zebra", "updated zebra")
+            )
+            assert result.created == (operation == "create")
+        assert observed == [
+            ("write" if operation in {"overwrite", "create"} else "edit", target)
+        ]
+        assert "updated" in destination.read_text()
     finally:
         vault.close()
 
 
-async def test_skill_verify_read_roundtrip(
-    trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A successful verifier append must be visible to the next skill read."""
-    (trust_auth_env / "SKILL.md").write_text(
-        "---\nname: demo\nverified: [literal]\nmetadata:\n  type: Runbook\n"
-        "  verified: {by: 'human:previous'}\n---\n# Demo\n"
-    )
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "fixture")
-    monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "fixture"})
-    async with Client(make_server()) as client:
-        await wait_for_mcp_writer_drain(client)
-        verified = _parse_tool_data(
-            await client.call_tool("okf_verify", {"path": "SKILL.md"})
-        )
-        assert verified["verifier"] == "human:fixture"
-        assert verified["verified_count"] == 2
-        read = _parse_tool_data(await client.call_tool("read", {"path": "SKILL.md"}))
-        assert read["okf"]["trust_tier"] == "human-reviewed"
-        assert read["frontmatter"]["metadata"]["verified"][1]["by"] == "human:fixture"
-        assert read["frontmatter"]["verified"] == ["literal"]
-
-
 @pytest.mark.parametrize(
-    "slot", ["", "metadata: null\n", "metadata: wrong\n", "metadata: []\n"]
+    ("target", "request_path", "nested"),
+    [
+        ("target/SKILL.md", "alias.md", True),
+        ("target/ordinary.md", "aliases/SKILL.md", False),
+    ],
 )
-def test_skill_write_repairs_only_explicitly_mutated_slot(
-    tmp_path: Path, slot: str
+def test_alias_content_edit_stamps_resolved_slot(
+    tmp_path: Path, target: str, request_path: str, nested: bool
 ) -> None:
-    """A requested write can create a nested slot without persisting inferred type."""
+    """Real enrichment invalidates only the resolved note's authoritative slot."""
+    from tests.fixtures.okf_skills import SKILL
+
+    destination = tmp_path / target
+    destination.parent.mkdir(parents=True)
+    before = fm.loads(SKILL).metadata
+    before.update(type="Literal", verified=[{"by": "human:literal"}])
+    destination.write_text(fm.dumps(fm.Post("Run the zebra checks.", **before)))
+    alias = tmp_path / request_path
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    alias.symlink_to(destination)
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
     )
     try:
         vault.index.build_index()
-        vault.writer.write(
-            "SKILL.md", "---\nname: demo\ntype: Literal\n" + slot + "---\n# Demo\n"
+        assert vault.reader.read(request_path).path == target
+        vault.writer.edit(
+            request_path, old_text="Run the zebra checks.", new_text="Changed zebra."
         )
-        meta = _meta(vault, "SKILL.md")
-        assert meta["name"] == "demo"
-        assert meta["type"] == "Literal"
-        assert set(meta["metadata"]) == {"generated"}
-        assert meta["metadata"]["generated"]["by"].startswith("markdown-vault-mcp/")
+        after = fm.loads(destination.read_text()).metadata
+        slot = after["metadata"] if nested else after
+        assert "Changed zebra." in destination.read_text()
+        assert "verified" not in slot
+        assert slot["generated"]["by"].startswith("markdown-vault-mcp/")
+        _assert_recent_utc_stamp(slot["generated"]["at"])
+        if nested:
+            assert after["verified"] == before["verified"]
+            assert after["type"] == before["type"]
+        else:
+            assert after["metadata"] == before["metadata"]
     finally:
         vault.close()
-
-
-@pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
-def test_path_aware_transforms_preserve_unrelated_families(path: str | None) -> None:
-    """Only exact skill paths mutate nested provenance; literal conflicts survive."""
-    text = (
-        "---\ntype: Literal\nverified: [{by: 'human:literal'}]\n"
-        "metadata:\n  custom: keep\n  generated: {by: 'human:original', custom: retained}\n"
-        "  verified: {by: 'human:previous'}\n---\n# Demo\n"
-    )
-    stamped = fm.loads(
-        apply_okf_write_stamp(text, actor="fallback", now=_NOW, path=path)
-    ).metadata
-    nested = path == "SKILL.md"
-    slot = stamped["metadata"] if nested else stamped
-    assert "verified" not in slot
-    assert slot["generated"]["by"] == "fallback"
-    assert slot["generated"]["at"] == _ISO
-    assert stamped["type"] == "Literal"
-    assert stamped["metadata"]["custom"] == "keep"
-    if nested:
-        assert stamped["verified"] == [{"by": "human:literal"}]
-    verified = fm.loads(
-        append_okf_verification(text, subject="fixture", now=_NOW, path=path)
-    ).metadata
-    slot = verified["metadata"] if nested else verified
-    assert slot["verified"][-1] == {"by": "human:fixture", "at": _ISO}
-    assert len(slot["verified"]) == 2
 
 
 @pytest.mark.parametrize("actor", [None, "", "human:fixture"])

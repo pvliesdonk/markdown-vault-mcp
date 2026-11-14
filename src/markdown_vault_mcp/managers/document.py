@@ -840,7 +840,9 @@ class DocumentManager:
         """
         if self._okf_write_enrich is not None:
             try:
-                with okf_write_path(path):
+                with okf_write_path(
+                    abs_path.relative_to(self._source_dir.resolve()).as_posix()
+                ):
                     content = self._okf_write_enrich(content, operation)
             except yaml.YAMLError as exc:
                 # The stamp is written *into* the note's frontmatter, so a

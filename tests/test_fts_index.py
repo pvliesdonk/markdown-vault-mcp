@@ -2097,44 +2097,6 @@ def test_skill_type_tags_preserve_raw_frontmatter(nested_type: str | None) -> No
         idx.close()
 
 
-def test_skill_semantics_rebuilds_existing_index(tmp_path: Path) -> None:
-    """Unchanged skill bytes gain new tags once, then the rebuilt index is adopted."""
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-    from tests.fixtures.okf_skills import SKILL
-
-    source = tmp_path / "source"
-    source.mkdir()
-    path = source / "SKILL.md"
-    path.write_text(SKILL)
-    original = (path.read_bytes(), path.stat().st_mtime_ns)
-    db = tmp_path / "index.sqlite"
-    settings = VaultSettings(okf_mode="on", index_path=db)
-    vault = Vault(source_dir=source, settings=settings)
-    try:
-        vault.index.build_index()
-    finally:
-        vault.close()
-    with sqlite3.connect(db) as conn:
-        conn.execute("DELETE FROM document_tags")
-        conn.execute(
-            "UPDATE meta SET value = '11' WHERE key = 'index_semantics_version'"
-        )
-    vault = Vault(source_dir=source, settings=settings)
-    try:
-        assert vault.index.build_index().chunks_indexed > 0
-        assert vault.reader.list_tags("type") == ["Skill"]
-        assert "type" not in vault.reader.get_metadata("SKILL.md").frontmatter
-    finally:
-        vault.close()
-    vault = Vault(source_dir=source, settings=settings)
-    try:
-        assert vault.index.build_index().chunks_indexed == 0
-        assert vault.reader.list_tags("type") == ["Skill"]
-    finally:
-        vault.close()
-    assert (path.read_bytes(), path.stat().st_mtime_ns) == original
-
-
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [

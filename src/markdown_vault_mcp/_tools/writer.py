@@ -1181,11 +1181,15 @@ def register(mcp: FastMCP) -> None:
         if note is None:
             raise DocumentNotFoundError.note(path)
         verified_count = (
-            len(verified_entries(effective_okf_metadata(note.frontmatter, path=path)))
+            len(
+                verified_entries(
+                    effective_okf_metadata(note.frontmatter, path=note.path)
+                )
+            )
             + 1
         )
         new_text = append_okf_verification(
-            note.content, subject=subject, now=datetime.now(UTC), path=path
+            note.content, subject=subject, now=datetime.now(UTC), path=note.path
         )
         # Verification attests to a specific set of bytes, so the read-modify-
         # write must be atomic: pass the read's etag as if_match so a concurrent

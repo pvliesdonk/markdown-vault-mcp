@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import threading
@@ -50,7 +51,9 @@ def make_coordinator(
     if db is None:
         db = tmp_path / "index.db"
     fts = FTSIndex(
-        db_path=db, searchable_frontmatter_fields=list(searchable_fields) or None
+        db_path=db,
+        searchable_frontmatter_fields=list(searchable_fields) or None,
+        indexed_frontmatter_fields=list(indexed_frontmatter_fields),
     )
     tracker = ChangeTracker(tmp_path / ".state.json")
     index_mgr = IndexManager(
@@ -321,8 +324,14 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
     stale link row planted here stands in for the wrong link rows #1124
     reported surviving an upgrade: only a real re-parse clears it.
     """
+    from markdown_vault_mcp.okf import _effective_okf_tag_key
+    from tests.fixtures.okf_skills import SKILL
+
+    path = tmp_path / "SKILL.md"
+    path.write_text(SKILL)
+    original = (path.read_bytes(), path.stat().st_mtime_ns)
     db = tmp_path / "index.db"
-    coord = make_coordinator(tmp_path, db=db)
+    coord = make_coordinator(tmp_path, db=db, indexed_frontmatter_fields=("type",))
     try:
         coord.build_index()
     finally:
@@ -331,6 +340,7 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
     conn = sqlite3.connect(db)
     try:
         with conn:
+            conn.execute("DELETE FROM document_tags")
             doc_id = conn.execute("SELECT id FROM documents LIMIT 1").fetchone()[0]
             conn.execute(
                 "INSERT INTO links(source_id, target_path, link_text, link_type) "
@@ -339,19 +349,36 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
             )
     finally:
         conn.close()
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT count(*) FROM document_tags").fetchone()[0] == 0
     assert "stale-extractor-row.md" in _link_targets(db)
     _set_semantics_version(db, str(INDEX_SEMANTICS_VERSION - 1))
 
-    coord2 = make_coordinator(tmp_path, db=db)
+    coord2 = make_coordinator(tmp_path, db=db, indexed_frontmatter_fields=("type",))
     try:
         assert coord2._chunking_meta_matches() is False
         stats = coord2.build_index()
         assert stats.chunks_indexed > 0  # full re-parse ran, not warm O(1)
+        assert coord2._fts.list_field_values(
+            _effective_okf_tag_key("type", ["type"])
+        ) == ["Skill"]
+        raw = json.loads(coord2._fts.get_note("SKILL.md")["frontmatter_json"])
+        assert "type" not in raw
     finally:
         coord2.close(timeout=5)
 
     assert "stale-extractor-row.md" not in _link_targets(db)
     assert _stored_semantics_version(db) == INDEX_SEMANTICS_VERSION
+
+    coord3 = make_coordinator(tmp_path, db=db, indexed_frontmatter_fields=("type",))
+    try:
+        assert coord3.build_index().chunks_indexed == 0
+        assert coord3._fts.list_field_values(
+            _effective_okf_tag_key("type", ["type"])
+        ) == ["Skill"]
+    finally:
+        coord3.close(timeout=5)
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == original
 
 
 def test_absent_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
@@ -1265,7 +1292,9 @@ def test_on_build_embeddings_done_leaves_an_unavailable_store_to_the_writer_log(
     ] == ["DEBUG"]
 
 
-@pytest.mark.parametrize("stored_version", [None, "11", "13", "invalid"])
+@pytest.mark.parametrize(
+    "stored_version", [None, "11", str(INDEX_SEMANTICS_VERSION + 1), "invalid"]
+)
 def test_shared_adoption_refuses_incompatible_tag_derivation(
     tmp_path: Path, stored_version: str | None
 ) -> None:

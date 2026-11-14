@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -1194,9 +1194,18 @@ class TestReservedFrontmatterPolicy:
         assert policy.build(None, title="Log") == {"heading": "Log"}
 
 
-@pytest.mark.parametrize("nested_type", [None, "", "  ", 42, [], "Runbook", "Custom"])
-def test_effective_skill_metadata(nested_type: object) -> None:
-    """Nested families override conflicting raw keys without flattening the input."""
+@pytest.mark.parametrize(
+    ("case", "value"),
+    [("nested", value) for value in [None, "", "  ", 42, [], "Runbook", "Custom"]]
+    + [("slot", value) for value in [None, "bad", [], {}, {"type": None}]]
+    + [("absent", None)]
+    + [
+        ("literal", path)
+        for path in [None, "skill.md", "notes/ordinary.md", "SKILL.md/other.md"]
+    ],
+)
+def test_effective_skill_metadata(case: str, value: Any) -> None:
+    """Projection handles each slot state without mutating raw or ordinary metadata."""
     from copy import deepcopy
 
     from markdown_vault_mcp.okf import effective_okf_metadata
@@ -1212,53 +1221,43 @@ def test_effective_skill_metadata(nested_type: object) -> None:
         "stale_after": "1990-01-01",
         "sources": [{"resource": "wrong"}],
         "metadata": {
-            "type": nested_type,
+            "type": value,
             "status": "deprecated",
             "generated": {"by": "human:alex"},
             "sources": [{"resource": "https://example.invalid/spec"}],
         },
     }
+    path = "skills/demo/SKILL.md"
+    if case == "slot":
+        raw["metadata"] = value
+    elif case == "absent":
+        del raw["metadata"]
+    elif case == "literal":
+        raw["metadata"] = {"type": "Skill"}
+        path = value
     before = deepcopy(raw)
-    result = effective_okf_metadata(raw, path="skills/demo/SKILL.md")
+    result = effective_okf_metadata(raw, path=path)
+    assert result is not raw and raw == before
+    if case == "literal":
+        assert result == raw
+        return
     assert result["type"] == (
-        nested_type if isinstance(nested_type, str) and nested_type.strip() else "Skill"
+        value
+        if case == "nested" and isinstance(value, str) and value.strip()
+        else "Skill"
     )
-    assert result["status"] == "deprecated"
-    assert result["generated"] == {"by": "human:alex"}
-    assert result["sources"] == [{"resource": "https://example.invalid/spec"}]
-    assert "verified" not in result and "stale_after" not in result
     assert result["name"] == "demo" and result["unknown"] == "kept"
     assert result["description"] == "Discovery text"
-    assert result is not raw and raw == before
+    assert "verified" not in result and "stale_after" not in result
+    if case == "nested":
+        assert result["status"] == "deprecated"
+        assert result["generated"] == {"by": "human:alex"}
+        assert result["sources"] == [{"resource": "https://example.invalid/spec"}]
+    else:
+        assert not {"status", "generated", "sources"} & result.keys()
 
 
-@pytest.mark.parametrize("slot", [None, "bad", [], {}, {"type": None}])
-def test_skill_metadata_fallback(slot: object) -> None:
-    """Malformed or absent nested metadata cannot leak conflicting top-level type."""
-    from markdown_vault_mcp.okf import effective_okf_metadata
-
-    assert (
-        effective_okf_metadata({"metadata": slot, "type": "Wrong"}, path="SKILL.md")[
-            "type"
-        ]
-        == "Skill"
-    )
-    assert effective_okf_metadata({}, path="SKILL.md") == {"type": "Skill"}
-
-
-@pytest.mark.parametrize(
-    "path", [None, "skill.md", "notes/ordinary.md", "SKILL.md/other.md"]
-)
-def test_skill_metadata_leaves_ordinary_notes_literal(path: str | None) -> None:
-    """Only the exact basename activates interpretation, including when nested type exists."""
-    from markdown_vault_mcp.okf import effective_okf_metadata
-
-    raw = {"type": "Reference", "metadata": {"type": "Skill"}}
-    result = effective_okf_metadata(raw, path=path)
-    assert result == raw and result is not raw
-
-
-def test_skill_audit_uses_nested_type(tmp_path: Path) -> None:
+def test_skill_audit_uses_filename_inferred_type(tmp_path: Path) -> None:
     """A filename-inferred skill passes the existing concept audit without a rewrite."""
     from markdown_vault_mcp.okf import audit_bundle
     from tests.fixtures.okf_skills import SKILL
