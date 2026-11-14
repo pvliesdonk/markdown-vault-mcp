@@ -564,9 +564,9 @@ class ChangeTracker:
         try:
             with self._state_path.open(encoding="utf-8") as fh:
                 state = json.load(fh)
-            if strict:
-                self._validate_mutation_state(state)
             if not isinstance(state, dict):
+                if strict:
+                    raise ValueError("Tracker state must be an object")
                 logger.warning(
                     "state_file_malformed path=%s reason=not_object outcome=reset",
                     self._state_path,
@@ -581,12 +581,16 @@ class ChangeTracker:
                     or not isinstance(skipped, dict)
                     or not isinstance(skip_reasons, dict)
                 ):
+                    if strict:
+                        raise ValueError("Malformed tracker state maps")
                     logger.warning(
                         "state_file_malformed path=%s reason=not_object_maps "
                         "outcome=reset",
                         self._state_path,
                     )
                     return {}, {}, {}
+                if strict:
+                    self._validate_mutation_entries(indexed, skipped, skip_reasons)
                 reasons = (
                     skip_reasons
                     if strict
@@ -594,6 +598,10 @@ class ChangeTracker:
                 )
                 return indexed, skipped, reasons
             # Legacy flat format: every entry is an indexed path → digest.
+            if strict:
+                if "version" in state:
+                    raise ValueError("Unsupported tracker state version")
+                self._validate_mutation_entries(state, {}, {})
             return state, {}, {}
         except (OSError, json.JSONDecodeError) as exc:
             if strict:
@@ -606,26 +614,18 @@ class ChangeTracker:
             return {}, {}, {}
 
     @staticmethod
-    def _validate_mutation_state(state: object) -> None:
-        """Refuse snapshots whose unrelated entries a partial write would lose."""
-        if not isinstance(state, dict):
-            raise ValueError("Tracker state must be an object")
-        if "version" not in state:
-            maps = [state]
-            reasons = {}
-        else:
-            if state["version"] != _STATE_VERSION:
-                raise ValueError("Unsupported tracker state version")
-            maps = [state.get("indexed", {}), state.get("skipped", {})]
-            reasons = state.get("skip_reasons", {})
-        for entries in maps:
-            if not isinstance(entries, dict) or any(
+    def _validate_mutation_entries(
+        indexed: dict[str, object],
+        skipped: dict[str, object],
+        reasons: dict[str, object],
+    ) -> None:
+        """Refuse malformed entries before a partial write of decoded maps."""
+        for entries in (indexed, skipped):
+            if any(
                 not isinstance(path, str) or not isinstance(digest, str)
                 for path, digest in entries.items()
             ):
                 raise ValueError("Malformed tracker hash map")
-        if not isinstance(reasons, dict):
-            raise ValueError("Malformed tracker skip reasons")
         for reason in reasons.values():
             if (
                 not isinstance(reason, dict)

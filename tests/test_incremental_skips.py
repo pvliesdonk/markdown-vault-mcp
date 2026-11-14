@@ -19,7 +19,6 @@ from tests.test_managers_index import _make_index_mgr
 
 if TYPE_CHECKING:
     from os import stat_result
-    from typing import IO, Any
 
 
 @settings(max_examples=40, deadline=None)
@@ -178,51 +177,51 @@ def test_dirty_skip_persists_before_graph_failure(
     fts.close()
 
 
-def test_failed_dirty_tombstone_does_not_record_skip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Only a committed tombstone gains a surfaced skip."""
-    (tmp_path / "note.md").write_text("untitled\n")
-    mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path, required_frontmatter=["title"])
-
-    def fail(*_args: object, **_kwargs: object) -> None:
-        raise sqlite3.OperationalError("write unavailable")
-
-    monkeypatch.setattr(fts, "upsert_tombstone", fail)
-    with pytest.raises(sqlite3.OperationalError, match="write unavailable"):
-        mgr.process_dirty_paths({"note.md"})
-    assert mgr.skipped_files() == []
-    fts.close()
-
-
-@pytest.mark.parametrize("stage", ["hash", "stat", "state"])
+@pytest.mark.parametrize("stage", ["hash", "stat", "state", "tombstone"])
 def test_failed_dirty_skip_recording_retries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
 ) -> None:
-    """Hash/stat/state failures retain the dirty snapshot for another attempt."""
+    """Failed skip recording retains retry state without publishing a refresh."""
     path = tmp_path / "note.md"
-    path.write_text("---\ntitle: [unclosed\n---\nbody\n")
+    content = (
+        "untitled\n" if stage == "tombstone" else "---\ntitle: [unclosed\n---\nbody\n"
+    )
+    path.write_text(content)
     tracker = ChangeTracker(tmp_path / "state.json")
-    mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path, tracker=tracker)
+    mgr, fts, _ = _make_index_mgr(
+        tmp_path, tmp_path, tracker=tracker, required_frontmatter=["title"]
+    )
     refreshed: list[str] = []
+    error_type = sqlite3.OperationalError if stage == "tombstone" else OSError
 
     def fail(*_args: object, **_kwargs: object) -> None:
-        raise OSError("synthetic recording failure")
+        raise error_type("synthetic recording failure")
 
     if stage == "hash":
         monkeypatch.setattr(index_module, "compute_file_hash", fail)
     elif stage == "stat":
         original_stat = Path.stat
+        original_hash = index_module.compute_file_hash
+        hashed = False
+
+        def hash_and_arm(item: Path) -> str:
+            nonlocal hashed
+            digest = original_hash(item)
+            hashed = True
+            return digest
 
         def stat(item: Path, *args: object, **kwargs: object) -> stat_result:
-            if item == path:
+            if item == path and hashed:
                 raise OSError("synthetic recording failure")
             return original_stat(item, *args, **kwargs)
 
+        monkeypatch.setattr(index_module, "compute_file_hash", hash_and_arm)
         monkeypatch.setattr(Path, "stat", stat)
+    elif stage == "tombstone":
+        monkeypatch.setattr(fts, "upsert_tombstone", fail)
     else:
         monkeypatch.setattr(tracker, "_save_state", fail)
-    with pytest.raises(OSError, match="synthetic recording failure"):
+    with pytest.raises(error_type, match="synthetic recording failure"):
         mgr.process_dirty_paths({"note.md"}, on_refreshed=refreshed.append)
     assert mgr.skipped_files() == []
     assert refreshed == []
@@ -297,7 +296,7 @@ def test_equivalent_writer_path_clears_canonical_skip(
 def test_ordinary_dirty_batch_reads_tracker_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Multiple valid dirty notes share one snapshot and perform no state saves."""
+    """Multiple valid dirty notes share one tracker snapshot."""
     tracker = ChangeTracker(tmp_path / "state.json")
     mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path, tracker=tracker)
     tracker._save_state(
@@ -307,43 +306,31 @@ def test_ordinary_dirty_batch_reads_tracker_once(
     for path in paths:
         (tmp_path / path).write_text("# Valid\nbody\n")
     load = Mock(wraps=tracker._load_state)
-    save = Mock(wraps=tracker._save_state)
     monkeypatch.setattr(tracker, "_load_state", load)
-    monkeypatch.setattr(tracker, "_save_state", save)
     mgr.process_dirty_paths(paths)
     assert load.call_count == 1
-    assert save.call_count == 0
     fts.close()
 
 
 def test_unreadable_tracker_fails_batch_without_callback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mutation read failures preserve bytes, retry paths and graph recovery."""
-    path = tmp_path / "state.json"
-    tracker = ChangeTracker(path)
-    tracker._save_state({"good.md": "old-hash"}, {}, {})
-    before = path.read_bytes()
+    """A snapshot failure retains retry routing and runs graph recovery."""
+    tracker = ChangeTracker(tmp_path / "state.json")
     (tmp_path / "note.md").write_text("untitled\n")
     mgr, fts, _ = _make_index_mgr(
         tmp_path, tmp_path, tracker=tracker, required_frontmatter=["title"]
     )
-    original_open = Path.open
-
-    def fail_read(item: Path, *args: object, **kwargs: object) -> IO[Any]:
-        if item == path:
-            raise PermissionError("synthetic tracker read failure")
-        return original_open(item, *args, **kwargs)
-
+    monkeypatch.setattr(
+        tracker,
+        "skipped_paths",
+        Mock(side_effect=PermissionError("synthetic tracker read failure")),
+    )
     recovered = Mock(wraps=fts.resolve_vault_wikilinks)
     refreshed: list[str] = []
     monkeypatch.setattr(fts, "resolve_vault_wikilinks", recovered)
-    with monkeypatch.context() as patcher:
-        patcher.setattr(Path, "open", fail_read)
-        with pytest.raises(PermissionError, match="synthetic tracker"):
-            mgr.process_dirty_paths({"note.md"}, on_refreshed=refreshed.append)
-        assert tracker.skip_reasons() == {}
-    assert path.read_bytes() == before
+    with pytest.raises(PermissionError, match="synthetic tracker"):
+        mgr.process_dirty_paths({"note.md"}, on_refreshed=refreshed.append)
     assert refreshed == []
     assert recovered.call_count == 1
     fts.close()

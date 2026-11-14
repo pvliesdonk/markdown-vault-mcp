@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -14,7 +15,7 @@ from markdown_vault_mcp.tracker import ChangeTracker
 from markdown_vault_mcp.types import Chunk, ParsedNote
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from typing import IO, Any
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1031,12 +1032,20 @@ class TestCheckpointState:
         assert state["indexed"] == {"a.md": "hash-a"}
 
 
-@pytest.mark.parametrize("persistent", [False, True])
+@pytest.mark.parametrize("mode", ["memory", "disk", "absent"])
 def test_dirty_skip_updates_preserve_scan_state(
-    tmp_path: Path, persistent: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     """Per-path skip transitions preserve unrelated maps, carries and reparse markers."""
-    tracker = ChangeTracker(tmp_path / "state.json" if persistent else None)
+    tracker = ChangeTracker(None if mode == "memory" else tmp_path / "state.json")
+    if mode == "absent":
+
+        def fail(*_args: object, **_kwargs: object) -> None:
+            pytest.fail("clearing an absent skip must not save state")
+
+        monkeypatch.setattr(tracker, "_save_state", fail)
+        tracker.update_skip("live.md")
+        return
     reason = {"category": "encoding_error", "detail": "unrelated decode failure"}
     tracker._save_state(
         {"live.md": "old-live", "pending.md": "", "changed.md": "old-changed"},
@@ -1073,19 +1082,6 @@ def test_dirty_skip_updates_preserve_scan_state(
         {"other.md": "other-hash"},
         {"other.md": reason},
     )
-
-
-def test_clearing_absent_skip_does_not_write_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Ordinary successful dirty refreshes do not rewrite tracker state."""
-    tracker = ChangeTracker(tmp_path / "state.json")
-
-    def fail(*_args: object, **_kwargs: object) -> None:
-        pytest.fail("clearing an absent skip must not save state")
-
-    monkeypatch.setattr(tracker, "_save_state", fail)
-    tracker.update_skip("live.md")
 
 
 @pytest.mark.parametrize(
@@ -1143,8 +1139,9 @@ def test_batch_skip_membership_follows_successful_persistence(
     assert tracker._load_state() == ({}, {}, {})
 
 
+@pytest.mark.parametrize("operation", ["stat", "read"])
 def test_partial_skip_refuses_failed_state_stat(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
     """An inaccessible snapshot is not mistaken for an absent first-run file."""
     path = tmp_path / "state.json"
@@ -1152,11 +1149,22 @@ def test_partial_skip_refuses_failed_state_stat(
     tracker._save_state({"good.md": "hash"}, {}, {})
     before = path.read_bytes()
 
-    def fail(_path: Path) -> bool:
-        raise PermissionError("synthetic state stat failure")
+    def fail_stat(_path: Path) -> bool:
+        raise PermissionError("synthetic state failure")
 
-    monkeypatch.setattr(tracker_module, "path_exists", fail)
-    with pytest.raises(PermissionError, match="synthetic state stat"):
-        tracker.update_skip("note.md", content_hash="hash")
-    assert tracker.skip_reasons() == {}
+    original_open = Path.open
+
+    def fail_read(item: Path, *args: object, **kwargs: object) -> IO[Any]:
+        if item == path:
+            raise PermissionError("synthetic state failure")
+        return original_open(item, *args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        if operation == "stat":
+            patcher.setattr(tracker_module, "path_exists", fail_stat)
+        else:
+            patcher.setattr(Path, "open", fail_read)
+        with pytest.raises(PermissionError, match="synthetic state"):
+            tracker.update_skip("note.md", content_hash="hash")
+        assert tracker.skip_reasons() == {}
     assert path.read_bytes() == before

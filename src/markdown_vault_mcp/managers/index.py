@@ -1278,11 +1278,9 @@ class IndexManager:
             # serving its last-good content. A transient read failure
             # must propagate so the writer retains its dirty snapshot.
             skip = SkippedFile(path=path, category="parse_error", detail=str(exc))
-            content_hash = compute_file_hash(abs_path)
             self._tombstone_skip(
                 skip,
                 abs_path,
-                content_hash=content_hash,
                 retry_on_error=True,
             )
             self._tracker.update_skip(
