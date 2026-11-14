@@ -397,3 +397,75 @@ def test_empty_injected_discovery_does_not_walk(
     finally:
         client.close()
         vault.close()
+
+
+def test_discovery_reports_traversal_and_read_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Traversal failures, submodules and unreadable notes have distinct outcomes."""
+    from unittest.mock import MagicMock
+
+    def scan(_root: Any, _excludes: Any, *, on_error: Any) -> Any:
+        on_error(OSError(13, "denied", str(tmp_path / "directory")))
+        yield tmp_path / "submodule.md"
+        yield tmp_path / "missing.md"
+
+    monkeypatch.setattr(module, "iter_markdown_files", scan)
+    guard = MagicMock()
+    guard.submodule_of.side_effect = lambda path: path.name == "submodule.md"
+    paths, errors = module.discover_notes(
+        tmp_path, DecideSelection(missing_type=True), "types.md", guard=guard
+    )
+    assert paths == []
+    assert [error["error"] for error in errors] == [
+        "Cannot enumerate notes.",
+        "Cannot select note safely.",
+    ]
+
+
+@pytest.mark.parametrize("failure", ["missing", "unreadable", "conflict"])
+def test_prerequest_read_failures_keep_discovery_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Native reread errors retain preflight failures and never contact Decisions."""
+    from markdown_vault_mcp.exceptions import EditConflictError
+
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+
+    def read(_path: str) -> Any:
+        if failure == "unreadable":
+            raise OSError("private fixture body")
+        if failure == "conflict":
+            raise EditConflictError("private fixture body")
+        return None
+
+    def forbidden(_request: httpx.Request) -> httpx.Response:
+        pytest.fail("Failed reread reached inference")
+
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    client = DecisionsClient(
+        "https://fixture.invalid/v1",
+        "fixture",
+        transport=httpx.MockTransport(forbidden),
+    )
+    monkeypatch.setattr(vault.reader, "read", read)
+    try:
+        errors = [
+            {
+                "path": "directory",
+                "disposition": "error",
+                "error": "Cannot enumerate notes.",
+            }
+        ]
+        report = OkfDecisionManager(
+            vault,
+            client,
+            DecisionPolicy(THRESHOLDS),
+            load_vocabulary(tmp_path, "types.md"),
+        ).decide(DecideSelection(missing_type=True), discovery=(["note.md"], errors))
+        assert len(report.results) == 2 and report.exit_code() == 1
+        assert report.counts["conflict"] == (1 if failure == "conflict" else 0)
+        assert "private fixture" not in json.dumps(report.results)
+    finally:
+        client.close()
+        vault.close()

@@ -534,3 +534,113 @@ def test_description_never_skips_or_copies_unsuitable_first_block(
         "note.md", {}, body, load_vocabulary(tmp_path, "types.md")
     )
     assert "description" not in decision.bindings
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("name", None), ("name", "type"), ("instructions", ""), ("type", "unknown")],
+)
+def test_invalid_question_metadata_precedes_http(field: str, value: Any) -> None:
+    """Invalid names and question shapes never reach a transport."""
+    questions = copy.deepcopy(QUESTIONS)
+    questions[0][field] = value
+
+    def forbidden(_request: httpx.Request) -> httpx.Response:
+        pytest.fail("Invalid question reached HTTP")
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1",
+        "fixture",
+        transport=httpx.MockTransport(forbidden),
+    )
+    try:
+        with pytest.raises(ValueError):
+            client.decide(PARTS, questions)
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize("data", [{"not-json": {1, 2}}, {"nonfinite": float("nan")}])
+def test_non_json_input_precedes_http(data: Any) -> None:
+    """Non-JSON metadata refuses locally without a paid request."""
+    parts = copy.deepcopy(PARTS)
+    parts[1]["data"] = data
+
+    def forbidden(_request: httpx.Request) -> httpx.Response:
+        pytest.fail("Invalid JSON reached HTTP")
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1",
+        "fixture",
+        transport=httpx.MockTransport(forbidden),
+    )
+    try:
+        with pytest.raises(ValueError, match="valid JSON"):
+            client.decide(parts, QUESTIONS)
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize("item", [None, {"value": True, "probability": 0.5}])
+def test_malformed_distribution_items_refuse_whole_reply(item: Any) -> None:
+    """Every probability entry requires a mapping and literal string value."""
+    answers = copy.deepcopy(ANSWERS)
+    answers[1]["probabilities"][0] = item
+    client = DecisionsClient(
+        "https://fixture.invalid/v1",
+        "fixture",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json={"answers": answers})
+        ),
+    )
+    try:
+        with pytest.raises(DecisionError, match="response"):
+            client.decide(PARTS, QUESTIONS)
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    "answer,disposition",
+    [({"type": "refusal"}, "refusal"), ({"probability": 0.1}, "low-confidence")],
+)
+def test_source_outcome_retains_literal_candidate(
+    tmp_path: Path, answer: dict[str, Any], disposition: str
+) -> None:
+    """Refusals and low scores retain the resource and actual source decision."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    decision = build_questions(
+        "note.md",
+        {},
+        "https://example.invalid/evidence",
+        load_vocabulary(tmp_path, "types.md"),
+    )
+    patch, fields = decision.evaluate(
+        accept_answers(decision.questions, **{"sources:0": answer}),
+        DecisionPolicy(THRESHOLDS),
+        now=NOW,
+    )
+    assert "sources" not in patch
+    source = fields["sources"]["decisions"]["sources:0"]
+    assert source["proposed"] == "https://example.invalid/evidence"
+    assert source["disposition"] == disposition and not source["accepted"]
+
+
+def test_source_candidates_reject_escaped_paths_and_bad_urls(tmp_path: Path) -> None:
+    """A resolved symlink outside the vault and malformed URLs are not evidence."""
+    from dataclasses import replace
+
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    outside = tmp_path.parent / (tmp_path.name + "-outside.md")
+    outside.write_text("Fixture.")
+    (tmp_path / "escaped.md").symlink_to(outside)
+    try:
+        vocabulary = load_vocabulary(tmp_path, "types.md")
+        body = "[escape](escaped.md) https://[invalid"
+        decision = build_questions("note.md", {}, body, vocabulary)
+        assert not decision.bindings["sources"]
+        assert not build_questions(
+            "note.md", {}, body, replace(vocabulary, root=None)
+        ).bindings["sources"]
+    finally:
+        outside.unlink()

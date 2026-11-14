@@ -2790,3 +2790,10 @@ def test_decisions_threshold_env_suffixes(
     assert getattr(
         ProjectConfig.from_env(), f"okf_decisions_{key.lower()}_threshold"
     ) == float(value)
+
+
+@pytest.mark.parametrize("url", [None, True, 42])
+def test_decisions_url_type_is_guarded(url: Any) -> None:
+    """Invalid direct URL types produce a safe configuration error."""
+    with pytest.raises(ConfigurationError, match="OKF_DECISIONS_BASE_URL"):
+        ProjectConfig(okf_decisions_base_url=url)

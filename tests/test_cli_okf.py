@@ -416,3 +416,32 @@ def test_empty_discovery_errors_need_no_key_or_builder(
     result = runner.invoke(app, ["okf", "decide", "--missing-type", "--json"])
     assert result.exit_code == 1
     assert json.loads(result.stdout)["counts"]["error"] == 1
+
+
+def test_text_decision_report_escapes_terminal_controls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Text includes actual answers while untrusted paths cannot control a terminal."""
+    from unittest.mock import MagicMock
+
+    from markdown_vault_mcp.managers.okf_decide import DecideReport
+
+    _source(tmp_path, monkeypatch)
+    (tmp_path / "note.md").write_text("Fixture.")
+    report = DecideReport()
+    report.add(
+        {
+            "path": "note\x1b[31m.md",
+            "disposition": "unchanged",
+            "answers": [{"name": "meaningful", "probability": 0.1}],
+        }
+    )
+    client, built, manager = MagicMock(), MagicMock(), MagicMock()
+    manager.decide.return_value = report
+    monkeypatch.setattr(_cli_okf, "DecisionsClient", lambda *_args: client)
+    monkeypatch.setattr(_cli_okf, "_build_decide_vault", lambda *_args: built)
+    monkeypatch.setattr(_cli_okf, "OkfDecisionManager", lambda *_args: manager)
+    result = runner.invoke(app, ["okf", "decide", "--missing-type"])
+    assert result.exit_code == 0
+    assert "\x1b" not in result.stdout and "0.1" in result.stdout
+    assert "meaningful" in result.stdout and "\\u001b" in result.stdout
