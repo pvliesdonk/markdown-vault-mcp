@@ -16,6 +16,14 @@ Use this guide to choose and configure the right git mode for your deployment.
 3. **No-git** (default)
    The vault is treated as a plain directory with no git operations.
 
+## Filenames from outside the server
+
+Notes created through Git or directly on disk can carry carriage returns
+(`CR`) or carriage-return/newline pairs (`CRLF`) in their filenames.
+History, rename tracking, revision reads and conflict recovery preserve those
+characters, along with newlines, tabs and supported non-ASCII names. Ignored
+filenames retain the same spelling when Git decides which paths to stage.
+
 ## What a commit covers
 
 In both git modes, the commit boundary is the MCP tool call, not the file.

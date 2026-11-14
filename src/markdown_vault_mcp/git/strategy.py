@@ -22,11 +22,11 @@ import re
 import subprocess
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
-    from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
     from markdown_vault_mcp.git.types import RevisionQuery
@@ -2026,12 +2026,14 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
     """
     if not paths:
         return set()
-    result = subprocess.run(
-        ["git", "-C", root, "check-ignore", "--no-index", "-z", "--stdin"],
+    result = run_git_capturing(
+        Path(root),
+        "check-ignore",
+        "--no-index",
+        "-z",
+        "--stdin",
         input="".join(f"{path}\0" for path in paths),
-        capture_output=True,
-        text=True,
-        check=False,
+        preserve_newlines=True,
     )
     if result.returncode not in (0, 1):
         # Warned rather than traced: when the paths turn out not to be excluded

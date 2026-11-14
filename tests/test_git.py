@@ -2083,13 +2083,17 @@ class TestGitSyncOnce:
 
         call_count = 0
 
-        def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        def fake_run(
+            cmd: list[str], **_kwargs: object
+        ) -> SimpleNamespace | subprocess.CompletedProcess[bytes]:
             nonlocal call_count
             call_count += 1
             # diff --name-only -z --diff-filter=U: always return a conflicting
             # file, NUL-terminated as the -z stream frames it.
             if "--diff-filter=U" in cmd:
-                return SimpleNamespace(returncode=0, stdout="README.md\0", stderr="")
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout=b"README.md\0", stderr=b""
+                )
             # git show REBASE_HEAD:README.md: return fake MCP content.
             if "show" in cmd:
                 return SimpleNamespace(
@@ -4336,9 +4340,11 @@ class TestGetFileDiff:
         # Synthetic `git diff --name-status -z`: status\0path\0 (R adds 2nd path).
         fake_stdout = f"M\0other.md\0R092\0{old_path}\0{new_path}\0"
 
-        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+        def fake_run(
+            *_args: object, **_kw: object
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout, stderr=""
+                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
             )
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
@@ -4353,9 +4359,11 @@ class TestGetFileDiff:
         """No rename row matching cur_rel -> None, not a crash."""
         fake_stdout = "M\0other.md\0A\0added.md\0"
 
-        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+        def fake_run(
+            *_args: object, **_kw: object
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout, stderr=""
+                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
             )
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
@@ -4376,9 +4384,11 @@ class TestGetFileDiff:
         # which doesn't match cur_rel either, so the final answer is None.
         fake_stdout = "R092\0other_old.md\0other_new.md\0M\0target.md\0"
 
-        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+        def fake_run(
+            *_args: object, **_kw: object
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout, stderr=""
+                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
             )
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
@@ -4412,9 +4422,11 @@ class TestGetFileDiff:
             "C092\x00copied_src.md\x00copied_dst.md\x00R100\x00old.md\x00wanted.md\x00"
         )
 
-        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+        def fake_run(
+            *_args: object, **_kw: object
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout, stderr=""
+                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
             )
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
@@ -4440,9 +4452,11 @@ class TestGetFileDiff:
         """Truncated R<score>\\0old\\0 (missing new-path) returns None without raising."""
         fake_stdout = "R092\0old.md\0"
 
-        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+        def fake_run(
+            *_args: object, **_kw: object
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout, stderr=""
+                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
             )
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
@@ -4459,9 +4473,11 @@ class TestGetFileDiff:
         """Truncated M\\0 (missing path) returns None without raising."""
         fake_stdout = "M\0"
 
-        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+        def fake_run(
+            *_args: object, **_kw: object
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=fake_stdout, stderr=""
+                args=[], returncode=0, stdout=fake_stdout.encode(), stderr=b""
             )
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
@@ -6984,7 +7000,7 @@ class TestTheExcludeProbeItself:
         from markdown_vault_mcp.git.strategy import _ignored_paths
 
         killed = subprocess.CompletedProcess(
-            args=["git", "check-ignore"], returncode=-9, stdout="", stderr=""
+            args=["git", "check-ignore"], returncode=-9, stdout=b"", stderr=b""
         )
         with (
             mock.patch(
