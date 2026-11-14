@@ -58,10 +58,10 @@ docker compose exec -u appuser markdown-vault-mcp markdown-vault-mcp search "rel
 
 Run it as `appuser`, the user the server runs as. As root, which is what `docker exec` uses by default, a vault that is a git checkout fails with `Managed mode requires SOURCE_DIR to be empty or a git repository`, because git refuses a checkout owned by another user.
 
-The command also prints the server's startup log lines on stderr. Set `MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING` for the call to keep the terminal to the results. An alias for a container started with `docker run --name my-vault` puts both in one word:
+Local read commands suppress routine INFO logs while producing results. Warnings and errors remain on stderr. Use `-v` or `MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG` for diagnostics; an existing stricter logging policy still applies. Server and admin commands keep their configured logging behavior. An alias for a container started with `docker run --name my-vault` puts the read command in one word:
 
 ```bash
-alias vault='docker exec -u appuser -e MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING my-vault markdown-vault-mcp'
+alias vault='docker exec -u appuser my-vault markdown-vault-mcp'
 vault search "release notes"
 ```
 

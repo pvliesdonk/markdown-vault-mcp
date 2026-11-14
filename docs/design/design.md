@@ -943,7 +943,13 @@ operations (`read`, `write`, `edit`, `delete`, `rename`,
 `stats`, `list_folders`, `list_tags`, `get_recent`,
 `get_orphan_notes`, `get_most_linked`, `get_broken_links`) work on an
 unbuilt index: bucket-1 hits disk directly; bucket-2 queries
-whatever is currently in the index (empty on cold start). So the CLI
+whatever is currently in the index (empty on cold start). Local CLI read
+dispatch suppresses logs through INFO for the duration of the local adapter,
+preserving any stricter existing global disable threshold. Effective root DEBUG
+keeps diagnostics enabled. The exact previous threshold is restored after success,
+failure or interruption. This policy leaves root handlers, server/admin logging
+and remote credential-log suppression unchanged (#1999). It does not change local
+search construction or managed Git ownership validation. So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
