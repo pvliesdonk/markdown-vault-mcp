@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from markdown_vault_mcp.fts_index import FTSIndex, _json_default
-from markdown_vault_mcp.types import Chunk, FTSResult, ParsedNote
+from markdown_vault_mcp.types import Chunk, FTSResult, ParsedNote, SkippedFile
 
 # ---------------------------------------------------------------------------
 # Test helper
@@ -2145,3 +2145,27 @@ def test_alias_effective_tags_use_resolved_authority(
             idx.close()
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("tombstone", [False, True], ids=["absent", "tombstone"])
+def test_authority_comparison_ignores_nonlive_rows(tombstone: bool) -> None:
+    """Authority checks leave absent and skipped paths out of reconciliation."""
+    idx = FTSIndex(":memory:", indexed_frontmatter_fields=["type"])
+    try:
+        idx.upsert_note(make_note("live.md", frontmatter={"type": "Original"}))
+        if tombstone:
+            idx.upsert_tombstone(
+                SkippedFile(
+                    path="missing.md", category="parse_error", detail="bad yaml"
+                ),
+                content_hash="invalid",
+                modified_at=2000.0,
+            )
+        known_paths = idx.list_document_paths()
+        writes = idx._conn().total_changes
+        assert not idx.tags_match_authority("live.md", "live.md", {"type": "Changed"})
+        assert idx.tags_match_authority("missing.md", "SKILL.md", {"type": "Changed"})
+        assert idx.list_document_paths() == known_paths
+        assert idx._conn().total_changes == writes
+    finally:
+        idx.close()
