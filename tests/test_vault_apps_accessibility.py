@@ -63,7 +63,19 @@ def test_context_heading_through_tool_lifecycle(page: Page) -> None:
     card = frame.locator("#context-card")
     heading = frame.locator("#ctx-title")
     assert not card.is_visible()
-    for result in ({"title": "Synthetic note"}, {}, None, "error"):
+    success = {
+        "path": "folder/example.md",
+        "title": "Synthetic note",
+        "folder": "folder",
+        "frontmatter": {},
+        "modified_at": 1_700_000_000.0,
+        "backlinks": [],
+        "outlinks": [],
+        "similar": [],
+        "folder_notes": [],
+        "tags": {},
+    }
+    for result in (success, None, "error"):
         frame.evaluate("void window.loadContext('folder/example.md')")
         page.wait_for_function("window.pending.length === 1")
         assert card.is_visible()
@@ -75,12 +87,12 @@ def test_context_heading_through_tool_lifecycle(page: Page) -> None:
             [payload, result == "error"],
         )
         if isinstance(result, dict):
-            expected = result.get("title", "example")
-            frame.get_by_role("heading", name=expected, exact=True).wait_for()
+            frame.get_by_role("heading", name=result["title"], exact=True).wait_for()
+            assert card.is_visible()
+            frame.evaluate("void window.loadContext(null)")
+            assert not card.is_visible()
         else:
             card.wait_for(state="hidden")
-    frame.evaluate("void window.loadContext(null)")
-    assert not card.is_visible()
 
 
 def test_search_name_survives_populated_value(page: Page) -> None:
