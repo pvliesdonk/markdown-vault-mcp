@@ -592,9 +592,8 @@ if _WATCHDOG_AVAILABLE:
             paths = [getattr(event, "src_path", "") or ""]
             if event.event_type == EVENT_TYPE_MOVED:
                 paths.append(getattr(event, "dest_path", "") or "")
-            if not any(
-                not _is_hidden_relative_to_root(path, self._watch_root)
-                for path in paths
+            if all(
+                _is_hidden_relative_to_root(path, self._watch_root) for path in paths
             ):
                 return
             self._schedule()
