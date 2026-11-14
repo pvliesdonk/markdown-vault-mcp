@@ -2114,3 +2114,34 @@ def test_canonical_indexed_fields_preserves_field_identity(
     from markdown_vault_mcp.fts_index import canonical_indexed_fields
 
     assert canonical_indexed_fields(fields) == expected
+
+
+def test_alias_effective_tags_use_resolved_authority(
+    tmp_path: Path, alias_note
+) -> None:
+    """Both lexical rows must match the resolved type before the native limit."""
+    from markdown_vault_mcp.scanner import parse_note
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    target, alias, raw, expected = alias_note
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+        hits = vault.reader.search(
+            "zebra", mode="keyword", filters={"type": expected["type"]}
+        )
+        assert {hit.path for hit in hits} == {target, alias}
+        assert all(hit.frontmatter == raw for hit in hits)
+        parsed = parse_note(tmp_path / alias, tmp_path)
+        idx = FTSIndex(":memory:", indexed_frontmatter_fields=["type"])
+        try:
+            idx.upsert_note(parsed)
+            assert [
+                r.path for r in idx.search("zebra", filters={"type": "Literal"})
+            ] == [alias]
+            assert json.loads(idx.get_note(alias)["frontmatter_json"]) == raw
+            assert make_note().okf_authority_path is None
+        finally:
+            idx.close()
+    finally:
+        vault.close()

@@ -1158,3 +1158,20 @@ def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> No
         shut.chmod(0o755)
     assert [n.path for n in notes] == ["ok.md"]
     assert len(errors) == 1
+
+
+def test_alias_parse_retains_row_identity_and_resolved_authority(
+    tmp_path: Path, alias_note: Any
+) -> None:
+    """Parsing must not confuse the lexical row with the resolved metadata authority."""
+    from markdown_vault_mcp.hashing import compute_etag
+
+    target, alias, raw, _ = alias_note
+    original = (tmp_path / target).read_bytes()
+    parsed = parse_note(tmp_path / alias, tmp_path)
+    assert parsed.path == alias
+    assert parsed.title == Path(alias).stem
+    assert parsed.frontmatter == raw
+    assert parsed.content_hash == compute_etag(original)
+    assert parsed.okf_authority_path == (tmp_path / target).resolve().as_posix()
+    assert parsed.links[0].target_path == str(Path(alias).parent / "peer.md")

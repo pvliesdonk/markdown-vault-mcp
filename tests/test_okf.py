@@ -1294,3 +1294,43 @@ def test_effective_skill_tag_keys_avoid_configured_names() -> None:
     assert _effective_okf_tag_key("type", fields) == "__okf__:__okf__:__okf__:type"
     assert _effective_okf_tag_key("tags", fields) == "tags"
     assert _effective_okf_tag_key("type", ["tags"]) == "type"
+
+
+def test_resolved_okf_metadata_uses_held_mapping(
+    tmp_path: Path, alias_note: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Identity resolution must project the held six families without another note read."""
+    from copy import deepcopy
+
+    from markdown_vault_mcp.okf import OKF_METADATA_FIELDS, resolved_okf_metadata
+
+    _, alias, raw, expected = alias_note
+    before = deepcopy(raw)
+
+    def forbid(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("unexpected note content read")
+
+    monkeypatch.setattr(type(tmp_path), "read_bytes", forbid)
+    monkeypatch.setattr(type(tmp_path), "read_text", forbid)
+    monkeypatch.setattr("markdown_vault_mcp.okf.parse_frontmatter", forbid)
+    projected = resolved_okf_metadata(raw, path=alias, source_dir=tmp_path)
+    assert {key: projected[key] for key in OKF_METADATA_FIELDS} == expected
+    assert projected["name"] == "discovery" and raw == before
+    assert resolved_okf_metadata(raw, path=None, source_dir=tmp_path) == raw
+    assert resolved_okf_metadata(raw, path="ordinary.md") == raw
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), RuntimeError("loop")])
+def test_resolved_okf_metadata_propagates_resolution_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """A genuine resolution failure must not silently select a lexical authority."""
+    from markdown_vault_mcp.okf import resolved_okf_metadata
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        raise error
+
+    monkeypatch.setattr(type(tmp_path), "resolve", fail)
+    with pytest.raises(type(error)) as caught:
+        resolved_okf_metadata({"type": "Literal"}, path="alias.md", source_dir=tmp_path)
+    assert caught.value is error

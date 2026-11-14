@@ -504,7 +504,7 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: is no longer an H1, the title or a chunk boundary; its chunk and
 #: ``content_chars`` gain the indentation. Every other note's rows are
 #: byte-identical, so no other note's embeddings are recomputed.
-#: Version 12 (#2062) adds effective OKF tags alongside literal configured tags,
+#: Version 12 (#2062) adds resolved-authority effective OKF tags alongside literal tags,
 #: including SKILL.md nested metadata and filename-inferred Skill type. Raw
 #: frontmatter_json stays literal; unchanged files rebuild both views once.
 #: Complete indexed-field sets use canonical JSON under a distinct meta key;
@@ -1326,7 +1326,12 @@ class FTSIndex:
         if not self._indexed_fields:
             return
 
-        metadata = effective_okf_metadata(note.frontmatter, path=note.path)
+        metadata = effective_okf_metadata(
+            note.frontmatter,
+            path=note.okf_authority_path
+            if note.okf_authority_path is not None
+            else note.path,
+        )
         values = {key: note.frontmatter.get(key) for key in self._indexed_fields}
         values.update(
             {

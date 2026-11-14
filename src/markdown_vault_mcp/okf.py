@@ -384,6 +384,28 @@ def effective_okf_metadata(
     return result
 
 
+def resolved_okf_metadata(
+    metadata: dict[str, Any], *, path: str | None, source_dir: Path | None = None
+) -> dict[str, Any]:
+    """Project held indexed metadata using its resolved filesystem identity.
+
+    Args:
+        metadata: Raw metadata already held by the caller; never reread.
+        path: Indexed spelling, or ``None`` for ordinary semantics.
+        source_dir: Optional index root, including its native symlink population.
+
+    Returns:
+        The pure six-family projection, retaining lexical semantics without a root.
+
+    Raises:
+        OSError: If identity resolution fails; no lexical fallback is applied.
+        RuntimeError: If the native resolver reports a symlink loop.
+    """
+    if source_dir is not None and path is not None:
+        path = (source_dir / path).resolve().as_posix()
+    return effective_okf_metadata(metadata, path=path)
+
+
 def derive_annotation(
     metadata: dict[str, Any],
     *,
