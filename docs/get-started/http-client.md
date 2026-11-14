@@ -59,6 +59,28 @@ Whether Claude can also write is the operator's choice: a server in read-only mo
 - `browse_vault` and `show_context` open an interactive view in clients that render [MCP Apps](../deploy/mcp-apps.md); other clients get the same data as text.
 - `create_download_link` and `create_upload_link` return a one-time URL for moving a file out of or into the vault, which works without your credential. See [Transfer links](../deploy/transfer-links.md).
 - `summarize` appears only when the operator configured a language model for it.
+
+### Read a complete HTTP result
+
+When building a client for this vault, discover `search` and `read` through
+`tools/list`. Search with `mode="keyword"` works without an embedding provider;
+pass a returned note's `path` to `read`. The [terminal guide](../use/terminal.md)
+shows the same workflow through the command line.
+
+Keep the complete MCP result when calling these tools. For vault search,
+`structuredContent.result` holds the hit list; for `read`, `structuredContent`
+holds the note object. Search includes a Boolean `_meta.index_stale` describing index freshness; `read` reads the file
+directly. Keep search metadata alongside the hits so a caller can decide
+whether to wait for pending writes.
+
+For result fields and error handling, see the
+[MCP tool-result contract](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
+
+The synthetic HTTP contract tests exercise the native vault server and these
+whole-result shapes expected by an Executor caller. They do not establish
+acceptance by an installed Executor runtime or verify a personal connection.
+Use the operator's [authentication instructions](../deploy/authentication.md)
+for credentials; the contract tests use only synthetic notes.
 <!-- DOMAIN-HTTP-CLIENT-EXTRA-END -->
 
 ## Next
