@@ -1121,6 +1121,36 @@ class IndexManager:
     # Deferred embedding flush
     # ------------------------------------------------------------------
 
+    def _expanded_dirty_paths(
+        self, paths: set[str]
+    ) -> tuple[set[str], Exception | None]:
+        """Select original inputs and known in-vault aliases, retaining identity faults."""
+        known = {row["path"] for row in self._fts.list_notes()}
+        known.update(row["path"] for row in self._fts.list_tombstones())
+        root = self._source_dir.resolve()
+        identities: dict[str, Path] = {}
+        first_error: Exception | None = None
+        for path in [*sorted(paths), *sorted(known - paths)]:
+            absolute = self._source_dir / path
+            try:
+                if self._is_path_excluded(path) or not is_regular_file(absolute):
+                    continue
+                resolved = absolute.resolve()
+                if resolved.is_relative_to(root):
+                    identities[path] = resolved
+            except (OSError, ValueError, RuntimeError) as exc:
+                # A loop/disappearance has native deletion semantics. A refused
+                # stat or still-live unresolved spelling must retain retry input.
+                try:
+                    absent = not is_regular_file(absolute)
+                except OSError:
+                    absent = False
+                if not absent and first_error is None:
+                    first_error = exc
+        targets = {identities[path] for path in paths if path in identities}
+        selected = paths | {path for path in known if identities.get(path) in targets}
+        return selected, first_error
+
     def process_dirty_paths(
         self, paths: set[str], *, on_refreshed: Callable[[str], None] | None = None
     ) -> None:
@@ -1159,7 +1189,8 @@ class IndexManager:
         paths for retry; if parsing already failed, that primary error wins.
 
         Args:
-            paths: Vault-relative paths to refresh.
+            paths: Original vault-relative inputs; known resolved aliases refresh
+                in the same batch without discovering new indexed names.
             on_refreshed: Optional callback for each successfully refreshed row,
                 allowing the writer to advance its embeddings even if a sibling
                 or the final graph refresh fails.
@@ -1167,8 +1198,8 @@ class IndexManager:
         if not paths:
             return
         try:
-            first_error: Exception | None = None
-            for path in paths:
+            expanded, first_error = self._expanded_dirty_paths(paths)
+            for path in expanded:
                 try:
                     self._process_dirty_path(path)
                     if on_refreshed is not None:

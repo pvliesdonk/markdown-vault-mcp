@@ -800,6 +800,68 @@ class TestOkfVerifyTrustAuth:
             with pytest.raises(ToolError, match="changed while it was being verified"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
 
+    @pytest.mark.parametrize("conflict", [False, True])
+    async def test_verify_alias_retarget_stays_bound_to_read_target(
+        self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch, conflict: bool
+    ) -> None:
+        """Same-byte alias retarget must not redirect the attestation after its read."""
+        from markdown_vault_mcp.facets.reader import ReaderFacet
+        from markdown_vault_mcp.facets.writer import WriterFacet
+
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
+        original = trust_auth_env / "SKILL.md"
+        other = trust_auth_env / "ordinary.md"
+        before = fm.dumps(
+            fm.Post("# Same zebra", type="Literal", metadata={"type": "Runbook"})
+        )
+        original.write_text(before)
+        other.write_text(before)
+        alias = trust_auth_env / "alias.md"
+        alias.symlink_to(original)
+        read = ReaderFacet.read
+        write = WriterFacet.write
+        observed = {}
+
+        def read_and_retarget(reader, path: str, **kwargs: Any):
+            note = read(reader, path, **kwargs)
+            if path == "alias.md":
+                observed["note"] = note
+                alias.unlink()
+                alias.symlink_to(other)
+                if conflict:
+                    original.write_text(before + "\nconcurrent change\n")
+            return note
+
+        def conditional_write(writer, path: str, content: str, **kwargs: Any):
+            observed["path"], observed["etag"] = path, kwargs.get("if_match")
+            return write(writer, path, content, **kwargs)
+
+        monkeypatch.setattr(ReaderFacet, "read", read_and_retarget)
+        monkeypatch.setattr(WriterFacet, "write", conditional_write)
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            if conflict:
+                with pytest.raises(ToolError, match=r"alias\.md.*changed while"):
+                    await client.call_tool("okf_verify", {"path": "alias.md"})
+            else:
+                result = _parse_tool_data(
+                    await client.call_tool("okf_verify", {"path": "alias.md"})
+                )
+                assert result["path"] == "alias.md" and result["verified_count"] == 1
+            await wait_for_mcp_writer_drain(client)
+        note = observed["note"]
+        assert observed["path"] == note.path == "SKILL.md"
+        assert observed["etag"] == note.etag
+        assert other.read_text() == before
+        if conflict:
+            assert original.read_text() == before + "\nconcurrent change\n"
+        else:
+            assert (
+                fm.loads(original.read_text())["metadata"]["verified"][0]["by"]
+                == "human:peter"
+            )
+
     @pytest.mark.parametrize(
         ("target", "request_path", "nested"),
         [
@@ -1077,7 +1139,7 @@ def test_skill_content_edit_invalidates_nested_verification(
         def enrich(text: str, op: Any) -> str:
             intent = _okf_write.current_okf_intent()
             observed.append((op, intent.path if intent else None))
-            return text
+            return text + "\nlegacy " + op + "\n"
 
         vault._doc_mgr._okf_write_enrich = enrich
         if operation == "body":
@@ -1103,6 +1165,7 @@ def test_skill_content_edit_invalidates_nested_verification(
             ("write" if operation in {"overwrite", "create"} else "edit", target)
         ]
         assert "updated" in destination.read_text()
+        assert "legacy " + observed[0][0] in destination.read_text()
     finally:
         vault.close()
 
@@ -1197,17 +1260,95 @@ def test_path_scope_restores_outer_intent_after_error(tmp_path: Path) -> None:
     assert _okf_write.current_okf_intent() is None
 
 
-def test_legacy_enrichment_callback_keeps_two_arguments(tmp_path: Path) -> None:
-    """A native mutation must still accept a shipped two-argument injected callback."""
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+@pytest.mark.parametrize("write_alias", [False, True])
+def test_native_write_refreshes_all_indexed_spellings(
+    tmp_path: Path, alias_note, write_alias: bool
+) -> None:
+    """A real enriched write refreshes known live and tombstone names, never new aliases."""
+    import json
+
+    from markdown_vault_mcp.hashing import compute_etag
+    from markdown_vault_mcp.types import SkippedFile
+
+    target, alias, _, expected = alias_note
+    (tmp_path / "restored.md").symlink_to(tmp_path / target)
+    (tmp_path / "unrelated.md").write_text("# Unrelated")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
     try:
         vault.index.build_index()
+        vault._fts.upsert_tombstone(
+            SkippedFile(path="restored.md", category="parse_error", detail="fixture"),
+            content_hash="old",
+            modified_at=0,
+        )
+        (tmp_path / "unknown.md").symlink_to(tmp_path / target)
+        untouched = vault._fts.get_note("unrelated.md")
+        vault.writer.append(alias if write_alias else target, "\nupdated zebra\n")
+        wait_for_writer_drain(vault)
+        content = (tmp_path / target).read_bytes()
+        raw = fm.loads(content.decode()).metadata
+        slot = raw["metadata"] if expected["type"] == "Runbook" else raw
+        assert "verified" not in slot and "generated" in slot
+        for path in (target, alias, "restored.md"):
+            row = vault._fts.get_note(path)
+            assert row["content_hash"] == compute_etag(content)
+            assert json.loads(row["frontmatter_json"]) == raw
+        assert {
+            h.path
+            for h in vault.reader.search(
+                "updated", mode="keyword", filters={"type": expected["type"]}
+            )
+        } == {target, alias, "restored.md"}
+        assert vault.reader.okf_stats()["types"][expected["type"]] == 3
+        assert vault._fts.get_note("unknown.md") is None
+        assert vault._fts.get_note("unrelated.md") == untouched
+        from markdown_vault_mcp.query_types import NoteQuery
 
-        def enrich(text: str, operation: Any) -> str:
-            return text + "\nlegacy " + operation + "\n"
+        assert {
+            n["path"]
+            for n in vault.reader.query_documents(
+                NoteQuery(filters={"type": "Literal"})
+            ).items
+        } == {target, alias, "restored.md"}
+    finally:
+        vault.close()
 
-        vault._doc_mgr._okf_write_enrich = enrich
-        vault.writer.write("SKILL.md", "# Demo\n")
-        assert "legacy write" in (tmp_path / "SKILL.md").read_text()
+
+@pytest.mark.parametrize("failure", ["etag", "atomic", "malformed"])
+def test_alias_refused_write_preserves_authoritative_bytes(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Native stamp computation never persists when validation or replacement fails."""
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+
+    target, alias, _, _ = alias_note
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
+    try:
+        vault.index.build_index()
+        before = (tmp_path / target).read_bytes()
+        if failure == "atomic":
+
+            def failed(*_args: Any, **_kwargs: Any) -> None:
+                raise OSError("synthetic atomic replacement refusal")
+
+            monkeypatch.setattr(
+                "markdown_vault_mcp.managers.document.atomic_write", failed
+            )
+            with pytest.raises(OSError, match="atomic replacement"):
+                vault.writer.append(alias, "changed")
+        elif failure == "etag":
+            with pytest.raises(ConcurrentModificationError):
+                vault.writer.write(alias, "# Replacement", if_match="stale-etag")
+        else:
+            with pytest.raises(InvalidRequestError):
+                vault.writer.write(alias, "---\n[bad\n---\n# Replacement")
+        assert (tmp_path / target).read_bytes() == before
+        assert vault.index.wait_for_drain(timeout=5)
     finally:
         vault.close()

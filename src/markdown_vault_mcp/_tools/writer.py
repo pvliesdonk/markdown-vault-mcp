@@ -1199,7 +1199,7 @@ def register(mcp: FastMCP) -> None:
         try:
             with okf_write_suppressed():
                 await asyncio.to_thread(
-                    vault.writer.write, path, new_text, if_match=note.etag
+                    vault.writer.write, note.path, new_text, if_match=note.etag
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(

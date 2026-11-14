@@ -8,7 +8,7 @@ import sqlite3
 import threading
 from concurrent.futures import CancelledError, Future
 from contextlib import closing
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -1582,3 +1582,88 @@ def test_vault_adopts_completed_empty_canonical_namespace(
         assert reader._fts.get_chunking_meta().indexed_frontmatter_fields == "[]"
         assert reader.reader.list_documents() == []
     assert db.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "fault_kind", ["sibling-resolve", "sibling-parse", "original-transient"]
+)
+def test_alias_refresh_failure_reexpands_original_dirty_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault_kind: str
+) -> None:
+    """Queued partial failures notify healthy rows and retry only the original input set."""
+    from pathlib import Path
+
+    import markdown_vault_mcp.managers.index as index_mod
+    from markdown_vault_mcp.indexing import FlushDirtyEmbeddings
+    from markdown_vault_mcp.scanner import parse_note
+    from tests.fixtures.okf_skills import SKILL
+
+    (tmp_path / "SKILL.md").write_text(SKILL)
+    for name in ("alias.md", "healthy.md"):
+        (tmp_path / name).symlink_to(tmp_path / "SKILL.md")
+    coord = make_coordinator(tmp_path)
+    fault = PermissionError("synthetic queued identity/read fault")
+    failing = True
+    original_attempts = 0
+    flushed = []
+    resolve, parse = Path.resolve, index_mod.parse_note
+
+    def resolve_one(path: Path, *args: Any, **kwargs: Any) -> Path:
+        nonlocal original_attempts
+        if (
+            failing
+            and fault_kind == "sibling-resolve"
+            and path == tmp_path / "alias.md"
+        ):
+            raise fault
+        if (
+            failing
+            and fault_kind == "original-transient"
+            and path == tmp_path / "SKILL.md"
+        ):
+            original_attempts += 1
+            if original_attempts == 1:
+                raise fault
+        return resolve(path, *args, **kwargs)
+
+    def parse_one(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if failing and fault_kind == "sibling-parse" and path == tmp_path / "alias.md":
+            raise fault
+        return parse(path, *args, **kwargs)
+
+    try:
+        coord.build_index()
+        mgr = coord._writer_ctx.index_manager
+        monkeypatch.setattr(
+            mgr, "flush_dirty_embeddings", lambda paths: flushed.append(set(paths))
+        )
+        monkeypatch.setattr(Path, "resolve", resolve_one)
+        monkeypatch.setattr(index_mod, "parse_note", parse_one)
+        original = {"SKILL.md", "healthy.md"}
+        coord.writer.mark_dirty(original)
+        with pytest.raises(PermissionError) as caught:
+            coord.writer.submit(ProcessDirtyPaths()).result(timeout=5)
+        assert caught.value is fault
+        coord.writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+        assert coord.writer.snapshot_dirty_paths() == original
+        successful = set().union(*flushed)
+        assert successful == (
+            original | {"alias.md"} if fault_kind == "original-transient" else original
+        )
+        failing = False
+        (tmp_path / "late.md").symlink_to(tmp_path / "SKILL.md")
+        coord._fts.upsert_note(parse_note(tmp_path / "late.md", tmp_path))
+        (tmp_path / "unknown.md").symlink_to(tmp_path / "SKILL.md")
+        flushed.clear()
+        coord.writer.submit(ProcessDirtyPaths()).result(timeout=5)
+        assert coord.wait_for_drain(timeout=5)
+        assert not coord.writer.snapshot_dirty_paths()
+        assert set().union(*flushed) == {
+            "SKILL.md",
+            "healthy.md",
+            "alias.md",
+            "late.md",
+        }
+        assert coord._fts.get_note("unknown.md") is None
+    finally:
+        coord.close(timeout=5)
