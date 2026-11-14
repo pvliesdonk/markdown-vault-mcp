@@ -40,7 +40,6 @@ from watchdog.events import (
     FileOpenedEvent,
     FileSystemEvent,
 )
-from watchdog.observers.api import EventEmitter, EventQueue, ObservedWatch
 
 from markdown_vault_mcp._file_watcher import (
     VaultFileWatcher,
@@ -264,30 +263,6 @@ def test_inotify_watch_mask_suppresses_reads(tmp_path: Path, recursive: bool) ->
         InotifyConstants.IN_CLOSE_WRITE,
     ):
         assert mask & bit, f"missing mutation bit {bit:#x}"
-
-
-def test_watch_filter_admits_all_mutations(tmp_path: Path) -> None:
-    """The scheduled policy admits every file and directory mutation to the queue."""
-    event_filter = _capture_watch_subscriptions(tmp_path)[0][2]
-    queue = EventQueue()
-    emitter = EventEmitter(
-        queue, ObservedWatch(str(tmp_path), recursive=True), event_filter=event_filter
-    )
-    visible, renamed = str(tmp_path / "note"), str(tmp_path / "renamed")
-    events = [
-        FileCreatedEvent(visible),
-        DirCreatedEvent(visible),
-        FileModifiedEvent(visible),
-        DirModifiedEvent(visible),
-        FileMovedEvent(visible, renamed),
-        DirMovedEvent(visible, renamed),
-        FileDeletedEvent(visible),
-        DirDeletedEvent(visible),
-    ]
-    for event in events:
-        emitter.queue_event(event)
-    assert [queue.get_nowait()[0] for _ in events] == events
-    assert queue.empty()
 
 
 def test_mutating_event_in_hidden_dir_still_ignored(tmp_path: Path) -> None:

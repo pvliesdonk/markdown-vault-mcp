@@ -55,11 +55,11 @@ or recursive exclusion policy.
 - `BaseObserver.schedule(event_filter=...)` passes concrete event classes to
   the emitter; `EventEmitter.queue_event` admits an event when it is an
   instance of an allowed class. [source: api7]
-  [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch, tests/test_file_watcher.py::test_watch_filter_admits_all_mutations]
+  [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch]
 - The eight file/directory create, modify, move and delete classes admit those
   mutations independently; filtering only file classes would discard directory
   events at the emitter boundary. [source: api7]
-  [pins: tests/test_file_watcher.py::test_watch_filter_admits_all_mutations, tests/test_file_watcher.py::test_mutating_events_schedule]
+  [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch, tests/test_file_watcher.py::test_mutating_events_schedule]
 - On Linux, `InotifyEmitter.on_thread_start` passes the mask derived by
   `get_event_mask_from_filter` to its native watch owner, so this filter changes
   subscriptions before queueing, beyond what the handler can suppress.
