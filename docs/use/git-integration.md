@@ -502,7 +502,7 @@ A git submodule or plain Git repository nested inside the vault is read-only. It
 - `move_folder` refuses to move a folder that holds a protected repository, but you can move a folder next to one.
 - A `rename` or `move_folder` that would rewrite links inside a protected repository leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
 - A submodule whose folder is empty (never initialised) is refused too.
-- Plain repositories need no gitlink or `.gitmodules` registration. Both `.git` directories and valid gitfiles are detected, including ones created after startup. The vault's own repository is allowed.
+- Plain repositories need no `gitlink` or `.gitmodules` registration. Both `.git` directories and valid `.git` files are detected, including ones created after startup. The vault's own repository is allowed.
 - Bulk OKF link conversion skips protected notes. Index generation can link to their existing `index.md` but does not write it.
 
 These checks do not change the ordering of uploads, fetch downloads or the OKF index refresh after a folder move; those can do other work before reaching the refusal ([#1950](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950)).
