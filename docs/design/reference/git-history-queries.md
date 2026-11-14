@@ -2,17 +2,27 @@
 type: Reference
 title: Git history and revision queries
 description: "git command-line behaviour that the history and revision-read code in src/markdown_vault_mcp/git/ depends on: log -z and --name-status framing, quotePath, pretty-format placeholders, --follow and rename detection, --since/--until date semantics, ls-tree -l, symlink blobs and LFS pointers"
-subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0; push/commit/log/diff/config say 2.55.0); git source at master and v2.43.0; git 2.56.0 release notes; observed on git 2.43.0, for the ref-verification and error-exit claims 2.55.0, and for the merge-time-rename `--follow` claim 2.55.0 against 2.56.0"
+subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0; push/commit/log/diff/config say 2.55.0); git source at master and v2.43.0; git 2.56.0 release notes; CPython 3.14 subprocess docs/source; newline capture observed on Python 3.12; observed on git 2.43.0, for the ref-verification and error-exit claims 2.55.0, and for the merge-time-rename `--follow` claim 2.55.0 against 2.56.0"
 valid_for: "git 2.x"
 generated:
   by: process:researching-references
   at: 2026-09-06T12:14:49+02:00
 verified:
   - by: process:researching-references-refute
+    at: 2026-11-14T16:35:00+00:00
+  - by: process:researching-references-refute
     at: 2026-09-06T13:18:18+02:00
 stale_after: 2027-03-06
 status: stable
 sources:
+  - id: python-subprocess
+    title: Python 3.14 subprocess — frequently used arguments
+    resource: https://docs.python.org/3.14/library/subprocess.html#frequently-used-arguments
+    accessed: 2026-11-14
+  - id: cpython-subprocess
+    title: CPython 3.14 Lib/subprocess.py
+    resource: https://github.com/python/cpython/blob/3.14/Lib/subprocess.py
+    accessed: 2026-11-14
   - id: git-log
     title: git-log(1)
     resource: https://git-scm.com/docs/git-log
@@ -80,6 +90,7 @@ repositories under `/tmp/gitref/`.
 
 ### History queries (`query.py`)
 
+- Python subprocess text mode translates CR and CRLF in stdout/stderr to LF even inside a NUL-framed path; binary capture performs no newline conversion. CPython's default text codec is UTF-8 in UTF-8 mode, otherwise the locale encoding; decoding captured bytes with that codec preserves newline characters, and stdin bytes bypass platform text newline conversion. Stderr can be separately normalized with CRLF→LF followed by CR→LF to retain text-mode behavior. [source: python-subprocess] (Frequently used arguments) [source: cpython-subprocess] (`_text_encoding`, `_translate_newlines`, `_save_input`) [observed: Python 3.12 and git 2.43.0, synthetic CR/CRLF filenames, `log -z --name-only` and `check-ignore -z --stdin`, 2026-11-14] [pins: tests/test_git_path_streams.py::test_capture_defaults_and_error_contract, tests/test_git_path_streams.py::test_capture_round_trips_git_path_stdin, tests/test_git.py::TestQuotedPathsInLogReaders::test_history_survives_a_quote_or_tab_in_the_name]
 - `log -z` separates commits with NUL; with `--name-status`/`--name-only` each block is `<format>\0`, then (when paths follow) one `\n` and `<status>\0<path>\0` records, `R<score>`/`C<score>` carrying `\0<old>\0<new>\0`; an empty subject is an empty field; the stream ends in the last NUL. The manual documents `-z` path framing only for `--raw`/`--numstat`. [source: git-log] (`-z`) [observed: git 2.43.0, `cat -A` of `log -z --name-status --format=$'\x1e%H%x00...'`] [pins: tests/test_git.py::TestZBlockFraming::test_a_leading_newline_in_a_filename_survives, tests/test_git.py::TestZBlockFraming::test_an_empty_subject_is_a_field_not_padding]
 - Under `-z` paths are verbatim; otherwise `core.quotePath` (default true) octal-escapes bytes ≥ 0x80 in double quotes, and `"`, `\`, control characters are escaped even with `core.quotePath=false`. [source: git-config] (`core.quotePath`) [source: git-diff] (`-z`) [observed: git 2.43.0, `"ta\tb.md"` under both settings] [pins: tests/test_git.py::TestQuotedPathsInLogReaders::test_history_survives_a_quote_or_tab_in_the_name, tests/test_git.py::TestQuotedPathsInLogReaders::test_vault_history_reports_usable_non_ascii_paths]
 - `%x00` is a NUL; `%H`, `%h`, `%aI` (author date, strict ISO 8601), `%aN`/`%aE` (mailmap-applied), `%s`, `%cI` are documented placeholders. [source: pretty-formats]
@@ -106,7 +117,7 @@ repositories under `/tmp/gitref/`.
 
 By function; the design anchor is `docs/design/design.md` § "Write + Git Integration" unless stated.
 
-- **`_history_log_cmd`, `get_file_history` (`query.py`)** — `--since`/`--until` documented as inclusive (right) without saying they compare committer dates; the directory-branch comment "git rejects `--follow` for anything but a single file" is partial (git rejects >1 pathspec, accepts a directory); `--find-renames=30` and `-c diff.renameLimit=2000` deliberately override `diff.renames`/`diff.renameLimit`. ("Git history queries", #1297.)
+- **`_history_log_args`, `get_file_history` (`query.py`)** — `--since`/`--until` documented as inclusive (right) without saying they compare committer dates; the directory-branch comment "git rejects `--follow` for anything but a single file" is partial (git rejects >1 pathspec, accepts a directory); `--find-renames=30` and `-c diff.renameLimit=2000` deliberately override `diff.renames`/`diff.renameLimit`. ("Git history queries", #1297.)
 - **`_split_z_block` (`query.py`)** — rests on the observed `-z --name-status` framing, which the manual does not document.
 - **`_tree_entry` (`query.py`)** — `ls-tree -l -z` with a literal pathspec rather than `<rev>:<path>`; the glob motivation does not apply to `cat-file <rev>:<path>` (a revision expression, exact on 2.43.0), though `ls-tree` still gives mode and size in one call.
 
