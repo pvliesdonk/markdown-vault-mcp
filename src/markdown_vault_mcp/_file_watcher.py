@@ -11,6 +11,9 @@ git pull is disabled (``GIT_PULL_INTERVAL_S=0`` or not set) AND no webhook
 can actually deliver — credentials set *and* an HTTP/SSE transport to mount
 their route on, which is what
 :func:`markdown_vault_mcp._webhooks.webhook_routes_active` answers (#1263).
+
+Subscription semantics and the dependency floor are recorded in
+``docs/design/reference/watchdog-event-filtering.md``.
 """
 
 from __future__ import annotations
@@ -34,12 +37,34 @@ try:
         EVENT_TYPE_DELETED,
         EVENT_TYPE_MODIFIED,
         EVENT_TYPE_MOVED,
+        DirCreatedEvent,
+        DirDeletedEvent,
+        DirModifiedEvent,
+        DirMovedEvent,
+        FileCreatedEvent,
+        FileDeletedEvent,
+        FileModifiedEvent,
+        FileMovedEvent,
         FileSystemEvent,
         FileSystemEventHandler,
     )
     from watchdog.observers import Observer
 
     _WATCHDOG_AVAILABLE = True
+
+    # Filter before native queueing (#2045). DirModifiedEvent retains
+    # IN_CLOSE_WRITE; adding FileClosedEvent would also request read-close
+    # notifications on watchdog 4.x.
+    _MUTATING_EVENT_CLASSES: list[type[FileSystemEvent]] = [
+        FileCreatedEvent,
+        DirCreatedEvent,
+        FileModifiedEvent,
+        DirModifiedEvent,
+        FileMovedEvent,
+        DirMovedEvent,
+        FileDeletedEvent,
+        DirDeletedEvent,
+    ]
 
     # Only these event types represent an actual mutation of the vault.
     # Read-only events (``opened``, ``closed``, ``closed_no_write``, access)
@@ -493,7 +518,12 @@ class VaultFileWatcher:
         for root in roots:
             handler = _VaultEventHandler(self._schedule, root.path)
             try:
-                observer.schedule(handler, str(root.path), recursive=root.recursive)
+                observer.schedule(
+                    handler,
+                    str(root.path),
+                    recursive=root.recursive,
+                    event_filter=_MUTATING_EVENT_CLASSES,
+                )
             except Exception:
                 # A single root can fail (e.g. watchdog cannot watch a symlinked
                 # child's target); keep the rest, notably the source_dir floor.

@@ -8,6 +8,10 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [Watchdog event filtering](watchdog-event-filtering.md) — mutation-only
+  subscriptions, Linux native masks and the FSEvents 4.0.2 API floor. Read
+  before changing `_file_watcher.py` subscriptions.
+
 - [GitHub and git behaviour behind integration branches](github-integration-branches.md) —
   up-to-date requirements, merge queue, workflow branch filters, closing
   keywords, retargeting, merge methods, knope's commit walk and git's

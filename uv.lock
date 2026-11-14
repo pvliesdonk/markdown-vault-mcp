@@ -1991,8 +1991,8 @@ requires-dist = [
     { name = "python-frontmatter", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "typer", specifier = ">=0.12" },
-    { name = "watchdog", marker = "extra == 'all'", specifier = ">=4.0" },
-    { name = "watchdog", marker = "extra == 'file-watcher'", specifier = ">=4.0" },
+    { name = "watchdog", marker = "extra == 'all'", specifier = ">=4.0.2" },
+    { name = "watchdog", marker = "extra == 'file-watcher'", specifier = ">=4.0.2" },
 ]
 provides-extras = ["mcp", "embeddings-api", "embeddings", "file-watcher", "summarize", "postgres", "all", "debug", "property-tests"]
 
