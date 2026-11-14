@@ -45,6 +45,8 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 
+When OKF is active at startup, `tags` also becomes queryable without adding it to `INDEXED_FIELDS`. Use `filters={"tags": "memory"}` in `search` or `list_documents`, and `list_tags` with `field="tags"` to discover values. A list such as `[memory, vault, memory]` contributes each value once per note. A scalar string stays whole: `memory,vault` is one tag. Inactive bundles gain no fields automatically; fields you explicitly configure keep their usual behavior. Restart after declaring a bundle to enable these indexed fields.
+
 ## Frontmatter fields
 
 A conformant note needs only a non-empty `type`. Everything else is optional but recommended:
@@ -67,6 +69,8 @@ verified:
 ```
 
 ## Migrating an existing vault
+
+`okf_validate` reports `invalid_tags` when a concept note's tags list contains a non-string member, such as `[memory, 42]`. This is advice once per note: the note stays available and `memory` remains queryable. Tags are optional; missing tags, an empty list, and whole values such as `null` or a number add no tags finding. The generic index still converts numbers and `true`/`false` values to strings.
 
 Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.
 

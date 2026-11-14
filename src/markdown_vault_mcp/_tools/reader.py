@@ -949,6 +949,8 @@ def register(mcp: FastMCP) -> None:
             Advisory rules, tolerated but worth fixing:
 
             - unknown_status: a `status` outside draft, stable and deprecated.
+            - invalid_tags: concept notes with a non-string member in a `tags`
+              list; valid string members remain queryable.
             - log_heading_shape: log.md files whose `##` headings are not
               YYYY-MM-DD dates.
             - root_index_missing (bool): true when the root index.md is absent.

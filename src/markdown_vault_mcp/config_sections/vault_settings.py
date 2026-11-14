@@ -189,7 +189,7 @@ class VaultSettings:
             ``"auto"`` (default; follow the vault's ``okf_version``
             declaration in the root ``index.md``), ``"off"``, or ``"on"``.
             When read semantics are active at construction time, the OKF
-            scalar keys (``type`` / ``status`` / ``stale_after``) extend the
+            keys (``type`` / ``status`` / ``stale_after`` / ``tags``) extend the
             effective *indexed_frontmatter_fields* set. See
             :attr:`~markdown_vault_mcp.vault.Vault.okf`.
         okf_write: Enable the OKF enforced-write layer.
@@ -339,7 +339,7 @@ class VaultSettings:
         """Return the indexed-frontmatter set, OKF-extended when active.
 
         When OKF read semantics are active at construction time, the OKF
-        scalar keys (``type`` / ``status`` / ``stale_after``) join the
+        keys (``type`` / ``status`` / ``stale_after`` / ``tags``) join the
         configured set so ``document_tags`` carries them (design okf.md §3).
 
         Args:
