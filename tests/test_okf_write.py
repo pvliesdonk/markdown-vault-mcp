@@ -140,6 +140,8 @@ class TestApplyOkfWriteStamp:
         # re-stamping is a byte-for-byte no-op — its YAML formatting is frozen.
         once = apply_okf_write_stamp("# T\n\nBody.\n", actor="t/1", now=_NOW)
         assert apply_okf_write_stamp(once, actor="t/1", now=_NOW) == once
+        # A different fallback cannot replace the supplied actor or reformat it.
+        assert apply_okf_write_stamp(once, actor="human:caller", now=_NOW) == once
 
     def test_a_local_offset_instant_is_written_as_utc(self) -> None:
         # 16:30:05 at +02:00 is 14:30:05Z; the stamp carries one spelling

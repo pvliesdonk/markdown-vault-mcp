@@ -37,7 +37,7 @@ Check the current state at any time through the `okf` section of the `stats` too
 ### Note modification time
 
 A note's `generated.at` records its last content change. When it
-contains a parseable datetime with a UTC offset, `modified_at` uses that instant
+contains a valid datetime with a UTC offset, `modified_at` uses that instant
 and `get_recent` orders by it. Quoted strings and native YAML timestamps work,
 including `Z`, numeric offsets, fractional seconds and the Unix epoch. Missing
 or unusable values, bare dates and timestamps without an offset fall back to file
