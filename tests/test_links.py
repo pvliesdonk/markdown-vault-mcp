@@ -1479,6 +1479,28 @@ class TestRenameUpdateLinks:
         # updated_links is less than the total of 8 (one failure)
         assert result.updated_links < 8
 
+    def test_single_bracket_wikilink_survives_rename(self, tmp_path: Path) -> None:
+        """Index and rewrite a literal closing bracket in a note name (#1384)."""
+        (tmp_path / "Sq]uare.md").write_text("# Heading\n")
+        (tmp_path / "source.md").write_text("[[Sq]uare#Heading|Square]]\n")
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+        try:
+            vault.index.build_index()
+            assert [
+                row["target_path"] for row in vault._fts.get_outlinks("source.md")
+            ] == ["Sq]uare.md"]
+            result = vault.writer.rename("Sq]uare.md", "New]name.md", update_links=True)
+            assert result.updated_links == 1
+            assert (
+                tmp_path / "source.md"
+            ).read_text() == "[[New]name#Heading|Square]]\n"
+            wait_for_writer_drain(vault)
+            assert [
+                row["target_path"] for row in vault._fts.get_outlinks("source.md")
+            ] == ["New]name.md"]
+        finally:
+            vault.close()
+
     def test_update_links_wikilink_fragment_preserved(self, rename_vault: Path) -> None:
         """Wikilink with fragment [[target#heading]] becomes [[renamed#heading]]."""
         col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))

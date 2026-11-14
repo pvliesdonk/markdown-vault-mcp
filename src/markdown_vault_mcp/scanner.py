@@ -1072,11 +1072,9 @@ _FOOTNOTE_LABEL_PREFIX = "^"
 #: costs O(n²): 16000 of them took about 6 s, and a single such file
 #: stalled the whole vault, since indexing runs one write queue.
 _RE_WIKILINK_OPEN = re.compile(r"\[\[")
-#: Where a wikilink's target ends: the first character it may not contain.
-_RE_WIKILINK_TARGET_END = re.compile(r"[\]|\n]")
-#: Where its alias ends. The alias may hold ``|`` and a line ending; only
-#: ``]`` stops it.
-_RE_WIKILINK_ALIAS_END = re.compile(r"\]")
+#: A single closing bracket is a literal target character; only a pair
+#: closes the link (#1384). Pipes and line endings still end the target.
+_RE_WIKILINK_TARGET_END = re.compile(r"\]\]|[|\n]")
 
 # Line shapes at which a paragraph ends, each decidable from the line alone
 # (no container state beyond the quote depth read off the line itself). The
@@ -1972,7 +1970,7 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None, int] | 
     export, or pasted log or JSON that was never fenced, produces it.
 
     What makes the scan *linear* is that those retries are all the same
-    question. A target ends at the first ``]``, ``|`` or line ending after
+    question. A target ends at the first ``]]``, ``|`` or line ending after
     the ``[[``, and that stop is the same character whichever ``[[`` of a
     run opened it; everything the match then needs is read from the stop
     onwards. So one failure at the stop is a failure for every opener
@@ -1984,12 +1982,15 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None, int] | 
     pipe is also a stop, and the alias search that follows it left its
     resume point back at the pipe, so a run of ``[[x|`` re-ran that search
     once per opener and was quadratic exactly like the pattern it
-    replaced. Both searches now resume past what they read, so each
-    character is looked at a bounded number of times.
+    replaced. Target searches advance past each stop. Alias searches cache
+    the next closing bracket: a failed alias must retry openers after its
+    pipe, since a single bracket can belong to an inner target (#1384).
+    Those retries reuse that bracket until the target scan passes it, so
+    each character is still looked at a bounded number of times.
 
-    Matching otherwise follows the pattern exactly, including its
-    asymmetry: the target may not hold ``]``, ``|`` or a line ending and
-    the alias may hold everything but ``]``; both must be non-empty; the
+    Since #1384 a target may hold a single ``]``; only ``]]``, ``|`` or a
+    line ending stops it. Other rules still follow the old pattern: the
+    alias may hold everything but ``]``; both must be non-empty; the
     leftmost ``[[`` wins, so ``[[[a]]`` links ``[a``.
 
     Args:
@@ -2005,6 +2006,7 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None, int] | 
         scan actually matched, not one inferred from its end — the
         leftmost ``[[`` wins, so the two differ on ``[[[a]]``.
     """
+    alias_close = -1
     while (opener := _RE_WIKILINK_OPEN.search(region, pos)) is not None:
         start = opener.end()
         stop_match = _RE_WIKILINK_TARGET_END.search(region, start)
@@ -2019,31 +2021,22 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None, int] | 
         if stop == start:
             continue  # empty target
         if region[stop] == "|":
-            alias_end = _RE_WIKILINK_ALIAS_END.search(region, stop + 1)
-            if alias_end is None:
-                # No ``]`` remains at all, so neither this opener nor any
-                # later one can close. The same exit as a missing target
-                # stop, and it is what keeps a run of ``[[x|`` from
-                # re-scanning the tail once per opener.
-                return None
-            if alias_end.start() == stop + 1:
+            if alias_close <= stop:
+                alias_close = region.find("]", stop + 1)
+            if alias_close < 0:
+                return None  # no closing bracket for this or any later opener
+            if alias_close == stop + 1:
                 continue  # empty alias
-            close = alias_end.start()
-            alias: str | None = region[stop + 1 : close]
+            close = alias_close
         elif region[stop] == "]":
             close = stop
-            alias = None
         else:
             continue  # a line ending: the target ran out before ``]]``
-        # The shared-stop argument again, one character further on: this
-        # ``]`` is the first after the pipe, so it is the same character
-        # for every opener behind it and they all fail with it. Resuming
-        # past it therefore skips no possible match — and it is what keeps
-        # the alias search from being re-run per opener. Without it a run
-        # of ``[[x|y`` ending in a lone ``]`` is quadratic, the very shape
-        # this function exists to remove.
-        pos = close + 1
+        # On alias failure, retry after the pipe, not after its bracket:
+        # ``[[a|text [[Sq]uare]]`` contains a valid inner target. Reusing
+        # alias_close above keeps those retries from re-scanning the tail.
         if region[close : close + 2] == "]]":
+            alias = region[stop + 1 : close] if close != stop else None
             return close + 2, region[start:stop], alias, opener.start()
     return None
 

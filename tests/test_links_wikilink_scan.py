@@ -7,19 +7,10 @@ a whole vault, because indexing runs single-threaded over one write queue.
 The shape is not hypothetical — a bracketed-citation export gone wrong, or
 pasted log or JSON that was never fenced.
 
-``_find_wikilink`` replaces the pattern with a scan. What makes it linear
-is that all those retries ask the same question: a target ends at the first
-``]``, ``|`` or line ending after the ``[[``, and that stop is the same
-character whichever ``[[`` of a run opened it, so one failure at the stop
-is a failure for every opener before it and the search resumes past the
-stop.
-
-Two properties, as in the two escape-aware scans this follows. The first is
-the bound. The second is that nothing else moved: the scan agrees with the
-pattern it replaced on every short string over the characters that pattern
-can distinguish. This change alters no row for any input, which is why it
-needs no ``INDEX_SEMANTICS_VERSION`` note — a claim only the second
-property can carry.
+``_find_wikilink`` uses shared forward stops rather than retrying each
+opener. Since #1384, a target stops at ``]]``, not a single ``]``. The
+correctness oracle below describes that updated grammar; timing cases
+still guard the forward-only scan rather than the regex oracle.
 """
 
 from __future__ import annotations
@@ -38,9 +29,8 @@ from markdown_vault_mcp.scanner import (
 
 SRC = "source.md"
 
-#: The pattern the scan replaced. Kept here, not imported, precisely
-#: because it no longer exists in the scanner.
-_SUPERSEDED_WIKILINK = re.compile(r"\[\[([^\]|\n]+)(?:\|([^\]]+))?\]\]")
+#: Grammar oracle: a target holds single closing brackets, never a pair.
+_WIKILINK_GRAMMAR = re.compile(r"\[\[((?:(?!\]\])[^|\n])+)(?:\|([^\]]+))?\]\]")
 
 
 def _scan(text: str) -> list[tuple[int, str, str | None]]:
@@ -50,18 +40,16 @@ def _scan(text: str) -> list[tuple[int, str, str | None]]:
     while (link := _find_wikilink(text, pos)) is not None:
         pos = link[0]
         # The scan also hands back where the span began, which
-        # ``_blank_wikilinks`` needs and the superseded pattern never
-        # reported; the comparison below is against that pattern, so it
+        # ``_blank_wikilinks`` needs and the grammar oracle never
+        # reported; the comparison below is against the oracle, so it
         # stops at the three elements both produce.
         found.append(link[:3])
     return found
 
 
 def _regex(text: str) -> list[tuple[int, str, str | None]]:
-    """The same, as ``finditer`` over the superseded pattern gave it."""
-    return [
-        (m.end(), m.group(1), m.group(2)) for m in _SUPERSEDED_WIKILINK.finditer(text)
-    ]
+    """The same match sequence from the declarative grammar oracle."""
+    return [(m.end(), m.group(1), m.group(2)) for m in _WIKILINK_GRAMMAR.finditer(text)]
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +121,10 @@ class TestTheScanIsLinear:
 
     @pytest.mark.parametrize(
         "region",
-        ["[[a|" * 100000, "[[a|b" * 100000 + "]"],
-        ids=["unterminated-alias", "alias-then-lone-bracket"],
+        ["[[a|" * 100000, "[[a|b" * 100000 + "]", "[[a]" * 100000],
+        ids=["unterminated-alias", "alias-then-lone-bracket", "single-bracket-target"],
     )
-    def test_the_alias_shapes_do_not_stall_either(self, region: str) -> None:
+    def test_unclosed_targets_and_aliases_do_not_stall(self, region: str) -> None:
         # The two shapes the scan's first version got wrong: a pipe ends a
         # target too, and the alias search that follows it resumed at the
         # pipe rather than past its own reading, so every opener re-ran it
@@ -163,13 +151,13 @@ class TestTheScanIsLinear:
 
 
 # ---------------------------------------------------------------------------
-# The property: nothing else moved
+# The property: the scan follows the grammar
 # ---------------------------------------------------------------------------
 
 
-class TestTheScanAgreesWithThePatternItReplaced:
+class TestTheScanAgreesWithTheGrammar:
     @pytest.mark.parametrize("length", range(9), ids=lambda n: f"len{n}")
-    def test_no_input_changed_meaning(self, length: int) -> None:
+    def test_all_short_inputs_follow_the_grammar(self, length: int) -> None:
         # Exhaustive over the characters the pattern can distinguish: the
         # bracket that opens, the one that closes, the pipe that starts an
         # alias, the line ending the target may not hold, and a filler
@@ -245,3 +233,47 @@ class TestTheScanAgreesWithThePatternItReplaced:
             ("four.md", "four#Heading", "Heading"),
             ("five.md", "aliased", None),
         ]
+
+
+@pytest.mark.parametrize(
+    ("text", "target", "display", "fragment"),
+    [
+        ("[[Sq]uare]]", "Sq]uare.md", "Sq]uare", None),
+        ("[[]start]]", "]start.md", "]start", None),
+        ("[[a]b]c]]", "a]b]c.md", "a]b]c", None),
+        ("[[Sq]uare|Square]]", "Sq]uare.md", "Square", None),
+        ("[[Sq]uare#Heading]]", "Sq]uare.md", "Sq]uare#Heading", "Heading"),
+        ("[[Sq]uare.md]]", "Sq]uare.md", "Sq]uare.md", None),
+    ],
+)
+def test_single_bracket_in_target(
+    text: str, target: str, display: str, fragment: str | None
+) -> None:
+    """Only a closing pair ends a target, as observed on #1384."""
+    links = extract_links(text, SRC)
+    assert [(link.target_path, link.link_text, link.fragment) for link in links] == [
+        (target, display, fragment)
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[[a|text [[Sq]uare]]",
+        "[[a|[[b|text [[Sq]uare]]",
+        "[[a|[[b|] [[Sq]uare]]",
+        "[[a|line\n[[Sq]uare]]",
+    ],
+)
+def test_failed_alias_keeps_inner_single_bracket_target(text: str) -> None:
+    """A failed alias cannot hide an opener whose target contains its bracket."""
+    assert _scan(text) == _regex(text)
+    assert [link.target_path for link in extract_links(text, SRC)] == ["Sq]uare.md"]
+
+
+def test_failed_alias_retries_share_the_same_closing_bracket() -> None:
+    """Retrying inner targets remains linear after an outer alias fails."""
+    text = "[[a|" * 100000 + "[[Sq]uare]]"
+    started = time.perf_counter()
+    assert _scan(text) == [(len(text), "Sq]uare", None)]
+    assert time.perf_counter() - started < TestTheScanIsLinear.BOUND
