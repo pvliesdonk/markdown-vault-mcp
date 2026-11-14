@@ -418,6 +418,16 @@ class TestFilterDimensionsModeOff:
 class TestOkfValidateTool:
     """Phase 3 (#962): the okf_validate conformance audit tool."""
 
+    async def test_invalid_tags_advisory(self, okf_vault: Path) -> None:
+        (okf_vault / "mixed.md").write_text(
+            "---\ntype: Note\ntags: [memory, 42]\n---\n# Zebra\n"
+        )
+        async with Client(make_server()) as client:
+            report = _structured(await client.call_tool("okf_validate", {}))
+            assert report["invalid_tags"] == {"count": 1, "examples": ["mixed.md"]}
+            hits = await _search(client, filters={"tags": "memory"})
+            assert [hit["path"] for hit in hits] == ["mixed.md"]
+
     async def test_report_on_declared_vault(self) -> None:
         async with Client(make_server()) as client:
             report = _structured(await client.call_tool("okf_validate", {}))

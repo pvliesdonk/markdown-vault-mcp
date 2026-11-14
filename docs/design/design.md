@@ -1921,11 +1921,18 @@ the spec itself says, dated and sourced, in
   gain an OKF guidance sentence whenever the mode permits detection
   (same pre-clone rationale as the conventions sentence).
 - **Indexed-field extension**: when detection is active at `Vault`
-  construction, the OKF scalar keys (`type`, `status`, `stale_after`)
+  construction, the OKF keys (`type`, `status`, `stale_after`, `tags`)
   join the effective `indexed_frontmatter_fields` set — feeding
   `document_tags` (so `filters={"type": ...}` works immediately) and the
   chunking provenance string, so the startup where detection first flips
   cold-rebuilds the tag table once (see Frontmatter Filtering, #927).
+  `tags` lists yield distinct values per note; scalar strings, including
+  `memory,vault`, stay whole. Search/list filters and `list_tags("tags")`
+  need no extra configuration. Inactive bundles gain no automatic fields;
+  explicit indexed fields retain generic behavior. Adding `tags` invalidates
+  old active indexes through indexed-field provenance, even for unchanged
+  bytes; identical preconfigured fields remain warm. No extraction or
+  `INDEX_SEMANTICS_VERSION` change is needed (#2058).
 - **Query dimensions (phase 2, #961)**: on an active bundle, three
   ``filters`` keys carry OKF semantics in ``search``, ``list_documents``,
   and ``get_similar`` — ``status`` (evaluated against the derived
@@ -1963,7 +1970,8 @@ the spec itself says, dated and sourced, in
   (missing ``type``, unparseable frontmatter, ``okf_version`` outside the
   bundle root, ``index.md`` frontmatter beyond the root's ``okf_version``
   — generated indexes included, #1396), advisory (unknown ``status``
-  vocabulary, ``log.md`` heading shape, missing root ``index.md``),
+  vocabulary, ``log.md`` heading shape, missing root ``index.md``,
+  ``invalid_tags`` for a non-string member in a concept note's tags list),
   informational (wikilink
   usage, missing recommended fields). Reserved files are exempt from the
   ``type`` rule. The tool is registered with an ``okf`` tag and hidden
@@ -1971,6 +1979,10 @@ the spec itself says, dated and sourced, in
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+  Tags remain optional: absent, empty or non-list values add no tags finding.
+  Advice counts once per concept, respects exclusions and caps, and leaves
+  conformance, original metadata and availability unchanged. Generic indexing
+  still coerces numeric/boolean scalar members and retains string siblings.
 - **Migration transforms (phase 4, #963)**: three one-shot write tools
   move a vault toward the bundle conventions, each built on the existing
   ``DocumentManager.write`` path (atomic write, read-only gate, index

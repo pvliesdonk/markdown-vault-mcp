@@ -130,6 +130,143 @@ class TestOkfDetector:
 
 
 class TestVaultIntegration:
+    def test_okf_tags_filterable(self, tmp_path: Path) -> None:
+        """Active bundles expose list members and preserve whole scalar tags."""
+        from markdown_vault_mcp.vault import Vault
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n')
+        for name, tags in (
+            ("list", "[memory, vault, memory]"),
+            ("scalar", "memory"),
+            ("comma", "memory,vault"),
+            ("mixed", "[memory, 42, true, null, {nested: value}, [inner]]"),
+        ):
+            (tmp_path / f"{name}.md").write_text(
+                f"---\ntype: Note\ntags: {tags}\n---\n# Zebra\n"
+            )
+        vault = Vault(source_dir=tmp_path)
+        try:
+            vault.index.build_index()
+            for tag, expected in (
+                ("memory", ["list.md", "mixed.md", "scalar.md"]),
+                ("vault", ["list.md"]),
+                ("memory,vault", ["comma.md"]),
+                ("missing", []),
+                ("42", ["mixed.md"]),
+                ("True", ["mixed.md"]),
+            ):
+                assert (
+                    sorted(
+                        hit.path
+                        for hit in vault.reader.search(
+                            "zebra", mode="keyword", filters={"tags": tag}
+                        )
+                    )
+                    == expected
+                )
+                assert (
+                    sorted(
+                        note.path
+                        for note in vault.reader.list_documents(filters={"tags": tag})
+                    )
+                    == expected
+                )
+            assert vault.reader.list_tags("tags") == [
+                "42",
+                "True",
+                "memory",
+                "memory,vault",
+                "vault",
+            ]
+            assert vault.reader.okf_validate().invalid_tags.examples == ("mixed.md",)
+        finally:
+            vault.close()
+
+    @pytest.mark.parametrize(
+        ("mode", "declared", "explicit", "queryable"),
+        [
+            ("auto", True, False, True),
+            ("on", False, False, True),
+            ("auto", False, False, False),
+            ("off", True, False, False),
+            ("auto", False, True, True),
+            ("off", True, True, True),
+        ],
+    )
+    def test_okf_tags_activation(
+        self, tmp_path: Path, mode: str, declared: bool, explicit: bool, queryable: bool
+    ) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        if declared:
+            _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n')
+        (tmp_path / "note.md").write_text("---\ntags: [memory]\n---\n# Zebra\n")
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(
+                okf_mode=mode, indexed_frontmatter_fields=["tags"] if explicit else []
+            ),
+        )
+        try:
+            vault.index.build_index()
+            assert (
+                "tags" in vault.reader.stats().indexed_frontmatter_fields
+            ) is queryable
+            assert [
+                hit.path
+                for hit in vault.reader.search(
+                    "zebra", mode="keyword", filters={"tags": "memory"}
+                )
+            ] == (["note.md"] if queryable else [])
+        finally:
+            vault.close()
+
+    @pytest.mark.parametrize("preconfigured", [False, True])
+    def test_okf_tags_upgrade(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preconfigured: bool
+    ) -> None:
+        """Unchanged notes gain tags after field promotion; identical fields stay warm."""
+        from markdown_vault_mcp import okf
+        from markdown_vault_mcp.vault import Vault
+
+        source = tmp_path / "notes"
+        source.mkdir()
+        _write_root_index(source, '---\nokf_version: "0.2"\n---\n')
+        note = source / "note.md"
+        note.write_text("---\ntype: Note\ntags: [memory, vault]\n---\n# Zebra\n")
+        original = note.read_bytes()
+        settings = VaultSettings(
+            index_path=tmp_path / "index.db",
+            indexed_frontmatter_fields=(
+                ["type", "status", "stale_after", "tags"] if preconfigured else []
+            ),
+        )
+        with monkeypatch.context() as old:
+            old.setattr(okf, "OKF_INDEXED_FIELDS", ("type", "status", "stale_after"))
+            vault = Vault(source_dir=source, settings=settings)
+            try:
+                vault.index.build_index()
+                semantics = vault._fts.get_chunking_meta().semantics_version
+            finally:
+                vault.close()
+        vault = Vault(source_dir=source, settings=settings)
+        try:
+            stats = vault.index.build_index()
+            assert (stats.chunks_indexed == 0) is preconfigured
+            assert vault._fts.get_chunking_meta().semantics_version == semantics
+            assert [
+                n.path for n in vault.reader.list_documents(filters={"tags": "memory"})
+            ] == ["note.md"]
+            assert vault.reader.list_tags("tags") == ["memory", "vault"]
+            assert note.read_bytes() == original
+        finally:
+            vault.close()
+        vault = Vault(source_dir=source, settings=settings)
+        try:
+            assert vault.index.build_index().chunks_indexed == 0
+        finally:
+            vault.close()
+
     def test_okf_stats_none_without_detector(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.fts_index import FTSIndex
         from markdown_vault_mcp.managers.search import SearchManager
@@ -674,6 +811,33 @@ def _build_audit_vault(root: Path) -> None:
 
 
 class TestOkfAudit:
+    def test_invalid_tags_advisory(self, tmp_path: Path) -> None:
+        """Mixed lists advise once per concept, even in an inactive explicit audit."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        for i, member in enumerate(
+            ("42, 99", "true", "null", "{key: value}", "[nested]")
+        ):
+            (tmp_path / f"mixed-{i}.md").write_text(
+                f"---\ntype: Note\ntags: [memory, {member}]\n---\n# Note\n"
+            )
+        for i, value in enumerate(
+            (None, "[]", "memory", "memory,vault", "null", "42", "true", "{key: value}")
+        ):
+            tags = "" if value is None else f"tags: {value}\n"
+            (tmp_path / f"valid-{i}.md").write_text(
+                f"---\ntype: Note\n{tags}---\n# Note\n"
+            )
+        for name in ("index.md", "log.md", "excluded.md"):
+            (tmp_path / name).write_text("---\ntype: Note\ntags: [42]\n---\n# Note\n")
+        report = audit_bundle(tmp_path, exclude_patterns=["excluded.md"], example_cap=2)
+        assert report.active is False
+        assert report.total_notes == report.conformant_notes == 13
+        assert report.missing_type.count == report.unparseable_frontmatter.count == 0
+        assert report.invalid_tags.count == 5
+        assert report.invalid_tags.examples == ("mixed-0.md", "mixed-1.md")
+        assert report.missing_recommended.count == 13
+
     def test_mixed_vault_report(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import OkfDetector, audit_bundle
 
@@ -828,6 +992,26 @@ class TestOkfAudit:
             "auto", "0.2", True, 0, 0, none, none, none, none, none, False, none, none
         )
         assert report.index_frontmatter == none
+        assert report.invalid_tags == none
+        assert (
+            OkfAuditReport(
+                "auto",
+                "0.2",
+                True,
+                0,
+                0,
+                none,
+                none,
+                none,
+                none,
+                none,
+                False,
+                none,
+                none,
+                none,
+            ).invalid_tags
+            == none
+        )
 
 
 class TestIndexFrontmatterAudit:

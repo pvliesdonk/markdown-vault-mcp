@@ -54,9 +54,9 @@ logger = logging.getLogger(__name__)
 #: to the marker itself).
 KNOWN_OKF_VERSIONS: tuple[str, ...] = ("0.1", "0.2")
 
-#: Scalar frontmatter keys promoted into ``document_tags`` when detection
+#: Frontmatter keys promoted into ``document_tags`` when detection
 #: is on (feeds the phase-2 filters; harmless to index ahead of them).
-OKF_INDEXED_FIELDS: tuple[str, ...] = ("type", "status", "stale_after")
+OKF_INDEXED_FIELDS: tuple[str, ...] = ("type", "status", "stale_after", "tags")
 
 #: Lifecycle vocabulary (``status``); absent means ``stable`` per spec.
 OKF_STATUS_DEFAULT = "stable"
@@ -504,8 +504,11 @@ class OkfAuditReport:
             read by the same parser as every other rule, so JSON frontmatter
             is judged by its keys and its syntax is not checked. A folder
             index declaring ``okf_version`` is also
-            ``misplaced_okf_version``. Declared last and defaulted so earlier
-            positional construction still works.
+            ``misplaced_okf_version``. Defaulted so earlier positional
+            construction still works.
+        invalid_tags: Concept notes whose ``tags`` list contains a non-string
+            member (advisory). Other whole-value shapes are tolerated without
+            this finding. Appended and defaulted for positional compatibility.
     """
 
     mode: str
@@ -522,6 +525,7 @@ class OkfAuditReport:
     wikilink_files: OkfFinding
     missing_recommended: OkfFinding
     index_frontmatter: OkfFinding = OkfFinding(count=0, examples=())
+    invalid_tags: OkfFinding = OkfFinding(count=0, examples=())
 
 
 class _FindingAccumulator:
@@ -553,6 +557,7 @@ class _AuditCounters:
         self.wikilinks = _FindingAccumulator(cap)
         self.missing_recommended = _FindingAccumulator(cap)
         self.index_frontmatter = _FindingAccumulator(cap)
+        self.invalid_tags = _FindingAccumulator(cap)
         self.total = 0
         self.conformant = 0
         self.root_index_seen = False
@@ -611,6 +616,9 @@ def _evaluate_note(
         and status.strip() not in OKF_STATUS_VALUES
     ):
         acc.unknown_status.add(rel)
+    tags = metadata.get("tags")
+    if isinstance(tags, list) and any(not isinstance(tag, str) for tag in tags):
+        acc.invalid_tags.add(rel)
     if "[[" in body:
         acc.wikilinks.add(rel)
     if not metadata.get("title") or not metadata.get("description"):
@@ -717,6 +725,7 @@ def audit_bundle(
         wikilink_files=acc.wikilinks.finding(),
         missing_recommended=acc.missing_recommended.finding(),
         index_frontmatter=acc.index_frontmatter.finding(),
+        invalid_tags=acc.invalid_tags.finding(),
     )
 
 

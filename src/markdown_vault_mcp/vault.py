@@ -423,7 +423,7 @@ class Vault:
         self._write_protect_existing = settings.write_protect_existing
         self._report_unresolved_links = settings.report_unresolved_links
         # OKF detection (disk probe, index-independent). When read semantics
-        # are active at construction time, the OKF scalar keys join the
+        # are active at construction time, the OKF keys join the
         # effective indexed-field set so `document_tags` carries them; the
         # extended set also feeds the chunking provenance string, so the
         # startup where detection first flips cold-rebuilds the tag table

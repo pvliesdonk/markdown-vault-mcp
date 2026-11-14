@@ -225,10 +225,13 @@ frontmatter blob; not persisted):
    conformance checks (§4) per spec. They are not notes, so the `stats`
    histograms (channel 2) exclude them as well.
 
-**Indexing integration:** OKF scalar fields ride the existing
+**Indexing integration:** OKF fields ride the existing
 `document_tags` machinery — when detection is on, the effective
 `indexed_frontmatter_fields` set is extended with the OKF keys
-(`type`, `status`, `stale_after`). Per the Frontmatter Filtering design,
+(`type`, `status`, `stale_after`, `tags`) at construction. `tags` lists
+produce distinct values per note; a scalar string, including `memory,vault`,
+stays one value. Inactive bundles gain no fields automatically; explicit
+indexed fields keep their generic behavior. Per the Frontmatter Filtering design,
 changing the effective indexed-field set alters chunking provenance and
 triggers a one-time cold rebuild of `document_tags` on the startup where
 detection first flips — an accepted, logged cost. Complex fields
@@ -257,6 +260,8 @@ is disk-based rather than index-based, and the tool is hidden under
 existing `filters` → `document_tags` subquery path (AND semantics unchanged):
 
 - `type=<value>` — direct tag lookup.
+- `tags=<value>` — direct lookup of a list member or whole scalar string;
+  `list_tags("tags")` discovers values without extra configuration.
 - `status=<value>` — tag lookup with the documented caveat that absent
   `status` means `stable` (the filter for `stable` must match
   absent-or-stable; this is the one filter that cannot be a pure tag lookup
@@ -277,6 +282,13 @@ Graph surfaces (`GraphFacet`, SPA GraphView) may color/segment nodes by
 
 Read-only tool reporting bundle conformance **as a degree, not a verdict** —
 during migration it is a progress meter:
+
+`invalid_tags` advises once per concept note whose tags list contains a
+non-string member. It respects exclusions and example caps, also before
+declaration, and exempts reserved files. Tags stay optional: missing, empty
+and non-list values add no tags finding. Advice changes neither conformance
+nor availability; string siblings remain queryable and generic numeric/boolean
+coercion stays intact.
 
 - Per-rule counts + capped example lists: notes missing parseable
   frontmatter; notes missing non-empty `type`; unknown `status` values;
