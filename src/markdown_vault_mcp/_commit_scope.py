@@ -10,8 +10,9 @@ This module supplies the missing boundary. A :class:`CommitScopeMiddleware`
 binds a scope for the duration of each tool call; the dispatcher snapshots that
 scope when a write is fired and groups the call's writes into **one** commit.
 A call that touched many files is named after the tool that caused them; a call
-that touched exactly one keeps that file's own path as the subject, so ordinary
-writes read in ``git log`` exactly as they always have.
+that touched exactly one keeps that file's own path as the subject. Secondary
+OKF maintenance is marked separately so it can share that note's commit
+without replacing its path subject with a count.
 
 The scope travels in a :class:`~contextvars.ContextVar` and is read in
 ``fire``, never on the dispatcher's worker thread — the same constraint that
@@ -96,6 +97,24 @@ def current_commit_scope() -> CommitScope | None:
     startup write — and must commit on its own, exactly as before.
     """
     return _scope_var.get()
+
+
+_auxiliary_var: ContextVar[bool] = ContextVar("auxiliary_commit_write", default=False)
+
+
+@contextmanager
+def auxiliary_commit_writes() -> Iterator[None]:
+    """Mark secondary writes for commit subjects, without excluding their files."""
+    token = _auxiliary_var.set(True)
+    try:
+        yield
+    finally:
+        _auxiliary_var.reset(token)
+
+
+def is_auxiliary_commit_write() -> bool:
+    """Return whether this callback is fired by secondary maintenance."""
+    return _auxiliary_var.get()
 
 
 class CommitScopeMiddleware(Middleware):
