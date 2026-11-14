@@ -573,15 +573,28 @@ def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
-    """The lifespan starts the watcher on a non-git vault and stops it on exit."""
+@pytest.mark.parametrize(
+    "enabled, transport, retained_webhook",
+    [(True, "stdio", False), (False, "http", True), (False, "sse", True)],
+    ids=["plain", "git-off-http", "git-off-sse"],
+)
+def test_lifespan_starts_and_stops_watcher_when_no_git(
+    tmp_path: Path, enabled: bool, transport: str, retained_webhook: bool
+) -> None:
+    """Keep the watcher active when plain or disabled git cannot receive pushes."""
     import asyncio
 
     from markdown_vault_mcp.config import ProjectConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
-    config = ProjectConfig(source_dir=tmp_path, read_only=False)
-    lifespan_fn = _make_test_lifespan(config)
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        read_only=False,
+        git_enabled=enabled,
+        git_repo_url="https://invalid.example/vault" if retained_webhook else None,
+        github_webhook_secret="retained" if retained_webhook else None,
+    )
+    lifespan_fn = _make_test_lifespan(config, transport=transport)
 
     async def _run() -> None:
         with (

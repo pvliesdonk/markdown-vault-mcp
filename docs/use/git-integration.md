@@ -9,12 +9,36 @@ Use this guide to choose and configure the right git mode for your deployment.
 
 ## Modes
 
-1. **Managed** (`GIT_REPO_URL` + `GIT_TOKEN`)
+Git integration is enabled by default. With `GIT_ENABLED=true` (or unset),
+the server selects a mode from the remote settings and vault directory:
+
+1. **Managed** (`GIT_REPO_URL`, with `GIT_TOKEN` when authentication is needed)
    The server owns clone, periodic pull, commit, and deferred push.
-2. **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo)
+2. **Unmanaged / commit-only** (no `GIT_REPO_URL` or `GIT_TOKEN`, existing git repo)
    The server commits writes (one commit per tool call), but never pulls or pushes.
-3. **No-git** (default)
-   The vault is treated as a plain directory with no git operations.
+3. **Plain directory** (outside a git repository)
+   Git callbacks have nothing to commit.
+
+A token without a URL retains legacy pull and push against the checkout's
+origin and logs a deprecation warning.
+
+### Disable git integration
+
+Set `MARKDOWN_VAULT_MCP_GIT_ENABLED=false` when another application owns git.
+The server makes no git calls during startup, reads, writes or shutdown,
+even when the vault is inside a repository. Markdown reads, search and writes
+continue under their usual access and overwrite protections.
+
+Disabled git takes precedence over retained remote, token, LFS, cadence and
+webhook settings. These values stay configured and their scalar validation
+still applies, but the server performs no repository discovery, clone or
+remote authentication validation. The vault directory must already exist.
+
+History and diffs return their existing empty results, revision reads refuse
+the request, overwrites omit `previous_revision`, and `git_sync` is hidden.
+Submodule paths become ordinary filesystem paths for writes. Git webhook
+routes are inactive, and the filesystem watcher remains eligible for external
+edits when `FILE_WATCHER=true` and its extra is installed.
 
 ## What a commit covers
 

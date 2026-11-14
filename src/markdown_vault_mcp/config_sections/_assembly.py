@@ -140,7 +140,7 @@ def source_dir_problem(config: ProjectConfig) -> SourceDirProblem | None:
         ``(reason, message)`` with *reason* ``"missing"`` or ``"unreadable"``,
         or ``None`` when the directory is there.
     """
-    if config.git.repo_url is not None:
+    if config.git_enabled and config.git.repo_url is not None:
         return None
     try:
         if is_directory(config.source_dir):
@@ -214,17 +214,16 @@ class VaultInstances:
             semantic search is unconfigured or auto-detection failed.
         summarizer: Resolved summarization backend, or ``None`` when
             unconfigured or auto-detection failed.
-        git_strategy: The git write strategy (always constructed; commit-only
-            mode when no remote is configured).
-        on_write: Write callback for the vault — the git strategy, so writes
-            auto-commit.
+        git_strategy: The git write strategy, or ``None`` when git is disabled.
+        on_write: Write callback for the vault — the git strategy when enabled,
+            otherwise ``None``.
         git_pull_interval_s: Resolved periodic-pull interval; ``0`` when no
-            remote is configured.
+            remote is configured or git is disabled.
     """
 
     embedding_provider: EmbeddingProvider | None
     summarizer: Summarizer | None
-    git_strategy: GitWriteStrategy
+    git_strategy: GitWriteStrategy | None
     on_write: WriteCallback | None
     git_pull_interval_s: int
 
@@ -239,7 +238,8 @@ class VaultInstances:
         closes each collaborator once more; the strategy's own ``close()``
         is idempotent, so a repeated call is harmless.
         """
-        self.git_strategy.close()
+        if self.git_strategy is not None:
+            self.git_strategy.close()
         for resource in (self.on_write, self.embedding_provider, self.summarizer):
             if resource is None or resource is self.git_strategy:
                 continue
@@ -372,7 +372,7 @@ def _resolve_summarizer(config: ProjectConfig) -> Summarizer | None:
         return None
 
 
-def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
+def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy | None, int]:
     """Build the git strategy for the configured mode, with the pull interval.
 
     Args:
@@ -380,8 +380,11 @@ def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
 
     Returns:
         ``(strategy, pull_interval_s)`` — the interval is ``0`` in
-        commit-only mode (no remote configured).
+        commit-only mode (no remote configured) or when git is disabled.
     """
+    if not config.git_enabled:
+        logger.info("git_mode_resolved mode=off")
+        return None, 0
     if config.git.repo_url is not None:
         strategy = _build_git_strategy(
             config,
@@ -390,6 +393,7 @@ def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
             managed=True,
             enable_sync=True,
         )
+        logger.info("git_mode_resolved mode=managed")
         return strategy, config.git.pull_interval_s
 
     # Backward compatibility mode: token without explicit repo URL keeps
@@ -401,6 +405,7 @@ def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
             managed=False,
             enable_sync=True,
         )
+        logger.info("git_mode_resolved mode=legacy")
         return strategy, config.git.pull_interval_s
 
     # Unmanaged / commit-only mode: commit locally if repo exists, never pull/push.
@@ -410,14 +415,14 @@ def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
         managed=False,
         enable_sync=False,
     )
+    logger.info("git_mode_resolved mode=commit_only")
     return strategy, 0
 
 
 def to_vault_instances(config: ProjectConfig) -> VaultInstances:
     """Resolve the constructed ``Vault`` collaborators from config.
 
-    Resolves the embedding provider, summarizer, and the three-mode
-    Git strategy.
+    Resolves the embedding provider, summarizer, and optional git strategy.
 
     Args:
         config: The :class:`~markdown_vault_mcp.config.ProjectConfig` to
@@ -488,19 +493,22 @@ def to_vault_settings(
     )
 
 
-def resolve_git_repo_url(raw: str | None, token: str | None, prefix: str) -> str | None:
+def resolve_git_repo_url(
+    raw: str | None, token: str | None, prefix: str, *, enabled: bool = True
+) -> str | None:
     """Resolve ``GIT_REPO_URL``, warning when a token is set without it.
 
     Args:
         raw: The already-read ``GIT_REPO_URL`` env value.
         token: The already-resolved ``GIT_TOKEN`` value (or ``None``).
         prefix: Env var prefix, used in the warning message.
+        enabled: Whether git is enabled; disabled git emits no legacy warning.
 
     Returns:
         The repo URL, or ``None`` when unset.
     """
     repo_url = raw or None
-    if token and not repo_url:
+    if enabled and token and not repo_url:
         # Legacy mode is deprecated; set GIT_REPO_URL to enable explicit
         # managed mode instead of relying on a bare token.
         logger.warning(
