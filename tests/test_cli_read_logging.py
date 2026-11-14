@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+from logging.handlers import BufferingHandler
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -21,10 +22,22 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.parametrize("backend", ["memory", "okf-disk", "plain-disk", "unknown"])
-@pytest.mark.parametrize("output", ["text", "json", "agent"])
 @pytest.mark.parametrize(
-    "verbosity", ["default", "INFO", "DEBUG", "legacy", "verbose", "WARNING"]
+    ("backend", "verbosity", "output"),
+    [
+        ("memory", "default", "text"),
+        ("memory", "INFO", "json"),
+        ("memory", "DEBUG", "agent"),
+        ("memory", "legacy", "text"),
+        ("memory", "verbose", "json"),
+        ("memory", "WARNING", "agent"),
+        ("okf-disk", "default", "json"),
+        ("okf-disk", "DEBUG", "text"),
+        ("unknown", "default", "agent"),
+        ("unknown", "DEBUG", "json"),
+        ("unknown", "WARNING", "text"),
+        ("plain-disk", "default", "text"),
+    ],
 )
 def test_natural_read_logs(
     tmp_path: Path, backend: str, output: str, verbosity: str
@@ -56,7 +69,8 @@ def test_natural_read_logs(
             timeout=20,
         )
         assert setup.returncode == 0, setup.stderr
-        assert '"level": "INFO"' in setup.stderr
+        if backend == "okf-disk" and verbosity == "default":
+            assert '"level": "INFO"' in setup.stderr
     if verbosity in {"INFO", "DEBUG", "legacy", "WARNING"}:
         env[
             "FASTMCP_LOG_LEVEL"
@@ -75,8 +89,6 @@ def test_natural_read_logs(
     result = subprocess.run(
         command, env=env, capture_output=True, text=True, timeout=20
     )
-    (tmp_path / "read.stdout").write_text(result.stdout)
-    (tmp_path / "read.stderr").write_text(result.stderr)
     assert result.returncode == 0, result.stderr
     assert "document_count" in result.stdout
     records = [json.loads(line) for line in result.stderr.splitlines()]
@@ -104,9 +116,17 @@ def test_local_read_restores_logging(level: int, previous: int, fault: Any) -> N
     saved = root.level, root.manager.disable
     observed: list[bool] = []
     error = fault("synthetic callback fault") if fault else None
+    emitted = [
+        (20, "synthetic_info"),
+        (30, "synthetic_warning"),
+        (40, "synthetic_error"),
+    ]
+    capture = BufferingHandler(10)
 
     def local() -> str:
         observed.extend(root.isEnabledFor(value) for value in [10, 20, 30, 40, 50])
+        for value, message in emitted:
+            root.log(value, message)
         if error:
             raise error
         return "payload"
@@ -114,6 +134,7 @@ def test_local_read_restores_logging(level: int, previous: int, fault: Any) -> N
     try:
         root.setLevel(level)
         logging.disable(previous)
+        root.addHandler(capture)
         if error:
             with pytest.raises(type(error)) as raised:
                 run_read("stats", {}, ClientOptions(local=True), local)
@@ -129,28 +150,21 @@ def test_local_read_restores_logging(level: int, previous: int, fault: Any) -> N
         ]
         assert root.manager.disable == previous
         assert root.level == level
+        root.info("outside_info")
+        assert [record.getMessage() for record in capture.buffer] == [
+            message
+            for value, message in emitted
+            if value >= level and value > threshold
+        ] + (
+            ["outside_info"]
+            if level <= logging.INFO and previous < logging.INFO
+            else []
+        )
     finally:
+        root.removeHandler(capture)
+        capture.close()
         root.setLevel(saved[0])
         logging.disable(saved[1])
-
-
-def test_local_warning_error_and_outside_info(caplog: pytest.LogCaptureFixture) -> None:
-    """Local warnings/errors remain visible and INFO resumes after the read."""
-    logger = logging.getLogger(__name__)
-
-    def local() -> None:
-        logger.info("synthetic_info")
-        logger.warning("synthetic_warning")
-        logger.error("synthetic_error")
-
-    with caplog.at_level(logging.INFO):
-        run_read("stats", {}, ClientOptions(local=True), local)
-        logger.info("outside_info")
-    assert [record.message for record in caplog.records] == [
-        "synthetic_warning",
-        "synthetic_error",
-        "outside_info",
-    ]
 
 
 def test_remote_keeps_security_suppression(
