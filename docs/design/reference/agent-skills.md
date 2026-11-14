@@ -37,7 +37,7 @@ sources:
 
 ## Deliberate consumer departure
 
-The server accepts structured OKF values under `metadata` for exact
+The server accepts structured OKF values under `metadata` for resolved exact
 `SKILL.md` basenames, including mappings for `generated` and lists for
 `sources` and `verified`. Those values exceed the specification's string
 mapping; accepting them does not assert strict Agent Skills producer

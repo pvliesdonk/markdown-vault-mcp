@@ -316,7 +316,18 @@ def test_build_records_current_semantics_version(tmp_path: Path) -> None:
     assert _stored_semantics_version(db) == INDEX_SEMANTICS_VERSION
 
 
-def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("target", "alias", "expected_type"),
+    [
+        ("SKILL.md", None, "Skill"),
+        ("target/SKILL.md", "alias.md", "Skill"),
+        ("target/ordinary.md", "alias/SKILL.md", "Literal"),
+        ("target/skill.md", "alias/SKILL.md", "Literal"),
+    ],
+)
+def test_older_semantics_version_rejects_warm_restart(
+    tmp_path: Path, target: str, alias: str | None, expected_type: str
+) -> None:
     """An index built by an older parse pipeline is rebuilt, not short-circuited.
 
     Hash-based reindexing never re-parses an unchanged file, so rows derived
@@ -327,8 +338,20 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
     from markdown_vault_mcp.okf import _effective_okf_tag_key
     from tests.fixtures.okf_skills import SKILL
 
-    path = tmp_path / "SKILL.md"
-    path.write_text(SKILL)
+    path = tmp_path / target
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        SKILL
+        if expected_type == "Skill"
+        else SKILL.replace("name: demo", "type: Literal\nname: demo")
+    )
+    path.write_text(content)
+    names = {target}
+    if alias is not None:
+        alias_path = tmp_path / alias
+        alias_path.parent.mkdir(parents=True, exist_ok=True)
+        alias_path.symlink_to(path)
+        names.add(alias)
     original = (path.read_bytes(), path.stat().st_mtime_ns)
     db = tmp_path / "index.db"
     coord = make_coordinator(tmp_path, db=db, indexed_frontmatter_fields=("type",))
@@ -361,9 +384,23 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
         assert stats.chunks_indexed > 0  # full re-parse ran, not warm O(1)
         assert coord2._fts.list_field_values(
             _effective_okf_tag_key("type", ["type"])
-        ) == ["Skill"]
-        raw = json.loads(coord2._fts.get_note("SKILL.md")["frontmatter_json"])
-        assert "type" not in raw
+        ) == [expected_type]
+        raw = json.loads(coord2._fts.get_note(target)["frontmatter_json"])
+        if expected_type == "Skill":
+            assert "type" not in raw
+        else:
+            assert raw["type"] == "Literal"
+        assert {
+            hit.path
+            for hit in coord2._fts.search(
+                "zebra",
+                filters={_effective_okf_tag_key("type", ["type"]): expected_type},
+            )
+        } == names
+        assert all(
+            json.loads(coord2._fts.get_note(name)["frontmatter_json"]) == raw
+            for name in names
+        )
     finally:
         coord2.close(timeout=5)
 
@@ -373,9 +410,16 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
     coord3 = make_coordinator(tmp_path, db=db, indexed_frontmatter_fields=("type",))
     try:
         assert coord3.build_index().chunks_indexed == 0
+        assert {
+            hit.path
+            for hit in coord3._fts.search(
+                "zebra",
+                filters={_effective_okf_tag_key("type", ["type"]): expected_type},
+            )
+        } == names
         assert coord3._fts.list_field_values(
             _effective_okf_tag_key("type", ["type"])
-        ) == ["Skill"]
+        ) == [expected_type]
     finally:
         coord3.close(timeout=5)
     assert (path.read_bytes(), path.stat().st_mtime_ns) == original

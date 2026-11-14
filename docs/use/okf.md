@@ -48,14 +48,15 @@ You can filter on these dimensions. `search` and `list_documents` accept `status
 
 ### Reading skills
 
-For a file whose exact name is `SKILL.md`, OKF reads take `type`,
+For a file whose resolved target has the exact name `SKILL.md`, OKF reads take `type`,
 `status`, `generated`, `verified`, `sources`, and `stale_after` from its
 `metadata` mapping. A missing, blank or invalid nested type defaults to
 `Skill`. These six top-level keys are ignored for skills; discovery fields
 such as `name` and `description` keep their original meaning.
 
 Search filters, `list_tags`, ranking, audit, statistics and graph labels use that same
-identity. Whole-note reads expose structured provenance and sources; search
+identity. Indexed aliases keep their own paths and count as separate rows.
+Whole-note reads expose structured provenance and sources; search
 hits count sources. The original `frontmatter` mapping and file bytes stay
 unchanged. Exact structured queries retain literal YAML paths, so nested
 fields remain under `metadata`. With OKF inactive, read annotations remain
@@ -71,6 +72,12 @@ stamp `metadata.generated` and clear `metadata.verified` on a skill.
 `okf_verify` appends to that same nested verification list. These explicit
 mutations preserve unrelated fields and literal top-level conflicts; they do
 not save an inferred `type: Skill` into your YAML.
+
+After a native write, the existing index refresh updates all already indexed
+names for that target, including aliases. Use `wait_for_pending_writes` when a
+query must see that refresh. File replacement and index refresh are asynchronous
+steps, without a transaction spanning both. This adds no watcher for external
+symlink retargeting.
 
 A shared disk index must have the current derivation version and the same
 indexed field set as the reader; order and repeated fields do not matter.

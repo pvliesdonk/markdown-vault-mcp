@@ -190,8 +190,8 @@ def register(mcp: FastMCP) -> None:
             section= to get the full document's frontmatter),
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
             On an active OKF bundle, whole-document reads also carry
-            an 'okf' dict (type, status, stale, trust_tier, and the note's
-            'sources' list when present); section reads omit it because they
+            an 'okf' dict (type, status, stale, trust_tier, supplied mapping-valued
+            'generated', and the note's 'sources' list when present); section reads omit it because they
             carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),

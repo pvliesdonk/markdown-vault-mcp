@@ -1911,7 +1911,7 @@ the spec itself says, dated and sourced, in
   `sources_count`. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
-- **Skill identity** (#2062): exact `SKILL.md` basenames read the six OKF
+- **Skill identity** (#2062): resolved exact `SKILL.md` basenames read the six OKF
   families from nested `metadata`, with `Skill` as the fallback type. The
   shared `effective_okf_metadata` projection feeds annotations, existing
   filters/ranking, stats, audit, graph labels and configured tags while raw
@@ -1924,7 +1924,12 @@ the spec itself says, dated and sourced, in
   and [the read contract](okf.md#skill-metadata-reads). Index semantics 12
   refreshes derived tags for unchanged skills once. Existing native mutations
   target the same authoritative slot: content writes stamp provenance and
-  invalidate verification; `okf_verify` appends and counts nested entries.
+  invalidate verification; `okf_verify` appends and counts nested entries at
+  the path/etag returned by its read. Indexed aliases retain lexical row identity.
+  Native refresh includes known live/tombstone spellings of the target, preserves
+  original retry input on failure and notifies healthy embeddings. File writes
+  and SQL refresh remain asynchronous, without a cross-store transaction or a
+  new external symlink-retarget watcher.
   Request activation is captured once across filtering/ranking/snippets.
   Shared readers refuse incompatible semantics or indexed-field namespaces
   without writing or rebuilding the owner's index.

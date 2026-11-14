@@ -244,12 +244,16 @@ than a per-vault authoring task.
 
 ### Skill metadata reads
 
-Exact case-sensitive `SKILL.md` basenames use a pure effective OKF projection
+Resolved exact case-sensitive `SKILL.md` basenames use a pure effective OKF projection
 for the six families `type`, `status`, `generated`, `verified`, `sources`,
 and `stale_after`. Those values come only from a mapping-valued `metadata`
 slot; missing, null, blank or non-string type infers `Skill`. Unknown valid
 type strings stay valid. Conflicting top-level families cannot supply missing
 nested values. Other keys, ordinary notes and lowercase `skill.md` stay literal.
+Parser authority is an optional transient scalar, separate from lexical row
+paths, titles, folders and links. Readers resolve indexed spellings using held
+raw metadata without reading note content again. Indexed outside-root farm
+rows retain their native metadata access; whole reads/writes retain containment.
 
 The [Agent Skills reference](reference/agent-skills.md) records the deliberate
 tolerance of structured values beyond its string-map producer contract.
@@ -293,6 +297,14 @@ top-level conflicts, and creates a mapping for absent/malformed slots. It never
 persists the inferred `Skill` type. Ordinary and lowercase targets retain root
 mutations. The existing two-argument enrichment callback is unchanged: its
 native target travels through the existing request intent only during enrichment.
+Verification conditionally writes the resolved path and etag returned by its
+read, while responses retain the caller path. Native dirty refresh snapshots
+live and tombstone names once, then refreshes original inputs and known in-vault
+spellings of their resolved targets. It discovers no new aliases or targets.
+Identity faults preserve original retry input while healthy refreshes still
+notify embeddings; retries recompute the current population. Filesystem writes
+and SQL refresh are asynchronous, not a cross-store transaction. External
+symlink retargeting gains no new watcher policy.
 
 ## 4. Layer 2 — query dimensions, and `okf_validate`
 
