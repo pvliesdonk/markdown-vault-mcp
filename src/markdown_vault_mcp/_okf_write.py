@@ -1,7 +1,8 @@
 """OKF enforced-write layer runtime (#964): request-scoped actor + enrichment.
 
 The enforced-write layer (design §6) stamps ``generated`` provenance and clears
-``verified`` on content writes, attributing them to the authenticated identity.
+``verified`` on content writes, preserving a supplied ``generated.by`` and
+using the authenticated identity only when that key is absent.
 That identity is a FastMCP request-context dependency (``get_subject``), so it is
 resolvable only inside a tool handler — but the write path runs deep under
 ``asyncio.to_thread``. The actor (and a *suppress* flag for ``okf_verify``, which
@@ -14,7 +15,7 @@ What the spec requires of the ``generated`` / ``verified`` stamps written here
 (actor convention, timestamp form) is in ``docs/design/reference/okf-v0.2.md``;
 the stamps' departure from it is #1372.
 
-Actor resolution rules (design §6):
+Fallback actor resolution rules (design §6):
 
 - ``human:<subject>`` for a principal classified as human by the identity layer.
 - a tool actor ``markdown-vault-mcp/<version>`` otherwise (service credentials,
@@ -64,7 +65,8 @@ class OkfWriteIntent:
     """The current request's OKF write intent, carried across ``to_thread``.
 
     Attributes:
-        actor: The provenance actor to stamp (``human:<subject>`` or a tool actor).
+        actor: Fallback provenance actor when ``generated.by`` is absent
+            (``human:<subject>`` or a tool actor).
         suppress: When ``True`` the enricher is a no-op — used by ``okf_verify``,
             which sets ``verified`` on purpose and must not have it cleared.
     """

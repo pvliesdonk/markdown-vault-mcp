@@ -419,10 +419,11 @@ Tool tags following switches: #1412.
 
 - **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
-  example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
+  example form (`2026-06-30T14:00:00Z`, a string; #1372). An incoming
+  `generated.by` is preserved by key presence, including null or empty values,
+  and extension keys survive. When `by` is absent, the fallback actor is
   the token's usable `sub` when the principal is human (`human:<subject>`), else
-  `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
-  values are overwritten (it describes the current bytes); `sources` are
+  `markdown-vault-mcp/<version>` as a tool actor. `sources` are
   never touched. Client-ID-only identities, including static and mapped
   bearer credentials, use the tool actor (#1463). So does an OAuth token the
   issuer marks as an application's (`sub` equal to the client ID, `idtyp: app`

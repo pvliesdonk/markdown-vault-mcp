@@ -73,6 +73,28 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 
 class TestApplyOkfWriteStamp:
+    @pytest.mark.parametrize("by", ["codex/6.1-terra", "human:writer", "", None])
+    def test_supplied_actor_survives_stamp(self, by: str | None) -> None:
+        """Presence, not truthiness or the caller's identity, selects by."""
+        text = fm.dumps(
+            fm.Post("Body.", generated={"by": by, "at": "old", "x": 1}, verified=[{}])
+        )
+        meta = fm.loads(
+            apply_okf_write_stamp(text, actor="human:caller", now=_NOW)
+        ).metadata
+        assert meta["generated"] == {"by": by, "at": _ISO, "x": 1}
+        assert "verified" not in meta
+
+    @pytest.mark.parametrize("generated", [None, [], "invalid", {"x": 1}])
+    @pytest.mark.parametrize("actor", ["human:caller", "markdown-vault-mcp/1.2.3"])
+    def test_missing_actor_uses_resolved_fallback(
+        self, generated: object, actor: str
+    ) -> None:
+        text = fm.dumps(fm.Post("Body.", generated=generated))
+        meta = fm.loads(apply_okf_write_stamp(text, actor=actor, now=_NOW)).metadata
+        assert meta["generated"]["by"] == actor
+        assert meta["generated"]["at"] == _ISO
+
     def test_stamps_generated_on_a_note_without_frontmatter(self) -> None:
         out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", now=_NOW)
         post = fm.loads(out)
@@ -403,7 +425,7 @@ class TestInvalidationMatrix:
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
         assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        assert meta["generated"]["by"] == "process:enrich"
         _assert_recent_utc_stamp(meta["generated"]["at"])
 
     def test_body_edit_clears_verified(self, enforced_vault: Vault) -> None:
@@ -417,7 +439,7 @@ class TestInvalidationMatrix:
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
         assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        assert meta["generated"]["by"] == "process:enrich"
 
     def test_body_append_clears_verified(self, enforced_vault: Vault) -> None:
         (enforced_vault._source_dir / "note.md").write_text(
@@ -428,7 +450,7 @@ class TestInvalidationMatrix:
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
         assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        assert meta["generated"]["by"] == "process:enrich"
 
     def test_frontmatter_only_edit_clears_verified(self, enforced_vault: Vault) -> None:
         (enforced_vault._source_dir / "note.md").write_text(
@@ -587,33 +609,42 @@ def _verified_meta(path: Path) -> Any:
 
 @pytest.mark.usefixtures("enforced_env")
 class TestWriteToolThreadsActor:
-    async def test_write_stamps_tool_actor_and_clears_verified(
-        self, enforced_env: Path
+    @pytest.mark.parametrize("by", [None, "codex/6.1-terra"])
+    async def test_write_preserves_actor_or_uses_tool_fallback(
+        self, enforced_env: Path, by: str | None
     ) -> None:
         # No auth configured → get_subject() is "local" → tool actor, not human.
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
+            post = fm.loads(_VERIFIED_NOTE)
+            post.metadata["generated"] = {} if by is None else {"by": by}
             await client.call_tool(
-                "write", {"path": "note.md", "content": _VERIFIED_NOTE}
+                "write", {"path": "note.md", "content": fm.dumps(post)}
             )
             await wait_for_mcp_writer_drain(client)
         meta = fm.loads((enforced_env / "note.md").read_text(encoding="utf-8")).metadata
         assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        if by is None:
+            assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        else:
+            assert meta["generated"]["by"] == by
+        _assert_recent_utc_stamp(meta["generated"]["at"])
 
+    @pytest.mark.parametrize("by", [None, "codex/6.1-terra"])
     async def test_write_stamps_human_actor_when_authed(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch, by: str | None
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            await client.call_tool(
-                "write", {"path": "note.md", "content": "# N\n\nBody.\n"}
-            )
+            args: dict[str, Any] = {"path": "note.md", "content": "# N\n\nBody.\n"}
+            if by is not None:
+                args["frontmatter"] = {"generated": {"by": by}}
+            await client.call_tool("write", args)
             await wait_for_mcp_writer_drain(client)
         meta = fm.loads((enforced_env / "note.md").read_text(encoding="utf-8")).metadata
-        assert meta["generated"]["by"] == "human:peter"
+        assert meta["generated"]["by"] == ("human:peter" if by is None else by)
 
     async def test_convert_links_migration_does_not_restamp(
         self, enforced_env: Path

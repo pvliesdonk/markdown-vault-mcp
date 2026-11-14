@@ -29,10 +29,25 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | Value | Behaviour |
 |-------|-----------|
 | `auto` (default) | Apply OKF read semantics when the root `index.md` declares `okf_version`. |
-| `off` | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
+| `off` | Disable OKF annotations and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on` | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own. |
 
 Check the current state at any time through the `okf` section of the `stats` tool, or the `config://vault` resource.
+
+### Note modification time
+
+A note's `generated.at` records its last content change. When it
+contains a parseable datetime with a UTC offset, `modified_at` uses that instant
+and `get_recent` orders by it. Quoted strings and native YAML timestamps work,
+including `Z`, numeric offsets, fractional seconds and the Unix epoch. Missing
+or unusable values, bare dates and timestamps without an offset fall back to file
+modification time. This clock applies to all notes, including with `OKF_MODE=off`.
+Attachments use file modification time.
+
+The owning server rebuilds older persisted index rows on upgrade. A CLI using
+a read-only index needs its writer or administrator to rebuild that index first.
+Content hashes still detect changes, including a frontmatter edit that moves
+`generated.at` backward.
 
 ## What the metadata means
 
@@ -109,10 +124,12 @@ The steps above keep a bundle conformant by convention. The enforced write layer
 
 With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
 
-- **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the instant of the write, in UTC (`2026-09-07T05:32:29Z`), as the OKF spec requires of every timestamp. `by` is `human:<subject>` when the token carries a usable `sub` claim the issuer does not mark as an application's, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its `sub` equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries `gty: client-credentials` (Auth0) or `idtyp: app` (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark. List those accounts' `sub` values in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` so their writes use the tool actor too; an unlisted one receives human attribution. It records who called the write, which is not the same as who wrote the words, so an agent writing under your token stamps your identity. Any existing `generated` value is replaced, including one another tool wrote. The field tracks the last write this server saw rather than the note's history.
+- **Stamps provenance.** The server always sets `generated.at` to the instant of the write, in UTC (`2026-09-07T05:32:29Z`). It preserves a supplied `generated.by`, such as `codex/6.1-terra`, and any extra keys in `generated`. Preservation depends on the key being present, so empty and null `by` values also survive. An `edit` or `append` carries the actor already in the note; a replacement `write` that omits `by` uses the current caller's fallback actor. When `by` is absent, the fallback is `human:<subject>` when the token carries a usable `sub` claim the issuer does not mark as an application's, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its `sub` equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries `gty: client-credentials` (Auth0) or `idtyp: app` (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark. List those accounts' `sub` values in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` so their writes use the tool actor too; an unlisted one receives human attribution. That fallback records who called the write, which can differ from who wrote the words. The field describes the current content rather than the note's history.
 - **Invalidates prior review.** A content change means an earlier human review no longer describes the current note, so the server clears `verified`. This fires on any content-changing write, including an edit that touches only a frontmatter line. A `rename` moves the file without changing its content, so it leaves both fields alone. Clearing is one-way. The entries are removed rather than archived, and a write that changes nothing of substance clears them just the same.
 
-Both fields describe what this server observed on its own write path. A note changed by anything else (a teammate's editor, a git pull, a script) carries whatever its author left there, and the layer neither notices nor corrects that.
+The timestamp and verification clearing describe this server's own write path;
+the actor can be a claim supplied by the caller. A note changed in an external
+editor retains its author's metadata. This layer leaves those fields alone.
 
 The one-shot migration transforms above (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) are exempt: a mechanical rewrite does not re-stamp provenance or discard a human attestation.
 
