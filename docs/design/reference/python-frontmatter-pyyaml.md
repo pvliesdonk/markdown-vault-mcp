@@ -36,18 +36,18 @@ not cover alternate frontmatter handlers or Git conflict-copy generation.
   and `YAMLHandler.export` to `yaml.dump`. The YAML handler supplies safe
   dumping, block style and Unicode defaults, but no sorting override
   (`frontmatter/__init__.py`, `default_handlers.py`). [source: frontmatter]
-  [pins: tests/test_managers_document.py::TestWrite::test_write_preserves_frontmatter_order]
+  [pins: tests/test_managers_document.py::TestWrite::test_write_with_frontmatter]
 - PyYAML's `dump_all` defaults to `sort_keys=True`. Its mapping representer
   starts with `mapping.items()` and sorts only when this flag is true;
   nested mappings and mappings inside sequences use the same representer
   setting (`lib/yaml/__init__.py`, `representer.py`). Both `SafeDumper` and
   `CSafeDumper` pass that flag to the representer (`dumper.py`, `cyaml.py`).
   [source: pyyaml]
-  [pins: tests/test_managers_document.py::TestWrite::test_write_preserves_frontmatter_order, tests/test_managers_document.py::TestWrite::test_write_preserves_key_permutations]
+  [pins: tests/test_managers_document.py::TestWrite::test_write_with_frontmatter]
 - The YAML constructor inserts mapping entries in node order
   (`lib/yaml/constructor.py`, `BaseConstructor.construct_mapping`), so a
   parsed ordinary mapping exposes the serialized field order. [source: pyyaml]
-  [pins: tests/test_managers_document.py::TestWrite::test_write_preserves_frontmatter_order]
+  [pins: tests/test_managers_document.py::TestWrite::test_write_with_frontmatter]
 - Formatting is reconstructed: the YAML handler dumps metadata afresh and
   `BaseHandler.format` strips the assembled document. Mapping-order
   preservation does not promise comments, quoting, whitespace or exact-byte
@@ -58,7 +58,7 @@ not cover alternate frontmatter handlers or Git conflict-copy generation.
 The [frontmatter contract](../design.md#frontmatter-handling) disables sorting
 at the three existing content-write serializer owners. The OKF transforms
 retain surviving field positions while changing their owned trust fields.
-[pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_frontmatter_order, tests/test_okf_write.py::TestAppendOkfVerification::test_preserves_frontmatter_order]
+[pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields, tests/test_okf_write.py::TestAppendOkfVerification::test_preserves_body_and_other_fields]
 
 The source distributions' SHA-256 values match `uv.lock`: python-frontmatter
 `acc73e477a568dc2a25c9e130c6c68ae8daa8c204c8f7e813db47d6a7280dcf2`;

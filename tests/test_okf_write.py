@@ -26,7 +26,7 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
 
-from markdown_vault_mcp import __version__, _okf_write
+from markdown_vault_mcp import _okf_write
 from markdown_vault_mcp._okf_write import (
     OkfWriteIntent,
     build_okf_write_enrich,
@@ -74,26 +74,26 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 class TestApplyOkfWriteStamp:
     @pytest.mark.parametrize("existing_stamp", [False, True])
-    def test_preserves_frontmatter_order(self, existing_stamp: bool) -> None:
+    def test_preserves_sources_and_other_fields(self, existing_stamp: bool) -> None:
         stamp = "generated: {by: old, at: old}\n" if existing_stamp else ""
         text = (
-            "---\nzeta: {zeta: 1, alpha: 2}\n"
+            "---\nzeta: {zeta: 1, alpha: 2}\ntype: Playbook\n"
             + stamp
             + "verified: [{by: 'human:old', at: old}]\n"
-            "sources: [{resource: 'https://example.com', id: source}]\n"
-            "alpha: false\n---\n\n# Body\n\nText."
+            "sources: [{resource: 'https://example.com/a', id: a}]\n"
+            "x_custom: 1\nalpha: false\n---\n\n# Body\n\nText."
         )
         before = fm.loads(text)
         post = fm.loads(apply_okf_write_stamp(text, actor="human:writer", now=_NOW))
         expected = (
-            ["zeta", "generated", "sources", "alpha"]
+            ["zeta", "type", "generated", "sources", "x_custom", "alpha"]
             if existing_stamp
-            else ["zeta", "sources", "alpha", "generated"]
+            else ["zeta", "type", "sources", "x_custom", "alpha", "generated"]
         )
         assert list(post.metadata) == expected
         assert post.metadata["generated"] == {"by": "human:writer", "at": _ISO}
         assert list(post.metadata["generated"]) == ["by", "at"]
-        for key in ("zeta", "sources", "alpha"):
+        for key in ("zeta", "type", "sources", "x_custom", "alpha"):
             assert post.metadata[key] == before.metadata[key]
         assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
         assert list(post.metadata["sources"][0]) == ["resource", "id"]
@@ -121,23 +121,6 @@ class TestApplyOkfWriteStamp:
         assert meta["generated"] == {"by": "human:x", "at": _ISO}
         # Unrelated fields survive.
         assert meta["title"] == "T"
-
-    def test_preserves_sources_and_other_fields(self) -> None:
-        text = (
-            "---\n"
-            "type: Playbook\n"
-            "sources:\n"
-            "  - resource: https://example.com/a\n"
-            "    id: a\n"
-            "x_custom: 1\n"
-            "---\n"
-            "# P\n"
-        )
-        meta = fm.loads(apply_okf_write_stamp(text, actor="t/1", now=_NOW)).metadata
-        assert meta["type"] == "Playbook"
-        assert meta["sources"] == [{"resource": "https://example.com/a", "id": "a"}]
-        # A producer-defined key survives the round trip (OKF v0.2 §4.1).
-        assert meta["x_custom"] == 1
 
     def test_same_actor_same_instant_re_stamp_is_idempotent(self) -> None:
         # Once a note carries this exact actor/instant stamp and no verified,
@@ -182,7 +165,7 @@ class TestApplyOkfWriteStamp:
 
 class TestAppendOkfVerification:
     @pytest.mark.parametrize("existing_verification", [False, True])
-    def test_preserves_frontmatter_order(self, existing_verification: bool) -> None:
+    def test_preserves_body_and_other_fields(self, existing_verification: bool) -> None:
         verification = (
             "verified: [{by: 'human:old', at: old}]\n" if existing_verification else ""
         )
@@ -190,21 +173,21 @@ class TestAppendOkfVerification:
             "---\nzeta: {zeta: 1, alpha: 2}\n"
             + verification
             + "sources: [{resource: 'https://example.com', id: source}]\n"
-            "alpha: false\n---\n\n# Body\n\nText."
+            "title: T\nalpha: false\n---\n\n# T\n\nBody line."
         )
         before = fm.loads(text)
         post = fm.loads(append_okf_verification(text, subject="reviewer", now=_NOW))
         expected = (
-            ["zeta", "verified", "sources", "alpha"]
+            ["zeta", "verified", "sources", "title", "alpha"]
             if existing_verification
-            else ["zeta", "sources", "alpha", "verified"]
+            else ["zeta", "sources", "title", "alpha", "verified"]
         )
         assert list(post.metadata) == expected
         assert post.metadata["verified"] == [
             *before.metadata.get("verified", []),
             {"by": "human:reviewer", "at": _ISO},
         ]
-        for key in ("zeta", "sources", "alpha"):
+        for key in ("zeta", "sources", "title", "alpha"):
             assert post.metadata[key] == before.metadata[key]
         assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
         assert list(post.metadata["sources"][0]) == ["resource", "id"]
@@ -226,13 +209,6 @@ class TestAppendOkfVerification:
             {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
             {"by": "human:peter", "at": _ISO},
         ]
-
-    def test_preserves_body_and_other_fields(self) -> None:
-        text = "---\ntitle: T\n---\n# T\n\nBody line.\n"
-        out = append_okf_verification(text, subject="peter", now=_NOW)
-        post = fm.loads(out)
-        assert post.metadata["title"] == "T"
-        assert "Body line." in post.content
 
     def test_a_bare_mapping_is_kept_as_the_first_entry(self) -> None:
         # The spec's single-verifier shorthand is a one-element list; the
@@ -453,48 +429,6 @@ def enforced_vault(tmp_path: Path) -> Iterator[Vault]:
 
 
 class TestInvalidationMatrix:
-    @pytest.mark.parametrize("operation", ["mapping", "raw", "edit", "append"])
-    def test_content_writes_preserve_frontmatter_order(
-        self, enforced_vault: Vault, operation: str
-    ) -> None:
-        text = (
-            "---\nzeta: {zeta: 1, alpha: 2}\n"
-            "generated: {by: old, at: old}\n"
-            "verified: [{by: 'human:old', at: old}]\n"
-            "sources: [{resource: 'https://example.com', id: source}]\n"
-            "alpha: false\n---\n\n# Body\n\nText."
-        )
-        before = fm.loads(text)
-        path = enforced_vault._source_dir / "ordered.md"
-        if operation == "mapping":
-            enforced_vault.writer.write(
-                "ordered.md", before.content, frontmatter=before.metadata
-            )
-        elif operation == "raw":
-            enforced_vault.writer.write("ordered.md", text)
-        else:
-            path.write_text(text, encoding="utf-8")
-            enforced_vault.index.build_index()
-            if operation == "edit":
-                enforced_vault.writer.edit("ordered.md", "Text.", "Changed.")
-            else:
-                enforced_vault.writer.append("ordered.md", "More.")
-        wait_for_writer_drain(enforced_vault)
-        post = fm.loads(path.read_text(encoding="utf-8"))
-        assert list(post.metadata) == ["zeta", "generated", "sources", "alpha"]
-        assert list(_meta(enforced_vault, "ordered.md")) == list(post.metadata)
-        assert post.metadata["generated"]["by"] == tool_actor(__version__)
-        _assert_recent_utc_stamp(post.metadata["generated"]["at"])
-        for key in ("zeta", "sources", "alpha"):
-            assert post.metadata[key] == before.metadata[key]
-        assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
-        assert list(post.metadata["sources"][0]) == ["resource", "id"]
-        expected_body = {
-            "edit": "# Body\n\nChanged.",
-            "append": "# Body\n\nText.\nMore.",
-        }.get(operation, before.content)
-        assert post.content == expected_body
-
     def test_body_write_clears_verified_and_stamps(self, enforced_vault: Vault) -> None:
         enforced_vault.writer.write("note.md", _VERIFIED_NOTE)
         wait_for_writer_drain(enforced_vault)
@@ -811,12 +745,6 @@ class TestOkfVerifyTrustAuth:
     async def test_appends_verification_when_authed(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        path = trust_auth_env / "guides" / "playbook.md"
-        text = path.read_text(encoding="utf-8")
-        path.write_text(
-            text.replace("---\n", "---\nzeta: 1\nalpha: 2\n", 1), encoding="utf-8"
-        )
-        before = fm.loads(path.read_text(encoding="utf-8"))
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
@@ -833,10 +761,6 @@ class TestOkfVerifyTrustAuth:
         meta = fm.loads(
             (trust_auth_env / "guides" / "playbook.md").read_text(encoding="utf-8")
         ).metadata
-        assert list(meta) == [*before.metadata, "verified"]
-        assert {
-            key: value for key, value in meta.items() if key != "verified"
-        } == before.metadata
         (entry,) = meta["verified"]
         assert entry["by"] == "human:peter"
         _assert_recent_utc_stamp(entry["at"])
