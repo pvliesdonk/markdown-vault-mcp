@@ -766,6 +766,11 @@ class TestOkfAudit:
         assert report.missing_type.count == 0
         empty = audit_bundle(tmp_path / "missing")
         assert empty.malformed_sources == empty.malformed_generated == OkfFinding(0, ())
+        no_examples = audit_bundle(
+            tmp_path, exclude_patterns=["*excluded*"], example_cap=0
+        )
+        assert no_examples.malformed_sources == OkfFinding(5, ())
+        assert no_examples.malformed_generated == OkfFinding(4, ())
         valid = audit_bundle(
             tmp_path,
             exclude_patterns=[
