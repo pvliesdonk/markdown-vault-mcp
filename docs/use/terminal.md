@@ -17,6 +17,8 @@ uv tool install markdown-vault-mcp
 
 `pipx install markdown-vault-mcp` works as well. A remote lookup needs no extras, because the vault and its index stay on the server.
 
+The package also installs `mvmcp` as a short name for `markdown-vault-mcp`. Both names run the same commands with the same options. Try `mvmcp search "release notes"`.
+
 ### Point it at the server
 
 Create `~/.config/markdown-vault-mcp/client.toml`:

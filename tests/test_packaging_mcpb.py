@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +21,14 @@ PLUGIN_DIR = REPO_ROOT / ".claude-plugin" / "plugin"
 # main carry the rc version), so main may carry an RC version between stable
 # releases.
 _VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-rc\.\d+)?")
+
+
+def test_installed_cli_names_share_main() -> None:
+    """Both installed command names must dispatch through the same CLI main."""
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    scripts = project["project"]["scripts"]
+    assert scripts["markdown-vault-mcp"] == "markdown_vault_mcp.cli:main"
+    assert scripts["mvmcp"] == scripts["markdown-vault-mcp"]
 
 
 def test_cli_main_import_target_exists() -> None:
