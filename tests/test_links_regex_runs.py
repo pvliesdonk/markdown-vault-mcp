@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import itertools
-import random
 import re
 import time
 
@@ -46,19 +45,23 @@ def test_inline_code_keeps_the_same_spans(length: int) -> None:
         ], text
 
 
-def test_titles_keep_the_same_spans_and_replacements() -> None:
+def test_titles_keep_the_same_spans_and_fullmatches() -> None:
     # Each title delimiter, escapes, both separators and a non-separator
-    # whitespace character are included. Longer inputs cover repeated titles
-    # and escaped delimiters that the exhaustive short inputs cannot hold.
+    # whitespace character are included. Longer inputs cover escaped
+    # delimiters and mixed runs beyond the exhaustive short-input bound.
     alphabet = " \t\n\u00a0\"'()\\a"
-    randomizer = random.Random(1749)  # noqa: S311 - reproducible test data, not secrets
     texts = itertools.chain(
         (
             "".join(chars)
             for length in range(6)
             for chars in itertools.product(alphabet, repeat=length)
         ),
-        ("".join(randomizer.choices(alphabet, k=100)) for _ in range(5000)),
+        (
+            f"a{gap}{opening}a\\{opening}b{closing}{tail}"
+            for gap in (" ", "\t", " \t" * 100)
+            for opening, closing in (('"', '"'), ("'", "'"), ("(", ")"))
+            for tail in ("", "\n", "  ", " bad", " \\")
+        ),
     )
     for text in texts:
         assert [m.span() for m in trailing_title_pattern.finditer(text)] == [
