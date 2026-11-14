@@ -160,18 +160,28 @@ def load_vocabulary(root: Path, path: str) -> Vocabulary:
 def _paragraph(body: str) -> str | None:
     lines = body.splitlines()
     while lines:
+        if _non_prose(lines):
+            return None
         if not lines[0].strip() or re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0]):
             lines.pop(0)
         elif len(lines) > 1 and re.fullmatch(r" {0,3}(?:=+|-+)\s*", lines[1]):
             del lines[:2]
         else:
             break
-    if not lines or re.match(
-        r"^(?: {4}|\t| {0,3}(?:[`~]{3}|[>|]|[-+*](?:\s|$)|\d+[.)]\s))", lines[0]
-    ):
+    if not lines:
         return None
     paragraph = "\n".join(body_line for body_line in _first_block(lines)).strip()
     return paragraph if paragraph and len(paragraph) <= 280 else None
+
+
+def _non_prose(lines: list[str]) -> bool:
+    return bool(
+        re.match(
+            r"^(?: {4}|\t| {0,3}(?:[`~]{3}|[>|]|[-+*](?:\s|$)|\d+[.)]\s))"
+            r"|^[^\n]*\|[^\n]*\n\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?\s*$",
+            "\n".join(lines[:2]),
+        )
+    )
 
 
 def _first_block(lines: list[str]) -> list[str]:

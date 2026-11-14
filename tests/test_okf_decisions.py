@@ -54,6 +54,55 @@ def test_decisions_exact_wire_contract() -> None:
         client.close()
 
 
+def _invalid_answers(mutation: str) -> list[dict[str, Any]]:
+    answers = copy.deepcopy(ANSWERS)
+    first, second = answers
+    if mutation == "missing":
+        answers.pop()
+    elif mutation == "extra":
+        answers.append(first)
+    elif mutation == "shifted":
+        second["name"] = "status"
+    elif mutation == "null_answer":
+        answers[0] = None  # type: ignore[assignment]
+    elif mutation == "wrong_type":
+        second["type"] = "predicate"
+    elif mutation == "choice_bool":
+        second["choice"] = True
+    elif mutation == "forged_choice":
+        second["choice"] = "Invented"
+    elif mutation in {"bool", "nan", "inf", "negative", "over_one"}:
+        first["probability"] = {
+            "bool": True,
+            "nan": float("nan"),
+            "inf": float("inf"),
+            "negative": -0.1,
+            "over_one": 1.1,
+        }[mutation]
+    else:
+        _mutate_distribution_or_name(first, second, mutation)
+    return answers
+
+
+def _mutate_distribution_or_name(
+    first: dict[str, Any], second: dict[str, Any], mutation: str
+) -> None:
+    if mutation == "distribution_dict":
+        second["probabilities"] = {"Reference": 0.8}
+    elif mutation == "distribution_bool":
+        second["probabilities"][0]["probability"] = True
+    elif mutation == "distribution_forged":
+        second["probabilities"][0]["value"] = "Forged"
+    elif mutation == "distribution_duplicate":
+        second["probabilities"][1]["value"] = "Reference"
+    elif mutation == "distribution_missing":
+        second["probabilities"].pop()
+    elif mutation == "null_name":
+        first["name"] = None
+    else:
+        first["type"] = "unknown"
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -80,44 +129,7 @@ def test_decisions_exact_wire_contract() -> None:
 )
 def test_invalid_reply_never_returns_answers(mutation: str) -> None:
     """A malformed field must invalidate the entire response before any write."""
-    answers = copy.deepcopy(ANSWERS)
-    first, second = answers
-    if mutation == "missing":
-        answers.pop()
-    elif mutation == "extra":
-        answers.append(first)
-    elif mutation == "shifted":
-        second["name"] = "status"
-    elif mutation == "null_answer":
-        answers[0] = None  # type: ignore[assignment]
-    elif mutation == "wrong_type":
-        second["type"] = "predicate"
-    elif mutation == "choice_bool":
-        second["choice"] = True
-    elif mutation == "forged_choice":
-        second["choice"] = "Invented"
-    elif mutation in {"bool", "nan", "inf", "negative", "over_one"}:
-        first["probability"] = {
-            "bool": True,
-            "nan": float("nan"),
-            "inf": float("inf"),
-            "negative": -0.1,
-            "over_one": 1.1,
-        }[mutation]
-    elif mutation == "distribution_dict":
-        second["probabilities"] = {"Reference": 0.8}
-    elif mutation == "distribution_bool":
-        second["probabilities"][0]["probability"] = True
-    elif mutation == "distribution_forged":
-        second["probabilities"][0]["value"] = "Forged"
-    elif mutation == "distribution_duplicate":
-        second["probabilities"][1]["value"] = "Reference"
-    elif mutation == "distribution_missing":
-        second["probabilities"].pop()
-    elif mutation == "null_name":
-        first["name"] = None
-    else:
-        first["type"] = "unknown"
+    answers = _invalid_answers(mutation)
     client = DecisionsClient(
         "https://fixture.invalid/v1",
         "synthetic-only",
@@ -504,3 +516,21 @@ def test_malformed_source_record_is_preserved_without_append(tmp_path: Path) -> 
     assert "sources" not in decision.accepted_patch(
         accept_answers(decision.questions), DecisionPolicy(THRESHOLDS), now=NOW
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "- First item\n---\n\nLater prose.",
+        "A | B\n--- | ---\none | two\n\nLater prose.",
+    ],
+)
+def test_description_never_skips_or_copies_unsuitable_first_block(
+    tmp_path: Path, body: str
+) -> None:
+    """A list before a thematic break and a pipe-optional table aren't prose."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    decision = build_questions(
+        "note.md", {}, body, load_vocabulary(tmp_path, "types.md")
+    )
+    assert "description" not in decision.bindings
