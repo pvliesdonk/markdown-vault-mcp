@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 from fastmcp import Client
 
+from tests.fixtures.okf import malformed_okf_note as malformed_okf_note
 from tests.server_factory import make_server
 
 from .conftest import _CLEAR_VARS, _parse_tool_data, wait_for_mcp_writer_drain
@@ -192,17 +193,9 @@ class TestDeclaredBundle:
     """A declared vault gains annotations on every read surface."""
 
     async def test_malformed_provenance_survives_public_reads(
-        self, okf_vault: Path
+        self, malformed_okf_note: tuple[str, Path, bytes]
     ) -> None:
-        path = "guides/malformed.md"
-        raw = (
-            "---\ntype: Note\nsources: https://example.com\n"
-            "generated: codex at a date\n---\n# Malformed\n\n"
-            "Zebra malformed provenance.\n\n## Steps\n\nZebra checklist.\n"
-        )
-        note = okf_vault / path
-        note.write_text(raw, encoding="utf-8")
-        before = note.read_bytes()
+        path, note, before = malformed_okf_note
         async with Client(make_server()) as client:
             hits = await _search(client, mode="keyword")
             hit = next(hit for hit in hits if hit["path"] == path)
@@ -336,16 +329,10 @@ class TestModeOff:
     def _off(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
 
-    async def test_no_okf_surfaces(self, okf_vault: Path) -> None:
-        path = "guides/malformed.md"
-        raw = (
-            "---\ntype: Note\nsources: https://example.com\n"
-            "generated: codex at a date\n---\n# Malformed\n\n"
-            "Zebra malformed provenance.\n\n## Steps\n\nZebra checklist.\n"
-        )
-        note = okf_vault / path
-        note.write_text(raw, encoding="utf-8")
-        before = note.read_bytes()
+    async def test_no_okf_surfaces(
+        self, malformed_okf_note: tuple[str, Path, bytes]
+    ) -> None:
+        path, note, before = malformed_okf_note
         async with Client(make_server()) as client:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
