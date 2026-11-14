@@ -18,6 +18,8 @@ and reflects a mid-session declaration on the next call.
 The OKF field vocabulary is deliberately kept as *data* (module constants)
 rather than spread through code: the spec is pre-1.0 with one breaking
 rename already behind it, so a future revision should be a table edit.
+
+Write serialization: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 """
 
 from __future__ import annotations
@@ -1057,6 +1059,9 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     "the content's last meaningful change" — so it moves on every content
     write; ``verified`` is dropped because a content change invalidates any
     prior attestation; ``sources`` and every other field are untouched.
+    Surviving fields retain their mapping order, including nested mappings;
+    a new ``generated`` field appends, while replacing it retains its slot.
+    YAML comments and formatting are not retained on serialization.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1078,7 +1083,7 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     new_meta.pop("verified", None)
     if new_meta == meta:
         return text
-    return fm.dumps(fm.Post(post.content, **new_meta))
+    return fm.dumps(fm.Post(post.content, **new_meta), sort_keys=False)
 
 
 def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
@@ -1086,8 +1091,10 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
 
     The ``okf_verify`` tool's core transform (design §6): records an attributable
     human attestation, promoting the note's trust tier to ``human-reviewed``.
-    Preserves all other frontmatter and the body verbatim; the entry keeps the
-    ``{by, at}`` shape :func:`derive_trust_tier` reads.
+    Preserves other frontmatter values and mapping order, including nested
+    mappings. A new ``verified`` field appends; an existing field retains its
+    slot. The entry keeps the ``{by, at}`` shape :func:`derive_trust_tier` reads.
+    YAML comments, quoting and surrounding whitespace may be normalized.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1104,4 +1111,4 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
     verified = list(verified_entries(meta))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
     meta["verified"] = verified
-    return fm.dumps(fm.Post(post.content, **meta))
+    return fm.dumps(fm.Post(post.content, **meta), sort_keys=False)

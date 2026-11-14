@@ -3,6 +3,8 @@
 Handles all read/write/edit/append/delete/rename operations, attachment I/O,
 path validation, and backlink updates — all with dependency injection
 and no back-reference to :class:`Vault`.
+
+Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 """
 
 from __future__ import annotations
@@ -759,7 +761,8 @@ class DocumentManager:
         """Create or overwrite a document.
 
         Creates intermediate directories as needed.  If *frontmatter* is
-        provided, it is serialised as a YAML header at the top of the file.
+        provided, it is serialised as a YAML header in mapping insertion order,
+        including nested mappings. YAML comments and formatting are not retained.
 
         Args:
             path: Relative document path.
@@ -801,7 +804,7 @@ class DocumentManager:
 
             if frontmatter is not None:
                 post = fm.Post(content, **frontmatter)
-                file_content = fm.dumps(post)
+                file_content = fm.dumps(post, sort_keys=False)
             else:
                 file_content = content
 

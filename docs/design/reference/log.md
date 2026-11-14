@@ -1,5 +1,13 @@
 # Reference research log
 
+## 2026-11-14
+
+- New: [Python frontmatter serialization and mapping order](python-frontmatter-pyyaml.md),
+  for #2029. Read and refuted the lockfile-matched python-frontmatter 1.3.0 and
+  PyYAML 6.0.3 source distributions: keyword forwarding, default sorting,
+  recursive mapping representation, loading order and formatting boundaries.
+  Next review: 2027-05-14, or when either pinned dependency changes.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,
