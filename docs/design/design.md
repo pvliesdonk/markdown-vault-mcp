@@ -6456,6 +6456,19 @@ the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
 subject when the call staged exactly one path.
 
+OKF content-write maintenance marks its secondary writes with
+`auxiliary_commit_writes`. The dispatcher snapshots this context beside each
+queued write, not on the worker. It sends the primary paths through the
+separate `ACCEPTS_PRIMARY_PATHS_ATTR` opt-in: existing batch callbacks still
+receive the same two arguments and four-field items. When there is exactly
+one primary path and its item stages successfully, Git names that note in the
+subject while still committing every staged item. No primary, several primary
+paths, or a failed primary stage retains the batch count. A direct batch caller
+that supplies no provenance also retains its existing subject. Names and item
+order never establish maintenance provenance; a user's own `index.md` write
+is primary. This changes only the subject, not write authority or commit scope
+(#1675).
+
 Three properties this depends on:
 
 - **The scope is read in `fire`, never on the worker.** `fire` runs on the
