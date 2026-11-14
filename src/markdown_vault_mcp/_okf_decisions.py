@@ -61,17 +61,20 @@ def _validate_request(
                 raise ValueError("Decisions requires 2..255 unique string choices.")
     for part in parts:
         if part.get("type") == "input_json":
-            data = part.get("data")
-            if _json_bounds(data) > 10000:
-                raise ValueError("Decisions JSON input exceeds 10,000 values.")
-            try:
-                encoded = json.dumps(
-                    data, ensure_ascii=False, separators=(",", ":"), allow_nan=False
-                ).encode("utf-8")
-            except (ValueError, TypeError, UnicodeError):
-                raise ValueError("Decisions input must be valid JSON.") from None
-            if len(encoded) > 256 * 1024:
-                raise ValueError("Decisions JSON input exceeds 256 KiB.")
+            _validate_json(part.get("data"))
+
+
+def _validate_json(data: Any) -> None:
+    if _json_bounds(data) > 10000:
+        raise ValueError("Decisions JSON input exceeds 10,000 values.")
+    try:
+        encoded = json.dumps(
+            data, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+    except (ValueError, TypeError, UnicodeError):
+        raise ValueError("Decisions input must be valid JSON.") from None
+    if len(encoded) > 256 * 1024:
+        raise ValueError("Decisions JSON input exceeds 256 KiB.")
 
 
 def _valid_answer(answer: Any, question: dict[str, Any]) -> bool:
@@ -84,6 +87,10 @@ def _valid_answer(answer: Any, question: dict[str, Any]) -> bool:
         return False
     if kind == "predicate":
         return _metric(answer.get("probability"))
+    return _valid_choice(answer, question)
+
+
+def _valid_choice(answer: dict[str, Any], question: dict[str, Any]) -> bool:
     values = [choice["value"] for choice in question["choices"]]
     distribution = answer.get("probabilities")
     if (

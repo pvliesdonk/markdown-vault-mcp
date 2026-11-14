@@ -439,3 +439,68 @@ def test_policy_rejects_invalid_thresholds(change: dict[str, Any]) -> None:
     """Malformed policy cannot be treated as uncertainty or weaken replacement."""
     with pytest.raises(ValueError):
         DecisionPolicy({**THRESHOLDS, **change})
+
+
+@pytest.mark.parametrize("confidence,expected", [(0.8, True), (0.799, False)])
+def test_missing_type_threshold_is_inclusive(
+    tmp_path: Path, confidence: float, expected: bool
+) -> None:
+    """Missing values accept exactly the configured confidence boundary."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    decision = build_questions("note.md", {}, "", load_vocabulary(tmp_path, "types.md"))
+    patch = decision.accepted_patch(
+        accept_answers(
+            decision.questions, type={"confidence": confidence}, status="stable"
+        ),
+        DecisionPolicy(THRESHOLDS),
+        now=NOW,
+    )
+    assert (patch == {"type": "Reference"}) is expected
+
+
+def test_duration_overflow_refuses_only_expiry(tmp_path: Path) -> None:
+    """A representable duration cannot overflow the write-attempt datetime."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    decision = build_questions("note.md", {}, "", load_vocabulary(tmp_path, "types.md"))
+    patch = decision.accepted_patch(
+        accept_answers(decision.questions),
+        DecisionPolicy(THRESHOLDS),
+        now=datetime(9999, 12, 20, tzinfo=UTC),
+    )
+    assert "stale_after" not in patch and patch["type"] == "Reference"
+
+
+@pytest.mark.parametrize(
+    "body,description",
+    [
+        ("*An emphasized paragraph.*", "*An emphasized paragraph.*"),
+        ("A title\n=======\n\nFirst prose.", "First prose."),
+    ],
+)
+def test_first_ordinary_paragraph_respects_markdown_blocks(
+    tmp_path: Path, body: str, description: str
+) -> None:
+    """Emphasis is prose and leading setext headings are headings."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    decision = build_questions(
+        "note.md", {}, body, load_vocabulary(tmp_path, "types.md")
+    )
+    patch = decision.accepted_patch(
+        accept_answers(decision.questions), DecisionPolicy(THRESHOLDS), now=NOW
+    )
+    assert patch["description"] == description
+
+
+def test_malformed_source_record_is_preserved_without_append(tmp_path: Path) -> None:
+    """Whitespace-only resource records must not be silently treated as valid."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    metadata = {"sources": [{"resource": " "}]}
+    decision = build_questions(
+        "note.md",
+        metadata,
+        "Paragraph.\n\nhttps://example.invalid/evidence",
+        load_vocabulary(tmp_path, "types.md"),
+    )
+    assert "sources" not in decision.accepted_patch(
+        accept_answers(decision.questions), DecisionPolicy(THRESHOLDS), now=NOW
+    )

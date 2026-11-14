@@ -267,3 +267,133 @@ def test_concurrent_edit_is_never_overwritten(tmp_path: Path, failure: str) -> N
     finally:
         client.close()
         vault.close()
+
+
+def test_terminal_error_retains_earlier_write(tmp_path: Path) -> None:
+    """Stopping later paid work retains the first note's applied outcome."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    for name in ("a.md", "b.md", "c.md"):
+        (tmp_path / name).write_text("Fixture paragraph.")
+    submitted: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        submitted.append(payload["input"][0]["content"][0]["text"])
+        if len(submitted) == 2:
+            return httpx.Response(401, text="private")
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1", "fixture", transport=httpx.MockTransport(respond)
+    )
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(read_only=False, okf_mode="on")
+    )
+    try:
+        report = OkfDecisionManager(
+            vault,
+            client,
+            DecisionPolicy(THRESHOLDS),
+            load_vocabulary(tmp_path, "types.md"),
+        ).decide(DecideSelection(missing_type=True))
+        assert report.counts["written"] == report.counts["error"] == 1
+        assert len(submitted) == 2 and report.exit_code() == 1
+        assert fm.load(tmp_path / "a.md")["type"] == "Reference"
+        assert (tmp_path / "c.md").read_text() == "Fixture paragraph."
+    finally:
+        client.close()
+        vault.close()
+
+
+@pytest.mark.parametrize("outcome", ["suppressed", "low", "conflict", "write-error"])
+def test_reporting_retains_proposals_and_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """Policy acceptance and persistence stay distinct even on suppression/failure."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    (tmp_path / "note.md").write_text(
+        "Exact paragraph.\n\nhttps://example.invalid/evidence"
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        questions = json.loads(request.content)["questions"]
+        overrides = (
+            {"meaningful": {"probability": 0.1}}
+            if outcome == "suppressed"
+            else {"description": {"probability": 0.1}}
+            if outcome == "low"
+            else {}
+        )
+        if outcome == "conflict":
+            (tmp_path / "note.md").write_text("Concurrent bytes.")
+        return httpx.Response(
+            200, json={"answers": accept_answers(questions, **overrides)}
+        )
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1", "fixture", transport=httpx.MockTransport(respond)
+    )
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(read_only=False, okf_mode="on")
+    )
+    if outcome == "write-error":
+
+        def fail(*_args: Any, **_kwargs: Any) -> Any:
+            raise OSError("private fixture body or key")
+
+        monkeypatch.setattr(vault.writer, "write", fail)
+    try:
+        result = (
+            OkfDecisionManager(
+                vault,
+                client,
+                DecisionPolicy(THRESHOLDS),
+                load_vocabulary(tmp_path, "types.md"),
+            )
+            .decide(DecideSelection(missing_type=True))
+            .results[0]
+        )
+        assert result["answers"][0]["name"] == "meaningful"
+        field = result["fields"]["description"]
+        assert field["proposed"] == "Exact paragraph."
+        assert field["accepted"] == (outcome in {"conflict", "write-error"})
+        assert field["persisted"] is False
+        assert result["fields"]["sources"]["candidates"] == {
+            "sources:0": "https://example.invalid/evidence"
+        }
+        assert "private fixture" not in json.dumps(result)
+    finally:
+        client.close()
+        vault.close()
+
+
+def test_empty_injected_discovery_does_not_walk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even an empty preflight snapshot is authoritative, without another traversal."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    (tmp_path / "note.md").write_text("A note.")
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("Discovery was repeated")
+
+    monkeypatch.setattr(module, "discover_notes", forbidden)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    client = DecisionsClient(
+        "https://fixture.invalid/v1",
+        "fixture",
+        transport=httpx.MockTransport(forbidden),
+    )
+    try:
+        report = OkfDecisionManager(
+            vault,
+            client,
+            DecisionPolicy(THRESHOLDS),
+            load_vocabulary(tmp_path, "types.md"),
+        ).decide(DecideSelection(missing_type=True), discovery=([], []))
+        assert report.results == [] and report.exit_code() == 0
+    finally:
+        client.close()
+        vault.close()

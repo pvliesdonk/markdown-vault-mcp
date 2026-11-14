@@ -159,12 +159,15 @@ def load_vocabulary(root: Path, path: str) -> Vocabulary:
 
 def _paragraph(body: str) -> str | None:
     lines = body.splitlines()
-    while lines and (
-        not lines[0].strip() or re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0])
-    ):
-        lines.pop(0)
+    while lines:
+        if not lines[0].strip() or re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0]):
+            lines.pop(0)
+        elif len(lines) > 1 and re.fullmatch(r" {0,3}(?:=+|-+)\s*", lines[1]):
+            del lines[:2]
+        else:
+            break
     if not lines or re.match(
-        r"^(?: {4}|\t| {0,3}(?:[`~]{3}|[-+*>|]|\d+[.)]\s))", lines[0]
+        r"^(?: {4}|\t| {0,3}(?:[`~]{3}|[>|]|[-+*](?:\s|$)|\d+[.)]\s))", lines[0]
     ):
         return None
     paragraph = "\n".join(body_line for body_line in _first_block(lines)).strip()
@@ -254,61 +257,126 @@ class NoteDecision:
         Returns:
             Changed keys only; empty for equality, refusal or abstention.
         """
+        patch, _ = self.evaluate(answers, policy, now=now)
+        return patch
+
+    def evaluate(
+        self, answers: list[dict[str, Any]], policy: DecisionPolicy, *, now: datetime
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Evaluate proposals once, retaining policy outcomes before persistence.
+
+        Args:
+            answers: Validated ordered answers, including refusals.
+            policy: Field, replacement and meaningful thresholds.
+            now: Aware write-attempt time for review durations.
+
+        Returns:
+            Accepted patch and complete proposed/accepted/persisted field records.
+        """
         by_name = {q["name"]: a for q, a in zip(self.questions, answers, strict=True)}
-
-        def qualifies(name: str, threshold: float, *, strict: bool = False) -> bool:
-            answer = by_name.get(name, {})
-            metric = answer.get(
-                "confidence" if answer.get("type") == "choice" else "probability", -1
+        meaningful = _qualifies(
+            by_name.get("meaningful", {}), policy.meaningful_threshold
+        )
+        fields: dict[str, Any] = {}
+        for key in sorted(_KEYS - {"sources"}):
+            answer = by_name.get(key, {})
+            proposed = (
+                answer.get("choice")
+                if key in {"type", "status"}
+                else self.bindings.get(key)
             )
-            return (
-                answer.get("type") != "refusal"
-                and _metric(metric)
-                and (metric > threshold if strict else metric >= threshold)
-            )
-
-        if not qualifies("meaningful", policy.meaningful_threshold):
-            return {}
-        patch: dict[str, Any] = {}
-        for key in ("type", "status"):
-            answer = by_name[key]
-            value, current = answer.get("choice"), self.metadata.get(key)
-            if (
-                not qualifies(key, policy.thresholds[key])
-                or value == current
-                or (key == "status" and not _present(current) and value == "stable")
-            ):
-                continue
-            if _present(current) and not qualifies(
-                key + "_wrong", policy.replace_threshold, strict=True
-            ):
-                continue
-            patch[key] = value
-        for key in ("description", "stale_after"):
-            if key not in self.bindings or not qualifies(key, policy.thresholds[key]):
-                continue
-            value = self.bindings[key]
-            if key == "stale_after":
-                try:
-                    value = okf_timestamp(
-                        now + timedelta(days=int(by_name[key]["choice"][:-1]))
+            disposition = "unavailable"
+            if key in by_name:
+                disposition = (
+                    "refusal" if answer.get("type") == "refusal" else "low-confidence"
+                )
+                if _qualifies(answer, policy.thresholds[key]):
+                    disposition = self._field_disposition(
+                        key, proposed, by_name, policy
                     )
-                except (OverflowError, ValueError):
-                    continue
-            patch[key] = value
+            if key == "stale_after" and proposed is not None:
+                try:
+                    proposed = okf_timestamp(
+                        now + timedelta(days=int(answer["choice"][:-1]))
+                    )
+                except (OverflowError, ValueError, KeyError):
+                    proposed, disposition = None, "duration-unavailable"
+            fields[key] = _field_outcome(proposed, disposition, meaningful)
         sources = (
             list(self.metadata.get("sources") or [])
-            if self.bindings.get("sources_valid")
+            if self.bindings["sources_valid"]
             else []
         )
-        for name, resource in self.bindings.get("sources", {}).items():
-            if qualifies(name, policy.thresholds["sources"]) and resource not in {
-                s["resource"] for s in sources
-            }:
+        candidates = self.bindings.get("sources", {})
+        outcomes = {}
+        for name, resource in candidates.items():
+            disposition = (
+                "equal" if resource in {s["resource"] for s in sources} else "accepted"
+            )
+            if not _qualifies(by_name[name], policy.thresholds["sources"]):
+                disposition = (
+                    "refusal"
+                    if by_name[name].get("type") == "refusal"
+                    else "low-confidence"
+                )
+            outcomes[name] = _field_outcome(resource, disposition, meaningful)
+            if disposition == "accepted":
                 sources.append({"resource": resource})
-        if sources and sources != self.metadata.get("sources"):
-            patch["sources"] = sources
-        return patch
+        disposition = (
+            "accepted" if sources != self.metadata.get("sources", []) else "unchanged"
+        )
+        if not self.bindings["sources_valid"]:
+            disposition = "malformed-existing"
+        fields["sources"] = {
+            **_field_outcome(sources, disposition, meaningful),
+            "candidates": candidates,
+            "decisions": outcomes,
+        }
+        return {
+            key: value["proposed"] for key, value in fields.items() if value["accepted"]
+        }, fields
+
+    def _field_disposition(
+        self, key: str, proposed: Any, answers: dict[str, Any], policy: DecisionPolicy
+    ) -> str:
+        current = self.metadata.get(key)
+        if proposed == current or (
+            key == "status" and not _present(current) and proposed == "stable"
+        ):
+            return "equal"
+        if (
+            key in {"type", "status"}
+            and _present(current)
+            and not _qualifies(
+                answers[key + "_wrong"], policy.replace_threshold, strict=True
+            )
+        ):
+            return "replacement-protected"
+        return "accepted"
+
+
+def _qualifies(
+    answer: dict[str, Any], threshold: float, *, strict: bool = False
+) -> bool:
+    metric = answer.get(
+        "confidence" if answer.get("type") == "choice" else "probability", -1
+    )
+    return (
+        answer.get("type") != "refusal"
+        and _metric(metric)
+        and (metric > threshold if strict else metric >= threshold)
+    )
+
+
+def _field_outcome(proposed: Any, disposition: str, meaningful: bool) -> dict[str, Any]:
+    if disposition == "accepted" and not meaningful:
+        disposition = "meaningful-suppressed"
+    return {
+        "proposed": proposed,
+        "disposition": disposition,
+        "accepted": disposition == "accepted",
+        "persisted": False,
+    }
 
 
 def build_questions(
@@ -358,7 +426,9 @@ def build_questions(
         )
     sources = metadata.get("sources", [])
     bindings["sources_valid"] = isinstance(sources, list) and all(
-        isinstance(s, dict) and isinstance(s.get("resource"), str) and s["resource"]
+        isinstance(s, dict)
+        and isinstance(s.get("resource"), str)
+        and s["resource"].strip()
         for s in sources
     )
     if bindings["sources_valid"]:
@@ -533,23 +603,31 @@ class OkfDecisionManager:
         )
         self.guard = guard or SubmoduleGuard(vault.source_dir)
 
-    def decide(self, selection: DecideSelection) -> DecideReport:
+    def decide(
+        self,
+        selection: DecideSelection,
+        *,
+        discovery: tuple[list[str], list[dict[str, Any]]] | None = None,
+    ) -> DecideReport:
         """Process selected notes once, stopping paid work on terminal failures.
 
         Args:
             selection: At least one explicit filesystem selector.
+            discovery: Optional authoritative preflight membership and errors.
 
         Returns:
             Complete prior outcomes, field answers and safe per-note errors.
         """
         report = DecideReport()
-        paths, errors = discover_notes(
-            self.vault.source_dir,
-            selection,
-            self.vocabulary.path,
-            self.vault.exclude_patterns,
-            self.guard,
-        )
+        if discovery is None:
+            discovery = discover_notes(
+                self.vault.source_dir,
+                selection,
+                self.vocabulary.path,
+                self.vault.exclude_patterns,
+                self.guard,
+            )
+        paths, errors = discovery
         for error in errors:
             report.add(error)
         for path in paths:
@@ -584,16 +662,7 @@ class OkfDecisionManager:
         decision = build_questions(path, metadata, body, self.vocabulary)
         answers = self.client.decide(decision.input_parts, decision.questions)
         now = _now()
-        patch = decision.accepted_patch(answers, self.policy, now=now)
-        fields = {
-            key: {
-                "disposition": "accepted" if key in patch else "unchanged",
-                "proposed": patch.get(key),
-            }
-            for key in sorted(_KEYS)
-        }
-        if not decision.bindings["sources_valid"]:
-            fields["sources"]["disposition"] = "malformed-existing"
+        patch, fields = decision.evaluate(answers, self.policy, now=now)
         result = {
             "path": path,
             "disposition": "written" if patch else "unchanged",
@@ -604,16 +673,39 @@ class OkfDecisionManager:
             ],
         }
         if patch:
-            merged = {**metadata, **patch}
-            if not self.policy.okf_write:
-                stamped = apply_okf_write_stamp(
-                    fm.dumps(fm.Post(body, **merged)),
-                    actor="process:okf-decide",
-                    now=now,
+            try:
+                self._persist(path, body, {**metadata, **patch}, read.etag, now)
+            except (OSError, UnicodeError, ValueError, MarkdownMCPError) as error:
+                conflict = isinstance(
+                    error, (EditConflictError, ConcurrentModificationError)
                 )
-                merged = dict(parse_frontmatter(stamped).metadata)
-            with okf_write_intent(OkfWriteIntent(actor="process:okf-decide")):
-                self.vault.writer.write(
-                    path, body, frontmatter=merged, if_match=read.etag
+                result.update(
+                    disposition="conflict" if conflict else "error",
+                    error="Note changed during inference."
+                    if conflict
+                    else "Cannot persist note safely.",
                 )
+            else:
+                for value in fields.values():
+                    value["persisted"] = value["accepted"]
+                for value in fields["sources"]["decisions"].values():
+                    value["persisted"] = value["accepted"]
         return result
+
+    def _persist(
+        self,
+        path: str,
+        body: str,
+        merged: dict[str, Any],
+        etag: str | None,
+        now: datetime,
+    ) -> None:
+        if not self.policy.okf_write:
+            stamped = apply_okf_write_stamp(
+                fm.dumps(fm.Post(body, **merged)),
+                actor="process:okf-decide",
+                now=now,
+            )
+            merged = dict(parse_frontmatter(stamped).metadata)
+        with okf_write_intent(OkfWriteIntent(actor="process:okf-decide")):
+            self.vault.writer.write(path, body, frontmatter=merged, if_match=etag)
