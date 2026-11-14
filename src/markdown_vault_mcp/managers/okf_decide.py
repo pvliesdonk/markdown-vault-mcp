@@ -4,25 +4,45 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from markdown_vault_mcp._okf_decisions import _metric
-from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES, okf_timestamp
+import frontmatter as fm
+
+from markdown_vault_mcp._okf_decisions import DecisionError, DecisionsClient, _metric
+from markdown_vault_mcp._okf_write import OkfWriteIntent, okf_write_intent
+from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
+    EditConflictError,
+    MarkdownMCPError,
+)
+from markdown_vault_mcp.git.submodules import SubmoduleGuard
+from markdown_vault_mcp.okf import (
+    OKF_RESERVED_FILENAMES,
+    apply_okf_write_stamp,
+    okf_timestamp,
+)
 from markdown_vault_mcp.scanner import (
     _collect_reference_definitions,
     _strip_fenced_code,
     _strip_inline_code,
     extract_links,
     parse_frontmatter,
+    strip_frontmatter_block,
 )
-from markdown_vault_mcp.utils import validate_path
+from markdown_vault_mcp.utils import is_path_excluded, validate_path
+from markdown_vault_mcp.utils.fs import iter_markdown_files
 from markdown_vault_mcp.utils.links import (
     decode_markdown_destination,
     iter_inline_links,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from markdown_vault_mcp.vault import Vault
 
 _KEYS = frozenset({"type", "status", "description", "sources", "stale_after"})
 _MEANINGFUL = "Would filling or correcting the eligible metadata from the supplied candidates be a meaningful change to this page, rather than a cosmetic or redundant update? Evaluate the current metadata and body; existing equal values do not count."
@@ -178,11 +198,11 @@ def _sources(body: str, path: str, root: Path | None) -> list[str]:
         for value in _collect_reference_definitions(clean).values()
     )
     # Exclude link/image syntax before recognizing bare prose URL tokens.
-    for link in reversed(links):
+    for inline_link in reversed(links):
         clean = (
-            clean[: link.open_index]
-            + " " * (link.end - link.open_index)
-            + clean[link.end :]
+            clean[: inline_link.open_index]
+            + " " * (inline_link.end - inline_link.open_index)
+            + clean[inline_link.end :]
         )
     external.extend(
         match.group().rstrip(".,;:!?)]}")
@@ -239,7 +259,7 @@ class NoteDecision:
         def qualifies(name: str, threshold: float, *, strict: bool = False) -> bool:
             answer = by_name.get(name, {})
             metric = answer.get(
-                "confidence" if answer.get("type") == "choice" else "probability"
+                "confidence" if answer.get("type") == "choice" else "probability", -1
             )
             return (
                 answer.get("type") != "refusal"
@@ -374,3 +394,226 @@ def build_questions(
         ],
         bindings,
     )
+
+
+@dataclass(frozen=True)
+class DecideSelection:
+    """Filesystem mtime and missing-raw-type selectors, combined by union."""
+
+    since: datetime | None = None
+    missing_type: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.missing_type and self.since is None:
+            raise ValueError("Choose --since or --missing-type.")
+        if self.since is not None and self.since.utcoffset() is None:
+            raise ValueError("--since requires an offset-aware ISO datetime.")
+
+
+@dataclass
+class DecideReport:
+    """Per-note results including unmodified actual metrics and safe failures."""
+
+    results: list[dict[str, Any]] = field(default_factory=list)
+    counts: dict[str, int] = field(
+        default_factory=lambda: dict.fromkeys(
+            ("written", "unchanged", "skipped", "conflict", "error"), 0
+        )
+    )
+    terminal_error: str | None = None
+
+    def exit_code(self) -> int:
+        """Return one for failed/conflicting notes, zero for successful abstentions."""
+        return int(
+            bool(self.terminal_error or self.counts["error"] or self.counts["conflict"])
+        )
+
+    def add(self, result: dict[str, Any]) -> None:
+        """Record one note's disposition and increment its matching total.
+
+        Args:
+            result: Path, disposition and optional field answers or error.
+        """
+        self.results.append(result)
+        self.counts[result["disposition"]] += 1
+
+
+def discover_notes(
+    root: Path,
+    selection: DecideSelection,
+    vocabulary_path: str,
+    excludes: Sequence[str] | None = None,
+    guard: SubmoduleGuard | None = None,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Select safe ordinary notes from disk, without opening indexes or models.
+
+    Args:
+        root: Resolved local vault root.
+        selection: Union of requested filesystem selectors.
+        vocabulary_path: The normalized vocabulary path to omit.
+        excludes: Effective native exclusion patterns.
+        guard: Optional native submodule boundary.
+
+    Returns:
+        Sorted unique paths and observable discovery failures.
+    """
+    paths, errors = set(), []
+
+    def failed(error: OSError) -> None:
+        errors.append(
+            {
+                "path": str(error.filename or ""),
+                "disposition": "error",
+                "error": "Cannot enumerate notes.",
+            }
+        )
+
+    for file in iter_markdown_files(root, excludes, on_error=failed):
+        path = file.relative_to(root).as_posix()
+        if (
+            file.name in {*OKF_RESERVED_FILENAMES, "SKILL.md"}
+            or path == vocabulary_path
+            or is_path_excluded(path, excludes)
+        ):
+            continue
+        try:
+            absolute = validate_path(path, root)
+            if guard is not None and guard.submodule_of(absolute):
+                continue
+            recent = (
+                selection.since is not None
+                and absolute.stat().st_mtime >= selection.since.timestamp()
+            )
+            missing = selection.missing_type and not _present(
+                parse_frontmatter(absolute.read_text(encoding="utf-8")).metadata.get(
+                    "type"
+                )
+            )
+            if recent or missing:
+                paths.add(path)
+        except (OSError, UnicodeError, ValueError):
+            errors.append(
+                {
+                    "path": path,
+                    "disposition": "error",
+                    "error": "Cannot select note safely.",
+                }
+            )
+    return sorted(paths), errors
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+class OkfDecisionManager:
+    """Apply explicit per-note decisions through the native conditional writer.
+
+    Args:
+        vault: Writable local vault with native callbacks and protections.
+        client: Injected Decisions transport; the caller owns its lifecycle.
+        policy: Validated thresholds and native stamping ownership.
+        vocabulary: Validated closed options and contained origin.
+        guard: Optional native submodule boundary.
+    """
+
+    def __init__(
+        self,
+        vault: Vault,
+        client: DecisionsClient,
+        policy: DecisionPolicy,
+        vocabulary: Vocabulary,
+        guard: SubmoduleGuard | None = None,
+    ) -> None:
+        self.vault, self.client, self.policy, self.vocabulary = (
+            vault,
+            client,
+            policy,
+            vocabulary,
+        )
+        self.guard = guard or SubmoduleGuard(vault.source_dir)
+
+    def decide(self, selection: DecideSelection) -> DecideReport:
+        """Process selected notes once, stopping paid work on terminal failures.
+
+        Args:
+            selection: At least one explicit filesystem selector.
+
+        Returns:
+            Complete prior outcomes, field answers and safe per-note errors.
+        """
+        report = DecideReport()
+        paths, errors = discover_notes(
+            self.vault.source_dir,
+            selection,
+            self.vocabulary.path,
+            self.vault.exclude_patterns,
+            self.guard,
+        )
+        for error in errors:
+            report.add(error)
+        for path in paths:
+            try:
+                report.add(self._decide_note(path))
+            except DecisionError as error:
+                report.add({"path": path, "disposition": "error", "error": str(error)})
+                if error.terminal:
+                    report.terminal_error = str(error)
+                    break
+            except (OSError, UnicodeError, ValueError, MarkdownMCPError) as error:
+                conflict = isinstance(
+                    error, (EditConflictError, ConcurrentModificationError)
+                )
+                report.add(
+                    {
+                        "path": path,
+                        "disposition": "conflict" if conflict else "error",
+                        "error": "Note changed during inference."
+                        if conflict
+                        else "Cannot process note safely.",
+                    }
+                )
+        return report
+
+    def _decide_note(self, path: str) -> dict[str, Any]:
+        read = self.vault.reader.read(path)
+        if read is None:
+            raise ValueError("Note disappeared.")
+        body = strip_frontmatter_block(read.content)
+        metadata = dict(read.frontmatter)
+        decision = build_questions(path, metadata, body, self.vocabulary)
+        answers = self.client.decide(decision.input_parts, decision.questions)
+        now = _now()
+        patch = decision.accepted_patch(answers, self.policy, now=now)
+        fields = {
+            key: {
+                "disposition": "accepted" if key in patch else "unchanged",
+                "proposed": patch.get(key),
+            }
+            for key in sorted(_KEYS)
+        }
+        if not decision.bindings["sources_valid"]:
+            fields["sources"]["disposition"] = "malformed-existing"
+        result = {
+            "path": path,
+            "disposition": "written" if patch else "unchanged",
+            "fields": fields,
+            "answers": [
+                {**answer, "name": question["name"]}
+                for question, answer in zip(decision.questions, answers, strict=True)
+            ],
+        }
+        if patch:
+            merged = {**metadata, **patch}
+            if not self.policy.okf_write:
+                stamped = apply_okf_write_stamp(
+                    fm.dumps(fm.Post(body, **merged)),
+                    actor="process:okf-decide",
+                    now=now,
+                )
+                merged = dict(parse_frontmatter(stamped).metadata)
+            with okf_write_intent(OkfWriteIntent(actor="process:okf-decide")):
+                self.vault.writer.write(
+                    path, body, frontmatter=merged, if_match=read.etag
+                )
+        return result
