@@ -474,9 +474,8 @@ def test_lifespan_cold_start_handshake_does_not_block_on_build(
 def test_lifespan_warm_start_skips_background(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Warm-start lifespan submits a BuildIndex job that short-circuits in
-    O(1) via the FTS sentinel; status reaches queryable shortly after the
-    server starts handling requests (#559)."""
+    """Warm startup validates metadata on the writer; status becomes queryable
+    after validation while the server starts handling requests (#559)."""
     from markdown_vault_mcp.server import make_server
     from tests.conftest import wait_for_mcp_writer_drain
 
