@@ -42,12 +42,21 @@ def test_query_page_guidance_preserves_native_reply_and_request(
         "index_stale": False,
         "items": [
             {
-                "path": f"{i}.md",
-                "title": "Note",
-                "folder": "",
-                "frontmatter": {},
+                "path": f"Projects/{i}.md",
+                "title": "private-query",
+                "folder": "Projects",
+                "frontmatter": {"tags": ["kept"]},
                 "modified_at": 0,
                 "score": None,
+                **(
+                    {
+                        "sections": [
+                            {"heading": None, "content": "private-query", "score": 1.0}
+                        ]
+                    }
+                    if command == "body"
+                    else {}
+                ),
             }
             for i in range(size)
         ],
@@ -137,6 +146,7 @@ def test_query_page_failure_never_suggests_continuation(
                 "frontmatter": {},
                 "modified_at": 0,
                 "score": None,
+                "sections": [{"heading": None, "content": "word", "score": 1.0}],
             }
         ],
     }
