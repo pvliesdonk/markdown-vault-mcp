@@ -42,6 +42,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentExistsError,
     DocumentNotFoundError,
     InvalidRequestError,
+    SubmodulePathError,
 )
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.utils import (
@@ -230,8 +231,9 @@ class VaultTransferSink:
 
         The handle is the vault-relative path itself. Download validation is
         stat-only (existence without a read); upload validation checks the
-        destination is a note or an allowed attachment, and rejects existing
-        files when overwrite protection is enabled. ``kind`` selects which.
+        destination is a note or an allowed attachment outside git submodules,
+        and rejects existing files when overwrite protection is enabled.
+        ``kind`` selects which.
 
         Args:
             ref: Vault-relative path of a note or attachment.
@@ -245,13 +247,14 @@ class VaultTransferSink:
             ToolError: At INFO, rejecting the ref: path traversal, a missing
                 download source, a disallowed attachment extension, a bundle
                 ref with OKF disabled, a bundle scope naming a folder that does
-                not exist, or an existing upload destination when overwrite
-                protection is enabled.
+                not exist, an upload destination inside a git submodule, or
+                an existing upload destination when overwrite protection is
+                enabled.
             ConfigurationError: When the lifespan built no vault (the
                 configured directory does not exist): a link must not be
                 minted that can only fail when followed.
         """
-        self._vault()  # refuse to mint against a vault that is not there
+        vault = self._vault()  # refuse to mint against a vault that is not there
         source_dir = self._config.source_dir
         exts = self._config.content.attachment_extensions
         if kind == "download":
@@ -262,6 +265,12 @@ class VaultTransferSink:
             _validate_source(ref, source_dir, exts)
         else:
             destination = _validate_destination(ref, source_dir, exts)
+            try:
+                await asyncio.to_thread(
+                    vault._doc_mgr.refuse_folder_in_submodule, ref, "ref"
+                )
+            except SubmodulePathError as exc:
+                raise _reject(str(exc)) from None
             if self._config.write_protect_existing and is_regular_file(destination):
                 logger.info(
                     "transfer_upload_refused_protected ref=%s setting=%s",
