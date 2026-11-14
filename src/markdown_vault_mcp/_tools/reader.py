@@ -193,8 +193,8 @@ def register(mcp: FastMCP) -> None:
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
             On an active OKF bundle, whole-document reads also carry
             an 'okf' dict (type, status, stale, trust_tier, and the note's
-            'sources' list when present). Optional 'malformed_sources' and
-            'malformed_generated' flags appear only when true; section reads
+            'sources' list when present). Optional `malformed_sources` and
+            `malformed_generated` flags appear only when true; section reads
             omit the annotation because they carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),
