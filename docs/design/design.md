@@ -3235,7 +3235,7 @@ and nothing surfaces which file is responsible.
 
 `_find_wikilink` replaces the pattern with a scan, and the reason it is
 linear rather than merely faster is worth stating: those retries all ask the
-same question. A target ends at the first `]`, `|` or line ending after the
+same question. A target ends at the first `]]`, `|` or line ending after the
 `[[`, and that stop is the same character whichever `[[` of a run opened it;
 everything the match then needs is read from the stop onwards. So a failure
 at the stop is a failure for every opener before it, and the search resumes
@@ -3252,10 +3252,11 @@ a second route, where the alias search *succeeded* and the `]]` test failed.
 Caught in review on #1524 by reading the argument rather than by the tests,
 which measured only bare `[` — all three shapes are pinned now, by a growth
 ratio and by a wall clock chosen to be one the defect actually crosses. The
-same shared-stop reasoning licenses the alias resume: the first `]` after
-the pipe is the same character for every opener behind it, so they all fail
-with it. The pipe shape is the realistic one, not the exotic one: an
-unfenced markdown table pasted into a note is a wall of `|`.
+single-bracket target correction (#1384) changes that recovery: after an
+alias fails, retry openers following its pipe, since `[[a|text [[Sq]uare]]`
+contains a valid inner target. Cache the next alias-closing bracket across
+those retries instead of searching for it again. Both target scans and
+uncached alias searches advance monotonically, preserving linear work.
 
 | Input | before | after |
 | --- | --- | --- |
@@ -3272,15 +3273,15 @@ for 4000 → 8000 → 16000. **A guard on the scanned unit**, the issue's own
 suggested direction, was not pursued: refusing to link-scan a bracket-dense
 body drops real rows to bound a cost the scan simply removes.
 
-The scan changes no row for any input, so there is no
-`INDEX_SEMANTICS_VERSION` note — a claim carried by the same differential
-property the escape-aware scans use (`tests/test_links_wikilink_scan.py`):
-it agrees with the pattern on *every* string up to length 8 over the five
-characters that pattern can distinguish, and on 400k random strings over a
-wider alphabet. The departures the pattern carried are carried too: a single
-`]` still ends the target where Obsidian needs `]]` (#1384), an embed is
-still indexed as a link, and the leftmost `[[` still wins, so `[[[a]]` links
-`[a`.
+The original scan preserved the replaced pattern's rows (#1343). Since
+#1384, a single `]` is allowed in the target: `[[Sq]uare]]` now links to
+`Sq]uare.md`, matching the observed Obsidian behavior. A closing pair ends
+the target, so the shared-stop argument still holds. Pipes and line endings
+remain target boundaries; the alias grammar is unchanged. The exhaustive
+short-input property in `tests/test_links_wikilink_scan.py` compares the
+scan to this updated grammar. `INDEX_SEMANTICS_VERSION` 12 rebuilds stored
+link rows, since version 11 shipped in v6.1.1. Embeds are still indexed as
+links and the leftmost `[[` still wins, so `[[[a]]` links `[a`.
 
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"

@@ -496,7 +496,10 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: is no longer an H1, the title or a chunk boundary; its chunk and
 #: ``content_chars`` gain the indentation. Every other note's rows are
 #: byte-identical, so no other note's embeddings are recomputed.
-INDEX_SEMANTICS_VERSION = 11
+#: Version 12 (#1384) extracts wikilinks with a literal single closing
+#: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
+#: in v6.1.1; rebuilding adds the previously missing link rows.
+INDEX_SEMANTICS_VERSION = 12
 
 
 class ChunkingMeta(NamedTuple):
