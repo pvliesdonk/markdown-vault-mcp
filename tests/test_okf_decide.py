@@ -80,6 +80,20 @@ def test_discovery_uses_filesystem_and_union(tmp_path: Path, bom: str) -> None:
         vault.close()
 
 
+def _assert_native_alias_attachment(source_text: str, vault: Vault) -> None:
+    """Require the exact native-valid alias and configured attachment preconditions."""
+    embed = source_text.split(" https://example.invalid/real", 1)[0]
+    wiki = module._find_wikilink(embed, 1)
+    assert wiki == (
+        len(embed),
+        "diagram.custom",
+        "[caption https://example.invalid/image",
+        1,
+    )
+    assert module.names_attachment(wiki[1], frozenset({"custom"}))
+    assert vault._attachment_extensions == (".custom",)
+
+
 def _assert_complete_metadata(
     post: Any,
     resources: list[str],
@@ -107,6 +121,154 @@ def _assert_complete_metadata(
     "evidence,paragraph",
     [
         *((evidence, "Exact paragraph.") for evidence in SOURCE_SPAN_CASES),
+        pytest.param(
+            ("![[diagram.custom|[caption https://example.invalid/image]]", []),
+            "Exact paragraph.",
+            id="review6-native-alias-exact",
+        ),
+        pytest.param(
+            (
+                "“See https://example.invalid/evidence”.",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-phrase-double",
+        ),
+        pytest.param(
+            (
+                "\u2018See https://example.invalid/evidence\u2019.",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-phrase-single",
+        ),
+        pytest.param(
+            (
+                "«See https://example.invalid/evidence».",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-phrase-guillemet",
+        ),
+        pytest.param(
+            (
+                "“\u2018https://example.invalid/evidence\u2019”",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-nested-single",
+        ),
+        pytest.param(
+            (
+                "«“https://example.invalid/evidence”»",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-nested-guillemet",
+        ),
+        pytest.param(
+            (
+                "(“https://example.invalid/evidence”)",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-paren-outside",
+        ),
+        pytest.param(
+            (
+                "“(https://example.invalid/evidence)”",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-paren-inside",
+        ),
+        pytest.param(
+            (
+                "| Evidence |\n|---|\n|https://example.invalid/evidence|",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-compact-table",
+        ),
+        pytest.param(
+            (
+                "See \\(https://example.invalid/evidence\\).",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-escaped-parens",
+        ),
+        pytest.param(
+            (
+                "“https://example.invalid/evidence”.",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-immediate-control",
+        ),
+        pytest.param(
+            (
+                "| Evidence |\n|---|\n| https://example.invalid/evidence |",
+                ["https://example.invalid/evidence"],
+            ),
+            "Exact paragraph.",
+            id="review6-spaced-table-control",
+        ),
+        pytest.param(
+            (
+                "[ref](https://example.invalid/evidence»)",
+                ["https://example.invalid/evidence»"],
+            ),
+            "Exact paragraph.",
+            id="review6-explicit-control",
+        ),
+        pytest.param(
+            (
+                "<https://example.invalid/evidence»>",
+                ["https://example.invalid/evidence»"],
+            ),
+            "Exact paragraph.",
+            id="review6-autolink-control",
+        ),
+        pytest.param(
+            ("https://example.invalid/O'Reilly", ["https://example.invalid/O'Reilly"]),
+            "Exact paragraph.",
+            id="review6-internal-apostrophe-control",
+        ),
+        pytest.param(
+            (
+                "https://example.invalid/evidence'",
+                ["https://example.invalid/evidence'"],
+            ),
+            "Exact paragraph.",
+            id="review6-unmatched-apostrophe-control",
+        ),
+        pytest.param(
+            (
+                "https://example.invalid/evidence|tail",
+                ["https://example.invalid/evidence|tail"],
+            ),
+            "Exact paragraph.",
+            id="review6-literal-pipe-control",
+        ),
+        pytest.param(
+            ("`https://example.invalid/evidence`", []),
+            "Exact paragraph.",
+            id="review6-code-control",
+        ),
+        pytest.param(
+            ("![caption](https://example.invalid/evidence)", []),
+            "Exact paragraph.",
+            id="review6-image-control",
+        ),
+        pytest.param(
+            (
+                "![[diagram.custom|[caption https://example.invalid/image]] https://example.invalid/real",
+                ["https://example.invalid/real"],
+            ),
+            "Exact paragraph.",
+            id="review6-native-alias-candidate",
+        ),
         (("[[evidence.custom]]", []), "Exact paragraph."),
         *(
             pytest.param(
@@ -386,9 +548,13 @@ def test_complete_decide_persists_once_with_etag(
             read_only=False,
             okf_mode="on",
             okf_write=enforced,
-            attachment_extensions=(".custom", ".png"),
+            attachment_extensions=(".custom",)
+            if source_text.startswith("![[diagram.custom|[caption")
+            else (".custom", ".png"),
         ),
     )
+    if source_text.startswith("![[diagram.custom|[caption"):
+        _assert_native_alias_attachment(source_text, vault)
     native_read = vault.reader.read("note.md")
     assert native_read is not None
     original_body = strip_frontmatter_block(native_read.content)
@@ -428,7 +594,10 @@ def test_complete_decide_persists_once_with_etag(
         assert len(calls) == len(seen) == 1
         assert seen[0]["args"] == ("note.md", original_body)
         assert isinstance(seen[0]["if_match"], str)
-        assert "---" not in strip_frontmatter_block((tmp_path / "note.md").read_text())
+        assert (
+            strip_frontmatter_block((tmp_path / "note.md").read_text()).strip()
+            == original_body.strip()
+        )
         assert "  Keep internal whitespace." in post.content
     finally:
         client.close()
@@ -1191,6 +1360,97 @@ def test_native_empty_publication_is_reused(
         assert all(
             fm.load(tmp_path / name)["type"] == "Reference" for name in ("a.md", "b.md")
         )
+    finally:
+        client.close()
+        vault.close()
+
+
+CAPFIX_URL = "https://example.invalid/evidence"
+
+
+@pytest.mark.parametrize("enforced", [False, True])
+@pytest.mark.parametrize(
+    "evidence,expected",
+    [
+        ("The operator's source is " + CAPFIX_URL + "'.", [CAPFIX_URL + "'"]),
+        ("'See " + CAPFIX_URL + "'.", [CAPFIX_URL]),
+        ("'Some phrase' then " + CAPFIX_URL + "'.", [CAPFIX_URL + "'"]),
+        ("https://example.invalid/O'Reilly", ["https://example.invalid/O'Reilly"]),
+        (
+            "An earlier https://example.invalid/other' then " + CAPFIX_URL + "'.",
+            ["https://example.invalid/other'", CAPFIX_URL + "'"],
+        ),
+        ("The operator's source is 'See " + CAPFIX_URL + "'.", [CAPFIX_URL]),
+    ],
+    ids=[
+        "contraction",
+        "phrase",
+        "closed-phrase",
+        "internal",
+        "earlier-unmatched",
+        "contraction-phrase",
+    ],
+)
+def test_capfix_apostrophe_context_preserves_native_resource(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enforced: bool,
+    evidence: str,
+    expected: list[str],
+) -> None:
+    """Preserve literal apostrophes while excluding surrounding prose quotes."""
+    (tmp_path / "types.md").write_text(vocabulary_text())
+    body = "Exact paragraph.\n\n" + evidence + "\n"
+    (tmp_path / "note.md").write_text("---\ncustom: keep\n---\n" + body)
+    requests: list[dict[str, Any]] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requests.append(payload)
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1",
+        "synthetic",
+        transport=httpx.MockTransport(respond),
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=enforced),
+    )
+    writes: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    native = vault.writer.write
+
+    def write(*args: Any, **kwargs: Any) -> Any:
+        writes.append((args, kwargs))
+        return native(*args, **kwargs)
+
+    monkeypatch.setattr(vault.writer, "write", write)
+    try:
+        read = vault.reader.read("note.md")
+        assert read is not None
+        report = module.OkfDecisionManager(
+            vault,
+            client,
+            module.DecisionPolicy(
+                dict.fromkeys(
+                    ("type", "status", "description", "sources", "stale_after"), 0.8
+                ),
+                okf_write=enforced,
+            ),
+            module.load_vocabulary(tmp_path, "types.md"),
+        ).decide(module.DecideSelection(missing_type=True))
+        assert report.exit_code() == 0 and report.counts["written"] == 1
+        assert len(requests) == len(writes) == 1
+        assert writes[0][0] == ("note.md", strip_frontmatter_block(read.content))
+        assert writes[0][1]["if_match"] == read.etag
+        post = fm.load(tmp_path / "note.md")
+        assert post["custom"] == "keep"
+        assert post["type"] == "Reference" and post["status"] == "draft"
+        assert post["description"] == "Exact paragraph." and "stale_after" in post
+        assert post["sources"] == [{"resource": value} for value in expected]
     finally:
         client.close()
         vault.close()

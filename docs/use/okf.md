@@ -225,8 +225,9 @@ description candidate. Unicode paragraph separators retain their original
 characters. Sources append only whole body HTTP(S) resources or existing note
 paths inside the vault. Supplied records remain unchanged. Complete image
 spans, including Obsidian attachment embeds, cannot supply resource fragments.
-Code is excluded too. Paired prose quotes and markup such as `~~text~~` are
-omitted from bare URLs; explicit destinations keep their punctuation. HTTP schemes match regardless
+Code is excluded too. Paired prose quotes and escaped wrappers are omitted
+from bare URLs, as is markup such as `~~text~~`. Table cell separators stay
+outside resources; explicit destinations keep their punctuation. HTTP schemes match regardless
 of case; URL spelling, percent escapes and internal apostrophes retain their
 resource identity. Short wikilinks and aliases use the native vault link resolver. A listed duration fills a
 blank `stale_after` using the server's UTC write-attempt time. Existing nonempty

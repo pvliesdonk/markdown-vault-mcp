@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -77,6 +77,17 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.types import LinkInfo
     from markdown_vault_mcp.vault import Vault
+
+_SOURCE_LEAVES = {
+    "paragraph": [],
+    "heading": ["paragraph", "reference", "blockquote"],
+    "lheading": [],
+    "reference": [],
+    "html_block": ["paragraph", "reference", "blockquote"],
+    "table": ["paragraph", "reference"],
+}
+_PROSE_QUOTES = {"\u2018": "\u2019", "\u201c": "\u201d", "\u00ab": "\u00bb"}
+_BARE_PAIRS = {")": "(", "]": "[", "}": "{"}
 
 _KEYS = frozenset({"type", "status", "description", "sources", "stale_after"})
 _MEANINGFUL = "Would filling or correcting the eligible metadata from the supplied candidates be a meaningful change to this page, rather than a cosmetic or redundant update? Evaluate the current metadata and body; existing equal values do not count."
@@ -257,7 +268,6 @@ class _SourceScan:
 @dataclass(frozen=True)
 class _SourceContext:
     scan: _SourceScan
-    attachment_extensions: frozenset[str] | None
     resolved_wikilinks: dict[str, str] | None = None
 
 
@@ -303,7 +313,7 @@ def _leaf_rule(rule: Any, kind: str, regions: list[_SourceRegion]) -> Any:
         else:
             end_line = (
                 inline.map[1]
-                if inline is not None and inline.map is not None
+                if inline is not None and inline.map is not None and kind != "table"
                 else state.line
             )
             region = _mapped_lines(state, first, end_line, False)
@@ -316,32 +326,30 @@ def _leaf_rule(rule: Any, kind: str, regions: list[_SourceRegion]) -> Any:
 def _source_regions(body: str) -> list[_SourceRegion]:
     units = list(re.finditer(r"\r\n?|[^\r]", body))
     origins = [unit.start() for unit in units]
-    normalized = "".join(
-        "\n" if u.group().startswith("\r") else u.group() for u in units
-    )
+    normalized = _normalise_line_endings(body)
     regions: list[_SourceRegion] = []
-    md = MarkdownIt("commonmark")
+    md = MarkdownIt("commonmark").enable("table")
     md.core.ruler.disable("inline")
-    for kind in ("paragraph", "heading", "lheading", "reference", "html_block"):
-        alternatives = (
-            ["paragraph", "reference", "blockquote"]
-            if kind in {"heading", "html_block"}
-            else []
-        )
+    for kind, alternatives in _SOURCE_LEAVES.items():
         md.block.ruler.at(
             kind,
             _leaf_rule(getattr(block_rules, kind), kind, regions),
             {"alt": alternatives},
         )
     md.parse(normalized)
-    return [
-        _SourceRegion(
-            r.text,
-            tuple(origins[i] if i is not None else None for i in r.origins),
-            r.kind,
+    mapped = []
+    for region in regions:
+        separators = (
+            {m.start() for m in re.finditer(r"(?<!\\)\|", region.text)}
+            if region.kind == "table"
+            else set()
         )
-        for r in regions
-    ]
+        coordinates = tuple(
+            origins[i] if i is not None and j not in separators else None
+            for j, i in enumerate(region.origins)
+        )
+        mapped.append(replace(region, origins=coordinates))
+    return mapped
 
 
 @dataclass
@@ -418,14 +426,14 @@ def _attachment_image_rule(extensions: frozenset[str]) -> Any:
     def image(state: StateInline, silent: bool) -> bool:
         if state.src.startswith("![[", state.pos):
             close = state.md.helpers.parseLinkLabel(state, state.pos + 1, False)
-            if close >= 0 and state.src[close - 1] == "]":
-                target = state.src[state.pos + 3 : close - 1].partition("|")[0]
-                wiki = _find_wikilink("[[" + target + "]]", 0)
-                if wiki and names_attachment(
-                    wiki[1].strip().removesuffix("\\").split("#", 1)[0], extensions
-                ):
-                    state.pos = close + 1
-                    return True
+            close = close if close >= 0 and state.src[close - 1] == "]" else -1
+            text = state.src[state.pos + 1 :]
+            label = text.partition("|")[0] + "]]" if close >= 0 else text
+            wiki = _find_wikilink(label, 0)
+            target = wiki[1].strip().removesuffix("\\").split("#", 1)[0] if wiki else ""
+            if wiki and wiki[3] == 0 and names_attachment(target, extensions):
+                state.pos = close + 1 if close >= 0 else state.pos + 1 + wiki[0]
+                return True
         return inline_rules.image(state, silent)
 
     return image
@@ -497,14 +505,13 @@ def _explicit_sources(
 
 def _bare_url(value: str, *, quoted: str = "") -> str:
     value = value.rstrip(".,;:!?")
-    if quoted:
-        value = value.removesuffix(quoted).rstrip(".,;:!?")
-    pairs = {")": "(", "]": "[", "}": "{"}
+    pairs = _BARE_PAIRS | dict.fromkeys(quoted, "")
     while value and value[-1] in pairs:
         closer = value[-1]
-        if value.count(closer) <= value.count(pairs[closer]):
+        if pairs[closer] and value.count(closer) <= value.count(pairs[closer]):
             break
-        value = value[:-1].rstrip(".,;:!?")
+        end = len(value) - 1
+        value = value[: end - int(_is_escaped(value, end))].rstrip(".,;:!?")
     return value
 
 
@@ -524,24 +531,24 @@ def _region_sources(
         if clean[start] != "\x00" and "\x00" not in value
     ]
     bare = _mask(clean, spans.occupied)
-    quotes = {"'": "'", "\u2018": "\u2019", "\u201c": "\u201d", "\u00ab": "\u00bb"}
     for match in re.finditer(
         r'(?<![\w+.-])[a-z][a-z0-9+.-]*:[^\s<>"\x00-\x20]+', bare, re.IGNORECASE
     ):
-        end = min(
-            (
-                close
-                for open_, close in spans.pairs
-                if open_ < match.start() <= close < match.end()
-            ),
-            default=match.end(),
+        boundaries = [
+            close
+            for open_, close in spans.pairs
+            if open_ < match.start() <= close < match.end()
+        ]
+        end = min(boundaries, default=match.end())
+        prefix = bare[: match.start()]
+        quoted = "".join(
+            close
+            for open_, close in _PROSE_QUOTES.items()
+            if prefix.count(open_) > prefix.count(close)
         )
-        external.append(
-            _bare_url(
-                bare[match.start() : end],
-                quoted=quotes.get(bare[match.start() - 1], "") if match.start() else "",
-            )
-        )
+        if re.search(r"(?<!\w)'[^']*$", prefix):
+            quoted += "'"
+        external.append(_bare_url(bare[match.start() : end], quoted=quoted))
     return clean, external
 
 
@@ -821,7 +828,7 @@ def build_questions(
     Returns:
         Questions, input and literal candidate bindings for policy evaluation.
     """
-    context = source_context or _SourceContext(_scan_sources(body, path), None)
+    context = source_context or _SourceContext(_scan_sources(body, path))
     questions: list[dict[str, Any]] = [
         {"name": "meaningful", "type": "predicate", "instructions": _MEANINGFUL}
     ]
@@ -1136,7 +1143,7 @@ class OkfDecisionManager:
             metadata,
             body,
             self.vocabulary,
-            source_context=_SourceContext(scan, extensions, resolved),
+            source_context=_SourceContext(scan, resolved),
         )
         answers = self.client.decide(decision.input_parts, decision.questions)
         now = _now()

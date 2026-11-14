@@ -164,8 +164,13 @@ unused definition never becomes candidate text. Recognition-only parser
 reference records cannot supply a persisted URL. Explicit destinations and
 autolinks keep their punctuation; only bare prose URLs receive surrounding
 sentence, paired Unicode quote and matched emphasis/strikethrough trimming.
-The image callback uses the maintained image rule's label-bound helper and
-native attachment classification for complete Obsidian embed exclusion.
+The image callback uses maintained balanced label bounds and native wikilink
+bounds with configured attachment classification. The native fallback retains
+complete Obsidian aliases containing an unmatched opening bracket. Maintained
+table recognition identifies cell separators for raw-coordinate exclusion;
+non-table and escaped literal pipes retain their spelling. Bare prose quote
+context preserves internal apostrophes while excluding matched nested wrappers
+and their Markdown escapes.
 Whole schemes are recognized before HTTP(S) filtering; a non-HTTP URI cannot
 supply a different resource by substring.
 [observed: Decisions adapter contract, #2061]

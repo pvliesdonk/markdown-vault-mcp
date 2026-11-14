@@ -1909,8 +1909,10 @@ and [operator usage](../use/okf.md#curate-metadata-with-decisions).
 The source adapter consumes markdown-it-py 3.0.0's maintained leaf and inline
 rules with raw coordinate projection. Complete code/image spans, including
 configured Obsidian attachment embeds, are excluded before either source lane.
-Whole URI schemes precede HTTP(S) filtering; paired prose quotes, emphasis
-and maintained strikethrough cannot become bare resource characters. Explicit
+Whole URI schemes precede HTTP(S) filtering. Paired prose quotes and escaped
+wrappers cannot become bare resource characters, including nested combinations.
+Maintained table boundaries exclude cell separators; literal pipes outside tables
+retain their spelling. Matched emphasis and maintained strikethrough are excluded. Explicit
 destinations and autolinks retain their spelling. Native reference
 availability is a separate dictionary, never appended evidence text. The
 same protected scan and effective attachment policy govern candidate assembly

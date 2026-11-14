@@ -639,6 +639,126 @@ def test_source_outcome_retains_literal_candidate(
     "path,body,expected",
     [
         *(("note.md", body, resources) for body, resources in SOURCE_SPAN_CASES),
+        pytest.param(
+            "note.md",
+            "![[diagram.custom|[caption https://example.invalid/image]]",
+            [],
+            id="review6-native-alias-exact",
+        ),
+        pytest.param(
+            "note.md",
+            "“See https://example.invalid/evidence”.",
+            ["https://example.invalid/evidence"],
+            id="review6-phrase-double",
+        ),
+        pytest.param(
+            "note.md",
+            "\u2018See https://example.invalid/evidence\u2019.",
+            ["https://example.invalid/evidence"],
+            id="review6-phrase-single",
+        ),
+        pytest.param(
+            "note.md",
+            "«See https://example.invalid/evidence».",
+            ["https://example.invalid/evidence"],
+            id="review6-phrase-guillemet",
+        ),
+        pytest.param(
+            "note.md",
+            "“\u2018https://example.invalid/evidence\u2019”",
+            ["https://example.invalid/evidence"],
+            id="review6-nested-single",
+        ),
+        pytest.param(
+            "note.md",
+            "«“https://example.invalid/evidence”»",
+            ["https://example.invalid/evidence"],
+            id="review6-nested-guillemet",
+        ),
+        pytest.param(
+            "note.md",
+            "(“https://example.invalid/evidence”)",
+            ["https://example.invalid/evidence"],
+            id="review6-paren-outside",
+        ),
+        pytest.param(
+            "note.md",
+            "“(https://example.invalid/evidence)”",
+            ["https://example.invalid/evidence"],
+            id="review6-paren-inside",
+        ),
+        pytest.param(
+            "note.md",
+            "| Evidence |\n|---|\n|https://example.invalid/evidence|",
+            ["https://example.invalid/evidence"],
+            id="review6-compact-table",
+        ),
+        pytest.param(
+            "note.md",
+            "See \\(https://example.invalid/evidence\\).",
+            ["https://example.invalid/evidence"],
+            id="review6-escaped-parens",
+        ),
+        pytest.param(
+            "note.md",
+            "“https://example.invalid/evidence”.",
+            ["https://example.invalid/evidence"],
+            id="review6-immediate-control",
+        ),
+        pytest.param(
+            "note.md",
+            "| Evidence |\n|---|\n| https://example.invalid/evidence |",
+            ["https://example.invalid/evidence"],
+            id="review6-spaced-table-control",
+        ),
+        pytest.param(
+            "note.md",
+            "[ref](https://example.invalid/evidence»)",
+            ["https://example.invalid/evidence»"],
+            id="review6-explicit-control",
+        ),
+        pytest.param(
+            "note.md",
+            "<https://example.invalid/evidence»>",
+            ["https://example.invalid/evidence»"],
+            id="review6-autolink-control",
+        ),
+        pytest.param(
+            "note.md",
+            "https://example.invalid/O'Reilly",
+            ["https://example.invalid/O'Reilly"],
+            id="review6-internal-apostrophe-control",
+        ),
+        pytest.param(
+            "note.md",
+            "https://example.invalid/evidence'",
+            ["https://example.invalid/evidence'"],
+            id="review6-unmatched-apostrophe-control",
+        ),
+        pytest.param(
+            "note.md",
+            "https://example.invalid/evidence|tail",
+            ["https://example.invalid/evidence|tail"],
+            id="review6-literal-pipe-control",
+        ),
+        pytest.param(
+            "note.md",
+            "`https://example.invalid/evidence`",
+            [],
+            id="review6-code-control",
+        ),
+        pytest.param(
+            "note.md",
+            "![caption](https://example.invalid/evidence)",
+            [],
+            id="review6-image-control",
+        ),
+        pytest.param(
+            "note.md",
+            "![[diagram.custom|[caption https://example.invalid/image]] https://example.invalid/real",
+            ["https://example.invalid/real"],
+            id="review6-native-alias-candidate",
+        ),
         ("note.md", "[escape](escaped.md) https://[invalid", []),
         *(
             pytest.param(
@@ -947,8 +1067,27 @@ def test_source_candidates_reject_escaped_paths_and_bad_urls(
     outside.write_text("Fixture.")
     (tmp_path / "escaped.md").symlink_to(outside)
     try:
+        context = None
+        if body.startswith("![[diagram.custom|[caption"):
+            embed = body.split(" https://example.invalid/real", 1)[0]
+            wiki = module._find_wikilink(embed, 1)
+            assert wiki == (
+                len(embed),
+                "diagram.custom",
+                "[caption https://example.invalid/image",
+                1,
+            )
+            extensions = frozenset({"custom"})
+            assert module.names_attachment(wiki[1], extensions)
+            context = module._SourceContext(
+                module._scan_sources(body, path, extensions)
+            )
         decision = build_questions(
-            path, {}, body, load_vocabulary(tmp_path, "types.md")
+            path,
+            {},
+            body,
+            load_vocabulary(tmp_path, "types.md"),
+            source_context=context,
         )
         assert decision.bindings["sources"] == {
             f"sources:{i}": value for i, value in enumerate(expected)
