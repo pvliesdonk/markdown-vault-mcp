@@ -431,6 +431,13 @@ Tool tags following switches: #1412.
   token still stamps `human:<subject>`. See
   [authenticated subjects](reference/authenticated-subjects.md).
 
+  Content writes and verification preserve surviving frontmatter fields in
+  order, including nested mappings and mappings inside lists. Replacing
+  `generated` or `verified` retains its slot; an absent field appends, and
+  content writes still remove `verified`. Order and values survive, while
+  comments, quoting and whitespace may change. The serializer boundary is
+  recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
+
   A stamp is written *into* the note's frontmatter, so content whose block
   no parser can read leaves nothing to stamp and the write is **refused**
   (#1454). Writing it unstamped was the alternative and is worse: the layer's

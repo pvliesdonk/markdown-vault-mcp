@@ -8,6 +8,10 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [Python frontmatter serialization and mapping order](python-frontmatter-pyyaml.md) —
+  pinned serializer keyword forwarding, recursive mapping order and formatting
+  boundaries used by the document writer and OKF transforms.
+
 - [GitHub and git behaviour behind integration branches](github-integration-branches.md) —
   up-to-date requirements, merge queue, workflow branch filters, closing
   keywords, retargeting, merge methods, knope's commit walk and git's

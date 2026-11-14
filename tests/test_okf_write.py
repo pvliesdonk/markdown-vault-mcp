@@ -73,6 +73,32 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 
 class TestApplyOkfWriteStamp:
+    @pytest.mark.parametrize("existing_stamp", [False, True])
+    def test_preserves_sources_and_other_fields(self, existing_stamp: bool) -> None:
+        stamp = "generated: {by: old, at: old}\n" if existing_stamp else ""
+        text = (
+            "---\nzeta: {zeta: 1, alpha: 2}\ntype: Playbook\n"
+            + stamp
+            + "verified: [{by: 'human:old', at: old}]\n"
+            "sources: [{resource: 'https://example.com/a', id: a}]\n"
+            "x_custom: 1\nalpha: false\n---\n\n# Body\n\nText."
+        )
+        before = fm.loads(text)
+        post = fm.loads(apply_okf_write_stamp(text, actor="human:writer", now=_NOW))
+        expected = (
+            ["zeta", "type", "generated", "sources", "x_custom", "alpha"]
+            if existing_stamp
+            else ["zeta", "type", "sources", "x_custom", "alpha", "generated"]
+        )
+        assert list(post.metadata) == expected
+        assert post.metadata["generated"] == {"by": "human:writer", "at": _ISO}
+        assert list(post.metadata["generated"]) == ["by", "at"]
+        for key in ("zeta", "type", "sources", "x_custom", "alpha"):
+            assert post.metadata[key] == before.metadata[key]
+        assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
+        assert list(post.metadata["sources"][0]) == ["resource", "id"]
+        assert post.content == before.content
+
     def test_stamps_generated_on_a_note_without_frontmatter(self) -> None:
         out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", now=_NOW)
         post = fm.loads(out)
@@ -95,23 +121,6 @@ class TestApplyOkfWriteStamp:
         assert meta["generated"] == {"by": "human:x", "at": _ISO}
         # Unrelated fields survive.
         assert meta["title"] == "T"
-
-    def test_preserves_sources_and_other_fields(self) -> None:
-        text = (
-            "---\n"
-            "type: Playbook\n"
-            "sources:\n"
-            "  - resource: https://example.com/a\n"
-            "    id: a\n"
-            "x_custom: 1\n"
-            "---\n"
-            "# P\n"
-        )
-        meta = fm.loads(apply_okf_write_stamp(text, actor="t/1", now=_NOW)).metadata
-        assert meta["type"] == "Playbook"
-        assert meta["sources"] == [{"resource": "https://example.com/a", "id": "a"}]
-        # A producer-defined key survives the round trip (OKF v0.2 §4.1).
-        assert meta["x_custom"] == 1
 
     def test_same_actor_same_instant_re_stamp_is_idempotent(self) -> None:
         # Once a note carries this exact actor/instant stamp and no verified,
@@ -155,6 +164,35 @@ class TestApplyOkfWriteStamp:
 
 
 class TestAppendOkfVerification:
+    @pytest.mark.parametrize("existing_verification", [False, True])
+    def test_preserves_body_and_other_fields(self, existing_verification: bool) -> None:
+        verification = (
+            "verified: [{by: 'human:old', at: old}]\n" if existing_verification else ""
+        )
+        text = (
+            "---\nzeta: {zeta: 1, alpha: 2}\n"
+            + verification
+            + "sources: [{resource: 'https://example.com', id: source}]\n"
+            "title: T\nalpha: false\n---\n\n# T\n\nBody line."
+        )
+        before = fm.loads(text)
+        post = fm.loads(append_okf_verification(text, subject="reviewer", now=_NOW))
+        expected = (
+            ["zeta", "verified", "sources", "title", "alpha"]
+            if existing_verification
+            else ["zeta", "sources", "title", "alpha", "verified"]
+        )
+        assert list(post.metadata) == expected
+        assert post.metadata["verified"] == [
+            *before.metadata.get("verified", []),
+            {"by": "human:reviewer", "at": _ISO},
+        ]
+        for key in ("zeta", "sources", "title", "alpha"):
+            assert post.metadata[key] == before.metadata[key]
+        assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
+        assert list(post.metadata["sources"][0]) == ["resource", "id"]
+        assert post.content == before.content
+
     def test_creates_verified_list_when_absent(self) -> None:
         out = append_okf_verification("# N\n", subject="peter", now=_NOW)
         meta = fm.loads(out).metadata
@@ -171,13 +209,6 @@ class TestAppendOkfVerification:
             {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
             {"by": "human:peter", "at": _ISO},
         ]
-
-    def test_preserves_body_and_other_fields(self) -> None:
-        text = "---\ntitle: T\n---\n# T\n\nBody line.\n"
-        out = append_okf_verification(text, subject="peter", now=_NOW)
-        post = fm.loads(out)
-        assert post.metadata["title"] == "T"
-        assert "Body line." in post.content
 
     def test_a_bare_mapping_is_kept_as_the_first_entry(self) -> None:
         # The spec's single-verifier shorthand is a one-element list; the

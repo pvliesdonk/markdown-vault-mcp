@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import os
 import threading
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
+import frontmatter as fm
 import pytest
 
 from markdown_vault_mcp.vault import VaultSettings
@@ -251,6 +253,57 @@ class TestRead:
 class TestWrite:
     """Tests for DocumentManager.write()."""
 
+    @pytest.mark.parametrize("case", ["issue", "permutations"])
+    def test_write_with_frontmatter(
+        self, doc_mgr: DocumentManager, doc_vault: Path, case: str
+    ) -> None:
+        metadata = {
+            "up_date": "2026-11-05",
+            "verdict_date": "",
+            "verdict": "观察",
+            "tags": ["测试"],
+            "t0": False,
+            "reference_url": "",
+            "doc_type": "测试/验证",
+            "doc_stage": "初步",
+            "doc_domain": ["投资增值/ETF投资"],
+            "create_date": "2026-11-05",
+            "code": "000000",
+            "asset_type": "etf",
+            "nested": {"zeta": 1, "alpha": 2},
+            "records": [{"zeta": "末", "alpha": "首"}],
+        }
+
+        def check_order(keys: list[str]) -> None:
+            supplied = {key: metadata[key] for key in keys}
+            original = deepcopy(supplied)
+            etag = None
+            for body in ("# Created\n\nBody.", "# Replaced\n\nReplacement."):
+                doc_mgr.write("ordered.md", body, supplied, if_match=etag)
+                note = doc_mgr.read("ordered.md")
+                assert note is not None
+                post = fm.loads((doc_vault / "ordered.md").read_text(encoding="utf-8"))
+                for actual in (post.metadata, note.frontmatter):
+                    assert list(actual) == keys
+                    assert list(actual["nested"]) == ["zeta", "alpha"]
+                    assert list(actual["records"][0]) == ["zeta", "alpha"]
+                    assert actual == original
+                assert post.content == body
+                assert body in note.content
+                assert supplied == original
+                assert list(supplied) == keys
+                etag = note.etag
+
+        if case == "issue":
+            check_order(list(metadata))
+        else:
+            hypothesis = pytest.importorskip("hypothesis")
+            from hypothesis import strategies as st
+
+            hypothesis.settings(max_examples=30, deadline=None)(
+                hypothesis.given(st.permutations(tuple(metadata)))(check_order)
+            )()
+
     def test_write_creates_file(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.write("new.md", "# New\n\nContent.\n")
         assert result.created is True
@@ -266,15 +319,6 @@ class TestWrite:
 
         note = doc_mgr.read("deep/nested/note.md")
         assert note is not None
-
-    def test_write_with_frontmatter(self, doc_mgr: DocumentManager) -> None:
-        result = doc_mgr.write(
-            "fm.md", "Body.", frontmatter={"title": "FM Note", "tags": ["a"]}
-        )
-        assert result.created is True
-        note = doc_mgr.read("fm.md")
-        assert note is not None
-        assert note.frontmatter.get("title") == "FM Note"
 
     def test_write_overwrites_existing(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.write("alpha.md", "# Replaced\n")
@@ -399,10 +443,15 @@ class TestWriteProtectExisting:
 class TestEdit:
     """Tests for DocumentManager.edit()."""
 
-    def test_edit_exact_match(self, doc_mgr: DocumentManager) -> None:
+    def test_edit_exact_match(self, doc_mgr: DocumentManager, doc_vault: Path) -> None:
+        header = "---\nzeta: 1\nalpha: 2\n---\n"
+        (doc_vault / "alpha.md").write_text(header + "Hello world.", encoding="utf-8")
         result = doc_mgr.edit("alpha.md", old_text="Hello world.", new_text="Goodbye.")
         assert result.replacements == 1
         assert result.match_type == "exact"
+        assert (doc_vault / "alpha.md").read_text(
+            encoding="utf-8"
+        ) == header + "Goodbye."
 
         note = doc_mgr.read("alpha.md")
         assert note is not None
@@ -508,10 +557,11 @@ class TestAppend:
     def test_append_verbatim_after_trailing_newline(
         self, doc_mgr: DocumentManager, doc_vault: Path
     ) -> None:
-        (doc_vault / "newline.md").write_text("# Note\n", encoding="utf-8")
+        header = "---\nzeta: 1\nalpha: 2\n---\n"
+        (doc_vault / "newline.md").write_text(header + "# Note\n", encoding="utf-8")
         doc_mgr.append("newline.md", "- item\n")
         text = (doc_vault / "newline.md").read_text(encoding="utf-8")
-        assert text == "# Note\n- item\n"
+        assert text == header + "# Note\n- item\n"
 
     def test_append_updates_fts(self, doc_mgr: DocumentManager) -> None:
         doc_mgr.append("alpha.md", "\nZanzibar content marker.\n")
