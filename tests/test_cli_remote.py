@@ -430,18 +430,20 @@ def test_write_reads_exact_etag_or_aborts(etag: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    "failure",
+    ("failure", "message", "expected_calls", "extra_args"),
     [
-        "missing",
-        "schema",
-        "read-missing",
-        "read-schema",
-        "read-error",
-        "conflict-auto",
-        "conflict-explicit",
+        ("missing", "write", [], {}),
+        ("schema", "write", [], {"unknown": "option"}),
+        ("read-missing", "read", [], {}),
+        ("read-schema", "read", [], {}),
+        ("read-error", "Read cap exceeded", ["read"], {}),
+        ("conflict-auto", "Conflict: stale etag", ["read", "write"], {}),
+        ("conflict-explicit", "Conflict: stale etag", ["write"], {"if_match": "stale"}),
     ],
 )
-def test_write_checks_before_calls_and_preserves_errors(failure: str) -> None:
+def test_write_checks_before_calls_and_preserves_errors(
+    failure: str, message: str, expected_calls: list[str], extra_args: dict[str, str]
+) -> None:
     from fastmcp import Client
 
     from markdown_vault_mcp._cli_remote import call_write
@@ -478,11 +480,7 @@ def test_write_checks_before_calls_and_preserves_errors(failure: str) -> None:
             assert if_match == ("stale" if failure == "conflict-explicit" else "live")
             raise ToolError("Conflict: stale etag\x1b[31m")
 
-    args = {"path": "a.md", "content": "new"}
-    if failure == "schema":
-        args["unknown"] = "option"
-    if failure == "conflict-explicit":
-        args["if_match"] = "stale"
+    args = {"path": "a.md", "content": "new", **extra_args}
     with (
         serve_http(server.http_app()) as origin,
         patch.object(Client, "call_tool_mcp", submit),
@@ -494,17 +492,8 @@ def test_write_checks_before_calls_and_preserves_errors(failure: str) -> None:
             args,
             read_etag_from=None if failure == "conflict-explicit" else "a.md",
         )
-    if failure in {"missing", "schema", "read-missing", "read-schema"}:
-        assert ("read" if failure.startswith("read-") else "write") in str(error.value)
-        assert calls == []
-    elif failure == "read-error":
-        assert "Read cap exceeded" in str(error.value)
-        assert calls == ["read"]
-    else:
-        assert "Conflict: stale etag" in str(error.value)
-        assert calls == (
-            ["write"] if failure == "conflict-explicit" else ["read", "write"]
-        )
+    assert message in str(error.value)
+    assert calls == expected_calls
 
 
 def test_write_deadline_covers_read_and_submitted_mutation() -> None:

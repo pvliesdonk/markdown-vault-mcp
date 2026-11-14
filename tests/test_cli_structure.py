@@ -117,13 +117,23 @@ def test_old_names_keep_working(old: list[str], new: str) -> None:
     assert runner.invoke(app, [*new.split(), "--help"]).exit_code == 0
 
 
-def test_old_name_runs_the_command_and_names_the_new_form(tmp_path: Path) -> None:
+@pytest.mark.parametrize("standalone", [False, True])
+def test_old_name_runs_the_command_and_names_the_new_form(
+    tmp_path: Path, standalone: bool
+) -> None:
     """Running an alias does the work and points at the admin command on stderr."""
+    selected_app = app
+    if standalone:
+        from markdown_vault_mcp._cli_admin import register_admin_commands
+        from markdown_vault_mcp.cli import embeddings_import, index, reindex
+
+        selected_app = typer.Typer()
+        register_admin_commands(selected_app, index, reindex, embeddings_import)
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / "a.md").write_text("# A\n\nneedle\n", encoding="utf-8")
     result = CliRunner().invoke(
-        app,
+        selected_app,
         ["index", "--source-dir", str(vault), "--index-path", str(tmp_path / "i.db")],
     )
     assert result.exit_code == 0, result.output
