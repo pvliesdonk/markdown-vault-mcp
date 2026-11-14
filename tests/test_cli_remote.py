@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import pytest
@@ -19,6 +19,9 @@ from markdown_vault_mcp._cli_client import ClientError, ClientOptions, ClientSet
 from markdown_vault_mcp._cli_remote import call_read
 from markdown_vault_mcp.cli import app
 from tests.fixtures.cli_http import serve_http
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 HITS = [
     {
@@ -535,3 +538,60 @@ def test_write_deadline_covers_read_and_submitted_mutation() -> None:
             read_etag_from="a.md",
         )
     assert calls == ["read", "write"]
+
+
+def test_write_slow_native_reindex_returns_job_before_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hosted reindex returns its accepted job while native work continues."""
+    from concurrent.futures import Future
+    from threading import Timer
+
+    from markdown_vault_mcp.facets.index import IndexFacet
+    from markdown_vault_mcp.server import make_server
+    from markdown_vault_mcp.types import ReindexResult
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "index.db"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S", "0.15")
+    workers: list[Timer] = []
+
+    def slow_reindex(_self: IndexFacet) -> Future[ReindexResult]:
+        future: Future[ReindexResult] = Future()
+
+        def finish() -> None:
+            if not future.done():
+                future.set_result(
+                    ReindexResult(added=1, modified=0, deleted=0, unchanged=0)
+                )
+
+        worker = Timer(1.0, finish)
+        workers.append(worker)
+        worker.start()
+        return future
+
+    monkeypatch.setattr(IndexFacet, "reindex_async", slow_reindex)
+    server = make_server(transport="http")
+    try:
+        with serve_http(server.http_app()) as origin:
+            result = CliRunner().invoke(
+                app,
+                [
+                    "index",
+                    "reindex",
+                    "--server",
+                    origin + "/mcp",
+                    "--timeout",
+                    "0.5",
+                    "--json",
+                ],
+            )
+            assert result.exit_code == 0, result.output
+            data = json.loads(result.stdout)
+            assert data["status"] == "working"
+            assert data["job_id"]
+            assert data["poll_with"] == "get_job_result"
+    finally:
+        for worker in workers:
+            worker.join()

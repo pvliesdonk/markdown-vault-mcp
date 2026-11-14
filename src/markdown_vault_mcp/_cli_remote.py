@@ -84,7 +84,11 @@ async def _call(
     async with (
         asyncio.timeout(settings.timeout),
         Client(
-            transport, timeout=settings.timeout, init_timeout=settings.timeout
+            transport,
+            timeout=settings.timeout,
+            init_timeout=settings.timeout,
+            # Preserve native job envelopes instead of SDK task auto-polling.
+            mode="legacy" if write else "auto",
         ) as client,
     ):
         tools = {item.name: item for item in await client.list_tools()}

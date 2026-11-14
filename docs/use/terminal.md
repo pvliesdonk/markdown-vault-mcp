@@ -93,7 +93,7 @@ Commands discover the tools once and fail naming an unavailable tool, including 
 markdown-vault-mcp index reindex --force --json
 ```
 
-The command returns the server's result without polling. `status=completed` includes its counts; `status=working`, `job_id` and `poll_with` mean the job was accepted. Writes do not trigger an extra CLI reindex or rebuild embeddings.
+The command returns the server's result without polling. A slow reindex returns an accepted job while work continues on the server. `status=completed` includes its counts; `status=working`, `job_id` and `poll_with` mean the job was accepted. Writes do not trigger an extra CLI reindex or rebuild embeddings.
 
 Local `admin index`, `admin reindex` and `admin embeddings import` keep their existing behavior. The shipped `index --source-dir DIR --index-path PATH --force` invocation still runs local indexing and prints its deprecation message. Parent local options cannot be combined with the hosted `index reindex` child. `index --help` shows help without indexing.
 
