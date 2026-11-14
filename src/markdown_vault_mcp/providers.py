@@ -14,7 +14,9 @@ Provides an :class:`EmbeddingProvider` ABC and four concrete implementations:
 
 All three API providers share one wire protocol and one client
 (:class:`_OpenAICompatEmbeddings`); the provider names are ergonomic presets
-over it, not separate code paths (#916).
+over it, not separate code paths (#916). How OpenAI-compatible endpoints
+shape their responses, Gemini's missing ``index`` included, is recorded in
+``docs/design/reference/openai-compatible-embeddings.md``.
 
 Use :func:`get_embedding_provider` to auto-detect and return the best
 available provider based on a :class:`ProjectConfig` instance.
@@ -158,8 +160,11 @@ class _OpenAICompatEmbeddings:
             raise RuntimeError(
                 f"{self._label} embeddings request failed: {exc}"
             ) from exc
-        # Sort by index to guarantee input order is preserved.
-        items = sorted(response.data, key=lambda d: d.index)
+        # Sort by index to guarantee input order is preserved. A missing index
+        # means 0, as in proto3 JSON, which omits zero values: Gemini's
+        # compatibility endpoint leaves ``index`` out of the first item, and
+        # the SDK reads it as None (#2050).
+        items = sorted(response.data, key=lambda d: d.index or 0)
         return [item.embedding for item in items]
 
 
