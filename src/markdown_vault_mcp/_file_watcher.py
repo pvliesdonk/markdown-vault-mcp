@@ -97,7 +97,7 @@ def _is_hidden_relative_to_root(abs_path: str, watch_root: Path) -> bool:
     reduces to the old ``rel = path.relative_to(source_dir)`` behavior exactly.
 
     Args:
-        abs_path: Absolute ``src_path`` from a watchdog event.
+        abs_path: Absolute endpoint path from a watchdog event.
         watch_root: The directory the delivering watch was scheduled on.
 
     Returns:
@@ -580,10 +580,21 @@ if _WATCHDOG_AVAILABLE:
             self._watch_root = watch_root
 
         def on_any_event(self, event: FileSystemEvent) -> None:
+            """Schedule a mutating event when an endpoint belongs to this root.
+
+            Moves consider both endpoints; other mutations consider only source.
+
+            Args:
+                event: The filesystem event delivered under this watch root.
+            """
             if event.event_type not in _MUTATING_EVENT_TYPES:
                 return
-            path = getattr(event, "src_path", "") or ""
-            if _is_hidden_relative_to_root(path, self._watch_root):
+            paths = [getattr(event, "src_path", "") or ""]
+            if event.event_type == EVENT_TYPE_MOVED:
+                paths.append(getattr(event, "dest_path", "") or "")
+            if all(
+                _is_hidden_relative_to_root(path, self._watch_root) for path in paths
+            ):
                 return
             self._schedule()
 

@@ -1445,6 +1445,14 @@ a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python
 with a WARNING rather than dropped, degrading to the pre-resolution behavior
 (correct on inotify / ReadDirectoryChangesW) instead of crashing `start()`.
 
+Delivered moves trigger reindexing when either endpoint is a nonempty,
+non-hidden descendant of the delivering watch root, using watchdog's
+[source and destination event paths](https://github.com/gorakhargosh/watchdog/blob/v4.0.0/src/watchdog/events.py#L114-L151).
+Each qualifying event schedules once, including moves from a hidden temporary
+file onto a visible note and moves of visible content into hidden or outside
+storage. Hidden-only and root-self noise stays ignored, including below
+intentionally watched dot-roots; other mutations consider only their source.
+
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
 narrow `_file_write_lock` (a `threading.RLock` that serialises only the
