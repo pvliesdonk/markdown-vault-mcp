@@ -417,15 +417,6 @@ def test_skill_tag_views_survive_mode_reopens_and_collisions(tmp_path: Path) -> 
             assert [hit.path for hit in hits] == ["SKILL.md"]
             assert "zebra" in hits[0].sections[0].content
             assert len(hits[0].sections[0].content.split()) < 15
-            snippets = vault._search_mgr._fetch_snippet_map(
-                "zebra",
-                vault._fts.search("zebra"),
-                snippet_words=5,
-                folder=None,
-                filters={"type": expected},
-                candidate_limit=50,
-            )
-            assert list(snippets.values()) == [hits[0].sections[0].content]
             assert vault.reader.search(
                 "zebra", mode="keyword", filters={"__okf__:type": "literal1"}
             )
@@ -446,6 +437,7 @@ def test_skill_tag_views_survive_mode_reopens_and_collisions(tmp_path: Path) -> 
             vault.close()
 
 
+@pytest.mark.usefixtures("constant_embeddings")
 def test_skill_keyword_type_filter_retains_prelimit_recall(tmp_path: Path) -> None:
     """A skill past the unfiltered pool remains reachable through indexed type filtering."""
     from markdown_vault_mcp.vault import Vault
@@ -457,16 +449,34 @@ def test_skill_keyword_type_filter_retains_prelimit_recall(tmp_path: Path) -> No
         + "filler " * 300
         + "zebra\n"
     )
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    (tmp_path / "alias.md").symlink_to(tmp_path / "SKILL.md")
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
     try:
         vault.index.build_index()
+        vault.index.build_embeddings()
         unfiltered = vault.reader.search("zebra", mode="keyword", limit=200)
         assert len(unfiltered) == 200
         assert "SKILL.md" not in {hit.path for hit in unfiltered}
-        hits = vault.reader.search(
-            "zebra", mode="keyword", limit=1, filters={"type": "Runbook"}
-        )
-        assert [hit.path for hit in hits] == ["SKILL.md"]
+        for mode in ("keyword", "hybrid"):
+            hits = vault.reader.search(
+                "zebra",
+                mode=mode,
+                limit=2,
+                filters={"type": "Runbook"},
+                snippet_words=5,
+            )
+            assert {hit.path for hit in hits} == {"SKILL.md", "alias.md"}
+            assert all(
+                "zebra" in h.sections[0].content
+                and len(h.sections[0].content.split()) < 15
+                for h in hits
+            )
     finally:
         vault.close()
 
@@ -486,6 +496,7 @@ def test_filtered_requests_use_one_activation_snapshot(
     marker = tmp_path / "index.md"
     marker.write_text('---\nokf_version: "0.2"\n---\n# Index\n')
     (tmp_path / "SKILL.md").write_text(SKILL)
+    (tmp_path / "alias.md").symlink_to(tmp_path / "SKILL.md")
     for number in range(25):
         (tmp_path / f"{number}.md").write_text(
             "---\ntype: Reference\ntags: fixture\n---\n# Note\n\nzebra\n"
@@ -515,7 +526,115 @@ def test_filtered_requests_use_one_activation_snapshot(
                 hits = vault.reader.search(
                     "zebra", mode=operation, filters=filters, snippet_words=5
                 )
-            assert [hit.path for hit in hits] == (["SKILL.md"] if active else [])
+            assert {hit.path for hit in hits} == (
+                {"SKILL.md", "alias.md"} if active else set()
+            )
             assert probes == 1, f"{probes} detection reads for one {operation} request"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid", "similar"])
+@pytest.mark.usefixtures("constant_embeddings")
+def test_alias_retrieval_agrees_with_resolved_whole_read(
+    tmp_path: Path, alias_note, mode: str
+) -> None:
+    """All retrieval channels must match and rank aliases by their target's six families."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.conftest import MockEmbeddingProvider
+
+    target, alias, raw, expected = alias_note
+    (tmp_path / "reference.md").write_text("# Reference\n\nzebra\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        nested = expected["type"] == "Runbook"
+        filters = {
+            "type": expected["type"],
+            "status": expected["status"],
+            "stale": str(nested).lower(),
+            "trust_tier": "human-reviewed" if nested else "machine-confirmed",
+        }
+        hits = (
+            vault.reader.get_similar("reference.md", filters=filters)
+            if mode == "similar"
+            else vault.reader.search(
+                "zebra", mode=mode, filters=filters, snippet_words=5
+            )
+        )
+        assert {hit.path for hit in hits} == {target, alias}
+        assert all(hit.frontmatter == raw for hit in hits)
+        assert {n.path for n in vault.reader.list_documents(filters=filters)} == {
+            target,
+            alias,
+        }
+        assert vault.reader.get_context(alias, similar_limit=0).tags["type"] == [
+            expected["type"]
+        ]
+        if mode != "similar":
+            assert all(
+                "zebra" in h.sections[0].content.lower()
+                and len(h.sections[0].content.split()) < 15
+                for h in hits
+            )
+            active_scores = {
+                h.path: h.score for h in vault.reader.search("zebra", mode=mode)
+            }
+            vault.okf._mode = "off"
+            baseline = {
+                h.path: h.score for h in vault.reader.search("zebra", mode=mode)
+            }
+            for hit in hits:
+                assert active_scores[hit.path] == pytest.approx(
+                    baseline[hit.path] * (0.375 if nested else 1.0)
+                )
+            assert {
+                h.path
+                for h in vault.reader.search(
+                    "zebra", mode=mode, filters={"type": "Literal"}
+                )
+            } == {target, alias}
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("similar_limit", [0, 2])
+@pytest.mark.usefixtures("constant_embeddings")
+def test_context_uses_one_activation_snapshot_with_similar_notes(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch, similar_limit: int
+) -> None:
+    """Context must not add an unused detection probe through unfiltered similarity."""
+    target, alias, _, expected = alias_note
+    marker = tmp_path / "index.md"
+    marker.write_text('---\nokf_version: "0.2"\n---\n')
+    vault = _vault_with_embeddings(tmp_path)
+    try:
+        vault.index.build_embeddings()
+        probes = 0
+        probe = vault.okf._probe_declared_version
+
+        def counted() -> str | None:
+            nonlocal probes
+            probes += 1
+            return probe()
+
+        monkeypatch.setattr(vault.okf, "_probe_declared_version", counted)
+        for active in [True, False]:
+            if not active:
+                marker.write_text("# Inactive\n")
+            probes = 0
+            context = vault.reader.get_context(alias, similar_limit=similar_limit)
+            assert probes == 1
+            assert context.tags["type"] == [expected["type"] if active else "Literal"]
+            if similar_limit:
+                assert target in {n.path for n in context.similar}
+        probes = 0
+        assert target in {h.path for h in vault.reader.get_similar(alias)}
+        assert probes == 0
     finally:
         vault.close()

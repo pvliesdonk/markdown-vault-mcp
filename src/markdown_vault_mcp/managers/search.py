@@ -59,10 +59,10 @@ from markdown_vault_mcp.okf import (
     OKF_RESERVED_FILENAMES,
     _effective_okf_tag_key,
     derive_annotation,
-    effective_okf_metadata,
     matches_okf_filters,
     okf_downweight_factor,
     parse_stale_filter,
+    resolved_okf_metadata,
 )
 from markdown_vault_mcp.types import (
     DEFAULT_SEARCH_MODES,
@@ -573,13 +573,14 @@ class SearchManager:
         """Snapshot read activation once for a request, never across requests."""
         return self._okf is not None and self._okf.state().active
 
-    @staticmethod
     def _effective_okf_metadata(
-        metadata: dict[str, Any], path: str, *, okf_active: bool
+        self, metadata: dict[str, Any], path: str, *, okf_active: bool
     ) -> dict[str, Any]:
         """Interpret skill fields only when OKF read semantics are active."""
         if okf_active:
-            return effective_okf_metadata(metadata, path=path)
+            return resolved_okf_metadata(
+                metadata, path=path, source_dir=self._source_dir
+            )
         return metadata
 
     def _native_tag_key(self, field: str, *, okf_active: bool) -> str:
@@ -676,7 +677,7 @@ class SearchManager:
             return False
         metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
         return matches_okf_filters(
-            effective_okf_metadata(metadata, path=path), okf_filters
+            self._effective_okf_metadata(metadata, path, okf_active=True), okf_filters
         )
 
     def _filter_rows_okf(
@@ -734,7 +735,9 @@ class SearchManager:
             cached = factors.get(path)
             if cached is None:
                 annotation = derive_annotation(
-                    effective_okf_metadata(self._get_frontmatter(path), path=path)
+                    self._effective_okf_metadata(
+                        self._get_frontmatter(path), path, okf_active=True
+                    )
                 )
                 cached = okf_downweight_factor(annotation, path)
                 factors[path] = cached
@@ -1226,7 +1229,7 @@ class SearchManager:
         folder: str | None,
         filters: dict[str, str] | None,
         candidate_limit: int,
-        okf_active: bool | None = None,
+        okf_active: bool,
     ) -> dict[tuple[str, str | None], str]:
         """Re-query FTS with snippet projection, restricted to survivor paths.
 
@@ -1248,11 +1251,10 @@ class SearchManager:
             candidate_limit: The caller's initial candidate pool size; used as
                 a floor so the snippet re-query is at least as wide as the
                 ranking query.
-            okf_active: Request snapshot; omitted probes once for a direct call.
+            okf_active: Activation snapshot shared by this request.
         """
         if not survivors:
             return {}
-        okf_active = self._okf_active() if okf_active is None else okf_active
         candidate_n = max(candidate_limit, len(survivors) * 4, 50)
         rows = self._fts.search(
             query,
@@ -1523,7 +1525,10 @@ class SearchManager:
                 n
                 for n in note_infos
                 if matches_okf_filters(
-                    effective_okf_metadata(n.frontmatter, path=n.path), okf_filters
+                    self._effective_okf_metadata(
+                        n.frontmatter, n.path, okf_active=okf_active
+                    ),
+                    okf_filters,
                 )
             ]
         notes: list[NoteInfo | AttachmentInfo] = list(note_infos)
@@ -1766,7 +1771,7 @@ class SearchManager:
                 row.get("frontmatter_json"), row["path"]
             )
             annotation = derive_annotation(
-                effective_okf_metadata(metadata, path=row["path"])
+                self._effective_okf_metadata(metadata, row["path"], okf_active=True)
             )
             note_type = annotation.get("type")
             if note_type is None:
@@ -1869,7 +1874,7 @@ class SearchManager:
         eff_cpf = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
-        okf_active = self._okf_active()
+        okf_active = self._okf_active() if filters else False
         filters, okf_filters = self._split_okf_filters(filters, okf_active=okf_active)
         candidate_limit = self._widen_for_post_filter(
             max(limit * (eff_cpf + 4), 50),

@@ -699,7 +699,9 @@ def _evaluate_note(
         acc.missing_recommended.add(rel)
 
 
-def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
+def _audit_file(
+    rel: str, raw: str, acc: _AuditCounters, *, authority_path: str | None = None
+) -> None:
     """Classify one markdown file and update the audit counters."""
     try:
         post = parse_frontmatter(raw)
@@ -725,7 +727,14 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     if not parse_ok:
         acc.unparseable.add(rel)
     else:
-        _evaluate_note(rel, effective_okf_metadata(metadata, path=rel), body, acc)
+        _evaluate_note(
+            rel,
+            effective_okf_metadata(
+                metadata, path=authority_path if authority_path is not None else rel
+            ),
+            body,
+            acc,
+        )
 
 
 def audit_bundle(
@@ -782,7 +791,9 @@ def audit_bundle(
             continue
         raw = _read_capped(source_dir / rel, rel)
         if raw is not None:
-            _audit_file(rel, raw, acc)
+            _audit_file(
+                rel, raw, acc, authority_path=(source_dir / rel).resolve().as_posix()
+            )
 
     return OkfAuditReport(
         mode=state.mode,

@@ -1334,3 +1334,51 @@ def test_resolved_okf_metadata_propagates_resolution_refusal(
     with pytest.raises(type(error)) as caught:
         resolved_okf_metadata({"type": "Literal"}, path="alias.md", source_dir=tmp_path)
     assert caught.value is error
+
+
+def test_alias_stats_use_resolved_authority(tmp_path: Path, alias_note: Any) -> None:
+    """Stats must count both indexed spellings under the resolved lifecycle/provenance."""
+    from markdown_vault_mcp.vault import Vault
+
+    target, alias, _, expected = alias_note
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+        stats = vault.reader.okf_stats()
+        nested = expected["type"] == "Runbook"
+        assert stats["types"] == {expected["type"]: 2}
+        assert stats["status"] == {expected["status"]: 2}
+        assert stats["trust"] == {
+            "human-reviewed" if nested else "machine-confirmed": 2
+        }
+        assert stats["stale_count"] == (2 if nested else 0)
+        assert {n.path for n in vault.reader.list_documents()} == {target, alias}
+    finally:
+        vault.close()
+
+
+def test_alias_audit_uses_resolved_authority(
+    tmp_path: Path, alias_note: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Disk audit must infer target skills while keeping lexical finding examples."""
+    import frontmatter
+
+    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.okf import audit_bundle
+
+    target, alias, raw, expected = alias_note
+    raw.pop("type")
+    raw["metadata"].pop("type")
+    raw["metadata"]["status"] = "strange"
+    (tmp_path / target).write_text(frontmatter.dumps(frontmatter.Post("zebra", **raw)))
+
+    def forbid(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("audit accessed index")
+
+    monkeypatch.setattr(FTSIndex, "list_notes", forbid)
+    report = audit_bundle(tmp_path)
+    nested = expected["type"] == "Runbook"
+    assert report.total_notes == 2
+    assert report.missing_type.count == (0 if nested else 2)
+    assert set(report.missing_type.examples) == (set() if nested else {target, alias})
+    assert set(report.unknown_status.examples) == ({target, alias} if nested else set())
