@@ -5269,6 +5269,15 @@ the ``/api/show`` context-length probe, and the ``/api/tags`` reachability
 probe in ``get_embedding_provider``. ``fastembed`` (in-process, non-API)
 is unaffected.
 
+**Response order (#2050)**: the transport returns vectors in input order by
+sorting ``response.data`` on each item's ``index``, and reads a missing
+``index`` as 0, the meaning proto3 JSON gives an omitted integer. Gemini's
+compatibility endpoint leaves ``index`` out of the first item of a batch;
+the SDK builds responses without validation and reads it as ``None``, and
+comparing ``None`` with the next item's ``1`` failed every batch of two or
+more. The evidence is in
+[OpenAI-compatible embedding responses](reference/openai-compatible-embeddings.md).
+
 **Voyage preset**: ``VoyageProvider`` is a third preset over the same
 transport, with ``base_url`` pinned to ``https://api.voyageai.com/v1`` and
 its own ``VOYAGE_API_KEY`` / ``MARKDOWN_VAULT_MCP_VOYAGE_MODEL`` surface

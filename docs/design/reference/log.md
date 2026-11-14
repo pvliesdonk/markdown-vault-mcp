@@ -1,5 +1,15 @@
 # Reference research log
 
+## 2026-11-14
+
+- New: [OpenAI-compatible embedding responses](openai-compatible-embeddings.md),
+  for bug #2050. Sources: the OpenAI OpenAPI spec's `Embedding` and
+  `CreateEmbeddingResponse` schemas, openai-python's `Embedding` type and
+  `BaseModel.construct`, the ProtoJSON format's default-value rule and
+  Google's OpenAI compatibility page, all read 2026-11-14. Observations: raw
+  Gemini batch responses and per-text comparisons from #2050 and a rerun on
+  `gemini-embedding-2`. Next review: 2027-05-14.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,
