@@ -12,18 +12,29 @@ pytest.importorskip("playwright.sync_api")
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from playwright.sync_api import Browser, BrowserType, Frame, Page
+    from playwright.sync_api import Browser, Frame, Page
 
 pytestmark = pytest.mark.browser
 _ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")
-def browser(browser_type: BrowserType) -> Iterator[Browser]:
+def browser() -> Iterator[Browser]:
     """Use Chromium when installed; keep the optional suite actionable otherwise."""
-    if not Path(browser_type.executable_path).exists():
-        pytest.skip("Browser missing -- run `uv run playwright install chromium`")
-    instance = browser_type.launch()
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        if not Path(playwright.chromium.executable_path).exists():
+            pytest.skip("Chromium missing -- run `uv run playwright install chromium`")
+        instance = playwright.chromium.launch()
+        yield instance
+        instance.close()
+
+
+@pytest.fixture
+def page(browser: Browser) -> Iterator[Page]:
+    """Close each synthetic host page before the module's runtime stops."""
+    instance = browser.new_page()
     yield instance
     instance.close()
 
