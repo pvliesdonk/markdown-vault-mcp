@@ -157,7 +157,7 @@ src/markdown_vault_mcp/
   _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
   _cli_client.py       -- nonsecret client TOML/environment selection and credential/URL/timeout validation
-  _cli_remote.py       -- lazy native MCP HTTP read transport, capability checks and read dispatch
+  _cli_remote.py       -- lazy native MCP HTTP transport, capability checks and single-deadline read/write dispatch
   _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies
   _cli_discovery.py    -- note, attachment, metadata and context CLI commands
   _cli_graph.py        -- backlinks/outlinks/broken-links/orphans/hubs/connection CLI registration; native graph payloads through the shared read runner
@@ -166,7 +166,8 @@ src/markdown_vault_mcp/
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
   _cli_options.py      -- shared Typer option aliases (connection, folder, agent, drain) for the read commands
   _cli_reader.py       -- register_read_commands: search plus every read-only command, one unit a CLI mounts whole (#2005)
-  _cli_admin.py        -- the admin group (index, reindex, embeddings import) and the hidden aliases for their old names (#2005)
+  _cli_write.py        -- hosted mutation registration, input validation, etag selection and unconditional verify refusal (#2060)
+  _cli_admin.py        -- local admin group and compatibility aliases; composes the visible index group with hosted reindex (#2005, #2060)
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
 ```

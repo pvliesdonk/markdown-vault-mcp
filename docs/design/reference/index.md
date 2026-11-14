@@ -155,3 +155,5 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
 See the [research log](log.md) for completed research passes. Add project
 references here as they are written.
+
+- [Typer parameter sources](typer-parameter-sources.md) — explicit local options and the vendored enum boundary used by hosted reindex.
