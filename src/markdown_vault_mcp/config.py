@@ -1459,8 +1459,8 @@ class ProjectConfig:
             value = getattr(self, f"okf_decisions_{key}_threshold")
             if (
                 type(value) not in (float, int)
-                or not math.isfinite(value)
                 or not 0 <= value <= 1
+                or not math.isfinite(value)
             ):
                 raise ConfigurationError(
                     f"OKF_DECISIONS_{key.upper()}_THRESHOLD must be finite in [0,1]."

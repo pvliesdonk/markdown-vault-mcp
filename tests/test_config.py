@@ -2744,6 +2744,19 @@ def test_decide_config_defaults_and_fallback(monkeypatch: pytest.MonkeyPatch) ->
 @pytest.mark.parametrize(
     "fields",
     [
+        *(
+            {f"okf_decisions_{field}_threshold": sign * 10**1000}
+            for field in [
+                "type",
+                "status",
+                "description",
+                "sources",
+                "stale_after",
+                "meaningful",
+                "replace",
+            ]
+            for sign in (-1, 1)
+        ),
         {"okf_decisions_type_threshold": float("nan")},
         {"okf_decisions_description_threshold": float("inf")},
         {"okf_decisions_sources_threshold": -0.01},
@@ -2754,6 +2767,9 @@ def test_decide_config_defaults_and_fallback(monkeypatch: pytest.MonkeyPatch) ->
         *(
             {"okf_decisions_base_url": url}
             for url in [
+                None,
+                True,
+                42,
                 "relative",
                 "file:///tmp/api",
                 "https://fixture@example.invalid",
@@ -2765,7 +2781,10 @@ def test_decide_config_defaults_and_fallback(monkeypatch: pytest.MonkeyPatch) ->
 )
 def test_decisions_direct_config_validation(fields: dict[str, Any]) -> None:
     """Direct constructors reject unsafe endpoints/thresholds like env reads do."""
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(
+        ConfigurationError,
+        match="OKF_DECISIONS_BASE_URL" if "okf_decisions_base_url" in fields else None,
+    ):
         ProjectConfig(**fields)
 
 
@@ -2790,10 +2809,3 @@ def test_decisions_threshold_env_suffixes(
     assert getattr(
         ProjectConfig.from_env(), f"okf_decisions_{key.lower()}_threshold"
     ) == float(value)
-
-
-@pytest.mark.parametrize("url", [None, True, 42])
-def test_decisions_url_type_is_guarded(url: Any) -> None:
-    """Invalid direct URL types produce a safe configuration error."""
-    with pytest.raises(ConfigurationError, match="OKF_DECISIONS_BASE_URL"):
-        ProjectConfig(okf_decisions_base_url=url)

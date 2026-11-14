@@ -738,8 +738,32 @@ Discovery uses filesystem mtime or missing raw type, with union/dedup and
 native exclusions, containment and submodule boundaries. Reserved files,
 `SKILL.md` and the vocabulary are excluded. The command initializes no model
 clients without enabled selected work and never opens server persistent stores.
+The report explicitly distinguishes disabled from enabled-empty work. One
+caller-owned report retains earlier writes through later note or cleanup errors.
 Assembly clears Git URL and token before validation, so local commits retain
 native callbacks without managed bootstrap or remote synchronization.
+
+Raw frontmatter uses the installed handler to reject nonmapping roots and
+nonstring top-level keys before native serialization. Empty or unclosed headers
+retain native body semantics. Metadata depth/value bounds precede maintained
+Pydantic conversion; malformed notes remain isolated from later work. Authored
+input errors carry safe remedies; arbitrary configuration/path/YAML failures
+use categorical diagnostics.
+
+Description candidates collect the complete first prose paragraph before the
+280-character Unicode limit, skip complete ATX/setext headings and refuse an
+initial nonprose block. Context distinguishes paragraph continuation from block
+interruptions, including HTML type 7. External links decode Markdown syntax
+without percent-decoding resource identity.
+
+Enabled nonempty work populates the command-owned scratch index with only its
+IndexManager admission requirements relaxed. Configured vault/writer and
+reserved convention requirements remain intact. Before resolving a reread
+source, drain the native FIFO, parse the current source with the native parser
+settings, upsert it and consume native wikilink destinations. Current body
+occurrences and canonical containment govern eligibility; native FTS owns
+short-name, alias and tie-break resolution. Failed refreshes cannot supply
+evidence. The index is discarded on close.
 
 The [endpoint reference](reference/openai-decisions.md) pins ordered answers,
 null-name refusals, request limits and safe terminal errors. All thresholds

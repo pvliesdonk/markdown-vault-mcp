@@ -41,11 +41,13 @@ from markdown_vault_mcp.scanner import (
     _strip_inline_code,
     extract_links,
     parse_frontmatter,
+    parse_note,
     strip_frontmatter_block,
 )
 from markdown_vault_mcp.utils import is_path_excluded, validate_path
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 from markdown_vault_mcp.utils.links import (
+    _decode_escapes_and_entities,
     _follow_inline_destination,
     decode_markdown_destination,
     is_pointy_destination,
@@ -61,6 +63,10 @@ if TYPE_CHECKING:
 
 _KEYS = frozenset({"type", "status", "description", "sources", "stale_after"})
 _MEANINGFUL = "Would filling or correcting the eligible metadata from the supplied candidates be a meaningful change to this page, rather than a cosmetic or redundant update? Evaluate the current metadata and body; existing equal values do not count."
+
+
+class DecisionInputError(ValueError):
+    """An authored local-input remedy safe to display to the operator."""
 
 
 @dataclass(frozen=True)
@@ -81,13 +87,13 @@ class DecisionPolicy:
                 self.meaningful_threshold,
             ]
         ):
-            raise ValueError(
+            raise DecisionInputError(
                 "Decisions thresholds must name all five fields and be finite numbers in [0,1]."
             )
         if self.replace_threshold <= max(
             self.thresholds["type"], self.thresholds["status"]
         ):
-            raise ValueError(
+            raise DecisionInputError(
                 "Replacement threshold must exceed type and status thresholds."
             )
 
@@ -105,19 +111,19 @@ class Vocabulary:
 
 def _choices(raw: Any) -> tuple[dict[str, str], ...]:
     if not isinstance(raw, list) or not 2 <= len(raw) <= 255:
-        raise ValueError("Vocabulary lists require 2..255 described options.")
+        raise DecisionInputError("Vocabulary lists require 2..255 described options.")
     result = []
     for item in raw:
         if not isinstance(item, dict) or any(
             not isinstance(item.get(k), str) or not item[k].strip()
             for k in ("value", "description")
         ):
-            raise ValueError(
+            raise DecisionInputError(
                 "Vocabulary options require nonempty value and description strings."
             )
         result.append({"value": item["value"], "description": item["description"]})
     if len({item["value"] for item in result}) != len(result):
-        raise ValueError("Vocabulary values must be unique.")
+        raise DecisionInputError("Vocabulary values must be unique.")
     return tuple(result)
 
 
@@ -140,17 +146,16 @@ def load_vocabulary(root: Path, path: str) -> Vocabulary:
         *OKF_RESERVED_FILENAMES,
         "SKILL.md",
     }:
-        raise ValueError("Vocabulary must name an ordinary vault-relative concept.")
-    try:
-        metadata = parse_frontmatter(absolute.read_text(encoding="utf-8")).metadata
-    except yaml.YAMLError:
-        raise ValueError("Vocabulary YAML is invalid.") from None
+        raise DecisionInputError(
+            "Vocabulary must name an ordinary vault-relative concept."
+        )
+    metadata = _raw_metadata(absolute.read_text(encoding="utf-8"))
     types, statuses = (
         _choices(metadata.get("types")),
         _choices(metadata.get("statuses")),
     )
     if {v["value"] for v in statuses} != {"draft", "stable", "deprecated"}:
-        raise ValueError(
+        raise DecisionInputError(
             "Vocabulary statuses must be exactly draft, stable, deprecated."
         )
     durations = (
@@ -161,11 +166,15 @@ def load_vocabulary(root: Path, path: str) -> Vocabulary:
     for option in durations:
         value = option["value"]
         if not re.fullmatch(r"[1-9][0-9]*d", value):
-            raise ValueError("Durations require positive integer days, such as 30d.")
+            raise DecisionInputError(
+                "Durations require positive integer days, such as 30d."
+            )
         try:
             timedelta(days=int(value[:-1]))
         except OverflowError:
-            raise ValueError("Duration exceeds supported datetime range.") from None
+            raise DecisionInputError(
+                "Duration exceeds supported datetime range."
+            ) from None
     return Vocabulary(
         absolute.relative_to(root.resolve()).as_posix(),
         types,
@@ -175,44 +184,92 @@ def load_vocabulary(root: Path, path: str) -> Vocabulary:
     )
 
 
+def _raw_metadata(text: str) -> dict[str, Any]:
+    candidate = text.lstrip()
+    handler = fm.detect_format(candidate, fm.handlers)
+    if handler is None:
+        return {}
+    try:
+        header, _ = handler.split(candidate)
+    except ValueError:
+        return {}
+    try:
+        metadata = handler.load(header) if header.strip() else {}
+    except yaml.YAMLError:
+        raise DecisionInputError("Use valid YAML frontmatter.") from None
+    if not isinstance(metadata, dict) or any(not isinstance(k, str) for k in metadata):
+        raise DecisionInputError("Frontmatter requires a mapping with string keys.")
+    _json_bounds(metadata)
+    return metadata
+
+
 def _paragraph(body: str) -> str | None:
     lines = body.splitlines()
     while lines:
-        if not lines[0].strip():
+        if not lines[0].strip() or re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0]):
             lines.pop(0)
             continue
         if _non_prose(lines):
             return None
-        if re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0]):
-            lines.pop(0)
-        elif len(lines) > 1 and re.fullmatch(r" {0,3}(?:=+|-+)\s*", lines[1]):
-            del lines[:2]
-        else:
-            break
-    if not lines:
-        return None
-    paragraph = "\n".join(body_line for body_line in _first_block(lines)).strip()
-    return paragraph if paragraph and len(paragraph) <= 280 else None
+        block = _first_block(lines)
+        if len(block) < len(lines) and re.fullmatch(
+            r" {0,3}(?:=+|-+)\s*", lines[len(block)]
+        ):
+            del lines[: len(block) + 1]
+            continue
+        paragraph = "\n".join(block).strip()
+        return paragraph if paragraph and len(paragraph) <= 280 else None
+    return None
 
 
-def _non_prose(lines: list[str]) -> bool:
+def _html_block(line: str, *, continuation: bool) -> bool:
+    common = (
+        r"^ {0,3}(?:<!--|<\?|<![A-Z]|<!\[CDATA\[|"
+        r"(?i:</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|"
+        r"col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|"
+        r"footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|"
+        r"link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|"
+        r"section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:[ \t/>]|$)|"
+        r"<(?:script|pre|style|textarea)(?:[ \t>]|$)))"
+    )
+    tag = r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*\s*/?>\s*"
     return bool(
-        re.match(
-            r"^(?: {4}|\t| {0,3}(?:[`~]{3}|[>|]|[-+*](?:\s|$)|\d+[.)]\s))"
-            r"|^[^\n]*\|[^\n]*\n\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?\s*$",
+        re.match(common, line) or (not continuation and re.fullmatch(tag, line))
+    )
+
+
+def _non_prose(lines: list[str], *, continuation: bool = False) -> bool:
+    line = lines[0]
+    marker = (
+        r" {0,3}(?:[-+*]|1[.)])\s+\S"
+        if continuation
+        else r"(?: {4}|\t| {0,3}(?:[-+*](?:\s|$)|\d+[.)]\s))"
+    )
+    return bool(
+        re.match(marker, line)
+        or re.match(r" {0,3}(?:>|\|)", line)
+        or re.fullmatch(r" {0,3}(?:`{3,}[^`]*|~{3,}.*)", line)
+        or (_line_shape(line, 0)[0] == "separator" and "=" not in line)
+        or _html_block(line, continuation=continuation)
+        or re.match(
+            r"^[^\n]*\|[^\n]*\n\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?\s*$",
             "\n".join(lines[:2]),
         )
     )
 
 
 def _first_block(lines: list[str]) -> list[str]:
-    for index, line in enumerate(lines):
-        if _line_shape(line, 0)[0] != "continuation" or _non_prose([line]):
+    for index in range(1, len(lines)):
+        if _line_shape(lines[index], 0)[0] in {"separator", "heading"} or _non_prose(
+            lines[index:], continuation=True
+        ):
             return lines[:index]
     return lines
 
 
-def _contained_source(link: LinkInfo, path: str, root: Path) -> str | None:
+def _contained_source(
+    link: LinkInfo, path: str, root: Path, resolved_path: str | None = None
+) -> str | None:
     raw = link.raw_target
     if link.link_type == "wikilink":
         raw = raw.split("#", 1)[0]
@@ -220,8 +277,10 @@ def _contained_source(link: LinkInfo, path: str, root: Path) -> str | None:
         raw = raw[1:-1] if is_pointy_destination(raw) else raw
         raw = decode_markdown_destination(split_markdown_fragment(raw)[0])
     base = root if raw.startswith("/") else root / Path(path).parent
+    if link.link_type == "wikilink" and not raw.startswith(("./", "../", "/")):
+        base = root
     (base / raw.removeprefix("/")).resolve().relative_to(root.resolve())
-    resolved = validate_path(link.target_path, root)
+    resolved = validate_path(resolved_path or link.target_path, root)
     return resolved.relative_to(root).as_posix() if resolved.is_file() else None
 
 
@@ -237,7 +296,9 @@ def _source_tokens(region: str, definitions: dict[str, str]) -> list[str]:
         return matched
 
     values = [
-        decode_markdown_destination(target)
+        _decode_escapes_and_entities(
+            target[1:-1] if is_pointy_destination(target) else target
+        )
         for _, _, target, _ in iter_bracket_links(region, follow)
     ]
     # Callbacks observe image spans even though the native walker omits images.
@@ -261,15 +322,28 @@ def _bare_url(value: str) -> str:
     return value
 
 
-def _sources(body: str, path: str, root: Path | None) -> list[str]:
+def _sources(
+    body: str,
+    path: str,
+    root: Path | None,
+    *,
+    resolved_wikilinks: dict[str, str] | None = None,
+) -> list[str]:
     candidates = []
     if root is not None:
         for link in extract_links(body, path):
             try:
-                resource = _contained_source(link, path, root)
+                resource = _contained_source(
+                    link,
+                    path,
+                    root,
+                    (resolved_wikilinks or {}).get(link.raw_target)
+                    if link.link_type == "wikilink"
+                    else None,
+                )
                 if resource:
                     candidates.append(resource)
-            except ValueError:
+            except (OSError, ValueError, RuntimeError):
                 continue
     clean = _strip_inline_code(_strip_fenced_code(body))
     definitions = _collect_reference_definitions(clean)
@@ -280,14 +354,9 @@ def _sources(body: str, path: str, root: Path | None) -> list[str]:
                 parsed = urlsplit(value)
                 if parsed.scheme in {"http", "https"} and parsed.hostname:
                     candidates.append(value)
-            except ValueError:
+            except (OSError, ValueError, RuntimeError):
                 continue
     return list(dict.fromkeys(candidates))
-
-
-def _json_value(value: Any) -> Any:
-    _json_bounds(value)
-    return to_jsonable_python(value)
 
 
 def _present(value: Any) -> bool:
@@ -302,22 +371,6 @@ class NoteDecision:
     questions: list[dict[str, Any]]
     input_parts: list[dict[str, Any]]
     bindings: dict[str, Any]
-
-    def accepted_patch(
-        self, answers: list[dict[str, Any]], policy: DecisionPolicy, *, now: datetime
-    ) -> dict[str, Any]:
-        """Select changed metadata only, never provenance or model-generated text.
-
-        Args:
-            answers: Ordered, transport-validated answers.
-            policy: Per-field thresholds and replacement protection.
-            now: Aware UTC write-attempt instant for listed durations.
-
-        Returns:
-            Changed keys only; empty for equality, refusal or abstention.
-        """
-        patch, _ = self.evaluate(answers, policy, now=now)
-        return patch
 
     def evaluate(
         self, answers: list[dict[str, Any]], policy: DecisionPolicy, *, now: datetime
@@ -439,7 +492,12 @@ def _field_outcome(proposed: Any, disposition: str, meaningful: bool) -> dict[st
 
 
 def build_questions(
-    path: str, metadata: dict[str, Any], body: str, vocabulary: Vocabulary
+    path: str,
+    metadata: dict[str, Any],
+    body: str,
+    vocabulary: Vocabulary,
+    *,
+    resolved_wikilinks: dict[str, str] | None = None,
 ) -> NoteDecision:
     """Build one stable closed request for all eligible fields of one note.
 
@@ -448,10 +506,12 @@ def build_questions(
         metadata: Full raw frontmatter, including unknown operator fields.
         body: Original body without YAML frontmatter.
         vocabulary: Validated operator options and source root.
+        resolved_wikilinks: Native scratch-index destinations keyed by raw wiki target.
 
     Returns:
         Questions, input and literal candidate bindings for policy evaluation.
     """
+    _json_bounds(metadata)
     questions: list[dict[str, Any]] = [
         {"name": "meaningful", "type": "predicate", "instructions": _MEANINGFUL}
     ]
@@ -493,7 +553,11 @@ def build_questions(
     if bindings["sources_valid"]:
         bindings["sources"] = {
             f"sources:{i}": value
-            for i, value in enumerate(_sources(body, path, vocabulary.root))
+            for i, value in enumerate(
+                _sources(
+                    body, path, vocabulary.root, resolved_wikilinks=resolved_wikilinks
+                )
+            )
         }
         for name, resource in bindings["sources"].items():
             questions.append(
@@ -518,7 +582,7 @@ def build_questions(
         questions,
         [
             {"type": "input_text", "text": f"Path: {path}"},
-            {"type": "input_json", "data": _json_value(metadata)},
+            {"type": "input_json", "data": to_jsonable_python(metadata)},
             {"type": "input_text", "text": body},
         ],
         bindings,
@@ -534,9 +598,9 @@ class DecideSelection:
 
     def __post_init__(self) -> None:
         if not self.missing_type and self.since is None:
-            raise ValueError("Choose --since or --missing-type.")
+            raise DecisionInputError("Choose --since or --missing-type.")
         if self.since is not None and self.since.utcoffset() is None:
-            raise ValueError("--since requires an offset-aware ISO datetime.")
+            raise DecisionInputError("--since requires an offset-aware ISO datetime.")
 
 
 @dataclass
@@ -550,6 +614,7 @@ class DecideReport:
         )
     )
     terminal_error: str | None = None
+    disabled: bool = False
 
     def exit_code(self) -> int:
         """Return one for failed/conflicting notes, zero for successful abstentions."""
@@ -621,13 +686,18 @@ def discover_notes(
                 and absolute.stat().st_mtime >= selection.since.timestamp()
             )
             missing = selection.missing_type and not _present(
-                parse_frontmatter(absolute.read_text(encoding="utf-8")).metadata.get(
-                    "type"
-                )
+                _raw_metadata(absolute.read_text(encoding="utf-8")).get("type")
             )
             if recent or missing:
                 paths.add(path)
-        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
+        except (
+            OSError,
+            UnicodeError,
+            ValueError,
+            TypeError,
+            RuntimeError,
+            yaml.YAMLError,
+        ):
             errors.append(
                 {
                     "path": path,
@@ -674,17 +744,19 @@ class OkfDecisionManager:
         selection: DecideSelection,
         *,
         discovery: tuple[list[str], list[dict[str, Any]]] | None = None,
+        report: DecideReport | None = None,
     ) -> DecideReport:
         """Process selected notes once, stopping paid work on terminal failures.
 
         Args:
             selection: At least one explicit filesystem selector.
             discovery: Optional authoritative preflight membership and errors.
+            report: Caller-owned outcomes retained through processing and cleanup.
 
         Returns:
             Complete prior outcomes, field answers and safe per-note errors.
         """
-        report = DecideReport()
+        report = DecideReport() if report is None else report
         if discovery is None:
             discovery = discover_notes(
                 self.vault.source_dir,
@@ -696,6 +768,9 @@ class OkfDecisionManager:
         paths, errors = discovery
         for error in errors:
             report.add(error)
+        if paths:
+            self.vault._index_mgr._required_frontmatter = None
+            self.vault.index.build_index()
         for path in paths:
             try:
                 report.add(self._decide_note(path))
@@ -704,7 +779,15 @@ class OkfDecisionManager:
                 if error.terminal:
                     report.terminal_error = str(error)
                     break
-            except (OSError, UnicodeError, ValueError, MarkdownMCPError) as error:
+            except (
+                OSError,
+                UnicodeError,
+                ValueError,
+                TypeError,
+                RuntimeError,
+                yaml.YAMLError,
+                MarkdownMCPError,
+            ) as error:
                 conflict = isinstance(
                     error, (EditConflictError, ConcurrentModificationError)
                 )
@@ -722,10 +805,17 @@ class OkfDecisionManager:
     def _decide_note(self, path: str) -> dict[str, Any]:
         read = self.vault.reader.read(path)
         if read is None:
-            raise ValueError("Note disappeared.")
+            raise DecisionInputError("Note disappeared.")
         body = strip_frontmatter_block(read.content)
-        metadata = dict(read.frontmatter)
-        decision = build_questions(path, metadata, body, self.vocabulary)
+        metadata = _raw_metadata(read.content)
+        resolved = (
+            self._resolved_wikilinks(path)
+            if any(link.link_type == "wikilink" for link in extract_links(body, path))
+            else None
+        )
+        decision = build_questions(
+            path, metadata, body, self.vocabulary, resolved_wikilinks=resolved
+        )
         answers = self.client.decide(decision.input_parts, decision.questions)
         now = _now()
         patch, fields = decision.evaluate(answers, self.policy, now=now)
@@ -741,7 +831,15 @@ class OkfDecisionManager:
         if patch:
             try:
                 self._persist(path, body, {**metadata, **patch}, read.etag, now)
-            except (OSError, UnicodeError, ValueError, MarkdownMCPError) as error:
+            except (
+                OSError,
+                UnicodeError,
+                ValueError,
+                TypeError,
+                RuntimeError,
+                yaml.YAMLError,
+                MarkdownMCPError,
+            ) as error:
                 conflict = isinstance(
                     error, (EditConflictError, ConcurrentModificationError)
                 )
@@ -758,6 +856,23 @@ class OkfDecisionManager:
                 ]:
                     value["persisted"] = value["accepted"]
         return result
+
+    def _resolved_wikilinks(self, path: str) -> dict[str, str]:
+        self.vault._coordinator.prepare_index_read()
+        parsed = parse_note(
+            self.vault.source_dir / path,
+            self.vault.source_dir,
+            self.vault._chunk_strategy,
+            title_field=self.vault._title_field,
+            attachment_extensions=self.vault._index_mgr._attachment_extensions,
+        )
+        self.vault._fts.upsert_note(parsed)
+        self.vault._fts.resolve_vault_wikilinks()
+        return {
+            row["raw_target"]: row["target_path"]
+            for row in self.vault._fts.get_outlinks(path, limit=None)
+            if row["link_type"] == "wikilink"
+        }
 
     def _persist(
         self,

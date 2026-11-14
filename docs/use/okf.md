@@ -210,16 +210,20 @@ markdown-vault-mcp okf decide --since 2026-11-14T00:00:00Z --threshold type=0.85
 timestamp. Combining it with `--missing-type` selects their union, once per
 note. Effective exclusions, reserved files, the vocabulary and `SKILL.md` are
 omitted. The command runs locally and requires active OKF and a writable vault.
-No configured types path or inactive OKF reports disabled; empty selections
-need no key. Embeddings, summarization and persistent indexes are not opened.
+No configured types path or inactive OKF reports `disabled: true` with zero
+counts and exit 0. Enabled empty selections report `disabled: false` and need
+no key. Embeddings, summarization and persistent indexes are not opened.
 Native local Git commits remain enabled, while remote synchronization is off.
 
 Type and status choices accept confidence at least 0.8 by default. Replacing an
 explicit value also requires its incorrect-value predicate to be strictly
 above 0.95. Omitted status never gains `stable` merely to fill the key.
 Description fills only a blank value with the exact first prose paragraph,
-up to 280 characters. Sources append only existing body URLs or contained
-existing note paths, preserving supplied records. A listed duration fills a
+up to 280 Unicode characters after collecting the complete paragraph. Headings
+are skipped; an initial code block, list, quote, table or HTML block prevents a
+description candidate. Sources append only body URLs or contained existing note
+paths, preserving supplied records. URL percent escapes retain their resource
+identity. Short wikilinks and aliases use the native vault link resolver. A listed duration fills a
 blank `stale_after` using the server's UTC write-attempt time. Existing nonempty
 descriptions, expiry values and malformed source lists remain untouched.
 
@@ -230,6 +234,10 @@ modification times, provenance and callbacks untouched. Actual writes use the
 native etag guard, stamp `generated.at` and invalidate prior verification;
 they do not create a machine verification or alter `last_edited`. A concurrent
 edit is reported as a conflict and is not overwritten or retried.
+
+Invalid YAML, frontmatter that is not a mapping and unsupported metadata leave that note
+unchanged. Earlier outcomes remain available and later valid notes continue.
+Invalid vocabulary or invocation options report a safe remedy and exit 2.
 
 JSON output contains counts and per-note outcomes, including actual named
 confidence/probability or refusal. Text output escapes terminal controls.

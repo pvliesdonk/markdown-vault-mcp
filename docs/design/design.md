@@ -1895,7 +1895,12 @@ owners. No stored derivation or index schema changes.
 
 The CLI owns lazy collaborator assembly with models and persistent stores
 disabled, clears both Git URL and token before source validation/assembly,
-and retains native commit-only callbacks. See [the OKF design](okf.md#explicit-local-decisions-pass)
+and retains native commit-only callbacks. The scratch index admits untyped link
+targets without clearing writer or reserved-file requirements; native FTS
+resolution follows a FIFO drain and current-source refresh. Invalid raw YAML
+shapes refuse only their note and caller-owned reporting retains prior outcomes.
+Descriptions use complete prose blocks and URLs preserve percent escapes.
+See [the OKF design](okf.md#explicit-local-decisions-pass)
 and [operator usage](../use/okf.md#curate-metadata-with-decisions).
 
 ### OKF Read Semantics (phase 1, #960)

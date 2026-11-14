@@ -135,6 +135,9 @@ Python 3.13.
   structure". [source: gfm] [observed: markdown-it-py 3.0.0 with `table`,
   `para\n| a |\n|---|\n| b |` renders `<p>para</p><table>`]
 
+The Decisions paragraph candidate follows these boundaries before applying its
+280-character limit. [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
+
 ### What cannot interrupt a paragraph
 
 - Indented code: `aaa`/`    bbb` is one paragraph (§4.4, Ex. 223).

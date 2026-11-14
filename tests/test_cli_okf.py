@@ -11,13 +11,16 @@ import pytest
 from typer.testing import CliRunner
 
 from markdown_vault_mcp import _cli_okf
+from markdown_vault_mcp import cli as cli_module
 from markdown_vault_mcp._okf_decisions import DecisionsClient
 from markdown_vault_mcp.cli import app
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.managers.okf_decide import DecideReport
 from tests.fixtures.okf_decisions import accept_answers, vocabulary_text
 
 if TYPE_CHECKING:
     from pathlib import Path
+
 
 runner = CliRunner()
 
@@ -33,28 +36,44 @@ def _source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_okf_decide_cli_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The registered command produces a single report of real conditional writes."""
+    """CLI forwards selectors and nondefault policy and closes both owners."""
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
     _source(tmp_path, monkeypatch)
     (tmp_path / "note.md").write_text("Exact paragraph.")
-    captured: list[dict[str, Any]] = []
-    closed: list[bool] = []
+    captured: list[Any] = []
+    closed: list[str] = []
 
-    def respond(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
-        captured.append(payload)
-        return httpx.Response(
-            200, json={"answers": accept_answers(payload["questions"])}
-        )
-
-    class FixtureClient(DecisionsClient):
-        def __init__(self, base_url: str, api_key: str) -> None:
-            super().__init__(base_url, api_key, transport=httpx.MockTransport(respond))
+    class FixtureClient:
+        def __init__(self, *_args: Any) -> None:
+            pass
 
         def close(self) -> None:
-            closed.append(True)
-            super().close()
+            closed.append("client")
+
+    class FixtureManager:
+        def __init__(
+            self, _vault: Any, _client: Any, policy: Any, _vocabulary: Any, _guard: Any
+        ) -> None:
+            captured.append(policy)
+
+        def decide(
+            self, selection: Any, *, discovery: Any, report: DecideReport
+        ) -> DecideReport:
+            captured.extend([selection, discovery])
+            report.add({"path": "note.md", "disposition": "written"})
+            return report
 
     monkeypatch.setattr(_cli_okf, "DecisionsClient", FixtureClient)
+    monkeypatch.setattr(_cli_okf, "OkfDecisionManager", FixtureManager)
+    monkeypatch.setattr(
+        cli_module,
+        "_build_vault",
+        lambda **_kwargs: SimpleNamespace(
+            vault=object(), close=lambda: closed.append("vault")
+        ),
+    )
     assert runner.invoke(app, ["okf", "decide", "--help"]).exit_code == 0
     result = runner.invoke(
         app,
@@ -65,7 +84,7 @@ def test_okf_decide_cli_contract(
             "--since",
             "2026-01-01T00:00:00Z",
             "--threshold",
-            "type=0.8",
+            "type=0.87",
             "--json",
         ],
     )
@@ -73,40 +92,69 @@ def test_okf_decide_cli_contract(
     data = json.loads(result.stdout)
     assert data["counts"]["written"] == 1
     assert data["results"][0]["path"] == "note.md"
-    assert len(captured) == 1 and closed == [True]
+    policy, selection, discovery = captured
+    assert policy.thresholds["type"] == 0.87
+    assert selection.missing_type is True
+    assert selection.since == datetime(2026, 1, 1, tzinfo=UTC)
+    assert discovery == (["note.md"], [])
+    assert closed == ["vault", "client"]
     assert "synthetic-only" not in result.output
 
 
 @pytest.mark.parametrize(
-    "args",
+    "args,remedy",
     [
-        [],
-        ["--server", "https://example.invalid"],
-        ["--since", "2026-11-14"],
-        ["--missing-type", "--threshold", "unknown=0.5"],
-        ["--missing-type", "--threshold", "type=0.5", "--threshold", "type=0.6"],
-        ["--missing-type", "--replace-threshold", "0.8"],
-        ["--missing-type", "--threshold", "type=nan"],
+        ([], "--since|--missing-type"),
+        (["--server", "https://example.invalid"], "[Nn]o such option"),
+        (["--since", "2026-11-14"], "offset|aware|ISO"),
+        (["--since", "not-a-date"], "offset|aware|ISO"),
+        (
+            ["--missing-type", "--threshold", "unknown=0.5"],
+            "[Uu]nknown|[Ff]ields|type.*status",
+        ),
+        (
+            ["--missing-type", "--threshold", "type=0.5", "--threshold", "type=0.6"],
+            "repeated|duplicate",
+        ),
+        (["--missing-type", "--threshold", "type"], "KEY=|key=value|KEY=FLOAT"),
+        (["--missing-type", "--replace-threshold", "0.8"], "[Rr]eplace|replacement"),
+        (["--missing-type", "--threshold", "type=nan"], "finite|range|\\[0, ?1\\]"),
     ],
 )
 def test_decide_invalid_invocation_is_two(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str], remedy: str
 ) -> None:
     """Invalid request syntax/configuration is never reported as abstention."""
     _source(tmp_path, monkeypatch)
-    assert runner.invoke(app, ["okf", "decide", *args]).exit_code == 2
+    import re
+
+    result = runner.invoke(app, ["okf", "decide", *args])
+    assert result.exit_code == 2
+    assert re.search(remedy, result.output), result.output
+    assert "synthetic-only" not in result.output
 
 
 @pytest.mark.parametrize(
     "gate",
-    ["disabled", "no-path", "empty", "missing-key", "readonly", "bad-vocabulary"],
+    [
+        "disabled",
+        "no-path",
+        "empty",
+        "missing-key",
+        "readonly",
+        "bad-vocabulary",
+        "vocabulary-loop",
+        "source-loop",
+    ],
 )
+@pytest.mark.parametrize("json_output", [False, True])
 def test_disabled_or_empty_decide_never_initializes_models(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, gate: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, gate: str, json_output: bool
 ) -> None:
     """Gates precede factories, persistent stores and credentials validation."""
     _source(tmp_path, monkeypatch)
-    monkeypatch.delenv("MARKDOWN_VAULT_MCP_OKF_DECISIONS_API_KEY")
+    if gate not in {"readonly", "bad-vocabulary", "vocabulary-loop"}:
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_OKF_DECISIONS_API_KEY")
     if gate != "empty":
         (tmp_path / "note.md").write_text("A note.")
     if gate == "disabled":
@@ -116,17 +164,72 @@ def test_disabled_or_empty_decide_never_initializes_models(
     if gate == "readonly":
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
     if gate == "bad-vocabulary":
-        (tmp_path / "types.md").write_text("Not a vocabulary.")
+        (tmp_path / "types.md").write_text(
+            vocabulary_text().replace(
+                "  - {value: Runbook, description: Ordered steps.}\n", ""
+            )
+        )
+
+    if gate == "vocabulary-loop":
+        (tmp_path / "types.md").unlink()
+        (tmp_path / "types.md").symlink_to(tmp_path / "types.md")
+
+    if gate == "source-loop":
+        (tmp_path / "loop").symlink_to(tmp_path / "loop")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path / "loop"))
 
     def forbidden(*_args: Any, **_kwargs: Any) -> Any:
         pytest.fail("Gated command opened collaborators")
 
     monkeypatch.setattr(_cli_okf, "DecisionsClient", forbidden)
-    monkeypatch.setattr(_cli_okf, "_build_decide_vault", forbidden)
-    result = runner.invoke(app, ["okf", "decide", "--missing-type", "--json"])
+    monkeypatch.setattr(cli_module, "_build_vault", forbidden)
+    args = ["okf", "decide", "--missing-type"] + (["--json"] if json_output else [])
+    result = runner.invoke(app, args)
+    _assert_decide_gate(result, gate, json_output)
+
+
+def _assert_decide_gate(result: Any, gate: str, json_output: bool) -> None:
     assert result.exit_code == (
-        2 if gate in {"missing-key", "readonly", "bad-vocabulary"} else 0
+        2
+        if gate
+        in {
+            "missing-key",
+            "readonly",
+            "bad-vocabulary",
+            "vocabulary-loop",
+            "source-loop",
+        }
+        else 0
     ), result.output
+    if gate in {"disabled", "no-path"}:
+        assert "disabled" in result.stdout.lower()
+    elif gate == "source-loop":
+        assert "readable local source" in result.output.lower()
+    elif gate == "readonly":
+        assert (
+            "writable" in result.output.lower() or "read-only" in result.output.lower()
+        )
+    elif gate == "bad-vocabulary":
+        assert "2" in result.output and any(
+            word in result.output.lower() for word in ("choice", "option", "type")
+        )
+    elif gate == "missing-key":
+        assert (
+            "OKF_DECISIONS_API_KEY" in result.output
+            and "OPENAI_API_KEY" in result.output
+        )
+    elif gate == "vocabulary-loop":
+        assert (
+            "vocabulary" in result.output.lower()
+            and "synthetic-only" not in result.output
+        )
+    if json_output and gate in {"disabled", "no-path", "empty"}:
+        data = json.loads(result.stdout)
+        assert data["disabled"] is (gate != "empty")
+        assert data["results"] == [] and data["terminal_error"] is None
+        assert data["counts"] == dict.fromkeys(
+            ("written", "unchanged", "skipped", "conflict", "error"), 0
+        )
 
 
 @pytest.mark.parametrize(
@@ -136,12 +239,18 @@ def test_disabled_or_empty_decide_never_initializes_models(
         {"git_token": "synthetic-only"},
     ],
 )
+@pytest.mark.parametrize("summary", ["key", "url"])
 def test_decide_commit_only_snapshot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remote: dict[str, str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remote: dict[str, str],
+    summary: str,
 ) -> None:
     """Construction, first native write and close retain commits without remote sync."""
+    from markdown_vault_mcp import providers, summarizer
     from markdown_vault_mcp.git import _run
     from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+    from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
     from tests.conftest import wait_for_writer_drain
 
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
@@ -164,16 +273,36 @@ def test_decide_commit_only_snapshot(
 
     monkeypatch.setattr(_run.subprocess, "run", checked)
     monkeypatch.setattr(RepoBootstrap, "ensure_managed_repo", forbidden)
+    monkeypatch.setattr(providers, "get_embedding_provider", forbidden)
+    monkeypatch.setattr(summarizer, "get_summarizer", forbidden)
+    monkeypatch.setattr(PostgresVectorBackend, "__init__", forbidden)
+    values = (
+        {"summarize_openai_api_key": "synthetic-summary"}
+        if summary == "key"
+        else {"summarize_openai_base_url": "https://fixture.invalid/v1"}
+    )
+    sentinels = dict.fromkeys(
+        ("server.db", "state.db", "vectors.db"), b"fixture persistent store"
+    )
+    for name, content in sentinels.items():
+        (tmp_path / name).write_bytes(content)
     config = ProjectConfig(
         source_dir=tmp_path,
         read_only=False,
+        state_path=tmp_path / "state.db",
+        embeddings_path=tmp_path / "vectors.db",
         embedding_provider="openai",
         summarize_provider="openai",
-        summarize_openai_api_key="synthetic-summary",
+        embedding_store="postgres",
+        embedding_postgres_dsn="host=fixture.invalid",
+        embedding_postgres_schema="fixture",
+        **values,
         index_path=tmp_path / "server.db",
         **remote,
     )
-    built = _cli_okf._build_decide_vault(config, None)
+    built = cli_module._build_vault(
+        config=_cli_okf._local_config(config, None), scratch_index=True
+    )
     try:
         assert (
             built.settings is not None
@@ -184,7 +313,7 @@ def test_decide_commit_only_snapshot(
         wait_for_writer_drain(built.vault)
     finally:
         built.close()
-    assert not (tmp_path / "server.db").exists()
+    assert {name: (tmp_path / name).read_bytes() for name in sentinels} == sentinels
     assert subprocess.run(
         ["git", "-C", str(tmp_path), "log", "--format=%s"],
         capture_output=True,
@@ -289,7 +418,12 @@ def test_decide_sanitizes_all_model_and_storage_selectors(
         return "built-fixture"
 
     monkeypatch.setattr(cli, "_build_vault", capture)
-    assert _cli_okf._build_decide_vault(config, None) == "built-fixture"
+    assert (
+        cli_module._build_vault(
+            config=_cli_okf._local_config(config, None), scratch_index=True
+        )
+        == "built-fixture"
+    )
     cfg = snapshots[0]
     assert cfg.embedding_provider is None and not cfg.indexing.vector_storage_configured
     assert cfg.embedding_store == "sqlite" and cfg.embedding_search == "streamed"
@@ -307,8 +441,6 @@ def test_decide_lifecycle_failures_close_all_owners(
     """Every failure closes acquired owners and emits one safe structured report."""
     from unittest.mock import MagicMock
 
-    from markdown_vault_mcp.managers.okf_decide import DecideReport
-
     _source(tmp_path, monkeypatch)
     (tmp_path / "note.md").write_text("Fixture paragraph.")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
@@ -321,7 +453,10 @@ def test_decide_lifecycle_failures_close_all_owners(
             "answers": [{"name": "type", "confidence": 0.99}],
         }
     )
-    manager.decide.return_value = report
+    manager.decide.side_effect = lambda *_args, **kwargs: (
+        kwargs["report"].results.extend(report.results),
+        kwargs["report"].counts.update(report.counts),
+    )
     client_factory = MagicMock(return_value=client)
     builder = MagicMock(return_value=built)
     manager_factory = MagicMock(return_value=manager)
@@ -333,9 +468,13 @@ def test_decide_lifecycle_failures_close_all_owners(
         "vault-close": built.close,
         "client-close": client.close,
     }[failure]
+    if failure == "index":
+        manager.decide.side_effect = lambda *_args, **_kwargs: (
+            built.vault.index.build_index()
+        )
     target.side_effect = RuntimeError("synthetic-only private body")
     monkeypatch.setattr(_cli_okf, "DecisionsClient", client_factory)
-    monkeypatch.setattr(_cli_okf, "_build_decide_vault", builder)
+    monkeypatch.setattr(cli_module, "_build_vault", builder)
     monkeypatch.setattr(_cli_okf, "OkfDecisionManager", manager_factory)
     result = runner.invoke(app, ["okf", "decide", "--missing-type", "--json"])
     assert result.exit_code == 1
@@ -351,42 +490,6 @@ def test_decide_lifecycle_failures_close_all_owners(
         assert data["results"][0]["answers"][0]["confidence"] == 0.99
 
 
-@pytest.mark.parametrize("summary", ["key", "url"])
-def test_native_decide_assembly_never_opens_models_or_postgres(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, summary: str
-) -> None:
-    """Configured persistent/vector/model factories stay unopened on native writes."""
-    from markdown_vault_mcp import providers, summarizer
-    from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
-
-    def forbidden(*_args: Any, **_kwargs: Any) -> Any:
-        pytest.fail("Model or persistent PostgreSQL factory opened")
-
-    monkeypatch.setattr(providers, "get_embedding_provider", forbidden)
-    monkeypatch.setattr(summarizer, "get_summarizer", forbidden)
-    monkeypatch.setattr(PostgresVectorBackend, "__init__", forbidden)
-    values = (
-        {"summarize_openai_api_key": "fixture"}
-        if summary == "key"
-        else {"summarize_openai_base_url": "https://fixture.invalid/v1"}
-    )
-    config = ProjectConfig(
-        source_dir=tmp_path,
-        embedding_provider="fastembed",
-        embedding_store="postgres",
-        embedding_postgres_dsn="host=fixture.invalid",
-        embedding_postgres_schema="fixture",
-        index_path=tmp_path / "server.db",
-        **values,
-    )
-    built = _cli_okf._build_decide_vault(config, None)
-    try:
-        built.vault.writer.write("note.md", "Synthetic accepted note.")
-    finally:
-        built.close()
-    assert not (tmp_path / "server.db").exists()
-
-
 def test_empty_discovery_errors_need_no_key_or_builder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -398,7 +501,7 @@ def test_empty_discovery_errors_need_no_key_or_builder(
         pytest.fail("Empty discovery initialized a collaborator")
 
     monkeypatch.setattr(_cli_okf, "DecisionsClient", forbidden)
-    monkeypatch.setattr(_cli_okf, "_build_decide_vault", forbidden)
+    monkeypatch.setattr(cli_module, "_build_vault", forbidden)
     monkeypatch.setattr(
         _cli_okf,
         "discover_notes",
@@ -424,8 +527,6 @@ def test_text_decision_report_escapes_terminal_controls(
     """Text includes actual answers while untrusted paths cannot control a terminal."""
     from unittest.mock import MagicMock
 
-    from markdown_vault_mcp.managers.okf_decide import DecideReport
-
     _source(tmp_path, monkeypatch)
     (tmp_path / "note.md").write_text("Fixture.")
     report = DecideReport()
@@ -437,9 +538,12 @@ def test_text_decision_report_escapes_terminal_controls(
         }
     )
     client, built, manager = MagicMock(), MagicMock(), MagicMock()
-    manager.decide.return_value = report
+    manager.decide.side_effect = lambda *_args, **kwargs: (
+        kwargs["report"].results.extend(report.results),
+        kwargs["report"].counts.update(report.counts),
+    )
     monkeypatch.setattr(_cli_okf, "DecisionsClient", lambda *_args: client)
-    monkeypatch.setattr(_cli_okf, "_build_decide_vault", lambda *_args: built)
+    monkeypatch.setattr(cli_module, "_build_vault", lambda **_kwargs: built)
     monkeypatch.setattr(_cli_okf, "OkfDecisionManager", lambda *_args: manager)
     result = runner.invoke(app, ["okf", "decide", "--missing-type"])
     assert result.exit_code == 0
@@ -504,3 +608,34 @@ def test_review_native_invalid_configuration_returns_two(
     result = runner.invoke(app, ["okf", "decide", "--missing-type", "--json"])
     assert result.exit_code == 2
     assert "Invalid Decisions" in result.output
+
+
+def test_invalid_note_retains_cli_batch_outcomes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A per-note parser failure cannot erase completed writes or abandon later notes."""
+    _source(tmp_path, monkeypatch)
+    bad = "---\n1: bad key\n---\nSecond."
+    for name, text in (("a.md", "First."), ("b.md", bad), ("c.md", "Last.")):
+        (tmp_path / name).write_text(text)
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    class FixtureClient(DecisionsClient):
+        def __init__(self, base_url: str, api_key: str) -> None:
+            super().__init__(base_url, api_key, transport=httpx.MockTransport(respond))
+
+    monkeypatch.setattr(_cli_okf, "DecisionsClient", FixtureClient)
+    result = runner.invoke(
+        app, ["okf", "decide", "--since", "1970-01-01T00:00:00Z", "--json"]
+    )
+    assert result.exit_code == 1
+    assert "type: Reference" in (tmp_path / "a.md").read_text()
+    report = json.loads(result.stdout)
+    assert report["counts"]["written"] == 2 and report["counts"]["error"] == 1
+    assert [row["path"] for row in report["results"]] == ["a.md", "b.md", "c.md"]
+    assert (tmp_path / "b.md").read_text() == bad

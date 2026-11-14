@@ -83,7 +83,6 @@ def test_complete_decide_persists_once_with_etag(
         + original_body
     )
     calls: list[dict[str, Any]] = []
-    writes: list[tuple[str, Any]] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
@@ -99,7 +98,6 @@ def test_complete_decide_persists_once_with_etag(
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(read_only=False, okf_mode="on", okf_write=enforced),
-        on_write=lambda p, op, **_kw: writes.append((p, op)),
     )
     if enforced:
         vault.index.build_index()
@@ -148,8 +146,11 @@ def test_second_run_noop_has_no_side_effects(
 ) -> None:
     """Bytes, mtime, attestation, log and callbacks cannot move for abstentions."""
     (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    type_line = "type: Reference\n" if outcome == "equal" else ""
     (tmp_path / "note.md").write_text(
-        "---\ntype: Reference\nstatus: draft\ndescription: Keep.\ngenerated: {by: 'human:fixture', at: '2026-01-01T00:00:00Z'}\nverified: [{by: 'human:fixture', at: '2026-01-01T00:00:00Z'}]\n---\n\nBody.\n"
+        "---\n"
+        + type_line
+        + "status: draft\ndescription: Keep.\ngenerated: {by: 'human:fixture', at: '2026-01-01T00:00:00Z'}\nverified: [{by: 'human:fixture', at: '2026-01-01T00:00:00Z'}]\n---\n\nBody.\n"
     )
     calls: list[str] = []
 
@@ -174,7 +175,7 @@ def test_second_run_noop_has_no_side_effects(
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(read_only=False, okf_mode="on", okf_write=enforced),
-        on_write=lambda p, _op, **_kw: calls.append(p),
+        on_write=lambda p, _content, _op, **_kw: calls.append(p),
     )
     try:
         if enforced:
@@ -471,9 +472,27 @@ def test_prerequest_read_failures_keep_discovery_errors(
         vault.close()
 
 
-def test_review_discovery_bad_yaml_retains_other_notes(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "---\ncustom: [\n---\nBroken.",
+        "---\n1: bad key\n---\nNumeric.",
+        "---\n- operator\n- metadata\n---\nSequence.",
+        *(
+            f"---\n{root}\n---\nInvalid root."
+            for root in ("[]", "null", "false", "42", "scalar")
+        ),
+        "symlink-loop",
+    ],
+)
+def test_review_discovery_bad_yaml_retains_other_notes(
+    tmp_path: Path, bad: str
+) -> None:
     """Malformed YAML is an observable per-note discovery failure."""
-    (tmp_path / "a.md").write_text("---\ncustom: [\n---\nBroken.")
+    if bad == "symlink-loop":
+        (tmp_path / "a.md").symlink_to(tmp_path / "a.md")
+    else:
+        (tmp_path / "a.md").write_text(bad)
     (tmp_path / "b.md").write_text("Good.")
     paths, errors = module.discover_notes(
         tmp_path, DecideSelection(missing_type=True), "types.md"
@@ -498,7 +517,16 @@ def test_review_discovery_excludes_canonical_aliases(
 
 @pytest.mark.parametrize(
     "bad",
-    ["---\ncustom: [\n---\nBroken.", "---\ncustom: &cycle [*cycle]\n---\nCyclic."],
+    [
+        "---\ncustom: [\n---\nBroken.",
+        "---\ncustom: &cycle [*cycle]\n---\nCyclic.",
+        "---\n1: bad key\n---\nNumeric.",
+        "---\n- operator\n- metadata\n---\nSequence.",
+        *(
+            f"---\n{root}\n---\nInvalid root."
+            for root in ("[]", "null", "false", "42", "scalar")
+        ),
+    ],
 )
 def test_review_bad_metadata_keeps_prior_and_later_reports(
     tmp_path: Path, bad: str
@@ -535,7 +563,202 @@ def test_review_bad_metadata_keeps_prior_and_later_reports(
             "written",
         ]
         assert submitted == ["Path: a.md", "Path: c.md"]
+        assert (tmp_path / "b.md").read_text() == bad
         assert report.exit_code() == 1
+    finally:
+        client.close()
+        vault.close()
+
+
+@pytest.mark.parametrize("enforced", [False, True])
+@pytest.mark.parametrize("required", [False, True])
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("Evidence", "note.md", "facts/Evidence.md", []),
+        ("Proof", "note.md", "facts/Evidence.md", []),
+        ("Proof", "facts/note.md", "facts/Evidence.md", ["Evidence.md"]),
+        ("Evidence", "notes/note.md", "x/Evidence.md", ["long/Evidence.md"]),
+        ("Evidence", "facts/note.md", "Evidence.md", ["facts/Evidence.md"]),
+    ],
+)
+def test_native_wikilink_resolution_supplies_decision_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enforced: bool,
+    required: bool,
+    case: tuple[str, str, str, list[str]],
+) -> None:
+    """Scratch admission and native tie-breaks preserve writer requirement policy."""
+    stem, source, target, others = case
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    for name in [target, *others]:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("---\naliases: [Proof]\n---\nEvidence.")
+    (tmp_path / source).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / source).write_text("Initial body without links.")
+    events: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert events[-2:] == ["drained", "parsed"]
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1", "fixture", transport=httpx.MockTransport(respond)
+    )
+    settings = VaultSettings(
+        read_only=False,
+        okf_mode="on",
+        okf_write=enforced,
+        required_frontmatter=("operator",) if required else None,
+        attachment_extensions=(".PDF",),
+        title_field="name",
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    original_build = vault.index.build_index
+    original_drain = vault._coordinator.prepare_index_read
+    original_parse = module.parse_note
+
+    def build() -> Any:
+        result = original_build()
+        assert vault._fts.get_outlinks(source, limit=None) == []
+        (tmp_path / source).write_text(f"First paragraph.\n\n[[{stem}]]")
+        return result
+
+    def drain() -> None:
+        original_drain()
+        events.append("drained")
+
+    def parse(*args: Any, **kwargs: Any) -> Any:
+        assert events[-1] == "drained"
+        assert args[2] is vault._chunk_strategy
+        assert kwargs == {
+            "title_field": "name",
+            "attachment_extensions": frozenset({"pdf"}),
+        }
+        events.append("parsed")
+        return original_parse(*args, **kwargs)
+
+    monkeypatch.setattr(vault.index, "build_index", build)
+    monkeypatch.setattr(vault._coordinator, "prepare_index_read", drain)
+    monkeypatch.setattr(module, "parse_note", parse)
+    try:
+        report = OkfDecisionManager(
+            vault,
+            client,
+            DecisionPolicy(THRESHOLDS, okf_write=enforced),
+            load_vocabulary(tmp_path, "types.md"),
+        ).decide(DecideSelection(missing_type=True), discovery=([source], []))
+        assert report.counts["written"] == 1, report.results
+        assert fm.load(tmp_path / source)["sources"] == [{"resource": target}]
+        assert vault._index_mgr._required_frontmatter is None
+        assert settings.required_frontmatter == (("operator",) if required else None)
+        assert vault._required_frontmatter == (["operator"] if required else None)
+        assert vault._okf_migrate._reserved_frontmatter.required_fields == (
+            ("operator",) if required else ()
+        )
+        if enforced:
+            assert vault._okf_convention._reserved_frontmatter.required_fields == (
+                ("operator",) if required else ()
+            )
+            assert (
+                "operator" in fm.load((tmp_path / source).parent / "index.md")
+                if required
+                else True
+            )
+    finally:
+        client.close()
+        vault.close()
+
+
+def test_native_refresh_failure_keeps_prior_and_later_outcomes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed native refresh cannot supply graph evidence or erase batch outcomes."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    for name, body in (("a.md", "First."), ("b.md", "[[a]]"), ("c.md", "Last.")):
+        (tmp_path / name).write_text(body)
+    submitted: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        submitted.append(payload["input"][0]["content"][0]["text"])
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1", "fixture", transport=httpx.MockTransport(respond)
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+
+    def failed_refresh() -> None:
+        raise RuntimeError("synthetic private refresh error")
+
+    monkeypatch.setattr(vault._coordinator, "prepare_index_read", failed_refresh)
+    report = module.DecideReport()
+    try:
+        returned = OkfDecisionManager(
+            vault,
+            client,
+            DecisionPolicy(THRESHOLDS),
+            load_vocabulary(tmp_path, "types.md"),
+        ).decide(
+            DecideSelection(missing_type=True),
+            discovery=(["a.md", "b.md", "c.md"], []),
+            report=report,
+        )
+        assert returned is report
+        assert [r["disposition"] for r in report.results] == [
+            "written",
+            "error",
+            "written",
+        ]
+        assert submitted == ["Path: a.md", "Path: c.md"]
+        assert (tmp_path / "b.md").read_text() == "[[a]]"
+        assert "synthetic private" not in json.dumps(report.results)
+    finally:
+        client.close()
+        vault.close()
+
+
+@pytest.mark.parametrize("header", ["", "---\n \n---\n", "---\nUnclosed header.\n"])
+def test_empty_or_unclosed_frontmatter_retains_body_on_write(
+    tmp_path: Path, header: str
+) -> None:
+    """Absent/empty/unclosed headers admit prose without discarding original bytes."""
+    (tmp_path / "types.md").write_text(vocabulary_text(durations=False))
+    original = header + "Literal body."
+    (tmp_path / "note.md").write_text(original)
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["input"][0]["content"][2]["text"] == strip_frontmatter_block(
+            original
+        )
+        return httpx.Response(
+            200, json={"answers": accept_answers(payload["questions"])}
+        )
+
+    client = DecisionsClient(
+        "https://fixture.invalid/v1", "fixture", transport=httpx.MockTransport(respond)
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        report = OkfDecisionManager(
+            vault,
+            client,
+            DecisionPolicy(THRESHOLDS),
+            load_vocabulary(tmp_path, "types.md"),
+        ).decide(DecideSelection(missing_type=True))
+        assert report.counts["written"] == 1, report.results
+        assert strip_frontmatter_block(
+            (tmp_path / "note.md").read_text()
+        ) == strip_frontmatter_block(original)
     finally:
         client.close()
         vault.close()

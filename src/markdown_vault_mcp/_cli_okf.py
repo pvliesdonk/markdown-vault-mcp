@@ -7,9 +7,10 @@ from contextlib import ExitStack
 from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, NoReturn
+from typing import Annotated, NoReturn
 
 import typer
+import yaml
 from pydantic_core import to_jsonable_python
 
 from markdown_vault_mcp._cli_output import terminal_text
@@ -22,21 +23,24 @@ from markdown_vault_mcp.git.submodules import SubmoduleGuard
 from markdown_vault_mcp.managers.okf_decide import (
     DecideReport,
     DecideSelection,
+    DecisionInputError,
     DecisionPolicy,
     OkfDecisionManager,
+    Vocabulary,
     discover_notes,
     load_vocabulary,
 )
 from markdown_vault_mcp.okf import OkfDetector
 
-if TYPE_CHECKING:
-    from markdown_vault_mcp.cli import _BuiltVault
-
 
 def _local_config(config: ProjectConfig, source_dir: str | None) -> ProjectConfig:
+    try:
+        root = Path(source_dir or config.source_dir).resolve()
+    except RuntimeError:
+        raise DecisionInputError("Use a readable local source directory.") from None
     return replace(
         config,
-        source_dir=Path(source_dir or config.source_dir).resolve(),
+        source_dir=root,
         git_repo_url=None,
         git_token=None,
         embedding_provider=None,
@@ -53,12 +57,6 @@ def _local_config(config: ProjectConfig, source_dir: str | None) -> ProjectConfi
     )
 
 
-def _build_decide_vault(config: ProjectConfig, source_dir: str | None) -> _BuiltVault:
-    from markdown_vault_mcp.cli import _build_vault
-
-    return _build_vault(config=_local_config(config, source_dir), scratch_index=True)
-
-
 def _policy(
     config: ProjectConfig,
     overrides: list[str],
@@ -71,17 +69,46 @@ def _policy(
     }
     seen = set()
     for override in overrides:
-        key, value = override.split("=", 1)
+        try:
+            key, value = override.split("=", 1)
+            number = float(value)
+        except ValueError:
+            raise DecisionInputError(
+                "Use --threshold KEY=FLOAT with a finite number."
+            ) from None
         if key not in thresholds or key in seen:
-            raise ValueError("Unknown or repeated threshold.")
+            raise DecisionInputError(
+                "Unknown or repeated threshold field; use each field once."
+            )
         seen.add(key)
-        thresholds[key] = float(value)
+        thresholds[key] = number
     return DecisionPolicy(
         thresholds,
         config.okf_decisions_replace_threshold if replacement is None else replacement,
         config.okf_decisions_meaningful_threshold if meaningful is None else meaningful,
         config.okf_write,
     )
+
+
+def _selection(since: str | None, missing_type: bool) -> DecideSelection:
+    try:
+        parsed_since = datetime.fromisoformat(since) if since else None
+    except ValueError:
+        raise DecisionInputError(
+            "Use an offset-aware ISO datetime for --since."
+        ) from None
+    return DecideSelection(parsed_since, missing_type)
+
+
+def _vocabulary(root: Path, path: str) -> Vocabulary:
+    try:
+        return load_vocabulary(root, path)
+    except DecisionInputError:
+        raise
+    except (OSError, ValueError, TypeError, RuntimeError, yaml.YAMLError):
+        raise DecisionInputError(
+            "Use a contained readable ordinary vocabulary with valid YAML."
+        ) from None
 
 
 def _render(report: DecideReport, json_output: bool) -> NoReturn:
@@ -92,6 +119,8 @@ def _render(report: DecideReport, json_output: bool) -> NoReturn:
         for result in data["results"]:
             typer.echo(terminal_text(json.dumps(result, ensure_ascii=False)))
         typer.echo(f"{report.counts} {report.terminal_error or ''}")
+        if report.disabled:
+            typer.echo("Decisions disabled: enable OKF and configure a types path.")
     raise typer.Exit(report.exit_code())
 
 
@@ -126,12 +155,12 @@ def register_okf_commands(okf: typer.Typer) -> None:
         ),
     ) -> None:
         """Apply closed metadata decisions to explicitly selected local notes."""
+        from markdown_vault_mcp.cli import _build_vault
+
         report = DecideReport()
         try:
             config = _local_config(ProjectConfig.from_env(), source_dir)
-            selection = DecideSelection(
-                datetime.fromisoformat(since) if since else None, missing_type
-            )
+            selection = _selection(since, missing_type)
             policy = _policy(
                 config, threshold or [], replace_threshold, meaningful_threshold
             )
@@ -139,10 +168,10 @@ def register_okf_commands(okf: typer.Typer) -> None:
                 not config.okf_types_path
                 or not OkfDetector(config.source_dir, config.okf_mode).state().active
             ):
-                _render(DecideReport(), json_output)
+                _render(DecideReport(disabled=True), json_output)
             if config.read_only or source_dir_problem(config):
-                raise ValueError("Requires a writable local source directory.")
-            vocabulary = load_vocabulary(config.source_dir, config.okf_types_path)
+                raise DecisionInputError("Requires a writable local source directory.")
+            vocabulary = _vocabulary(config.source_dir, config.okf_types_path)
             excludes = VaultSettings(
                 exclude_patterns=config.exclude,
                 conventions_file=config.conventions_file,
@@ -156,10 +185,17 @@ def register_okf_commands(okf: typer.Typer) -> None:
                     report.add(error)
                 _render(report, json_output)
             if not config.okf_decisions_api_key:
-                raise ValueError("Set OKF_DECISIONS_API_KEY or OPENAI_API_KEY.")
-        except (OSError, UnicodeError, ValueError, ConfigurationError) as error:
+                raise DecisionInputError("Set OKF_DECISIONS_API_KEY or OPENAI_API_KEY.")
+        except DecisionInputError as error:
+            raise typer.BadParameter(str(error)) from error
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            ConfigurationError,
+        ) as error:
             raise typer.BadParameter(
-                "Invalid Decisions selection, configuration or vocabulary; check the local source, key and thresholds."
+                "Invalid Decisions configuration: use finite [0,1] thresholds, replacement above type/status, a valid HTTP(S) endpoint and a readable local source."
             ) from error
         try:
             with ExitStack() as stack:
@@ -167,13 +203,11 @@ def register_okf_commands(okf: typer.Typer) -> None:
                     config.okf_decisions_base_url, config.okf_decisions_api_key
                 )
                 stack.callback(client.close)
-                built = _build_decide_vault(config, None)
+                built = _build_vault(config=config, scratch_index=True)
                 stack.callback(built.close)
-                if config.okf_write:
-                    built.vault.index.build_index()
-                report = OkfDecisionManager(
+                OkfDecisionManager(
                     built.vault, client, policy, vocabulary, guard
-                ).decide(selection, discovery=discovery)
+                ).decide(selection, discovery=discovery, report=report)
         except Exception:
             report.terminal_error = "Cannot complete local Decisions pass safely."
             report.counts["error"] += 1
