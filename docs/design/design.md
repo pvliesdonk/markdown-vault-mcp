@@ -2257,9 +2257,10 @@ Two MCP tools create tokens and return the capability URL:
   read-only mode). Validates that `path` exists before minting the token (fail-fast).
   Returns `{url, path, expires_at, expires_in_seconds}`.
 - **`create_upload_link(path, ttl_seconds=None)`**: write tool (hidden in
-  read-only mode). Validates the destination path (traversal + extension check)
-  at link-creation time, rejecting existing files under the default overwrite
-  protection before minting a capability. Returns the same shape.
+  read-only mode). Validates the destination path (traversal, extension and
+  submodule boundary checks) at link-creation time, rejecting existing files
+  under the default overwrite protection before minting a capability. Returns
+  the same shape.
 
 Both tools require `MARKDOWN_VAULT_MCP_BASE_URL` and raise `ValueError` when it
 is unset. Both tools are hidden when the transport is stdio (no HTTP server to
@@ -6421,8 +6422,8 @@ The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
 refuse nothing, since nothing is committed there. A plain repository nested
 in the vault that is not a submodule is not detected (#1949). Issue #1950
-tracks early submodule refusal and convention refresh: upload links now refuse
-before minting; `fetch` preflight and OKF refresh traversal remain pending.
+tracks caller timing for upload-link admission, fetch downloads and OKF refresh
+after folder moves.
 What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
