@@ -242,6 +242,80 @@ than a per-vault authoring task.
 
 ---
 
+### Skill metadata reads
+
+Resolved exact case-sensitive `SKILL.md` basenames use a pure effective OKF projection
+for the six families `type`, `status`, `generated`, `verified`, `sources`,
+and `stale_after`. Those values come only from a mapping-valued `metadata`
+slot; missing, null, blank or non-string type infers `Skill`. Unknown valid
+type strings stay valid. Conflicting top-level families cannot supply missing
+nested values. Other keys, ordinary notes and lowercase `skill.md` stay literal.
+Parser authority is an optional transient scalar, separate from lexical row
+paths, titles, folders and links. Readers resolve indexed spellings and reread current typed frontmatter for skills. Indexed outside-root farm
+rows retain their native metadata access; whole reads/writes retain containment.
+
+The [Agent Skills reference](reference/agent-skills.md) records the deliberate
+tolerance of structured values beyond its string-map producer contract.
+No extras block is consulted. The projection never changes raw frontmatter,
+stored `frontmatter_json`, body or source bytes. Existing read annotations,
+computed filters/ranking, stats, audit and graph labels share the projection;
+full-read annotations also expose a supplied `generated` mapping. Search
+annotations retain source counts. Exact structured queries keep literal paths.
+
+Configured tag derivation preserves literal rows and adds effective copies
+for the six OKF families, including ordinary notes. One shared allocator
+repeats an internal key prefix until it avoids every configured literal name;
+no user name is reserved. Active keyword filters, snippet re-queries and
+`list_tags` select those effective keys. Semantic/list matching keeps original
+field names against the projected mapping. Exact queries/counts/groups retain
+literal rows. Filtering stays in native SQL before the keyword candidate cap.
+
+Both tag views exist regardless of mode, so reopening active/off with identical
+configured fields needs no rebuild. This costs additional tag rows, not a new
+table or schema. Internal keys are not a security boundary: unsupported guessed
+names can reach derived rows through keyword filters; public `list_tags` and
+exact queries retain registration validation. No fields are automatically
+registered when OKF is off; inactive filters/ranking keep existing semantics.
+Index semantics version 12 rebuilds unchanged skills' tags once; no on-disk
+note migration is required. Shared-index adoption refuses absent, older,
+malformed or newer semantics versions and requires the same complete indexed
+field set. Canonical sorted JSON preserves field boundaries while ignoring
+order and duplicates. A distinct metadata key separates this evidence from
+legacy comma text, even when that text looks like JSON. Missing evidence
+requires one owning-process rebuild; a shared reader refuses without writing
+or scanning. Other stored producer settings remain authoritative.
+
+Interpreted skill consumers read and parse current skill frontmatter to retain
+YAML types lost by JSON storage, then project only the six families. Unrelated
+held discovery fields, ordinary notes and inactive reads keep their prior views.
+Native read/parse faults propagate; async annotation reads stay in workers.
+
+Each search or filtered listing captures activation once and reuses it through
+filtering, ranking and snippet selection. The next request probes again.
+
+Native writes and `okf_verify` select authority by resolved note identity. With
+`OKF_WRITE` active, content writes replace nested `generated` and clear nested
+`verified`; verification appends there and reports its effective count. The
+mutation copies valid nested mappings, preserves unrelated members and literal
+top-level conflicts, and creates a mapping for absent/malformed slots. It never
+persists the inferred `Skill` type. Ordinary and lowercase targets retain root
+mutations. The existing two-argument enrichment callback is unchanged: its
+native target travels through the existing request intent only during enrichment.
+Verification conditionally writes the resolved path and etag returned by its
+read, while responses retain the caller path. Native dirty refresh snapshots
+live and tombstone names once, then refreshes original inputs and known in-vault
+spellings of their resolved targets. It discovers no new aliases or targets.
+Identity faults preserve original retry input while healthy refreshes still
+notify embeddings; retries recompute the current population. Filesystem writes
+and SQL refresh are asynchronous, not a cross-store transaction. External
+symlink retargeting gains no new watcher policy. Explicit reindex supplements
+byte changes with a comparison of stored tags against the current resolved
+authority, using the same row derivation as insertion. Warm reuse performs
+that read-only comparison too, reading and parsing current live frontmatter
+to retain YAML value types; mismatches dispatch the native rebuild while
+unchanged aliases retain warm reuse. Raw hashes and etags remain byte-based.
+The dirty population snapshot selects only paths, including tombstones.
+
 ## 4. Layer 2 — query dimensions, and `okf_validate`
 
 *Status:* both halves implemented (#961, #962); `design.md`'s "OKF Read
@@ -326,7 +400,7 @@ is both deprecated and stale sinks below either alone. The pure re-ranker
 `apply_okf_downweight` (alongside `apply_folder_boost`) runs as the conservative
 last score mutation — immediately after the folder boost, before grouping — in
 all three channels (keyword, semantic, hybrid), gated on
-`self._okf.state().active`; the per-hit OKF factor comes from the same
+the request's activation snapshot; the per-hit OKF factor comes from the same
 `get_note` → frontmatter → `derive_annotation` path the annotation and filter
 layers use, memoised per path. It mirrors `apply_folder_boost` in scaling only
 positive scores, so a negative cosine is never promoted. On any vault where

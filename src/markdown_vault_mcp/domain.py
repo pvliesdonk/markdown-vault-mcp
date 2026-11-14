@@ -323,10 +323,9 @@ class Service:
         await asyncio.to_thread(vault.sync_from_remote_before_index)
 
         # Submit the initial build jobs to the IndexWriter and yield
-        # immediately (#559). build_index_async() short-circuits in
-        # O(1) on warm restarts (existing FTS sentinel from PR #526);
-        # cold restarts submit a BuildIndex job that the writer
-        # processes asynchronously while the lifespan yields.
+        # immediately (#559). The writer validates warm metadata or runs
+        # a cold build; neither performs filesystem reads on this event loop.
+        # The build Future completes after validation and readiness publication.
         # Bucket-3 tools block on @needs_queryable until the build
         # completes; bucket-2 tools return whatever is currently in
         # the index per #526.
@@ -334,10 +333,9 @@ class Service:
         logger.info("build_index_job_submitted")
 
         # Reconcile offline changes (#665): files added, modified, or
-        # deleted while no server was running are invisible to both the
-        # warm-restart short-circuit above (O(1), no filesystem scan) and
-        # the file watcher below (future events only).  Enqueue an
-        # incremental reindex behind the build: the writer's FIFO ordering
+        # deleted while no server was running need full discovery beyond
+        # warm known-row metadata validation and the watcher (future events
+        # only). Enqueue an incremental reindex behind the build: FIFO ordering
         # guarantees build-before-reindex, and on a cold boot the full
         # build has just recorded tracker state (including skipped files),
         # so the reindex degenerates to a cheap hash scan instead of a
@@ -355,14 +353,11 @@ class Service:
             vault.adopt_boot_reindex(vault.index.reindex_async(), head_at_boot)
             logger.info("boot_reindex_job_submitted")
         else:
-            # Offline changes (files added/modified/deleted while no server
-            # was running) stay invisible to the index until an explicit
-            # reindex runs — either the `reindex` tool or the
-            # `markdown-vault-mcp reindex` CLI command.  Accepting the index
-            # at the boot HEAD keeps that trade: later pulls that move HEAD
-            # still reindex.  This records the git HEAD the index is taken
-            # to reflect; get_index_status still reports offline_changes as
-            # not reconciled, because nothing compared the index with disk.
+            # Other offline changes wait for an explicit reindex, via the
+            # tool or CLI. Accepting the boot HEAD keeps that trade: later
+            # pulls that move HEAD still reindex. Warm known-row validation
+            # does not discover every file, so get_index_status reports
+            # offline_changes as not reconciled until a full scan completes.
             vault.mark_index_reconciled(head_at_boot)
             logger.info("boot_reindex_disabled reason=config")
 

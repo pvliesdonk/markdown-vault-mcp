@@ -357,7 +357,7 @@ class TestSkipStateMemory:
     def test_build_index_records_skips_so_first_reindex_is_quiet(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A reindex right after a full build re-parses nothing (boot path)."""
+        """A reindex after a full build reuses chunks after metadata validation."""
         vault = self._vault_with_skip(tmp_path)
         mgr, _fts, _ = _make_index_mgr(vault, tmp_path, required_frontmatter=["title"])
         mgr.build_index()
@@ -1872,6 +1872,197 @@ class TestProcessDirtyPaths:
         assert fts.get_note("alpha.md") is not None
         assert fts.get_note("bogus.md") is None
 
+    def test_alias_refresh_preserves_known_population(
+        self, tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Batch selection resolves each known spelling once without discovering targets."""
+        from collections import Counter
+        from pathlib import Path
+
+        target, alias, _, _ = alias_note
+        mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path)
+        mgr.build_index()
+        fts.delete_by_path(target)
+        (tmp_path / "unknown.md").symlink_to(tmp_path / target)
+        calls = Counter()
+        resolutions = Counter()
+        native = False
+        resolve = Path.resolve
+        process = mgr._process_dirty_path
+
+        def counted_resolve(path: Path, *args: Any, **kwargs: Any) -> Path:
+            if not native and path in (
+                tmp_path / target,
+                tmp_path / alias,
+                tmp_path / "unknown.md",
+            ):
+                resolutions[path.relative_to(tmp_path).as_posix()] += 1
+            return resolve(path, *args, **kwargs)
+
+        def process_one(path: str) -> None:
+            nonlocal native
+            native = True
+            try:
+                process(path)
+            finally:
+                native = False
+
+        monkeypatch.setattr(mgr, "_process_dirty_path", process_one)
+        for name in ("list_document_paths",):
+            original = getattr(fts, name)
+
+            def listed(_name=name, _original=original):
+                calls[_name] += 1
+                return _original()
+
+            monkeypatch.setattr(fts, name, listed)
+        monkeypatch.setattr(Path, "resolve", counted_resolve)
+        inputs = {alias}
+        refreshed = set()
+        mgr.process_dirty_paths(inputs, on_refreshed=refreshed.add)
+        assert inputs == {alias} and refreshed == {alias}
+        assert fts.get_note(target) is fts.get_note("unknown.md") is None
+        assert calls == {"list_document_paths": 1}
+        assert resolutions == {alias: 1}
+        calls.clear()
+        mgr.process_dirty_paths(set())
+        assert not calls
+        mgr.process_dirty_paths({target})
+        assert fts.get_note(target) is not None
+        assert fts.get_note("unknown.md") is None
+
+    @pytest.mark.parametrize(
+        "fault_kind",
+        ["resolve", "resolve-stat", "stat", "parse", "input-resolve", "input-parse"],
+    )
+    def test_alias_refresh_resolution_failure_keeps_healthy_callbacks(
+        self,
+        tmp_path: Path,
+        alias_note,
+        monkeypatch: pytest.MonkeyPatch,
+        fault_kind: str,
+    ) -> None:
+        """A genuine sibling fault survives graph recovery while healthy rows advance."""
+        from pathlib import Path
+
+        import markdown_vault_mcp.managers.index as index_mod
+
+        target, alias, _, _ = alias_note
+        mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path)
+        mgr.build_index()
+        (tmp_path / "healthy.md").symlink_to(tmp_path / target)
+        mgr.process_dirty_paths({"healthy.md"})
+        fault = PermissionError("synthetic sibling refusal")
+        resolve, stat_file, parse = (
+            Path.resolve,
+            index_mod.is_regular_file,
+            index_mod.parse_note,
+        )
+
+        def resolve_one(path: Path, *args: Any, **kwargs: Any) -> Path:
+            if (
+                fault_kind in {"resolve", "resolve-stat"} and path == tmp_path / alias
+            ) or (fault_kind == "input-resolve" and path == tmp_path / target):
+                raise fault
+            return resolve(path, *args, **kwargs)
+
+        def stat_one(path: Path) -> bool:
+            if fault_kind in {"stat", "resolve-stat"} and path == tmp_path / alias:
+                raise fault
+            return stat_file(path)
+
+        def parse_one(path: Path, *args: Any, **kwargs: Any):
+            if (fault_kind == "parse" and path == tmp_path / alias) or (
+                fault_kind == "input-parse" and path == tmp_path / target
+            ):
+                raise fault
+            return parse(path, *args, **kwargs)
+
+        def failed_graph() -> None:
+            raise ValueError("secondary graph recovery")
+
+        monkeypatch.setattr(Path, "resolve", resolve_one)
+        monkeypatch.setattr(index_mod, "is_regular_file", stat_one)
+        monkeypatch.setattr(index_mod, "parse_note", parse_one)
+        monkeypatch.setattr(fts, "resolve_vault_wikilinks", failed_graph)
+        refreshed = set()
+        with pytest.raises(PermissionError) as caught:
+            mgr.process_dirty_paths({target, "healthy.md"}, on_refreshed=refreshed.add)
+        assert caught.value is fault
+        assert refreshed == (
+            {alias, "healthy.md"}
+            if fault_kind.startswith("input-")
+            else {target, "healthy.md"}
+        )
+
+    @pytest.mark.parametrize(
+        "case", ["farm", "excluded-farm", "input-loop", "unrelated-loop"]
+    )
+    def test_alias_refresh_retains_native_input_policy(
+        self, tmp_path: Path, case: str
+    ) -> None:
+        """Eligibility never prevents native farm refresh, exclusion purge or loop deletion."""
+        source = tmp_path / "vault"
+        source.mkdir()
+        outside = tmp_path / "outside.md"
+        outside.write_text("# Old zebra")
+        native = source / "native.md"
+        native.symlink_to(outside)
+        (source / "healthy.md").write_text("# Healthy zebra")
+        mgr, fts, _ = _make_index_mgr(source, tmp_path)
+        mgr.build_index()
+        old = fts.get_note("native.md")["content_hash"]
+        if "loop" in case:
+            native.unlink()
+            native.symlink_to(native)
+        else:
+            outside.write_text("# New zebra")
+        if case == "excluded-farm":
+            mgr, _, _ = _make_index_mgr(
+                source, tmp_path, fts=fts, exclude_patterns=["native.md"]
+            )
+        refreshed = set()
+        mgr.process_dirty_paths(
+            {"healthy.md" if case == "unrelated-loop" else "native.md"},
+            on_refreshed=refreshed.add,
+        )
+        if case == "farm":
+            assert fts.get_note("native.md")["content_hash"] != old
+        elif case == "unrelated-loop":
+            assert fts.get_note("native.md")["content_hash"] == old
+            assert refreshed == {"healthy.md"}
+        else:
+            assert fts.get_note("native.md") is None
+            assert refreshed == {"native.md"}
+
+    @pytest.mark.parametrize("original", [False, True])
+    def test_alias_refresh_resolution_race_uses_native_absence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, original: bool
+    ) -> None:
+        """A candidate turning into a loop during resolution retains native absence semantics."""
+        from pathlib import Path
+
+        for name in ("healthy.md", "native.md"):
+            (tmp_path / name).write_text("# Zebra")
+        mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path)
+        mgr.build_index()
+        resolve = Path.resolve
+
+        def raced(path: Path, *args: Any, **kwargs: Any) -> Path:
+            if path == tmp_path / "native.md":
+                path.unlink()
+                path.symlink_to(path)
+                raise RuntimeError("synthetic symlink race")
+            return resolve(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", raced)
+        refreshed = set()
+        mgr.process_dirty_paths(
+            {"native.md" if original else "healthy.md"}, on_refreshed=refreshed.add
+        )
+        assert (fts.get_note("native.md") is None) is original
+        assert refreshed == ({"native.md"} if original else {"healthy.md"})
+
 
 # ---------------------------------------------------------------------------
 # flush_dirty_embeddings with explicit snapshot
@@ -2723,3 +2914,40 @@ class TestReindexCheckpointing:
 
         assert result.modified == 4
         assert spy.call_count == 2
+
+
+def test_alias_population_sweep_reads_only_paths(tmp_path: Path) -> None:
+    """Known live and tombstone siblings are selected without materializing metadata."""
+    from markdown_vault_mcp.types import SkippedFile
+
+    (tmp_path / "target.md").write_text("# Zebra\n\nzebra\n")
+    for name in ("live.md", "skipped.md", "unknown.md"):
+        (tmp_path / name).symlink_to("target.md")
+    mgr, fts, _ = _make_index_mgr(tmp_path, tmp_path)
+    mgr.build_index()
+    fts.delete_by_path("unknown.md")
+    fts.upsert_tombstone(
+        SkippedFile(
+            path="skipped.md", category="missing_frontmatter", detail="fixture"
+        ),
+        content_hash="fixture",
+        modified_at=0,
+    )
+    queries: list[str] = []
+    fts._conn().set_trace_callback(queries.append)
+    try:
+        selected, fault = mgr._expanded_dirty_paths({"target.md"})
+    finally:
+        fts._conn().set_trace_callback(None)
+    assert fault is None
+    assert selected == {"target.md", "live.md", "skipped.md"}
+    selects = [
+        query.lower()
+        for query in queries
+        if query.lstrip().lower().startswith("select")
+    ]
+    assert selects
+    assert all(
+        "frontmatter_json" not in query and "skip_detail" not in query
+        for query in selects
+    )

@@ -505,6 +505,8 @@ def _local_search(
             # are only read: this shell does not own them.
             if by_meaning and not configured.vector_storage_configured:
                 _embed_in_memory(built.vault)
+        else:
+            built.vault.index.use_existing_index()
         try:
             results = built.vault.reader.search(
                 query,
@@ -526,6 +528,7 @@ def _local_search(
         return annotate_hits(
             [asdict(r) for r in results],
             derive_annotation if built.vault.okf.state().active else None,
+            source_dir=built.vault.source_dir,
         )
     finally:
         built.close()
@@ -558,10 +561,9 @@ def reindex(
     quiet_http_loggers()
     built = _build_owning_vault("admin reindex", source_dir, index_path)
     try:
-        # reindex() needs a built index (#525); build_index() is a cheap no-op
-        # when the index is already populated (a SQL row-count check, no
-        # filesystem scan) and the recorded build provenance still matches
-        # this process (#1124).
+        # reindex() needs a built index (#525); build_index() reuses chunks
+        # when provenance and current typed tag authority match. Otherwise the
+        # native coordinator rebuilds (#1124).
         built.vault.index.build_index(force=force)
         result = built.vault.index.reindex()
         if result.vault_root_empty:

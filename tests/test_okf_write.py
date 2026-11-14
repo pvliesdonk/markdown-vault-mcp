@@ -73,28 +73,48 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 
 class TestApplyOkfWriteStamp:
-    def test_stamps_generated_on_a_note_without_frontmatter(self) -> None:
-        out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", now=_NOW)
-        post = fm.loads(out)
-        assert post.metadata["generated"] == {"by": "a/1", "at": _ISO}
-        assert "Body." in post.content
-
-    def test_clears_verified_on_content_change(self) -> None:
+    @pytest.mark.parametrize(
+        "slot", [None, "", "metadata: null\n", "metadata: wrong\n", "metadata: []\n"]
+    )
+    def test_stamps_generated_on_a_note_without_frontmatter(
+        self, slot: str | None
+    ) -> None:
         text = (
-            "---\n"
-            "verified:\n"
-            "  - by: human:peter\n"
-            "    at: 2026-01-01\n"
-            "title: T\n"
-            "---\n"
-            "# T\n"
+            "# Note\n\nBody.\n"
+            if slot is None
+            else "---\nname: demo\ntype: Literal\n" + slot + "---\nBody.\n"
         )
-        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW)
-        meta = fm.loads(out).metadata
-        assert "verified" not in meta
-        assert meta["generated"] == {"by": "human:x", "at": _ISO}
-        # Unrelated fields survive.
-        assert meta["title"] == "T"
+        out = apply_okf_write_stamp(
+            text, actor="a/1", now=_NOW, path=None if slot is None else "SKILL.md"
+        )
+        post = fm.loads(out)
+        authority = post.metadata if slot is None else post.metadata["metadata"]
+        assert authority["generated"] == {"by": "a/1", "at": _ISO}
+        assert "Body." in post.content
+        if slot is not None:
+            assert post.metadata["name"] == "demo"
+            assert post.metadata["type"] == "Literal"
+            assert set(authority) == {"generated"}
+
+    @pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
+    def test_clears_verified_on_content_change(self, path: str | None) -> None:
+        text = (
+            "---\nverified: [{by: 'human:peter', at: 2026-01-01}]\ntitle: T\ntype: Literal\n"
+            "metadata:\n  custom: keep\n  generated: {by: 'human:original', custom: retained}\n"
+            "  verified: {by: 'human:previous'}\n---\n# T\n"
+        )
+        meta = fm.loads(
+            apply_okf_write_stamp(text, actor="human:x", now=_NOW, path=path)
+        ).metadata
+        slot = meta["metadata"] if path == "SKILL.md" else meta
+        assert "verified" not in slot
+        assert slot["generated"] == {"by": "human:x", "at": _ISO}
+        assert meta["title"] == "T" and meta["type"] == "Literal"
+        assert meta["metadata"]["custom"] == "keep"
+        if path == "SKILL.md":
+            assert meta["verified"] == [
+                {"by": "human:peter", "at": _dt.date(2026, 1, 1)}
+            ]
 
     def test_preserves_sources_and_other_fields(self) -> None:
         text = (
@@ -179,17 +199,28 @@ class TestAppendOkfVerification:
         assert post.metadata["title"] == "T"
         assert "Body line." in post.content
 
-    def test_a_bare_mapping_is_kept_as_the_first_entry(self) -> None:
-        # The spec's single-verifier shorthand is a one-element list; the
-        # existing attestation must survive the append (#1357).
-        text = "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# N\n"
+    @pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
+    def test_a_bare_mapping_is_kept_as_the_first_entry(self, path: str | None) -> None:
+        """The selected shorthand entry survives, with the new attestation appended."""
+        text = (
+            "---\ntype: Literal\nverified: {by: 'human:alice', at: 2026-01-01}\n"
+            "metadata:\n  custom: keep\n  generated: {by: 'human:original', custom: retained}\n"
+            "  verified: {by: 'human:previous'}\n---\n# N\n"
+        )
         meta = fm.loads(
-            append_okf_verification(text, subject="peter", now=_NOW)
+            append_okf_verification(text, subject="peter", now=_NOW, path=path)
         ).metadata
-        assert meta["verified"] == [
-            {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
+        nested = path == "SKILL.md"
+        entries = (meta["metadata"] if nested else meta)["verified"]
+        assert entries == [
+            {"by": "human:previous"}
+            if nested
+            else {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
             {"by": "human:peter", "at": _ISO},
         ]
+        assert meta["type"] == "Literal" and meta["metadata"]["custom"] == "keep"
+        if nested:
+            assert meta["verified"] == {"by": "human:alice", "at": _dt.date(2026, 1, 1)}
 
     def test_scalar_verified_is_replaced(self) -> None:
         # A malformed scalar verified is treated as empty, not crashed on.
@@ -755,11 +786,13 @@ class TestOkfVerifyTrustAuth:
 
         real_append = writer_mod.append_okf_verification
 
-        def racing_append(text: str, *, subject: str, now: Any) -> str:
+        def racing_append(
+            text: str, *, subject: str, now: Any, path: str | None = None
+        ) -> str:
             (trust_auth_env / "guides" / "playbook.md").write_text(
                 "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
             )
-            return real_append(text, subject=subject, now=now)
+            return real_append(text, subject=subject, now=now, path=path)
 
         monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
         async with Client(make_server()) as client:
@@ -767,24 +800,123 @@ class TestOkfVerifyTrustAuth:
             with pytest.raises(ToolError, match="changed while it was being verified"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
 
-    async def test_counts_a_bare_mapping_as_one(
-        self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("conflict", [False, True])
+    async def test_verify_alias_retarget_stays_bound_to_read_target(
+        self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch, conflict: bool
     ) -> None:
-        # verified_count is the list length after the append; a bare-mapping
-        # verified is one entry, not zero (#1357).
+        """Same-byte alias retarget must not redirect the attestation after its read."""
+        from markdown_vault_mcp.facets.reader import ReaderFacet
+        from markdown_vault_mcp.facets.writer import WriterFacet
+
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
-        (trust_auth_env / "guides" / "playbook.md").write_text(
-            "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# P\n",
-            encoding="utf-8",
+        original = trust_auth_env / "SKILL.md"
+        other = trust_auth_env / "ordinary.md"
+        before = fm.dumps(
+            fm.Post("# Same zebra", type="Literal", metadata={"type": "Runbook"})
         )
+        original.write_text(before)
+        other.write_text(before)
+        alias = trust_auth_env / "alias.md"
+        alias.symlink_to(original)
+        read = ReaderFacet.read
+        write = WriterFacet.write
+        observed = {}
+
+        def read_and_retarget(reader, path: str, **kwargs: Any):
+            note = read(reader, path, **kwargs)
+            if path == "alias.md":
+                observed["note"] = note
+                alias.unlink()
+                alias.symlink_to(other)
+                if conflict:
+                    original.write_text(before + "\nconcurrent change\n")
+            return note
+
+        def conditional_write(writer, path: str, content: str, **kwargs: Any):
+            observed["path"], observed["etag"] = path, kwargs.get("if_match")
+            return write(writer, path, content, **kwargs)
+
+        monkeypatch.setattr(ReaderFacet, "read", read_and_retarget)
+        monkeypatch.setattr(WriterFacet, "write", conditional_write)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
-            )
+            if conflict:
+                with pytest.raises(ToolError, match=r"alias\.md.*changed while"):
+                    await client.call_tool("okf_verify", {"path": "alias.md"})
+            else:
+                result = _parse_tool_data(
+                    await client.call_tool("okf_verify", {"path": "alias.md"})
+                )
+                assert result["path"] == "alias.md" and result["verified_count"] == 1
             await wait_for_mcp_writer_drain(client)
-        assert _parse_tool_data(result)["verified_count"] == 2
+        note = observed["note"]
+        assert observed["path"] == note.path == "SKILL.md"
+        assert observed["etag"] == note.etag
+        assert other.read_text() == before
+        if conflict:
+            assert original.read_text() == before + "\nconcurrent change\n"
+        else:
+            assert (
+                fm.loads(original.read_text())["metadata"]["verified"][0]["by"]
+                == "human:peter"
+            )
+
+    @pytest.mark.parametrize(
+        "case",
+        [
+            ("guides/playbook.md", "guides/playbook.md", False),
+            ("SKILL.md", "SKILL.md", True),
+            ("target/SKILL.md", "alias.md", True),
+            ("target/ordinary.md", "aliases/SKILL.md", False),
+        ],
+    )
+    @pytest.mark.parametrize("has_prior", [True, False])
+    async def test_counts_a_bare_mapping_as_one(
+        self,
+        trust_auth_env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        case: tuple[str, str, bool],
+        has_prior: bool,
+    ) -> None:
+        """Verification counts and preserves entries in the resolved authority slot."""
+        target, request_path, nested = case
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
+        prior = {"by": "human:alice", "at": _dt.date(2026, 1, 1)}
+        literal = {"verified": ["literal", "conflict"], "custom": "keep"}
+        raw: dict[str, Any] = {"type": "Literal", "metadata": dict(literal)}
+        if nested:
+            raw.update(literal)
+            raw["metadata"] = {"type": "Runbook", "custom": "keep"}
+        slot = raw["metadata"] if nested else raw
+        if has_prior:
+            slot["verified"] = prior
+        destination = trust_auth_env / target
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(fm.dumps(fm.Post("# P\n", **raw)))
+        if request_path != target:
+            alias = trust_auth_env / request_path
+            alias.parent.mkdir(parents=True, exist_ok=True)
+            alias.symlink_to(destination)
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool("okf_verify", {"path": request_path})
+            await wait_for_mcp_writer_drain(client)
+        payload = _parse_tool_data(result)
+        assert payload["path"] == request_path
+        assert payload["verifier"] == "human:peter"
+        assert payload["verified_count"] == (2 if has_prior else 1)
+        persisted = fm.loads(destination.read_text()).metadata
+        entries = (persisted["metadata"] if nested else persisted)["verified"]
+        assert entries[:-1] == ([prior] if has_prior else [])
+        assert entries[-1]["by"] == "human:peter"
+        _assert_recent_utc_stamp(entries[-1]["at"])
+        if nested:
+            assert persisted["verified"] == literal["verified"]
+            assert persisted["type"] == "Literal"
+        else:
+            assert persisted["metadata"] == literal
 
 
 @pytest.mark.usefixtures("enforced_env")
@@ -971,3 +1103,251 @@ class TestServiceTokenOkf:
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+
+@pytest.mark.parametrize(
+    "operation", ["body", "frontmatter", "append", "overwrite", "create"]
+)
+@pytest.mark.parametrize(
+    ("target", "request_path"),
+    [
+        ("SKILL.md", "SKILL.md"),
+        ("target/SKILL.md", "alias.md"),
+        ("target/ordinary.md", "aliases/SKILL.md"),
+    ],
+)
+def test_skill_content_edit_invalidates_nested_verification(
+    tmp_path: Path, operation: str, target: str, request_path: str
+) -> None:
+    """Native mutations forward the resolved target to the two-argument enricher."""
+    from tests.fixtures.okf_skills import SKILL
+
+    destination = tmp_path / target
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(SKILL)
+    if request_path != target:
+        alias = tmp_path / request_path
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        alias.symlink_to(destination)
+    (tmp_path / "keep.md").write_text("# Keep vault mounted\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        observed: list[tuple[str, str | None]] = []
+
+        def enrich(text: str, op: Any) -> str:
+            intent = _okf_write.current_okf_intent()
+            observed.append((op, intent.path if intent else None))
+            return text + "\nlegacy " + op + "\n"
+
+        vault._doc_mgr._okf_write_enrich = enrich
+        if operation == "body":
+            vault.writer.edit(
+                request_path,
+                old_text="Run the zebra checks.",
+                new_text="Run updated zebra checks.",
+            )
+        elif operation == "frontmatter":
+            vault.writer.edit(
+                request_path, old_text="name: demo", new_text="name: updated"
+            )
+        elif operation == "append":
+            vault.writer.append(request_path, "\nupdated zebra\n")
+        else:
+            if operation == "create":
+                destination.unlink()
+            result = vault.writer.write(
+                request_path, SKILL.replace("zebra", "updated zebra")
+            )
+            assert result.created == (operation == "create")
+        assert observed == [
+            ("write" if operation in {"overwrite", "create"} else "edit", target)
+        ]
+        assert "updated" in destination.read_text()
+        assert "legacy " + observed[0][0] in destination.read_text()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    ("target", "request_path", "nested"),
+    [
+        ("target/SKILL.md", "alias.md", True),
+        ("target/ordinary.md", "aliases/SKILL.md", False),
+    ],
+)
+def test_alias_content_edit_stamps_resolved_slot(
+    tmp_path: Path, target: str, request_path: str, nested: bool
+) -> None:
+    """Real enrichment invalidates only the resolved note's authoritative slot."""
+    from tests.fixtures.okf_skills import SKILL
+
+    destination = tmp_path / target
+    destination.parent.mkdir(parents=True)
+    before = fm.loads(SKILL).metadata
+    before.update(type="Literal", verified=[{"by": "human:literal"}])
+    destination.write_text(fm.dumps(fm.Post("Run the zebra checks.", **before)))
+    alias = tmp_path / request_path
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    alias.symlink_to(destination)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
+    try:
+        vault.index.build_index()
+        assert vault.reader.read(request_path).path == target
+        vault.writer.edit(
+            request_path, old_text="Run the zebra checks.", new_text="Changed zebra."
+        )
+        after = fm.loads(destination.read_text()).metadata
+        slot = after["metadata"] if nested else after
+        assert "Changed zebra." in destination.read_text()
+        assert "verified" not in slot
+        assert slot["generated"]["by"].startswith("markdown-vault-mcp/")
+        _assert_recent_utc_stamp(slot["generated"]["at"])
+        if nested:
+            assert after["verified"] == before["verified"]
+            assert after["type"] == before["type"]
+        else:
+            assert after["metadata"] == before["metadata"]
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("actor", [None, "", "human:fixture"])
+def test_path_scope_selects_nested_slot_and_preserves_actor(
+    tmp_path: Path, actor: str | None
+) -> None:
+    """A path-only scope uses the configured actor; explicit empty actors stay explicit."""
+    enrich = build_okf_write_enrich(
+        okf_write=True, detector=_active_detector(tmp_path), version="fixture"
+    )
+    assert enrich is not None
+    with (
+        okf_write_intent(OkfWriteIntent(actor=actor)),
+        _okf_write.okf_write_path("nested/SKILL.md"),
+    ):
+        meta = fm.loads(enrich("# Demo\n", "write")).metadata
+    assert meta["metadata"]["generated"]["by"] == (
+        "markdown-vault-mcp/fixture" if actor is None else actor
+    )
+    assert _okf_write.current_okf_intent() is None
+
+
+def test_path_scope_restores_outer_intent_after_error(tmp_path: Path) -> None:
+    """Nested native target scopes retain suppression and restore on exceptions."""
+    enrich = build_okf_write_enrich(
+        okf_write=True, detector=_active_detector(tmp_path), version="fixture"
+    )
+    assert enrich is not None
+    with _okf_write.okf_write_path("outer/SKILL.md"):
+        outer = _okf_write.current_okf_intent()
+        assert outer is not None and outer.actor is None
+        with okf_write_intent(OkfWriteIntent("", True)):
+            suppressed = _okf_write.current_okf_intent()
+            with (
+                pytest.raises(RuntimeError, match="fixture"),
+                _okf_write.okf_write_path("ordinary.md"),
+            ):
+                current = _okf_write.current_okf_intent()
+                assert current is not None and current.path == "ordinary.md"
+                assert enrich("# Demo\n", "write") == "# Demo\n"
+                raise RuntimeError("fixture")
+            assert _okf_write.current_okf_intent() is suppressed
+        assert _okf_write.current_okf_intent() is outer
+    assert _okf_write.current_okf_intent() is None
+
+
+@pytest.mark.parametrize("write_alias", [False, True])
+def test_native_write_refreshes_all_indexed_spellings(
+    tmp_path: Path, alias_note, write_alias: bool
+) -> None:
+    """A real enriched write refreshes known live and tombstone names, never new aliases."""
+    import json
+
+    from markdown_vault_mcp.hashing import compute_etag
+    from markdown_vault_mcp.types import SkippedFile
+
+    target, alias, _, expected = alias_note
+    (tmp_path / "restored.md").symlink_to(tmp_path / target)
+    (tmp_path / "unrelated.md").write_text("# Unrelated")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
+    try:
+        vault.index.build_index()
+        vault._fts.upsert_tombstone(
+            SkippedFile(path="restored.md", category="parse_error", detail="fixture"),
+            content_hash="old",
+            modified_at=0,
+        )
+        (tmp_path / "unknown.md").symlink_to(tmp_path / target)
+        untouched = vault._fts.get_note("unrelated.md")
+        vault.writer.append(alias if write_alias else target, "\nupdated zebra\n")
+        wait_for_writer_drain(vault)
+        content = (tmp_path / target).read_bytes()
+        raw = fm.loads(content.decode()).metadata
+        slot = raw["metadata"] if expected["type"] == "Runbook" else raw
+        assert "verified" not in slot and "generated" in slot
+        for path in (target, alias, "restored.md"):
+            row = vault._fts.get_note(path)
+            assert row["content_hash"] == compute_etag(content)
+            assert json.loads(row["frontmatter_json"]) == raw
+        assert {
+            h.path
+            for h in vault.reader.search(
+                "updated", mode="keyword", filters={"type": expected["type"]}
+            )
+        } == {target, alias, "restored.md"}
+        assert vault.reader.okf_stats()["types"][expected["type"]] == 3
+        assert vault._fts.get_note("unknown.md") is None
+        assert vault._fts.get_note("unrelated.md") == untouched
+        from markdown_vault_mcp.query_types import NoteQuery
+
+        assert {
+            n["path"]
+            for n in vault.reader.query_documents(
+                NoteQuery(filters={"type": "Literal"})
+            ).items
+        } == {target, alias, "restored.md"}
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("failure", ["etag", "atomic", "malformed"])
+def test_alias_refused_write_preserves_authoritative_bytes(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Native stamp computation never persists when validation or replacement fails."""
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+
+    target, alias, _, _ = alias_note
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
+    try:
+        vault.index.build_index()
+        before = (tmp_path / target).read_bytes()
+        if failure == "atomic":
+
+            def failed(*_args: Any, **_kwargs: Any) -> None:
+                raise OSError("synthetic atomic replacement refusal")
+
+            monkeypatch.setattr(
+                "markdown_vault_mcp.managers.document.atomic_write", failed
+            )
+            with pytest.raises(OSError, match="atomic replacement"):
+                vault.writer.append(alias, "changed")
+        elif failure == "etag":
+            with pytest.raises(ConcurrentModificationError):
+                vault.writer.write(alias, "# Replacement", if_match="stale-etag")
+        else:
+            with pytest.raises(InvalidRequestError):
+                vault.writer.write(alias, "---\n[bad\n---\n# Replacement")
+        assert (tmp_path / target).read_bytes() == before
+        assert vault.index.wait_for_drain(timeout=5)
+    finally:
+        vault.close()

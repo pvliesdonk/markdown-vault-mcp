@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
-from markdown_vault_mcp.fts_index import should_optimize
+from markdown_vault_mcp.fts_index import canonical_indexed_fields, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers.embeddings import (
     _EMBED_KEPT,
@@ -30,6 +30,7 @@ from markdown_vault_mcp.managers.embeddings import (
 )
 from markdown_vault_mcp.scanner import (
     CategorizedSkip,
+    parse_frontmatter,
     parse_note,
     parse_note_categorized,
     scan_directory,
@@ -53,6 +54,7 @@ from markdown_vault_mcp.utils.fs import (
     is_regular_file,
     iter_markdown_files,
 )
+from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -732,7 +734,9 @@ class IndexManager:
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
             searchable_fields=",".join(self._embed_builder.searchable_fields),
-            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            indexed_frontmatter_fields=canonical_indexed_fields(
+                self._indexed_frontmatter_fields
+            ),
             attachment_extensions=canonical_attachment_extensions(
                 self._attachment_extensions
             ),
@@ -748,12 +752,39 @@ class IndexManager:
     # Incremental reindex
     # ------------------------------------------------------------------
 
+    def stale_authority_paths(self) -> set[str]:
+        """Find stored live rows whose resolved identity needs native reconciliation.
+
+        Returns:
+            Mismatched or unreadable live spellings; raw hashes stay unchanged.
+            Missing files stay with the change tracker's deletion handling.
+        """
+        stale = set()
+        for path in self._fts.list_document_paths():
+            if self._is_path_excluded(path) or self._fts.get_note(path) is None:
+                continue
+            try:
+                authority = (self._source_dir / path).resolve()
+                metadata = parse_frontmatter(
+                    decode_utf8(authority.read_bytes())
+                ).metadata
+            except FileNotFoundError:
+                # A missing file is a deletion, not changed metadata. A warm
+                # build must leave it for reindex to reconcile and count.
+                continue
+            except (OSError, ValueError, RuntimeError, yaml.YAMLError):
+                stale.add(path)
+                continue
+            if not self._fts.tags_match_authority(path, authority.as_posix(), metadata):
+                stale.add(path)
+        return stale
+
     def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.
 
         Uses :class:`~markdown_vault_mcp.tracker.ChangeTracker` to detect
         which files have been added, modified, or deleted since the last
-        scan.  Only changed files are re-parsed and re-indexed.  Files
+        scan. Live metadata is validated; only changed rows are re-indexed. Files
         matching ``exclude_patterns`` are skipped, and any previously indexed
         documents that now match the patterns are purged.
 
@@ -773,6 +804,10 @@ class IndexManager:
         changes = self._tracker.detect_changes(
             self._source_dir, exclude_patterns=self._exclude_patterns
         )
+        changed = set(changes.added + changes.modified + changes.deleted)
+        stale = self.stale_authority_paths() - changed
+        changes.modified.extend(sorted(stale))
+        changes.unchanged -= len(stale)
         logger.info(
             "reindex_changes_detected added=%d modified=%d deleted=%d "
             "unchanged=%d skipped=%d",
@@ -1119,6 +1154,35 @@ class IndexManager:
     # Deferred embedding flush
     # ------------------------------------------------------------------
 
+    def _expanded_dirty_paths(
+        self, paths: set[str]
+    ) -> tuple[set[str], Exception | None]:
+        """Select original inputs and known in-vault aliases, retaining identity faults."""
+        known = set(self._fts.list_document_paths())
+        root = self._source_dir.resolve()
+        identities: dict[str, Path] = {}
+        first_error: Exception | None = None
+        for path in [*sorted(paths), *sorted(known - paths)]:
+            absolute = self._source_dir / path
+            try:
+                if self._is_path_excluded(path):
+                    continue
+                resolved = absolute.resolve()
+                if resolved.is_relative_to(root):
+                    identities[path] = resolved
+            except (OSError, ValueError, RuntimeError) as exc:
+                # A loop/disappearance has native deletion semantics. A refused
+                # stat or still-live unresolved spelling must retain retry input.
+                try:
+                    absent = not is_regular_file(absolute)
+                except OSError:
+                    absent = False
+                if not absent and first_error is None:
+                    first_error = exc
+        targets = {identities[path] for path in paths if path in identities}
+        selected = paths | {path for path in known if identities.get(path) in targets}
+        return selected, first_error
+
     def process_dirty_paths(
         self, paths: set[str], *, on_refreshed: Callable[[str], None] | None = None
     ) -> None:
@@ -1157,7 +1221,8 @@ class IndexManager:
         paths for retry; if parsing already failed, that primary error wins.
 
         Args:
-            paths: Vault-relative paths to refresh.
+            paths: Original vault-relative inputs; known resolved aliases refresh
+                in the same batch without discovering new indexed names.
             on_refreshed: Optional callback for each successfully refreshed row,
                 allowing the writer to advance its embeddings even if a sibling
                 or the final graph refresh fails.
@@ -1165,8 +1230,8 @@ class IndexManager:
         if not paths:
             return
         try:
-            first_error: Exception | None = None
-            for path in paths:
+            expanded, first_error = self._expanded_dirty_paths(paths)
+            for path in expanded:
                 try:
                     self._process_dirty_path(path)
                     if on_refreshed is not None:

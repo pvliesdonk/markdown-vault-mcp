@@ -295,3 +295,510 @@ class TestByteIdenticalWhenNotDetected:
             assert s["normal.md"] == pytest.approx(s["deprecated.md"])
         finally:
             vault.close()
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+@pytest.mark.usefixtures("constant_embeddings")
+def test_skill_filters_stats_and_ranking_agree(tmp_path: Path, mode: str) -> None:
+    """Retrieval and stats interpret nested identity, while results retain raw metadata."""
+    from tests.fixtures.okf_skills import SKILL
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
+    # Conflicting legacy keys must never leak through a skill's effective slot.
+    (tmp_path / "SKILL.md").write_text(
+        SKILL.replace("name: demo", "type: Wrong\nstatus: draft\nname: demo")
+    )
+    vault = _vault_with_embeddings(tmp_path)
+    try:
+        vault.index.build_embeddings()
+        filters = {
+            "type": "Skill",
+            "status": "deprecated",
+            "trust_tier": "human-reviewed",
+            "stale": "true",
+        }
+        hits = vault.reader.search("zebra", mode=mode, filters=filters)
+        assert [hit.path for hit in hits] == ["SKILL.md"]
+        assert hits[0].frontmatter["type"] == "Wrong"
+        assert [note.path for note in vault.reader.list_documents(filters=filters)] == [
+            "SKILL.md"
+        ]
+        stats = vault.reader.okf_stats()
+        assert stats["types"] == {"Skill": 1}
+        assert stats["status"] == {"deprecated": 1}
+        assert stats["trust"] == {"human-reviewed": 1}
+        assert stats["stale_count"] == 1
+        assert vault.reader.get_context("SKILL.md", similar_limit=0).tags["type"] == [
+            "Skill"
+        ]
+        # The same real row keeps its relevance, scaled only by the existing policy.
+        vault.okf._mode = "off"
+        baseline = vault.reader.search("zebra", mode=mode)
+        raw_score = next(hit.score for hit in baseline if hit.path == "SKILL.md")
+        assert hits[0].score == pytest.approx(raw_score * 0.375)
+        assert vault.reader.list_documents(filters={"type": "Skill"}) == []
+        assert len(vault.reader.list_documents(filters={"type": "Wrong"})) == 1
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+@pytest.mark.usefixtures("constant_embeddings")
+def test_skill_off_explicit_type_filters_stay_literal(
+    tmp_path: Path, mode: str
+) -> None:
+    """An explicitly indexed type must not change off-mode identity by search channel."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.conftest import MockEmbeddingProvider
+    from tests.fixtures.okf_skills import SKILL
+
+    (tmp_path / "SKILL.md").write_text(
+        SKILL.replace("name: demo", "type: Wrong\nname: demo").replace(
+            "  status:", "  type: Runbook\n  status:"
+        )
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="off", indexed_frontmatter_fields=["type"]),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert [
+            note.path for note in vault.reader.list_documents(filters={"type": "Wrong"})
+        ] == ["SKILL.md"]
+        assert [
+            hit.path
+            for hit in vault.reader.search(
+                "zebra", mode=mode, filters={"type": "Wrong"}
+            )
+        ] == ["SKILL.md"]
+        assert (
+            vault.reader.search("zebra", mode=mode, filters={"type": "Runbook"}) == []
+        )
+    finally:
+        vault.close()
+
+
+def test_skill_tag_views_survive_mode_reopens_and_collisions(tmp_path: Path) -> None:
+    """Native tags/snippets switch identity without rebuilding; exact queries stay literal."""
+    from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+    from markdown_vault_mcp.vault import Vault
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "SKILL.md").write_text(
+        "---\ntype: Wrong\n'__okf__:type': literal1\n"
+        "'__okf__:__okf__:type': literal2\nmetadata:\n  type: Runbook\n---\n"
+        "# Demo\n\n" + "before " * 40 + "zebra " + "after " * 40
+    )
+    # Include all active defaults so the actual registered field set is identical.
+    fields = ["type", "status", "stale_after", "__okf__:type", "__okf__:__okf__:type"]
+    for number, active in enumerate([False, True, False, True]):
+        vault = Vault(
+            source_dir=source,
+            settings=VaultSettings(
+                okf_mode="on" if active else "off",
+                indexed_frontmatter_fields=fields,
+                index_path=tmp_path / "index.sqlite",
+            ),
+        )
+        try:
+            report = vault.index.build_index()
+            assert (report.chunks_indexed > 0) is (number == 0)
+            expected = "Runbook" if active else "Wrong"
+            assert vault.reader.list_tags("type") == [expected]
+            assert vault.reader.list_tags("__okf__:type") == ["literal1"]
+            assert vault.reader.list_tags("__okf__:__okf__:type") == ["literal2"]
+            hits = vault.reader.search(
+                "zebra", mode="keyword", filters={"type": expected}, snippet_words=5
+            )
+            assert [hit.path for hit in hits] == ["SKILL.md"]
+            assert "zebra" in hits[0].sections[0].content
+            assert len(hits[0].sections[0].content.split()) < 15
+            assert vault.reader.search(
+                "zebra", mode="keyword", filters={"__okf__:type": "literal1"}
+            )
+            literal = NoteQuery(filters={"type": "Wrong"})
+            assert vault.reader.query_documents(literal).total == 1
+            assert vault.reader.count_documents_matching(literal).total == 1
+            grouped = vault.reader.aggregate_documents(
+                literal, NoteGrouping(by="tag", field="type")
+            )
+            assert grouped.buckets == [{"key": "Wrong", "count": 1}]
+            assert (
+                vault.reader.count_documents_matching(
+                    NoteQuery(filters={"type": "Runbook"})
+                ).total
+                == 0
+            )
+        finally:
+            vault.close()
+
+
+@pytest.mark.usefixtures("constant_embeddings")
+def test_skill_keyword_type_filter_retains_prelimit_recall(tmp_path: Path) -> None:
+    """A skill past the unfiltered pool remains reachable through indexed type filtering."""
+    from markdown_vault_mcp.vault import Vault
+
+    for number in range(210):
+        (tmp_path / f"{number:03}.md").write_text("# Zebra\n\nzebra\n")
+    (tmp_path / "SKILL.md").write_text(
+        "---\nmetadata:\n  type: Runbook\n---\n# Long guide\n\n"
+        + "filler " * 300
+        + "zebra\n"
+    )
+    (tmp_path / "alias.md").symlink_to(tmp_path / "SKILL.md")
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        unfiltered = vault.reader.search("zebra", mode="keyword", limit=200)
+        assert len(unfiltered) == 200
+        assert "SKILL.md" not in {hit.path for hit in unfiltered}
+        for mode in ("keyword", "hybrid"):
+            hits = vault.reader.search(
+                "zebra",
+                mode=mode,
+                limit=2,
+                filters={"type": "Runbook"},
+                snippet_words=5,
+            )
+            assert {hit.path for hit in hits} == {"SKILL.md", "alias.md"}
+            assert all(
+                "zebra" in h.sections[0].content
+                and len(h.sections[0].content.split()) < 15
+                for h in hits
+            )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "operation", ["list", "keyword", "semantic", "hybrid", "similar"]
+)
+@pytest.mark.usefixtures("constant_embeddings")
+def test_filtered_requests_use_one_activation_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    """Candidate/key loops must not reread detection; the next request sees changes."""
+    from tests.fixtures.okf_skills import SKILL
+
+    marker = tmp_path / "index.md"
+    marker.write_text('---\nokf_version: "0.2"\n---\n# Index\n')
+    (tmp_path / "SKILL.md").write_text(SKILL)
+    (tmp_path / "alias.md").symlink_to(tmp_path / "SKILL.md")
+    for number in range(25):
+        (tmp_path / f"{number}.md").write_text(
+            "---\ntype: Reference\ntags: fixture\n---\n# Note\n\nzebra\n"
+        )
+    vault = _vault_with_embeddings(tmp_path)
+    try:
+        vault.index.build_embeddings()
+        probes = 0
+        probe = vault.okf._probe_declared_version
+
+        def counted_probe() -> str | None:
+            nonlocal probes
+            probes += 1
+            return probe()
+
+        monkeypatch.setattr(vault.okf, "_probe_declared_version", counted_probe)
+        for active in (True, False):
+            if not active:
+                marker.write_text("# Index\n")
+            probes = 0
+            filters = {"type": "Skill", "status": "deprecated"}
+            if operation == "list":
+                hits = vault.reader.list_documents(filters=filters)
+            elif operation == "similar":
+                hits = vault.reader.get_similar("0.md", filters=filters)
+            else:
+                hits = vault.reader.search(
+                    "zebra", mode=operation, filters=filters, snippet_words=5
+                )
+            assert {hit.path for hit in hits} == (
+                {"SKILL.md", "alias.md"} if active else set()
+            )
+            assert probes == 1, f"{probes} detection reads for one {operation} request"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid", "similar"])
+@pytest.mark.usefixtures("constant_embeddings")
+def test_alias_retrieval_agrees_with_resolved_whole_read(
+    tmp_path: Path, alias_note, mode: str
+) -> None:
+    """All retrieval channels must match and rank aliases by their target's six families."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.conftest import MockEmbeddingProvider
+
+    target, alias, raw, expected = alias_note
+    (tmp_path / "reference.md").write_text("# Reference\n\nzebra\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        nested = expected["type"] == "Runbook"
+        filters = {
+            "type": expected["type"],
+            "status": expected["status"],
+            "stale": str(nested).lower(),
+            "trust_tier": "human-reviewed" if nested else "machine-confirmed",
+        }
+        hits = (
+            vault.reader.get_similar("reference.md", filters=filters)
+            if mode == "similar"
+            else vault.reader.search(
+                "zebra", mode=mode, filters=filters, snippet_words=5
+            )
+        )
+        assert {hit.path for hit in hits} == {target, alias}
+        assert all(hit.frontmatter == raw for hit in hits)
+        assert {n.path for n in vault.reader.list_documents(filters=filters)} == {
+            target,
+            alias,
+        }
+        assert vault.reader.get_context(alias, similar_limit=0).tags["type"] == [
+            expected["type"]
+        ]
+        if mode != "similar":
+            assert all(
+                "zebra" in h.sections[0].content.lower()
+                and len(h.sections[0].content.split()) < 15
+                for h in hits
+            )
+            active_scores = {
+                h.path: h.score for h in vault.reader.search("zebra", mode=mode)
+            }
+            vault.okf._mode = "off"
+            baseline = {
+                h.path: h.score for h in vault.reader.search("zebra", mode=mode)
+            }
+            for hit in hits:
+                assert active_scores[hit.path] == pytest.approx(
+                    baseline[hit.path] * (0.375 if nested else 1.0)
+                )
+            assert {
+                h.path
+                for h in vault.reader.search(
+                    "zebra", mode=mode, filters={"type": "Literal"}
+                )
+            } == {target, alias}
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("similar_limit", [0, 2])
+@pytest.mark.usefixtures("constant_embeddings")
+def test_context_uses_one_activation_snapshot_with_similar_notes(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch, similar_limit: int
+) -> None:
+    """Context must not add an unused detection probe through unfiltered similarity."""
+    target, alias, _, expected = alias_note
+    marker = tmp_path / "index.md"
+    marker.write_text('---\nokf_version: "0.2"\n---\n')
+    vault = _vault_with_embeddings(tmp_path)
+    try:
+        vault.index.build_embeddings()
+        probes = 0
+        probe = vault.okf._probe_declared_version
+
+        def counted() -> str | None:
+            nonlocal probes
+            probes += 1
+            return probe()
+
+        monkeypatch.setattr(vault.okf, "_probe_declared_version", counted)
+        for active in [True, False]:
+            if not active:
+                marker.write_text("# Inactive\n")
+            probes = 0
+            context = vault.reader.get_context(alias, similar_limit=similar_limit)
+            assert probes == 1
+            assert context.tags["type"] == [expected["type"] if active else "Literal"]
+            if similar_limit:
+                assert target in {n.path for n in context.similar}
+        probes = 0
+        assert target in {h.path for h in vault.reader.get_similar(alias)}
+        assert probes == 0
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("refresh", ["reindex", "reopen"])
+@pytest.mark.parametrize("to_skill", [True, False], ids=["to-skill", "from-skill"])
+@pytest.mark.parametrize("directory_alias", [False, True], ids=["file", "directory"])
+def test_same_byte_retarget_refreshes_authoritative_tags(  # noqa: PLR0915, RUF100 -- one retarget/reopen lifecycle with raw/off controls
+    tmp_path: Path, refresh: str, to_skill: bool, directory_alias: bool
+) -> None:
+    """Native reconciliation must notice authority changes without changing raw hashes."""
+    import sys
+
+    from markdown_vault_mcp.vault import Vault
+
+    if directory_alias and sys.version_info < (3, 13):
+        pytest.skip("Native directory-symlink discovery requires Python 3.13")
+    source = tmp_path / "source"
+    source.mkdir()
+    raw = "---\ntype: Literal\nmetadata: {type: Runbook}\n---\n# Zebra\n\nzebra instructions\n"
+    if directory_alias:
+        for folder in ("ordinary", "skill"):
+            (source / folder).mkdir()
+            (source / folder / "note.md").write_text(raw)
+        # A directory alias can retarget one stored basename to an exact SKILL.md.
+        (source / "skill" / "note.md").unlink()
+        (source / "skill" / "note.md").symlink_to("../SKILL.md")
+        (source / "SKILL.md").write_text(raw)
+        alias = source / "alias"
+        name = "alias/note.md"
+        old_target, new_target = (
+            ("ordinary", "skill") if to_skill else ("skill", "ordinary")
+        )
+    else:
+        (source / "ordinary.md").write_text(raw)
+        (source / "SKILL.md").write_text(raw)
+        alias = source / "alias.md"
+        name = "alias.md"
+        old_target, new_target = (
+            ("ordinary.md", "SKILL.md") if to_skill else ("SKILL.md", "ordinary.md")
+        )
+    alias.symlink_to(old_target, target_is_directory=directory_alias)
+    settings = VaultSettings(
+        okf_mode="on",
+        index_path=tmp_path / "index.sqlite",
+        indexed_frontmatter_fields=["type"],
+    )
+    vault = Vault(source_dir=source, settings=settings)
+    try:
+        vault.index.build_index()
+        before = vault.reader.read(name)
+        assert before is not None
+        stored_hash = vault._fts.get_note(name)["content_hash"]
+        vault.close()
+        vault = Vault(source_dir=source, settings=settings)
+        assert vault.index.build_index().chunks_indexed == 0
+        alias.unlink()
+        alias.symlink_to(new_target, target_is_directory=directory_alias)
+        if refresh == "reindex":
+            vault.index.reindex()
+        else:
+            vault.close()
+            vault = Vault(source_dir=source, settings=settings)
+            vault.index.build_index()
+        expected = "Runbook" if to_skill else "Literal"
+        listed = {
+            note.path
+            for note in vault.reader.list_documents(filters={"type": expected})
+        }
+        assert name in listed
+        assert name in {
+            hit.path
+            for hit in vault.reader.search(
+                "zebra", mode="keyword", filters={"type": expected}
+            )
+        }
+        after = vault.reader.read(name)
+        assert after is not None
+        assert (after.content, after.frontmatter, after.etag) == (
+            before.content,
+            before.frontmatter,
+            before.etag,
+        )
+        assert vault._fts.get_note(name)["content_hash"] == stored_hash
+        vault.okf._mode = "off"
+        assert name in {
+            hit.path
+            for hit in vault.reader.search(
+                "zebra", mode="keyword", filters={"type": "Literal"}
+            )
+        }
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "mutation", ["delete", "rename", "alias-delete", "alias-rename", "folder"]
+)
+@pytest.mark.parametrize(
+    "consumer", ["indexes", "keyword", "semantic", "hybrid", "stats", "list"]
+)
+@pytest.mark.usefixtures("constant_embeddings")
+def test_native_removal_reconciles_known_aliases(
+    tmp_path: Path, mutation: str, consumer: str
+) -> None:
+    """Drained native removals purge broken aliases without losing healthy retrieval."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.conftest import MockEmbeddingProvider, wait_for_writer_drain
+    from tests.fixtures.vectors import metadata_by_path
+
+    target = "target/SKILL.md"
+    (tmp_path / "target").mkdir()
+    (tmp_path / target).write_text(
+        "---\nmetadata: {type: Runbook}\n---\n# Zebra\n\nzebra instructions\n"
+    )
+    (tmp_path / "alias.md").symlink_to("target/SKILL.md")
+    (tmp_path / "directory").symlink_to("target", target_is_directory=True)
+    (tmp_path / "healthy.md").write_text(
+        "---\ntype: Reference\n---\n# Zebra\n\nzebra healthy\n"
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on", read_only=False),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        # Native explicit refresh registers this spelling even on Python <3.13,
+        # whose directory walk does not discover directory symlinks.
+        vault._index_mgr.process_dirty_paths({"directory/SKILL.md"})
+        vault.index.build_embeddings()
+        removed = {target, "alias.md", "directory/SKILL.md"}
+        assert removed <= set(vault._fts.list_document_paths())
+        assert vault._vectors is not None
+        assert removed <= set(metadata_by_path(vault._vectors))
+        expected = {"healthy.md"}
+        if mutation == "folder":
+            vault.writer.move_folder("target", "moved")
+            expected.add("moved/SKILL.md")
+        else:
+            path = "alias.md" if mutation.startswith("alias-") else target
+            if mutation.endswith("delete"):
+                vault.writer.delete(path)
+            else:
+                vault.writer.rename(path, "moved.md")
+                expected.add("moved.md")
+        wait_for_writer_drain(vault)
+        if consumer == "indexes":
+            assert set(vault._fts.list_document_paths()) == expected
+            assert set(metadata_by_path(vault._vectors)) == expected
+        elif consumer == "stats":
+            stats = vault.reader.okf_stats()
+            assert stats["types"].get("Runbook", 0) == int(mutation == "folder")
+            assert stats["types"]["Reference"] == 1
+        elif consumer == "list":
+            assert {n.path for n in vault.reader.list_documents()} == expected
+            assert {
+                n.path
+                for n in vault.reader.list_documents(filters={"type": "Reference"})
+            } == {"healthy.md"}
+        else:
+            assert {
+                h.path for h in vault.reader.search("zebra", mode=consumer)
+            } == expected
+    finally:
+        vault.close()

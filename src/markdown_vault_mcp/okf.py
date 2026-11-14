@@ -8,6 +8,8 @@ before changing a rule here. This module implements phase 1 of
 `docs/design/okf.md`: the vault-side detection probe (``okf_version`` declared
 in the bundle-root ``index.md``) and the pure derivation of per-note read
 annotations (``type`` / ``status`` / staleness / trust tier).
+The read-only skill projection follows ``docs/design/reference/agent-skills.md``,
+including the deliberate tolerance of structured values in its metadata slot.
 
 Trust model (design §2): the vault-side declaration only ever enables
 *read* semantics and advisory guidance — never write behavior. Detection is
@@ -25,6 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -42,7 +45,7 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -57,6 +60,16 @@ KNOWN_OKF_VERSIONS: tuple[str, ...] = ("0.1", "0.2")
 #: Scalar frontmatter keys promoted into ``document_tags`` when detection
 #: is on (feeds the phase-2 filters; harmless to index ahead of them).
 OKF_INDEXED_FIELDS: tuple[str, ...] = ("type", "status", "stale_after")
+
+# Families interpreted from a skill's metadata slot; indexing uses the same set.
+OKF_METADATA_FIELDS: tuple[str, ...] = (
+    "type",
+    "status",
+    "generated",
+    "verified",
+    "sources",
+    "stale_after",
+)
 
 #: Lifecycle vocabulary (``status``); absent means ``stable`` per spec.
 OKF_STATUS_DEFAULT = "stable"
@@ -328,6 +341,84 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     return now.date() >= boundary
 
 
+def _effective_okf_tag_key(field: str, indexed_fields: Collection[str]) -> str:
+    """Select a derived tag key without taking any configured literal name."""
+    if field not in OKF_METADATA_FIELDS or field not in indexed_fields:
+        return field
+    key = "__okf__:" + field
+    while key in indexed_fields:
+        key = "__okf__:" + key
+    return key
+
+
+def effective_okf_metadata(
+    metadata: dict[str, Any], *, path: str | None = None
+) -> dict[str, Any]:
+    """Project a skill's nested OKF fields without changing raw frontmatter.
+
+    Only an exact ``SKILL.md`` basename uses the nested ``metadata`` slot.
+    Structured values are tolerated beyond Agent Skills' string-map contract;
+    see ``docs/design/reference/agent-skills.md``. Other keys remain literal.
+
+    Args:
+        metadata: Raw frontmatter, including any discovery fields.
+        path: Vault-relative note path, or ``None`` for ordinary semantics.
+
+    Returns:
+        A new dictionary with the six OKF families selected from a skill's
+        nested mapping and absent or invalid type inferred as ``Skill``.
+        Ordinary notes retain their values. Nested structures are not mutated.
+    """
+    result = dict(metadata)
+    if path is None or path.rsplit("/", 1)[-1] != "SKILL.md":
+        return result
+    nested = metadata.get("metadata")
+    nested = nested if isinstance(nested, Mapping) else {}
+    for key in OKF_METADATA_FIELDS:
+        result.pop(key, None)
+        if key in nested:
+            result[key] = nested[key]
+    note_type = result.get("type")
+    if not isinstance(note_type, str) or not note_type.strip():
+        result["type"] = "Skill"
+    return result
+
+
+def resolved_okf_metadata(
+    metadata: dict[str, Any], *, path: str | None, source_dir: Path | None = None
+) -> dict[str, Any]:
+    """Project typed skill families while preserving unrelated held metadata.
+
+    Args:
+        metadata: Held metadata whose unrelated discovery fields stay unchanged.
+        path: Indexed spelling, or ``None`` for ordinary semantics.
+        source_dir: Optional index root, including its native symlink population.
+
+    Returns:
+        The pure six-family projection, retaining lexical semantics without a root.
+
+    Raises:
+        OSError: If native identity resolution or a skill read fails.
+        RuntimeError: If the native resolver reports a symlink loop.
+        ValueError: If current skill bytes cannot be decoded or parsed.
+        yaml.YAMLError: If current skill YAML is malformed.
+    """
+    if source_dir is None or path is None:
+        return effective_okf_metadata(metadata, path=path)
+    authority = (source_dir / path).resolve()
+    result = effective_okf_metadata(metadata, path=authority.as_posix())
+    if authority.name == "SKILL.md":
+        typed = effective_okf_metadata(
+            parse_frontmatter(read_text_utf8(authority)).metadata,
+            path=authority.as_posix(),
+        )
+        for key in OKF_METADATA_FIELDS:
+            result.pop(key, None)
+            if key in typed:
+                result[key] = typed[key]
+    return result
+
+
 def derive_annotation(
     metadata: dict[str, Any],
     *,
@@ -342,12 +433,13 @@ def derive_annotation(
             the server's local now.
         include_sources: When true (``read`` payloads), include the raw
             ``sources`` list; otherwise (search hits) include only
-            ``sources_count``, and only when non-zero.
+            ``sources_count``, and only when non-zero. Full reads also expose
+            a supplied mapping-valued ``generated`` without inventing provenance.
 
     Returns:
         The annotation dict: ``status`` (defaulted to ``"stable"``),
         ``stale``, and ``trust_tier`` always; ``type`` only when present
-        and non-empty; sources per *include_sources*.
+        and non-empty; sources and generated per *include_sources*.
     """
     now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
@@ -365,6 +457,9 @@ def derive_annotation(
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:
+        generated = metadata.get("generated")
+        if isinstance(generated, Mapping):
+            annotation["generated"] = generated
         if source_list:
             annotation["sources"] = source_list
     elif source_list:
@@ -617,7 +712,9 @@ def _evaluate_note(
         acc.missing_recommended.add(rel)
 
 
-def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
+def _audit_file(
+    rel: str, raw: str, acc: _AuditCounters, *, authority_path: str | None = None
+) -> None:
     """Classify one markdown file and update the audit counters."""
     try:
         post = parse_frontmatter(raw)
@@ -643,7 +740,14 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     if not parse_ok:
         acc.unparseable.add(rel)
     else:
-        _evaluate_note(rel, metadata, body, acc)
+        _evaluate_note(
+            rel,
+            effective_okf_metadata(
+                metadata, path=authority_path if authority_path is not None else rel
+            ),
+            body,
+            acc,
+        )
 
 
 def audit_bundle(
@@ -700,7 +804,9 @@ def audit_bundle(
             continue
         raw = _read_capped(source_dir / rel, rel)
         if raw is not None:
-            _audit_file(rel, raw, acc)
+            _audit_file(
+                rel, raw, acc, authority_path=(source_dir / rel).resolve().as_posix()
+            )
 
     return OkfAuditReport(
         mode=state.mode,
@@ -1047,16 +1153,28 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
-def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
-    """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
+def _okf_write_slot(metadata: dict[str, Any], *, path: str | None) -> dict[str, Any]:
+    """Select a copied skill slot only for an explicitly requested mutation."""
+    if path is None or path.rsplit("/", 1)[-1] != "SKILL.md":
+        return metadata
+    nested = metadata.get("metadata")
+    slot = dict(nested) if isinstance(nested, Mapping) else {}
+    metadata["metadata"] = slot
+    return slot
+
+
+def apply_okf_write_stamp(
+    text: str, *, actor: str, now: _dt.datetime, path: str | None = None
+) -> str:
+    """Refresh ``generated.at`` and clear verification in the authoritative slot.
 
     The enforced-write layer's core transform (design §6). Operates on the final
-    file text (frontmatter plus body), so it is uniform across the ``write``
-    (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
-    the current bytes and is overwritten with the instant of this write —
-    "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
+    file text (frontmatter plus body), uniformly across write and edit paths.
+    The current actor and timestamp replace ``generated`` on every content
+    write, and verification is removed because the old attestation no longer
+    applies.
+    Exact ``SKILL.md`` targets use nested ``metadata``; other paths use the root.
+    Unrelated fields and conflicting literal top-level families are untouched.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1065,6 +1183,7 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
             ``markdown-vault-mcp/<version>``.
         now: The instant of the write, timezone-aware (spelled by
             :func:`okf_timestamp`).
+        path: Optional target path; only exact ``SKILL.md`` selects a nested slot.
 
     Returns:
         The stamped file text, or *text* unchanged when the resulting frontmatter
@@ -1074,20 +1193,24 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
-    new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
-    new_meta.pop("verified", None)
+    slot = _okf_write_slot(new_meta, path=path)
+    slot["generated"] = {"by": actor, "at": okf_timestamp(now)}
+    slot.pop("verified", None)
     if new_meta == meta:
         return text
     return fm.dumps(fm.Post(post.content, **new_meta))
 
 
-def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
+def append_okf_verification(
+    text: str, *, subject: str, now: _dt.datetime, path: str | None = None
+) -> str:
     """Append a ``human:<subject>`` entry to a note's ``verified`` list.
 
     The ``okf_verify`` tool's core transform (design §6): records an attributable
     human attestation, promoting the note's trust tier to ``human-reviewed``.
-    Preserves all other frontmatter and the body verbatim; the entry keeps the
-    ``{by, at}`` shape :func:`derive_trust_tier` reads.
+    Preserves other frontmatter values and the body; the entry keeps the
+    ``{by, at}`` shape :func:`derive_trust_tier` reads. Exact ``SKILL.md``
+    targets append in nested ``metadata`` rather than the literal root.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1095,13 +1218,15 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
             or ``local`` for a confirmed review without human identity claims.
         now: The instant of the verification, timezone-aware (spelled by
             :func:`okf_timestamp`).
+        path: Optional target path; only exact ``SKILL.md`` selects a nested slot.
 
     Returns:
         The note text with the appended verification.
     """
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
-    verified = list(verified_entries(meta))
+    slot = _okf_write_slot(meta, path=path)
+    verified = list(verified_entries(slot))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
-    meta["verified"] = verified
+    slot["verified"] = verified
     return fm.dumps(fm.Post(post.content, **meta))

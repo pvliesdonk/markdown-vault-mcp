@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from markdown_vault_mcp.fts_index import FTSIndex, _json_default
-from markdown_vault_mcp.types import Chunk, FTSResult, ParsedNote
+from markdown_vault_mcp.types import Chunk, FTSResult, ParsedNote, SkippedFile
 
 # ---------------------------------------------------------------------------
 # Test helper
@@ -1310,6 +1310,7 @@ def test_chunking_meta_roundtrip(tmp_path):
     assert idx.get_chunking_meta() == ChunkingMeta(
         model="bge-m3:latest",
         max_chunk_chars_override=5000,
+        indexed_frontmatter_fields="[]",
         semantics_version=INDEX_SEMANTICS_VERSION,
     )
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
@@ -1334,12 +1335,13 @@ def test_chunking_meta_stores_none_as_empty(tmp_path):
     assert idx.get_chunking_meta() == ChunkingMeta(
         model=None,
         max_chunk_chars_override=None,
+        indexed_frontmatter_fields="[]",
         semantics_version=INDEX_SEMANTICS_VERSION,
     )
 
 
 def test_chunking_meta_indexed_frontmatter_fields_roundtrip(tmp_path):
-    """indexed_frontmatter_fields persists and defaults to ``""``."""
+    """Canonical field boundaries persist; missing evidence has a distinct sentinel."""
     from markdown_vault_mcp.fts_index import (
         INDEX_SEMANTICS_VERSION,
         ChunkingMeta,
@@ -1350,16 +1352,31 @@ def test_chunking_meta_indexed_frontmatter_fields_roundtrip(tmp_path):
     idx.set_chunking_meta(
         model=None,
         max_chunk_chars_override=None,
-        indexed_frontmatter_fields="tags,category",
+        indexed_frontmatter_fields='["category", "tags"]',
     )
     assert idx.get_chunking_meta() == ChunkingMeta(
         model=None,
         max_chunk_chars_override=None,
-        indexed_frontmatter_fields="tags,category",
+        indexed_frontmatter_fields='["category", "tags"]',
         semantics_version=INDEX_SEMANTICS_VERSION,
     )
+    with idx._conn() as conn:
+        assert (
+            conn.execute(
+                "SELECT value FROM meta WHERE key = 'indexed_frontmatter_fields_json'"
+            ).fetchone()[0]
+            == '["category", "tags"]'
+        )
+        conn.execute("DELETE FROM meta WHERE key = 'indexed_frontmatter_fields_json'")
+        conn.execute(
+            "INSERT OR REPLACE INTO meta VALUES ('indexed_frontmatter_fields', ?)",
+            ('["category", "tags"]',),
+        )
+    assert idx.get_chunking_meta().indexed_frontmatter_fields == ""
+    idx.close()
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
     assert idx2.get_chunking_meta().indexed_frontmatter_fields == ""
+    idx2.close()
 
 
 # ---------------------------------------------------------------------------
@@ -2044,4 +2061,111 @@ class TestListChunksManyPaths:
         paths = [f"missing-{i}.md" for i in range(40_000)] + ["real.md"]
         rows = idx.list_chunks(paths=paths)
         assert [r["path"] for r in rows] == ["real.md"]
+        idx.close()
+
+
+@pytest.mark.parametrize("nested_type", [None, "Runbook"])
+def test_skill_type_tags_preserve_raw_frontmatter(nested_type: str | None) -> None:
+    """Configured type tags use the skill identity without flattening stored JSON."""
+    raw = {"type": "Wrong", "other": "literal", "metadata": {"status": "deprecated"}}
+    if nested_type is not None:
+        raw["metadata"]["type"] = nested_type
+    idx = FTSIndex(":memory:", indexed_frontmatter_fields=["type", "status", "other"])
+    try:
+        idx.upsert_note(make_note("demo/SKILL.md", frontmatter=raw))
+        idx.upsert_note(
+            make_note(
+                "ordinary.md",
+                frontmatter={"type": "Reference", "metadata": {"type": "Wrong"}},
+            )
+        )
+        from markdown_vault_mcp.okf import _effective_okf_tag_key
+
+        fields = ["type", "status", "other"]
+        assert idx.list_field_values("type") == ["Reference", "Wrong"]
+        assert idx.list_field_values(_effective_okf_tag_key("type", fields)) == [
+            "Reference",
+            nested_type or "Skill",
+        ]
+        assert idx.list_field_values("status") == []
+        assert idx.list_field_values(_effective_okf_tag_key("status", fields)) == [
+            "deprecated"
+        ]
+        assert idx.list_field_values("other") == ["literal"]
+        assert json.loads(idx.get_note("demo/SKILL.md")["frontmatter_json"]) == raw
+    finally:
+        idx.close()
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ([], "[]"),
+        (["type", "status", "type"], '["status", "type"]'),
+        (["type", "__okf__:type,x"], '["__okf__:type,x", "type"]'),
+        (["type", "__okf__:type", "x"], '["__okf__:type", "type", "x"]'),
+        (["Type", " type ", "é"], '[" type ", "Type", "\\u00e9"]'),
+    ],
+)
+def test_canonical_indexed_fields_preserves_field_identity(
+    fields: list[str], expected: str
+) -> None:
+    """Canonical set evidence ignores order but preserves every name boundary/byte."""
+    from markdown_vault_mcp.fts_index import canonical_indexed_fields
+
+    assert canonical_indexed_fields(fields) == expected
+
+
+def test_alias_effective_tags_use_resolved_authority(
+    tmp_path: Path, alias_note
+) -> None:
+    """Both lexical rows must match the resolved type before the native limit."""
+    from markdown_vault_mcp.scanner import parse_note
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    target, alias, raw, expected = alias_note
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+        hits = vault.reader.search(
+            "zebra", mode="keyword", filters={"type": expected["type"]}
+        )
+        assert {hit.path for hit in hits} == {target, alias}
+        assert all(hit.frontmatter == raw for hit in hits)
+        parsed = parse_note(tmp_path / alias, tmp_path)
+        idx = FTSIndex(":memory:", indexed_frontmatter_fields=["type"])
+        try:
+            idx.upsert_note(parsed)
+            assert [
+                r.path for r in idx.search("zebra", filters={"type": "Literal"})
+            ] == [alias]
+            assert json.loads(idx.get_note(alias)["frontmatter_json"]) == raw
+            assert make_note().okf_authority_path is None
+        finally:
+            idx.close()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("tombstone", [False, True], ids=["absent", "tombstone"])
+def test_authority_comparison_ignores_nonlive_rows(tombstone: bool) -> None:
+    """Authority checks leave absent and skipped paths out of reconciliation."""
+    idx = FTSIndex(":memory:", indexed_frontmatter_fields=["type"])
+    try:
+        idx.upsert_note(make_note("live.md", frontmatter={"type": "Original"}))
+        if tombstone:
+            idx.upsert_tombstone(
+                SkippedFile(
+                    path="missing.md", category="parse_error", detail="bad yaml"
+                ),
+                content_hash="invalid",
+                modified_at=2000.0,
+            )
+        known_paths = idx.list_document_paths()
+        writes = idx._conn().total_changes
+        assert not idx.tags_match_authority("live.md", "live.md", {"type": "Changed"})
+        assert idx.tags_match_authority("missing.md", "SKILL.md", {"type": "Changed"})
+        assert idx.list_document_paths() == known_paths
+        assert idx._conn().total_changes == writes
+    finally:
         idx.close()

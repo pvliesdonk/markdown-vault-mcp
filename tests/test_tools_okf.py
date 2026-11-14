@@ -191,36 +191,74 @@ class TestNonOkfBaseline:
 class TestDeclaredBundle:
     """A declared vault gains annotations on every read surface."""
 
-    async def test_search_hits_carry_annotations(self) -> None:
+    @pytest.mark.parametrize("skill", [False, True])
+    async def test_search_hits_carry_annotations(
+        self, okf_vault: Path, skill: bool
+    ) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+        from tests.fixtures.okf_skills import SKILL
+
+        if skill:
+            (okf_vault / "SKILL.md").write_text(SKILL)
+            (okf_vault / "guides" / "SKILL.md").write_text(
+                SKILL.replace("  status:", "  type: Runbook\n  status:")
+            )
+        path = okf_vault / ("SKILL.md" if skill else "guides/playbook.md")
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
         async with Client(make_server()) as client:
             hits = await _search(client)
         by_path = {hit["path"]: hit for hit in hits}
-        playbook = by_path["guides/playbook.md"]["okf"]
-        assert playbook["type"] == "Playbook"
-        assert playbook["status"] == "deprecated"
-        assert playbook["stale"] is True
-        assert playbook["trust_tier"] == "human-reviewed"
-        assert playbook["sources_count"] == 2
-        assert "sources" not in playbook
-        plain = by_path["guides/plain.md"]["okf"]
-        assert plain == {
-            "status": "stable",
-            "stale": False,
-            "trust_tier": "unverified",
-        }
+        if skill:
+            hit = by_path["SKILL.md"]
+            assert hit["okf"]["type"] == "Skill"
+            assert hit["okf"]["sources_count"] == 1
+            assert "sources" not in hit["okf"] and "generated" not in hit["okf"]
+            assert hit["frontmatter"] == dict(parse_frontmatter(SKILL).metadata)
+            assert by_path["guides/SKILL.md"]["okf"]["type"] == "Runbook"
+        else:
+            playbook = by_path["guides/playbook.md"]["okf"]
+            assert playbook["type"] == "Playbook"
+            assert playbook["status"] == "deprecated"
+            assert playbook["stale"] is True
+            assert playbook["trust_tier"] == "human-reviewed"
+            assert playbook["sources_count"] == 2
+            assert "sources" not in playbook
+            assert by_path["guides/plain.md"]["okf"] == {
+                "status": "stable",
+                "stale": False,
+                "trust_tier": "unverified",
+            }
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
-    async def test_read_includes_full_sources(self) -> None:
+    @pytest.mark.parametrize("skill", [False, True])
+    async def test_read_includes_full_sources(
+        self, okf_vault: Path, skill: bool
+    ) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+        from tests.fixtures.okf_skills import SKILL
+
+        name = "SKILL.md" if skill else "guides/playbook.md"
+        path = okf_vault / name
+        if skill:
+            path.write_text(SKILL)
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
         async with Client(make_server()) as client:
-            read = _structured(
-                await client.call_tool("read", {"path": "guides/playbook.md"})
-            )
+            read = _structured(await client.call_tool("read", {"path": name}))
         okf = read["okf"]
         assert okf["trust_tier"] == "human-reviewed"
-        assert [s["resource"] for s in okf["sources"]] == [
-            "https://example.com/a",
-            "https://example.com/b",
-        ]
         assert "sources_count" not in okf
+        if skill:
+            raw = dict(parse_frontmatter(SKILL).metadata)
+            assert okf["type"] == "Skill"
+            assert okf["generated"] == raw["metadata"]["generated"]
+            assert okf["sources"] == raw["metadata"]["sources"]
+            assert read["frontmatter"] == raw
+        else:
+            assert [s["resource"] for s in okf["sources"]] == [
+                "https://example.com/a",
+                "https://example.com/b",
+            ]
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
     async def test_section_read_omits_annotation(self) -> None:
         async with Client(make_server()) as client:
@@ -233,16 +271,29 @@ class TestDeclaredBundle:
             )
         assert "okf" not in read
 
-    async def test_get_context_carries_annotation(self) -> None:
+    @pytest.mark.parametrize("skill", [False, True])
+    async def test_get_context_carries_annotation(
+        self, okf_vault: Path, skill: bool
+    ) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+        from tests.fixtures.okf_skills import SKILL
+
+        name = "SKILL.md" if skill else "guides/playbook.md"
+        path = okf_vault / name
+        if skill:
+            path.write_text(SKILL)
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             context = _structured(
                 await client.call_tool(
-                    "get_context",
-                    {"path": "guides/playbook.md", "similar_limit": 0},
+                    "get_context", {"path": name, "similar_limit": 0}
                 )
             )
-        assert context["okf"]["type"] == "Playbook"
+        assert context["okf"]["type"] == ("Skill" if skill else "Playbook")
+        if skill:
+            assert context["frontmatter"] == dict(parse_frontmatter(SKILL).metadata)
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
     async def test_stats_okf_section(self) -> None:
         async with Client(make_server()) as client:
@@ -547,3 +598,163 @@ class TestOkfMigrationTools:
         async with Client(make_server()) as client:
             names = {t.name for t in await client.list_tools()}
         assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)
+
+
+async def test_alias_annotations_reach_mcp_query(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MCP hits/exact/context project aliases while preserving literal predicates."""
+    target, alias, raw, expected = alias_note
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type")
+    async with Client(make_server()) as client:
+        await wait_for_mcp_writer_drain(client)
+        for tool, args in (
+            ("search", {"query": "zebra"}),
+            ("query_documents", {"filters": {"type": "Literal"}}),
+            ("get_context", {"path": alias, "similar_limit": 0}),
+            ("read", {"path": alias}),
+        ):
+            result = await client.call_tool(tool, args)
+            data = _parse_tool_data(result) if tool == "search" else _structured(result)
+            if isinstance(data, list):
+                data = next(h for h in data if h["path"] == alias)
+            elif "items" in data:
+                data = next(h for h in data["items"] if h["path"] == alias)
+            assert data["path"] == (target if tool == "read" else alias)
+            assert data["frontmatter"] == raw
+            annotation = data["okf"]
+            assert annotation["type"] == expected["type"]
+            assert annotation["status"] == expected["status"]
+            assert annotation["stale"] is (expected["type"] == "Runbook")
+            assert annotation["trust_tier"] == (
+                "human-reviewed"
+                if expected["type"] == "Runbook"
+                else "machine-confirmed"
+            )
+            if tool == "read":
+                assert annotation["generated"] == expected["generated"]
+                assert annotation["sources"] == expected["sources"]
+            else:
+                assert annotation["sources_count"] == len(expected["sources"])
+                assert "sources" not in annotation and "generated" not in annotation
+
+
+async def test_mcp_annotation_resolution_runs_in_worker(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Single and batch attachment resolve and read skill metadata off the event loop."""
+    import threading
+
+    from markdown_vault_mcp import okf
+    from markdown_vault_mcp._tools import _common
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    _, alias, raw, expected = alias_note
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    threads = []
+    probes = 0
+    original = okf.resolved_okf_metadata
+
+    def recorded(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        threads.append(threading.get_ident())
+        return original(*args, **kwargs)
+
+    async def active(_vault: Any) -> bool:
+        nonlocal probes
+        probes += 1
+        return True
+
+    read_threads = []
+    from pathlib import Path
+
+    native_read = Path.read_text
+
+    def worker_read(path: Path, *args: Any, **kwargs: Any) -> str:
+        read_threads.append(threading.get_ident())
+        assert threading.get_ident() != main_thread
+        return native_read(path, *args, **kwargs)
+
+    main_thread = threading.get_ident()
+
+    monkeypatch.setattr(okf, "resolved_okf_metadata", recorded)
+    # The attachment module imports the adapter directly.
+    monkeypatch.setattr(_common, "resolved_okf_metadata", recorded, raising=False)
+    monkeypatch.setattr(_common, "okf_active", active)
+    monkeypatch.setattr(Path, "read_text", worker_read)
+    try:
+        single = await _common.attach_okf(vault, {"path": alias}, raw)
+        batch = await _common.attach_okf_to_results(
+            vault, [{"path": alias, "frontmatter": raw}] * 2
+        )
+        assert single["okf"]["type"] == batch[0]["okf"]["type"] == expected["type"]
+        assert len(threads) == 3 and all(t != threading.get_ident() for t in threads)
+        assert probes == 2
+        assert len(read_threads) == (3 if expected["type"] == "Runbook" else 0)
+        fault = PermissionError("synthetic metadata identity refusal")
+
+        def refused(*_args: Any, **_kwargs: Any) -> Any:
+            raise fault
+
+        monkeypatch.setattr(okf, "resolved_okf_metadata", refused)
+        monkeypatch.setattr(_common, "resolved_okf_metadata", refused)
+        for call in (
+            _common.attach_okf(vault, {"path": alias}, raw),
+            _common.attach_okf_to_results(vault, [{"path": alias, "frontmatter": raw}]),
+        ):
+            with pytest.raises(PermissionError) as caught:
+                await call
+            assert caught.value is fault
+    finally:
+        vault.close()
+
+
+def test_indexed_farm_metadata_keeps_native_access_policy(tmp_path: Path) -> None:
+    """Outside-root leaf aliases keep indexed views, without broadening whole reads."""
+    from dataclasses import asdict
+
+    import frontmatter
+
+    from markdown_vault_mcp._cli_read import _path_payload, _query_payload
+    from markdown_vault_mcp._read_payloads import annotate_hits
+    from markdown_vault_mcp.okf import derive_annotation
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.fixtures.okf_skills import NESTED_OKF, ROOT_OKF
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    target = tmp_path / "SKILL.md"
+    raw = {**ROOT_OKF, "metadata": NESTED_OKF}
+    target.write_text(frontmatter.dumps(frontmatter.Post("zebra instructions", **raw)))
+    (source / "farm.md").symlink_to(target)
+    vault = Vault(source_dir=source, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+        hits = vault.reader.search("zebra", mode="keyword", filters={"type": "Runbook"})
+        assert [h.path for h in hits] == ["farm.md"]
+        assert hits[0].frontmatter == raw
+        vault.okf._mode = "off"
+        baseline = vault.reader.search("zebra", mode="keyword")[0].score
+        assert hits[0].score == pytest.approx(baseline * 0.375)
+        vault.okf._mode = "on"
+        assert [
+            n.path for n in vault.reader.list_documents(filters={"type": "Runbook"})
+        ] == ["farm.md"]
+        assert vault.reader.okf_stats()["types"] == {"Runbook": 1}
+        assert vault.graph.get_neighborhood("farm.md").nodes[0].note_type == "Runbook"
+        for payload in (
+            annotate_hits([asdict(hits[0])], derive_annotation, source_dir=source)[0],
+            _path_payload(vault, {"query": "farm"})["items"][0],
+            _query_payload(vault, "query_documents", {"filters": {"type": "Literal"}})[
+                "items"
+            ][0],
+        ):
+            assert payload["path"] == "farm.md" and payload["frontmatter"] == raw
+            assert payload["okf"]["type"] == "Runbook"
+            assert payload["okf"]["sources_count"] == 1
+        assert vault.reader.read("farm.md") is None
+    finally:
+        vault.close()

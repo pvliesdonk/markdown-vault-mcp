@@ -140,6 +140,25 @@ class KeywordIndex(Protocol):
         """Return every stored note, optionally restricted to *folder*."""
         ...
 
+    def list_document_paths(self) -> list[str]:
+        """Return ordered live and tombstone paths without materializing metadata."""
+        ...
+
+    def tags_match_authority(
+        self, path: str, authority_path: str, frontmatter: dict[str, Any]
+    ) -> bool:
+        """Check stored derived tags against the current resolved authority.
+
+        Args:
+            path: Stored relative document spelling.
+            authority_path: Currently resolved filesystem path.
+            frontmatter: Current parsed YAML mapping, retaining its native value types.
+
+        Returns:
+            Whether rows match; absent/live-less rows have no tags.
+        """
+        ...
+
     def list_folders(self) -> list[str]:
         """Return every folder that contains at least one note."""
         ...

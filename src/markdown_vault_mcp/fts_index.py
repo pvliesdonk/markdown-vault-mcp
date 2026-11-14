@@ -35,6 +35,7 @@ import logging
 import sqlite3
 import threading
 from collections import deque
+from collections.abc import Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -53,6 +54,11 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.okf import (
+    OKF_METADATA_FIELDS,
+    _effective_okf_tag_key,
+    effective_okf_metadata,
+)
 from markdown_vault_mcp.types import (
     FTSResult,
     ParsedNote,
@@ -62,7 +68,7 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Collection, Iterable, Iterator
 
     from markdown_vault_mcp.query_types import (
         NoteAggregate,
@@ -279,7 +285,9 @@ _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
 # short-circuit on its own trigger rather than piggybacking on
 # searchable_fields (which only shares its value when SEARCHABLE_FIELDS is
 # left to default to INDEXED_FIELDS).
-_META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
+# A separate JSON key distinguishes complete field-set evidence from legacy
+# comma-joined text, whose field boundaries cannot be recovered unambiguously.
+_META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields_json"
 # Link-extraction provenance: the attachment allowlist in force at build
 # time (#1333). The link graph is notes-only, so a reference whose target
 # carries an allowlisted extension stores no link row — which makes the
@@ -496,7 +504,27 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: is no longer an H1, the title or a chunk boundary; its chunk and
 #: ``content_chars`` gain the indentation. Every other note's rows are
 #: byte-identical, so no other note's embeddings are recomputed.
-INDEX_SEMANTICS_VERSION = 11
+#: Version 12 (#2062) adds resolved-authority effective OKF tags alongside literal tags,
+#: including SKILL.md nested metadata and filename-inferred Skill type. Raw
+#: frontmatter_json stays literal; unchanged files rebuild both views once.
+#: Complete indexed-field sets use canonical JSON under a distinct meta key;
+#: missing evidence rebuilds once instead of guessing legacy field boundaries.
+#: Version 11 shipped in v6.1.1. Coordinate any unshipped 12 with #2057 rather
+#: than adding a second bump before release.
+INDEX_SEMANTICS_VERSION = 12
+
+
+def canonical_indexed_fields(fields: Collection[str]) -> str:
+    """Encode a complete indexed-field set without losing field boundaries.
+
+    Args:
+        fields: Literal frontmatter field names; order and duplicates do not
+            affect their derived tag-key namespace.
+
+    Returns:
+        A sorted JSON array of distinct names, or ``"[]"`` for no fields.
+    """
+    return json.dumps(sorted(set(fields)))
 
 
 class ChunkingMeta(NamedTuple):
@@ -513,9 +541,9 @@ class ChunkingMeta(NamedTuple):
         searchable_fields: Comma-joined canonical form of the searchable
             frontmatter fields feeding the FTS ``summary`` column (default
             ``""`` — none configured).
-        indexed_frontmatter_fields: Comma-joined canonical form of the
-            frontmatter fields promoted to ``document_tags`` for structured
-            filtering (default ``""`` — none configured).
+        indexed_frontmatter_fields: Canonical JSON set of frontmatter fields
+            promoted to ``document_tags`` for structured filtering (``"[]"``
+            for no fields; ``""`` for missing provenance).
         attachment_extensions: Canonical form of the attachment allowlist
             link extraction consulted (default ``""`` — the built-in set;
             see :data:`_META_ATTACHMENT_EXTENSIONS_KEY`).
@@ -673,6 +701,8 @@ class FTSIndex:
     values produce one row per item (deduplicated per document).  Complex
     types (nested dicts, objects) are stored in the raw JSON blob only and
     are not indexed.
+    Configured OKF families also have effective values under collision-free
+    internal keys; original keys always retain literal frontmatter values.
 
     Args:
         db_path: Path to the SQLite database file.  Pass ``":memory:"`` (the
@@ -1285,17 +1315,47 @@ class FTSIndex:
         Only keys listed in ``indexed_frontmatter_fields`` are processed.
         Scalar values produce one row; list values produce one row per item
         (deduplicated per document).  Complex types (dicts, etc.) are skipped.
+        Effective OKF copies use internal keys alongside the literal rows,
+        independent of detector mode, so mode changes need no rebuild.
 
         Args:
             cur: Active cursor inside the current transaction.
             document_id: The ``id`` of the parent document row.
             note: Parsed document whose frontmatter is to be indexed.
         """
+        for key, value in self._tag_rows(
+            note.frontmatter,
+            note.path,
+            note.okf_authority_path
+            if note.okf_authority_path is not None
+            else note.path,
+        ):
+            cur.execute(
+                "INSERT OR IGNORE INTO document_tags "
+                "(document_id, tag_key, tag_value) VALUES (?, ?, ?)",
+                (document_id, key, value),
+            )
+
+    def _tag_rows(
+        self, frontmatter: dict[str, Any], path: str, authority_path: str
+    ) -> Iterator[tuple[str, str]]:
+        """Derive the same literal/effective scalar rows for insertion and validation."""
         if not self._indexed_fields:
             return
 
-        for key in self._indexed_fields:
-            value = note.frontmatter.get(key)
+        metadata = effective_okf_metadata(
+            frontmatter,
+            path=authority_path,
+        )
+        values = {key: frontmatter.get(key) for key in self._indexed_fields}
+        values.update(
+            {
+                _effective_okf_tag_key(key, self._indexed_fields): metadata.get(key)
+                for key in self._indexed_fields
+                if key in OKF_METADATA_FIELDS
+            }
+        )
+        for key, value in values.items():
             if value is None:
                 continue
 
@@ -1311,31 +1371,60 @@ class FTSIndex:
                         tag_val = str(item)
                         if tag_val not in seen:
                             seen.add(tag_val)
-                            cur.execute(
-                                """
-                                INSERT OR IGNORE INTO document_tags
-                                    (document_id, tag_key, tag_value)
-                                VALUES (?, ?, ?)
-                                """,
-                                (document_id, key, tag_val),
-                            )
+                            yield key, tag_val
             elif isinstance(value, dict):
                 # Complex type — skip.
                 logger.debug(
                     "complex_frontmatter_value_skipped key=%r path=%s",
                     key,
-                    note.path,
+                    path,
                 )
             else:
                 # Scalar value.
-                cur.execute(
-                    """
-                    INSERT OR IGNORE INTO document_tags
-                        (document_id, tag_key, tag_value)
-                    VALUES (?, ?, ?)
-                    """,
-                    (document_id, key, str(value)),
-                )
+                yield key, str(value)
+
+    @_retry_on_locked
+    def tags_match_authority(
+        self, path: str, authority_path: str, frontmatter: dict[str, Any]
+    ) -> bool:
+        """Check stored tags against raw metadata interpreted at the current authority.
+
+        Args:
+            path: Stored relative document spelling.
+            authority_path: Currently resolved filesystem path.
+            frontmatter: Current parsed YAML mapping, retaining its native value types.
+
+        Returns:
+            Whether all derived rows match; absent/live-less rows have no tags.
+        """
+        row = (
+            self._conn()
+            .execute(
+                "SELECT id FROM documents_live WHERE path = ?",
+                (path,),
+            )
+            .fetchone()
+        )
+        if row is None:
+            return True
+        expected = set(self._tag_rows(frontmatter, path, authority_path))
+        stored = self._conn().execute(
+            "SELECT tag_key, tag_value FROM document_tags WHERE document_id = ?",
+            (row["id"],),
+        )
+        return expected == {tuple(tag) for tag in stored}
+
+    @_retry_on_locked
+    def list_document_paths(self) -> list[str]:
+        """Return ordered known paths, including tombstones, without loading metadata.
+
+        Returns:
+            All stored document spellings, live or skipped.
+        """
+        return [
+            row[0]
+            for row in self._conn().execute("SELECT path FROM documents ORDER BY path")
+        ]
 
     def _insert_aliases(
         self,
@@ -1812,9 +1901,8 @@ class FTSIndex:
                 pre-upgrade index (absent key) reads back as the default.
             searchable_fields: Comma-joined canonical searchable-field list.
                 The default (no fields) is already the empty string.
-            indexed_frontmatter_fields: Comma-joined canonical
-                structured-filter field list. The default (no fields) is
-                already the empty string.
+            indexed_frontmatter_fields: Canonical JSON structured-filter field
+                set. The empty-string default is stored as ``"[]"``.
             attachment_extensions: Canonical attachment allowlist, as
                 rendered by ``utils.canonical_attachment_extensions`` (the
                 default set is the empty string).
@@ -1833,7 +1921,7 @@ class FTSIndex:
                 (_META_MAX_CHUNK_CHARS_OVERRIDE_KEY, override_value),
                 (_META_TITLE_FIELD_KEY, title_value),
                 (_META_SEARCHABLE_FIELDS_KEY, searchable_fields),
-                (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields),
+                (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields or "[]"),
                 (_META_ATTACHMENT_EXTENSIONS_KEY, attachment_extensions),
                 (_META_INDEX_SEMANTICS_KEY, str(INDEX_SEMANTICS_VERSION)),
             ):
@@ -2161,8 +2249,8 @@ class FTSIndex:
     def list_field_values(self, field: str) -> list[str]:
         """Return all distinct tag values for a given frontmatter field.
 
-        If ``field`` was not in ``indexed_frontmatter_fields``, returns an
-        empty list.
+        Accepts configured literal keys and their internal effective OKF keys.
+        Keys with no stored tag rows return an empty list.
 
         Args:
             field: Frontmatter key (e.g. ``"cluster"``).

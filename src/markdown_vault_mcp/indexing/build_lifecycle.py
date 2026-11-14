@@ -1,7 +1,7 @@
 """Build attempts and their single completion owner (#1483).
 
-Every entry point schedules the same command. Its public Future completes only
-once the scan, persistent marker and readiness publication have finished. Each
+Every entry point schedules the same command. Its public Future completes after
+validation, any required scan and marker writes, and readiness publication. Each
 attempt retains its own outcome: a later build cannot rewrite an earlier waiter's
 result. Readiness is a projection of the latest scheduled attempt for query APIs.
 Future ordering: docs/design/reference/python-futures.md.
@@ -86,6 +86,7 @@ class BuildAttempt:
 @dataclass(frozen=True)
 class _BuildCommand(BuildIndex):
     attempt: BuildAttempt = field(kw_only=True)
+    warm_eligible: bool = field(kw_only=True)
 
 
 class BuildLifecycle:
@@ -114,33 +115,28 @@ class BuildLifecycle:
         self._pending: set[BuildAttempt] = set()
 
     def submit(self, writer: IndexWriter, *, force: bool = False) -> Future[IndexStats]:
-        """Schedule a complete build; an idle warm restart resolves immediately."""
+        """Schedule validation and any required build on the writer thread."""
         with self._lock:
             active = any(not pending.future.done() for pending in self._pending)
             attempt = BuildAttempt()
             self._latest = attempt
             attempt.future.add_done_callback(lambda _: self._on_cancelled(attempt))
+            self._readiness.begin_sync_build()
+            self._pending.add(attempt)
             try:
-                if not active and not force and self._is_warm():
-                    stats = IndexStats(
-                        documents_indexed=self._fts.count_documents(),
-                        chunks_indexed=0,
-                        skipped=0,
+                warm_eligible = not active and not force
+                if not warm_eligible and self._on_scan is not None:
+                    self._on_scan(attempt.future)
+                queued = writer.submit(
+                    _BuildCommand(
+                        force=force, attempt=attempt, warm_eligible=warm_eligible
                     )
-                    attempt.future.set_running_or_notify_cancel()
-                    self._finish(attempt, _Succeeded(stats))
-                else:
-                    self._readiness.begin_sync_build()
-                    self._pending.add(attempt)
-                    if self._on_scan is not None:
-                        self._on_scan(attempt.future)
-                    queued = writer.submit(_BuildCommand(force=force, attempt=attempt))
-                    queued.add_done_callback(
-                        lambda future: self._on_dispatch_done(attempt, future)
-                    )
+                )
+                queued.add_done_callback(
+                    lambda future: self._on_dispatch_done(attempt, future)
+                )
             except BaseException as exc:
                 self._pending.discard(attempt)
-                self._readiness.begin_sync_build()
                 attempt.future.set_running_or_notify_cancel()
                 self._finish(attempt, _Unsuccessful("failed", exc))
                 raise
@@ -173,15 +169,15 @@ class BuildLifecycle:
             return None
         scanning = True
         try:
-            self._fts.clear_build_completed()
-            stats: IndexStats = run_build_index(job, ctx)
+            stats, scanned = self._scan_or_reuse(job, ctx)
             scanning = False
-            self._fts.set_build_completed(walk_complete=stats.walk_complete)
-            if not stats.walk_complete:
-                # The build completed: warm restarts stay warm (the tracker
-                # keeps unwalked subtrees). It is recorded as incomplete so no
-                # empty cold build trusts it (#1785).
-                logger.warning("build_index_recorded_incomplete reason=walk_errors")
+            if scanned:
+                self._fts.set_build_completed(walk_complete=stats.walk_complete)
+                if not stats.walk_complete:
+                    # The build completed: warm restarts stay warm (the tracker
+                    # keeps unwalked subtrees). It is recorded as incomplete so no
+                    # empty cold build trusts it (#1785).
+                    logger.warning("build_index_recorded_incomplete reason=walk_errors")
         except CancelledError as exc:
             self._finish(attempt, _Unsuccessful("cancelled", exc))
             raise
@@ -195,6 +191,22 @@ class BuildLifecycle:
             raise
         self._finish(attempt, _Succeeded(stats))
         return stats
+
+    def _scan_or_reuse(
+        self, job: _BuildCommand, ctx: WriterContext
+    ) -> tuple[IndexStats, bool]:
+        """Validate warm reuse or run the scan, reporting full-discovery work."""
+        if job.warm_eligible and self._is_warm():
+            return IndexStats(
+                documents_indexed=self._fts.count_documents(),
+                chunks_indexed=0,
+                skipped=0,
+                walk_complete=False,
+            ), False
+        if job.warm_eligible and self._on_scan is not None:
+            self._on_scan(job.attempt.future)
+        self._fts.clear_build_completed()
+        return run_build_index(job, ctx), True
 
     def _record(
         self, attempt: BuildAttempt, outcome: _Succeeded | _Unsuccessful

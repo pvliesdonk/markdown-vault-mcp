@@ -217,3 +217,54 @@ class TestGraphViews:
             assert view.truncated is False
         finally:
             col.close()
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_skill_graph_type_is_effective(tmp_path: Path, active: bool) -> None:
+    """Neighborhood labels project nested identity; inactive and hub views stay untyped."""
+    from markdown_vault_mcp.vault import VaultSettings
+    from tests.fixtures.okf_skills import SKILL
+
+    (tmp_path / "SKILL.md").write_text(SKILL)
+    (tmp_path / "ref.md").write_text("# Ref\n\n[skill](SKILL.md)\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(okf_mode="on" if active else "off")
+    )
+    try:
+        vault.index.build_index()
+        view = vault.graph.get_neighborhood("SKILL.md", depth=1)
+        node = next(node for node in view.nodes if node.id == "SKILL.md")
+        assert node.note_type == ("Skill" if active else None)
+        assert all(node.note_type is None for node in vault.graph.get_hub_graph().nodes)
+    finally:
+        vault.close()
+
+
+def test_alias_graph_type_uses_resolved_authority(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Graph labels keep lexical identity while type follows held resolved authority."""
+    from markdown_vault_mcp.vault import VaultSettings
+
+    target, alias, _, expected = alias_note
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+
+        def forbid(*_args, **_kwargs):
+            raise AssertionError("graph read note content")
+
+        monkeypatch.setattr(vault._doc_mgr, "read", forbid)
+        for path in [target, alias]:
+            node = next(
+                n for n in vault.graph.get_neighborhood(path).nodes if n.id == path
+            )
+            meta = vault.reader.get_metadata(path)
+            assert node.note_type == expected["type"]
+            assert node.label == meta.title and node.folder == meta.folder
+        vault.okf._mode = "off"
+        assert all(
+            n.note_type is None for n in vault.graph.get_neighborhood(alias).nodes
+        )
+    finally:
+        vault.close()

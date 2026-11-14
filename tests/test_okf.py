@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -1192,3 +1192,232 @@ class TestReservedFrontmatterPolicy:
             title_field="heading", required_fields=("heading",)
         )
         assert policy.build(None, title="Log") == {"heading": "Log"}
+
+
+@pytest.mark.parametrize(
+    ("case", "value"),
+    [("nested", value) for value in [None, "", "  ", 42, [], "Runbook", "Custom"]]
+    + [("slot", value) for value in [None, "bad", [], {}, {"type": None}]]
+    + [("absent", None)]
+    + [
+        ("literal", path)
+        for path in [None, "skill.md", "notes/ordinary.md", "SKILL.md/other.md"]
+    ],
+)
+def test_effective_skill_metadata(case: str, value: Any) -> None:
+    """Projection handles each slot state without mutating raw or ordinary metadata."""
+    from copy import deepcopy
+
+    from markdown_vault_mcp.okf import effective_okf_metadata
+
+    raw = {
+        "name": "demo",
+        "description": "Discovery text",
+        "unknown": "kept",
+        "type": "Wrong",
+        "status": "draft",
+        "generated": {"by": "wrong"},
+        "verified": [{"by": "human:wrong"}],
+        "stale_after": "1990-01-01",
+        "sources": [{"resource": "wrong"}],
+        "metadata": {
+            "type": value,
+            "status": "deprecated",
+            "generated": {"by": "human:alex"},
+            "sources": [{"resource": "https://example.invalid/spec"}],
+        },
+    }
+    path = "skills/demo/SKILL.md"
+    if case == "slot":
+        raw["metadata"] = value
+    elif case == "absent":
+        del raw["metadata"]
+    elif case == "literal":
+        raw["metadata"] = {"type": "Skill"}
+        path = value
+    before = deepcopy(raw)
+    result = effective_okf_metadata(raw, path=path)
+    assert result is not raw and raw == before
+    if case == "literal":
+        assert result == raw
+        return
+    assert result["type"] == (
+        value
+        if case == "nested" and isinstance(value, str) and value.strip()
+        else "Skill"
+    )
+    assert result["name"] == "demo" and result["unknown"] == "kept"
+    assert result["description"] == "Discovery text"
+    assert "verified" not in result and "stale_after" not in result
+    if case == "nested":
+        assert result["status"] == "deprecated"
+        assert result["generated"] == {"by": "human:alex"}
+        assert result["sources"] == [{"resource": "https://example.invalid/spec"}]
+    else:
+        assert not {"status", "generated", "sources"} & result.keys()
+
+
+def test_skill_audit_uses_filename_inferred_type(tmp_path: Path) -> None:
+    """A filename-inferred skill passes the existing concept audit without a rewrite."""
+    from markdown_vault_mcp.okf import audit_bundle
+    from tests.fixtures.okf_skills import SKILL
+
+    path = tmp_path / "SKILL.md"
+    path.write_text(SKILL)
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    report = audit_bundle(tmp_path)
+    assert report.conformant_notes == 1 and report.missing_type.count == 0
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+@pytest.mark.parametrize(
+    "generated", [{"by": "human:alex", "at": "2026-11-13T00:00:00Z"}, None, "invalid"]
+)
+def test_generated_read_annotation_preserves_mapping(generated: object) -> None:
+    """Whole reads expose supplied structured provenance, never an invented producer."""
+    metadata = {"generated": generated}
+    full = derive_annotation(metadata, include_sources=True)
+    assert full.get("generated") == (generated if isinstance(generated, dict) else None)
+    assert "generated" not in derive_annotation(metadata)
+    if not isinstance(generated, dict):
+        assert "generated" not in full
+
+
+def test_effective_skill_tag_keys_avoid_configured_names() -> None:
+    """Derived keys never consume an operator's literal field, including repeated prefixes."""
+    from markdown_vault_mcp.okf import OKF_METADATA_FIELDS, _effective_okf_tag_key
+
+    fields = [*OKF_METADATA_FIELDS, "__okf__:type", "__okf__:__okf__:type", "tags"]
+    keys = [_effective_okf_tag_key(field, fields) for field in OKF_METADATA_FIELDS]
+    assert len(set(keys)) == len(OKF_METADATA_FIELDS)
+    assert set(keys).isdisjoint(fields)
+    assert _effective_okf_tag_key("type", fields) == "__okf__:__okf__:__okf__:type"
+    assert _effective_okf_tag_key("tags", fields) == "tags"
+    assert _effective_okf_tag_key("type", ["tags"]) == "type"
+
+
+def test_resolved_okf_metadata_preserves_held_discovery_fields(
+    tmp_path: Path, alias_note: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skill families retain YAML types while unrelated held discovery stays intact."""
+    from copy import deepcopy
+
+    from markdown_vault_mcp.okf import OKF_METADATA_FIELDS, resolved_okf_metadata
+
+    target, alias, raw, expected = alias_note
+    raw["name"] = "held discovery"
+    raw["metadata"] = dict.fromkeys(OKF_METADATA_FIELDS, "serialized held")
+    before = deepcopy(raw)
+    reads = []
+    read_text = type(tmp_path).read_text
+
+    def read(path: Path, *args: Any, **kwargs: Any) -> str:
+        reads.append(path)
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(tmp_path), "read_text", read)
+    projected = resolved_okf_metadata(raw, path=alias, source_dir=tmp_path)
+    assert {key: projected[key] for key in OKF_METADATA_FIELDS} == expected
+    assert projected["name"] == "held discovery" and raw == before
+    assert projected["metadata"] == raw["metadata"]
+    assert reads == ([tmp_path / target] if target.endswith("/SKILL.md") else [])
+
+    def forbid(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("unexpected context-free/ordinary content read")
+
+    monkeypatch.setattr(type(tmp_path), "read_bytes", forbid)
+    monkeypatch.setattr(type(tmp_path), "read_text", forbid)
+    monkeypatch.setattr("markdown_vault_mcp.okf.parse_frontmatter", forbid)
+    assert resolved_okf_metadata(raw, path=None, source_dir=tmp_path) == raw
+    assert resolved_okf_metadata(raw, path="ordinary.md") == raw
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), RuntimeError("loop")])
+def test_resolved_okf_metadata_propagates_resolution_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """A genuine resolution failure must not silently select a lexical authority."""
+    from markdown_vault_mcp.okf import resolved_okf_metadata
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        raise error
+
+    monkeypatch.setattr(type(tmp_path), "resolve", fail)
+    with pytest.raises(type(error)) as caught:
+        resolved_okf_metadata({"type": "Literal"}, path="alias.md", source_dir=tmp_path)
+    assert caught.value is error
+
+
+def test_alias_stats_use_resolved_authority(tmp_path: Path, alias_note: Any) -> None:
+    """Stats must count both indexed spellings under the resolved lifecycle/provenance."""
+    from markdown_vault_mcp.vault import Vault
+
+    target, alias, _, expected = alias_note
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+        stats = vault.reader.okf_stats()
+        nested = expected["type"] == "Runbook"
+        assert stats["types"] == {expected["type"]: 2}
+        assert stats["status"] == {expected["status"]: 2}
+        assert stats["trust"] == {
+            "human-reviewed" if nested else "machine-confirmed": 2
+        }
+        assert stats["stale_count"] == (2 if nested else 0)
+        assert {n.path for n in vault.reader.list_documents()} == {target, alias}
+    finally:
+        vault.close()
+
+
+def test_alias_audit_uses_resolved_authority(
+    tmp_path: Path, alias_note: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Disk audit must infer target skills while keeping lexical finding examples."""
+    import frontmatter
+
+    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.okf import audit_bundle
+
+    target, alias, raw, expected = alias_note
+    raw.pop("type")
+    raw["metadata"].pop("type")
+    raw["metadata"]["status"] = "strange"
+    (tmp_path / target).write_text(frontmatter.dumps(frontmatter.Post("zebra", **raw)))
+
+    def forbid(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("audit accessed index")
+
+    monkeypatch.setattr(FTSIndex, "list_notes", forbid)
+    report = audit_bundle(tmp_path)
+    nested = expected["type"] == "Runbook"
+    assert report.total_notes == 2
+    assert report.missing_type.count == (0 if nested else 2)
+    assert set(report.missing_type.examples) == (set() if nested else {target, alias})
+    assert set(report.unknown_status.examples) == ({target, alias} if nested else set())
+
+
+@pytest.mark.parametrize("fault", ["decode", "parse", "permission"])
+def test_resolved_skill_metadata_propagates_native_read_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    """Typed skill projection propagates native content failures without held fallback."""
+    import yaml
+
+    from markdown_vault_mcp.okf import resolved_okf_metadata
+
+    path = tmp_path / "SKILL.md"
+    path.write_bytes(b"\xff" if fault == "decode" else b"---\nmetadata: [\n---\n")
+    expected: type[Exception] = (
+        UnicodeDecodeError if fault == "decode" else yaml.YAMLError
+    )
+    if fault == "permission":
+        expected = PermissionError
+
+        def denied(*_args: Any, **_kwargs: Any) -> Any:
+            raise PermissionError("synthetic native read refusal")
+
+        monkeypatch.setattr(type(tmp_path), "read_text", denied)
+    with pytest.raises(expected):
+        resolved_okf_metadata(
+            {"metadata": {"type": "Runbook"}}, path="SKILL.md", source_dir=tmp_path
+        )

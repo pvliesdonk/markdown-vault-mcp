@@ -162,6 +162,8 @@ sys.meta_path.insert(0, Deny())
 from markdown_vault_mcp._read_payloads import parse_filters, annotate_hits
 assert parse_filters(['tag=文=a']) == {'tag':'文=a'}
 assert annotate_hits([{'frontmatter':{}}], lambda _: {'status':'stable'}) == [{'frontmatter':{},'okf':{'status':'stable'}}]
+held = {'type': 'Literal', 'metadata': {'type': 'Skill'}}
+assert annotate_hits([{'path':'SKILL.md','frontmatter':held}], lambda data: data)[0]['okf'] == held
 """
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, timeout=30

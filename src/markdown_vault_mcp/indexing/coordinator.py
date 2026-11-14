@@ -89,8 +89,9 @@ class IndexWriteCoordinator:
         # frontmatter field set, tracked separately from searchable_fields
         # so an INDEXED_FIELDS-only change also rejects the warm-restart
         # short-circuit (#927) even when SEARCHABLE_FIELDS is explicitly
-        # overridden and would otherwise stay unchanged.
-        self._indexed_frontmatter_fields = indexed_frontmatter_fields
+        # overridden and would otherwise stay unchanged. Canonical JSON keeps
+        # complete field boundaries; the default encodes an empty field set.
+        self._indexed_frontmatter_fields = indexed_frontmatter_fields or "[]"
         # Link-extraction provenance: the attachment allowlist decides whether
         # a reference is a link row at all (#1333), so a change to it changes
         # the stored rows of notes whose bytes never moved. Hash-based
@@ -144,11 +145,14 @@ class IndexWriteCoordinator:
         """Adopt a completed stored index for reads without scanning or writing.
 
         The caller opens shared files read-only. Stored build provenance stays
-        authoritative, including when this shell has different build settings.
-        A completed empty index is usable; an incomplete build is refused.
+        authoritative for model, chunking, title and searchable fields. The
+        semantics version and entire indexed-field namespace must match so
+        readers interpret derived tag keys correctly. A completed empty index
+        is usable; an incomplete or incompatible build is refused.
 
         Raises:
             IndexUnavailableError: The writer is active or no complete build exists.
+            InvalidRequestError: Stored semantics or indexed fields are incompatible.
         """
         if not self.is_drained():
             raise IndexUnavailableError(
@@ -160,7 +164,30 @@ class IndexWriteCoordinator:
                 "Stored index has no completed build. Run admin index from its owning process.",
                 reason="never_built",
             )
+        self._require_compatible_read_provenance()
         self._readiness.mark_built()
+
+    def _require_compatible_read_provenance(self) -> None:
+        """Refuse a reader that cannot interpret the stored derived tag namespace."""
+        stored = self._fts.get_chunking_meta()
+        for key, actual, expected in (
+            (
+                "index_semantics_version",
+                stored.semantics_version,
+                INDEX_SEMANTICS_VERSION,
+            ),
+            (
+                "indexed_frontmatter_fields",
+                stored.indexed_frontmatter_fields,
+                self._indexed_frontmatter_fields,
+            ),
+        ):
+            if actual != expected:
+                raise InvalidRequestError(
+                    f"Stored index has incompatible {key}: {actual!r}; this reader needs {expected!r}. "
+                    "Use matching reader settings/version, or run admin index through "
+                    "the owning process to rebuild when required."
+                )
 
     def require_built(self) -> None:
         """Raise :exc:`IndexUnavailableError` if :meth:`build_index` has not run."""
@@ -360,6 +387,7 @@ class IndexWriteCoordinator:
             self._fts.is_build_completed()
             and self._chunking_meta_matches()
             and self._fts.has_documents()
+            and not self._writer_ctx.index_manager.stale_authority_paths()
         )
 
     def build_index(self, *, force: bool = False) -> IndexStats:
@@ -415,9 +443,9 @@ class IndexWriteCoordinator:
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Schedule a build whose Future includes marker and readiness publication.
 
-        An idle warm restart returns an already-resolved Future. A failed marker
-        write fails this Future just like a failed scan. Cancellation is possible
-        until execution begins; cancelling a pending build does not mark it failed.
+        Await the Future even on warm restarts: the writer validates current
+        metadata before reusing chunks. Validation, scan and marker failures fail
+        this attempt. Pending cancellation does not mark the build failed.
         """
         return self._builds.submit(self._writer, force=force)
 

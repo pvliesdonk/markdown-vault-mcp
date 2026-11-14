@@ -42,8 +42,55 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
 - **Trust tier**: derived from the `verified` list (a single entry may be written as a bare mapping, per the spec). A note verified by a person (`by: human:...`) is `human-reviewed`; a note verified only by a process is `machine-confirmed`; an unverified note is `unverified`.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
+- **Generated provenance**: whole-note `read` annotations include a supplied `generated` mapping with its original actor and timestamp.
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
+
+### Reading skills
+
+For a file whose resolved target has the exact name `SKILL.md`, OKF reads take `type`,
+`status`, `generated`, `verified`, `sources`, and `stale_after` from its
+`metadata` mapping. A missing, blank or invalid nested type defaults to
+`Skill`. These six top-level keys are ignored for skills; discovery fields
+such as `name` and `description` keep their original meaning.
+
+Search filters, `list_tags`, ranking, audit, statistics and graph labels use that same
+identity. Interpreted skill metadata is read from the current file to preserve
+YAML value types; malformed or unreadable skills report the native failure.
+Indexed aliases keep their own paths and count as separate rows.
+Whole-note reads expose structured provenance and sources; search
+hits count sources. The original `frontmatter` mapping and file bytes stay
+unchanged. Exact structured queries retain literal YAML paths, so nested
+fields remain under `metadata`. With OKF inactive, read annotations remain
+absent and search filters keep their ordinary frontmatter meaning.
+
+Agent Skills defines `metadata` as a string-to-string mapping. The server
+tolerates structured OKF values there, including `generated` mappings and
+`sources` lists; this does not make those values conform to that format's
+producer requirements. A lowercase `skill.md` follows ordinary note rules.
+
+When the enforced write layer is enabled, edits, appends and whole-note writes
+stamp `metadata.generated` and clear `metadata.verified` on a skill.
+`okf_verify` appends to that same nested verification list. These explicit
+mutations preserve unrelated fields and literal top-level conflicts; they do
+not save an inferred `type: Skill` into your YAML.
+
+After a native write, the existing index refresh updates all already indexed
+names for that target, including aliases. Use `wait_for_pending_writes` when a
+query must see that refresh. File replacement and index refresh are asynchronous
+steps, without a transaction spanning both. This adds no watcher for external
+symlink retargeting. Explicit reindexing and reopening a writable index
+reconcile changed skill authority even when the target bytes are identical.
+This reads and parses live frontmatter; unchanged aliases still reuse a
+compatible index without indexing chunks again.
+
+A shared disk index must have the current derivation version and the same
+indexed field set as the reader; order and repeated fields do not matter.
+Local disk search uses the same adoption check as other disk readers.
+An incompatible reader or an index without current field-set evidence refuses
+instead of returning incomplete filtered results. Use matching reader settings
+and version. For older indexes, run `admin index` through the owning process
+once to rebuild the field evidence.
 
 ## Frontmatter fields
 
