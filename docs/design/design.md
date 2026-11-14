@@ -1,3 +1,7 @@
+---
+last_edited: 2026-11-14
+---
+
 # markdown-vault-mcp: Design Specification v2
 
 > Generic markdown vault MCP with hybrid search.
@@ -2208,8 +2212,12 @@ upload, the fully-read (size-capped) body.
 - **Validation** (`validate(ref, kind)`): runs at link creation. Download
   validates existence stat-only, so minting a link for a large attachment never
   reads it; upload validates the destination is a note or an allowed attachment
-  extension and rejects an existing file when
+  extension outside any git submodule and rejects an existing file when
   `ProjectConfig.write_protect_existing` is true. Both reject path traversal.
+  Upload validation uses the live document manager's existing submodule guard
+  before minting a capability, naming the `ref` argument in an INFO rejection;
+  downloads remain available inside submodules. The locked upload write still
+  performs its own guard check in case the submodule boundary changes later.
   Setting `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly allows
   existing destinations at link creation and blind replacement during upload.
   A rejection is a `ToolError` at INFO that tells the model what to pass
@@ -2249,9 +2257,10 @@ Two MCP tools create tokens and return the capability URL:
   read-only mode). Validates that `path` exists before minting the token (fail-fast).
   Returns `{url, path, expires_at, expires_in_seconds}`.
 - **`create_upload_link(path, ttl_seconds=None)`**: write tool (hidden in
-  read-only mode). Validates the destination path (traversal + extension check)
-  at link-creation time, rejecting existing files under the default overwrite
-  protection before minting a capability. Returns the same shape.
+  read-only mode). Validates the destination path (traversal, extension and
+  submodule boundary checks) at link-creation time, rejecting existing files
+  under the default overwrite protection before minting a capability. Returns
+  the same shape.
 
 Both tools require `MARKDOWN_VAULT_MCP_BASE_URL` and raise `ValueError` when it
 is unset. Both tools are hidden when the transport is stdio (no HTTP server to
@@ -6412,9 +6421,10 @@ refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
 refuse nothing, since nothing is committed there. A plain repository nested
-in the vault that is not a submodule is not detected (#1949), and upload links,
-`fetch` and the OKF index refresh after a folder move reach the refusal only
-after other work (#1950). What git does there is recorded in
+in the vault that is not a submodule is not detected (#1949). Issue #1950
+tracks caller timing for upload-link admission, fetch downloads and OKF refresh
+after folder moves.
+What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 

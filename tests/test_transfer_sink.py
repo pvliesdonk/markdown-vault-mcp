@@ -175,6 +175,19 @@ async def test_validate_upload_bad_extension_raises(sink: VaultTransferSink) -> 
         await sink.validate("report.pdf", "upload")
 
 
+async def test_validate_guard_failure_is_a_server_fault(
+    sink: VaultTransferSink, vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed guard check remains a fault rather than a ref rejection."""
+
+    def fail(_folder: str, _argument: str) -> None:
+        raise OSError("guard unavailable")
+
+    monkeypatch.setattr(vault._doc_mgr, "refuse_folder_in_submodule", fail)
+    with pytest.raises(OSError, match="guard unavailable"):
+        await sink.validate("new.md", "upload")
+
+
 # --- read -----------------------------------------------------------------
 
 
