@@ -228,20 +228,38 @@ def test_failed_dirty_skip_recording_retries(
     fts.close()
 
 
-def test_excluding_dirty_skip_clears_status(tmp_path: Path) -> None:
-    """An existing skipped path leaves status when its refresh applies exclusion."""
+@pytest.mark.parametrize(
+    ("spelling", "pattern", "remains"),
+    [
+        ("note.md", "note.md", False),
+        ("sub/../note.md", "note.md", True),
+        ("sub/../note.md", "sub/**", True),
+    ],
+)
+def test_excluding_dirty_skip_clears_status(
+    tmp_path: Path, spelling: str, pattern: str, remains: bool
+) -> None:
+    """Dirty exclusions retain their lexical predicate and existing cleanup target."""
     (tmp_path / "note.md").write_text("untitled\n")
+    (tmp_path / "sub").mkdir()
     tracker = ChangeTracker(tmp_path / "state.json")
     mgr, fts, _ = _make_index_mgr(
         tmp_path, tmp_path, tracker=tracker, required_frontmatter=["title"]
     )
     mgr.build_index()
     excluded, _, _ = _make_index_mgr(
-        tmp_path, tmp_path, fts=fts, tracker=tracker, exclude_patterns=["note.md"]
+        tmp_path,
+        tmp_path,
+        fts=fts,
+        tracker=tracker,
+        exclude_patterns=[pattern],
+        required_frontmatter=["title"],
     )
-    excluded.process_dirty_paths({"note.md"})
-    assert excluded.skipped_files() == []
-    assert fts.get_tombstone("note.md") is None
+    excluded.process_dirty_paths({spelling})
+    assert [skip.path for skip in excluded.skipped_files()] == (
+        ["note.md"] if remains else []
+    )
+    assert (fts.get_tombstone("note.md") is not None) is remains
     fts.close()
 
 
@@ -267,12 +285,26 @@ def test_yaml_repaired_before_later_hash_is_reparsed(
     fts.close()
 
 
-@pytest.mark.parametrize("operation", ["repair", "delete", "rename"])
+@pytest.mark.parametrize(
+    "operation", ["repair", "delete", "rename", "missing", "parse"]
+)
+@pytest.mark.parametrize(
+    "spelling", ["./note.md", "sub/../note.md", "jump/../note.md", "absent/../note.md"]
+)
 def test_equivalent_writer_path_clears_canonical_skip(
-    tmp_path: Path, operation: str
+    tmp_path: Path, operation: str, spelling: str
 ) -> None:
-    """Native writer operations with ./ use the scanner's status identity."""
-    (tmp_path / "note.md").write_text("untitled\n")
+    """Equivalent writer spellings use the actual target's scanner status identity."""
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "physical" / "inner").mkdir(parents=True)
+    (tmp_path / "jump").symlink_to("physical/inner", target_is_directory=True)
+    canonical = "physical/note.md" if spelling.startswith("jump/") else "note.md"
+    initial = (
+        "---\ntitle: Before\n---\nbody\n"
+        if operation in {"missing", "parse"}
+        else "untitled\n"
+    )
+    (tmp_path / canonical).write_text(initial)
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
@@ -280,13 +312,26 @@ def test_equivalent_writer_path_clears_canonical_skip(
     try:
         vault.index.build_index()
         if operation == "repair":
-            vault.writer.write("./note.md", "---\ntitle: Repaired\n---\nbody\n")
+            vault.writer.write(spelling, "---\ntitle: Repaired\n---\nbody\n")
         elif operation == "delete":
-            vault.writer.delete("./note.md")
+            vault.writer.delete(spelling)
+        elif operation == "rename":
+            vault.writer.rename(spelling, "moved.md")
         else:
-            vault.writer.rename("./note.md", "moved.md")
+            content = (
+                "untitled\n"
+                if operation == "missing"
+                else "---\ntitle: [unclosed\n---\nbody\n"
+            )
+            vault.writer.write(spelling, content)
         assert vault.index.wait_for_drain(timeout=5)
-        expected = ["moved.md"] if operation == "rename" else []
+        expected = (
+            [canonical]
+            if operation in {"missing", "parse"}
+            else ["moved.md"]
+            if operation == "rename"
+            else []
+        )
         status = vault.index.get_index_status()
         assert [skip["path"] for skip in status["skipped_files"]] == expected
     finally:

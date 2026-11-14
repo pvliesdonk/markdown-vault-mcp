@@ -47,6 +47,7 @@ from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
     is_note,
     is_path_excluded,
+    resolve_inside,
 )
 from markdown_vault_mcp.utils.fs import (
     could_be_regular_file,
@@ -1208,6 +1209,12 @@ class IndexManager:
                 self._fts.delete_by_path(path)
                 self._tracker.update_skip(path, known_skips=known_skips)
                 return
+            if ".." in path.split("/"):
+                target = resolve_inside(path, self._source_dir)
+                abs_path = self._source_dir / target.relative_to(
+                    self._source_dir.resolve()
+                )
+                path = abs_path.relative_to(self._source_dir).as_posix()
             if is_regular_file(abs_path) and is_note(path):
                 note = parse_note(
                     abs_path,
