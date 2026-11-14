@@ -96,7 +96,7 @@ class TestApplyOkfWriteStamp:
             ],
         ],
     )
-    def test_stamps_generated_with_supplied_actor_or_fallback(
+    def test_stamps_generated_on_a_note_without_frontmatter(
         self, metadata: dict[str, Any] | None, actor: str, expected: dict[str, Any]
     ) -> None:
         """A supplied key wins; otherwise the resolved actor supplies by."""
