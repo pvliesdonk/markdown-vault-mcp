@@ -694,9 +694,7 @@ def test_a_plain_repository_write_is_refused_before_any_side_effect(
     )
 
 
-def _inject_gitfile_read_fault(
-    monkeypatch: pytest.MonkeyPatch, marker: Path
-) -> None:
+def _inject_gitfile_read_fault(monkeypatch: pytest.MonkeyPatch, marker: Path) -> None:
     """Install an accepted-size gitfile read fault after the first 4 KiB."""
     real_open = Path.open
 
