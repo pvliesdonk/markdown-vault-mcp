@@ -47,6 +47,7 @@ from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
     is_note,
     is_path_excluded,
+    resolve_inside,
 )
 from markdown_vault_mcp.utils.fs import (
     could_be_regular_file,
@@ -1140,7 +1141,7 @@ class IndexManager:
         A ``yaml.YAMLError`` additionally replaces the note's stale row with
         a ``parse_error`` tombstone, and a note missing required frontmatter
         is tombstoned rather than deleted, so FTS absence keeps meaning
-        "not a candidate" (#1129).
+        "not a candidate" (#1129). Successful refreshes update skip status (#1606).
         When the parse failure stems from the file disappearing between
         the existence check and ``parse_note()``, the stale FTS row
         is deleted so keyword/hybrid search results stay consistent with
@@ -1165,10 +1166,11 @@ class IndexManager:
         if not paths:
             return
         try:
+            known_skips = self._tracker.skipped_paths()
             first_error: Exception | None = None
             for path in paths:
                 try:
-                    self._process_dirty_path(path)
+                    self._process_dirty_path(path, known_skips=known_skips)
                     if on_refreshed is not None:
                         on_refreshed(path)
                 except (OSError, UnicodeDecodeError, ValueError) as exc:
@@ -1190,7 +1192,9 @@ class IndexManager:
             # otherwise a later mutation could trust an incomplete refresh.
             self._fts.resolve_vault_wikilinks()
 
-    def _process_dirty_path(self, path: str) -> None:
+    def _process_dirty_path(
+        self, path: str, *, known_skips: set[str] | None = None
+    ) -> None:
         """Refresh one row, propagating any failure that leaves it stale."""
         abs_path = self._source_dir / path
         try:
@@ -1202,7 +1206,15 @@ class IndexManager:
                 # never indexed and purges stale rows left from
                 # before the exclusion existed.
                 self._fts.delete_by_path(path)
+                self._tracker.update_skip(path, known_skips=known_skips)
                 return
+            path = abs_path.relative_to(self._source_dir).as_posix()
+            if ".." in path.split("/"):
+                target = resolve_inside(path, self._source_dir)
+                abs_path = self._source_dir / target.relative_to(
+                    self._source_dir.resolve()
+                )
+                path = abs_path.relative_to(self._source_dir).as_posix()
             if is_regular_file(abs_path) and is_note(path):
                 note = parse_note(
                     abs_path,
@@ -1223,22 +1235,30 @@ class IndexManager:
                     # indistinguishable from a deletion. The parsed
                     # note's own hash/mtime cover the exact bytes
                     # that were evaluated (#888 pattern).
+                    skip = SkippedFile(
+                        path=path,
+                        category="missing_frontmatter",
+                        detail=f"missing: {missing}",
+                    )
                     self._fts.upsert_tombstone(
-                        SkippedFile(
-                            path=path,
-                            category="missing_frontmatter",
-                            detail=f"missing: {missing}",
-                        ),
+                        skip,
                         content_hash=note.content_hash,
                         modified_at=note.modified_at,
+                    )
+                    self._tracker.update_skip(
+                        path,
+                        content_hash=note.content_hash,
+                        reason={"category": skip.category, "detail": skip.detail},
+                        known_skips=known_skips,
                     )
                     return
                 self._fts.upsert_note(note)
             else:
                 self._fts.delete_by_path(path)
+            self._tracker.update_skip(path, known_skips=known_skips)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             logger.warning(
-                "dirty_path_read_failed path=%s err=%s",
+                "dirty_path_refresh_failed path=%s err=%s",
                 path,
                 exc,
             )
@@ -1251,6 +1271,7 @@ class IndexManager:
                 vanished = False
             if vanished:
                 self._fts.delete_by_path(path)
+                self._tracker.update_skip(path, known_skips=known_skips)
                 return
             raise
         except yaml.YAMLError as exc:
@@ -1263,10 +1284,19 @@ class IndexManager:
             # note edited into unparseable frontmatter must stop
             # serving its last-good content. A transient read failure
             # must propagate so the writer retains its dirty snapshot.
+            skip = SkippedFile(path=path, category="parse_error", detail=str(exc))
             self._tombstone_skip(
-                SkippedFile(path=path, category="parse_error", detail=str(exc)),
+                skip,
                 abs_path,
                 retry_on_error=True,
+            )
+            self._tracker.update_skip(
+                path,
+                # The failed parse did not return its bytes. A later hash can
+                # describe a concurrent repair; keep the existing retry marker.
+                content_hash="",
+                reason={"category": skip.category, "detail": skip.detail},
+                known_skips=known_skips,
             )
             return
 

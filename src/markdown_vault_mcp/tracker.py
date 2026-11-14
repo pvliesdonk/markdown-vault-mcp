@@ -437,7 +437,7 @@ class ChangeTracker:
 
         Reads the state file fresh on each call (best-effort, non-blocking:
         a missing or malformed file yields ``{}``), so callers see the reasons
-        recorded by the most recent build/reindex even after a restart (#775).
+        recorded by the latest build/reindex/dirty refresh, across restarts.
 
         Returns:
             Mapping of relative POSIX path to a ``{"category", "detail"}`` dict.
@@ -446,12 +446,74 @@ class ChangeTracker:
         _indexed, _skipped, skip_reasons = self._load_state()
         return skip_reasons
 
+    def update_skip(
+        self,
+        path: str,
+        *,
+        content_hash: str | None = None,
+        reason: dict[str, str] | None = None,
+        known_skips: set[str] | None = None,
+    ) -> None:
+        """Record or clear one dirty path's skip without replacing scan state.
+
+        A recorded skip replaces that path's indexed hash. Clearing a skip
+        leaves indexed hashes unchanged, so successful dirty refreshes keep
+        their existing reindex and embedding lifecycle. Scan carries and
+        pending reparse markers are untouched; the index writer serializes
+        dirty refreshes with scans.
+
+        Args:
+            path: Vault-relative POSIX path successfully refreshed in FTS.
+            content_hash: Hash of the skipped bytes, ``""`` to force a scan retry
+                when their hash is unknown, or ``None`` to clear.
+            reason: Surfaced category/detail for a recorded skip, if any.
+            known_skips: Batch-local snapshot from :meth:`skipped_paths`, updated
+                after successful persistence. Avoids reads for absent clears.
+
+        Raises:
+            OSError: If persisting state fails; the dirty job must retry.
+            ValueError: If existing state cannot safely be partially updated.
+        """
+        if content_hash is None and known_skips is not None and path not in known_skips:
+            return
+        indexed, skipped, reasons = self._load_state(strict=True)
+        if content_hash is None and path not in skipped and path not in reasons:
+            return
+        skipped.pop(path, None)
+        reasons.pop(path, None)
+        if content_hash is not None:
+            indexed.pop(path, None)
+            skipped[path] = content_hash
+            if reason is not None:
+                reasons[path] = reason
+        self._save_state(indexed, skipped, reasons)
+        if known_skips is not None:
+            if content_hash is None:
+                known_skips.discard(path)
+            else:
+                known_skips.add(path)
+
+    def skipped_paths(self) -> set[str]:
+        """Read a strict skip-membership snapshot for one serialized dirty batch.
+
+        Returns:
+            Paths in either persisted skip map, including skips without reasons.
+
+        Raises:
+            OSError: If existing state cannot be read.
+            ValueError: If existing state cannot safely be partially updated.
+        """
+        _indexed, skipped, reasons = self._load_state(strict=True)
+        return skipped.keys() | reasons.keys()
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
     def _load_state(
         self,
+        *,
+        strict: bool = False,
     ) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, str]]]:
         """Load the persisted state from disk.
 
@@ -459,6 +521,10 @@ class ChangeTracker:
         (``{"version": 2, "indexed": {...}, "skipped": {...},
         "skip_reasons": {...}}``) and the legacy flat mapping of path to
         digest, which is loaded with every entry treated as indexed.
+
+        Args:
+            strict: Refuse unreadable, malformed or unsupported snapshots before
+                a partial mutation. Status and full-scan reads remain best effort.
 
         Returns:
             Tuple of ``(indexed, skipped, skip_reasons)``. ``indexed`` and
@@ -480,6 +546,8 @@ class ChangeTracker:
         try:
             present = path_exists(self._state_path)
         except OSError as exc:
+            if strict:
+                raise
             # Same outcome as an unreadable file below, and said at WARNING;
             # on 3.14 exists() would have called it missing at DEBUG (#1625).
             logger.warning(
@@ -497,6 +565,8 @@ class ChangeTracker:
             with self._state_path.open(encoding="utf-8") as fh:
                 state = json.load(fh)
             if not isinstance(state, dict):
+                if strict:
+                    raise ValueError("Tracker state must be an object")
                 logger.warning(
                     "state_file_malformed path=%s reason=not_object outcome=reset",
                     self._state_path,
@@ -511,22 +581,59 @@ class ChangeTracker:
                     or not isinstance(skipped, dict)
                     or not isinstance(skip_reasons, dict)
                 ):
+                    if strict:
+                        raise ValueError("Malformed tracker state maps")
                     logger.warning(
                         "state_file_malformed path=%s reason=not_object_maps "
                         "outcome=reset",
                         self._state_path,
                     )
                     return {}, {}, {}
-                return indexed, skipped, self._sanitize_skip_reasons(skip_reasons)
+                if strict:
+                    self._validate_mutation_entries(indexed, skipped, skip_reasons)
+                reasons = (
+                    skip_reasons
+                    if strict
+                    else self._sanitize_skip_reasons(skip_reasons)
+                )
+                return indexed, skipped, reasons
             # Legacy flat format: every entry is an indexed path → digest.
+            if strict:
+                if "version" in state:
+                    raise ValueError("Unsupported tracker state version")
+                self._validate_mutation_entries(state, {}, {})
             return state, {}, {}
         except (OSError, json.JSONDecodeError) as exc:
+            if strict:
+                raise
             logger.warning(
                 "state_file_read_failed path=%s error=%s outcome=all_added",
                 self._state_path,
                 exc,
             )
             return {}, {}, {}
+
+    @staticmethod
+    def _validate_mutation_entries(
+        indexed: dict[str, object],
+        skipped: dict[str, object],
+        reasons: dict[str, object],
+    ) -> None:
+        """Refuse malformed entries before a partial write of decoded maps."""
+        for entries in (indexed, skipped):
+            if any(
+                not isinstance(path, str) or not isinstance(digest, str)
+                for path, digest in entries.items()
+            ):
+                raise ValueError("Malformed tracker hash map")
+        for reason in reasons.values():
+            if (
+                not isinstance(reason, dict)
+                or not isinstance(reason.get("category"), str)
+                or not isinstance(reason.get("detail"), str)
+                or any(not isinstance(value, str) for value in reason.values())
+            ):
+                raise ValueError("Malformed tracker skip reason")
 
     @staticmethod
     def _sanitize_skip_reasons(
