@@ -155,6 +155,8 @@ def run_read(
 ) -> RemoteReply:
     """Route a read without initializing local dependencies in remote mode.
 
+    Local calls suppress routine INFO logs unless root logging enables DEBUG.
+
     Args:
         tool: MCP read tool name.
         arguments: Validated arguments shared by both backends.
@@ -168,4 +170,10 @@ def run_read(
     settings = settings if settings is not None else resolve_settings(options)
     if settings.url is not None:
         return call_read(settings, tool, arguments)
-    return RemoteReply(local_call())
+    previous = logging.root.manager.disable
+    if logging.getLogger().getEffectiveLevel() > logging.DEBUG:
+        logging.disable(max(previous, logging.INFO))
+    try:
+        return RemoteReply(local_call())
+    finally:
+        logging.disable(previous)
