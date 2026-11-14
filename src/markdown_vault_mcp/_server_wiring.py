@@ -203,10 +203,10 @@ def _hide_by_mode(mcp: FastMCP, config: ProjectConfig) -> None:
     # provider (slow, GBs of memory) and may run ``git clone`` as a side
     # effect.  The runtime check inside the ``git_sync`` tool body
     # (``isinstance(strategy, Syncer) and strategy.is_managed``)
-    # stays aligned with this gate via the same ``config.git.repo_url``
-    # value: managed mode requires an explicit remote URL.  See #220 for
+    # stays aligned with this gate: managed mode requires enabled git and
+    # an explicit ``config.git.repo_url``. See #220 for
     # the broader cleanup of duplicate assembly calls.
-    if config.git.repo_url is None:
+    if not config.git_enabled or config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 
 

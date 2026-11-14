@@ -447,6 +447,7 @@ starting points live under `examples/`: `obsidian-readonly.env`,
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
+| `MARKDOWN_VAULT_MCP_GIT_ENABLED` | `true` | No | Set to false to disable all server git operations, even inside a repository. Overrides retained git remote, token, LFS, sync and webhook settings; ordinary file reads and writes remain available. |
 | `MARKDOWN_VAULT_MCP_GIT_TOKEN` | (none) | No | Token/password for HTTPS git auth; remotes must be HTTPS when set. |
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
 | `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | No | Username for HTTPS git auth prompts (x-access-token for GitHub, oauth2 for GitLab, the account name for Bitbucket). |

@@ -1424,3 +1424,29 @@ def test_root_floor_false_ignores_root_level_file(tmp_path: Path) -> None:
         )
     finally:
         watcher.stop()
+
+
+@pytest.mark.parametrize("transport", ["http", "sse"])
+def test_disabled_git_keeps_watcher_with_retained_webhook(
+    tmp_path: Path, transport: str
+) -> None:
+    """Keep external-edit detection when disabled git cannot receive webhooks."""
+    import asyncio
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        git_enabled=False,
+        git_repo_url="https://invalid.example/vault",
+        github_webhook_secret="retained",
+    )
+    lifespan_fn = _make_test_lifespan(config, transport=transport)
+
+    async def run() -> None:
+        with patch("markdown_vault_mcp._file_watcher.VaultFileWatcher") as watcher:
+            async with lifespan_fn(None):  # type: ignore[operator]
+                watcher.return_value.start.assert_called_once()
+            watcher.return_value.stop.assert_called_once()
+
+    asyncio.run(run())

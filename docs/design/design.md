@@ -3616,7 +3616,7 @@ fnmatch forms + metacharacter validation), and
 
 On the served path, ``config_sections/_assembly.py`` resolves the two halves:
 ``to_vault_instances(config)`` builds the collaborators (embedding-provider /
-summarizer resolution with the explicit-vs-auto error posture, the three-mode
+summarizer resolution with the explicit-vs-auto error posture, the optional
 git-strategy construction, and the *resolved* pull interval), and
 ``to_vault_settings(config, instances=...)`` maps the config onto
 ``VaultSettings`` (threading the provider's token context into the
@@ -6418,7 +6418,26 @@ after other work (#1950). What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 
-Three git modes:
+`ProjectConfig.git_enabled` defaults to true and parses
+`MARKDOWN_VAULT_MCP_GIT_ENABLED` through the existing boolean parser. False
+selects `git_strategy=None`, `on_write=None` and pull interval zero before any
+strategy construction, repository discovery, remote validation, clone or LFS
+operation. Raw git and webhook settings stay intact and scalar validation
+still applies. The missing-directory check has no managed-clone exemption
+when disabled. Cleanup accepts the absent strategy and repeated calls.
+
+Without a strategy, history and both diff forms return empty results,
+revision reads use the existing no-git refusal, and overwrites carry no
+`previous_revision`. The submodule guard and HEAD reconciler are absent;
+submodule paths remain writable under ordinary filesystem safety checks.
+`git_sync` is hidden even with a retained URL and direct invocation retains
+the non-managed refusal. Webhook registration returns before warnings or
+credential decoding, and its shared eligibility predicate is false, leaving
+the configured file watcher eligible on HTTP/SSE as well as stdio.
+
+Assembly logs `git_mode_resolved mode=off|managed|legacy|commit_only` at INFO.
+`commit_only` names the selected branch, without probing whether a repository
+exists. With git enabled, the existing modes remain:
 
 1. **Managed mode** (`GIT_REPO_URL` set): server owns git lifecycle.
    Startup clones into `SOURCE_DIR` if empty, or verifies existing `origin`

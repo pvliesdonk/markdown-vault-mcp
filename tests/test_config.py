@@ -2710,3 +2710,41 @@ def test_the_resident_refusal_names_streamed_and_the_default(
         )
     assert "EMBEDDING_SEARCH=streamed" in str(refused.value)
     assert "leave it unset" in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    "raw, expected", [(None, True), ("true", True), ("false", False), ("0", False)]
+)
+def test_git_enabled_from_env(
+    monkeypatch: pytest.MonkeyPatch, raw: str | None, expected: bool
+) -> None:
+    """Parse the switch while preserving the enabled default."""
+    if raw is None:
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_ENABLED", raw)
+    assert ProjectConfig.from_env().git_enabled is expected
+    assert ProjectConfig().git_enabled is True
+
+
+def test_disabled_git_preserves_raw_config_and_suppresses_legacy_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Keep stored settings and scalar validation without enabling git work."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_ENABLED", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", "retained")
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
+    config = ProjectConfig.from_env()
+    assert config.git.token == "retained"
+    assert config.git.pull_interval_s == 600
+    assert to_vault_settings(config).git_pull_interval_s == 0
+    instances = to_vault_instances(config)
+    assert instances.git_strategy is None
+    assert instances.on_write is None
+    instances.close()
+    instances.close()
+    assert not any(
+        r.msg.startswith("git_token_without_repo_url") for r in caplog.records
+    )
+    with pytest.raises(ConfigurationError, match="pull_interval"):
+        ProjectConfig(git_enabled=False, git_pull_interval_s=-1)

@@ -374,3 +374,26 @@ async def test_a_vault_that_fails_to_start_after_the_wait_is_logged_and_stopped(
     assert any(r.msg.startswith("vault_start_failed") for r in caplog.records)
     await service.stop()  # does not raise, and closes the vault it built
     assert closed == [True]
+
+
+async def test_disabled_git_with_remote_cannot_clone_missing_source(
+    tmp_path: Path,
+) -> None:
+    """Require an existing source even when a disabled remote remains configured."""
+    source = tmp_path / "absent"
+    service = Service(
+        ProjectConfig(
+            source_dir=source,
+            git_enabled=False,
+            git_repo_url="https://invalid.example/vault",
+        )
+    )
+    await service.start()
+    try:
+        assert service.startup_error is not None
+        assert not source.exists()
+        with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
+            _ = service.vault
+    finally:
+        await service.stop()
+        await service.stop()

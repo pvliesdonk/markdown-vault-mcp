@@ -8,14 +8,16 @@ verify both the registered shape and the wire-level response.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import subprocess
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp import domain
-from tests.fixtures.git import _run_git
+from tests.fixtures.git import _run_git, make_superproject
 from tests.server_factory import make_server
 
 
@@ -59,6 +61,81 @@ _CLEAR_VARS = (
     "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
     "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
 )
+
+
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        {},
+        {"GIT_TOKEN": "retained"},
+        {"GIT_REPO_URL": "ssh://invalid.example/vault"},
+        {
+            "GIT_REPO_URL": "ssh://invalid.example/vault",
+            "GIT_TOKEN": "retained",
+            "GITHUB_WEBHOOK_SECRET": "retained",
+            "GITLAB_WEBHOOK_SIGNING_TOKEN": "malformed",
+        },
+    ],
+)
+async def test_git_disabled_never_invokes_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, credentials: dict[str, str]
+) -> None:
+    """Disabling git leaves a real checkout writable throughout server lifetime."""
+    from markdown_vault_mcp._tools.git import _resolve_managed_strategy
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    source = make_superproject(tmp_path)
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_ENABLED", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
+    for name, value in credentials.items():
+        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{name}", value)
+    attempts: list[list[str]] = []
+    real = subprocess.run
+
+    def counting(args: list[str], **kwargs: Any) -> Any:
+        if args and str(args[0]).rsplit("/", 1)[-1] == "git":
+            attempts.append(args)
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", counting)
+    try:
+        server = make_server(transport="http")
+        async with Client(server) as client:
+            vault = domain.get_vault_singleton()
+            assert attempts == []
+            assert await asyncio.to_thread(vault.index.wait_for_drain, 10.0)
+            note = vault.reader.read("top.md")
+            result = await client.call_tool(
+                "write",
+                {"path": "top.md", "content": "# Tangerine\n", "if_match": note.etag},
+            )
+            assert "previous_revision" not in _parse_tool_data(result)
+            assert "Tangerine" in vault.reader.read("top.md").content
+            assert await asyncio.to_thread(vault.index.wait_for_drain, 10.0)
+            search = await client.call_tool("search", {"query": "Tangerine"})
+            assert "top.md" in str(search.data)
+            assert vault.reader.get_history() == []
+            assert vault.reader.get_diff("top.md", since_sha="deadbeef") == ""
+            assert (
+                vault.reader.get_diff("top.md", since_sha="deadbeef", per_commit=True)
+                == []
+            )
+            with pytest.raises(InvalidRequestError, match="git"):
+                vault.reader.read_revision("top.md", "deadbeef")
+            with pytest.raises(InvalidRequestError, match="not synced"):
+                _resolve_managed_strategy(vault)
+            assert "git_sync" not in {tool.name for tool in await client.list_tools()}
+            sub = vault.reader.read("sub/note.md")
+            vault.writer.write("sub/note.md", "# Clementine\n", if_match=sub.etag)
+            vault.writer.write_attachment("sub/image.png", b"synthetic image")
+            assert (source / "sub/note.md").read_text() == "# Clementine\n"
+            assert (source / "sub/image.png").read_bytes() == b"synthetic image"
+            assert vault.git_head() is None
+    finally:
+        assert attempts == []
 
 
 @pytest.fixture

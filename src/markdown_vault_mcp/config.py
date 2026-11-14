@@ -766,6 +766,19 @@ class ProjectConfig:
             "wizard": {"group": "Embeddings"},
         },
     )
+    git_enabled: bool = field(
+        default=True,
+        kw_only=True,
+        metadata={
+            "help": (
+                "Set to false to disable all server git operations, even inside "
+                "a repository. Overrides retained git remote, token, LFS, sync "
+                "and webhook settings; ordinary file reads and writes remain available."
+            ),
+            "tags": ("git", "readme"),
+            "wizard": {"group": "Git sync"},
+        },
+    )
     git_repo_url: str | None = field(
         default=None,
         metadata={
@@ -1482,9 +1495,15 @@ class ProjectConfig:
             embed_context=to_bool(env(_ENV_PREFIX, "EMBED_CONTEXT"), default=False),
             embed_timeout_s=env_float(_ENV_PREFIX, "EMBED_TIMEOUT_S", 30.0),
             embedding_batch_size=env_int(_ENV_PREFIX, "EMBEDDING_BATCH_SIZE", 4),
+            git_enabled=(
+                _git_enabled := to_bool(env(_ENV_PREFIX, "GIT_ENABLED"), default=True)
+            ),
             git_token=(_git_token := env(_ENV_PREFIX, "GIT_TOKEN") or None),
             git_repo_url=resolve_git_repo_url(
-                env(_ENV_PREFIX, "GIT_REPO_URL"), _git_token, _ENV_PREFIX
+                env(_ENV_PREFIX, "GIT_REPO_URL"),
+                _git_token,
+                _ENV_PREFIX,
+                enabled=_git_enabled,
             ),
             git_username=env(_ENV_PREFIX, "GIT_USERNAME") or "x-access-token",
             git_pull_interval_s=env_int(_ENV_PREFIX, "GIT_PULL_INTERVAL_S", 600),
