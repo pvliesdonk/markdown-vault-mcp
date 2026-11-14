@@ -8,6 +8,7 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [Agent Skills frontmatter](agent-skills.md) — the SKILL.md filename, metadata slot and tolerant structured OKF reads.
 - [GitHub and git behaviour behind integration branches](github-integration-branches.md) —
   up-to-date requirements, merge queue, workflow branch filters, closing
   keywords, retargeting, merge methods, knope's commit walk and git's

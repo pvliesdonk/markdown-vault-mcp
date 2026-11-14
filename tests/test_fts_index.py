@@ -2045,3 +2045,74 @@ class TestListChunksManyPaths:
         rows = idx.list_chunks(paths=paths)
         assert [r["path"] for r in rows] == ["real.md"]
         idx.close()
+
+
+@pytest.mark.parametrize("nested_type", [None, "Runbook"])
+def test_skill_type_tags_preserve_raw_frontmatter(nested_type: str | None) -> None:
+    """Configured type tags use the skill identity without flattening stored JSON."""
+    raw = {"type": "Wrong", "other": "literal", "metadata": {"status": "deprecated"}}
+    if nested_type is not None:
+        raw["metadata"]["type"] = nested_type
+    idx = FTSIndex(":memory:", indexed_frontmatter_fields=["type", "status", "other"])
+    try:
+        idx.upsert_note(make_note("demo/SKILL.md", frontmatter=raw))
+        idx.upsert_note(
+            make_note(
+                "ordinary.md",
+                frontmatter={"type": "Reference", "metadata": {"type": "Wrong"}},
+            )
+        )
+        from markdown_vault_mcp.okf import _effective_okf_tag_key
+
+        fields = ["type", "status", "other"]
+        assert idx.list_field_values("type") == ["Reference", "Wrong"]
+        assert idx.list_field_values(_effective_okf_tag_key("type", fields)) == [
+            "Reference",
+            nested_type or "Skill",
+        ]
+        assert idx.list_field_values("status") == []
+        assert idx.list_field_values(_effective_okf_tag_key("status", fields)) == [
+            "deprecated"
+        ]
+        assert idx.list_field_values("other") == ["literal"]
+        assert json.loads(idx.get_note("demo/SKILL.md")["frontmatter_json"]) == raw
+    finally:
+        idx.close()
+
+
+def test_skill_semantics_rebuilds_existing_index(tmp_path: Path) -> None:
+    """Unchanged skill bytes gain new tags once, then the rebuilt index is adopted."""
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.fixtures.okf_skills import SKILL
+
+    source = tmp_path / "source"
+    source.mkdir()
+    path = source / "SKILL.md"
+    path.write_text(SKILL)
+    original = (path.read_bytes(), path.stat().st_mtime_ns)
+    db = tmp_path / "index.sqlite"
+    settings = VaultSettings(okf_mode="on", index_path=db)
+    vault = Vault(source_dir=source, settings=settings)
+    try:
+        vault.index.build_index()
+    finally:
+        vault.close()
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM document_tags")
+        conn.execute(
+            "UPDATE meta SET value = '11' WHERE key = 'index_semantics_version'"
+        )
+    vault = Vault(source_dir=source, settings=settings)
+    try:
+        assert vault.index.build_index().chunks_indexed > 0
+        assert vault.reader.list_tags("type") == ["Skill"]
+        assert "type" not in vault.reader.get_metadata("SKILL.md").frontmatter
+    finally:
+        vault.close()
+    vault = Vault(source_dir=source, settings=settings)
+    try:
+        assert vault.index.build_index().chunks_indexed == 0
+        assert vault.reader.list_tags("type") == ["Skill"]
+    finally:
+        vault.close()
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == original

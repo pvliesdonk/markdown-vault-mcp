@@ -57,7 +57,9 @@ from markdown_vault_mcp.managers._ranking import (
 from markdown_vault_mcp.okf import (
     OKF_FILTER_KEYS,
     OKF_RESERVED_FILENAMES,
+    _effective_okf_tag_key,
     derive_annotation,
+    effective_okf_metadata,
     matches_okf_filters,
     okf_downweight_factor,
     parse_stale_filter,
@@ -560,7 +562,31 @@ class SearchManager:
         if fm_raw:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
                 fm = json.loads(fm_raw)
-        return self._metadata_matches_filters(fm, filters)
+        return self._metadata_matches_filters(
+            self._effective_okf_metadata(fm, path), filters
+        )
+
+    def _effective_okf_metadata(
+        self, metadata: dict[str, Any], path: str
+    ) -> dict[str, Any]:
+        """Interpret skill fields only when OKF read semantics are active."""
+        if self._okf is not None and self._okf.state().active:
+            return effective_okf_metadata(metadata, path=path)
+        return metadata
+
+    def _native_tag_key(self, field: str) -> str:
+        """Select the effective storage key only while OKF reads are active."""
+        if self._okf is not None and self._okf.state().active:
+            return _effective_okf_tag_key(field, self._indexed_frontmatter_fields)
+        return field
+
+    def _native_tag_filters(
+        self, filters: dict[str, str] | None
+    ) -> dict[str, str] | None:
+        """Select effective storage keys only at active native tag boundaries."""
+        if not filters:
+            return filters
+        return {self._native_tag_key(key): value for key, value in filters.items()}
 
     @staticmethod
     def _metadata_matches_filters(
@@ -637,7 +663,9 @@ class SearchManager:
         if note_row is None:
             return False
         metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
-        return matches_okf_filters(metadata, okf_filters)
+        return matches_okf_filters(
+            effective_okf_metadata(metadata, path=path), okf_filters
+        )
 
     def _filter_rows_okf(
         self, rows: builtins.list[FTSResult], okf_filters: dict[str, str]
@@ -690,7 +718,9 @@ class SearchManager:
         def factor_for(path: str) -> float:
             cached = factors.get(path)
             if cached is None:
-                annotation = derive_annotation(self._get_frontmatter(path))
+                annotation = derive_annotation(
+                    effective_okf_metadata(self._get_frontmatter(path), path=path)
+                )
                 cached = okf_downweight_factor(annotation, path)
                 factors[path] = cached
             return cached
@@ -1111,7 +1141,7 @@ class SearchManager:
         raw = self._fts.search(
             query,
             limit=candidate_limit,
-            filters=filters,
+            filters=self._native_tag_filters(filters),
             folder=folder,
             snippet_words=None,
         )
@@ -1200,7 +1230,7 @@ class SearchManager:
             query,
             limit=candidate_n,
             folder=folder,
-            filters=filters,
+            filters=self._native_tag_filters(filters),
             snippet_words=snippet_words,
         )
         wanted = {(s.path, s.heading) for s in survivors}
@@ -1281,7 +1311,7 @@ class SearchManager:
         fts_raw: list[FTSResult] = self._fts.search(
             query,
             limit=fts_candidate_limit,
-            filters=filters,
+            filters=self._native_tag_filters(filters),
             folder=folder,
             snippet_words=None,
         )
@@ -1447,11 +1477,17 @@ class SearchManager:
             note_infos = [
                 n
                 for n in note_infos
-                if self._metadata_matches_filters(n.frontmatter, plain_filters)
+                if self._metadata_matches_filters(
+                    self._effective_okf_metadata(n.frontmatter, n.path), plain_filters
+                )
             ]
         if okf_filters:
             note_infos = [
-                n for n in note_infos if matches_okf_filters(n.frontmatter, okf_filters)
+                n
+                for n in note_infos
+                if matches_okf_filters(
+                    effective_okf_metadata(n.frontmatter, path=n.path), okf_filters
+                )
             ]
         notes: list[NoteInfo | AttachmentInfo] = list(note_infos)
 
@@ -1620,7 +1656,7 @@ class SearchManager:
                 f"Field {field!r} is not indexed, so its values cannot be "
                 f"listed. Pass one of the indexed fields as field: {indexed}."
             )
-        return self._fts.list_field_values(field)
+        return self._fts.list_field_values(self._native_tag_key(field))
 
     def stats(self) -> VaultStats:
         """Return vault-wide statistics.
@@ -1690,7 +1726,9 @@ class SearchManager:
             metadata = self._parse_frontmatter_json(
                 row.get("frontmatter_json"), row["path"]
             )
-            annotation = derive_annotation(metadata)
+            annotation = derive_annotation(
+                effective_okf_metadata(metadata, path=row["path"])
+            )
             note_type = annotation.get("type")
             if note_type is None:
                 untyped += 1
@@ -1967,8 +2005,9 @@ class SearchManager:
 
         # Tags — indexed frontmatter fields present on this document.
         tags: dict[str, list[str]] = {}
+        tag_metadata = self._effective_okf_metadata(frontmatter, path)
         for field in self._indexed_frontmatter_fields:
-            value = frontmatter.get(field)
+            value = tag_metadata.get(field)
             if value is None:
                 continue
             if isinstance(value, list):

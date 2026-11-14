@@ -1192,3 +1192,106 @@ class TestReservedFrontmatterPolicy:
             title_field="heading", required_fields=("heading",)
         )
         assert policy.build(None, title="Log") == {"heading": "Log"}
+
+
+@pytest.mark.parametrize("nested_type", [None, "", "  ", 42, [], "Runbook", "Custom"])
+def test_effective_skill_metadata(nested_type: object) -> None:
+    """Nested families override conflicting raw keys without flattening the input."""
+    from copy import deepcopy
+
+    from markdown_vault_mcp.okf import effective_okf_metadata
+
+    raw = {
+        "name": "demo",
+        "description": "Discovery text",
+        "unknown": "kept",
+        "type": "Wrong",
+        "status": "draft",
+        "generated": {"by": "wrong"},
+        "verified": [{"by": "human:wrong"}],
+        "stale_after": "1990-01-01",
+        "sources": [{"resource": "wrong"}],
+        "metadata": {
+            "type": nested_type,
+            "status": "deprecated",
+            "generated": {"by": "human:alex"},
+            "sources": [{"resource": "https://example.invalid/spec"}],
+        },
+    }
+    before = deepcopy(raw)
+    result = effective_okf_metadata(raw, path="skills/demo/SKILL.md")
+    assert result["type"] == (
+        nested_type if isinstance(nested_type, str) and nested_type.strip() else "Skill"
+    )
+    assert result["status"] == "deprecated"
+    assert result["generated"] == {"by": "human:alex"}
+    assert result["sources"] == [{"resource": "https://example.invalid/spec"}]
+    assert "verified" not in result and "stale_after" not in result
+    assert result["name"] == "demo" and result["unknown"] == "kept"
+    assert result["description"] == "Discovery text"
+    assert result is not raw and raw == before
+
+
+@pytest.mark.parametrize("slot", [None, "bad", [], {}, {"type": None}])
+def test_skill_metadata_fallback(slot: object) -> None:
+    """Malformed or absent nested metadata cannot leak conflicting top-level type."""
+    from markdown_vault_mcp.okf import effective_okf_metadata
+
+    assert (
+        effective_okf_metadata({"metadata": slot, "type": "Wrong"}, path="SKILL.md")[
+            "type"
+        ]
+        == "Skill"
+    )
+    assert effective_okf_metadata({}, path="SKILL.md") == {"type": "Skill"}
+
+
+@pytest.mark.parametrize(
+    "path", [None, "skill.md", "notes/ordinary.md", "SKILL.md/other.md"]
+)
+def test_skill_metadata_leaves_ordinary_notes_literal(path: str | None) -> None:
+    """Only the exact basename activates interpretation, including when nested type exists."""
+    from markdown_vault_mcp.okf import effective_okf_metadata
+
+    raw = {"type": "Reference", "metadata": {"type": "Skill"}}
+    result = effective_okf_metadata(raw, path=path)
+    assert result == raw and result is not raw
+
+
+def test_skill_audit_uses_nested_type(tmp_path: Path) -> None:
+    """A filename-inferred skill passes the existing concept audit without a rewrite."""
+    from markdown_vault_mcp.okf import audit_bundle
+    from tests.fixtures.okf_skills import SKILL
+
+    path = tmp_path / "SKILL.md"
+    path.write_text(SKILL)
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    report = audit_bundle(tmp_path)
+    assert report.conformant_notes == 1 and report.missing_type.count == 0
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+@pytest.mark.parametrize(
+    "generated", [{"by": "human:alex", "at": "2026-11-13T00:00:00Z"}, None, "invalid"]
+)
+def test_generated_read_annotation_preserves_mapping(generated: object) -> None:
+    """Whole reads expose supplied structured provenance, never an invented producer."""
+    metadata = {"generated": generated}
+    full = derive_annotation(metadata, include_sources=True)
+    assert full.get("generated") == (generated if isinstance(generated, dict) else None)
+    assert "generated" not in derive_annotation(metadata)
+    if not isinstance(generated, dict):
+        assert "generated" not in full
+
+
+def test_effective_skill_tag_keys_avoid_configured_names() -> None:
+    """Derived keys never consume an operator's literal field, including repeated prefixes."""
+    from markdown_vault_mcp.okf import OKF_METADATA_FIELDS, _effective_okf_tag_key
+
+    fields = [*OKF_METADATA_FIELDS, "__okf__:type", "__okf__:__okf__:type", "tags"]
+    keys = [_effective_okf_tag_key(field, fields) for field in OKF_METADATA_FIELDS]
+    assert len(set(keys)) == len(OKF_METADATA_FIELDS)
+    assert set(keys).isdisjoint(fields)
+    assert _effective_okf_tag_key("type", fields) == "__okf__:__okf__:__okf__:type"
+    assert _effective_okf_tag_key("tags", fields) == "tags"
+    assert _effective_okf_tag_key("type", ["tags"]) == "type"

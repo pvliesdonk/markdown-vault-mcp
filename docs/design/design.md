@@ -1911,6 +1911,18 @@ the spec itself says, dated and sourced, in
   `sources_count`. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
+- **Skill identity** (#2062): exact `SKILL.md` basenames read the six OKF
+  families from nested `metadata`, with `Skill` as the fallback type. The
+  shared `effective_okf_metadata` projection feeds annotations, existing
+  filters/ranking, stats, audit, graph labels and configured tags while raw
+  YAML/JSON and file bytes stay literal. Whole reads expose a supplied
+  `generated` mapping alongside sources. Exact structured queries retain
+  literal YAML paths and tag rows. Effective tag copies keep active native
+  filtering consistent without changing inactive behavior or requiring mode
+  change rebuilds. Structured values deliberately exceed Agent Skills'
+  string-map producer contract; see [the primary reference](reference/agent-skills.md)
+  and [the read contract](okf.md#skill-metadata-reads). Index semantics 12
+  refreshes derived tags for unchanged skills once.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows

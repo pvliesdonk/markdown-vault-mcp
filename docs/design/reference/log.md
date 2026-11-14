@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-14
+
+- New: [Agent Skills frontmatter](agent-skills.md), checked against the primary
+  specification for #2062. Records the string-map contract and the deliberate
+  tolerance of structured OKF metadata. Next review: 2027-05-14.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,

@@ -295,3 +295,187 @@ class TestByteIdenticalWhenNotDetected:
             assert s["normal.md"] == pytest.approx(s["deprecated.md"])
         finally:
             vault.close()
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+def test_skill_filters_stats_and_ranking_agree(
+    tmp_path: Path, mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Retrieval and stats interpret nested identity, while results retain raw metadata."""
+    from tests.conftest import MockEmbeddingProvider
+    from tests.fixtures.okf_skills import SKILL
+
+    def embed(provider: MockEmbeddingProvider, texts: list[str]) -> list[list[float]]:
+        return [[1.0] * provider.dimension for _ in texts]
+
+    monkeypatch.setattr(MockEmbeddingProvider, "embed", embed)
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
+    # Conflicting legacy keys must never leak through a skill's effective slot.
+    (tmp_path / "SKILL.md").write_text(
+        SKILL.replace("name: demo", "type: Wrong\nstatus: draft\nname: demo")
+    )
+    vault = _vault_with_embeddings(tmp_path)
+    try:
+        vault.index.build_embeddings()
+        filters = {
+            "type": "Skill",
+            "status": "deprecated",
+            "trust_tier": "human-reviewed",
+            "stale": "true",
+        }
+        hits = vault.reader.search("zebra", mode=mode, filters=filters)
+        assert [hit.path for hit in hits] == ["SKILL.md"]
+        assert hits[0].frontmatter["type"] == "Wrong"
+        assert [note.path for note in vault.reader.list_documents(filters=filters)] == [
+            "SKILL.md"
+        ]
+        stats = vault.reader.okf_stats()
+        assert stats["types"] == {"Skill": 1}
+        assert stats["status"] == {"deprecated": 1}
+        assert stats["trust"] == {"human-reviewed": 1}
+        assert stats["stale_count"] == 1
+        assert vault.reader.get_context("SKILL.md", similar_limit=0).tags["type"] == [
+            "Skill"
+        ]
+        # The same real row keeps its relevance, scaled only by the existing policy.
+        vault.okf._mode = "off"
+        baseline = vault.reader.search("zebra", mode=mode)
+        raw_score = next(hit.score for hit in baseline if hit.path == "SKILL.md")
+        assert hits[0].score == pytest.approx(raw_score * 0.375)
+        assert vault.reader.list_documents(filters={"type": "Skill"}) == []
+        assert len(vault.reader.list_documents(filters={"type": "Wrong"})) == 1
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+def test_skill_off_explicit_type_filters_stay_literal(
+    tmp_path: Path, mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicitly indexed type must not change off-mode identity by search channel."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.conftest import MockEmbeddingProvider
+    from tests.fixtures.okf_skills import SKILL
+
+    def embed(provider: MockEmbeddingProvider, texts: list[str]) -> list[list[float]]:
+        return [[1.0] * provider.dimension for _ in texts]
+
+    monkeypatch.setattr(MockEmbeddingProvider, "embed", embed)
+    (tmp_path / "SKILL.md").write_text(
+        SKILL.replace("name: demo", "type: Wrong\nname: demo").replace(
+            "  status:", "  type: Runbook\n  status:"
+        )
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="off", indexed_frontmatter_fields=["type"]),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert [
+            note.path for note in vault.reader.list_documents(filters={"type": "Wrong"})
+        ] == ["SKILL.md"]
+        assert [
+            hit.path
+            for hit in vault.reader.search(
+                "zebra", mode=mode, filters={"type": "Wrong"}
+            )
+        ] == ["SKILL.md"]
+        assert (
+            vault.reader.search("zebra", mode=mode, filters={"type": "Runbook"}) == []
+        )
+    finally:
+        vault.close()
+
+
+def test_skill_tag_views_survive_mode_reopens_and_collisions(tmp_path: Path) -> None:
+    """Native tags/snippets switch identity without rebuilding; exact queries stay literal."""
+    from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
+    from markdown_vault_mcp.vault import Vault
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "SKILL.md").write_text(
+        "---\ntype: Wrong\n'__okf__:type': literal1\n"
+        "'__okf__:__okf__:type': literal2\nmetadata:\n  type: Runbook\n---\n"
+        "# Demo\n\n" + "before " * 40 + "zebra " + "after " * 40
+    )
+    # Include all active defaults so the actual registered field set is identical.
+    fields = ["type", "status", "stale_after", "__okf__:type", "__okf__:__okf__:type"]
+    for number, active in enumerate([False, True, False, True]):
+        vault = Vault(
+            source_dir=source,
+            settings=VaultSettings(
+                okf_mode="on" if active else "off",
+                indexed_frontmatter_fields=fields,
+                index_path=tmp_path / "index.sqlite",
+            ),
+        )
+        try:
+            report = vault.index.build_index()
+            assert (report.chunks_indexed > 0) is (number == 0)
+            expected = "Runbook" if active else "Wrong"
+            assert vault.reader.list_tags("type") == [expected]
+            assert vault.reader.list_tags("__okf__:type") == ["literal1"]
+            assert vault.reader.list_tags("__okf__:__okf__:type") == ["literal2"]
+            hits = vault.reader.search(
+                "zebra", mode="keyword", filters={"type": expected}, snippet_words=5
+            )
+            assert [hit.path for hit in hits] == ["SKILL.md"]
+            assert "zebra" in hits[0].sections[0].content
+            assert len(hits[0].sections[0].content.split()) < 15
+            snippets = vault._search_mgr._fetch_snippet_map(
+                "zebra",
+                vault._fts.search("zebra"),
+                snippet_words=5,
+                folder=None,
+                filters={"type": expected},
+                candidate_limit=50,
+            )
+            assert list(snippets.values()) == [hits[0].sections[0].content]
+            assert vault.reader.search(
+                "zebra", mode="keyword", filters={"__okf__:type": "literal1"}
+            )
+            literal = NoteQuery(filters={"type": "Wrong"})
+            assert vault.reader.query_documents(literal).total == 1
+            assert vault.reader.count_documents_matching(literal).total == 1
+            grouped = vault.reader.aggregate_documents(
+                literal, NoteGrouping(by="tag", field="type")
+            )
+            assert grouped.buckets == [{"key": "Wrong", "count": 1}]
+            assert (
+                vault.reader.count_documents_matching(
+                    NoteQuery(filters={"type": "Runbook"})
+                ).total
+                == 0
+            )
+        finally:
+            vault.close()
+
+
+def test_skill_keyword_type_filter_retains_prelimit_recall(tmp_path: Path) -> None:
+    """A skill past the unfiltered pool remains reachable through indexed type filtering."""
+    from markdown_vault_mcp.vault import Vault
+
+    for number in range(210):
+        (tmp_path / f"{number:03}.md").write_text("# Zebra\n\nzebra\n")
+    (tmp_path / "SKILL.md").write_text(
+        "---\nmetadata:\n  type: Runbook\n---\n# Long guide\n\n"
+        + "filler " * 300
+        + "zebra\n"
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        vault.index.build_index()
+        unfiltered = vault.reader.search("zebra", mode="keyword", limit=200)
+        assert len(unfiltered) == 200
+        assert "SKILL.md" not in {hit.path for hit in unfiltered}
+        hits = vault.reader.search(
+            "zebra", mode="keyword", limit=1, filters={"type": "Runbook"}
+        )
+        assert [hit.path for hit in hits] == ["SKILL.md"]
+    finally:
+        vault.close()

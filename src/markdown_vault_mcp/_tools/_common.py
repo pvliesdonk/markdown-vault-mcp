@@ -9,7 +9,7 @@ from typing import Annotated, Any, TypeVar
 from fastmcp.tools import ToolResult
 
 from markdown_vault_mcp.git import SyncHealthReporter
-from markdown_vault_mcp.okf import derive_annotation
+from markdown_vault_mcp.okf import derive_annotation, effective_okf_metadata
 from markdown_vault_mcp.vault import Vault
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,10 @@ async def attach_okf(
         *data*, with the ``okf`` key added when active.
     """
     if await okf_active(vault):
-        data["okf"] = derive_annotation(metadata or {}, include_sources=include_sources)
+        data["okf"] = derive_annotation(
+            effective_okf_metadata(metadata or {}, path=data.get("path")),
+            include_sources=include_sources,
+        )
     return data
 
 

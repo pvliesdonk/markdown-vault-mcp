@@ -8,6 +8,8 @@ before changing a rule here. This module implements phase 1 of
 `docs/design/okf.md`: the vault-side detection probe (``okf_version`` declared
 in the bundle-root ``index.md``) and the pure derivation of per-note read
 annotations (``type`` / ``status`` / staleness / trust tier).
+The read-only skill projection follows ``docs/design/reference/agent-skills.md``,
+including the deliberate tolerance of structured values in its metadata slot.
 
 Trust model (design §2): the vault-side declaration only ever enables
 *read* semantics and advisory guidance — never write behavior. Detection is
@@ -25,6 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -42,7 +45,7 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -57,6 +60,16 @@ KNOWN_OKF_VERSIONS: tuple[str, ...] = ("0.1", "0.2")
 #: Scalar frontmatter keys promoted into ``document_tags`` when detection
 #: is on (feeds the phase-2 filters; harmless to index ahead of them).
 OKF_INDEXED_FIELDS: tuple[str, ...] = ("type", "status", "stale_after")
+
+# Families interpreted from a skill's metadata slot; indexing uses the same set.
+OKF_METADATA_FIELDS: tuple[str, ...] = (
+    "type",
+    "status",
+    "generated",
+    "verified",
+    "sources",
+    "stale_after",
+)
 
 #: Lifecycle vocabulary (``status``); absent means ``stable`` per spec.
 OKF_STATUS_DEFAULT = "stable"
@@ -328,6 +341,49 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     return now.date() >= boundary
 
 
+def _effective_okf_tag_key(field: str, indexed_fields: Collection[str]) -> str:
+    """Select a derived tag key without taking any configured literal name."""
+    if field not in OKF_METADATA_FIELDS or field not in indexed_fields:
+        return field
+    key = "__okf__:" + field
+    while key in indexed_fields:
+        key = "__okf__:" + key
+    return key
+
+
+def effective_okf_metadata(
+    metadata: dict[str, Any], *, path: str | None = None
+) -> dict[str, Any]:
+    """Project a skill's nested OKF fields without changing raw frontmatter.
+
+    Only an exact ``SKILL.md`` basename uses the nested ``metadata`` slot.
+    Structured values are tolerated beyond Agent Skills' string-map contract;
+    see ``docs/design/reference/agent-skills.md``. Other keys remain literal.
+
+    Args:
+        metadata: Raw frontmatter, including any discovery fields.
+        path: Vault-relative note path, or ``None`` for ordinary semantics.
+
+    Returns:
+        A new dictionary with the six OKF families selected from a skill's
+        nested mapping and absent or invalid type inferred as ``Skill``.
+        Ordinary notes retain their values. Nested structures are not mutated.
+    """
+    result = dict(metadata)
+    if path is None or path.rsplit("/", 1)[-1] != "SKILL.md":
+        return result
+    nested = metadata.get("metadata")
+    nested = nested if isinstance(nested, Mapping) else {}
+    for key in OKF_METADATA_FIELDS:
+        result.pop(key, None)
+        if key in nested:
+            result[key] = nested[key]
+    note_type = result.get("type")
+    if not isinstance(note_type, str) or not note_type.strip():
+        result["type"] = "Skill"
+    return result
+
+
 def derive_annotation(
     metadata: dict[str, Any],
     *,
@@ -342,12 +398,13 @@ def derive_annotation(
             the server's local now.
         include_sources: When true (``read`` payloads), include the raw
             ``sources`` list; otherwise (search hits) include only
-            ``sources_count``, and only when non-zero.
+            ``sources_count``, and only when non-zero. Full reads also expose
+            a supplied mapping-valued ``generated`` without inventing provenance.
 
     Returns:
         The annotation dict: ``status`` (defaulted to ``"stable"``),
         ``stale``, and ``trust_tier`` always; ``type`` only when present
-        and non-empty; sources per *include_sources*.
+        and non-empty; sources and generated per *include_sources*.
     """
     now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
@@ -365,6 +422,9 @@ def derive_annotation(
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:
+        generated = metadata.get("generated")
+        if isinstance(generated, Mapping):
+            annotation["generated"] = generated
         if source_list:
             annotation["sources"] = source_list
     elif source_list:
@@ -643,7 +703,7 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     if not parse_ok:
         acc.unparseable.add(rel)
     else:
-        _evaluate_note(rel, metadata, body, acc)
+        _evaluate_note(rel, effective_okf_metadata(metadata, path=rel), body, acc)
 
 
 def audit_bundle(

@@ -42,8 +42,29 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
 - **Trust tier**: derived from the `verified` list (a single entry may be written as a bare mapping, per the spec). A note verified by a person (`by: human:...`) is `human-reviewed`; a note verified only by a process is `machine-confirmed`; an unverified note is `unverified`.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
+- **Generated provenance**: whole-note `read` annotations include a supplied `generated` mapping with its original actor and timestamp.
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
+
+### Reading skills
+
+For a file whose exact name is `SKILL.md`, OKF reads take `type`,
+`status`, `generated`, `verified`, `sources`, and `stale_after` from its
+`metadata` mapping. A missing, blank or invalid nested type defaults to
+`Skill`. These six top-level keys are ignored for skills; discovery fields
+such as `name` and `description` keep their original meaning.
+
+Search filters, `list_tags`, ranking, audit, statistics and graph labels use that same
+identity. Whole-note reads expose structured provenance and sources; search
+hits count sources. The original `frontmatter` mapping and file bytes stay
+unchanged. Exact structured queries retain literal YAML paths, so nested
+fields remain under `metadata`. With OKF inactive, read annotations remain
+absent and search filters keep their ordinary frontmatter meaning.
+
+Agent Skills defines `metadata` as a string-to-string mapping. The server
+tolerates structured OKF values there, including `generated` mappings and
+`sources` lists; this does not make those values conform to that format's
+producer requirements. A lowercase `skill.md` follows ordinary note rules.
 
 ## Frontmatter fields
 

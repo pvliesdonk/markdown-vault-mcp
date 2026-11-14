@@ -53,6 +53,11 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.okf import (
+    OKF_METADATA_FIELDS,
+    _effective_okf_tag_key,
+    effective_okf_metadata,
+)
 from markdown_vault_mcp.types import (
     FTSResult,
     ParsedNote,
@@ -496,7 +501,12 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: is no longer an H1, the title or a chunk boundary; its chunk and
 #: ``content_chars`` gain the indentation. Every other note's rows are
 #: byte-identical, so no other note's embeddings are recomputed.
-INDEX_SEMANTICS_VERSION = 11
+#: Version 12 (#2062) adds effective OKF tags alongside literal configured tags,
+#: including SKILL.md nested metadata and filename-inferred Skill type. Raw
+#: frontmatter_json stays literal; unchanged files rebuild both views once.
+#: Version 11 shipped in v6.1.1. Coordinate any unshipped 12 with #2057 rather
+#: than adding a second bump before release.
+INDEX_SEMANTICS_VERSION = 12
 
 
 class ChunkingMeta(NamedTuple):
@@ -673,6 +683,8 @@ class FTSIndex:
     values produce one row per item (deduplicated per document).  Complex
     types (nested dicts, objects) are stored in the raw JSON blob only and
     are not indexed.
+    Configured OKF families also have effective values under collision-free
+    internal keys; original keys always retain literal frontmatter values.
 
     Args:
         db_path: Path to the SQLite database file.  Pass ``":memory:"`` (the
@@ -1285,6 +1297,8 @@ class FTSIndex:
         Only keys listed in ``indexed_frontmatter_fields`` are processed.
         Scalar values produce one row; list values produce one row per item
         (deduplicated per document).  Complex types (dicts, etc.) are skipped.
+        Effective OKF copies use internal keys alongside the literal rows,
+        independent of detector mode, so mode changes need no rebuild.
 
         Args:
             cur: Active cursor inside the current transaction.
@@ -1294,8 +1308,16 @@ class FTSIndex:
         if not self._indexed_fields:
             return
 
-        for key in self._indexed_fields:
-            value = note.frontmatter.get(key)
+        metadata = effective_okf_metadata(note.frontmatter, path=note.path)
+        values = {key: note.frontmatter.get(key) for key in self._indexed_fields}
+        values.update(
+            {
+                _effective_okf_tag_key(key, self._indexed_fields): metadata.get(key)
+                for key in self._indexed_fields
+                if key in OKF_METADATA_FIELDS
+            }
+        )
+        for key, value in values.items():
             if value is None:
                 continue
 

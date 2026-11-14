@@ -15,6 +15,7 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.exceptions import StoreOpenError
+from markdown_vault_mcp.okf import effective_okf_metadata
 from markdown_vault_mcp.types import GraphEdge, GraphNode, GraphView
 
 if TYPE_CHECKING:
@@ -199,7 +200,7 @@ class GraphFacet:
         folder = meta.folder if meta else ""
         note_type: str | None = None
         if include_type and meta is not None:
-            raw = meta.frontmatter.get("type")
+            raw = effective_okf_metadata(meta.frontmatter, path=path).get("type")
             if isinstance(raw, str) and raw.strip():
                 note_type = raw.strip()
         return label, folder, note_type

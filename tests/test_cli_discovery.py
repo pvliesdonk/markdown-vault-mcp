@@ -896,3 +896,45 @@ def test_reader_backend_valueerror_is_not_input_refusal(
     assert type(result.exception) is ValueError
     assert str(result.exception) == "Synthetic stored-data fault"
     assert result.stdout == ""
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_skill_read_annotation_preserves_raw_metadata(
+    discovery_source: Path, monkeypatch: pytest.MonkeyPatch, active: bool
+) -> None:
+    """CLI whole-note/context/hit annotations project identity only when OKF is active."""
+    from markdown_vault_mcp.scanner import parse_frontmatter
+    from tests.fixtures.okf_skills import SKILL
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on" if active else "off")
+    path = discovery_source / "SKILL.md"
+    path.write_text(SKILL)
+    raw = dict(parse_frontmatter(SKILL).metadata)
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    with reader_backend(False) as connection:
+        for arguments in (
+            ["read", "SKILL.md"],
+            ["context", "SKILL.md", "--similar-limit", "0"],
+            ["search", "zebra"],
+        ):
+            result = CliRunner().invoke(app, [*arguments, *connection, "--json"])
+            assert result.exit_code == 0, result.output
+            payload = json.loads(result.stdout)
+            data = (
+                next(item for item in payload if item["path"] == "SKILL.md")
+                if isinstance(payload, list)
+                else payload
+            )
+            assert data["frontmatter"] == raw
+            assert ("okf" in data) is active
+            if active:
+                assert data["okf"]["type"] == "Skill"
+                if arguments[0] == "read":
+                    assert data["okf"]["generated"] == raw["metadata"]["generated"]
+                    assert data["okf"]["sources"] == raw["metadata"]["sources"]
+        section = CliRunner().invoke(
+            app, ["read", "SKILL.md", "--section", "Steps", *connection, "--json"]
+        )
+        assert section.exit_code == 0, section.output
+        assert "okf" not in json.loads(section.stdout)
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before

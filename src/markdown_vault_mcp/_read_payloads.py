@@ -102,8 +102,14 @@ def annotate_hits(
         Hits with native annotations; ordinary vaults remain unchanged.
     """
     if annotation is not None:
+        from markdown_vault_mcp.okf import effective_okf_metadata
+
         for hit in results:
-            hit["okf"] = annotation(hit.get("frontmatter") or {})
+            hit["okf"] = annotation(
+                effective_okf_metadata(
+                    hit.get("frontmatter") or {}, path=hit.get("path")
+                )
+            )
     return results
 
 

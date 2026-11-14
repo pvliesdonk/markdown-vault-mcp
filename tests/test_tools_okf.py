@@ -547,3 +547,39 @@ class TestOkfMigrationTools:
         async with Client(make_server()) as client:
             names = {t.name for t in await client.list_tools()}
         assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_skill_read_and_search_annotations(okf_vault: Path) -> None:
+    """MCP reads, hits and context share identity while raw skill bytes stay literal."""
+    from markdown_vault_mcp.okf import audit_bundle
+    from markdown_vault_mcp.scanner import parse_frontmatter
+    from tests.fixtures.okf_skills import SKILL
+
+    path = okf_vault / "SKILL.md"
+    path.write_text(SKILL)
+    (okf_vault / "guides" / "SKILL.md").write_text(
+        SKILL.replace("  status:", "  type: Runbook\n  status:")
+    )
+    raw = dict(parse_frontmatter(SKILL).metadata)
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    async with Client(make_server()) as client:
+        read = _structured(await client.call_tool("read", {"path": "SKILL.md"}))
+        assert read["okf"]["type"] == "Skill"
+        assert read["okf"]["generated"] == raw["metadata"]["generated"]
+        assert read["okf"]["sources"] == raw["metadata"]["sources"]
+        assert read["frontmatter"] == raw
+        hits = {hit["path"]: hit for hit in await _search(client)}
+        assert hits["SKILL.md"]["okf"]["sources_count"] == 1
+        assert hits["guides/SKILL.md"]["okf"]["type"] == "Runbook"
+        assert "generated" not in hits["SKILL.md"]["okf"]
+        assert hits["SKILL.md"]["frontmatter"] == raw
+        context = _structured(
+            await client.call_tool(
+                "get_context", {"path": "SKILL.md", "similar_limit": 0}
+            )
+        )
+        assert context["okf"]["type"] == "Skill"
+        assert context["frontmatter"] == raw
+    audit_bundle(okf_vault)
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before

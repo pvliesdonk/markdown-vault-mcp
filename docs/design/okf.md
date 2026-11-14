@@ -242,6 +242,40 @@ than a per-vault authoring task.
 
 ---
 
+### Skill metadata reads
+
+Exact case-sensitive `SKILL.md` basenames use a pure effective OKF projection
+for the six families `type`, `status`, `generated`, `verified`, `sources`,
+and `stale_after`. Those values come only from a mapping-valued `metadata`
+slot; missing, null, blank or non-string type infers `Skill`. Unknown valid
+type strings stay valid. Conflicting top-level families cannot supply missing
+nested values. Other keys, ordinary notes and lowercase `skill.md` stay literal.
+
+The [Agent Skills reference](reference/agent-skills.md) records the deliberate
+tolerance of structured values beyond its string-map producer contract.
+No extras block is consulted. The projection never changes raw frontmatter,
+stored `frontmatter_json`, body or source bytes. Existing read annotations,
+computed filters/ranking, stats, audit and graph labels share the projection;
+full-read annotations also expose a supplied `generated` mapping. Search
+annotations retain source counts. Exact structured queries keep literal paths.
+
+Configured tag derivation preserves literal rows and adds effective copies
+for the six OKF families, including ordinary notes. One shared allocator
+repeats an internal key prefix until it avoids every configured literal name;
+no user name is reserved. Active keyword filters, snippet re-queries and
+`list_tags` select those effective keys. Semantic/list matching keeps original
+field names against the projected mapping. Exact queries/counts/groups retain
+literal rows. Filtering stays in native SQL before the keyword candidate cap.
+
+Both tag views exist regardless of mode, so reopening active/off with identical
+configured fields needs no rebuild. This costs additional tag rows, not a new
+table or schema. Internal keys are not a security boundary: unsupported guessed
+names can reach derived rows through keyword filters; public `list_tags` and
+exact queries retain registration validation. No fields are automatically
+registered when OKF is off; inactive filters/ranking keep existing semantics.
+Index semantics version 12 rebuilds unchanged skills' tags once; no on-disk
+note migration is required.
+
 ## 4. Layer 2 — query dimensions, and `okf_validate`
 
 *Status:* both halves implemented (#961, #962); `design.md`'s "OKF Read
