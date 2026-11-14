@@ -1,5 +1,13 @@
 # Reference research log
 
+## 2026-11-14
+
+- New: [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md),
+  for #1952. Read Linux 6.8 and pinned nsfs UAPI constants, namespace and kill
+  manual pages, and Docker's static-label contract. Guards are pinned to unit
+  tests; the real Docker SIGKILL regression awaits a Docker-capable CI worker.
+  Next review: 2027-05-14.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,
