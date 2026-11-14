@@ -98,7 +98,10 @@ def test_invalid_controls_fail_before_io(flags: list[str]) -> None:
     ):
         result = CliRunner().invoke(app, ["search", "needle", *flags])
     assert result.exit_code == 2, result.output
-    assert "ERROR" in result.stderr or "Error" in result.stderr
+    if "--json" in flags:
+        assert json.loads(result.stderr)["error"]["code"] == "conflicting_options"
+    else:
+        assert "ERROR" in result.stderr or "Error" in result.stderr
     assert result.stdout == ""
 
 

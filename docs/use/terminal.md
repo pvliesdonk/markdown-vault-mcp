@@ -97,6 +97,47 @@ The command returns the server's result without polling. A slow reindex returns 
 
 Local `admin index`, `admin reindex` and `admin embeddings import` keep their existing behavior. The shipped `index --source-dir DIR --index-path PATH --force` invocation still runs local indexing and prints its deprecation message. Parent local options cannot be combined with the hosted `index reindex` child. `index --help` shows help without indexing.
 
+## Error diagnostics
+
+Reader and hosted writer commands send errors to stderr. Plain output starts with `ERROR:` and may include a second `hint:` line. `--agent` produces `ERR <command> <kind> code=<reason>: <message>` and an optional `Hint:` line. Both escape terminal controls. `--json` produces one JSON error object:
+
+```json
+{"error":{"kind":"usage","code":"invalid_server_url","message":"Server URL must be HTTP(S) with a host and no credentials, query or fragment.","exit_code":2,"hint":"Set --server, MARKDOWN_VAULT_MCP_SERVER_URL or [remote] url to the complete HTTP(S) MCP endpoint."}}
+```
+
+`error.code` is a stable symbolic reason; `exit_code` is the numeric process status. An absent or empty hint is omitted. Categories are `usage`, `config`, `remote`, `timeout`, `connection`, `operation` and `internal`. Scripts can select a recovery path by code without parsing the message. Success JSON retains the native arrays, objects and receipts.
+
+| Code | Meaning and recovery |
+| --- | --- |
+| `client_config_missing` | The explicitly selected client file is absent; correct `MARKDOWN_VAULT_MCP_CLIENT_CONFIG`. |
+| `invalid_client_config` | Client TOML cannot be read or has unsupported fields or values; check syntax, permissions and `[remote]`. |
+| `invalid_timeout` | Set `--timeout` or `timeout_seconds` to positive finite seconds. |
+| `invalid_server_url` | Set a complete HTTP(S) endpoint without credentials, query or fragment. |
+| `invalid_client_token` | Correct the selected bearer token environment variable; line breaks and blank tokens are refused. |
+| `conflicting_options` | Choose compatible backend, source, output or creation options. |
+| `invalid_request` | Correct the request using the command's `--help`; exact queries require keyword mode. |
+| `configuration_error` | Check the local vault configuration and required settings. |
+| `operation_failed` | A typed library operation failed; check vault state and server logs. |
+| `invalid_payload` | A read result is malformed; check result format and compatibility. |
+| `query_failed` | An unexpected exact-query fault occurred; check the index and logs. |
+| `remote_client_unavailable` | Install the declared client dependency with `uv pip install "markdown-vault-mcp[mcp]"`. |
+| `server_url_required` | Select a remote endpoint with `--server` or the client profile. |
+| `remote_tool_unsupported` | Upgrade the server or choose an available operation. |
+| `remote_options_unsupported` | Upgrade the server or omit unsupported options. |
+| `remote_tool_failed` | The server refused or failed the tool; check capabilities, request and logs. |
+| `invalid_remote_payload` | The server returned an unsupported or malformed response; check compatibility and logs. |
+| `missing_remote_etag` | A required whole-note read lacked an etag; no mutation was submitted. |
+| `remote_timeout` | Check availability and the deadline. For writes, check current state before retrying. |
+| `remote_connection_failed` | Check the endpoint and bearer token source; interactive login is unsupported. For writes, check current state before retrying. |
+| `invalid_if_match` | Supply a nonempty etag or omit `--if-match`. |
+| `invalid_frontmatter` | Pass a JSON object with finite numeric values. |
+| `invalid_download_timeout` | Set `--download-timeout` to positive finite seconds. |
+| `elicitation_required` | Use a client supporting human elicitation; nothing was written. |
+
+Client selection and argument refusals exit 2; library, payload and remote operation failures exit 1. Interrupts exit 130. Writers never retry. A failed response does not establish whether a mutation was submitted. Inspect the current vault state before trying again after a timeout, a connection or tool failure, or a malformed response.
+
+`--json` and `--agent` conflict with exit 2 and a JSON diagnostic. `okf verify` always refuses with exit 1 before reading configuration or making an RPC, including when both selectors are given. `Typer` parser errors retain their normal format. Local configuration and bootstrap logs can precede a structured diagnostic on stderr; the renderer does not control those logs.
+
 ## Inside the server's Docker container
 
 The image carries the same command. Run inside the container, it reads the server's own index with the container's settings, so it needs no address and no token, and it never writes to the index or the vault:

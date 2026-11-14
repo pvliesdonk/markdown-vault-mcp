@@ -98,6 +98,10 @@ def test_remote_result_and_freshness(kind: str) -> None:
             with pytest.raises(ClientError) as error:
                 call_read(settings, "search", {"query": "x"})
             assert error.value.code == 1
+            assert error.value.reason == (
+                "remote_tool_failed" if kind == "error" else "invalid_remote_payload"
+            )
+            assert error.value.hint
             assert "secret" not in str(error.value)
         else:
             reply = call_read(settings, "search", {"query": "x"})
@@ -117,8 +121,11 @@ def test_remote_rejects_unsupported_argument_before_call(missing: bool) -> None:
         server = FastMCP("no-search-tool")
     with serve_http(server.http_app()) as origin:
         settings = ClientSettings(origin + "/mcp")
-        with pytest.raises(ClientError, match=r"server.*support"):
+        with pytest.raises(ClientError, match=r"server.*support") as error:
             call_read(settings, "search", {"query": "x", "filters": {"tags": "x"}})
+        assert error.value.reason == (
+            "remote_tool_unsupported" if missing else "remote_options_unsupported"
+        )
 
 
 def test_remote_deadline_bounds_slow_tool() -> None:
@@ -131,8 +138,9 @@ def test_remote_deadline_bounds_slow_tool() -> None:
 
     with serve_http(server.http_app()) as origin:
         settings = ClientSettings(origin + "/mcp", timeout=0.2)
-        with pytest.raises(ClientError, match="timed out"):
+        with pytest.raises(ClientError, match="timed out") as error:
             call_read(settings, "search", {"query": "x"})
+        assert (error.value.kind, error.value.reason) == ("timeout", "remote_timeout")
 
 
 def test_local_selection_never_imports_remote_transport(
@@ -193,6 +201,8 @@ def test_authenticated_transport_and_unauthorized_diagnostic() -> None:
         with pytest.raises(ClientError, match="bearer authentication") as error:
             call_read(settings, "search", {"query": "x"})
         assert "wrong-secret" not in str(error.value)
+        assert error.value.reason == "remote_connection_failed"
+        assert "wrong-secret" not in (error.value.hint or "")
         assert re.search(r"failed \((?!ExceptionGroup)\w+\)", str(error.value))
 
 
@@ -218,8 +228,9 @@ def test_cross_origin_redirect_is_not_followed() -> None:
             Starlette(routes=[Route("/mcp", redirect, methods=["GET", "POST"])])
         ) as origin:
             settings = ClientSettings(origin + "/mcp", token="never-forward-secret")
-            with pytest.raises(ClientError):
+            with pytest.raises(ClientError) as error:
                 call_read(settings, "search", {"query": "x"})
+            assert error.value.reason == "remote_connection_failed"
     assert received == []
 
 
@@ -237,8 +248,9 @@ def test_remote_extra_missing_has_actionable_error(
 
     monkeypatch.setattr(builtins, "__import__", missing)
     settings = ClientSettings("https://example.com/mcp")
-    with pytest.raises(ClientError, match=r"markdown-vault-mcp\[mcp\]"):
+    with pytest.raises(ClientError, match=r"markdown-vault-mcp\[mcp\]") as error:
         call_read(settings, "search", {"query": "x"})
+    assert error.value.reason == "remote_client_unavailable"
     from markdown_vault_mcp._cli_read import run_read
 
     assert run_read("search", {}, ClientOptions(local=True), lambda: HITS).data == HITS
@@ -419,7 +431,7 @@ def test_write_reads_exact_etag_or_aborts(etag: Any) -> None:
             assert clients.call_count == 1
             assert discoveries == ["list_tools"]
         else:
-            with pytest.raises(ClientError, match="etag"):
+            with pytest.raises(ClientError, match="etag") as error:
                 call_write(
                     settings,
                     "write",
@@ -427,6 +439,8 @@ def test_write_reads_exact_etag_or_aborts(etag: Any) -> None:
                     read_etag_from="a.md",
                 )
             assert calls == [("read", "a.md")]
+            assert error.value.reason == "missing_remote_etag"
+            assert "no mutation" in (error.value.hint or "")
 
 
 @pytest.mark.parametrize(
@@ -493,6 +507,17 @@ def test_write_checks_before_calls_and_preserves_errors(
             read_etag_from=None if failure == "conflict-explicit" else "a.md",
         )
     assert message in str(error.value)
+    assert error.value.reason == (
+        "remote_tool_unsupported"
+        if failure in {"missing", "read-missing"}
+        else "remote_options_unsupported"
+        if failure in {"schema", "read-schema"}
+        else "remote_tool_failed"
+    )
+    if "write" in expected_calls:
+        assert "state" in (error.value.hint or "") and "before retrying" in (
+            error.value.hint or ""
+        )
     assert calls == expected_calls
 
 
@@ -518,7 +543,7 @@ def test_write_deadline_covers_read_and_submitted_mutation() -> None:
 
     with (
         serve_http(server.http_app()) as origin,
-        pytest.raises(ClientError, match="outcome may be unknown"),
+        pytest.raises(ClientError, match="outcome may be unknown") as error,
     ):
         call_write(
             ClientSettings(origin + "/mcp", timeout=0.6),
@@ -527,6 +552,8 @@ def test_write_deadline_covers_read_and_submitted_mutation() -> None:
             read_etag_from="a.md",
         )
     assert calls == ["read", "write"]
+    assert error.value.reason == "remote_timeout"
+    assert "state before retrying" in (error.value.hint or "")
 
 
 def test_write_slow_native_reindex_returns_job_before_deadline(
@@ -562,3 +589,47 @@ def test_write_slow_native_reindex_returns_job_before_deadline(
             assert data["status"] == "working"
             assert data["job_id"]
             assert data["poll_with"] == "get_job_result"
+
+
+@pytest.mark.parametrize("malformed", [False, True])
+def test_write_protocol_failures_require_state_check(malformed: bool) -> None:
+    from markdown_vault_mcp._cli_remote import call_write
+
+    calls: list[str] = []
+    server = FastMCP("malformed-write")
+
+    @server.tool()
+    def append(path: str, content: str) -> ToolResult:
+        calls.append(path + content)
+        return ToolResult(
+            content=[TextContent(type="text", text="not JSON")] if malformed else []
+        )
+
+    with serve_http(server.http_app()) as origin, pytest.raises(ClientError) as error:
+        call_write(
+            ClientSettings(origin + "/mcp"), "append", {"path": "a.md", "content": "x"}
+        )
+    assert calls == ["a.mdx"]
+    assert error.value.reason == "invalid_remote_payload"
+    assert "state before retrying" in (error.value.hint or "")
+
+
+def test_write_connection_failure_requires_state_check() -> None:
+    from markdown_vault_mcp._cli_remote import call_write
+
+    with (
+        patch(
+            "markdown_vault_mcp._cli_remote._call", side_effect=OSError("secret-token")
+        ),
+        pytest.raises(ClientError) as error,
+    ):
+        call_write(ClientSettings("https://example.com/mcp"), "append", {})
+    assert error.value.reason == "remote_connection_failed"
+    assert "secret-token" not in str(error.value)
+    assert "state before retrying" in (error.value.hint or "")
+
+
+def test_remote_url_required_is_typed() -> None:
+    with pytest.raises(ClientError) as error:
+        call_read(ClientSettings(None), "search", {})
+    assert (error.value.code, error.value.reason) == (2, "server_url_required")

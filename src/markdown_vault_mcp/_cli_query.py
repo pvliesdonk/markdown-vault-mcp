@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 import typer
 
 from markdown_vault_mcp._cli_client import ClientError, ClientOptions, resolve_settings
+from markdown_vault_mcp._cli_errors import diagnostic, render_error
 from markdown_vault_mcp._cli_options import (
     Agent,
     Folder,
@@ -20,7 +21,6 @@ from markdown_vault_mcp._cli_output import (
     command_label,
     output_mode,
     render_reply,
-    terminal_text,
 )
 from markdown_vault_mcp._cli_read import local_read, run_read
 from markdown_vault_mcp._read_payloads import (
@@ -66,10 +66,16 @@ def _arguments(
     command: str | None, tool: str, params: dict[str, Any]
 ) -> dict[str, Any]:
     if params["json_output"] and params["agent"]:
-        raise ClientError("--json and --agent cannot be combined.")
+        raise ClientError(
+            "--json and --agent cannot be combined.",
+            reason="conflicting_options",
+            hint="Choose either --json or --agent.",
+        )
     if params.get("mode", "keyword") != "keyword":
         raise ClientError(
-            "Exact queries require --mode keyword; use search for ranked semantic or hybrid results."
+            "Exact queries require --mode keyword; use search for ranked semantic or hybrid results.",
+            reason="invalid_request",
+            hint="Use --mode keyword for exact queries, or search for ranked semantic or hybrid results.",
         )
     names = (
         "query",
@@ -106,7 +112,9 @@ def _run(ctx: typer.Context, tool: str, params: dict[str, Any]) -> None:
         source = params["source_dir"]
         if source is not None and settings.url is not None:
             raise ClientError(
-                "--source-dir conflicts with a remote server; use --local."
+                "--source-dir conflicts with a remote server; use --local.",
+                reason="conflicting_options",
+                hint="Use --local with --source-dir, or omit --source-dir for a remote server.",
             )
         reply = run_read(
             tool,
@@ -124,18 +132,28 @@ def _run(ctx: typer.Context, tool: str, params: dict[str, Any]) -> None:
             params["json_output"], params["agent"]
         )
         render_reply(command_label(ctx) or tool, reply, output)
-    except (ClientError, ReadPayloadError) as exc:
-        typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
-        raise typer.Exit(exc.code) from None
-    except (MarkdownMCPError, ConfigurationError) as exc:
-        typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
-        raise typer.Exit(1) from None
+    except (ClientError, ReadPayloadError, MarkdownMCPError, ConfigurationError) as exc:
+        error = diagnostic(exc)
+        render_error(
+            command_label(ctx) or tool,
+            error,
+            output_mode(params["json_output"], params["agent"]),
+        )
+        raise typer.Exit(error.code) from None
     except KeyboardInterrupt:
         raise typer.Exit(130) from None
     except Exception:
         # Unexpected backend/serialization faults are server failures, never input errors.
-        typer.echo(
-            "ERROR: Query failed; check the vault index and server logs.", err=True
+        render_error(
+            command_label(ctx) or tool,
+            ClientError(
+                "Query failed; check the vault index and server logs.",
+                1,
+                kind="internal",
+                reason="query_failed",
+                hint="Check the vault index and server logs.",
+            ),
+            output_mode(params["json_output"], params["agent"]),
         )
         raise typer.Exit(1) from None
 

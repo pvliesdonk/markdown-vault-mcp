@@ -373,7 +373,7 @@ def test_backend_fault_is_safe_server_failure(
     result = CliRunner().invoke(app, ["query", "count", "--local", "--json"])
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "ERROR:" in result.stderr
+    assert json.loads(result.stderr)["error"]["code"] == "query_failed"
     assert "private" not in result.stderr
 
 

@@ -11,12 +11,12 @@ import typer
 
 from markdown_vault_mcp import _cli_remote
 from markdown_vault_mcp._cli_client import ClientError, ClientOptions, resolve_settings
+from markdown_vault_mcp._cli_errors import diagnostic, render_error
 from markdown_vault_mcp._cli_options import Agent, Server, Timeout  # noqa: TC001 -- Typer evaluates aliases at registration
 from markdown_vault_mcp._cli_output import (
     command_label,
     output_mode,
     render_reply,
-    terminal_text,
 )
 from markdown_vault_mcp._read_payloads import ReadPayloadError
 
@@ -44,21 +44,41 @@ def _arguments(
         if params[name] is not None and params[name] is not False
     }
     if params.get("if_match") == "":
-        raise ClientError("--if-match must be nonempty.")
+        raise ClientError(
+            "--if-match must be nonempty.",
+            reason="invalid_if_match",
+            hint="Supply a nonempty whole-note etag or omit --if-match.",
+        )
     if params.get("create") and params.get("if_match") is not None:
-        raise ClientError("--create and --if-match cannot be combined.")
+        raise ClientError(
+            "--create and --if-match cannot be combined.",
+            reason="conflicting_options",
+            hint="Choose --create or --if-match.",
+        )
     if "frontmatter" in arguments:
         try:
             arguments["frontmatter"] = json.loads(arguments["frontmatter"])
             json.dumps(arguments["frontmatter"], allow_nan=False)
         except ValueError:
-            raise ClientError("--frontmatter must be a JSON object.") from None
+            raise ClientError(
+                "--frontmatter must be a JSON object.",
+                reason="invalid_frontmatter",
+                hint="Pass --frontmatter a JSON object containing only finite numeric values.",
+            ) from None
         if not isinstance(arguments["frontmatter"], dict):
-            raise ClientError("--frontmatter must be a JSON object.")
+            raise ClientError(
+                "--frontmatter must be a JSON object.",
+                reason="invalid_frontmatter",
+                hint="Pass --frontmatter a JSON object containing only finite numeric values.",
+            )
     if "download_timeout" in arguments:
         seconds = arguments.pop("download_timeout")
         if not math.isfinite(seconds) or seconds <= 0:
-            raise ClientError("--download-timeout must be positive and finite.")
+            raise ClientError(
+                "--download-timeout must be positive and finite.",
+                reason="invalid_download_timeout",
+                hint="Set --download-timeout to a positive finite number of seconds.",
+            )
         arguments["timeout_s"] = seconds
     if tool == "rename":
         arguments["update_links"] = True
@@ -70,14 +90,21 @@ def _run(
 ) -> None:
     try:
         if params["json_output"] and params["agent"]:
-            raise ClientError("--json and --agent cannot be combined.")
+            raise ClientError(
+                "--json and --agent cannot be combined.",
+                reason="conflicting_options",
+                hint="Choose either --json or --agent.",
+            )
         arguments = _arguments(tool, params, names)
         settings = resolve_settings(
             ClientOptions(server=params["server"], timeout=params["timeout"])
         )
         if settings.url is None:
             raise ClientError(
-                "Hosted writes require --server or a configured remote endpoint."
+                "Hosted writes require --server or a configured remote endpoint.",
+                kind="config",
+                reason="server_url_required",
+                hint="Set --server or [remote] url to the complete MCP endpoint.",
             )
         read_path = None
         if (
@@ -95,8 +122,13 @@ def _run(
             output_mode(params["json_output"], params["agent"]),
         )
     except (ClientError, ReadPayloadError) as exc:
-        typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
-        raise typer.Exit(exc.code) from None
+        error = diagnostic(exc)
+        render_error(
+            command_label(ctx),
+            error,
+            output_mode(params["json_output"], params["agent"]),
+        )
+        raise typer.Exit(error.code) from None
     except KeyboardInterrupt:
         raise typer.Exit(130) from None
 
@@ -273,10 +305,17 @@ def register_write_commands(app: typer.Typer) -> typer.Typer:  # noqa: C901, RUF
         agent: Agent = False,
     ) -> None:
         """Refuse review attestation; use a client supporting human elicitation."""
-        del path, server, timeout, json_output, agent
-        typer.echo(
-            "This CLI cannot ask for human review confirmation; use an MCP client that supports elicitation. Nothing was written.",
-            err=True,
+        del path, server, timeout
+        render_error(
+            "okf verify",
+            ClientError(
+                "This CLI cannot ask for human review confirmation; use an MCP client that supports elicitation. Nothing was written.",
+                1,
+                kind="operation",
+                reason="elicitation_required",
+                hint="Use an MCP client supporting human elicitation; nothing was written.",
+            ),
+            output_mode(json_output, agent),
         )
         raise typer.Exit(1)
 

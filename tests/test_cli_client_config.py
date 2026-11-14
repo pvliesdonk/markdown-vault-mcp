@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from typing import TYPE_CHECKING
 
@@ -11,8 +12,38 @@ if TYPE_CHECKING:
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from typer.testing import CliRunner
 
 from markdown_vault_mcp._cli_client import ClientError, ClientOptions, resolve_settings
+from markdown_vault_mcp.cli import app
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["search", "x"],
+        ["read", "a.md"],
+        ["query", "count"],
+        ["note", "append", "a.md", "x"],
+    ],
+)
+@pytest.mark.parametrize(
+    "options,reason",
+    [
+        (["--server", "invalid"], "invalid_server_url"),
+        (["--timeout", "0"], "invalid_timeout"),
+    ],
+)
+def test_selected_json_configuration_error(
+    command: list[str], options: list[str], reason: str
+) -> None:
+    result = CliRunner().invoke(app, [*command, *options, "--json"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    diagnostic = json.loads(result.stderr)["error"]
+    assert diagnostic["code"] == reason
+    assert diagnostic["exit_code"] == 2
+    assert diagnostic["hint"]
 
 
 @pytest.fixture(autouse=True)
@@ -83,8 +114,10 @@ def test_selected_named_token_is_required(
     )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_CONFIG", str(config))
     options = ClientOptions()
-    with pytest.raises(ClientError):
+    with pytest.raises(ClientError) as error:
         resolve_settings(options)
+    assert error.value.reason == "invalid_client_token"
+    assert error.value.hint
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_TOKEN", "override")
     assert resolve_settings(ClientOptions()).token == "override"
 
@@ -123,6 +156,12 @@ def test_invalid_profile_fails_without_echoing_contents(
     with pytest.raises(ClientError) as error:
         resolve_settings(options)
     assert "secret" not in str(error.value)
+    assert error.value.reason == (
+        "invalid_timeout"
+        if "timeout_seconds=true" in contents
+        else "invalid_client_config"
+    )
+    assert error.value.hint
 
 
 @pytest.mark.parametrize(
@@ -141,6 +180,7 @@ def test_unsafe_urls_fail_without_echoing_url(url: str) -> None:
     with pytest.raises(ClientError) as error:
         resolve_settings(options)
     assert "secret" not in str(error.value)
+    assert error.value.reason == "invalid_server_url"
 
 
 @settings(deadline=None)
@@ -150,8 +190,9 @@ def test_timeout_accepts_exactly_positive_finite_values(seconds: float) -> None:
     if seconds > 0 and math.isfinite(seconds):
         assert resolve_settings(options).timeout == seconds
     else:
-        with pytest.raises(ClientError):
+        with pytest.raises(ClientError) as error:
             resolve_settings(options)
+        assert error.value.reason == "invalid_timeout"
 
 
 def test_explicit_missing_profile_fails(
@@ -161,8 +202,9 @@ def test_explicit_missing_profile_fails(
         "MARKDOWN_VAULT_MCP_CLIENT_CONFIG", str(tmp_path / "missing.toml")
     )
     options = ClientOptions()
-    with pytest.raises(ClientError):
+    with pytest.raises(ClientError) as error:
         resolve_settings(options)
+    assert error.value.reason == "client_config_missing"
 
 
 def test_huge_toml_timeout_is_a_client_error(
@@ -180,3 +222,38 @@ def test_url_rejects_del_control_character() -> None:
     options = ClientOptions(server="https://host/mcp\x7f")
     with pytest.raises(ClientError):
         resolve_settings(options)
+
+
+def test_unreadable_profile_has_safe_metadata(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_CLIENT_CONFIG", str(tmp_path))
+    with pytest.raises(ClientError) as error:
+        resolve_settings(ClientOptions())
+    assert error.value.reason == "invalid_client_config"
+    assert str(tmp_path) not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "command,label",
+    [
+        (["search", "x"], "search"),
+        (["read", "a.md"], "read"),
+        (["query", "count"], "query count"),
+        (["note", "append", "a.md", "x"], "note append"),
+    ],
+)
+@pytest.mark.parametrize("agent", [False, True])
+def test_configuration_error_text_modes(
+    command: list[str], label: str, agent: bool
+) -> None:
+    result = CliRunner().invoke(
+        app, [*command, "--server", "invalid", *(["--agent"] if agent else [])]
+    )
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    first, hint = result.stderr.splitlines()
+    assert first.startswith(
+        f"ERR {label} usage code=invalid_server_url:" if agent else "ERROR:"
+    )
+    assert hint.startswith("Hint:" if agent else "hint:")

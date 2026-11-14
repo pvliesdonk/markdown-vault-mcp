@@ -176,7 +176,9 @@ def test_path_native_filter_refusals(remote: bool, field: str) -> None:
         )
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "ERROR:" in result.stderr
+    assert json.loads(result.stderr.splitlines()[-1])["error"]["code"] == (
+        "remote_tool_failed" if remote else "invalid_request"
+    )
 
 
 @pytest.mark.parametrize("coverage", [None, 0, False, [], {}])

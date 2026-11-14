@@ -33,20 +33,40 @@ def _payload(result: Any, tool: str, *, write: bool = False) -> RemoteReply:
             message = "\n".join(
                 block.text for block in result.content if block.type == "text"
             )
-            raise ClientError(message or "Remote tool failed.", 1)
+            raise ClientError(
+                message or "Remote tool failed.",
+                1,
+                kind="remote",
+                reason="remote_tool_failed",
+                hint="Check the current vault state and server logs before retrying the request.",
+            )
         raise ClientError(
-            "Remote read failed. Check the server's query and semantic capabilities.", 1
+            "Remote read failed. Check the server's query and semantic capabilities.",
+            1,
+            kind="remote",
+            reason="remote_tool_failed",
+            hint="Check the server's query and semantic capabilities and correct the request.",
         )
     data = result.structured_content
     if data is None:
         blocks = result.content
         if len(blocks) != 1 or blocks[0].type != "text":
-            raise ClientError("Server returned an unsupported read payload.", 1)
+            raise ClientError(
+                "Server returned an unsupported read payload.",
+                1,
+                kind="remote",
+                reason="invalid_remote_payload",
+                hint=_payload_hint(write),
+            )
         try:
             data = json.loads(blocks[0].text)
         except (ValueError, TypeError):
             raise ClientError(
-                "Server returned an invalid JSON read payload.", 1
+                "Server returned an invalid JSON read payload.",
+                1,
+                kind="remote",
+                reason="invalid_remote_payload",
+                hint=_payload_hint(write),
             ) from None
     if isinstance(data, dict) and set(data) == {"result"}:
         data = data["result"]
@@ -56,8 +76,22 @@ def _payload(result: Any, tool: str, *, write: bool = False) -> RemoteReply:
         try:
             validate_search(data)
         except ReadPayloadError as exc:
-            raise ClientError(str(exc), 1) from None
+            raise ClientError(
+                str(exc),
+                1,
+                kind="remote",
+                reason="invalid_remote_payload",
+                hint=_payload_hint(write),
+            ) from None
     return RemoteReply(data, result.meta or {})
+
+
+def _payload_hint(write: bool) -> str:
+    return "Check server compatibility and logs." + (
+        " Check the current vault state before retrying; the mutation outcome may be unknown."
+        if write
+        else ""
+    )
 
 
 async def _call(
@@ -74,10 +108,19 @@ async def _call(
         from fastmcp.client.transports import StreamableHttpTransport
     except ImportError:
         raise ClientError(
-            f'Install "markdown-vault-mcp[mcp]" to use remote {operation}.', 1
+            f'Install "markdown-vault-mcp[mcp]" to use remote {operation}.',
+            1,
+            kind="config",
+            reason="remote_client_unavailable",
+            hint='Install the declared client dependency with uv pip install "markdown-vault-mcp[mcp]".',
         ) from None
     if settings.url is None:
-        raise ClientError(f"Remote {operation} require a server URL.")
+        raise ClientError(
+            f"Remote {operation} require a server URL.",
+            kind="config",
+            reason="server_url_required",
+            hint="Set --server or [remote] url to the complete MCP endpoint.",
+        )
     # Passing headers explicitly also disables automatic interactive OAuth.
     headers = {"Authorization": f"Bearer {settings.token}"} if settings.token else {}
     transport = StreamableHttpTransport(settings.url, headers=headers, auth=None)
@@ -108,6 +151,9 @@ async def _call(
                 raise ClientError(
                     "Remote read did not return a nonempty etag; no mutation submitted.",
                     1,
+                    kind="remote",
+                    reason="missing_remote_etag",
+                    hint="Use a compatible server returning a whole-note etag; no mutation was submitted.",
                 )
             arguments = {**arguments, "if_match": etag}
         return _payload(await client.call_tool_mcp(tool, arguments), tool, write=write)
@@ -122,14 +168,26 @@ def _check_schema(
             if write
             else "Remote server does not support this read tool; upgrade the server."
         )
-        raise ClientError(message, 1)
+        raise ClientError(
+            message,
+            1,
+            kind="remote",
+            reason="remote_tool_unsupported",
+            hint="Upgrade the server or choose a supported operation.",
+        )
     if set(arguments) - set(tools[tool].input_schema.get("properties", {})):
         message = (
             f"Remote tool '{tool}' does not support the requested options."
             if write
             else "Remote server does not support the requested options; upgrade the server."
         )
-        raise ClientError(message, 1)
+        raise ClientError(
+            message,
+            1,
+            kind="remote",
+            reason="remote_options_unsupported",
+            hint="Upgrade the server or omit unsupported options.",
+        )
 
 
 def _failure_kind(exc: BaseException) -> str:
@@ -216,9 +274,16 @@ def _execute(
             raise ClientError(
                 "Remote operation timed out; outcome may be unknown. Check the server before retrying.",
                 1,
+                kind="timeout",
+                reason="remote_timeout",
+                hint="Check the current vault state before retrying; the mutation outcome may be unknown. Check server availability and --timeout.",
             ) from None
         raise ClientError(
-            "Remote read timed out; increase --timeout if needed.", 1
+            "Remote read timed out; increase --timeout if needed.",
+            1,
+            kind="timeout",
+            reason="remote_timeout",
+            hint="Check server availability and increase --timeout if appropriate.",
         ) from None
     except Exception as exc:
         # The exception's type names the failure without its text, which may
@@ -232,6 +297,14 @@ def _execute(
                 else ""
             ),
             1,
+            kind="connection",
+            reason="remote_connection_failed",
+            hint="Check the complete endpoint and selected bearer token environment variable; interactive login is unsupported."
+            + (
+                " Check the current vault state before retrying; the mutation outcome may be unknown."
+                if write
+                else ""
+            ),
         ) from None
     finally:
         logging.disable(previous)

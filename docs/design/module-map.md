@@ -157,6 +157,7 @@ src/markdown_vault_mcp/
   _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
   _cli_client.py       -- nonsecret client TOML/environment selection and credential/URL/timeout validation
+  _cli_errors.py       -- typed diagnostic adaptation and stderr rendering with symbolic reasons and optional recovery hints
   _cli_remote.py       -- lazy native MCP HTTP transport, capability checks and single-deadline read/write dispatch
   _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies
   _cli_discovery.py    -- note, attachment, metadata and context CLI commands
