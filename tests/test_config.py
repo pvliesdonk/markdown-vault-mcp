@@ -2710,3 +2710,83 @@ def test_the_resident_refusal_names_streamed_and_the_default(
         )
     assert "EMBEDDING_SEARCH=streamed" in str(refused.value)
     assert "leave it unset" in str(refused.value)
+
+
+def test_decide_config_defaults_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Decisions credentials/base are independent of embedding/summarizer settings."""
+    cfg = ProjectConfig.from_env()
+    assert cfg.okf_types_path is None
+    assert cfg.okf_decisions_api_key is None
+    assert cfg.okf_decisions_base_url == "https://api.openai.com/v1"
+    for key in ("type", "status", "description", "sources", "stale_after"):
+        assert getattr(cfg, f"okf_decisions_{key}_threshold") == 0.8
+    monkeypatch.setenv("VOYAGE_API_KEY", "synthetic-voyage")
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "synthetic-summary"
+    )
+    assert ProjectConfig.from_env().okf_decisions_api_key is None
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-platform")
+    assert ProjectConfig.from_env().okf_decisions_api_key == "synthetic-platform"
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_OKF_DECISIONS_API_KEY", "synthetic-dedicated"
+    )
+    cfg = ProjectConfig.from_env()
+    assert cfg.okf_decisions_api_key == "synthetic-dedicated"
+    assert "synthetic-dedicated" not in repr(cfg)
+    secret_field = next(
+        f for f in dataclasses.fields(cfg) if f.name == "okf_decisions_api_key"
+    )
+    assert secret_field.metadata["wizard"]["secret"] is True
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_DECISIONS_API_KEY", "")
+    assert ProjectConfig.from_env().okf_decisions_api_key == "synthetic-platform"
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"okf_decisions_type_threshold": float("nan")},
+        {"okf_decisions_description_threshold": float("inf")},
+        {"okf_decisions_sources_threshold": -0.01},
+        {"okf_decisions_stale_after_threshold": True},
+        {"okf_decisions_replace_threshold": 0.8},
+        {"okf_decisions_status_threshold": 0.95},
+        {"okf_decisions_meaningful_threshold": 1.1},
+        *(
+            {"okf_decisions_base_url": url}
+            for url in [
+                "relative",
+                "file:///tmp/api",
+                "https://fixture@example.invalid",
+                "https://example.invalid?key=secret",
+                "https://example.invalid#fragment",
+            ]
+        ),
+    ],
+)
+def test_decisions_direct_config_validation(fields: dict[str, Any]) -> None:
+    """Direct constructors reject unsafe endpoints/thresholds like env reads do."""
+    with pytest.raises(ConfigurationError):
+        ProjectConfig(**fields)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "TYPE",
+        "STATUS",
+        "DESCRIPTION",
+        "SOURCES",
+        "STALE_AFTER",
+        "MEANINGFUL",
+        "REPLACE",
+    ],
+)
+def test_decisions_threshold_env_suffixes(
+    monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    """Every documented flat threshold reads its exact environment suffix."""
+    value = "0.99" if key == "REPLACE" else "0.81"
+    monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_OKF_DECISIONS_{key}_THRESHOLD", value)
+    assert getattr(
+        ProjectConfig.from_env(), f"okf_decisions_{key.lower()}_threshold"
+    ) == float(value)

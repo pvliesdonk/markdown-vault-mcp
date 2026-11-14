@@ -282,7 +282,7 @@ class NoteDecision:
             answer = by_name.get(key, {})
             proposed = (
                 answer.get("choice")
-                if key in {"type", "status"}
+                if key in {"type", "status", "stale_after"}
                 else self.bindings.get(key)
             )
             disposition = "unavailable"
@@ -294,7 +294,7 @@ class NoteDecision:
                     disposition = self._field_disposition(
                         key, proposed, by_name, policy
                     )
-            if key == "stale_after" and proposed is not None:
+            if key == "stale_after" and answer.get("type") == "choice":
                 try:
                     proposed = okf_timestamp(
                         now + timedelta(days=int(answer["choice"][:-1]))
@@ -686,9 +686,10 @@ class OkfDecisionManager:
                     else "Cannot persist note safely.",
                 )
             else:
-                for value in fields.values():
-                    value["persisted"] = value["accepted"]
-                for value in fields["sources"]["decisions"].values():
+                for value in [
+                    *fields.values(),
+                    *fields["sources"]["decisions"].values(),
+                ]:
                     value["persisted"] = value["accepted"]
         return result
 
