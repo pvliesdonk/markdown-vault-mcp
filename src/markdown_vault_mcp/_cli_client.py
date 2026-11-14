@@ -120,7 +120,7 @@ def _timeout(value: object) -> float:
         raise ClientError(
             _TIMEOUT_MESSAGE,
             reason="invalid_timeout",
-            hint="Set --timeout or [remote] timeout_seconds to a positive finite number.",
+            hint="Use positive finite values for --timeout and [remote] timeout_seconds.",
         )
     try:
         result = float(value)
@@ -128,13 +128,13 @@ def _timeout(value: object) -> float:
         raise ClientError(
             _TIMEOUT_MESSAGE,
             reason="invalid_timeout",
-            hint="Set --timeout or [remote] timeout_seconds to a positive finite number.",
+            hint="Use positive finite values for --timeout and [remote] timeout_seconds.",
         ) from None
     if not math.isfinite(result) or result <= 0:
         raise ClientError(
             _TIMEOUT_MESSAGE,
             reason="invalid_timeout",
-            hint="Set --timeout or [remote] timeout_seconds to a positive finite number.",
+            hint="Use positive finite values for --timeout and [remote] timeout_seconds.",
         )
     return result
 

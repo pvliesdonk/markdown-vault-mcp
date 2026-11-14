@@ -111,7 +111,7 @@ Reader and hosted writer commands send errors to stderr. Plain output starts wit
 | --- | --- |
 | `client_config_missing` | The explicitly selected client file is absent; correct `MARKDOWN_VAULT_MCP_CLIENT_CONFIG`. |
 | `invalid_client_config` | Client TOML cannot be read or has unsupported fields or values; check syntax, permissions and `[remote]`. |
-| `invalid_timeout` | Set `--timeout` or `timeout_seconds` to positive finite seconds. |
+| `invalid_timeout` | Use positive finite values for `--timeout` and `[remote] timeout_seconds`. |
 | `invalid_server_url` | Set a complete HTTP(S) endpoint without credentials, query or fragment. |
 | `invalid_client_token` | Correct the selected bearer token environment variable; line breaks and blank tokens are refused. |
 | `conflicting_options` | Choose compatible backend, source, output or creation options. |
