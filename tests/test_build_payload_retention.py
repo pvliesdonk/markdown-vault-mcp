@@ -265,7 +265,9 @@ def test_indexes_without_optional_projection_remain_compatible(
     (root / "a.md").write_text("# A\n\nbodyword\n", encoding="utf-8")
     (root / "deleted.md").write_text("# Deleted\n\nstaleword\n", encoding="utf-8")
     assert manager.build_index().documents_indexed == 2
-    old_hash = fts.get_note("a.md")["content_hash"]
+    old_row = fts.get_note("a.md")
+    assert old_row is not None
+    old_hash = old_row["content_hash"]
     (root / "deleted.md").unlink()
     monkeypatch.delattr(FTSIndex, "list_note_states")
     assert manager.build_index(force=force).documents_indexed == 1
