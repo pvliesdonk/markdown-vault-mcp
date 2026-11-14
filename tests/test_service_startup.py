@@ -30,10 +30,19 @@ def _no_singleton() -> None:
     set_vault_singleton(None)
 
 
+@pytest.mark.parametrize("retained_remote", [False, True], ids=["plain", "git-off"])
 async def test_missing_directory_starts_without_a_vault(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, retained_remote: bool
 ) -> None:
-    service = Service(ProjectConfig(source_dir=tmp_path / "absent"))
+    """Refuse an absent source, including when a disabled remote cannot clone it."""
+    source = tmp_path / "absent"
+    service = Service(
+        ProjectConfig(
+            source_dir=source,
+            git_enabled=not retained_remote,
+            git_repo_url="https://invalid.example/vault" if retained_remote else None,
+        )
+    )
     with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.domain"):
         await service.start()
     try:
@@ -42,9 +51,11 @@ async def test_missing_directory_starts_without_a_vault(
         ]
         assert [r.args for r in records] == [(tmp_path / "absent",)]
         assert service.startup_error is not None
+        assert not source.exists()
         with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
             _ = service.vault
     finally:
+        await service.stop()
         await service.stop()
 
 
@@ -374,26 +385,3 @@ async def test_a_vault_that_fails_to_start_after_the_wait_is_logged_and_stopped(
     assert any(r.msg.startswith("vault_start_failed") for r in caplog.records)
     await service.stop()  # does not raise, and closes the vault it built
     assert closed == [True]
-
-
-async def test_disabled_git_with_remote_cannot_clone_missing_source(
-    tmp_path: Path,
-) -> None:
-    """Require an existing source even when a disabled remote remains configured."""
-    source = tmp_path / "absent"
-    service = Service(
-        ProjectConfig(
-            source_dir=source,
-            git_enabled=False,
-            git_repo_url="https://invalid.example/vault",
-        )
-    )
-    await service.start()
-    try:
-        assert service.startup_error is not None
-        assert not source.exists()
-        with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
-            _ = service.vault
-    finally:
-        await service.stop()
-        await service.stop()

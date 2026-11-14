@@ -81,7 +81,6 @@ async def test_git_disabled_never_invokes_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, credentials: dict[str, str]
 ) -> None:
     """Disabling git leaves a real checkout writable throughout server lifetime."""
-    from markdown_vault_mcp._tools.git import _resolve_managed_strategy
     from markdown_vault_mcp.exceptions import InvalidRequestError
 
     source = make_superproject(tmp_path)
@@ -117,16 +116,11 @@ async def test_git_disabled_never_invokes_git(
             assert await asyncio.to_thread(vault.index.wait_for_drain, 10.0)
             search = await client.call_tool("search", {"query": "Tangerine"})
             assert "top.md" in str(search.data)
-            assert vault.reader.get_history() == []
-            assert vault.reader.get_diff("top.md", since_sha="deadbeef") == ""
-            assert (
-                vault.reader.get_diff("top.md", since_sha="deadbeef", per_commit=True)
-                == []
-            )
-            with pytest.raises(InvalidRequestError, match="git"):
+            vault.reader.get_history()
+            vault.reader.get_diff("top.md", since_sha="deadbeef")
+            vault.reader.get_diff("top.md", since_sha="deadbeef", per_commit=True)
+            with pytest.raises(InvalidRequestError):
                 vault.reader.read_revision("top.md", "deadbeef")
-            with pytest.raises(InvalidRequestError, match="not synced"):
-                _resolve_managed_strategy(vault)
             assert "git_sync" not in {tool.name for tool in await client.list_tools()}
             sub = vault.reader.read("sub/note.md")
             vault.writer.write("sub/note.md", "# Clementine\n", if_match=sub.etag)

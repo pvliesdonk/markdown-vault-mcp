@@ -2716,15 +2716,24 @@ def test_the_resident_refusal_names_streamed_and_the_default(
     "raw, expected", [(None, True), ("true", True), ("false", False), ("0", False)]
 )
 def test_git_enabled_from_env(
-    monkeypatch: pytest.MonkeyPatch, raw: str | None, expected: bool
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    raw: str | None,
+    expected: bool,
 ) -> None:
-    """Parse the switch while preserving the enabled default."""
+    """Parse the switch and warn about legacy tokens only when enabled."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", "retained")
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
     if raw is None:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_ENABLED", raising=False)
     else:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_ENABLED", raw)
     assert ProjectConfig.from_env().git_enabled is expected
     assert ProjectConfig().git_enabled is True
+    assert (
+        any(r.msg.startswith("git_token_without_repo_url") for r in caplog.records)
+        is expected
+    )
 
 
 def test_disabled_git_preserves_raw_config_and_suppresses_legacy_warning(

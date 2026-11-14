@@ -469,8 +469,8 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         return JSONResponse({"error": "pull failed"}, status_code=503)
 
     if pull_result is None:
-        # Reachable for a library consumer that constructed Vault with
-        # git_strategy=None; a config-driven server always has one.
+        # A library consumer may omit the strategy. Servers with git disabled
+        # do not register webhook routes.
         logger.info("webhook_no_git_strategy kind=%s delivery_id=%s", name, delivery_id)
         return JSONResponse({"ok": True, "message": "no git strategy"})
 

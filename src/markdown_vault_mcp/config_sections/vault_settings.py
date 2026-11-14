@@ -250,7 +250,8 @@ class VaultSettings:
         ``default_mode`` → ``default_search_mode``) and the weight-map
         tuple → dict conversions (#639).  The git pull interval resolves the
         same way the git-strategy assembly does: ``config.git.pull_interval_s``
-        only when a remote is configured (repo URL or token), else ``0``.
+        only when git is enabled and a repo URL or legacy token enables sync,
+        else ``0``.
 
         Args:
             config: The served project configuration.
