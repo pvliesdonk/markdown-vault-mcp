@@ -18,6 +18,150 @@ from tests.fixtures.cli_queries import query_index as query_index
 from tests.fixtures.cli_queries import query_notes as query_notes
 
 
+@pytest.mark.parametrize("command", ["metadata", "body"])
+@pytest.mark.parametrize("mode", ["text", "agent", "json"])
+@settings(max_examples=20)
+@example(total=9, offset=3, limit=2)
+@given(
+    total=st.integers(min_value=0, max_value=30),
+    offset=st.integers(min_value=0, max_value=30),
+    limit=st.integers(min_value=1, max_value=8),
+)
+def test_query_page_guidance_preserves_native_reply_and_request(
+    command: str, mode: str, total: int, offset: int, limit: int
+) -> None:
+    """Continuation follows the validated page without losing caller context."""
+    from markdown_vault_mcp._cli_read import RemoteReply
+
+    size = min(limit, max(0, total - offset))
+    payload = {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "truncated": offset + size < total,
+        "index_stale": False,
+        "items": [
+            {
+                "path": f"{i}.md",
+                "title": "Note",
+                "folder": "",
+                "frontmatter": {},
+                "modified_at": 0,
+                "score": None,
+            }
+            for i in range(size)
+        ],
+    }
+    expected = json.loads(json.dumps(payload))
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def read(tool: str, arguments: dict[str, Any], *_a: Any, **_kw: Any) -> RemoteReply:
+        calls.append((tool, arguments.copy()))
+        return RemoteReply(payload, {"index_stale": False})
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("markdown_vault_mcp._cli_query.run_read", read)
+        result = CliRunner().invoke(
+            app,
+            [
+                "query",
+                command,
+                "private-query",
+                "--offset",
+                str(offset),
+                "--limit",
+                str(limit),
+                "--folder",
+                "Projects",
+                "--pattern",
+                "*.md",
+                "--filter",
+                "tags=kept",
+                "--server",
+                "https://vault.example/mcp",
+                "--wait-for-pending-writes",
+                *([] if mode == "text" else [f"--{mode}"]),
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    tool, arguments = calls[0]
+    assert tool == "query_documents"
+    assert (
+        arguments.items()
+        >= {
+            "query": "private-query",
+            "scope": command,
+            "offset": offset,
+            "limit": limit,
+            "folder": "Projects",
+            "pattern": "*.md",
+            "filters": {"tags": "kept"},
+            "wait_for_pending_writes": True,
+        }.items()
+    )
+    record = result.stdout
+    if mode == "agent":
+        header, record = record.splitlines()
+        assert header.startswith(f"OK query {command} ")
+        assert "count=1" in header and "index_stale=false" in header
+    assert json.loads(record) == payload == expected
+    if payload["truncated"] and mode != "json":
+        assert result.stderr.startswith("Hint:" if mode == "agent" else "hint:")
+        assert f"--offset {offset + size}" in result.stderr
+        assert "same query" in result.stderr.lower()
+        assert "all other options unchanged" in result.stderr
+        assert "private-query" not in result.stderr
+    else:
+        assert result.stderr == ""
+
+
+@pytest.mark.parametrize("stage", ["validation", "rendering"])
+@pytest.mark.parametrize("mode", ["text", "agent"])
+def test_query_page_failure_never_suggests_continuation(
+    stage: str, mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even a truncated receipt is not guidance when validation or rendering fails."""
+    from markdown_vault_mcp._cli_read import RemoteReply
+
+    payload = {
+        "total": 2,
+        "offset": 0,
+        "limit": 1,
+        "truncated": True,
+        "items": [
+            {
+                "path": "a.md",
+                "title": "A",
+                "folder": "",
+                "frontmatter": {},
+                "modified_at": 0,
+                "score": None,
+            }
+        ],
+    }
+    if stage == "validation":
+        payload["total"] = True
+    else:
+
+        def fail(*_args: Any, **_kwargs: Any) -> None:
+            raise ValueError("render failed")
+
+        monkeypatch.setattr("markdown_vault_mcp._cli_query.render_reply", fail)
+    monkeypatch.setattr(
+        "markdown_vault_mcp._cli_query.run_read",
+        lambda *_a, **_kw: RemoteReply(payload),
+    )
+    result = CliRunner().invoke(
+        app,
+        ["query", "body", "word", "--local", *([] if mode == "text" else ["--agent"])],
+    )
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "--offset" not in result.stderr
+    assert "hint:" not in result.stderr.lower()
+
+
 @pytest.mark.parametrize(
     "args,paths,total",
     [
@@ -104,6 +248,7 @@ def test_query_commands_over_real_http() -> None:
 
     with reader_backend(True) as connection:
         for arguments, expected in [
+            (["query", "metadata", "--limit", "1"], 3),
             (["query", "metadata", "bodyword", "--limit", "1"], 1),
             (
                 [
@@ -148,6 +293,12 @@ def test_query_commands_over_real_http() -> None:
             data = json.loads(record)
             assert data["total"] == expected
             assert data["index_stale"] is False
+            if arguments[1] in {"metadata", "body"} and data["truncated"]:
+                assert (
+                    f"--offset {data['offset'] + len(data['items'])}" in result.stderr
+                )
+            else:
+                assert "Hint:" not in result.stderr
             if arguments[1] == "body":
                 assert data["offset"] == 1
                 assert data["limit"] == 1
