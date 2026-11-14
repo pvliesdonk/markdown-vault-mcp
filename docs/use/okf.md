@@ -128,8 +128,9 @@ With the layer on, and only while the vault is an active OKF bundle, every `writ
 - **Invalidates prior review.** A content change means an earlier human review no longer describes the current note, so the server clears `verified`. This fires on any content-changing write, including an edit that touches only a frontmatter line. A `rename` moves the file without changing its content, so it leaves both fields alone. Clearing is one-way. The entries are removed rather than archived, and a write that changes nothing of substance clears them just the same.
 
 The timestamp and verification clearing describe this server's own write path;
-the actor can be a claim supplied by the caller. A note changed in an external
-editor retains its author's metadata. This layer leaves those fields alone.
+the retained `generated.by` is a producer claim that may differ from the caller
+responsible for the latest timestamp. A note changed in an external editor
+retains its author's metadata. This layer leaves those fields alone.
 
 The one-shot migration transforms above (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) are exempt: a mechanical rewrite does not re-stamp provenance or discard a human attestation.
 
