@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.exceptions import IndexUnavailableError
+from markdown_vault_mcp.exceptions import IndexUnavailableError, InvalidRequestError
 from markdown_vault_mcp.fts_index import INDEX_SEMANTICS_VERSION, FTSIndex
 from markdown_vault_mcp.indexing import IndexWriteCoordinator, ProcessDirtyPaths
 from markdown_vault_mcp.managers.index import IndexManager
@@ -1254,3 +1254,69 @@ def test_on_build_embeddings_done_leaves_an_unavailable_store_to_the_writer_log(
         for r in caplog.records
         if r.msg.startswith("async_build_embeddings")
     ] == ["DEBUG"]
+
+
+@pytest.mark.parametrize("stored_version", [None, "11", "13", "invalid"])
+def test_shared_adoption_refuses_incompatible_tag_derivation(
+    tmp_path: Path, stored_version: str | None
+) -> None:
+    """A shared reader must refuse absent, older, newer or malformed tag derivations."""
+    coord = make_coordinator(tmp_path, indexed_frontmatter_fields=("type",))
+    try:
+        coord.build_index()
+        if stored_version is None:
+            with sqlite3.connect(tmp_path / "index.db") as conn:
+                conn.execute("DELETE FROM meta WHERE key = 'index_semantics_version'")
+        else:
+            _set_semantics_version(tmp_path / "index.db", stored_version)
+        with pytest.raises(InvalidRequestError, match="admin index"):
+            coord.use_existing_index()
+    finally:
+        coord.close(timeout=5)
+
+
+def test_shared_adoption_refuses_different_tag_namespace(tmp_path: Path) -> None:
+    """Prefix allocation cannot use local fields that differ from the stored build."""
+    db = tmp_path / "index.db"
+    owner = make_coordinator(tmp_path, db=db, indexed_frontmatter_fields=("type",))
+    owner.build_index()
+    owner.close(timeout=5)
+    reader = make_coordinator(
+        tmp_path, db=db, indexed_frontmatter_fields=("type", "__okf__:type")
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match="indexed_frontmatter_fields"):
+            reader.use_existing_index()
+    finally:
+        reader.close(timeout=5)
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_shared_adoption_preserves_compatible_stored_build(
+    tmp_path: Path, empty: bool
+) -> None:
+    """Adoption is read-only and ignores unrelated local producer settings."""
+    db = tmp_path / "index.db"
+    owner = make_coordinator(
+        tmp_path,
+        db=db,
+        indexed_frontmatter_fields=("type",),
+        embed_model_name="producer",
+        title_field="heading",
+        searchable_fields=("description",),
+    )
+    owner.build_index()
+    if empty:
+        owner._fts.delete_by_path("a.md")
+    owner.close(timeout=5)
+    reader = make_coordinator(tmp_path, db=db, indexed_frontmatter_fields=("type",))
+    try:
+        # SQLite itself refuses a metadata write/rebuild attempted during adoption.
+        assert isinstance(reader._fts, FTSIndex)
+        reader._fts._conn().execute("PRAGMA query_only=ON")
+        reader.use_existing_index()
+        assert reader.is_queryable()
+        assert reader._fts.count_documents() == (0 if empty else 1)
+        assert reader._fts.get_chunking_meta().model == "producer"
+    finally:
+        reader.close(timeout=5)

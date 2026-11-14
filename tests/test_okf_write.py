@@ -755,11 +755,13 @@ class TestOkfVerifyTrustAuth:
 
         real_append = writer_mod.append_okf_verification
 
-        def racing_append(text: str, *, subject: str, now: Any) -> str:
+        def racing_append(
+            text: str, *, subject: str, now: Any, path: str | None = None
+        ) -> str:
             (trust_auth_env / "guides" / "playbook.md").write_text(
                 "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
             )
-            return real_append(text, subject=subject, now=now)
+            return real_append(text, subject=subject, now=now, path=path)
 
         monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
         async with Client(make_server()) as client:
@@ -971,3 +973,187 @@ class TestServiceTokenOkf:
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+
+@pytest.mark.parametrize(
+    "operation", ["body", "frontmatter", "append", "overwrite", "create"]
+)
+def test_skill_content_edit_invalidates_nested_verification(
+    tmp_path: Path, operation: str
+) -> None:
+    """Edited skill bytes must lose nested trust and expose their new provenance."""
+    from markdown_vault_mcp._cli_read import read_payload
+    from tests.fixtures.okf_skills import SKILL
+
+    (tmp_path / "SKILL.md").write_text(SKILL)
+    (tmp_path / "ordinary.md").write_text("# Keep vault mounted\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
+    try:
+        vault.index.build_index()
+        before = read_payload(vault, "SKILL.md")["okf"]
+        assert before["trust_tier"] == "human-reviewed"
+        if operation == "body":
+            vault.writer.edit(
+                "SKILL.md",
+                old_text="Run the zebra checks.",
+                new_text="Run updated zebra checks.",
+            )
+        elif operation == "frontmatter":
+            vault.writer.edit(
+                "SKILL.md", old_text="name: demo", new_text="name: updated"
+            )
+        elif operation == "append":
+            vault.writer.append("SKILL.md", "\nupdated zebra\n")
+        else:
+            if operation == "create":
+                (tmp_path / "SKILL.md").unlink()
+            vault.writer.write("SKILL.md", SKILL.replace("zebra", "updated zebra"))
+        wait_for_writer_drain(vault)
+        after = read_payload(vault, "SKILL.md")
+        assert "updated" in after["content"]
+        assert after["okf"]["trust_tier"] == "unverified"
+        assert "verified" not in after["frontmatter"]["metadata"]
+        assert after["okf"]["generated"]["by"].startswith("markdown-vault-mcp/")
+        assert after["okf"]["generated"]["at"] != before["generated"]["at"]
+        _assert_recent_utc_stamp(after["okf"]["generated"]["at"])
+    finally:
+        vault.close()
+
+
+async def test_skill_verify_read_roundtrip(
+    trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful verifier append must be visible to the next skill read."""
+    (trust_auth_env / "SKILL.md").write_text(
+        "---\nname: demo\nverified: [literal]\nmetadata:\n  type: Runbook\n"
+        "  verified: {by: 'human:previous'}\n---\n# Demo\n"
+    )
+    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "fixture")
+    monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "fixture"})
+    async with Client(make_server()) as client:
+        await wait_for_mcp_writer_drain(client)
+        verified = _parse_tool_data(
+            await client.call_tool("okf_verify", {"path": "SKILL.md"})
+        )
+        assert verified["verifier"] == "human:fixture"
+        assert verified["verified_count"] == 2
+        read = _parse_tool_data(await client.call_tool("read", {"path": "SKILL.md"}))
+        assert read["okf"]["trust_tier"] == "human-reviewed"
+        assert read["frontmatter"]["metadata"]["verified"][1]["by"] == "human:fixture"
+        assert read["frontmatter"]["verified"] == ["literal"]
+
+
+@pytest.mark.parametrize(
+    "slot", ["", "metadata: null\n", "metadata: wrong\n", "metadata: []\n"]
+)
+def test_skill_write_repairs_only_explicitly_mutated_slot(
+    tmp_path: Path, slot: str
+) -> None:
+    """A requested write can create a nested slot without persisting inferred type."""
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write(
+            "SKILL.md", "---\nname: demo\ntype: Literal\n" + slot + "---\n# Demo\n"
+        )
+        meta = _meta(vault, "SKILL.md")
+        assert meta["name"] == "demo"
+        assert meta["type"] == "Literal"
+        assert set(meta["metadata"]) == {"generated"}
+        assert meta["metadata"]["generated"]["by"].startswith("markdown-vault-mcp/")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
+def test_path_aware_transforms_preserve_unrelated_families(path: str | None) -> None:
+    """Only exact skill paths mutate nested provenance; literal conflicts survive."""
+    text = (
+        "---\ntype: Literal\nverified: [{by: 'human:literal'}]\n"
+        "metadata:\n  custom: keep\n  generated: {by: 'human:original', custom: retained}\n"
+        "  verified: {by: 'human:previous'}\n---\n# Demo\n"
+    )
+    stamped = fm.loads(
+        apply_okf_write_stamp(text, actor="fallback", now=_NOW, path=path)
+    ).metadata
+    nested = path == "SKILL.md"
+    slot = stamped["metadata"] if nested else stamped
+    assert "verified" not in slot
+    assert slot["generated"]["by"] == "fallback"
+    assert slot["generated"]["at"] == _ISO
+    assert stamped["type"] == "Literal"
+    assert stamped["metadata"]["custom"] == "keep"
+    if nested:
+        assert stamped["verified"] == [{"by": "human:literal"}]
+    verified = fm.loads(
+        append_okf_verification(text, subject="fixture", now=_NOW, path=path)
+    ).metadata
+    slot = verified["metadata"] if nested else verified
+    assert slot["verified"][-1] == {"by": "human:fixture", "at": _ISO}
+    assert len(slot["verified"]) == 2
+
+
+@pytest.mark.parametrize("actor", [None, "", "human:fixture"])
+def test_path_scope_selects_nested_slot_and_preserves_actor(
+    tmp_path: Path, actor: str | None
+) -> None:
+    """A path-only scope uses the configured actor; explicit empty actors stay explicit."""
+    enrich = build_okf_write_enrich(
+        okf_write=True, detector=_active_detector(tmp_path), version="fixture"
+    )
+    assert enrich is not None
+    with (
+        okf_write_intent(OkfWriteIntent(actor=actor)),
+        _okf_write.okf_write_path("nested/SKILL.md"),
+    ):
+        meta = fm.loads(enrich("# Demo\n", "write")).metadata
+    assert meta["metadata"]["generated"]["by"] == (
+        "markdown-vault-mcp/fixture" if actor is None else actor
+    )
+    assert _okf_write.current_okf_intent() is None
+
+
+def test_path_scope_restores_outer_intent_after_error(tmp_path: Path) -> None:
+    """Nested native target scopes retain suppression and restore on exceptions."""
+    enrich = build_okf_write_enrich(
+        okf_write=True, detector=_active_detector(tmp_path), version="fixture"
+    )
+    assert enrich is not None
+    with _okf_write.okf_write_path("outer/SKILL.md"):
+        outer = _okf_write.current_okf_intent()
+        assert outer is not None and outer.actor is None
+        with okf_write_intent(OkfWriteIntent("", True)):
+            suppressed = _okf_write.current_okf_intent()
+            with (
+                pytest.raises(RuntimeError, match="fixture"),
+                _okf_write.okf_write_path("ordinary.md"),
+            ):
+                current = _okf_write.current_okf_intent()
+                assert current is not None and current.path == "ordinary.md"
+                assert enrich("# Demo\n", "write") == "# Demo\n"
+                raise RuntimeError("fixture")
+            assert _okf_write.current_okf_intent() is suppressed
+        assert _okf_write.current_okf_intent() is outer
+    assert _okf_write.current_okf_intent() is None
+
+
+def test_legacy_enrichment_callback_keeps_two_arguments(tmp_path: Path) -> None:
+    """A native mutation must still accept a shipped two-argument injected callback."""
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+
+        def enrich(text: str, operation: Any) -> str:
+            return text + "\nlegacy " + operation + "\n"
+
+        vault._doc_mgr._okf_write_enrich = enrich
+        vault.writer.write("SKILL.md", "# Demo\n")
+        assert "legacy write" in (tmp_path / "SKILL.md").read_text()
+    finally:
+        vault.close()

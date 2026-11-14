@@ -274,7 +274,22 @@ names can reach derived rows through keyword filters; public `list_tags` and
 exact queries retain registration validation. No fields are automatically
 registered when OKF is off; inactive filters/ranking keep existing semantics.
 Index semantics version 12 rebuilds unchanged skills' tags once; no on-disk
-note migration is required.
+note migration is required. Shared-index adoption refuses absent, older,
+malformed or newer semantics versions and any difference in the complete
+indexed-field namespace. Other stored producer settings remain authoritative;
+no reader rebuild or metadata write occurs.
+
+Each search or filtered listing captures activation once and reuses it through
+filtering, ranking and snippet selection. The next request probes again.
+
+Explicit native writes and `okf_verify` use the same authoritative slot. With
+`OKF_WRITE` active, content writes replace nested `generated` and clear nested
+`verified`; verification appends there and reports its effective count. The
+mutation copies valid nested mappings, preserves unrelated members and literal
+top-level conflicts, and creates a mapping for absent/malformed slots. It never
+persists the inferred `Skill` type. Ordinary and lowercase targets retain root
+mutations. The existing two-argument enrichment callback is unchanged: its
+native target travels through the existing request intent only during enrichment.
 
 ## 4. Layer 2 — query dimensions, and `okf_validate`
 
@@ -360,7 +375,7 @@ is both deprecated and stale sinks below either alone. The pure re-ranker
 `apply_okf_downweight` (alongside `apply_folder_boost`) runs as the conservative
 last score mutation — immediately after the folder boost, before grouping — in
 all three channels (keyword, semantic, hybrid), gated on
-`self._okf.state().active`; the per-hit OKF factor comes from the same
+the request's activation snapshot; the per-hit OKF factor comes from the same
 `get_note` → frontmatter → `derive_annotation` path the annotation and filter
 layers use, memoised per path. It mirrors `apply_folder_boost` in scaling only
 positive scores, so a negative cosine is never promoted. On any vault where

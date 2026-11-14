@@ -479,3 +479,55 @@ def test_skill_keyword_type_filter_retains_prelimit_recall(tmp_path: Path) -> No
         assert [hit.path for hit in hits] == ["SKILL.md"]
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    "operation", ["list", "keyword", "semantic", "hybrid", "similar"]
+)
+def test_filtered_requests_use_one_activation_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    """Candidate/key loops must not reread detection; the next request sees changes."""
+    from tests.conftest import MockEmbeddingProvider
+    from tests.fixtures.okf_skills import SKILL
+
+    def embed(provider: MockEmbeddingProvider, texts: list[str]) -> list[list[float]]:
+        return [[1.0] * provider.dimension for _ in texts]
+
+    monkeypatch.setattr(MockEmbeddingProvider, "embed", embed)
+    marker = tmp_path / "index.md"
+    marker.write_text('---\nokf_version: "0.2"\n---\n# Index\n')
+    (tmp_path / "SKILL.md").write_text(SKILL)
+    for number in range(25):
+        (tmp_path / f"{number}.md").write_text(
+            "---\ntype: Reference\ntags: fixture\n---\n# Note\n\nzebra\n"
+        )
+    vault = _vault_with_embeddings(tmp_path)
+    try:
+        vault.index.build_embeddings()
+        probes = 0
+        probe = vault.okf._probe_declared_version
+
+        def counted_probe() -> str | None:
+            nonlocal probes
+            probes += 1
+            return probe()
+
+        monkeypatch.setattr(vault.okf, "_probe_declared_version", counted_probe)
+        for active in (True, False):
+            if not active:
+                marker.write_text("# Index\n")
+            probes = 0
+            filters = {"type": "Skill", "status": "deprecated"}
+            if operation == "list":
+                hits = vault.reader.list_documents(filters=filters)
+            elif operation == "similar":
+                hits = vault.reader.get_similar("0.md", filters=filters)
+            else:
+                hits = vault.reader.search(
+                    "zebra", mode=operation, filters=filters, snippet_words=5
+                )
+            assert [hit.path for hit in hits] == (["SKILL.md"] if active else [])
+            assert probes == 1, f"{probes} detection reads for one {operation} request"
+    finally:
+        vault.close()

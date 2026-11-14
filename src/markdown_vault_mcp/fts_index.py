@@ -2183,8 +2183,8 @@ class FTSIndex:
     def list_field_values(self, field: str) -> list[str]:
         """Return all distinct tag values for a given frontmatter field.
 
-        If ``field`` was not in ``indexed_frontmatter_fields``, returns an
-        empty list.
+        Accepts configured literal keys and their internal effective OKF keys.
+        Keys with no stored tag rows return an empty list.
 
         Args:
             field: Frontmatter key (e.g. ``"cluster"``).

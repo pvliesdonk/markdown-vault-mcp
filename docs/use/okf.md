@@ -66,6 +66,17 @@ tolerates structured OKF values there, including `generated` mappings and
 `sources` lists; this does not make those values conform to that format's
 producer requirements. A lowercase `skill.md` follows ordinary note rules.
 
+When the enforced write layer is enabled, edits, appends and whole-note writes
+stamp `metadata.generated` and clear `metadata.verified` on a skill.
+`okf_verify` appends to that same nested verification list. These explicit
+mutations preserve unrelated fields and literal top-level conflicts; they do
+not save an inferred `type: Skill` into your YAML.
+
+A shared disk index must have the current derivation version and the same
+indexed fields as the reader. An incompatible reader refuses instead of
+returning incomplete filtered results. Use matching reader settings/version,
+and run `admin index` through the index's owning process when a rebuild is needed.
+
 ## Frontmatter fields
 
 A conformant note needs only a non-empty `type`. Everything else is optional but recommended:

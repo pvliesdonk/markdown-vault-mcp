@@ -46,6 +46,7 @@ from markdown_vault_mcp.exceptions import (
 from markdown_vault_mcp.okf import (
     _HUMAN_ACTOR_PREFIX,
     append_okf_verification,
+    effective_okf_metadata,
     verified_entries,
 )
 from markdown_vault_mcp.utils import is_note
@@ -1179,9 +1180,12 @@ def register(mcp: FastMCP) -> None:
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
             raise DocumentNotFoundError.note(path)
-        verified_count = len(verified_entries(note.frontmatter)) + 1
+        verified_count = (
+            len(verified_entries(effective_okf_metadata(note.frontmatter, path=path)))
+            + 1
+        )
         new_text = append_okf_verification(
-            note.content, subject=subject, now=datetime.now(UTC)
+            note.content, subject=subject, now=datetime.now(UTC), path=path
         )
         # Verification attests to a specific set of bytes, so the read-modify-
         # write must be atomic: pass the read's etag as if_match so a concurrent

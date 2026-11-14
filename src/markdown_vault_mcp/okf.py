@@ -1107,16 +1107,28 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
-def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
-    """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
+def _okf_write_slot(metadata: dict[str, Any], *, path: str | None) -> dict[str, Any]:
+    """Select a copied skill slot only for an explicitly requested mutation."""
+    if path is None or path.rsplit("/", 1)[-1] != "SKILL.md":
+        return metadata
+    nested = metadata.get("metadata")
+    slot = dict(nested) if isinstance(nested, Mapping) else {}
+    metadata["metadata"] = slot
+    return slot
+
+
+def apply_okf_write_stamp(
+    text: str, *, actor: str, now: _dt.datetime, path: str | None = None
+) -> str:
+    """Refresh ``generated.at`` and clear verification in the authoritative slot.
 
     The enforced-write layer's core transform (design §6). Operates on the final
-    file text (frontmatter plus body), so it is uniform across the ``write``
-    (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
-    the current bytes and is overwritten with the instant of this write —
-    "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
+    file text (frontmatter plus body), uniformly across write and edit paths.
+    The current actor and timestamp replace ``generated`` on every content
+    write, and verification is removed because the old attestation no longer
+    applies.
+    Exact ``SKILL.md`` targets use nested ``metadata``; other paths use the root.
+    Unrelated fields and conflicting literal top-level families are untouched.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1125,6 +1137,7 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
             ``markdown-vault-mcp/<version>``.
         now: The instant of the write, timezone-aware (spelled by
             :func:`okf_timestamp`).
+        path: Optional target path; only exact ``SKILL.md`` selects a nested slot.
 
     Returns:
         The stamped file text, or *text* unchanged when the resulting frontmatter
@@ -1134,20 +1147,24 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
-    new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
-    new_meta.pop("verified", None)
+    slot = _okf_write_slot(new_meta, path=path)
+    slot["generated"] = {"by": actor, "at": okf_timestamp(now)}
+    slot.pop("verified", None)
     if new_meta == meta:
         return text
     return fm.dumps(fm.Post(post.content, **new_meta))
 
 
-def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
+def append_okf_verification(
+    text: str, *, subject: str, now: _dt.datetime, path: str | None = None
+) -> str:
     """Append a ``human:<subject>`` entry to a note's ``verified`` list.
 
     The ``okf_verify`` tool's core transform (design §6): records an attributable
     human attestation, promoting the note's trust tier to ``human-reviewed``.
-    Preserves all other frontmatter and the body verbatim; the entry keeps the
-    ``{by, at}`` shape :func:`derive_trust_tier` reads.
+    Preserves other frontmatter values and the body; the entry keeps the
+    ``{by, at}`` shape :func:`derive_trust_tier` reads. Exact ``SKILL.md``
+    targets append in nested ``metadata`` rather than the literal root.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1155,13 +1172,15 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
             or ``local`` for a confirmed review without human identity claims.
         now: The instant of the verification, timezone-aware (spelled by
             :func:`okf_timestamp`).
+        path: Optional target path; only exact ``SKILL.md`` selects a nested slot.
 
     Returns:
         The note text with the appended verification.
     """
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
-    verified = list(verified_entries(meta))
+    slot = _okf_write_slot(meta, path=path)
+    verified = list(verified_entries(slot))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
-    meta["verified"] = verified
+    slot["verified"] = verified
     return fm.dumps(fm.Post(post.content, **meta))

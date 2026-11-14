@@ -541,7 +541,9 @@ class SearchManager:
             frontmatter=self._parse_frontmatter_json(row.get("frontmatter_json"), path),
         )
 
-    def _row_matches_filters(self, path: str, filters: dict[str, str]) -> bool:
+    def _row_matches_filters(
+        self, path: str, filters: dict[str, str], *, okf_active: bool
+    ) -> bool:
         """Return ``True`` if the document at *path* satisfies all *filters*.
 
         Looks up frontmatter from the FTS index and checks each key/value
@@ -550,6 +552,7 @@ class SearchManager:
         Args:
             path: Relative document path.
             filters: Dict of ``{frontmatter_key: value}`` pairs.
+            okf_active: Activation snapshot shared by this request.
 
         Returns:
             ``True`` if the document exists and all filter conditions are met.
@@ -563,30 +566,38 @@ class SearchManager:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
                 fm = json.loads(fm_raw)
         return self._metadata_matches_filters(
-            self._effective_okf_metadata(fm, path), filters
+            self._effective_okf_metadata(fm, path, okf_active=okf_active), filters
         )
 
+    def _okf_active(self) -> bool:
+        """Snapshot read activation once for a request, never across requests."""
+        return self._okf is not None and self._okf.state().active
+
+    @staticmethod
     def _effective_okf_metadata(
-        self, metadata: dict[str, Any], path: str
+        metadata: dict[str, Any], path: str, *, okf_active: bool
     ) -> dict[str, Any]:
         """Interpret skill fields only when OKF read semantics are active."""
-        if self._okf is not None and self._okf.state().active:
+        if okf_active:
             return effective_okf_metadata(metadata, path=path)
         return metadata
 
-    def _native_tag_key(self, field: str) -> str:
+    def _native_tag_key(self, field: str, *, okf_active: bool) -> str:
         """Select the effective storage key only while OKF reads are active."""
-        if self._okf is not None and self._okf.state().active:
+        if okf_active:
             return _effective_okf_tag_key(field, self._indexed_frontmatter_fields)
         return field
 
     def _native_tag_filters(
-        self, filters: dict[str, str] | None
+        self, filters: dict[str, str] | None, *, okf_active: bool
     ) -> dict[str, str] | None:
         """Select effective storage keys only at active native tag boundaries."""
         if not filters:
             return filters
-        return {self._native_tag_key(key): value for key, value in filters.items()}
+        return {
+            self._native_tag_key(key, okf_active=okf_active): value
+            for key, value in filters.items()
+        }
 
     @staticmethod
     def _metadata_matches_filters(
@@ -617,7 +628,7 @@ class SearchManager:
         return True
 
     def _split_okf_filters(
-        self, filters: dict[str, str] | None
+        self, filters: dict[str, str] | None, *, okf_active: bool
     ) -> tuple[dict[str, str] | None, dict[str, str]]:
         """Split *filters* into plain tag filters and OKF dimensions.
 
@@ -630,6 +641,7 @@ class SearchManager:
 
         Args:
             filters: The caller's ``filters`` dict, or ``None``.
+            okf_active: Activation snapshot shared by this request.
 
         Returns:
             ``(plain_filters_or_None, okf_filters)`` — the second dict is
@@ -639,10 +651,10 @@ class SearchManager:
             InvalidRequestError: If an active ``stale`` filter value is not a
                 true/false spelling.
         """
-        if not filters or self._okf is None:
+        if not filters or not okf_active:
             return filters, {}
         okf_filters = {k: v for k, v in filters.items() if k in OKF_FILTER_KEYS}
-        if not okf_filters or not self._okf.state().active:
+        if not okf_filters:
             return filters, {}
         if "stale" in okf_filters:
             parse_stale_filter(okf_filters["stale"])
@@ -695,7 +707,9 @@ class SearchManager:
                 kept.append(row)
         return kept
 
-    def _rank_okf(self, rows: builtins.list[_RankT]) -> builtins.list[_RankT]:
+    def _rank_okf(
+        self, rows: builtins.list[_RankT], *, okf_active: bool | None = None
+    ) -> builtins.list[_RankT]:
         """Apply the OKF ranking downweight (design §5, #965) on active bundles.
 
         A no-op — the rows are returned unchanged, so ranking stays
@@ -707,11 +721,12 @@ class SearchManager:
 
         Args:
             rows: Candidate rows carrying ``path`` and ``score``.
+            okf_active: Request snapshot; omitted probes once for a direct call.
 
         Returns:
             The rows, downweighted and re-sorted when active, else unchanged.
         """
-        if self._okf is None or not self._okf.state().active:
+        if not (self._okf_active() if okf_active is None else okf_active):
             return rows
         factors: dict[str, float] = {}
 
@@ -763,6 +778,7 @@ class SearchManager:
         *,
         filters: dict[str, str] | None,
         okf_filters: dict[str, str] | None = None,
+        okf_active: bool,
     ) -> builtins.list[dict[str, Any]]:
         """Apply frontmatter and OKF filters to vector-search rows.
 
@@ -786,6 +802,7 @@ class SearchManager:
                 ``similar_to_document``.
             filters: Optional ``{frontmatter_key: value}`` equality filters.
             okf_filters: Optional OKF-dimension filters.
+            okf_active: Activation snapshot shared by this request.
 
         Returns:
             The rows that satisfy every condition, original order preserved.
@@ -794,7 +811,9 @@ class SearchManager:
         okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
-            if filters and not self._row_matches_filters(r["path"], filters):
+            if filters and not self._row_matches_filters(
+                r["path"], filters, okf_active=okf_active
+            ):
                 continue
             if okf_filters:
                 verdict = okf_verdicts.get(r["path"])
@@ -957,7 +976,8 @@ class SearchManager:
         )
         eff_snip = snippet_words if snippet_words is not None else self._snippet_words
         folder = normalize_folder(folder)
-        filters, okf_filters = self._split_okf_filters(filters)
+        okf_active = self._okf_active()
+        filters, okf_filters = self._split_okf_filters(filters, okf_active=okf_active)
 
         mode = self._resolve_mode(mode)
 
@@ -970,6 +990,7 @@ class SearchManager:
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
                 okf_filters=okf_filters,
+                okf_active=okf_active,
             )
 
         if mode == "semantic":
@@ -984,6 +1005,7 @@ class SearchManager:
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
                 okf_filters=okf_filters,
+                okf_active=okf_active,
             )
 
         # hybrid
@@ -998,6 +1020,7 @@ class SearchManager:
             chunks_per_file=eff_cap,
             snippet_words=eff_snip,
             okf_filters=okf_filters,
+            okf_active=okf_active,
         )
 
     @staticmethod
@@ -1132,6 +1155,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str] | None = None,
+        okf_active: bool,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1141,7 +1165,7 @@ class SearchManager:
         raw = self._fts.search(
             query,
             limit=candidate_limit,
-            filters=self._native_tag_filters(filters),
+            filters=self._native_tag_filters(filters, okf_active=okf_active),
             folder=folder,
             snippet_words=None,
         )
@@ -1150,7 +1174,7 @@ class SearchManager:
             raw, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
-        downweighted = self._rank_okf(downweighted)
+        downweighted = self._rank_okf(downweighted, okf_active=okf_active)
         groupable: list[_GroupableFTS] = [
             _GroupableFTS(
                 path=r.path,
@@ -1180,6 +1204,7 @@ class SearchManager:
                 folder=folder,
                 filters=filters,
                 candidate_limit=candidate_limit,
+                okf_active=okf_active,
             )
         else:
             snippets_by_key = {}
@@ -1201,6 +1226,7 @@ class SearchManager:
         folder: str | None,
         filters: dict[str, str] | None,
         candidate_limit: int,
+        okf_active: bool | None = None,
     ) -> dict[tuple[str, str | None], str]:
         """Re-query FTS with snippet projection, restricted to survivor paths.
 
@@ -1222,15 +1248,17 @@ class SearchManager:
             candidate_limit: The caller's initial candidate pool size; used as
                 a floor so the snippet re-query is at least as wide as the
                 ranking query.
+            okf_active: Request snapshot; omitted probes once for a direct call.
         """
         if not survivors:
             return {}
+        okf_active = self._okf_active() if okf_active is None else okf_active
         candidate_n = max(candidate_limit, len(survivors) * 4, 50)
         rows = self._fts.search(
             query,
             limit=candidate_n,
             folder=folder,
-            filters=self._native_tag_filters(filters),
+            filters=self._native_tag_filters(filters, okf_active=okf_active),
             snippet_words=snippet_words,
         )
         wanted = {(s.path, s.heading) for s in survivors}
@@ -1250,6 +1278,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str] | None = None,
+        okf_active: bool,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1260,7 +1289,7 @@ class SearchManager:
         raw = self._search_vectors(query, candidate_limit, folder)
 
         filtered = self._post_filter_semantic_rows(
-            raw, filters=filters, okf_filters=okf_filters
+            raw, filters=filters, okf_filters=okf_filters, okf_active=okf_active
         )
         rows = self._adapt_semantic_rows(filtered)
 
@@ -1268,7 +1297,7 @@ class SearchManager:
             rows, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
-        downweighted = self._rank_okf(downweighted)
+        downweighted = self._rank_okf(downweighted, okf_active=okf_active)
         groups = _group_by_path(
             downweighted, chunks_per_file=chunks_per_file, file_limit=limit
         )
@@ -1290,6 +1319,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str] | None = None,
+        okf_active: bool,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
         okf_filters = okf_filters or {}
@@ -1311,7 +1341,7 @@ class SearchManager:
         fts_raw: list[FTSResult] = self._fts.search(
             query,
             limit=fts_candidate_limit,
-            filters=self._native_tag_filters(filters),
+            filters=self._native_tag_filters(filters, okf_active=okf_active),
             folder=folder,
             snippet_words=None,
         )
@@ -1322,7 +1352,7 @@ class SearchManager:
 
         vec_raw = self._search_vectors(query, vec_candidate_limit, folder)
         vec_filtered = self._post_filter_semantic_rows(
-            vec_raw, filters=filters, okf_filters=okf_filters
+            vec_raw, filters=filters, okf_filters=okf_filters, okf_active=okf_active
         )
         vec_rows = _apply_length_downweight(
             self._adapt_semantic_rows(vec_filtered),
@@ -1373,7 +1403,7 @@ class SearchManager:
         groupable_rows = _apply_folder_boost(
             groupable_rows, weights=self._folder_weights
         )
-        groupable_rows = self._rank_okf(groupable_rows)
+        groupable_rows = self._rank_okf(groupable_rows, okf_active=okf_active)
         groups = _group_by_path(
             groupable_rows, chunks_per_file=chunks_per_file, file_limit=limit
         )
@@ -1396,6 +1426,7 @@ class SearchManager:
                 folder=folder,
                 filters=filters,
                 candidate_limit=fts_candidate_limit,
+                okf_active=okf_active,
             )
 
         def _group_search_type(
@@ -1467,7 +1498,10 @@ class SearchManager:
                 true/false spelling.
         """
         folder = normalize_folder(folder)
-        plain_filters, okf_filters = self._split_okf_filters(filters)
+        okf_active = self._okf_active()
+        plain_filters, okf_filters = self._split_okf_filters(
+            filters, okf_active=okf_active
+        )
         rows = self._fts.list_notes(folder=folder)
         note_infos = [fts_row_to_note_info(row) for row in rows]
 
@@ -1478,7 +1512,10 @@ class SearchManager:
                 n
                 for n in note_infos
                 if self._metadata_matches_filters(
-                    self._effective_okf_metadata(n.frontmatter, n.path), plain_filters
+                    self._effective_okf_metadata(
+                        n.frontmatter, n.path, okf_active=okf_active
+                    ),
+                    plain_filters,
                 )
             ]
         if okf_filters:
@@ -1656,7 +1693,9 @@ class SearchManager:
                 f"Field {field!r} is not indexed, so its values cannot be "
                 f"listed. Pass one of the indexed fields as field: {indexed}."
             )
-        return self._fts.list_field_values(self._native_tag_key(field))
+        return self._fts.list_field_values(
+            self._native_tag_key(field, okf_active=self._okf_active())
+        )
 
     def stats(self) -> VaultStats:
         """Return vault-wide statistics.
@@ -1830,7 +1869,8 @@ class SearchManager:
         eff_cpf = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
-        filters, okf_filters = self._split_okf_filters(filters)
+        okf_active = self._okf_active()
+        filters, okf_filters = self._split_okf_filters(filters, okf_active=okf_active)
         candidate_limit = self._widen_for_post_filter(
             max(limit * (eff_cpf + 4), 50),
             filters=filters,
@@ -1855,7 +1895,7 @@ class SearchManager:
         if not raw_results:
             return []
         raw_results = self._post_filter_semantic_rows(
-            raw_results, filters=filters, okf_filters=okf_filters
+            raw_results, filters=filters, okf_filters=okf_filters, okf_active=okf_active
         )
 
         rows = self._adapt_semantic_rows(raw_results)
@@ -2005,7 +2045,9 @@ class SearchManager:
 
         # Tags — indexed frontmatter fields present on this document.
         tags: dict[str, list[str]] = {}
-        tag_metadata = self._effective_okf_metadata(frontmatter, path)
+        tag_metadata = self._effective_okf_metadata(
+            frontmatter, path, okf_active=self._okf_active()
+        )
         for field in self._indexed_frontmatter_fields:
             value = tag_metadata.get(field)
             if value is None:

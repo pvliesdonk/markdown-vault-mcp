@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp._okf_write import okf_write_path
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -839,7 +840,8 @@ class DocumentManager:
         """
         if self._okf_write_enrich is not None:
             try:
-                content = self._okf_write_enrich(content, operation)
+                with okf_write_path(path):
+                    content = self._okf_write_enrich(content, operation)
             except yaml.YAMLError as exc:
                 # The stamp is written *into* the note's frontmatter, so a
                 # block the parser cannot read leaves the enforced-write layer
