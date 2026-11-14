@@ -202,7 +202,16 @@ def test_weighting_prefix_synonyms_and_terminal_escaping() -> None:
 
 
 @settings(max_examples=45, deadline=None)
-@given(st.text(max_size=90), st.integers(min_value=1, max_value=20))
+@given(
+    st.one_of(
+        st.text(max_size=90),
+        st.tuples(
+            st.sampled_from(["read", "tie match", "runnable", "child"]),
+            st.text(max_size=80),
+        ).map(" ".join),
+    ),
+    st.integers(min_value=1, max_value=20),
+)
 def test_arbitrary_queries_are_deterministic_bounded_and_runnable(
     query: str, limit: int
 ) -> None:
