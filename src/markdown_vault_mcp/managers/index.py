@@ -779,7 +779,7 @@ class IndexManager:
 
         Uses :class:`~markdown_vault_mcp.tracker.ChangeTracker` to detect
         which files have been added, modified, or deleted since the last
-        scan.  Only changed files are re-parsed and re-indexed.  Files
+        scan. Live metadata is validated; only changed rows are re-indexed. Files
         matching ``exclude_patterns`` are skipped, and any previously indexed
         documents that now match the patterns are purged.
 
@@ -1160,7 +1160,7 @@ class IndexManager:
         for path in [*sorted(paths), *sorted(known - paths)]:
             absolute = self._source_dir / path
             try:
-                if self._is_path_excluded(path) or not is_regular_file(absolute):
+                if self._is_path_excluded(path):
                     continue
                 resolved = absolute.resolve()
                 if resolved.is_relative_to(root):

@@ -1,7 +1,7 @@
 """Whether changes made while no server ran have reached the index (#1542).
 
-A warm start trusts the index it finds without looking at the files, and
-with ``boot_reindex`` off nothing compares the two until a reindex runs.
+Warm validation reads metadata for known live rows, without discovering every
+file. With ``boot_reindex`` off, full comparison waits for a build or reindex.
 :class:`OfflineChanges` records whether a scan that compared the index with
 every file on disk has finished in this process, so ``get_index_status`` can
 say so. Only a successful build or reindex that saw the whole vault folder

@@ -299,12 +299,12 @@ class Vault:
     lifespan submits a :class:`~markdown_vault_mcp.indexing.BuildIndex`
     job to the single-owner
     :class:`~markdown_vault_mcp.indexing.IndexWriter` via
-    :meth:`IndexFacet.build_index_async` and yields immediately. On a warm
-    restart the persisted FTS completeness sentinel (PR #526) causes
-    :meth:`IndexFacet.build_index_async` to return an already-resolved
-    ``Future`` in O(1) without touching the writer queue. On a cold
-    restart the writer thread runs the job asynchronously while the
-    lifespan yields; bucket-3/4 MCP tool *clients* block on the
+    :meth:`IndexFacet.build_index_async` and yields immediately. The writer
+    validates provenance and typed metadata for warm reuse, indexing zero
+    chunks, or performs a cold build. Callers must await the returned ``Future``
+    for this attempt's outcome; it is not guaranteed resolved at return.
+    Validation and required marker writes precede readiness publication.
+    Bucket-3/4 MCP tool *clients* block on the
     :class:`markdown_vault_mcp._server_queryable.needs_queryable`
     decorator, which calls :meth:`IndexFacet.wait_until_queryable` with a
     bounded default timeout
@@ -950,13 +950,11 @@ class Vault:
         """One-time git fetch + ff-only update before build_index().
 
         Intended to run during server startup before the initial index build.
-        No reindex is triggered here: on a cold start build_index() will scan
-        the updated working tree, but on a warm restart build_index_async()
-        short-circuits in O(1) on the existing FTS sentinel and scans
-        nothing. In that case the boot reindex (gated by
-        ``config.boot_reindex``, see #1535) is what actually indexes the tree
-        this pull just updated — with it disabled, the server accepts the
-        index at the resulting HEAD and only reindexes once HEAD moves on.
+        No reindex is triggered here. A cold build scans the updated tree;
+        warm reuse validates known live metadata without discovering every file.
+        The boot reindex (gated by ``config.boot_reindex``, see #1535) reconciles
+        the complete tree. With it disabled, other offline changes wait until
+        a later reindex, including one triggered when HEAD moves again.
         """
         if self._git_strategy is None or self._git_pull_interval_s <= 0:
             return

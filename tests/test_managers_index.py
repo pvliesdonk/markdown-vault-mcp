@@ -357,7 +357,7 @@ class TestSkipStateMemory:
     def test_build_index_records_skips_so_first_reindex_is_quiet(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A reindex right after a full build re-parses nothing (boot path)."""
+        """A reindex after a full build reuses chunks after metadata validation."""
         vault = self._vault_with_skip(tmp_path)
         mgr, _fts, _ = _make_index_mgr(vault, tmp_path, required_frontmatter=["title"])
         mgr.build_index()
@@ -1932,7 +1932,8 @@ class TestProcessDirtyPaths:
         assert fts.get_note("unknown.md") is None
 
     @pytest.mark.parametrize(
-        "fault_kind", ["resolve", "stat", "parse", "input-resolve", "input-parse"]
+        "fault_kind",
+        ["resolve", "resolve-stat", "stat", "parse", "input-resolve", "input-parse"],
     )
     def test_alias_refresh_resolution_failure_keeps_healthy_callbacks(
         self,
@@ -1959,14 +1960,14 @@ class TestProcessDirtyPaths:
         )
 
         def resolve_one(path: Path, *args: Any, **kwargs: Any) -> Path:
-            if (fault_kind == "resolve" and path == tmp_path / alias) or (
-                fault_kind == "input-resolve" and path == tmp_path / target
-            ):
+            if (
+                fault_kind in {"resolve", "resolve-stat"} and path == tmp_path / alias
+            ) or (fault_kind == "input-resolve" and path == tmp_path / target):
                 raise fault
             return resolve(path, *args, **kwargs)
 
         def stat_one(path: Path) -> bool:
-            if fault_kind == "stat" and path == tmp_path / alias:
+            if fault_kind in {"stat", "resolve-stat"} and path == tmp_path / alias:
                 raise fault
             return stat_file(path)
 

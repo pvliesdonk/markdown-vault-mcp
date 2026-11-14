@@ -729,3 +729,76 @@ def test_same_byte_retarget_refreshes_authoritative_tags(  # noqa: PLR0915, RUF1
         }
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    "mutation", ["delete", "rename", "alias-delete", "alias-rename", "folder"]
+)
+@pytest.mark.parametrize(
+    "consumer", ["indexes", "keyword", "semantic", "hybrid", "stats", "list"]
+)
+@pytest.mark.usefixtures("constant_embeddings")
+def test_native_removal_reconciles_known_aliases(
+    tmp_path: Path, mutation: str, consumer: str
+) -> None:
+    """Drained native removals purge broken aliases without losing healthy retrieval."""
+    from markdown_vault_mcp.vault import Vault
+    from tests.conftest import MockEmbeddingProvider, wait_for_writer_drain
+    from tests.fixtures.vectors import metadata_by_path
+
+    target = "target/SKILL.md"
+    (tmp_path / "target").mkdir()
+    (tmp_path / target).write_text(
+        "---\nmetadata: {type: Runbook}\n---\n# Zebra\n\nzebra instructions\n"
+    )
+    (tmp_path / "alias.md").symlink_to("target/SKILL.md")
+    (tmp_path / "directory").symlink_to("target", target_is_directory=True)
+    (tmp_path / "healthy.md").write_text(
+        "---\ntype: Reference\n---\n# Zebra\n\nzebra healthy\n"
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on", read_only=False),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        # Native explicit refresh registers this spelling even on Python <3.13,
+        # whose directory walk does not discover directory symlinks.
+        vault._index_mgr.process_dirty_paths({"directory/SKILL.md"})
+        vault.index.build_embeddings()
+        removed = {target, "alias.md", "directory/SKILL.md"}
+        assert removed <= set(vault._fts.list_document_paths())
+        assert vault._vectors is not None
+        assert removed <= set(metadata_by_path(vault._vectors))
+        expected = {"healthy.md"}
+        if mutation == "folder":
+            vault.writer.move_folder("target", "moved")
+            expected.add("moved/SKILL.md")
+        else:
+            path = "alias.md" if mutation.startswith("alias-") else target
+            if mutation.endswith("delete"):
+                vault.writer.delete(path)
+            else:
+                vault.writer.rename(path, "moved.md")
+                expected.add("moved.md")
+        wait_for_writer_drain(vault)
+        if consumer == "indexes":
+            assert set(vault._fts.list_document_paths()) == expected
+            assert set(metadata_by_path(vault._vectors)) == expected
+        elif consumer == "stats":
+            stats = vault.reader.okf_stats()
+            assert stats["types"].get("Runbook", 0) == int(mutation == "folder")
+            assert stats["types"]["Reference"] == 1
+        elif consumer == "list":
+            assert {n.path for n in vault.reader.list_documents()} == expected
+            assert {
+                n.path
+                for n in vault.reader.list_documents(filters={"type": "Reference"})
+            } == {"healthy.md"}
+        else:
+            assert {
+                h.path for h in vault.reader.search("zebra", mode=consumer)
+            } == expected
+    finally:
+        vault.close()

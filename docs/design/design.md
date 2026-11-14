@@ -879,7 +879,7 @@ Two methods manage the index:
   carries one key that records no operator input —
   `index_semantics_version`, written from the source constant
   `INDEX_SEMANTICS_VERSION` in `fts_index.py`. Change detection is
-  hash-based, so an unchanged file is never re-parsed; the rows derived
+  hash-based, so unchanged chunks are reused; stored rows derived
   from its bytes (links, chunks, tags, aliases, headings) therefore survive
   every upgrade that fixes how those rows are derived. That is what #1124
   observed after the link-extraction fixes in #1104 / #1107: new notes got
@@ -1015,7 +1015,7 @@ synchronous lifespan path in PR1: on cold start
 `build_embeddings()` is skipped with a log entry and semantic
 search returns empty until PR2 backgrounds embeddings or the
 operator runs CLI `index`. Warm starts continue to use PR #526's
-O(1) sentinel short-circuit and never spawn the background thread.
+sentinel checks plus typed metadata validation, without a rebuild thread.
 The library's `_require_built()` is unchanged from PR #525:
 it raises immediately on not-ready, which is what lets the git
 pull loop and lifespan's embeddings path handle "not ready"
@@ -1340,13 +1340,13 @@ soft deadline is promoted to a background job polled via
 **Boot reconciliation (#665).** The server lifespan conditionally submits
 `reindex_async()` immediately after `build_index_async()` (gated by
 `MARKDOWN_VAULT_MCP_BOOT_REINDEX`, default `true`; see #1535). On a warm
-restart the build short-circuits in O(1) via the FTS sentinel and scans
-nothing, so the queued `ReindexAll` job is what picks up files added,
+restart the build validates provenance and current typed metadata before
+reusing chunks; the queued `ReindexAll` job picks up files added,
 modified, or deleted while no server was running (the file watcher only
 sees future events). FIFO ordering guarantees build-before-reindex; on a
 cold boot the full build has just recorded tracker state (including
-skipped files), so the reindex degenerates to a hash scan with zero
-re-parses and zero re-upserts. When enabled, the boot reindex keeps the
+skipped files), so reindex validates hashes and metadata with zero
+chunk re-parses and zero re-upserts. When enabled, the boot reindex keeps the
 writer non-drained, so the `_meta.index_stale` signal (#646) reports
 `true` to early readers until offline changes are reconciled; no extra
 staleness bookkeeping is needed. Follow-up submissions issued from inside the writer thread
@@ -1356,9 +1356,9 @@ ends the worker loop.
 
 When it is off, only the reconciliation reindex is skipped; the initial
 build and the embeddings submission run as before (decision 28). The trade
-is explicit — an operator of a large vault stops paying a filesystem scan
-per server start, and in exchange changes made while no server was running
-stay invisible until a reindex runs out of band (the `reindex` tool, or
+is explicit — the operator skips the hash reconciliation scan; warm build
+still validates current typed metadata. Other offline changes remain
+unseen until a reindex runs out of band (the `reindex` tool, or
 `markdown-vault-mcp reindex`). Two consequences are worth
 stating plainly. First, `index_stale` (#646) is a writer-idle signal —
 `write_generation` unchanged and the writer drained — not a claim that the index
@@ -1387,7 +1387,7 @@ the one file that triggered it.
 `offline_changes`, so the gap above can be seen without the boot log, which
 a stdio host usually swallows. `OfflineChanges` (`indexing/offline_changes.py`)
 counts every scan that compares the index with the files: a build that is
-not a warm short-circuit (`BuildLifecycle` reports each one it queues) and
+not warm reuse (`BuildLifecycle` reports each full scan) and
 every reindex this process runs, sync or async (the tool, the watcher, a
 pull). A `markdown-vault-mcp reindex` from the command line runs in another
 process: it updates the shared index but not this status. A scan counts as
@@ -1464,9 +1464,12 @@ observation and dirty-path routing. `ReadinessState` is the latest-attempt
 projection consumed by existing query APIs; it does not decide mutation safety.
 
 Each request has a `BuildAttempt` with a stable outcome and public Future. The
-writer runs the scan and both marker writes in one command. The lifecycle records
-its outcome and updates readiness before completing that Future. Synchronous
-builds wait on the same Future returned by asynchronous builds. The legacy
+writer validates current typed metadata for warm reuse or runs the cold scan and
+marker writes. Submission performs no filesystem authority reads on the caller's
+thread. The lifecycle records its outcome and publishes readiness before completing
+that Future. Async callers must await it; warm Futures are no longer guaranteed
+resolved at return. Warm reuse indexes zero chunks but reads and parses metadata.
+Synchronous builds wait on the same Future. The legacy
 one-shot method schedules that same command without spawning another thread.
 Async marker failures therefore propagate through the Future instead of reporting
 success while readiness reports failure. Existing cancellation and process-signal
@@ -1486,9 +1489,10 @@ never held during waits. Only the latest scheduled attempt updates global
 readiness. Earlier attempts still publish their own outcomes, so an old completion
 cannot make a newer rebuild appear ready and a later recovery cannot erase an
 older waiter's failure. Warm reuse requires no unfinished build attempt, a valid
-completion marker, matching provenance, and stored documents (including tombstones).
-Checking those conditions does not clear an existing queryable verdict. The
-lifecycle clears readiness only after it determines that a cold build is needed.
+completion marker, matching provenance, current live-row metadata authority, and
+stored documents (including tombstones). Submission withholds queryability while
+writer validation or a cold build runs. Success publishes readiness only after
+validation or scan and markers complete; the Future carries any failure.
 Concurrent file edits or builds started after the barrier are not isolated from
 the subsequent file mutation; this remains a prior-work boundary, not a snapshot.
 
@@ -1970,9 +1974,9 @@ the spec itself says, dated and sourced, in
   attachments from ``list_documents`` (they carry no frontmatter).
   Graph views (``get_neighborhood`` / ``get_hub_graph`` and the SPA
   wire payload) additively carry ``note_type`` — the OKF ``type`` of
-  each node, extracted from metadata already fetched for labels (hub
-  nodes stay untyped: their construction deliberately avoids per-node
-  metadata reads) — only on an active bundle.
+  each node, using current typed skill families or held metadata (hub
+  nodes stay untyped without per-node metadata reads), only on an
+  active bundle.
 - **Conformance audit (phase 3, #962)**: ``okf_validate`` reports bundle
   conformance as a degree (``conformant_notes`` of ``total_notes``), not
   a verdict — during a migration it is the progress meter. The audit

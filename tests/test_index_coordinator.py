@@ -157,14 +157,37 @@ def test_wait_until_queryable_build_failed_when_error(tmp_path: Path) -> None:
         coord.close(timeout=5)
 
 
-def test_build_index_async_warm_restart_short_circuits(tmp_path: Path) -> None:
+async def test_build_index_async_warm_restart_short_circuits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Warm validation leaves the event loop free and completes without chunks."""
+    import asyncio
+
     coord = make_coordinator(tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    original = coord._builds._is_warm
+
+    def held_probe() -> bool:
+        entered.set()
+        assert release.wait(5)
+        return original()
+
     try:
-        coord.build_index()  # populate + set sentinel
-        fut = coord.build_index_async()  # warm: already-resolved, no new job
-        assert fut.done()
+        coord.build_index()
+        monkeypatch.setattr(coord._builds, "_is_warm", held_probe)
+        fut = coord.build_index_async()
+        assert await asyncio.to_thread(entered.wait, 5)
+        assert not fut.done()
+        assert not coord.is_queryable()
+        heartbeat = asyncio.Event()
+        asyncio.get_running_loop().call_soon(heartbeat.set)
+        await asyncio.wait_for(heartbeat.wait(), 5)
+        release.set()
+        stats = await asyncio.wait_for(asyncio.wrap_future(fut), 5)
+        assert stats.chunks_indexed == 0
         assert coord.is_queryable() is True
     finally:
+        release.set()
         coord.close(timeout=5)
 
 
@@ -172,7 +195,7 @@ def test_build_index_async_warm_restart_short_circuits(tmp_path: Path) -> None:
 
 
 def test_chunking_meta_match_warm_restarts(tmp_path: Path) -> None:
-    """Unchanged model + override warm-restarts (O(1) path, no re-scan)."""
+    """Unchanged model + override reuse chunks after metadata validation."""
     db = tmp_path / "index.db"
     coord = make_coordinator(
         tmp_path, embed_model_name="A", max_chunk_chars_override=100, db=db
@@ -215,7 +238,7 @@ def test_override_change_rejects_warm_restart(tmp_path: Path) -> None:
     )
     try:
         stats = coord2.build_index()
-        assert stats.chunks_indexed > 0  # full build ran, not warm O(1)
+        assert stats.chunks_indexed > 0  # full build ran, not warm reuse
         assert coord2._fts.get_chunking_meta().max_chunk_chars_override == 200
     finally:
         coord2.close(timeout=5)
@@ -266,7 +289,7 @@ def test_transient_context_read_does_not_flap(tmp_path: Path) -> None:
     try:
         assert coord2._chunking_meta_matches() is True
         stats = coord2.build_index()
-        assert stats.chunks_indexed == 0  # warm O(1)
+        assert stats.chunks_indexed == 0  # warm reuse
     finally:
         coord2.close(timeout=5)
 
@@ -381,7 +404,7 @@ def test_older_semantics_version_rejects_warm_restart(  # noqa: PLR0915, RUF100 
     try:
         assert coord2._chunking_meta_matches() is False
         stats = coord2.build_index()
-        assert stats.chunks_indexed > 0  # full re-parse ran, not warm O(1)
+        assert stats.chunks_indexed > 0  # full re-parse ran, not warm reuse
         assert coord2._fts.list_field_values(
             _effective_okf_tag_key("type", ["type"])
         ) == [expected_type]
@@ -1013,7 +1036,7 @@ def test_title_field_change_rejects_warm_restart(tmp_path: Path) -> None:
     try:
         assert coord2._chunking_meta_matches() is False
         stats = coord2.build_index()
-        assert stats.chunks_indexed > 0  # full build ran, not warm O(1)
+        assert stats.chunks_indexed > 0  # full build ran, not warm reuse
         assert coord2._fts.get_chunking_meta().title_field == "name"
     finally:
         coord2.close(timeout=5)
@@ -1057,7 +1080,7 @@ def test_indexed_frontmatter_fields_change_rejects_warm_restart(
     try:
         assert coord2._chunking_meta_matches() is False
         stats = coord2.build_index()
-        assert stats.chunks_indexed > 0  # full build ran, not warm O(1)
+        assert stats.chunks_indexed > 0  # full build ran, not warm reuse
         assert (
             coord2._fts.get_chunking_meta().indexed_frontmatter_fields
             == '["category", "tags"]'
@@ -1088,7 +1111,7 @@ def test_absent_provenance_keys_keep_warm_restart_under_defaults(
     try:
         assert coord2._chunking_meta_matches() is True
         stats = coord2.build_index()
-        assert stats.chunks_indexed == 0  # warm O(1) short-circuit held
+        assert stats.chunks_indexed == 0  # warm reuse short-circuit held
     finally:
         coord2.close(timeout=5)
 
@@ -1193,7 +1216,7 @@ def test_vault_wiring_provenance_warm_restarts_on_same_config(
 
     post = Vault(source_dir=tmp_path / "vault", settings=settings)
     try:
-        # Identical config → warm O(1) hold, no silent rescan.
+        # Identical config → warm chunk reuse after metadata validation.
         assert post.index.build_index().chunks_indexed == 0
     finally:
         post.close()
@@ -1213,7 +1236,7 @@ def test_vault_wiring_provenance_warm_restarts_on_same_config(
 
 
 def test_default_curated_knobs_keep_warm_restart(tmp_path: Path) -> None:
-    """Same defaults across restarts stay on the warm O(1) path."""
+    """Same defaults across restarts stay on the warm reuse path."""
     db = tmp_path / "index.db"
     coord = make_coordinator(tmp_path, db=db)
     try:
@@ -1766,5 +1789,41 @@ def test_unchanged_yaml_types_preserve_native_reuse(
                 vault.graph.get_neighborhood(name, depth=0).nodes[0].note_type
                 == expected_type
             )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("entry", ["coordinator", "facet", "legacy"])
+async def test_async_warm_authority_probe_leaves_caller_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entry: str
+) -> None:
+    """Warm authority I/O must run off the submitting event-loop thread."""
+    import asyncio
+
+    from markdown_vault_mcp.vault import Vault
+
+    (tmp_path / "SKILL.md").write_text("---\nmetadata: {type: Runbook}\n---\n# Guide\n")
+    vault = Vault(source_dir=tmp_path)
+    caller = threading.get_ident()
+    probes: list[int] = []
+    entered = threading.Event()
+    original = vault._index_mgr.stale_authority_paths
+
+    def probe() -> set[str]:
+        probes.append(threading.get_ident())
+        entered.set()
+        return original()
+
+    try:
+        vault.index.build_index()
+        monkeypatch.setattr(vault._index_mgr, "stale_authority_paths", probe)
+        if entry == "legacy":
+            vault.index.start_background_build_index()
+            assert await asyncio.to_thread(entered.wait, 5)
+        else:
+            api = vault._coordinator if entry == "coordinator" else vault.index
+            stats = await asyncio.wrap_future(api.build_index_async())
+            assert stats.chunks_indexed == 0
+        assert probes and all(thread != caller for thread in probes)
     finally:
         vault.close()

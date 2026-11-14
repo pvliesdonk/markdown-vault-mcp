@@ -140,11 +140,10 @@ class IndexFacet:
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index.
 
-        A warm restart (a complete, populated index whose provenance still
-        matches, ``force=False``) is an O(1) no-op keyed on FTS state. An
-        index that cannot be reused (changed provenance, or no completion
-        sentinel) gets a full build that drops the rows its walk did not find
-        (#1965). ``force=True`` drops and rebuilds unconditionally.
+        A warm restart validates provenance and current typed metadata on the
+        writer before reusing stored chunks, with zero chunks indexed. An index
+        that cannot be reused gets a full build that drops rows its walk did not
+        find (#1965). ``force=True`` drops and rebuilds unconditionally.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what was indexed.
@@ -182,11 +181,11 @@ class IndexFacet:
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Submit a full FTS index build and return the Future.
 
-        Caller may ``.result()`` to wait or fire-and-forget. Warm-restart
-        short-circuit returns an already-resolved Future without queuing a
-        job, mirroring :meth:`IndexFacet.build_index`. The Future includes the
-        completion-marker write and readiness publication; failure in either
-        fails the build. Pending work can be cancelled before execution begins.
+        Await ``asyncio.wrap_future(future)``, or call ``.result()`` outside an
+        event loop, before relying on this attempt's outcome. Warm validation reads
+        typed metadata on the writer and reuses chunks; it need not be done at
+        return. Completion includes readiness and any required scan and marker
+        writes; their failures propagate. Pending work can be cancelled.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

@@ -251,8 +251,7 @@ slot; missing, null, blank or non-string type infers `Skill`. Unknown valid
 type strings stay valid. Conflicting top-level families cannot supply missing
 nested values. Other keys, ordinary notes and lowercase `skill.md` stay literal.
 Parser authority is an optional transient scalar, separate from lexical row
-paths, titles, folders and links. Readers resolve indexed spellings using held
-raw metadata without reading note content again. Indexed outside-root farm
+paths, titles, folders and links. Readers resolve indexed spellings and reread current typed frontmatter for skills. Indexed outside-root farm
 rows retain their native metadata access; whole reads/writes retain containment.
 
 The [Agent Skills reference](reference/agent-skills.md) records the deliberate

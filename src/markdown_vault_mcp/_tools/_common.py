@@ -165,9 +165,8 @@ async def attach_okf_to_results(
 ) -> list[dict[str, Any]]:
     """Add OKF read annotations to a list of search-hit dicts.
 
-    One detection probe covers the whole batch; each hit's annotation is
-    derived from the ``frontmatter`` the hit already carries, so no extra
-    note-content reads happen per result; identity resolution runs in a worker.
+    One detection probe covers the batch. Identity resolution and current
+    typed skill-frontmatter reads run in a worker; other fields stay held.
     Hits are annotated with
     ``sources_count`` rather than the full ``sources`` list.
 
