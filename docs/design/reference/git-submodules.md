@@ -2,7 +2,7 @@
 type: Reference
 title: Git submodules seen from a superproject
 description: "How git treats a submodule inside a working tree the way src/markdown_vault_mcp/git/ drives it: what a gitlink is and how to find one, what superproject-level add, ls-files, log and show say about a path inside a submodule, how clone, fetch, merge and pull populate or leave a submodule, and the detached HEAD that update leaves behind"
-subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0); observed on git 2.55.0"
+subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0); Git v2.55.0 source for plain repositories; observed on git 2.55.0 and 2.43.0"
 valid_for: "git 2.x"
 generated:
   by: process:researching-references
@@ -13,6 +13,18 @@ verified:
 stale_after: 2027-03-23T16:25:10+02:00
 status: stable
 sources:
+  - id: repository-layout
+    title: gitrepository-layout(5), Git v2.55.0
+    resource: https://github.com/git/git/blob/v2.55.0/Documentation/gitrepository-layout.adoc
+    accessed: 2026-11-14
+  - id: embedded-add
+    title: git-add(1), Git v2.55.0, --no-warn-embedded-repo
+    resource: https://github.com/git/git/blob/v2.55.0/Documentation/git-add.adoc
+    accessed: 2026-11-14
+  - id: nested-directory
+    title: Git v2.55.0 dir.c, treat_directory
+    resource: https://github.com/git/git/blob/v2.55.0/dir.c
+    accessed: 2026-11-14
   - id: gitsubmodules
     title: gitsubmodules(7)
     resource: https://git-scm.com/docs/gitsubmodules
@@ -119,6 +131,31 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   handled so far.
 
 ## Claims
+
+### Plain repositories without a gitlink
+
+- A working tree normally has a `.git` directory; a `.git` text file can
+  instead contain `gitdir: <path>` pointing to the repository metadata.
+  Git calls this a gitfile and commonly uses it for submodules and linked
+  worktrees. [source: repository-layout]
+  [pins: tests/test_submodule_writes.py::test_plain_repositories_are_found_inside_and_below]
+- An embedded repository can exist without registration in `.gitmodules`:
+  `git add` documents a warning when adding such a repository itself.
+  That warning does not promise to stage a file below it.
+  [source: embedded-add]
+- Git's directory traversal detects non-bare nested repositories and returns
+  `path_none` for a recursively leading pathspec, rather than descending
+  into that repository. [source: nested-directory]
+- With an outer initial commit and a plain `git init` at `sub/`,
+  `git add -- sub/note.md` exits zero but stages nothing. Status remains
+  `?? sub/`. [observed: synthetic Boat sandbox, Git 2.43.0, 2026-11-14]
+  [pins: tests/test_submodule_writes.py::test_a_plain_repository_write_is_refused_before_any_side_effect]
+- Marker presence alone is insufficient: an empty `.git` directory or
+  invalid gitfile does not identify a new working-tree root. The guard
+  confirms candidates with `rev-parse --show-toplevel`; a genuine nested
+  repository below an inert marker still has its own root.
+  [observed: synthetic pytest fixtures, Git 2.43.0, 2026-11-14]
+  [pins: tests/test_submodule_writes.py::test_inert_markers_do_not_hide_a_real_descendant]
 
 ### What a submodule is on disk and in the tree
 
@@ -294,18 +331,17 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
 
 ## Where this project departs from the subject
 
-No deliberate departure. Today the project does not handle submodules at all:
-the git root is discovered once from `SOURCE_DIR` with `--show-toplevel`, so a
-submodule inside the vault is scanned like any folder while every git command
-addresses the superproject, with the answers recorded above. The design doc
-(`docs/design/design.md` § Write + Git Integration) records that status; the
-intended behaviour is decided in the submodule epic, not here.
+The project refuses writes into submodules and real nested repositories,
+using index gitlinks plus live, confirmed `.git` candidates. This avoids the
+failed staging and silent skip recorded above. Reads still scan their notes;
+the design doc (`docs/design/design.md` § Write + Git Integration) owns the
+refusal and skip policy.
 
 ## Not covered
 
-- No claim on this page is pinned: no test in this repository exercises a
-  submodule yet. The features under the submodule epic pin the claims they
-  depend on when they land.
+- Filesystem metadata that Git's best-effort root discovery cannot validate:
+  a candidate it cannot confirm is not classified as a repository. This is
+  not a replacement for Git's full repository validation.
 - `git push --recurse-submodules=on-demand` and `=check` outcomes and wording
   when a submodule commit is unpublished: would be settled by a push sandbox
   against a bare remote for both repositories.

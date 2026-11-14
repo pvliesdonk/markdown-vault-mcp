@@ -1,5 +1,14 @@
 # Reference research log
 
+## 2026-11-14
+
+- [Git submodules](git-submodules.md): added the plain embedded-repository
+  facet for #1949. Read Git v2.55.0 repository-layout, git-add and dir.c;
+  refuted marker-only discovery with inert-directory/gitfile fixtures.
+  Observed silent no-staging on Git 2.43.0 in a synthetic Boat sandbox and
+  pinned it to the real Vault regression. Other claims and review deadline
+  remain unchanged.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,

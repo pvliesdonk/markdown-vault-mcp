@@ -704,7 +704,7 @@ class Vault:
         )
 
     def _build_submodule_guard(self) -> SubmoduleGuard | None:
-        """Refuse writes git would never commit: those into a submodule (#1564).
+        """Guard writes into git submodules or nested repositories (#1564, #1949).
 
         Only a writable vault with a git strategy commits, so only one gets
         a guard; the guard itself refuses nothing outside a repository.

@@ -143,3 +143,41 @@ def make_superproject(
         _run_git(repo, *add, str(upstream), "other")
     _run_git(repo, "commit", "-qm", "add submodule")
     return source
+
+
+def make_nested_repository(
+    tmp_path: Path,
+    *,
+    vault: str = "",
+    sub: str = "sub",
+    note: str = "# Upstream\n",
+    extra: dict[str, str] | None = None,
+) -> Path:
+    """Build a vault holding a plain repository with no gitlink (#1949).
+
+    Args:
+        tmp_path: A fresh directory to build under.
+        vault: The vault's folder within the enclosing repository.
+        sub: The plain repository's path within the vault.
+        note: Contents of its note.md.
+        extra: Additional files within the plain repository.
+
+    Returns:
+        The vault directory, with top.md committed in its enclosing repository.
+    """
+    repo = tmp_path / "repo"
+    source = repo / vault
+    source.mkdir(parents=True)
+    _run_git(repo, "init", "-q", "--initial-branch=main")
+    _run_git(repo, "config", "user.email", "test@example.com")
+    _run_git(repo, "config", "user.name", "Test User")
+    (source / "top.md").write_text("# Top\n")
+    _run_git(repo, "add", "--", ".")
+    _run_git(repo, "commit", "-qm", "initial")
+    nested = source / sub
+    nested.mkdir(parents=True)
+    _run_git(nested, "init", "-q", "--initial-branch=main")
+    (nested / "note.md").write_text(note)
+    for name, text in (extra or {}).items():
+        (nested / name).write_text(text)
+    return source
