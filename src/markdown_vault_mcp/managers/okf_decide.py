@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 import frontmatter as fm
 import yaml
+from markdown_it import MarkdownIt
 from pydantic_core import to_jsonable_python
 
 from markdown_vault_mcp._okf_decisions import (
@@ -32,13 +33,13 @@ from markdown_vault_mcp.okf import (
     okf_timestamp,
 )
 from markdown_vault_mcp.scanner import (
+    _RE_INLINE_CODE,
     _blank_reference_definitions,
     _collect_reference_definitions,
-    _line_shape,
     _make_reference_follow,
+    _normalise_line_endings,
     _paragraph_regions,
     _strip_fenced_code,
-    _strip_inline_code,
     extract_links,
     parse_frontmatter,
     parse_note,
@@ -204,67 +205,30 @@ def _raw_metadata(text: str) -> dict[str, Any]:
 
 
 def _paragraph(body: str) -> str | None:
-    lines = body.splitlines()
-    while lines:
-        if not lines[0].strip() or re.match(r"^ {0,3}#{1,6}(?:\s|$)", lines[0]):
-            lines.pop(0)
+    lines = _normalise_line_endings(body).split("\n")
+    for token in MarkdownIt("commonmark").enable("table").parse("\n".join(lines)):
+        if token.level or token.type in {"heading_open", "heading_close"}:
             continue
-        if _non_prose(lines):
+        if token.type != "paragraph_open" or token.map is None:
             return None
-        block = _first_block(lines)
-        if len(block) < len(lines) and re.fullmatch(
-            r" {0,3}(?:=+|-+)\s*", lines[len(block)]
-        ):
-            del lines[: len(block) + 1]
-            continue
-        paragraph = "\n".join(block).strip()
+        start, end = token.map
+        # Conservatively refuse incomplete pipe rows as domain policy.
+        if re.match(r" {0,3}\|", lines[start]):
+            return None
+        paragraph = "\n".join(lines[start:end]).strip()
         return paragraph if paragraph and len(paragraph) <= 280 else None
     return None
 
 
-def _html_block(line: str, *, continuation: bool) -> bool:
-    common = (
-        r"^ {0,3}(?:<!--|<\?|<![A-Z]|<!\[CDATA\[|"
-        r"(?i:</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|"
-        r"col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|"
-        r"footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|"
-        r"link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|"
-        r"section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:[ \t/>]|$)|"
-        r"<(?:script|pre|style|textarea)(?:[ \t>]|$)))"
+def _source_body(body: str) -> str:
+    """Mask excluded spans without joining tokens or creating blank lines."""
+    body = _strip_fenced_code(_normalise_line_endings(body))
+    body = _RE_INLINE_CODE.sub(lambda match: "\x00" * len(match.group()), body)
+    return re.sub(
+        r"""(?is:<img\b(?:[^>"']|"[^"]*"|'[^']*')*>)""",
+        lambda match: re.sub(r"[^\n]", "\x00", match.group()),
+        body,
     )
-    tag = r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*\s*/?>\s*"
-    return bool(
-        re.match(common, line) or (not continuation and re.fullmatch(tag, line))
-    )
-
-
-def _non_prose(lines: list[str], *, continuation: bool = False) -> bool:
-    line = lines[0]
-    marker = (
-        r" {0,3}(?:[-+*]|1[.)])\s+\S"
-        if continuation
-        else r"(?: {4}|\t| {0,3}(?:[-+*](?:\s|$)|\d+[.)]\s))"
-    )
-    return bool(
-        re.match(marker, line)
-        or re.match(r" {0,3}(?:>|\|)", line)
-        or re.fullmatch(r" {0,3}(?:`{3,}[^`]*|~{3,}.*)", line)
-        or (_line_shape(line, 0)[0] == "separator" and "=" not in line)
-        or _html_block(line, continuation=continuation)
-        or re.match(
-            r"^[^\n]*\|[^\n]*\n\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?\s*$",
-            "\n".join(lines[:2]),
-        )
-    )
-
-
-def _first_block(lines: list[str]) -> list[str]:
-    for index in range(1, len(lines)):
-        if _line_shape(lines[index], 0)[0] in {"separator", "heading"} or _non_prose(
-            lines[index:], continuation=True
-        ):
-            return lines[:index]
-    return lines
 
 
 def _contained_source(
@@ -305,14 +269,18 @@ def _source_tokens(region: str, definitions: dict[str, str]) -> list[str]:
     for start, end in spans:
         region = region[:start] + " " * (end - start) + region[end:]
     values.extend(
-        _bare_url(match.group())
-        for match in re.finditer(r'https?://[^\s<>"\x00-\x20]+', region)
+        _bare_url(
+            match.group(), quoted=match.start() > 0 and region[match.start() - 1] == "'"
+        )
+        for match in re.finditer(r'https?://[^\s<>"\x00-\x20]+', region, re.IGNORECASE)
     )
     return values
 
 
-def _bare_url(value: str) -> str:
+def _bare_url(value: str, *, quoted: bool = False) -> str:
     value = value.rstrip(".,;:!?")
+    if quoted:
+        value = value.removesuffix("'")
     pairs = {")": "(", "]": "[", "}": "{"}
     while value and value[-1] in pairs:
         closer = value[-1]
@@ -330,8 +298,9 @@ def _sources(
     resolved_wikilinks: dict[str, str] | None = None,
 ) -> list[str]:
     candidates = []
+    clean = _source_body(body)
     if root is not None:
-        for link in extract_links(body, path):
+        for link in extract_links(clean, path):
             try:
                 resource = _contained_source(
                     link,
@@ -345,11 +314,12 @@ def _sources(
                     candidates.append(resource)
             except (OSError, ValueError, RuntimeError):
                 continue
-    clean = _strip_inline_code(_strip_fenced_code(body))
     definitions = _collect_reference_definitions(clean)
     clean = _blank_reference_definitions(clean)
     for region in _paragraph_regions(clean):
         for value in _source_tokens(region, definitions):
+            if "\x00" in value:
+                continue
             try:
                 parsed = urlsplit(value)
                 if parsed.scheme in {"http", "https"} and parsed.hostname:
@@ -375,7 +345,7 @@ class NoteDecision:
     def evaluate(
         self, answers: list[dict[str, Any]], policy: DecisionPolicy, *, now: datetime
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Evaluate proposals once, retaining policy outcomes before persistence.
+        """Evaluate proposals, retaining policy outcomes before persistence.
 
         Args:
             answers: Validated ordered answers, including refusals.
@@ -568,7 +538,6 @@ def build_questions(
                 }
             )
     if not _present(metadata.get("stale_after")) and vocabulary.durations:
-        bindings["stale_after"] = True
         questions.append(
             {
                 "name": "stale_after",
@@ -770,7 +739,6 @@ class OkfDecisionManager:
             report.add(error)
         if paths:
             self.vault._index_mgr._required_frontmatter = None
-            self.vault.index.build_index()
         for path in paths:
             try:
                 report.add(self._decide_note(path))
@@ -808,6 +776,13 @@ class OkfDecisionManager:
             raise DecisionInputError("Note disappeared.")
         body = strip_frontmatter_block(read.content)
         metadata = _raw_metadata(read.content)
+        if any(link.link_type == "wikilink" for link in extract_links(body, path)):
+            self._prepare_index()
+            read = self.vault.reader.read(path)
+            if read is None:
+                raise DecisionInputError("Note disappeared.")
+            body = strip_frontmatter_block(read.content)
+            metadata = _raw_metadata(read.content)
         resolved = (
             self._resolved_wikilinks(path)
             if any(link.link_type == "wikilink" for link in extract_links(body, path))
@@ -830,6 +805,14 @@ class OkfDecisionManager:
         }
         if patch:
             try:
+                if self.policy.okf_write:
+                    self._prepare_index()
+                    now = _now()
+                    patch, fields = decision.evaluate(answers, self.policy, now=now)
+                    result["fields"] = fields
+                    if not patch:
+                        result["disposition"] = "unchanged"
+                        return result
                 self._persist(path, body, {**metadata, **patch}, read.etag, now)
             except (
                 OSError,
@@ -857,8 +840,13 @@ class OkfDecisionManager:
                     value["persisted"] = value["accepted"]
         return result
 
-    def _resolved_wikilinks(self, path: str) -> dict[str, str]:
+    def _prepare_index(self) -> None:
         self.vault._coordinator.prepare_index_read()
+        if not self.vault.index.is_queryable():
+            self.vault.index.build_index()
+
+    def _resolved_wikilinks(self, path: str) -> dict[str, str]:
+        self._prepare_index()
         parsed = parse_note(
             self.vault.source_dir / path,
             self.vault.source_dir,

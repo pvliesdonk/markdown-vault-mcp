@@ -41,7 +41,7 @@ src/markdown_vault_mcp/
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
     git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
-    okf_decide.py      -- closed vocabulary/candidates, five-field Decisions policy, filesystem selection and native conditional metadata maintenance (#2061)
+    okf_decide.py      -- closed vocabulary/literal candidates, maintained paragraph spans, five-field Decisions policy, filesystem selection and readiness-gated native maintenance (#2061)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
   stores/

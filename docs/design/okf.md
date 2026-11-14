@@ -750,20 +750,32 @@ Pydantic conversion; malformed notes remain isolated from later work. Authored
 input errors carry safe remedies; arbitrary configuration/path/YAML failures
 use categorical diagnostics.
 
-Description candidates collect the complete first prose paragraph before the
-280-character Unicode limit, skip complete ATX/setext headings and refuse an
-initial nonprose block. Context distinguishes paragraph continuation from block
-interruptions, including HTML type 7. External links decode Markdown syntax
-without percent-decoding resource identity.
+Description candidates use the maintained markdown-it-py CommonMark block
+classifier with its table rule enabled. Top-level headings are skipped; the
+first other block must be a paragraph. Original LF source spans preserve
+Unicode separators and continuations before the 280-character limit; an
+incomplete leading pipe row remains an explicit conservative refusal.
+See [the parser contract](reference/commonmark-gfm.md#maintained-block-source-spans).
+Evidence masking preserves token and paragraph boundaries across code and
+image syntax at both vault and external candidate sites. HTTP schemes match
+without case sensitivity while resources retain their original spelling,
+percent escapes and internal apostrophes; surrounding prose quotes are excluded.
 
-Enabled nonempty work populates the command-owned scratch index with only its
-IndexManager admission requirements relaxed. Configured vault/writer and
+The command-owned scratch index builds only for graph evidence or an accepted
+enforcement-on write. Native queryability remembers successful publication,
+including empty builds; every consumer first checks the native FIFO barrier.
+Only its IndexManager admission requirements are relaxed. Configured vault/writer and
 reserved convention requirements remain intact. Before resolving a reread
 source, drain the native FIFO, parse the current source with the native parser
 settings, upsert it and consume native wikilink destinations. Current body
 occurrences and canonical containment govern eligibility; native FTS owns
 short-name, alias and tie-break resolution. Failed refreshes cannot supply
-evidence. The index is discarded on close.
+evidence. A first graph admission rereads the selected source before binding
+model input, metadata and etag. A later convention admission retains the
+original inference snapshot: a concurrent edit must fail the native etag check.
+The write-attempt clock and accepted duration are refreshed after admission by
+the same policy evaluator, without another model request. The index is discarded
+on close; plain enforcement-off writes and abstentions require no build.
 
 The [endpoint reference](reference/openai-decisions.md) pins ordered answers,
 null-name refusals, request limits and safe terminal errors. All thresholds

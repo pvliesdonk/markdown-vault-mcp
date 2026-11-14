@@ -33,6 +33,18 @@ sources:
     title: commonmark-spec changelog.txt (0.30, 0.31, 0.31.1, 0.31.2 entries)
     resource: https://raw.githubusercontent.com/commonmark/commonmark-spec/master/changelog.txt
     accessed: 2026-09-06
+  - id: mdit-token
+    title: markdown-it-py 3.0.0 Token source map and nesting API
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/token.py
+    accessed: 2026-11-14
+  - id: mdit-block
+    title: markdown-it-py 3.0.0 paragraph block source ranges
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/rules_block/paragraph.py
+    accessed: 2026-11-14
+  - id: mdit-main
+    title: markdown-it-py 3.0.0 parse and CommonMark preset
+    resource: https://github.com/executablebooks/markdown-it-py/tree/v3.0.0/markdown_it
+    accessed: 2026-11-14
   - id: rfc3986
     title: RFC 3986, Uniform Resource Identifier (URI), section 3.1 Scheme
     resource: https://www.rfc-editor.org/rfc/rfc3986#section-3.1
@@ -68,6 +80,26 @@ Python 3.13.
   `docs/design/design.md` § Link Extraction, § Chunking Strategy.
 
 ## Claims
+
+### Maintained block source spans
+
+- markdown-it-py 3.0.0 `MarkdownIt.parse` returns block tokens; `Token.map`
+  exposes `[line_begin, line_end]` separately from nesting level and content.
+  [source: mdit-main] [source: mdit-token]
+- The paragraph rule assigns the opening token its original source-line range,
+  while the inline token's content is separately trimmed; slicing the original
+  LF-normalized lines preserves characters that normalized content need not.
+  [source: mdit-block]
+  [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
+- The CommonMark preset enables HTML block classification, while tables need
+  its shipped `table` rule enabled explicitly. [source: mdit-main]
+  [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
+- Decisions rejects an incomplete leading pipe row as conservative application
+  policy, even when CommonMark classifies it as a paragraph; this exception
+  does not require another block grammar.
+  [observed: owning paragraph keeper, #2061]
+  [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
+
 
 ### Lines, line endings, blank lines (§2.1–2.3, §3.1, §4.9)
 

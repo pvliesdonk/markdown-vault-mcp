@@ -221,9 +221,11 @@ above 0.95. Omitted status never gains `stable` merely to fill the key.
 Description fills only a blank value with the exact first prose paragraph,
 up to 280 Unicode characters after collecting the complete paragraph. Headings
 are skipped; an initial code block, list, quote, table or HTML block prevents a
-description candidate. Sources append only body URLs or contained existing note
-paths, preserving supplied records. URL percent escapes retain their resource
-identity. Short wikilinks and aliases use the native vault link resolver. A listed duration fills a
+description candidate. Unicode paragraph separators retain their original
+characters. Sources append only body URLs or contained existing note paths,
+preserving supplied records. Images and code cannot supply or join resource
+fragments. HTTP schemes match regardless of case; URL spelling, percent escapes
+and internal apostrophes retain their resource identity. Short wikilinks and aliases use the native vault link resolver. A listed duration fills a
 blank `stale_after` using the server's UTC write-attempt time. Existing nonempty
 descriptions, expiry values and malformed source lists remain untouched.
 

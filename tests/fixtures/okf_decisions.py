@@ -1,5 +1,6 @@
 """Synthetic Decisions wire fixtures, without credentials or external calls."""
 
+from pathlib import Path
 from typing import Any
 
 PARTS: list[dict[str, Any]] = [
@@ -90,3 +91,16 @@ def accept_answers(
             answer.update(overrides[name])
         result.append(answer)
     return result
+
+
+def write_notes(root: Path, notes: dict[str, str]) -> None:
+    """Write synthetic notes, creating their parent folders.
+
+    Args:
+        root: Isolated fixture vault.
+        notes: Relative paths and complete fixture text.
+    """
+    for name, text in notes.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)

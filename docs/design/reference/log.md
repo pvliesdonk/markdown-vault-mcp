@@ -2,6 +2,11 @@
 
 ## 2026-11-14
 
+- Extended [CommonMark and GFM](commonmark-gfm.md#maintained-block-source-spans)
+  with markdown-it-py 3.0.0 public block tokens, source maps and CommonMark/table
+  preset, read directly from installed primary source for #2061. Original raw
+  spans and the conservative pipe-row policy are pinned by owning regressions.
+
 - New: [OpenAI Decisions](openai-decisions.md), pinned SDK commit and official guide/error pages, read and refuted against primary source. No live API request. Next review: 2027-05-14.
 
 ## 2026-11-07

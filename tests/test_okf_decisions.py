@@ -524,6 +524,13 @@ def test_duration_overflow_refuses_only_expiry(tmp_path: Path) -> None:
     "body,description",
     [
         ("*An emphasized paragraph.*", "*An emphasized paragraph.*"),
+        *(
+            (
+                "Verbatim" + separator + "paragraph.",
+                "Verbatim" + separator + "paragraph.",
+            )
+            for separator in ("\u2028", "\u2029", "\x85")
+        ),
         ("A title\n=======\n\nFirst prose.", "First prose."),
         (
             "Title first line\nTitle second line\n=================\n\nActual prose.",
@@ -634,6 +641,49 @@ def test_source_outcome_retains_literal_candidate(
     "path,body,expected",
     [
         ("note.md", "[escape](escaped.md) https://[invalid", []),
+        (
+            "note.md",
+            "[web](https://example.invalid/a`code`b)",
+            ["https://example.invalid/a"],
+        ),
+        ("note.md", "[web](<https://example.invalid/a`code`b>)", []),
+        (
+            "note.md",
+            '<IMG alt="greater > less"\nsrc="HTTPS://example.invalid/image">',
+            [],
+        ),
+        ("note.md", "![Image\n`code`\n](https://example.invalid/image)", []),
+        (
+            "note.md",
+            "[Evidence\n`code`\n](https://example.invalid/proof)",
+            ["https://example.invalid/proof"],
+        ),
+        ("note.md", "![Image\n`code`\n](fact.md)", []),
+        ("note.md", "[Evidence\n`code`\n](fact.md)", ["fact.md"]),
+        ("note.md", "[Evidence](fa`code`ct.md)", []),
+        ("note.md", "[[fa`code`ct]]", []),
+        (
+            "note.md",
+            "HTTPS://example.invalid/proof.",
+            ["HTTPS://example.invalid/proof"],
+        ),
+        (
+            "note.md",
+            "HtTpS://example.invalid/Mixed%2fPath?q=A%26B.",
+            ["HtTpS://example.invalid/Mixed%2fPath?q=A%26B"],
+        ),
+        ("note.md", "https://example.invalid/a`code`b", ["https://example.invalid/a"]),
+        ("note.md", '<img src="https://example.invalid/diagram.png">', []),
+        (
+            "note.md",
+            "See 'https://example.invalid/evidence'.",
+            ["https://example.invalid/evidence"],
+        ),
+        (
+            "note.md",
+            "https://example.invalid/O'Reilly",
+            ["https://example.invalid/O'Reilly"],
+        ),
         *(
             ("note.md", usage + "\n\n[r]: https://example.invalid/image", [])
             for usage in ["![image][r]", "![r][]", "![r]", ""]

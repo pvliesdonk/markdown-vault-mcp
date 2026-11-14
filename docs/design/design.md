@@ -1899,7 +1899,10 @@ and retains native commit-only callbacks. The scratch index admits untyped link
 targets without clearing writer or reserved-file requirements; native FTS
 resolution follows a FIFO drain and current-source refresh. Invalid raw YAML
 shapes refuse only their note and caller-owned reporting retains prior outcomes.
-Descriptions use complete prose blocks and URLs preserve percent escapes.
+Descriptions use maintained block classification and original source spans;
+URLs preserve literal spelling without joining across excluded code or images.
+Native readiness defers scratch admission until a graph/convention consumer,
+with premodel rereads and postadmission expiry clocks preserving native etags.
 See [the OKF design](okf.md#explicit-local-decisions-pass)
 and [operator usage](../use/okf.md#curate-metadata-with-decisions).
 
