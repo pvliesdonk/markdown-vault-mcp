@@ -6418,9 +6418,9 @@ refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
 refuse nothing, since nothing is committed there. A plain repository nested
-in the vault that is not a submodule is not detected (#1949), and upload links,
-`fetch` and the OKF index refresh after a folder move reach the refusal only
-after other work (#1950). What git does there is recorded in
+in the vault that is not a submodule is not detected (#1949). Issue #1950 tracks
+caller timing for upload-link admission, fetch downloads and OKF refresh after
+folder moves. What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 
