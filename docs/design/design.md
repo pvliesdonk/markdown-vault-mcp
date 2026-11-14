@@ -4623,6 +4623,18 @@ propagates, and such a process never creates or replaces the files (a
 forced rebuild raises `ReadOnlyError` before embedding); unavailable and
 unsupported always propagate. `SearchManager` embeds queries itself.
 
+An automatic or forced model or dimension transition must publish a compatible
+generation before its search succeeds (#1946). `rebuild_after_fault` uses
+`_full_build`'s `RebuildOutcome.published`: an authoritative empty generation
+counts as success, but failed batches or an incomplete empty walk that
+publish nothing raise `RuntimeError`. The slot discards and closes that
+exact owned replacement, leaving the previous stored files untouched.
+Later reads reopen those files and retry the transition; they fail again
+while the provider is down and recover once a compatible generation
+publishes. Old incompatible vectors never answer the new provider's queries.
+First builds without stored vectors still warn when all batches fail;
+low-level slot callbacks may still install an empty fresh store.
+
 **Writes (#1778).** `IndexManager` and `EmbeddingsManager` take the slot
 and write the store directly; each site keeps its algorithm (convergence
 diff, dirty flush, purge loops) and changes only how it mutates. A

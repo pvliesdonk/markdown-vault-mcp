@@ -479,6 +479,24 @@ class VectorStoreSlot:
             self._kept = None
             self._discard(provisional)
 
+    def discard_failed_rebuild(self, store: EmbeddingStore) -> None:
+        """Detach and close a failed owned rebuild target, leaving its files alone.
+
+        Called on the writer thread after an automatic rebuild fails. A
+        different installed store, an injected store, or one whose files
+        this slot does not own is left alone.
+
+        Args:
+            store: The exact target whose rebuild failed.
+        """
+        with self._lock:
+            if self._store is not store or self._injected or not self._owns_files:
+                return
+            self._store, self._kept = None, None
+            if self._suspect is store:
+                self._suspect = None
+            self._discard(store)
+
     def fresh(self) -> EmbeddingStore:
         """Install and return an empty store at the identity, to rebuild into.
 
