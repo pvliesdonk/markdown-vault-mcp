@@ -757,11 +757,13 @@ Unicode separators and continuations before the 280-character limit; an
 incomplete leading pipe row remains an explicit conservative refusal.
 See [the parser contract](reference/commonmark-gfm.md#maintained-block-source-spans).
 Evidence uses raw coordinates from maintained block and inline rules, pinned
-to markdown-it-py 3.0.0. Complete code and image spans are excluded without
-joining neighboring text. Native definitions provide availability separately
+to markdown-it-py 3.0.0. Complete code and image spans, including configured
+Obsidian attachment embeds, are excluded without joining neighboring text. Native definitions provide availability separately
 from candidate text; unused definitions cannot become evidence. Explicit
 links and autolinks retain literal destination punctuation; only bare prose
-URLs lose surrounding sentence, quote and matched-emphasis delimiters.
+URLs lose surrounding sentence, paired Unicode quote, emphasis and maintained
+strikethrough delimiters. Whole URI schemes are recognized before HTTP(S)
+filtering, so another scheme cannot supply an invented HTTP substring.
 Configured attachment exclusions apply to candidates and graph demand;
 BOM-prefixed vocabulary and discovery notes use the native UTF-8 reader. HTTP schemes match
 without case sensitivity while resources retain their original spelling,

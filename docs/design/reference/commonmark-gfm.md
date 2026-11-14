@@ -143,9 +143,10 @@ following implementation contracts, inspected from that version's source on
   `code_inline` emission defines code exclusions; success alone does not.
   [source: mdit-inline]
   [pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]
-- Emphasis tokenization records each marker's `Delimiter.token`. After
-  `balance_pairs`, `Delimiter.end` identifies its partner in root or nested
-  delimiter lists; emphasis postprocessing then changes and merges tokens.
+- Emphasis and maintained strikethrough tokenization record each marker's
+  `Delimiter.token`. Pending text flushes before marker tokens; a strikethrough
+  token holds two tildes. After `balance_pairs`, `Delimiter.end` identifies its
+  partner in root or nested lists; postprocessing then changes and merges tokens.
   Recording raw marker offsets before that postprocessing distinguishes a
   surrounding matched closer from internal or unmatched URI punctuation.
   [source: mdit-emphasis] [source: mdit-inline]
@@ -162,7 +163,11 @@ last-definition dictionary is passed separately to reference usages. An
 unused definition never becomes candidate text. Recognition-only parser
 reference records cannot supply a persisted URL. Explicit destinations and
 autolinks keep their punctuation; only bare prose URLs receive surrounding
-sentence, quote and matched-emphasis trimming.
+sentence, paired Unicode quote and matched emphasis/strikethrough trimming.
+The image callback uses the maintained image rule's label-bound helper and
+native attachment classification for complete Obsidian embed exclusion.
+Whole schemes are recognized before HTTP(S) filtering; a non-HTTP URI cannot
+supply a different resource by substring.
 [observed: Decisions adapter contract, #2061]
 [pins: tests/test_okf_decisions.py::test_source_candidates_reject_escaped_paths_and_bad_urls]
 [pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]

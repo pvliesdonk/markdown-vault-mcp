@@ -108,6 +108,107 @@ def _assert_complete_metadata(
     [
         *((evidence, "Exact paragraph.") for evidence in SOURCE_SPAN_CASES),
         (("[[evidence.custom]]", []), "Exact paragraph."),
+        *(
+            pytest.param(
+                (body, ["https://example.invalid/real"]),
+                "Exact paragraph.",
+                id="wiki-image-malformed-" + label,
+            )
+            for label, body in [
+                ("unclosed", "![[diagram.png|https://example.invalid/real"),
+                (
+                    "split-close",
+                    "![[diagram.png] caption] https://example.invalid/real",
+                ),
+            ]
+        ),
+        *(
+            pytest.param(
+                (
+                    wrapper.format("https://example.invalid/evidence"),
+                    ["https://example.invalid/evidence"],
+                ),
+                "Exact paragraph.",
+                id="prose-boundary-" + label,
+            )
+            for label, wrapper in [("guillemets", "«{}»"), ("strikethrough", "~~{}~~")]
+        ),
+        *(
+            pytest.param(
+                (body, [expected]),
+                "Exact paragraph.",
+                id="prose-boundary-literal-" + label,
+            )
+            for label, body, expected in [
+                (
+                    "unmatched",
+                    "https://example.invalid/evidence~~",
+                    "https://example.invalid/evidence~~",
+                ),
+                (
+                    "markdown",
+                    "[ref](https://example.invalid/evidence~~)",
+                    "https://example.invalid/evidence~~",
+                ),
+                (
+                    "autolink",
+                    "<https://example.invalid/evidence~~>",
+                    "https://example.invalid/evidence~~",
+                ),
+                (
+                    "unicode",
+                    "[ref](https://example.invalid/evidence»)",
+                    "https://example.invalid/evidence»",
+                ),
+            ]
+        ),
+        pytest.param(
+            ("![[diagram.png|https://example.invalid/image-only]]", []),
+            "Exact paragraph.",
+            id="wiki-image-url",
+        ),
+        pytest.param(
+            ("![[diagram.png|[caption](https://example.invalid/image-only)]]", []),
+            "Exact paragraph.",
+            id="wiki-image-markdown-url",
+        ),
+        pytest.param(
+            ("![[diagram.png|[caption](fact.md)]]", []),
+            "Exact paragraph.",
+            id="wiki-image-vault-link",
+        ),
+        pytest.param(
+            ("![[evidence.custom|[caption](fact.md)]]", []),
+            "Exact paragraph.",
+            id="wiki-image-configured-attachment",
+        ),
+        pytest.param(
+            ("![[diagram.png|caption\nhttps://example.invalid/image-only]]", []),
+            "Exact paragraph.",
+            id="wiki-image-multiline",
+        ),
+        pytest.param(
+            (
+                "![[diagram.png|https://example.invalid/image-only]] "
+                "[real](fact.md) https://example.invalid/real",
+                ["fact.md", "https://example.invalid/real"],
+            ),
+            "Exact paragraph.",
+            id="wiki-image-surrounding-evidence",
+        ),
+        pytest.param(
+            (
+                r"\![[evidence.custom|https://example.invalid/real]]",
+                ["https://example.invalid/real"],
+            ),
+            "Exact paragraph.",
+            id="wiki-image-escaped-marker-control",
+        ),
+        pytest.param(
+            ("![[fact]]", ["fact.md"]),
+            "Exact paragraph.",
+            id="wiki-image-note-embed-control",
+        ),
         (("[[evidence.pdf]]", ["evidence.pdf.md"]), "Exact paragraph."),
         (
             (
@@ -285,13 +386,13 @@ def test_complete_decide_persists_once_with_etag(
             read_only=False,
             okf_mode="on",
             okf_write=enforced,
-            attachment_extensions=(".custom",),
+            attachment_extensions=(".custom", ".png"),
         ),
     )
     native_read = vault.reader.read("note.md")
     assert native_read is not None
     original_body = strip_frontmatter_block(native_read.content)
-    graph_evidence = source_text == "[[evidence.pdf]]"
+    graph_evidence = source_text in {"[[evidence.pdf]]", "![[fact]]"}
     builds: list[int] = []
     original_build = vault.index.build_index
 
@@ -343,6 +444,15 @@ def test_complete_decide_persists_once_with_etag(
             for enforced in (False, True)
         ),
         ("expiry-overflow", True),
+        *(
+            pytest.param(
+                "whole-uri-" + prefix,
+                enforced,
+                id="whole-uri-" + prefix + str(enforced),
+            )
+            for prefix in ["git+", "x", "urn:"]
+            for enforced in (False, True)
+        ),
     ],
 )
 def test_second_run_noop_has_no_side_effects(
@@ -354,12 +464,21 @@ def test_second_run_noop_has_no_side_effects(
     )
     clock = [datetime(9999, 11, 30, tzinfo=UTC)]
     monkeypatch.setattr(module, "_now", lambda: clock[0])
-    type_line = "type: Reference\n" if outcome in {"equal", "expiry-overflow"} else ""
+    type_line = (
+        "type: Reference\n"
+        if outcome in {"equal", "expiry-overflow"} or outcome.startswith("whole-uri-")
+        else ""
+    )
     (tmp_path / "note.md").write_text(
         "---\n"
         + type_line
         + "status: draft\ndescription: Keep.\ngenerated: {by: 'human:fixture', at: '2026-01-01T00:00:00Z'}\nverified: [{by: 'human:fixture', at: '2026-01-01T00:00:00Z'}]\n---\n\nBody.\n"
     )
+    if outcome.startswith("whole-uri-"):
+        with (tmp_path / "note.md").open("a") as note:
+            note.write(
+                outcome.removeprefix("whole-uri-") + "https://example.invalid/evidence"
+            )
     calls: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:

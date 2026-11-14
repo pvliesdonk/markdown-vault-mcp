@@ -1907,8 +1907,11 @@ See [the OKF design](okf.md#explicit-local-decisions-pass)
 and [operator usage](../use/okf.md#curate-metadata-with-decisions).
 
 The source adapter consumes markdown-it-py 3.0.0's maintained leaf and inline
-rules with raw coordinate projection. Whole code/image spans are excluded;
-explicit destinations and autolinks retain their spelling. Native reference
+rules with raw coordinate projection. Complete code/image spans, including
+configured Obsidian attachment embeds, are excluded before either source lane.
+Whole URI schemes precede HTTP(S) filtering; paired prose quotes, emphasis
+and maintained strikethrough cannot become bare resource characters. Explicit
+destinations and autolinks retain their spelling. Native reference
 availability is a separate dictionary, never appended evidence text. The
 same protected scan and effective attachment policy govern candidate assembly
 and lazy graph demand. Native UTF-8 decoding handles vocabulary/discovery BOMs.

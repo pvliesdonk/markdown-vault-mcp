@@ -42,6 +42,7 @@ from markdown_vault_mcp.scanner import (
     _extract_inline_links,
     _extract_reference_links,
     _extract_wikilinks,
+    _find_wikilink,
     _make_reference_follow,
     _normalise_line_endings,
     _strip_fenced_code,
@@ -52,7 +53,10 @@ from markdown_vault_mcp.scanner import (
     strip_frontmatter_block,
 )
 from markdown_vault_mcp.utils import is_path_excluded, validate_path
-from markdown_vault_mcp.utils.content_kind import effective_attachment_extensions
+from markdown_vault_mcp.utils.content_kind import (
+    effective_attachment_extensions,
+    names_attachment,
+)
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 from markdown_vault_mcp.utils.links import (
     _decode_escapes_and_entities,
@@ -361,6 +365,7 @@ def _inline_rule(
             len(state.tokens),
             len(state.delimiters),
         )
+        pending = len(state.pending)
         nested = depth[0] > 0
         depth[0] += int(kind == "image")
         try:
@@ -378,8 +383,12 @@ def _inline_rule(
                 spans.external.append(
                     (start, state.pos, state.src[start + 1 : state.pos - 1])
                 )
-            for offset, delimiter in enumerate(state.delimiters[delimiters:]):
-                markers[id(state), delimiter.token] = start + offset
+            for delimiter in state.delimiters[delimiters:]:
+                markers[id(state), delimiter.token] = (
+                    start
+                    + sum(len(t.content) for t in state.tokens[count : delimiter.token])
+                    - pending
+                )
         return matched
 
     return observe
@@ -405,9 +414,28 @@ def _paired_delimiters(
                     spans.pairs.append((opener, closer))
 
 
-def _inline_spans(region: _SourceRegion, definitions: dict[str, str]) -> _InlineSpans:
+def _attachment_image_rule(extensions: frozenset[str]) -> Any:
+    def image(state: StateInline, silent: bool) -> bool:
+        if state.src.startswith("![[", state.pos):
+            close = state.md.helpers.parseLinkLabel(state, state.pos + 1, False)
+            if close >= 0 and state.src[close - 1] == "]":
+                target = state.src[state.pos + 3 : close - 1].partition("|")[0]
+                wiki = _find_wikilink("[[" + target + "]]", 0)
+                if wiki and names_attachment(
+                    wiki[1].strip().removesuffix("\\").split("#", 1)[0], extensions
+                ):
+                    state.pos = close + 1
+                    return True
+        return inline_rules.image(state, silent)
+
+    return image
+
+
+def _inline_spans(
+    region: _SourceRegion, definitions: dict[str, str], extensions: frozenset[str]
+) -> _InlineSpans:
     spans = _InlineSpans()
-    md = MarkdownIt("commonmark")
+    md = MarkdownIt("commonmark").enable("strikethrough")
     markers: dict[tuple[int, int], int] = {}
     depth = [0]
 
@@ -417,14 +445,15 @@ def _inline_spans(region: _SourceRegion, definitions: dict[str, str]) -> _Inline
 
     for kind, rule in (
         ("backticks", inline_rules.backtick),
-        ("image", inline_rules.image),
+        ("image", _attachment_image_rule(extensions)),
         ("link", inline_rules.link),
         ("autolink", inline_rules.autolink),
         ("html_inline", inline_rules.html_inline),
         ("emphasis", inline_rules.emphasis.tokenize),
+        ("strikethrough", inline_rules.strikethrough.tokenize),
     ):
         md.inline.ruler.at(kind, _inline_rule(rule, kind, spans, markers, depth))
-    md.inline.ruler2.before("emphasis", "decide_source_pairs", paired)
+    md.inline.ruler2.before("strikethrough", "decide_source_pairs", paired)
     references = {
         normalizeReference(label): {
             "href": decode_markdown_destination(raw),
@@ -480,9 +509,9 @@ def _bare_url(value: str, *, quoted: str = "") -> str:
 
 
 def _region_sources(
-    region: _SourceRegion, definitions: dict[str, str]
+    region: _SourceRegion, definitions: dict[str, str], extensions: frozenset[str]
 ) -> tuple[str, list[str]]:
-    spans = _inline_spans(region, definitions)
+    spans = _inline_spans(region, definitions, extensions)
     _explicit_sources(region, definitions, spans)
     excluded = [
         *spans.excluded,
@@ -495,8 +524,10 @@ def _region_sources(
         if clean[start] != "\x00" and "\x00" not in value
     ]
     bare = _mask(clean, spans.occupied)
-    quotes = {"'": "'", "\u2018": "\u2019", "\u201c": "\u201d"}
-    for match in re.finditer(r'https?://[^\s<>"\x00-\x20]+', bare, re.IGNORECASE):
+    quotes = {"'": "'", "\u2018": "\u2019", "\u201c": "\u201d", "\u00ab": "\u00bb"}
+    for match in re.finditer(
+        r'(?<![\w+.-])[a-z][a-z0-9+.-]*:[^\s<>"\x00-\x20]+', bare, re.IGNORECASE
+    ):
         end = min(
             (
                 close
@@ -515,13 +546,16 @@ def _region_sources(
 
 
 def _definition_view(
-    body: str, regions: list[_SourceRegion], definitions: dict[str, str] | None = None
+    body: str,
+    regions: list[_SourceRegion],
+    extensions: frozenset[str],
+    definitions: dict[str, str] | None = None,
 ) -> str:
     view = [c if c in "\r\n" else "\x00" for c in body]
     for region in regions:
         text = region.text
         if definitions is not None and region.kind != "reference":
-            text = _mask(text, _inline_spans(region, definitions).excluded)
+            text = _mask(text, _inline_spans(region, definitions, extensions).excluded)
         line_start = True
         for char, origin in zip(text, region.origins, strict=True):
             if origin is not None:
@@ -541,15 +575,17 @@ def _definition_view(
 def _scan_sources(
     body: str, path: str, attachment_extensions: frozenset[str] | None = None
 ) -> _SourceScan:
-    regions = _source_regions(body)
-    definitions = _collect_reference_definitions(_definition_view(body, regions))
-    definitions = _collect_reference_definitions(
-        _definition_view(body, regions, definitions)
-    )
     extensions = (
         effective_attachment_extensions(None)
         if attachment_extensions is None
         else attachment_extensions
+    )
+    regions = _source_regions(body)
+    definitions = _collect_reference_definitions(
+        _definition_view(body, regions, extensions)
+    )
+    definitions = _collect_reference_definitions(
+        _definition_view(body, regions, extensions, definitions)
     )
     groups: dict[str, list[LinkInfo]] = {
         "markdown": [],
@@ -560,7 +596,7 @@ def _scan_sources(
     for region in regions:
         text = _blank_reference_definitions(region.text)
         usable = _SourceRegion(text, region.origins, region.kind)
-        clean, values = _region_sources(usable, definitions)
+        clean, values = _region_sources(usable, definitions, extensions)
         inert = (
             _strip_fenced_code(clean) == clean and _strip_inline_code(clean) == clean
         )

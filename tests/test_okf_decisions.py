@@ -640,6 +640,109 @@ def test_source_outcome_retains_literal_candidate(
     [
         *(("note.md", body, resources) for body, resources in SOURCE_SPAN_CASES),
         ("note.md", "[escape](escaped.md) https://[invalid", []),
+        *(
+            pytest.param(
+                "note.md",
+                body,
+                ["https://example.invalid/real"],
+                id="wiki-image-malformed-" + label,
+            )
+            for label, body in [
+                ("unclosed", "![[diagram.png|https://example.invalid/real"),
+                (
+                    "split-close",
+                    "![[diagram.png] caption] https://example.invalid/real",
+                ),
+            ]
+        ),
+        *(
+            pytest.param(
+                "note.md",
+                prefix + "https://example.invalid/evidence",
+                [],
+                id="whole-uri-" + prefix,
+            )
+            for prefix in ["git+", "x", "urn:"]
+        ),
+        *(
+            pytest.param(
+                "note.md",
+                wrapper.format("https://example.invalid/evidence"),
+                ["https://example.invalid/evidence"],
+                id="prose-boundary-" + label,
+            )
+            for label, wrapper in [("guillemets", "«{}»"), ("strikethrough", "~~{}~~")]
+        ),
+        *(
+            pytest.param(
+                "note.md", body, [expected], id="prose-boundary-literal-" + label
+            )
+            for label, body, expected in [
+                (
+                    "unmatched",
+                    "https://example.invalid/evidence~~",
+                    "https://example.invalid/evidence~~",
+                ),
+                (
+                    "markdown",
+                    "[ref](https://example.invalid/evidence~~)",
+                    "https://example.invalid/evidence~~",
+                ),
+                (
+                    "autolink",
+                    "<https://example.invalid/evidence~~>",
+                    "https://example.invalid/evidence~~",
+                ),
+                (
+                    "unicode",
+                    "[ref](https://example.invalid/evidence»)",
+                    "https://example.invalid/evidence»",
+                ),
+            ]
+        ),
+        pytest.param(
+            "note.md",
+            "![[diagram.png|https://example.invalid/image-only]]",
+            [],
+            id="wiki-image-url",
+        ),
+        pytest.param(
+            "note.md",
+            "![[diagram.png|[caption](https://example.invalid/image-only)]]",
+            [],
+            id="wiki-image-markdown-url",
+        ),
+        pytest.param(
+            "note.md",
+            "![[diagram.png|[caption](fact.md)]]",
+            [],
+            id="wiki-image-vault-link",
+        ),
+        pytest.param(
+            "note.md",
+            "![[diagram.png|caption\nhttps://example.invalid/image-only]]",
+            [],
+            id="wiki-image-multiline",
+        ),
+        pytest.param(
+            "note.md",
+            "![[diagram.png|https://example.invalid/image-only]] "
+            "[real](fact.md) https://example.invalid/real",
+            ["fact.md", "https://example.invalid/real"],
+            id="wiki-image-surrounding-evidence",
+        ),
+        pytest.param(
+            "note.md",
+            r"\![[diagram.png|https://example.invalid/real]]",
+            ["https://example.invalid/real"],
+            id="wiki-image-escaped-marker-control",
+        ),
+        pytest.param(
+            "note.md",
+            "![[fact]]",
+            ["fact.md"],
+            id="wiki-image-note-embed-control",
+        ),
         (
             "note.md",
             "See **https://example.invalid/evidence**.",
@@ -932,4 +1035,6 @@ def test_source_partial_tab_projection() -> None:
     assert region.text == state.getLines(0, 1, 2, False)
     assert region.origins[:2] == (None, None)
     assert region.text[2:] == "[yes](fact.md)"
-    assert module._definition_view(state.src, [region]) == " [yes](fact.md)\n"
+    assert (
+        module._definition_view(state.src, [region], frozenset()) == " [yes](fact.md)\n"
+    )
