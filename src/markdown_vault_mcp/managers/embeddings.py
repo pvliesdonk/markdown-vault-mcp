@@ -254,6 +254,7 @@ class EmbeddingsManager:
 
         Raises:
             EmbeddingsNotConfiguredError: If no embedding provider is configured.
+            RuntimeError: If an incompatible store's rebuild publishes no generation.
             StoreOpenError: If the store still will not open, or a damaged
                 one cannot be moved aside.
         """
@@ -264,12 +265,39 @@ class EmbeddingsManager:
         try:
             store = self._slot.get(rebuild=None)
         except StoreIncompatibleError:
-            return self.build_embeddings(force=True)
+            return self._rebuild_changed_identity()
         # A store that differs only in dimension opens at its stored one, so
         # only this check finds it; the cold build would call back here.
         if store.count and not self._slot.answers(store):
-            return self.build_embeddings(force=True)
+            return self._rebuild_changed_identity()
         return self.build_embeddings()
+
+    def _rebuild_changed_identity(self) -> int:
+        """Require publication when automatically replacing incompatible vectors.
+
+        Unlike an initial cold build, an unpublished replacement cannot
+        serve as a successful empty index. Discard its target so a later
+        read retries the preserved store's identity mismatch (#1946).
+
+        Raises:
+            RuntimeError: If the rebuild publishes no compatible generation.
+        """
+        if self._slot is None:  # pragma: no cover - caller requires vectors
+            raise RuntimeError(_NO_RECONCILER)
+        store = self._slot.rebuild_target()
+        try:
+            outcome = self._full_build(
+                store, self._slot.identity, donor=None, reuse_own=False
+            )
+            if not outcome.published:
+                raise RuntimeError(
+                    "The automatic embedding rebuild failed: no compatible embeddings "
+                    "were published. Retry the rebuild after the provider or index recovers."
+                )
+            return outcome.embedded
+        except Exception:
+            self._slot.discard_failed_rebuild(store)
+            raise
 
     # ------------------------------------------------------------------
     # Inline reindex embedding
