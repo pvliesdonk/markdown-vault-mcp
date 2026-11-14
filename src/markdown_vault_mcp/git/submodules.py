@@ -15,7 +15,7 @@ listing it has no gitlink boundaries; live marker discovery still applies.
 
 Plain nested repositories have no gitlink: check their .git directory or
 gitfile live, confirming each candidate through git root discovery. File
-queries inspect ancestors only; holding queries walk only the requested
+and inside-only queries inspect ancestors; holding queries walk the requested
 directory, pruning metadata and stopping at the first repository. Filesystem
 inspection faults propagate rather than treating an unreadable path as safe.
 """
@@ -65,17 +65,21 @@ class SubmoduleGuard:
         self._listed = False
         self._gitlinks: tuple[Path, ...] = ()
 
-    def submodule_of(self, abs_path: Path) -> tuple[str, bool] | None:
+    def submodule_of(
+        self, abs_path: Path, *, holding: bool = True
+    ) -> tuple[str, bool] | None:
         """Return the submodule or nested repository *abs_path* lies in or holds.
 
         Args:
             abs_path: An absolute path inside the vault.
+            holding: Also look for repositories below a directory. ``False``
+                checks only the target and its ancestors.
 
         Returns:
             ``(repository, inside)``: its vault-relative POSIX path, and
             ``True`` when *abs_path* is the repository or lies inside it,
             ``False`` when it is a folder holding the repository. ``None`` when
-            neither holds, or the vault is not in a git repository.
+            no requested relation holds, or the vault is not in a git repository.
 
         Raises:
             OSError: If filesystem inspection is refused.
@@ -92,6 +96,8 @@ class SubmoduleGuard:
         nested = self._containing_repository(target)
         if nested is not None:
             return self._name(nested), True
+        if not holding:
+            return None
         for gitlink in gitlinks:
             if gitlink.is_relative_to(target):
                 return self._name(gitlink), False
@@ -139,12 +145,10 @@ class SubmoduleGuard:
             SubmodulePathError: When :meth:`submodule_of` finds a repository
                 that the arguments refuse.
         """
-        found = self.submodule_of(abs_path)
+        found = self.submodule_of(abs_path, holding=holding)
         if found is None:
             return
         submodule, inside = found
-        if not (inside or holding):
-            return
         build = SubmodulePathError.inside if inside else SubmodulePathError.holds
         raise build(argument, path, submodule)
 

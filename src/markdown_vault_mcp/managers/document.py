@@ -296,7 +296,7 @@ class DocumentManager:
         guard = self._submodule_guard
         if guard is None:
             return False
-        found = guard.submodule_of(self._source_dir / path)
+        found = guard.submodule_of(self._source_dir / path, holding=False)
         return found is not None and found[1]
 
     @contextlib.contextmanager
@@ -1694,7 +1694,9 @@ class DocumentManager:
         *new_dir* may hold one; only a destination inside one is lost.
         """
         guard = self._submodule_guard
-        found = guard.submodule_of(dst_abs) if guard is not None else None
+        found = (
+            guard.submodule_of(dst_abs, holding=False) if guard is not None else None
+        )
         if found is not None and found[1]:
             raise SubmodulePathError.into("new_dir", new_dir, found[0], new_path)
 

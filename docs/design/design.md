@@ -6404,8 +6404,8 @@ cannot list them it logs `submodule_list_failed`, keeps the submodules it last
 listed and asks again on the next write. That fallback concerns gitlinks
 only; live marker discovery remains independent of index listing failures.
 Plain repository discovery checks `.git` directory/file candidates against
-their Git working-tree root, strictly below the vault root. File queries
-check ancestors; holding queries walk only the queried directory, without
+their losslessly decoded Git root, strictly below the vault root. File and
+inside-only queries check ancestors; holding queries walk the target, without
 following directory symlinks or entering `.git` metadata, and stop at the
 first repository. Inert markers do not hide real descendants. No filesystem
 results are cached: marker creation/removal affects the next query even if

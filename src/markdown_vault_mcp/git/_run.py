@@ -113,10 +113,11 @@ def _find_git_root(path: Path) -> Path | None:
                 "--show-toplevel",
             ],
             capture_output=True,
-            text=True,
             check=True,
         )
-        return Path(result.stdout.strip())
+        # Preserve pathname bytes, including whitespace and undecodable names;
+        # rev-parse appends exactly one LF, not part of the root.
+        return Path(os.fsdecode(result.stdout.removesuffix(b"\n")))
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
