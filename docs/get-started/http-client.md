@@ -87,7 +87,7 @@ The synthetic HTTP contract tests exercise the native vault server and these
 whole-result shapes expected by an Executor caller. They do not establish
 acceptance by an installed Executor runtime or verify a personal connection.
 Use the operator's [authentication instructions](../deploy/authentication.md)
-for credentials; the tests use only disposable fixture tokens and notes.
+for credentials; the contract tests use only synthetic notes.
 <!-- DOMAIN-HTTP-CLIENT-EXTRA-END -->
 
 ## Next

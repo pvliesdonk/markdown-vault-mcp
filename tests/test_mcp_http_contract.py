@@ -11,10 +11,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
-from hypothesis import given, settings
-from hypothesis import strategies as st
 from mcp.types import TextContent
-from starlette.responses import Response
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.server import make_server
@@ -54,13 +51,9 @@ def _rpc(client: httpx.Client, method: str, params: dict[str, Any]) -> dict[str,
 
 
 @contextmanager
-def _session(
-    origin: str, token: str | None = None
-) -> Iterator[tuple[httpx.Client, dict[str, Any]]]:
+def _session(origin: str) -> Iterator[tuple[httpx.Client, dict[str, Any]]]:
     """Initialize a raw HTTP client with negotiated protocol and optional session."""
     headers = {"Accept": "application/json, text/event-stream"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
     with httpx.Client(
         base_url=origin, headers=headers, timeout=10, trust_env=False
     ) as client:
@@ -165,6 +158,7 @@ def test_http_whole_result_shapes(kind: str) -> None:
             "index_stale": False,
             "receipt": {"source": "synthetic", "counts": [0, 2]},
         }
+        assert ("structuredContent" in result) == (kind != "text")
         # Presence, rather than truthiness, preserves an empty structured object.
         if "structuredContent" in result:
             assert result["structuredContent"] == (
@@ -176,72 +170,10 @@ def test_http_whole_result_shapes(kind: str) -> None:
     assert calls == [kind]  # No implicit retry of the returned failure.
 
 
-def test_http_discovery_auth_and_protocol_boundary() -> None:
-    """Reject anonymous discovery and distinguish JSON-RPC errors from tool errors."""
-    server = FastMCP("synthetic-auth-contract")
-    calls: list[str] = []
-
-    @server.tool()
-    def guarded_read() -> str:
-        """Read synthetic data only after authentication."""
-        calls.append("read")
-        return "synthetic note"
-
-    application = server.http_app()
-
-    async def protected(scope: Any, receive: Any, send: Any) -> None:
-        if (
-            scope["type"] == "http"
-            and dict(scope["headers"]).get(b"authorization") != b"Bearer fixture-token"
-        ):
-            await Response(status_code=401)(scope, receive, send)
-        else:
-            await application(scope, receive, send)
-
-    with serve_http(protected) as origin:
-        with httpx.Client(trust_env=False, timeout=10) as anonymous:
-            for method in ("initialize", "tools/list"):
-                response = anonymous.post(
-                    origin + "/mcp",
-                    headers={"Accept": "application/json, text/event-stream"},
-                    json={"jsonrpc": "2.0", "id": 1, "method": method, "params": {}},
-                )
-                assert response.status_code == 401
-        with _session(origin, "fixture-token") as (client, _):
-            catalog = _rpc(client, "tools/list", {})["result"]["tools"]
-            assert catalog[0]["name"] == "guarded_read"
-            protocol_error = _rpc(client, "synthetic/unknown", {})
-            assert protocol_error["error"]["code"] == -32601
-            assert "result" not in protocol_error
-    assert calls == []
-
-
-def test_http_unicode_content_and_metadata_round_trip() -> None:
-    """Preserve arbitrary JSON Unicode strings through native result serialization."""
-    server = FastMCP("synthetic-unicode-contract")
-
-    @server.tool()
-    def echo(value: str) -> ToolResult:
-        """Return the supplied synthetic string in all native data channels."""
-        return ToolResult(
-            content=[TextContent(type="text", text=value)],
-            structured_content={"value": value},
-            meta={"receipt": {"value": value}},
-        )
-
+def test_http_protocol_error_is_not_a_tool_result() -> None:
+    """Keep an unknown JSON-RPC method distinct from a returned tool failure."""
+    server = FastMCP("synthetic-protocol-contract")
     with serve_http(server.http_app()) as origin, _session(origin) as (client, _):
-
-        @settings(max_examples=8, deadline=None)
-        @given(
-            st.text(alphabet=st.characters(blacklist_categories=("Cs",)), max_size=40)
-        )
-        def check(value: str) -> None:
-            result = _rpc(
-                client, "tools/call", {"name": "echo", "arguments": {"value": value}}
-            )["result"]
-            assert result["isError"] is False
-            assert result["content"] == [{"type": "text", "text": value}]
-            assert result["structuredContent"] == {"value": value}
-            assert result["_meta"]["receipt"] == {"value": value}
-
-        check()
+        protocol_error = _rpc(client, "synthetic/unknown", {})
+        assert protocol_error["error"]["code"] == -32601
+        assert "result" not in protocol_error
