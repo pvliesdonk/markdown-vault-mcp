@@ -166,7 +166,8 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   pointing to it, before working-tree discovery/configuration. Its status
   avoids owner checks, redirected `core.worktree` and unsupported extensions
   that can defeat working-root equality while outer staging skips the path.
-  [source: metadata-resolution, early-resolution, structural-metadata]
+  [source: metadata-resolution] [source: early-resolution]
+  [source: structural-metadata]
   [observed: synthetic Boat Git 2.43.0 fixtures, 2026-11-14]
   [pins: tests/test_submodule_writes.py::test_a_plain_repository_write_is_refused_before_any_side_effect]
 - Git conservatively treats gitfile open/read failures as repository boundaries;
