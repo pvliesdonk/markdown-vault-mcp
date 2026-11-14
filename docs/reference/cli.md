@@ -629,3 +629,21 @@ Copy vectors from another store into the configured one, embedding only what it 
 | `--from-schema` |  |  | Schema of a postgres source (default: the configured schema). |
 | `--from-dsn-env` |  |  | Environment variable holding a postgres source's connection string (default: $`MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`). |
 | `--dry-run` |  | False | Count what would be copied and embedded; write nothing. |
+
+## `markdown-vault-mcp okf`
+
+Maintain local OKF metadata.
+
+## `markdown-vault-mcp okf decide`
+
+Apply closed metadata decisions to explicitly selected local notes.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Local vault override. |
+| `--since` |  |  | Select modification time since an aware ISO datetime. |
+| `--missing-type` |  | False | Select notes without a raw type. |
+| `--threshold` |  |  | Repeat KEY=FLOAT for field acceptance. |
+| `--replace-threshold` |  |  | Strict replacement threshold. |
+| `--meaningful-threshold` |  |  | Whole-change acceptance threshold. |
+| `--json` |  | False | Emit one complete JSON report. |

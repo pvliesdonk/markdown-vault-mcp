@@ -724,3 +724,35 @@ phase owns.
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
   single-sourced; ignore until corroborated.
+
+## Explicit local Decisions pass
+
+`okf decide` is explicit maintenance independent of the enforced-write flag.
+CLI-only flat configuration supplies an ordinary types-note path, a separate
+Platform base/key and per-field thresholds. The vocabulary closes type options,
+fixes the three OKF statuses and may list positive whole-day expiry durations.
+The manager copies a suitable first paragraph and contained existing link/URL
+evidence; the model never generates prose, resources or dates.
+
+Discovery uses filesystem mtime or missing raw type, with union/dedup and
+native exclusions, containment and submodule boundaries. Reserved files,
+`SKILL.md` and the vocabulary are excluded. The command initializes no model
+clients without enabled selected work and never opens server persistent stores.
+Assembly clears Git URL and token before validation, so local commits retain
+native callbacks without managed bootstrap or remote synchronization.
+
+The [endpoint reference](reference/openai-decisions.md) pins ordered answers,
+null-name refusals, request limits and safe terminal errors. All thresholds
+are finite [0,1]; existing type/status replacement requires wrongness strictly
+above the replacement threshold, itself above their acceptance thresholds.
+Meaningfulness gates the full patch. All field outcomes retain their real
+metrics/refusals. Empty patches precede stamps, writers and callbacks.
+
+Persistence strips the native read's frontmatter block, merges accepted keys
+into full raw metadata, and uses exactly one conditional native write with its
+etag. Enforcement off serializes the full note for the shipped stamp helper
+and parses stamped metadata back; enforcement on leaves native enrichment in
+charge. Unknown keys/source records survive. The command creates no machine
+verification, uses no `last_edited` clock and changes no index semantics.
+Native serialization owns delimiter spacing. A concurrent edit reports a
+conflict and is not overwritten or reclassified.

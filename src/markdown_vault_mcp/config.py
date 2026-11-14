@@ -491,7 +491,7 @@ class ProjectConfig:
     okf_decisions_stale_after_threshold: float = field(
         default=0.8,
         metadata={
-            "help": "Decisions stale_after threshold, a finite number in [0,1].",
+            "help": "Decisions expiry threshold, a finite number in [0,1].",
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },
@@ -507,7 +507,7 @@ class ProjectConfig:
     okf_decisions_meaningful_threshold: float = field(
         default=0.8,
         metadata={
-            "help": "Decisions meaningful threshold, a finite number in [0,1].",
+            "help": "Minimum probability for a metadata change, in [0,1].",
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },

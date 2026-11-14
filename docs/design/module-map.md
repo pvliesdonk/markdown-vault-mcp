@@ -41,6 +41,7 @@ src/markdown_vault_mcp/
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
     git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
+    okf_decide.py      -- closed vocabulary/candidates, five-field Decisions policy, filesystem selection and native conditional metadata maintenance (#2061)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
   stores/
@@ -107,6 +108,7 @@ src/markdown_vault_mcp/
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
+  _okf_decisions.py   -- bounded one-request Platform Decisions transport with ordered answer/refusal validation (#2061)
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
@@ -166,6 +168,7 @@ src/markdown_vault_mcp/
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
   _cli_options.py      -- shared Typer option aliases (connection, folder, agent, drain) for the read commands
   _cli_reader.py       -- register_read_commands: search plus every read-only command, one unit a CLI mounts whole (#2005)
+  _cli_okf.py         -- local Decisions registrar, sanitized lazy preflight and native command lifecycle
   _cli_admin.py        -- the admin group (index, reindex, embeddings import) and the hidden aliases for their old names (#2005)
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point

@@ -7,7 +7,7 @@ subject_version: "openai-python 3dae6090cc31cc64a437fe0bcee740b6d81ed2cc"
 valid_for: "Pinned SDK contract; moving Decisions service as of 2026-11-14"
 generated:
   by: process:researching-references
-  at: 2026-11-14T12:18:00+00:00
+  at: 2026-11-14T11:15:00+00:00
 stale_after: 2027-05-14T12:18:00+00:00
 status: stable
 sources:

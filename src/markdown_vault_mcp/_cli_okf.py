@@ -103,7 +103,7 @@ def register_okf_commands(okf: typer.Typer) -> None:
     def decide(  # noqa: PLR0913, RUF100 -- Typer requires one parameter per public option.
         source_dir: str | None = typer.Option(None, help="Local vault override."),
         since: str | None = typer.Option(
-            None, help="Select mtime since an aware ISO datetime."
+            None, help="Select modification time since an aware ISO datetime."
         ),
         missing_type: bool = typer.Option(
             False, help="Select notes without a raw type."

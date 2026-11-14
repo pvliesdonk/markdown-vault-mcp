@@ -1880,6 +1880,24 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Explicit local OKF Decisions maintenance (#2061)
+
+The local `okf decide` workflow uses an ordinary operator vocabulary note,
+closed string choices and body evidence to curate type, status, description,
+sources and optional expiry. It sends one bounded request per selected note
+using the [pinned Decisions contract](reference/openai-decisions.md).
+The manager compares accepted values before provenance stamping and invokes
+the existing writer exactly once with the original read etag. No-op decisions
+leave bytes, timestamps, verification and convention callbacks untouched.
+Enforcement-off writes reuse the shipped full-note stamp adapter;
+enforcement-on writes delegate stamping and convention maintenance to native
+owners. No stored derivation or index schema changes.
+
+The CLI owns lazy collaborator assembly with models and persistent stores
+disabled, clears both Git URL and token before source validation/assembly,
+and retains native commit-only callbacks. See [the OKF design](okf.md#explicit-local-decisions-pass)
+and [operator usage](../use/okf.md#curate-metadata-with-decisions).
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)

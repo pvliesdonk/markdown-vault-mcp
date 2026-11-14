@@ -12,6 +12,7 @@
     "OPENAI_API_KEY",
     "VOYAGE_API_KEY",
     "MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN",
+    "MARKDOWN_VAULT_MCP_OKF_DECISIONS_API_KEY",
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
     "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN",
@@ -686,6 +687,86 @@
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OKF_MODE",
       "help": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_types_path",
+      "label": "Okf Types Path",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_TYPES_PATH",
+      "help": "Vault-relative ordinary note holding Decisions vocabularies.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_api_key",
+      "label": "Okf Decisions Api Key",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_API_KEY",
+      "help": "Independent Decisions key; falls back only to OPENAI_API_KEY.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_base_url",
+      "label": "Okf Decisions Base Url",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_BASE_URL",
+      "help": "HTTP(S) API base for the explicit local Decisions pass.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_type_threshold",
+      "label": "Okf Decisions Type Threshold",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_TYPE_THRESHOLD",
+      "help": "Decisions type threshold, a finite number in [0,1].",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_status_threshold",
+      "label": "Okf Decisions Status Threshold",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_STATUS_THRESHOLD",
+      "help": "Decisions status threshold, a finite number in [0,1].",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_description_threshold",
+      "label": "Okf Decisions Description Threshold",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_DESCRIPTION_THRESHOLD",
+      "help": "Decisions description threshold, a finite number in [0,1].",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_sources_threshold",
+      "label": "Okf Decisions Sources Threshold",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_SOURCES_THRESHOLD",
+      "help": "Decisions sources threshold, a finite number in [0,1].",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_stale_after_threshold",
+      "label": "Okf Decisions Stale After Threshold",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_STALE_AFTER_THRESHOLD",
+      "help": "Decisions expiry threshold, a finite number in [0,1].",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_replace_threshold",
+      "label": "Okf Decisions Replace Threshold",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_REPLACE_THRESHOLD",
+      "help": "Decisions replace threshold, a finite number in [0,1].",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_decisions_meaningful_threshold",
+      "label": "Okf Decisions Meaningful Threshold",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_OKF_DECISIONS_MEANINGFUL_THRESHOLD",
+      "help": "Minimum probability for a metadata change, in [0,1].",
       "advancedGroup": "Content"
     },
     {
