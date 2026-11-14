@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-14
+
+- New: [OpenAI Decisions](openai-decisions.md), pinned SDK commit and official guide/error pages, read and refuted against primary source. No live API request. Next review: 2027-05-14.
+
 ## 2026-11-07
 
 - [CommonMark and GFM](commonmark-gfm.md), § Where this project departs,

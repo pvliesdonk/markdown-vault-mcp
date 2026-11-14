@@ -155,3 +155,5 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
 See the [research log](log.md) for completed research passes. Add project
 references here as they are written.
+
+- [OpenAI Decisions endpoint](openai-decisions.md) — pinned wire schema, bounds, refusals and endpoint-specific pricing for local OKF maintenance.
