@@ -57,7 +57,7 @@ from markdown_vault_mcp.utils.content_kind import (
     effective_attachment_extensions,
     names_attachment,
 )
-from markdown_vault_mcp.utils.fs import iter_markdown_files
+from markdown_vault_mcp.utils.fs import is_regular_file, iter_markdown_files
 from markdown_vault_mcp.utils.links import (
     _decode_escapes_and_entities,
     _follow_inline_destination,
@@ -673,7 +673,7 @@ def _contained_source(
         base = root
     (base / raw.removeprefix("/")).resolve().relative_to(root.resolve())
     resolved = validate_path(resolved_path or link.target_path, root)
-    return resolved.relative_to(root).as_posix() if resolved.is_file() else None
+    return resolved.relative_to(root).as_posix() if is_regular_file(resolved) else None
 
 
 def _present(value: Any) -> bool:

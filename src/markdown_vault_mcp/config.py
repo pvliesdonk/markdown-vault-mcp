@@ -1473,7 +1473,9 @@ class ProjectConfig:
             )
         try:
             if not isinstance(self.okf_decisions_base_url, str):
-                raise ValueError("Invalid URL type.")
+                raise ConfigurationError(
+                    "OKF_DECISIONS_BASE_URL requires a URL string."
+                )
             validate_http_base_url(self.okf_decisions_base_url)
         except ValueError:
             raise ConfigurationError(

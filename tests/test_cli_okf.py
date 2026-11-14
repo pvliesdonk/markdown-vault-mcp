@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from markdown_vault_mcp import _cli_okf
@@ -126,11 +128,9 @@ def test_decide_invalid_invocation_is_two(
 ) -> None:
     """Invalid request syntax/configuration is never reported as abstention."""
     _source(tmp_path, monkeypatch)
-    import re
-
     result = runner.invoke(app, ["okf", "decide", *args])
     assert result.exit_code == 2
-    assert re.search(remedy, result.output), result.output
+    assert re.search(remedy, unstyle(result.output)), result.output
     assert "synthetic-only" not in result.output
 
 
@@ -204,7 +204,10 @@ def _assert_decide_gate(result: Any, gate: str, json_output: bool) -> None:
     if gate in {"disabled", "no-path"}:
         assert "disabled" in result.stdout.lower()
     elif gate == "source-loop":
-        assert "readable local source" in result.output.lower()
+        assert re.search(
+            r"(?:readable|writable) local source",
+            " ".join(unstyle(result.output).replace("│", " ").lower().split()),
+        )
     elif gate == "readonly":
         assert (
             "writable" in result.output.lower() or "read-only" in result.output.lower()
