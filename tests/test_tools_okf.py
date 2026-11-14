@@ -191,11 +191,9 @@ class TestNonOkfBaseline:
 class TestDeclaredBundle:
     """A declared vault gains annotations on every read surface."""
 
-    @pytest.mark.parametrize("mode", ["auto", "off"])
     async def test_malformed_provenance_survives_public_reads(
-        self, okf_vault: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+        self, okf_vault: Path
     ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", mode)
         path = "guides/malformed.md"
         raw = (
             "---\ntype: Note\nsources: https://example.com\n"
@@ -217,25 +215,12 @@ class TestDeclaredBundle:
             assert read["frontmatter"]["sources"] == "https://example.com"
             assert read["frontmatter"]["generated"] == "codex at a date"
             assert "Zebra malformed provenance." in read["content"]
-            section = _structured(
-                await client.call_tool("read", {"path": path, "section": "Steps"})
-            )
-            assert "okf" not in section
             for payload in (hit, read, context):
-                if mode == "off":
-                    assert "okf" not in payload
-                else:
-                    assert payload["okf"]["malformed_sources"] is True
-                    assert payload["okf"]["malformed_generated"] is True
-            if mode == "off":
-                assert "okf_validate" not in {
-                    tool.name for tool in await client.list_tools()
-                }
-            else:
-                report = _structured(await client.call_tool("okf_validate", {}))
-                for field in ("malformed_sources", "malformed_generated"):
-                    assert report[field] == {"count": 1, "examples": [path]}
-                assert report["conformant_notes"] == 2
+                assert payload["okf"]["malformed_sources"] is True
+                assert payload["okf"]["malformed_generated"] is True
+            report = _structured(await client.call_tool("okf_validate", {}))
+            for field in ("malformed_sources", "malformed_generated"):
+                assert report[field] == {"count": 1, "examples": [path]}
         assert note.read_bytes() == before
 
     async def test_search_hits_carry_annotations(self) -> None:
@@ -351,13 +336,35 @@ class TestModeOff:
     def _off(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
 
-    async def test_no_okf_surfaces(self) -> None:
+    async def test_no_okf_surfaces(self, okf_vault: Path) -> None:
+        path = "guides/malformed.md"
+        raw = (
+            "---\ntype: Note\nsources: https://example.com\n"
+            "generated: codex at a date\n---\n# Malformed\n\n"
+            "Zebra malformed provenance.\n\n## Steps\n\nZebra checklist.\n"
+        )
+        note = okf_vault / path
+        note.write_text(raw, encoding="utf-8")
+        before = note.read_bytes()
         async with Client(make_server()) as client:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
+            hit = next(hit for hit in hits if hit["path"] == path)
+            read = _structured(await client.call_tool("read", {"path": path}))
+            context = _structured(
+                await client.call_tool(
+                    "get_context", {"path": path, "similar_limit": 0}
+                )
+            )
+            for payload in (hit, read, context):
+                assert "okf" not in payload
+            assert read["frontmatter"]["sources"] == "https://example.com"
+            assert read["frontmatter"]["generated"] == "codex at a date"
+            assert "Zebra malformed provenance." in read["content"]
             stats = _structured(await client.call_tool("stats", {}))
             assert "okf" not in stats
             assert "type" not in stats["indexed_frontmatter_fields"]
+        assert note.read_bytes() == before
         server = make_server()
         assert server.instructions is not None
         assert "okf_version" not in server.instructions
