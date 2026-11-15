@@ -2,6 +2,12 @@
 
 ## 2026-11-14
 
+- [Git history and revision queries](git-history-queries.md): added Python's
+  subprocess newline/encoding behavior behind path streams (#1290).
+  Sources: Python 3.14 subprocess documentation and CPython source; observed
+  CR/CRLF corruption with Python 3.12 and Git 2.43.0 in synthetic fixtures.
+  Raw capture preserves path stdout, while stderr retains text normalization.
+  Existing Git claims were not re-researched; next review remains 2027-03-06.
 - [Git submodules](git-submodules.md): added the plain embedded-repository
   facet for #1949. Read Git v2.55.0 repository-layout, git-add and dir.c;
   refuted marker-only discovery with inert-directory/gitfile fixtures.

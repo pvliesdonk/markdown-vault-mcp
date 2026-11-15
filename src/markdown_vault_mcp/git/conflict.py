@@ -62,10 +62,13 @@ def resolve_rebase_conflicts(
         # git's default ``core.quotePath`` a non-ASCII name comes back
         # octal-escaped inside double quotes, and every command below is then
         # handed a path no longer naming the conflicting file.
-        result = subprocess.run(
-            ["git", "-C", root, "diff", "--name-only", "-z", "--diff-filter=U"],
-            capture_output=True,
-            text=True,
+        result = run_git_capturing(
+            git_root,
+            "diff",
+            "--name-only",
+            "-z",
+            "--diff-filter=U",
+            preserve_newlines=True,
             env=env,
         )
         conflicting = [f for f in result.stdout.split("\0") if f]
