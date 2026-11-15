@@ -3040,7 +3040,7 @@ The explorer has four tabs, and each note you click opens in one of them.
 - similar notes, when search by meaning is configured;
 - its tags, the other notes in its folder, and when it last changed.
 
-Click a linked note to open its card.
+Click a linked note to open its card. The heading reads "Context" while the first note loads, then shows the note's title.
 
 **Graph.** The link graph around a note, or the vault's most-linked notes:
 
@@ -3049,7 +3049,7 @@ Click a linked note to open its card.
 - With search by meaning configured, a switch adds similarity edges, drawn dashed to set them apart from links.
 - Far-out notes show as dots until you hover or zoom in. A chip in the corner counts the notes on screen, and a legend explains the styles.
 
-**Browser.** The vault's folder tree, with a search box that runs the vault's own search. Click a note to preview it.
+**Browser.** The vault's folder tree, with a search box that runs the vault's own search. Click a note to preview it. The search box keeps the accessible name "Search vault" after you type a query.
 
 **Note.** The rendered note, its frontmatter shown once, collapsed. You can:
 
@@ -4887,10 +4887,10 @@ docker compose exec -u appuser markdown-vault-mcp markdown-vault-mcp search "rel
 
 Running as `appuser` uses the same file permissions as the server. Local search also works as root on a service-owned Git checkout: like the other local readers, it ignores managed Git credentials and reads the existing files without cloning or synchronizing them. File permissions still apply.
 
-The command also prints the server's startup log lines on stderr. Set `MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING` for the call to keep the terminal to the results. An alias for a container started with `docker run --name my-vault` puts both in one word:
+Local read commands suppress routine INFO logs while producing results. Warnings and errors remain on stderr. Use `-v` or `MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG` for diagnostics; an existing stricter logging policy still applies. Server and admin commands keep their configured logging behavior. An alias for a container started with `docker run --name my-vault` puts the read command in one word:
 
 ```
-alias vault='docker exec -u appuser -e MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING my-vault markdown-vault-mcp'
+alias vault='docker exec -u appuser my-vault markdown-vault-mcp'
 vault search "release notes"
 ```
 
