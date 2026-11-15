@@ -4325,8 +4325,24 @@ class TestGetFileDiff:
                 "target.md",
                 "old.md",
             ),
+            (
+                "C092\0copied_src.md\0copied_dst.md\0R100\0old.md\0wanted.md\0",
+                "wanted.md",
+                "old.md",
+            ),
+            (
+                "C092\0copied_src.md\0copied_dst.md\0R100\0old.md\0wanted.md\0",
+                "copied_dst.md",
+                None,
+            ),
         ],
-        ids=["tab-name", "no-match", "skip-unrelated-rename"],
+        ids=[
+            "tab-name",
+            "no-match",
+            "skip-unrelated-rename",
+            "skip-copy-then-rename",
+            "copy-not-resolved",
+        ],
     )
     def test_resolve_path_at_ref_handles_tab_in_filename(
         self,
@@ -4336,7 +4352,11 @@ class TestGetFileDiff:
         current: str,
         expected: str | None,
     ) -> None:
-        """Usable NUL records preserve tabs and consume an unrelated rename fully."""
+        """Usable NUL records preserve tabs and consume unrelated records fully.
+
+        A copy (``C*``) record has three fields like a rename; the parser must
+        skip all three to reach the rename after it.
+        """
 
         def fake_run(
             *_args: object, **_kw: object
