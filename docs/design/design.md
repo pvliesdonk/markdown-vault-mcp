@@ -5294,6 +5294,35 @@ defaults breaks no released surface and carries no `!`. The package's
 release kind is not decided here: knope cuts it from the commits, and
 library changes already on the trunk since v5.1.0 carry `!`.
 
+### Deferred query-time recomputation (#1368)
+
+[#1368](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1368) records
+LEANN as a technique to revisit, not planned implementation. The
+[external reference](reference/leann.md) explains how it trades stored
+embeddings for graph-guided recomputation. It is not a drop-in replacement
+for the exact scans described above.
+
+Revisit only when all three conditions hold:
+
+1. A graph-based approximate-nearest-neighbor (ANN) backend has already been
+   adopted behind the embedding-store contract.
+2. A single vault's vector storage is roughly 1 GiB or more, evaluated against
+   the host's memory budget, or indexing a larger non-vault corpus is proposed.
+   For float32 vectors, use `4 × chunks × dimensions` bytes, not a fixed
+   chunk count: 1 GiB is about 350k chunks at 768 dimensions or 262k at 1024.
+3. Query latency with recomputation has been measured on the actual deployment,
+   including its encoder, batching and provider round trips, rather than
+   inferred from the paper's hardware.
+
+The historical numpy sidecar threshold does not make stored bytes equivalent
+to resident memory: SQLite is now streamed by default, and
+`embeddings_status` reports `stored_bytes` and `resident_vector_bytes`
+separately. First assess the existing stores against the
+[measured operating envelope](operating-envelope.md). The current mitigation
+is bounded-memory streaming, not an ANN index; float16/int8 are not implemented
+and would require a recall decision (decision 33 below). No new backend,
+telemetry or benchmark is implied by recording these criteria.
+
 ### `providers.py`: Embedding Providers
 
 Copied from ifcraftcorpus, adapted:
