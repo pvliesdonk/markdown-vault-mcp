@@ -1035,7 +1035,10 @@ _RE_FENCED_CODE = re.compile(
     r"^[ \t>]*(```|~~~)[^\n]*\n.*?^[ \t>]*\1", re.DOTALL | re.MULTILINE
 )
 # Inline code: a backtick run and its closing run on one line.
-_RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
+# Retry only at run starts: an unsuccessful run has the same following
+# text from every interior backtick, so retrying there is quadratic (#1749).
+# Keep the literal first so the engine can skip ordinary prose quickly.
+_RE_INLINE_CODE = re.compile(r"`(?<!``)`*[^`\n]+`+")
 #: A reference definition's line start: optional whitespace, then the ``[``
 #: that opens the label. What follows is read by :func:`_find_bracket_span`
 #: and :data:`_RE_REF_DEF_TAIL` rather than by one pattern, so an escaped
