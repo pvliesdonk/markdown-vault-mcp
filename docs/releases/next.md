@@ -1,6 +1,6 @@
 # Next release
 
-<!-- notes-range-end: 1f81a24876ad99561572c5a408b47953f977a28a -->
+<!-- notes-range-end: d5d70571f8a91f81b0c1e451b5fd74a6b914f68b -->
 
 <!-- RELEASE-SUMMARY NEXT START -->
 This release closes gaps where a change looked saved but wasn't, or a failure
