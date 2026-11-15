@@ -3594,6 +3594,7 @@ it.</p>
 <p>A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to <code>write</code>, <code>append</code>, <code>edit</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, attachment writes and OKF tools at their existing write checks.</p>
 <ul>
 <li><code>create_upload_link</code> refuses a <code>ref</code> inside a protected repository before creating a link, for notes and attachments. Choose a destination outside that repository. Download links can still read its files.</li>
+<li><code>fetch</code> refuses a <code>path</code> inside a protected repository before downloading anything. The save still applies the usual overwrite and etag checks.</li>
 <li>Change those files in their own repository instead.</li>
 <li><code>move_folder</code> refuses to move a folder that holds a protected repository, but you can move a folder next to one.</li>
 <li>A <code>rename</code> or <code>move_folder</code> that would rewrite links inside a protected repository leaves those notes as they are and reports them: in <code>hint</code> for a rename, in <code>failed_links</code> for a folder move.</li>
@@ -3601,7 +3602,6 @@ it.</p>
 <li>Plain repositories need no <code>gitlink</code> or <code>.gitmodules</code> registration. Both <code>.git</code> directories and valid <code>.git</code> files are detected, including ones created after startup or with working trees Git cannot open. An unreadable <code>.git</code> file up to Git's 1 MiB limit raises an I/O error. Larger markers are inert. The vault's own repository is allowed.</li>
 <li>Bulk OKF link conversion skips protected notes. Index generation can link to their existing <code>index.md</code> but does not write it.</li>
 </ul>
-<p>Fetch downloads can still do other work before they reach the refusal (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950">#1950</a>).</p>
 <p>In no-git mode nothing is committed, so nothing is refused.</p>
 <h2 id="git-lfs">Git LFS<a class="headerlink" href="#git-lfs" title="Permanent link">&para;</a></h2>
 <p>If your vault tracks large files (PDFs, images) with <a href="https://git-lfs.com">Git LFS</a>, the server runs <code>git lfs pull</code> on startup to resolve LFS pointers into actual file content. This is enabled by default.</p>
