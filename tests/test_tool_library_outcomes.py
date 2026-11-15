@@ -20,6 +20,7 @@ from markdown_vault_mcp.exceptions import (
     EditConflictError,
     EmbeddingsNotConfiguredError,
     EmbeddingsNotPublishedError,
+    EmbeddingsRebuildFailedError,
     IndexUnavailableError,
     InvalidRequestError,
     ReadOnlyError,
@@ -219,4 +220,13 @@ def test_an_unpublished_rebuild_says_the_embeddings_were_kept() -> None:
     assert err is not None
     assert err.log_level == logging.WARNING
     assert "kept" in str(err)
+    assert "Retry later" in str(err)
+
+
+def test_a_failed_model_change_rebuild_says_retry_later() -> None:
+    """#1946: a provider outage during a model change is not a server fault."""
+    err = outcome_error(EmbeddingsRebuildFailedError())
+    assert err is not None
+    assert err.log_level == logging.WARNING
+    assert "request was fine" in str(err)
     assert "Retry later" in str(err)

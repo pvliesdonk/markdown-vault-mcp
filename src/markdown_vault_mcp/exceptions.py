@@ -223,6 +223,24 @@ class EmbeddingsNotPublishedError(MarkdownMCPError, RuntimeError):
         self.failed_batches = failed_batches
 
 
+class EmbeddingsRebuildFailedError(MarkdownMCPError, RuntimeError):
+    """Raised when a model or dimension change's rebuild published nothing.
+
+    The stored vectors belong to the previous model and cannot answer the
+    new one's queries, so a semantic or hybrid search fails rather than
+    returning nothing (#1946). The request was fine: the next search retries
+    the rebuild, which succeeds once the provider recovers. A server-side
+    failure, not a request the caller must change.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "The embedding rebuild for the changed model published no "
+            "embeddings, so search by meaning is unavailable until a rebuild "
+            "succeeds."
+        )
+
+
 class SummarizeTimeoutError(InvalidRequestError, RuntimeError):
     """Raised when a summarization request outruns its per-request budget.
 
