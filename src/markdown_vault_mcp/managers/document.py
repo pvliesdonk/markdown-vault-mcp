@@ -1564,8 +1564,11 @@ class DocumentManager:
             try:
                 if self.in_submodule(source):
                     in_submodules.append(source)
-            except OSError:
+            except OSError as exc:
                 # Diagnostic inspection must not prevent index/Git notification.
+                logger.debug(
+                    "submodule_hint_check_failed path=%s error=%s", source, exc
+                )
                 continue
         return _submodule_links_text(in_submodules) if in_submodules else None
 

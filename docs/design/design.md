@@ -1,3 +1,7 @@
+---
+last_edited: 2026-11-14
+---
+
 # markdown-vault-mcp: Design Specification v2
 
 > Generic markdown vault MCP with hybrid search.
@@ -950,7 +954,13 @@ operations (`read`, `write`, `edit`, `delete`, `rename`,
 `stats`, `list_folders`, `list_tags`, `get_recent`,
 `get_orphan_notes`, `get_most_linked`, `get_broken_links`) work on an
 unbuilt index: bucket-1 hits disk directly; bucket-2 queries
-whatever is currently in the index (empty on cold start). So the CLI
+whatever is currently in the index (empty on cold start). Local CLI read
+dispatch suppresses logs through INFO for the duration of the local adapter,
+preserving any stricter existing global disable threshold. Effective root DEBUG
+keeps diagnostics enabled. The exact previous threshold is restored after success,
+failure or interruption. This policy leaves root handlers, server/admin logging
+and remote credential-log suppression unchanged (#1999). It does not change local
+search construction or managed Git ownership validation. So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
@@ -2215,8 +2225,12 @@ upload, the fully-read (size-capped) body.
 - **Validation** (`validate(ref, kind)`): runs at link creation. Download
   validates existence stat-only, so minting a link for a large attachment never
   reads it; upload validates the destination is a note or an allowed attachment
-  extension and rejects an existing file when
+  extension outside any git submodule and rejects an existing file when
   `ProjectConfig.write_protect_existing` is true. Both reject path traversal.
+  Upload validation uses the live document manager's existing submodule guard
+  before minting a capability, naming the `ref` argument in an INFO rejection;
+  downloads remain available inside submodules. The locked upload write still
+  performs its own guard check in case the submodule boundary changes later.
   Setting `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly allows
   existing destinations at link creation and blind replacement during upload.
   A rejection is a `ToolError` at INFO that tells the model what to pass
@@ -2256,9 +2270,10 @@ Two MCP tools create tokens and return the capability URL:
   read-only mode). Validates that `path` exists before minting the token (fail-fast).
   Returns `{url, path, expires_at, expires_in_seconds}`.
 - **`create_upload_link(path, ttl_seconds=None)`**: write tool (hidden in
-  read-only mode). Validates the destination path (traversal + extension check)
-  at link-creation time, rejecting existing files under the default overwrite
-  protection before minting a capability. Returns the same shape.
+  read-only mode). Validates the destination path (traversal, extension and
+  submodule boundary checks) at link-creation time, rejecting existing files
+  under the default overwrite protection before minting a capability. Returns
+  the same shape.
 
 Both tools require `MARKDOWN_VAULT_MCP_BASE_URL` and raise `ValueError` when it
 is unset. Both tools are hidden when the transport is stdio (no HTTP server to
@@ -6301,6 +6316,8 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 
 **View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation; keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.
 
+**Accessible names** (#1754): the Vault Browser search input has the persistent name `Search vault`, including when populated. The Context Card starts hidden with a `Context` heading; that nonempty heading remains when the first request reveals the card before its response. Success replaces it with the note title or filename, later pending requests retain the previous title, and null results or failures hide the card.
+
 **Host context updates**: the Graph Explorer calls `app.updateContext(...)` whenever the active note or the visible neighborhood changes, supplying the active path, title, visible node count, and visible link count. The exact wording of the string is an internal detail of the SPA; clients should read the structured fields (path/title/counts) rather than parse the string.
 
 **Vendored dependencies** (bundled inline at build time via `scripts/vendor_spa.py`):
@@ -6447,9 +6464,9 @@ notifications. A `move_folder` that would land a file inside a submodule is
 refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
-refuse nothing, since nothing is committed there. Issue #1950 tracks
-caller timing for upload-link admission, fetch downloads and OKF refresh after
-folder moves. What git does there is recorded in
+refuse nothing, since nothing is committed there. `create_upload_link`
+refuses a protected destination before minting a link. Issue #1950 tracks
+caller timing for fetch downloads. What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 

@@ -1115,3 +1115,25 @@ def test_an_okf_folder_inside_the_submodule_is_refused(
     with pytest.raises(SubmodulePathError, match=r"^folder 'sub' is inside"):
         call(vault)
     assert _snapshot(source) == before
+
+
+def test_links_hint_logs_failed_protection_check(
+    tmp_path: Path,
+    vault_of: Callable[[Path], Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A hint check that cannot inspect a source is skipped, and logged."""
+    vault = vault_of(make_nested_repository(tmp_path))
+    manager = vault._doc_mgr
+
+    def failing(_path: str) -> bool:
+        raise OSError(errno.EIO, "synthetic")
+
+    monkeypatch.setattr(manager, "in_submodule", failing)
+    caplog.set_level(logging.DEBUG, logger="markdown_vault_mcp.managers.document")
+    assert manager._submodule_links_hint(["sub/note.md"]) is None
+    assert any(
+        r.getMessage().startswith("submodule_hint_check_failed path=sub/note.md")
+        for r in caplog.records
+    )

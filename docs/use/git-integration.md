@@ -1,4 +1,5 @@
 ---
+last_edited: 2026-11-14
 description: "Choose a git mode for the vault, configure commits, pushes and pulls, and read history back."
 kind: how-to
 ---
@@ -503,6 +504,7 @@ Behavior:
 
 A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, attachment writes and OKF tools at their existing write checks.
 
+- `create_upload_link` refuses a `ref` inside a protected repository before creating a link, for notes and attachments. Choose a destination outside that repository. Download links can still read its files.
 - Change those files in their own repository instead.
 - `move_folder` refuses to move a folder that holds a protected repository, but you can move a folder next to one.
 - A `rename` or `move_folder` that would rewrite links inside a protected repository leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
@@ -510,7 +512,7 @@ A git submodule or plain Git repository nested inside the vault is read-only. It
 - Plain repositories need no `gitlink` or `.gitmodules` registration. Both `.git` directories and valid `.git` files are detected, including ones created after startup or with working trees Git cannot open. An unreadable `.git` file up to Git's 1 MiB limit raises an I/O error. Larger markers are inert. The vault's own repository is allowed.
 - Bulk OKF link conversion skips protected notes. Index generation can link to their existing `index.md` but does not write it.
 
-Upload links and fetch downloads can still do other work before they reach the refusal ([#1950](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950)).
+Fetch downloads can still do other work before they reach the refusal ([#1950](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950)).
 
 In no-git mode nothing is committed, so nothing is refused.
 
