@@ -53,6 +53,13 @@ vault becomes another.
    the primary interface; MCP is one consumer, not the only one. Other
    libraries (LangChain, LlamaIndex, and so on) may wrap `Vault` directly.
 
+The installed library advertises its inline annotations with
+`markdown_vault_mcp/py.typed` (#1911). The wheel must let a type checker accept
+a correctly typed `EmbeddingProvider` subclass and reject an incorrect return
+annotation in a consumer outside the source tree. This does not change the
+runtime import surface or split the distribution; the external packaging rule
+is recorded in [Python packaging boundaries](reference/python-packaging-boundaries.md).
+
 ## Shared Infrastructure
 
 Generic FastMCP infrastructure (auth providers, middleware stack, logging
@@ -3244,7 +3251,7 @@ and nothing surfaces which file is responsible.
 
 `_find_wikilink` replaces the pattern with a scan, and the reason it is
 linear rather than merely faster is worth stating: those retries all ask the
-same question. A target ends at the first `]`, `|` or line ending after the
+same question. A target ends at the first `]]`, `|` or line ending after the
 `[[`, and that stop is the same character whichever `[[` of a run opened it;
 everything the match then needs is read from the stop onwards. So a failure
 at the stop is a failure for every opener before it, and the search resumes
@@ -3261,10 +3268,11 @@ a second route, where the alias search *succeeded* and the `]]` test failed.
 Caught in review on #1524 by reading the argument rather than by the tests,
 which measured only bare `[` — all three shapes are pinned now, by a growth
 ratio and by a wall clock chosen to be one the defect actually crosses. The
-same shared-stop reasoning licenses the alias resume: the first `]` after
-the pipe is the same character for every opener behind it, so they all fail
-with it. The pipe shape is the realistic one, not the exotic one: an
-unfenced markdown table pasted into a note is a wall of `|`.
+single-bracket target correction (#1384) changes that recovery: after an
+alias fails, retry openers following its pipe, since `[[a|text [[Sq]uare]]`
+contains a valid inner target. Cache the next alias-closing bracket across
+those retries instead of searching for it again. Both target scans and
+uncached alias searches advance monotonically, preserving linear work.
 
 | Input | before | after |
 | --- | --- | --- |
@@ -3281,15 +3289,26 @@ for 4000 → 8000 → 16000. **A guard on the scanned unit**, the issue's own
 suggested direction, was not pursued: refusing to link-scan a bracket-dense
 body drops real rows to bound a cost the scan simply removes.
 
-The scan changes no row for any input, so there is no
-`INDEX_SEMANTICS_VERSION` note — a claim carried by the same differential
-property the escape-aware scans use (`tests/test_links_wikilink_scan.py`):
-it agrees with the pattern on *every* string up to length 8 over the five
-characters that pattern can distinguish, and on 400k random strings over a
-wider alphabet. The departures the pattern carried are carried too: a single
-`]` still ends the target where Obsidian needs `]]` (#1384), an embed is
-still indexed as a link, and the leftmost `[[` still wins, so `[[[a]]` links
-`[a`.
+The original scan preserved the replaced pattern's rows (#1343). Since
+#1384, a single `]` is allowed in the target: `[[Sq]uare]]` now links to
+`Sq]uare.md`, matching the observed Obsidian behavior. A closing pair ends
+the target, so the shared-stop argument still holds. Pipes and line endings
+remain target boundaries; the alias grammar is unchanged. The exhaustive
+short-input property in `tests/test_links_wikilink_scan.py` compares the
+scan to this updated grammar. `INDEX_SEMANTICS_VERSION` 12 rebuilds stored
+link rows, since version 11 shipped in v6.1.1. Embeds are still indexed as
+links and the leftmost `[[` still wins, so `[[[a]]` links `[a`.
+
+**Backtick and title-separator runs (#1749).** Inline-code matching and
+trailing link-title matching start only at the beginning of a backtick or
+space/tab run, respectively. Retrying at each interior character reached the
+same following text after scanning the rest of the run, making an unmatched
+run quadratic. A negative lookbehind after the first character prevents those
+redundant retries while retaining the engine's fast search for that first
+character, without changing the matched spans. The title pattern remains shared
+by extraction and rewriting. Differential tests against the old patterns and
+owner-level time bounds are in `tests/test_links_regex_runs.py`; no stored-row
+semantics change or `INDEX_SEMANTICS_VERSION` bump is needed.
 
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"
@@ -5073,9 +5092,9 @@ opt-in, since it writes a whole vault into the database it is given.
 `DIR/<git sha>[-dirty]-<size>-<UTC time>.json` and prints the tables.
 
 The harness is strict-typed. Gate 3 (`uv run mypy src/ tests/`) checks it
-through the tests' imports; on its own, check it as a package with the
-source tree on the path, `MYPYPATH=src uv run mypy -p scripts.envelope`,
-since the installed package has no `py.typed` marker yet (#1911).
+through the tests' imports; on its own, check it as a package with
+`uv run mypy -p scripts.envelope`. The installed library exposes its
+annotations through its `py.typed` marker (#1911).
 
 **Inputs.** A seeded synthetic vault (`synth.generate_vault`): notes of six
 H2 sections in a 1,000-word vocabulary, one folder in ten holding the notes
@@ -5930,13 +5949,15 @@ first-party prompt is a packaging defect.
 
 The CLI selects its backend before evaluating server configuration. A nonsecret TOML profile, client environment and explicit command options select the complete MCP HTTP endpoint; `--local` chooses the existing local index behavior. `serve`, `index` and `reindex` remain local. Credentials resolve only after remote selection. A nonempty client-token variable takes precedence; an empty value leaves the profile's named token source in effect, and that selected source must be nonempty. The client never borrows inbound-server or provider credentials.
 
-Remote search uses the installed native MCP client with function-local imports, tool/schema discovery once per invocation, the original search array and out-of-band freshness metadata. One deadline bounds initialization and the read. Errors never trigger local execution or disclose transport exception text. `_cli_read` is the stable import seam for lazy read dispatch, currently implemented beside the transport. Local disk-index freshness is unknown. The [SDK reference](reference/fastmcp-4.md#http-read-client) records the external APIs this depends on. Client environment fields are declared in the presentation contract because they are independent of ProjectConfig.
+Remote search uses the installed native MCP client with function-local imports, tool/schema discovery once per invocation, the original search array and out-of-band freshness metadata. One deadline bounds initialization and the read. Errors never trigger local execution or disclose transport exception text. `_cli_read` is the stable import seam for lazy read dispatch, currently implemented beside the transport. Local search ignores managed Git URL and token settings before collaborator construction, just as the other local readers do (#1999). It reads the existing checkout without cloning or synchronizing it, including when Git refuses repository discovery because the shell user differs from the checkout owner. Admin and server construction retain their managed-mode checks; Git trust configuration is unchanged. Local disk-index freshness is unknown. The [SDK reference](reference/fastmcp-4.md#http-read-client) records the external APIs this depends on. Client environment fields are declared in the presentation contract because they are independent of ProjectConfig.
 
 Search retains its keyword default. Explicit `auto` omits mode at either boundary; selected filters, section caps, snippet widths and remote drain requests retain native semantics. Optional controls are omitted when unset, so an older server need not advertise them for an ordinary search. Connection selection is resolved once before local-only option checks and dispatch. The shared runner also accepts that resolved snapshot without rereading the profile or credentials.
 
 `_read_payloads` contains SDK-independent controls and shape validation. Local and MCP search adapters inject the native OKF annotation function after one bundle observation; the helper does no I/O and preserves result order, sections, frontmatter and scores. Existing computed OKF filter/ranking semantics remain unchanged. Note and attachment reads retain their existing boundary policies.
 
 `_cli_output.render_reply` preserves bare-array search JSON and emits stale warnings only on stderr. Agent output uses one fixed header and JSON records, with JSON-compatible escapes for all control code points, including supplementary Unicode. Freshness accepts only observed Boolean values; absent or malformed observations remain unknown. Requested mode comes from validated options; actual mode comes from hits and is unknown for an empty result. Broken output pipes close cleanly, including the final interpreter flush. Invalid CLI controls fail before backend construction, and malformed remote payloads fail before output.
+
+Agent record and path-receipt properties compare decoded JSON values: [RFC 8259 §7](https://www.rfc-editor.org/rfc/rfc8259#section-7) represents supplementary characters with escaped UTF-16 surrogate pairs, so a JSON round trip need not preserve a Python string's separate surrogate code points. Their generators still include all code points to check terminal escaping and record framing.
 
 The reader CLI exposes `read`, `list`, `folders`, `tags`, `stats`, `recent`, `toc`, `similar` and `context` through the same lazy runner. Remote reads send native tool arguments without loading local configuration. Local readers canonicalize the selected source root before constructing native facets, so relative paths and directory aliases retain the same note identities. A configured disk index opens read-only and `IndexFacet.use_existing_index` adopts its completed-build marker without scanning or submitting a build, including for empty indexes. Incomplete builds refuse. Stored provenance remains authoritative even when the shell uses different build settings. An unconfigured index is built in memory only for indexed reads. They read an existing checkout without cloning or synchronizing a managed Git source and never build embeddings. Similarity requires existing stored vectors and retains the native unavailable outcome. Context retains conventions and OKF enrichment; statistics retain the OKF summary.
 
@@ -6421,10 +6442,9 @@ refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
 refuse nothing, since nothing is committed there. A plain repository nested
-in the vault that is not a submodule is not detected (#1949). Issue #1950
-tracks caller timing for upload-link admission, fetch downloads and OKF refresh
-after folder moves.
-What git does there is recorded in
+in the vault that is not a submodule is not detected (#1949). Issue #1950 tracks
+caller timing for upload-link admission, fetch downloads and OKF refresh after
+folder moves. What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 
@@ -6465,6 +6485,19 @@ item. The worker buffers writes by token and dispatches each group once, via
 the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
 subject when the call staged exactly one path.
+
+OKF content-write maintenance marks its secondary writes with
+`auxiliary_commit_writes`. The dispatcher snapshots this context beside each
+queued write, not on the worker. It sends the primary paths through the
+separate `ACCEPTS_PRIMARY_PATHS_ATTR` opt-in: existing batch callbacks still
+receive the same two arguments and four-field items. When there is exactly
+one primary path and its item stages successfully, Git names that note in the
+subject while still committing every staged item. No primary, several primary
+paths, or a failed primary stage retains the batch count. A direct batch caller
+that supplies no provenance also retains its existing subject. Names and item
+order never establish maintenance provenance; a user's own `index.md` write
+is primary. This changes only the subject, not write authority or commit scope
+(#1675).
 
 Three properties this depends on:
 
@@ -7141,6 +7174,17 @@ real release runs. No committed manifest bump is needed for the bundle.
 23. ifcraftcorpus becomes thin wrapper + domain tools + subagent prompts
 
 ## Testing Strategy
+
+The PostgreSQL fixture normally removes its own disposable container at teardown.
+After a killed pytest process (#1952), the next `start_container` also reclaims
+version-labeled containers only when native Linux initial PID/user namespaces,
+boot, hostname and UID match and signal zero proves the creator PID absent.
+Live/reused PIDs, permission failures, foreign or legacy labels and unsupported
+platforms/namespaces remain untouched. Recovery uses inspected full container
+IDs, has a shared ten-second budget, and never runs on the external-DSN path.
+See [container ownership evidence and limits](reference/test-postgres-container-ownership.md).
+`tests/test_postgres_cleanup.py` covers the guards and a real SIGKILL regression
+in the existing PostgreSQL-range CI; normal startup failure logs remain available.
 
 - **Fixtures**: `tests/fixtures/` directory with sample vault documents in
   several shapes: no frontmatter, minimal frontmatter, full frontmatter,

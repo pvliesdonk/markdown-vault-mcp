@@ -56,7 +56,7 @@ The image carries the same command. Run inside the container, it reads the serve
 docker compose exec -u appuser markdown-vault-mcp markdown-vault-mcp search "release notes"
 ```
 
-Run it as `appuser`, the user the server runs as. As root, which is what `docker exec` uses by default, a vault that is a git checkout fails with `Managed mode requires SOURCE_DIR to be empty or a git repository`, because git refuses a checkout owned by another user.
+Running as `appuser` uses the same file permissions as the server. Local search also works as root on a service-owned Git checkout: like the other local readers, it ignores managed Git credentials and reads the existing files without cloning or synchronizing them. File permissions still apply.
 
 The command also prints the server's startup log lines on stderr. Set `MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING` for the call to keep the terminal to the results. An alias for a container started with `docker run --name my-vault` puts both in one word:
 
