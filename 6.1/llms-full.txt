@@ -379,9 +379,19 @@ A first task that changes nothing:
 
 Whether Claude can also write is the operator's choice: a server in read-only mode lists none of the tools that change files. Some tools depend on the client or the operator:
 
-- `browse_vault` and `show_context` open an interactive view in clients that render [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/mcp-apps/index.md); other clients get the same data as text.
+- `browse_vault` and `show_context` open an interactive view in clients that render [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/mcp-apps/index.md). Other clients get the same data as text.
 - `create_download_link` and `create_upload_link` return a one-time URL for moving a file out of or into the vault, which works without your credential. See [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/transfer-links/index.md).
 - `summarize` appears only when the operator configured a language model for it.
+
+### Read a complete HTTP result
+
+When building a client for this vault, discover `search` and `read` through `tools/list`. Search with `mode="keyword"` works without an embedding provider. Pass a returned note's `path` to `read`. The [terminal guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/terminal/index.md) shows the same workflow through the command line.
+
+Keep the complete MCP result when calling these tools. For vault search, `structuredContent.result` holds the hit list; for `read`, `structuredContent` holds the note object. Search includes a Boolean `_meta.index_stale` describing index freshness; `read` reads the file directly. Keep search metadata alongside the hits so a caller can decide whether to wait for pending writes.
+
+For result fields and error handling, see the [MCP tool-result contract](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
+
+The synthetic HTTP contract tests exercise the native vault server and these whole-result shapes expected by an Executor caller. They do not establish acceptance by an installed Executor runtime or verify a personal connection. Use the operator's [authentication instructions](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) for credentials. The contract tests use only synthetic notes.
 
 ## Next
 
@@ -2145,6 +2155,7 @@ Regardless of which provider you choose:
 - **Switching between `numpy` and `sqlite` later starts with an empty store**, so every note would be embedded again, which a paid provider bills. Run `markdown-vault-mcp admin embeddings import` first to copy the vectors across ([Moving vectors between stores](#moving-vectors-between-stores)).
 - **Back up the stored vectors before you risk them:** [Backing up](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embedding-state/#backing-up) gives the command for each store, and [Restoring](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embedding-state/#restoring) shows how a restore embeds only the notes changed since.
 - Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
+- **A failed model change fails the search.** When a changed model or vector size requires a rebuild and no new embeddings are saved, semantic and hybrid searches report an error. The previous stored vectors remain untouched; they cannot answer queries from the new model. Later searches retry the rebuild and recover once the provider works again. A completed rebuild of an empty vault still returns no matches.
 - **A damaged `numpy` or `sqlite` store is set aside, not overwritten.** When the vectors' files no longer read back, at startup, during a search or before a full rebuild, the server renames them with a `.corrupt-<time>` suffix (such as `index-db-embeddings.v2.json.corrupt-20261024T120000Z`) and builds the vectors again; the log line `vector_store_moved_aside` names the renamed files. If the 5.x files from an upgrade are still there, it copies every vector whose note text is unchanged from them instead of embedding it again. The renamed copies are yours to inspect or delete; the server never touches them again. A store in a read-only folder cannot be renamed: the server leaves it in place, and searches by meaning fail until the folder is writable.
 - **A note that stops parsing keeps its embeddings.** A note whose frontmatter does not parse, that lacks a field `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` asks for, or that is not valid UTF-8 is left out of the index and listed in `get_index_status`'s `skipped_files`. Its embeddings stay stored but never appear in search results. Once you fix the note, only the sections whose text changed are embedded again; a changed title counts as a change to every section. Deleting, renaming or excluding the note removes them; a full rebuild while it is broken drops them too.
 - The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/tools/indexing/#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
@@ -2720,9 +2731,15 @@ Use this guide to choose and configure the right git mode for your deployment.
 1. **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo) The server commits writes (one commit per tool call), but never pulls or pushes.
 1. **No-git** (default) The vault is treated as a plain directory with no git operations.
 
+## Filenames from outside the server
+
+Notes created through Git or directly on disk can carry carriage returns (`CR`) or carriage-return/newline pairs (`CRLF`) in their filenames. History, rename tracking, revision reads and conflict recovery preserve those characters, along with newlines, tabs and supported non-ASCII names. Ignored filenames retain the same spelling when Git decides which paths to stage.
+
 ## What a commit covers
 
-In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many files, such as `move_folder`, `rename` with `update_links=True`, or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
+In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many files, such as `move_folder`, `rename` with `update_links=True`, or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit` or `append` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path.
+
+No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
 
 ## Getting an overwritten note back
 
@@ -2983,14 +3000,18 @@ Behavior:
 - GitLab: `oauth2`
 - Bitbucket: account username
 
-## Submodules in the vault
+## Submodules and nested repositories in the vault
 
-A git submodule inside the vault is read-only. Its notes are indexed and searchable like any folder, but git refuses to commit a change inside a submodule from the vault's own repository, so a change there would be lost. In managed and commit-only mode every write tool refuses a path inside a submodule and names it, and nothing is written. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, the attachment writes and the OKF tools.
+A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, attachment writes and OKF tools at their existing write checks.
 
-- Change those files in the repository the submodule comes from instead.
-- `move_folder` refuses to move a folder that holds a submodule, but you can move a folder next to one.
-- A `rename` or `move_folder` that would rewrite links inside a submodule leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
+- `create_upload_link` refuses a `ref` inside a protected repository before creating a link, for notes and attachments. Choose a destination outside that repository. Download links can still read its files.
+- `fetch` refuses a `path` inside a protected repository before downloading anything. The save still applies the usual overwrite and etag checks.
+- Change those files in their own repository instead.
+- `move_folder` refuses to move a folder that holds a protected repository, but you can move a folder next to one.
+- A `rename` or `move_folder` that would rewrite links inside a protected repository leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
 - A submodule whose folder is empty (never initialised) is refused too.
+- Plain repositories need no `gitlink` or `.gitmodules` registration. Both `.git` directories and valid `.git` files are detected, including ones created after startup or with working trees Git cannot open. An unreadable `.git` file up to Git's 1 MiB limit raises an I/O error. Larger markers are inert. The vault's own repository is allowed.
+- Bulk OKF link conversion skips protected notes. Index generation can link to their existing `index.md` but does not write it.
 
 In no-git mode nothing is committed, so nothing is refused.
 
@@ -3028,7 +3049,7 @@ The explorer has four tabs, and each note you click opens in one of them.
 - similar notes, when search by meaning is configured;
 - its tags, the other notes in its folder, and when it last changed.
 
-Click a linked note to open its card.
+Click a linked note to open its card. The heading reads "Context" while the first note loads, then shows the note's title.
 
 **Graph.** The link graph around a note, or the vault's most-linked notes:
 
@@ -3037,7 +3058,7 @@ Click a linked note to open its card.
 - With search by meaning configured, a switch adds similarity edges, drawn dashed to set them apart from links.
 - Far-out notes show as dots until you hover or zoom in. A chip in the corner counts the notes on screen, and a legend explains the styles.
 
-**Browser.** The vault's folder tree, with a search box that runs the vault's own search. Click a note to preview it.
+**Browser.** The vault's folder tree, with a search box that runs the vault's own search. Click a note to preview it. The search box keeps the accessible name "Search vault" after you type a query.
 
 **Note.** The rendered note, its frontmatter shown once, collapsed. You can:
 
@@ -3331,6 +3352,8 @@ A `verified` entry is also a claim about the note as it stood when the entry was
 With the layer on, the server also maintains a folder's reserved files as a side effect of writing into it. After a successful `write` or `edit` on a note, it appends a dated `**Update**` bullet to that folder's `log.md` (creating the log, and the day's `## YYYY-MM-DD` section, when needed) and regenerates the folder's `index.md` listing so a new note shows up without a manual step. A note written into a folder with no `index.md` is listed from the nearest folder above that has one, and each level in between gets its own `index.md`. That covers the upkeep the advisory layer otherwise asks the agent to do by hand, on the write paths below and no others.
 
 A `delete`, `rename` or `move_folder` keeps the listings current too. A deleted note drops out of its folder's `index.md`. A renamed note leaves its old folder's listing and appears in its new folder's, as a write there would. After a folder move, every `index.md` that moved with it is regenerated for its new paths, and so are the listings of the old and the new parent folder. When a note or folder lands several levels below the nearest folder with an `index.md`, that folder's listing is regenerated and each level in between gets one, so no listing points at a missing file. These changes add no `log.md` entry. A rename to or from `index.md` or `log.md` leaves the listings alone, so renaming a note onto a reserved name keeps its content.
+
+After a folder move, the refresh skips folders inside a git submodule or nested repository, and their descendants. It still updates ordinary containing folders and their other descendants, without attempting to rewrite those listings. The [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/git-integration/#submodules-and-nested-repositories-in-the-vault) explains the read-only boundary.
 
 A few boundaries keep this predictable, and they are also its limits. Maintenance runs only on an active bundle. A write whose target is itself a reserved file does not trigger it. The `okf_verify` tool and the one-shot migration transforms are exempt, so an attestation or a mechanical rewrite does not churn the reserved files. Only one listing is regenerated per write: that of the folder directly containing the note, or, when it has no `index.md`, that of the nearest folder above it with one. A folder's own listing is not otherwise refreshed when a note lands in one of its subfolders. A failure to update a reserved file is logged and skipped; it never fails or rolls back the note write that triggered it, so a listing can silently fall behind.
 
@@ -4871,12 +4894,12 @@ The image carries the same command. Run inside the container, it reads the serve
 docker compose exec -u appuser markdown-vault-mcp markdown-vault-mcp search "release notes"
 ```
 
-Run it as `appuser`, the user the server runs as. As root, which is what `docker exec` uses by default, a vault that is a git checkout fails with `Managed mode requires SOURCE_DIR to be empty or a git repository`, because git refuses a checkout owned by another user.
+Running as `appuser` uses the same file permissions as the server. Local search also works as root on a service-owned Git checkout: like the other local readers, it ignores managed Git credentials and reads the existing files without cloning or synchronizing them. File permissions still apply.
 
-The command also prints the server's startup log lines on stderr. Set `MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING` for the call to keep the terminal to the results. An alias for a container started with `docker run --name my-vault` puts both in one word:
+Local read commands suppress routine INFO logs while producing results. Warnings and errors remain on stderr. Use `-v` or `MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG` for diagnostics; an existing stricter logging policy still applies. Server and admin commands keep their configured logging behavior. An alias for a container started with `docker run --name my-vault` puts the read command in one word:
 
 ```
-alias vault='docker exec -u appuser -e MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING my-vault markdown-vault-mcp'
+alias vault='docker exec -u appuser my-vault markdown-vault-mcp'
 vault search "release notes"
 ```
 
@@ -8923,7 +8946,7 @@ Raises:
 
 | Type                          | Description                                                                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `SubmodulePathError`          | If path lies inside a git submodule (#1564).                                                                                  |
+| `SubmodulePathError`          | If path lies inside a git submodule or nested repository (#1564, #1949).                                                      |
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
@@ -8955,14 +8978,14 @@ Returns:
 
 Raises:
 
-| Type                          | Description                                         |
-| ----------------------------- | --------------------------------------------------- |
-| `SubmodulePathError`          | If path lies inside a git submodule (#1564).        |
-| `EditConflictError`           | If old_text is not found or appears more than once. |
-| `ReadOnlyError`               | If the vault is read-only.                          |
-| `ConcurrentModificationError` | If if_match is provided and does not match.         |
-| `DocumentNotFoundError`       | If the file does not exist.                         |
-| `InvalidRequestError`         | If path escapes the source directory.               |
+| Type                          | Description                                                              |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `SubmodulePathError`          | If path lies inside a git submodule or nested repository (#1564, #1949). |
+| `EditConflictError`           | If old_text is not found or appears more than once.                      |
+| `ReadOnlyError`               | If the vault is read-only.                                               |
+| `ConcurrentModificationError` | If if_match is provided and does not match.                              |
+| `DocumentNotFoundError`       | If the file does not exist.                                              |
+| `InvalidRequestError`         | If path escapes the source directory.                                    |
 
 ### `append(path, content, if_match=None, *, create_if_missing=False, report_unresolved_links=False)`
 
@@ -8988,13 +9011,13 @@ Returns:
 
 Raises:
 
-| Type                          | Description                                                |
-| ----------------------------- | ---------------------------------------------------------- |
-| `SubmodulePathError`          | If path lies inside a git submodule (#1564).               |
-| `ReadOnlyError`               | If the vault is read-only.                                 |
-| `DocumentNotFoundError`       | If the file does not exist and create_if_missing is False. |
-| `ConcurrentModificationError` | If if_match is provided and does not match.                |
-| `InvalidRequestError`         | If content is empty or path escapes the source directory.  |
+| Type                          | Description                                                              |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `SubmodulePathError`          | If path lies inside a git submodule or nested repository (#1564, #1949). |
+| `ReadOnlyError`               | If the vault is read-only.                                               |
+| `DocumentNotFoundError`       | If the file does not exist and create_if_missing is False.               |
+| `ConcurrentModificationError` | If if_match is provided and does not match.                              |
+| `InvalidRequestError`         | If content is empty or path escapes the source directory.                |
 
 ### `delete(path, if_match=None)`
 
@@ -9017,12 +9040,12 @@ Returns:
 
 Raises:
 
-| Type                          | Description                                  |
-| ----------------------------- | -------------------------------------------- |
-| `SubmodulePathError`          | If path lies inside a git submodule (#1564). |
-| `ReadOnlyError`               | If the vault is read-only.                   |
-| `ConcurrentModificationError` | If if_match is provided and does not match.  |
-| `DocumentNotFoundError`       | If path does not exist.                      |
+| Type                          | Description                                                              |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `SubmodulePathError`          | If path lies inside a git submodule or nested repository (#1564, #1949). |
+| `ReadOnlyError`               | If the vault is read-only.                                               |
+| `ConcurrentModificationError` | If if_match is provided and does not match.                              |
+| `DocumentNotFoundError`       | If path does not exist.                                                  |
 
 ### `rename(old_path, new_path, if_match=None, *, update_links=False, tolerate_link_rewrites=False)`
 
@@ -9050,7 +9073,7 @@ Raises:
 
 | Type                          | Description                                                                                |
 | ----------------------------- | ------------------------------------------------------------------------------------------ |
-| `SubmodulePathError`          | If either path lies inside a git submodule (#1564).                                        |
+| `SubmodulePathError`          | If either path lies inside a git submodule or nested repository (#1564, #1949).            |
 | `ReadOnlyError`               | If the vault is read-only.                                                                 |
 | `ConcurrentModificationError` | If if_match is provided and does not match, and tolerate_link_rewrites does not accept it. |
 | `DocumentNotFoundError`       | If old_path does not exist.                                                                |
@@ -9082,7 +9105,7 @@ Raises:
 
 | Type                    | Description                                                                                                                                                                                                                                         |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SubmodulePathError`    | If old_dir lies in or holds a git submodule, or a moved file would land inside one (#1564).                                                                                                                                                         |
+| `SubmodulePathError`    | If old_dir lies in or holds a git submodule or nested repository, or a moved file would land inside one (#1564).                                                                                                                                    |
 | `ReadOnlyError`         | If the vault is read-only.                                                                                                                                                                                                                          |
 | `DocumentNotFoundError` | If old_dir is missing, not a directory, or empty.                                                                                                                                                                                                   |
 | `DocumentExistsError`   | If any destination file already exists.                                                                                                                                                                                                             |
@@ -9105,7 +9128,7 @@ Raises:
 
 | Type                          | Description                                                                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `SubmodulePathError`          | If path lies inside a git submodule (#1564).                                                                                  |
+| `SubmodulePathError`          | If path lies inside a git submodule or nested repository (#1564, #1949).                                                      |
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
@@ -10198,7 +10221,7 @@ Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam (#1229): the
 
 Validate startup git settings for token-authenticated workflows.
 
-### `on_write_batch(items, tool_name)`
+### `on_write_batch(items, tool_name, *, primary_paths=None)`
 
 Commit every write from one tool call as a single commit.
 
@@ -10206,10 +10229,11 @@ Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary 
 
 Parameters:
 
-| Name        | Type                       | Description                                           | Default    |
-| ----------- | -------------------------- | ----------------------------------------------------- | ---------- |
-| `items`     | `Sequence[WriteBatchItem]` | The tool call's writes, in the order they were fired. | *required* |
-| `tool_name` | `str`                      | The MCP tool that produced them.                      | *required* |
+| Name            | Type                       | Description                                           | Default                                                                                    |
+| --------------- | -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `items`         | `Sequence[WriteBatchItem]` | The tool call's writes, in the order they were fired. | *required*                                                                                 |
+| `tool_name`     | `str`                      | The MCP tool that produced them.                      | *required*                                                                                 |
+| `primary_paths` | \`frozenset[Path]          | None\`                                                | Paths written outside secondary maintenance, or None to retain the ordinary batch subject. |
 
 ### `__call__(path, content, operation, *, old_path=None, principal=None)`
 
@@ -10652,6 +10676,8 @@ Load :class:`ProjectConfig` from `MARKDOWN_VAULT_MCP_*` env vars.
 # Embedding Providers
 
 The `providers` module defines an abstract base class for embedding providers and four concrete implementations for OpenAI, Voyage AI, Ollama, and FastEmbed.
+
+The installed package carries its type annotations through a PEP 561 marker. Type checkers can check subclasses of `EmbeddingProvider` against the installed library without adding the source checkout to their search path.
 
 ## Quick Start
 
@@ -13173,6 +13199,72 @@ The index now stores every heading of a note in document order, found by the sam
 A `#` line inside fenced code is a comment or a prompt, not a heading. As [#2034](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2034) put it, `read(path, section="Setup")` "stops at a `# comment` line inside a fenced code block". The same line showed in the outline, split a search chunk inside the code, and could become the note's title. Lines between an opening and a closing fence of three or more backticks or tildes are now never headings, for section reads, the outline, chunking and the title alike ([#2037](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2037)).
 
 A note that opens with indented code had the same problem one step earlier: the body was read with its first line's indentation stripped, so, in the words of [#2036](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2036), "the code line loses its indentation, and a `#` line in it becomes the note's title and an H1 in the outline". The first line now keeps its indentation; every other note reads exactly as before ([#2038](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2038)).
+
+## v6.1.2
+
+This release closes gaps where a change looked saved but wasn't, or a failure came back as an empty answer. In a Git-backed vault, a plain Git repository nested inside the vault is now read-only, like a submodule. Upload links, `fetch` and the OKF refresh refuse such a destination up front. A search by meaning after an embedding model change reports a failed rebuild instead of returning nothing. Wikilinks with a `]` in the target resolve as in Obsidian. Commit subjects name the note when OKF maintenance is on. Local terminal reads work as root and stop printing startup logs. The package ships its type hints. The first start rebuilds the text index once; see [Upgrading](#upgrading).
+
+### Upgrading
+
+No step is required for most deployments.
+
+- **If your Git-backed vault holds a folder with its own `.git` that is not a registered submodule, and something writes notes into it:** those writes now fail with an error naming the nested repository. Before this release they reported success but were never committed. Change those files in their own repository, or move the destination outside it ([#1949](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1949)).
+- **If you used `-e MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING` to keep startup logs out of `docker exec` reads:** you can drop it. Pass `-v` when you want the routine logs back.
+- **If your Python code type-checks against `markdown_vault_mcp`:** mypy now reads the package's type hints, so code that passed against an untyped package can report new type errors. Nothing changes at runtime.
+
+**Clients:** nothing beyond reconnecting; the tool surface is unchanged. Two cases that looked like success now return errors: a write into a nested repository and a search by meaning after a failed model-change rebuild.
+
+**State:** kept. The first start after upgrading rebuilds the text index once, automatically, because this release changes which wikilinks are read from a note. The embeddings are kept: the rebuild re-embeds only notes whose sections changed, and this release changes no sections.
+
+**Security posture:** none. Nested repositories become read-only for the server's write tools. Reads, search and download links still reach them.
+
+### Nested repositories are read-only
+
+Since 6.0 the server refuses to change files inside a Git submodule of a Git-backed vault: a change there never reaches the vault's own commits. That check missed a plain repository nested in the vault: a folder with its own `.git` that isn't a registered submodule. A write there reported success but "is never committed" ([#1949](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1949)).
+
+The server now refuses writes into a nested repository as it does for a submodule, including a repository created after the server started ([#2088](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2088)). The error names the argument and the nested repository. Reading and searching those files still work. A vault without Git refuses nothing.
+
+Three callers reached that refusal only after doing other work ([#1950](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950)). They now refuse up front:
+
+- [`create_upload_link`](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/tools/transfer/#create_upload_link) refuses a protected `ref` before it creates a link, instead of handing out a link whose upload then failed ([#2101](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2101)).
+- `fetch` refuses a protected `path` before it downloads anything ([#2103](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2103)).
+- After `move_folder`, the OKF index refresh skips these folders instead of logging `okf_convention_index_failed` with a traceback ([#2104](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2104)).
+
+The [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/git-integration/#submodules-and-nested-repositories-in-the-vault) describes the boundary.
+
+### Search by meaning reports a failed model change
+
+When the embedding model or its vector size changes, the server rebuilds the embeddings on the next search by meaning. If every batch of that rebuild failed because the provider was down, "the search returns `[]` and so does every later search. The caller gets no error" ([#1946](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1946)).
+
+Semantic and hybrid searches now fail with an error that says the rebuild failed, that the request was fine, and to retry later or search by keyword. Each later search tries the rebuild again and recovers once the provider does. `admin index` and `admin embeddings import` print the same failure and exit with status 1 ([#2081](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2081)). The [embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/#common-to-all-providers) covers model changes.
+
+### Links and indexing
+
+- **A `]` inside a wikilink target.** "A single `]` inside a wikilink target ends the link for the scanner, but not for Obsidian, where only `]]` does" ([#1384](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1384)). `[[Sq]uare]]` now links to `Sq]uare.md`, for backlinks, broken-link reports and renames alike ([#2089](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2089)). This is the change behind the one-time index rebuild.
+- **Slow indexing of long backtick or space runs.** Link extraction took time growing with the square of an unmatched run of backticks, or of spaces before a link title: "Doubling the run roughly quadruples the time" ([#1749](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1749)). Both cases now run in linear time with the same results. For a 16,000-character backtick run the PR measured 3.359 s before and 0.00256 s after ([#2084](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2084)).
+
+### Git history
+
+- **Commit subjects name the note.** With OKF maintenance on, a single-note write, edit or append committed as `edit: 3 files`, because the folder's `index.md` and `log.md` were counted. The owner's report in [#1675](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1675): "Every commit is as an edit for 3 files." The subject now names the note, and the `index.md` and `log.md` updates still land in the same commit ([#2091](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2091)).
+- **Carriage returns in filenames.** A note whose name contains a carriage return, which can only arrive from outside the server, "comes back from `get_history` with that byte rewritten to a newline, so the path names a file that does not exist" ([#1290](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1290)). History, rename tracking, revision reads and conflict recovery now keep the name as Git wrote it ([#2092](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2092), [guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/git-integration/index.md)).
+
+### Terminal reads in a container
+
+Running `markdown-vault-mcp search` through `docker exec` as root on a Git checkout owned by the service user failed with "Managed mode requires SOURCE_DIR to be empty or a git repository" ([#1999](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1999)). Local `search` now skips the managed Git checks, as `read`, `list` and the other read commands already did. It never clones or syncs ([#2097](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2097)).
+
+The same issue reported that "every successful call also writes the server's startup log lines (JSON, INFO) to stderr, interleaved with the results." Local read commands now print only warnings and errors; `-v` or `MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG` brings the routine lines back ([#2100](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2100)). The [terminal guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/terminal/index.md) shows the updated alias.
+
+### Type hints for library users
+
+The package now ships a `py.typed` marker, so mypy checks code that uses `markdown_vault_mcp` against its type hints instead of skipping it with "module is installed, but missing library stubs or py.typed marker" ([#1911](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1911)). Thanks to [@tstotzer](https://github.com/tstotzer) for [#2026](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2026).
+
+### Vault explorer
+
+Screen readers now announce the search box in the [vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/vault-explorer/index.md) as "Search vault" and the context heading as "Context" while the first note loads, where it used to be empty ([#1754](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1754), [#2096](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2096)).
+
+### Contributors
+
+Every fix in this release except the type marker came from [@salmonumbrella](https://github.com/salmonumbrella), who sent the pull requests for issues the maintainer had filed.
 # Contribute
 
 # Contribute

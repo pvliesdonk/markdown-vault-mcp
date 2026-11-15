@@ -105,7 +105,7 @@ Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam (#1229): the
 
 Validate startup git settings for token-authenticated workflows.
 
-### `on_write_batch(items, tool_name)`
+### `on_write_batch(items, tool_name, *, primary_paths=None)`
 
 Commit every write from one tool call as a single commit.
 
@@ -113,10 +113,11 @@ Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary 
 
 Parameters:
 
-| Name        | Type                       | Description                                           | Default    |
-| ----------- | -------------------------- | ----------------------------------------------------- | ---------- |
-| `items`     | `Sequence[WriteBatchItem]` | The tool call's writes, in the order they were fired. | *required* |
-| `tool_name` | `str`                      | The MCP tool that produced them.                      | *required* |
+| Name            | Type                       | Description                                           | Default                                                                                    |
+| --------------- | -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `items`         | `Sequence[WriteBatchItem]` | The tool call's writes, in the order they were fired. | *required*                                                                                 |
+| `tool_name`     | `str`                      | The MCP tool that produced them.                      | *required*                                                                                 |
+| `primary_paths` | \`frozenset[Path]          | None\`                                                | Paths written outside secondary maintenance, or None to retain the ordinary batch subject. |
 
 ### `__call__(path, content, operation, *, old_path=None, principal=None)`
 

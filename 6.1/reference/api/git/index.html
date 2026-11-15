@@ -3702,7 +3702,7 @@ private attribute before the promotion.</p>
 
 
 <h3 id="markdown_vault_mcp.git.GitWriteStrategy.on_write_batch" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">on_write_batch</span><span class="p">(</span><span class="n">items</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">on_write_batch</span><span class="p">(</span><span class="n">items</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">primary_paths</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.git.GitWriteStrategy.on_write_batch" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3758,6 +3758,23 @@ principal, so the items cannot legitimately disagree.</p>
             </td>
             <td>
                 <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>primary_paths</code>
+            </td>
+            <td>
+                  <code><span title="frozenset">frozenset</span>[<span title="pathlib.Path">Path</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Paths written outside secondary maintenance, or
+<code>None</code> to retain the ordinary batch subject.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
             </td>
           </tr>
       </tbody>
