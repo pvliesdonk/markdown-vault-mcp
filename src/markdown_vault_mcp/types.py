@@ -1063,6 +1063,32 @@ class BatchAwareWriteCallback(Protocol):
         ...
 
 
+#: Batch callbacks opt in to primary-path provenance separately, preserving
+#: the four-field items and two-argument call received by existing callbacks.
+ACCEPTS_PRIMARY_PATHS_ATTR = "accepts_primary_paths"
+
+
+class PrimaryAwareBatchWriteCallback(Protocol):
+    """A batch callback that also accepts the paths written outside maintenance."""
+
+    def on_write_batch(
+        self,
+        items: Sequence[WriteBatchItem],
+        tool_name: str,
+        *,
+        primary_paths: frozenset[Path] | None = None,
+    ) -> None:
+        """Handle all writes with optional primary-path provenance.
+
+        Args:
+            items: All writes, including secondary maintenance writes.
+            tool_name: Tool that produced the writes.
+            primary_paths: Paths written outside secondary maintenance.
+                ``None`` means provenance was not supplied, not an empty set.
+        """
+        ...
+
+
 class PrincipalAwareWriteCallback(Protocol):
     """A :data:`WriteCallback` that also accepts the acting principal.
 

@@ -3535,17 +3535,28 @@ class TestGetFileDiff:
                 repo, repo / "note.md", tree, per_commit=False
             )
 
-    def test_prefix_a_commit_shares_with_a_blob_resolves(self, tmp_path: Path) -> None:
+    def test_prefix_a_commit_shares_with_a_blob_resolves(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A prefix a commit shares with a blob is a commit, not a refusal (#1608)."""
+        # These dates make grow and rename share their first four hex digits (#1995).
+        monkeypatch.setenv("GIT_AUTHOR_DATE", "1700085487 +0000")
+        monkeypatch.setenv("GIT_COMMITTER_DATE", "1700085487 +0000")
         repo, _ = self._make_repo_with_commits(tmp_path)
         git = ["git", "-C", str(repo)]
         lines = "".join(f"line {i}\n" for i in range(10))
         (repo / "note.md").write_text(lines)
         subprocess.run([*git, "commit", "-qam", "grow"], check=True)
-        head = subprocess.run(
-            [*git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        subprocess.run([*git, "mv", "note.md", "moved.md"], check=True)
+        (repo / "moved.md").write_text(lines + "line 10\n")
+        subprocess.run([*git, "commit", "-qam", "rename"], check=True)
+        # Choose the prefix after all commits exist; only the blob should collide.
+        prefix = subprocess.run(
+            [*git, "rev-parse", "--short=4", "HEAD^"],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
-        prefix = head[:4]
         n = 0
         while True:
             body = f"collide {n}\n".encode()
@@ -3561,9 +3572,6 @@ class TestGetFileDiff:
             capture_output=True,
             check=True,
         )
-        subprocess.run([*git, "mv", "note.md", "moved.md"], check=True)
-        (repo / "moved.md").write_text(lines + "line 10\n")
-        subprocess.run([*git, "commit", "-qam", "rename"], check=True)
         diff = GitWriteStrategy().get_file_diff(
             repo, repo / "moved.md", prefix, per_commit=False
         )
