@@ -54,6 +54,10 @@
     let html = '';
     if (fm.type != null) html += '<span class="chip chip-primary">' + escapeHtml(String(fm.type)) + '</span>';
     if (fm.status != null) html += '<span class="chip">' + escapeHtml(String(fm.status)) + '</span>';
+    // Describe the supplied field without authenticating it or assessing validity.
+    if (Object.prototype.hasOwnProperty.call(fm, 'verified')) {
+      html += '<span class="chip">Recorded review metadata (verified). Applicability to current content: unknown.</span>';
+    }
     return html;
   }
 

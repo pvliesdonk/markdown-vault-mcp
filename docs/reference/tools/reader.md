@@ -49,7 +49,8 @@ List of result dicts ranked by file relevance. Each contains:
   the vault is an active OKF bundle. Carries `type` (when
   declared), `status` (defaults to `"stable"`), `stale`
   (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
-  `"machine-confirmed"` / `"human-reviewed"`), and
+  `"machine-confirmed"` / `"human-reviewed"`, classifying recorded
+  metadata rather than applicability to current content), and
   `sources_count` (when the note cites sources).
 - sections (list[dict]): Up to `chunks_per_file` best-matching
   sections, each with:
@@ -111,7 +112,8 @@ empty {} when section= is provided; call read(path) without
 section= to get the full document's frontmatter),
 `modified_at` (Unix timestamp), etag (SHA-256 hex str or null).
 On an active OKF bundle, whole-document reads also carry
-an 'okf' dict (type, status, stale, `trust_tier`, and the note's
+an 'okf' dict (type, status, stale, `trust_tier` for recorded review
+metadata, and the note's
 'sources' list when present); section reads omit it because they
 carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
@@ -296,7 +298,9 @@ Dict with the following fields:
 - okf (dict, optional): Present only when the vault is an active
   OKF (Open Knowledge Format) bundle. Carries mode,
   `declared_version`, a per-`type` histogram plus `untyped_count`,
-  status and trust-tier breakdowns, and `stale_count`. Those cover
+  status and recorded-review trust-tier breakdowns, and `stale_count`.
+  These classifications do not establish review applicability to
+  current content. Those cover
   the note population '`okf_validate`' audits; the reserved
   `index.md` / `log.md` files are counted apart as
   `reserved_count`.
@@ -524,7 +528,8 @@ Dict with the note context. Fields:
   them when writing to or proposing links involving this note;
   some folders are self-contained by design.
 - okf (dict, optional): OKF read annotation for this note
-  (type, status, stale, `trust_tier`, `sources_count`). Present
+  (type, status, stale, `trust_tier` for recorded review metadata,
+  `sources_count`). Present
   only when the vault is an active OKF bundle.
 
 Index freshness is reported out-of-band in the response's

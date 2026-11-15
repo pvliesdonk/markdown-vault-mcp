@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:f2d555dd8693d2ce110da1527e5056ebed5f3d73238e43b14a1bb3709959b51c -->
+<!-- vendor-spa-source-sha256:6d323766b732501d53be8d7636ca8306b5216ca2ac47142ee0cfa96a72e8b97a -->
 </head>
 <body>
 <div class="app-container">
@@ -939,6 +939,10 @@ app.onteardown = () => {
     let html = '';
     if (fm.type != null) html += '<span class="chip chip-primary">' + escapeHtml(String(fm.type)) + '</span>';
     if (fm.status != null) html += '<span class="chip">' + escapeHtml(String(fm.status)) + '</span>';
+    // Describe the supplied field without authenticating it or assessing validity.
+    if (Object.prototype.hasOwnProperty.call(fm, 'verified')) {
+      html += '<span class="chip">Recorded review metadata (verified). Applicability to current content: unknown.</span>';
+    }
     return html;
   }
 
@@ -1745,7 +1749,11 @@ app.onteardown = () => {
       ? '<button class="prop-toggle" id="preview-props-toggle">' + CHEVRON
         + '<span id="preview-props-toggle-label">Show ' + more + ' more properties</span></button>'
       : '';
-    return '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
+    // The supplied field is a claim, not evidence about the displayed content.
+    const review = Object.prototype.hasOwnProperty.call(fm, 'verified')
+      ? '<p>Recorded review metadata (verified). Applicability to current content: unknown.</p>'
+      : '';
+    return review + '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
   }
 
   function renderTags(fm) {

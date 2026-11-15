@@ -40,8 +40,10 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 
 - **Type**: the free-text `type` field, such as `Playbook`, `Metric`, or `Reference`.
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
-- **Trust tier**: derived from the `verified` list (a single entry may be written as a bare mapping, per the spec). A note verified by a person (`by: human:...`) is `human-reviewed`; a note verified only by a process is `machine-confirmed`; an unverified note is `unverified`.
+- **Recorded-review trust tier**: `trust_tier` classifies supplied `verified` metadata (a single entry may be a bare mapping). A mapping with a `by: human:...` prefix yields `human-reviewed`; any other mapping yields `machine-confirmed`; no mappings yields `unverified`. These legacy labels do not authenticate the reviewer, validate every entry, or establish that a review applies to the current content. The `stats` trust breakdown counts these same classifications.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
+
+The CLI labels recorded review metadata and unknown applicability in human-readable search output. For whole-note text reads, it sends that notice to `stderr`, leaving the note content on `stdout` unchanged. The app's note and context views show the same uncertainty beside any supplied `verified` field, including empty or malformed values; the original metadata stays available. These notices change only the human-readable presentation. JSON and agent output retain their existing payloads.
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 
@@ -130,9 +132,9 @@ One subtlety is worth understanding before you rely on the `human-reviewed` tier
 
 **Upgrading bearer-based review clients:** deployments that used `trust-auth` with a static or mapped bearer token must switch `MARKDOWN_VAULT_MCP_OKF_VERIFY` to `elicit` and use a client that presents the confirmation to a person. Existing provenance and verification entries are not rewritten.
 
-Whichever mode you pick, `human-reviewed` means a person deliberately confirmed the review, not that the note is provably correct. Someone can still rubber-stamp a note. The tier promises a deliberate human act rather than diligence, so treat it as one signal instead of a guarantee.
+The verification mode controls how this tool records a review claim. The `human-reviewed` tier itself only reports a `human:` prefix in supplied metadata, which can also arrive from other editors or imports. It does not prove that a person reviewed the note or that its content is correct.
 
-A `verified` entry is also a claim about the note as it stood when the entry was written. This server clears it when its own write path changes the note, but a change that arrives another way (a teammate's editor, a git pull, a script) leaves the entry in place. On a shared vault, read the tier as a record that someone confirmed a review at that time, and read `generated.at` beside it.
+A `verified` entry records a review claim without necessarily identifying the exact content reviewed. This server clears it when its own write path changes the note, but a change that arrives another way (a teammate's editor, a git pull, a script) leaves the entry in place. Applicability to current content remains unknown. Review timestamps do not establish applicability or invalidity. Neither do missing history or changed bytes. The presentation layer leaves write behavior unchanged. Snapshot-bound reviews and change-history assessment remain separate work.
 
 ### Keeping `log.md` and `index.md` current
 
