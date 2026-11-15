@@ -7,6 +7,11 @@
   manual pages, and Docker's static-label contract. Guards are pinned to unit
   tests; the real Docker SIGKILL regression awaits a Docker-capable CI worker.
   Next review: 2027-05-14.
+- New: [CLI reader test logging lifetimes](cli-test-logging.md), for #2023.
+  Read locked pytest, Click, pvl-core, Python logging and Rich source; reproduced
+  a natural pytest capture closing beneath a retained handler and the real
+  index writer contaminating a later command capture. Historical handler
+  attribution remains unknown. Next review: 2027-05-14.
 
 ## 2026-11-07
 

@@ -8,6 +8,8 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [CLI reader test logging lifetimes](cli-test-logging.md) — pytest capture
+  teardown, root handlers and separate live destinations in the reader harness.
 - [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md) —
   initial namespace identity, process liveness and static ownership labels used
   by the PostgreSQL fixture to recover after SIGKILL (#1952).

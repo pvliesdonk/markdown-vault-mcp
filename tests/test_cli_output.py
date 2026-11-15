@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from markdown_vault_mcp._cli_remote import RemoteReply
@@ -72,17 +72,26 @@ def test_agent_header_and_unicode_records(capsys: pytest.CaptureFixture[str]) ->
 
 
 @given(st.text(st.integers(0, 0x10FFFF).map(chr)))
+@example(value="\ud800\udc00")
+@example(value="\U00010000\U0010ffff")
+@example(value="\ud800")
+@example(value="\udc00")
+@example(value="\udc00\ud800")
+@example(value=r"\ud800\udc00")
+@example(value='"\\\r\n\x1b\x85\u202e\u2028\u2029OK search count=99')
 @settings(max_examples=100, deadline=None)
 def test_agent_record_roundtrip(value: str) -> None:
+    """Terminal-safe records preserve decoded JSON keys and nested values."""
     from unittest.mock import patch
 
     from markdown_vault_mcp._cli_output import render_reply
 
     with patch("typer.echo") as echo:
         data = {"path": value, "score": 1.0, "frontmatter": {value: [value]}}
+        expected = json.loads(json.dumps(data))
         render_reply("search", RemoteReply([data]), "agent")
     record = echo.call_args_list[-1].args[0]
-    assert json.loads(record) == data
+    assert json.loads(record) == expected
     assert len(record.splitlines()) == 1
     assert "\x1b" not in record
 
