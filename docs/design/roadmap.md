@@ -492,6 +492,19 @@ distributions
 research informs its storage, lifecycle and installation expectations without
 blocking the library research, which can run concurrently.
 
+`stated` — **[021 backlog-fixes](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/22)**,
+**[022 startup-and-memory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/23)**
+and **[023 reported-bugs](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/24)**
+come before `025`, in that order (15 November 2026). Each draws its issues from
+the contributed pull requests open on that date.
+
+`derived` — **Patch intent for all three.** `021` holds owner-filed bugs whose
+contributed fixes are small, and the test-only de-flake work lands first inside
+it, so that CI is quiet for everything after. `022` holds owner-filed bugs whose
+contributed PRs need an owner decision before review. `023` holds bugs the
+contributors reported, which join after their issues are accepted. The order
+follows from that: the least open decision ships first.
+
 `derived` — **[025 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
 (minor)** follows `020` with the read-only submodule epic [#1561][1561], less the
 refusal that moved to `015`.
@@ -791,6 +804,19 @@ and pvl-core question.
 [#1911][1911] and [#2000][2000] under [epic #1471][1471], and committed
 [#2016][2016] to `020` as a prerequisite of the client distribution.
 
+### 15 November 2026 — package the contributed pull requests as `021`–`023`
+
+`stated` — The owner asked for packages from the triage of open contributed
+PRs, in its order. They folded the test-only bucket into `021`, because a
+test-only cut would release nothing. They placed the packages before `025`, and
+left [#1606][1606] out because it is still deferred on [#1610][1610].
+
+`derived` — Re-committed [#1911][1911] from the closed `020` milestone to `021`.
+Moved [#1754][1754] from `030` to `021`. `022` carries [#1678][1678], where report
+versus commit at startup is still the owner's call, and [#1938][1938], whose
+"after 015" postponement has passed. Contributor-proposed features have no
+package until their issues are accepted.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -862,6 +888,10 @@ and pvl-core question.
 [1665]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1665
 [1666]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1666
 [1728]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728
+[1606]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1606
+[1610]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1610
+[1678]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678
+[1938]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938
 [1730]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1730
 [1733]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1733
 [1734]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1734
