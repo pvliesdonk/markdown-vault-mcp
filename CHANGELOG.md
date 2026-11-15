@@ -22,6 +22,24 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 6.1.2-rc.0 (2026-11-15)
+
+### Bug Fixes
+
+- expose installed library annotations (#2026)
+- avoid quadratic retries within delimiter runs (#2084)
+- keep single closing brackets in wikilink targets (#2089)
+- retain note subjects alongside OKF maintenance (#2091)
+- read shared vaults without managed Git bootstrap (#2097)
+- [Submodule work 3/3] skip submodule listings after folder moves (#2104)
+- name vault search accessibly (#2096)
+- quiet routine local read logs (#2100)
+- refuse upload links inside submodules (#2101)
+- refuse writes into plain nested repositories (#2088)
+- report failed model-change rebuilds (#2081)
+- preserve carriage returns in path streams (#2092)
+- refuse destinations before downloading (#2103)
+
 ## 6.1.1 (2026-11-08)
 
 ### Bug Fixes
