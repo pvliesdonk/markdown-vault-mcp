@@ -56,15 +56,15 @@ A first task that changes nothing:
 
 Whether Claude can also write is the operator's choice: a server in read-only mode lists none of the tools that change files. Some tools depend on the client or the operator:
 
-- `browse_vault` and `show_context` open an interactive view in clients that render [MCP Apps](../deploy/mcp-apps.md); other clients get the same data as text.
+- `browse_vault` and `show_context` open an interactive view in clients that render [MCP Apps](../deploy/mcp-apps.md). Other clients get the same data as text.
 - `create_download_link` and `create_upload_link` return a one-time URL for moving a file out of or into the vault, which works without your credential. See [Transfer links](../deploy/transfer-links.md).
 - `summarize` appears only when the operator configured a language model for it.
 
 ### Read a complete HTTP result
 
 When building a client for this vault, discover `search` and `read` through
-`tools/list`. Search with `mode="keyword"` works without an embedding provider;
-pass a returned note's `path` to `read`. The [terminal guide](../use/terminal.md)
+`tools/list`. Search with `mode="keyword"` works without an embedding provider.
+Pass a returned note's `path` to `read`. The [terminal guide](../use/terminal.md)
 shows the same workflow through the command line.
 
 Keep the complete MCP result when calling these tools. For vault search,
@@ -80,7 +80,7 @@ The synthetic HTTP contract tests exercise the native vault server and these
 whole-result shapes expected by an Executor caller. They do not establish
 acceptance by an installed Executor runtime or verify a personal connection.
 Use the operator's [authentication instructions](../deploy/authentication.md)
-for credentials; the contract tests use only synthetic notes.
+for credentials. The contract tests use only synthetic notes.
 <!-- DOMAIN-HTTP-CLIENT-EXTRA-END -->
 
 ## Next
