@@ -1200,6 +1200,13 @@ def register(mcp: FastMCP) -> None:
                     vault.writer.okf_apply_log_repair, path, approval
                 )
         except LogRepairInterrupted as exc:
+            logger.exception(
+                "log_repair_interrupted path=%s recovery_path=%s "
+                "target_may_have_changed=%s",
+                path,
+                exc.recovery_path,
+                exc.target_may_have_changed,
+            )
             raise ToolError(str(exc)) from exc
         return attach_remote_health(vault, result.model_dump())
 

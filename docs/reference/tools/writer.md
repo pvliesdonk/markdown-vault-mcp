@@ -8,7 +8,7 @@ kind: reference
 # Writer
 
 <!-- DOMAIN-INTRO-START -->
-Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
+The tools that change the vault are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`; `okf_preview_log_repair` is read-only and remains available. The [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 <!-- DOMAIN-INTRO-END -->

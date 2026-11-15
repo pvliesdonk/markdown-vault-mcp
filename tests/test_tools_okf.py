@@ -591,8 +591,12 @@ class TestOkfMigrationTools:
         assert preview["approval"] is None
 
     async def test_log_repair_interruption_keeps_recovery_guidance(
-        self, okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        okf_vault: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
+        import logging
         from pathlib import Path
         from unittest.mock import Mock
 
@@ -601,6 +605,7 @@ class TestOkfMigrationTools:
         from markdown_vault_mcp.managers import document as document_module
 
         original = Path("tests/fixtures/okf_log_repair/stacked.md").read_bytes()
+        failure = OSError("disk full")
         (okf_vault / "log.md").write_bytes(original)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
@@ -609,7 +614,7 @@ class TestOkfMigrationTools:
             )
             approval = {**preview["approval"], "operator_reviewed": True}
             monkeypatch.setattr(
-                document_module, "atomic_write", Mock(side_effect=OSError("disk full"))
+                document_module, "atomic_write", Mock(side_effect=failure)
             )
             with pytest.raises(
                 ToolError, match="target may already have changed"
@@ -621,6 +626,17 @@ class TestOkfMigrationTools:
         assert "before any retry" in str(caught.value)
         assert (okf_vault / "log.md").read_bytes() == original
         assert (okf_vault / "log.md.frontmatter-repair.bak").read_bytes() == original
+        records = [
+            record
+            for record in caplog.records
+            if record.name == "markdown_vault_mcp._tools.writer"
+            and record.msg.startswith("log_repair_interrupted ")
+        ]
+        assert len(records) == 1
+        assert records[0].levelno == logging.ERROR
+        assert records[0].exc_info is not None
+        assert records[0].exc_info[1] is not None
+        assert records[0].exc_info[1].__cause__ is failure
 
     async def test_seed_log_refuses_overwrite_as_tool_error(self) -> None:
         from fastmcp.exceptions import ToolError
