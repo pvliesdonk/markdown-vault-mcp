@@ -1,4 +1,5 @@
 ---
+last_edited: 2026-11-14
 description: "Choose a git mode for the vault, configure commits, pushes and pulls, and read history back."
 kind: how-to
 ---
@@ -33,6 +34,11 @@ did. A call that touched many files, such as `move_folder`, `rename` with
 `update_links=True`, or `okf_convert_links`, produces one commit with the
 subject `<tool>: N files`, where a per-file boundary produced one commit per
 file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)).
+With `OKF_WRITE` enabled, a single-note `write`, `edit` or `append` keeps
+that note's path in the subject. Its automatic index and log updates remain
+in the same commit; they do not replace the note's subject with a file count.
+Direct writes to `index.md` or `log.md` still name their own path.
+
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
@@ -506,6 +512,7 @@ Behavior:
 
 A git submodule inside the vault is read-only. Its notes are indexed and searchable like any folder, but git refuses to commit a change inside a submodule from the vault's own repository, so a change there would be lost. In managed and commit-only mode every write tool refuses a path inside a submodule and names it, and nothing is written. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, the attachment writes and the OKF tools.
 
+- `create_upload_link` refuses a `ref` inside a submodule before creating a link, for notes and attachments. Choose a destination outside that submodule. Download links can still read its files.
 - Change those files in the repository the submodule comes from instead.
 - `move_folder` refuses to move a folder that holds a submodule, but you can move a folder next to one.
 - A `rename` or `move_folder` that would rewrite links inside a submodule leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.

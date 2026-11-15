@@ -8,6 +8,16 @@
   CR/CRLF corruption with Python 3.12 and Git 2.43.0 in synthetic fixtures.
   Raw capture preserves path stdout, while stderr retains text normalization.
   Existing Git claims were not re-researched; next review remains 2027-03-06.
+- New: [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md),
+  for #1952. Read Linux 6.8 and pinned nsfs UAPI constants, namespace and kill
+  manual pages, and Docker's static-label contract. Guards are pinned to unit
+  tests; the real Docker SIGKILL regression awaits a Docker-capable CI worker.
+  Next review: 2027-05-14.
+- New: [CLI reader test logging lifetimes](cli-test-logging.md), for #2023.
+  Read locked pytest, Click, pvl-core, Python logging and Rich source; reproduced
+  a natural pytest capture closing beneath a retained handler and the real
+  index writer contaminating a later command capture. Historical handler
+  attribution remains unknown. Next review: 2027-05-14.
 
 ## 2026-11-07
 
