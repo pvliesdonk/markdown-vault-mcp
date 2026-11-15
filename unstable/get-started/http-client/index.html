@@ -760,6 +760,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#read-a-complete-http-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read a complete HTTP result
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2882,6 +2893,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#read-a-complete-http-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read a complete HTTP result
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2964,6 +2986,23 @@
 <li><code>create_download_link</code> and <code>create_upload_link</code> return a one-time URL for moving a file out of or into the vault, which works without your credential. See <a href="../../deploy/transfer-links/">Transfer links</a>.</li>
 <li><code>summarize</code> appears only when the operator configured a language model for it.</li>
 </ul>
+<h3 id="read-a-complete-http-result">Read a complete HTTP result<a class="headerlink" href="#read-a-complete-http-result" title="Permanent link">&para;</a></h3>
+<p>When building a client for this vault, discover <code>search</code> and <code>read</code> through
+<code>tools/list</code>. Search with <code>mode="keyword"</code> works without an embedding provider;
+pass a returned note's <code>path</code> to <code>read</code>. The <a href="../../use/terminal/">terminal guide</a>
+shows the same workflow through the command line.</p>
+<p>Keep the complete MCP result when calling these tools. For vault search,
+<code>structuredContent.result</code> holds the hit list; for <code>read</code>, <code>structuredContent</code>
+holds the note object. Search includes a Boolean <code>_meta.index_stale</code> describing index freshness; <code>read</code> reads the file
+directly. Keep search metadata alongside the hits so a caller can decide
+whether to wait for pending writes.</p>
+<p>For result fields and error handling, see the
+<a href="https://modelcontextprotocol.io/specification/2026-07-28/server/tools">MCP tool-result contract</a>.</p>
+<p>The synthetic HTTP contract tests exercise the native vault server and these
+whole-result shapes expected by an Executor caller. They do not establish
+acceptance by an installed Executor runtime or verify a personal connection.
+Use the operator's <a href="../../deploy/authentication/">authentication instructions</a>
+for credentials; the contract tests use only synthetic notes.</p>
 <!-- DOMAIN-HTTP-CLIENT-EXTRA-END -->
 
 <h2 id="next">Next<a class="headerlink" href="#next" title="Permanent link">&para;</a></h2>
