@@ -8,6 +8,17 @@
   CR/CRLF corruption with Python 3.12 and Git 2.43.0 in synthetic fixtures.
   Raw capture preserves path stdout, while stderr retains text normalization.
   Existing Git claims were not re-researched; next review remains 2027-03-06.
+- [Git submodules](git-submodules.md): added the plain embedded-repository
+  facet for #1949. Read Git v2.55.0 repository-layout, git-add and dir.c;
+  refuted marker-only discovery with inert-directory/gitfile fixtures.
+  Observed silent no-staging on Git 2.43.0 in a synthetic Boat sandbox and
+  pinned it to the real Vault regression. Replan 2 replaces working-root
+  equality with native structural resolution and strict gitfile reads, after
+  configured/foreign-owned and unreadable-marker counterexamples. Read Git
+  v2.55.0 setup.c and early rev-parse handling; pins cover the corrected owner.
+  Follow-up confirms the native 1 MiB gitfile limit before open; memory-capped
+  and unreadable-oversize fixtures pin bounded preliminary reads.
+  Other claims and review deadline remain unchanged.
 - New: [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md),
   for #1952. Read Linux 6.8 and pinned nsfs UAPI constants, namespace and kill
   manual pages, and Docker's static-label contract. Guards are pinned to unit

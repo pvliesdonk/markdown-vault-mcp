@@ -698,6 +698,43 @@ class TestTheSlotClosesWhatItStopsUsing:
         assert slot.location == "vault_a"
 
 
+class TestDiscardFailedRebuild:
+    def test_discard_closes_the_target_and_reopens_the_preserved_store(
+        self, tmp_path: Path
+    ) -> None:
+        _persist_with(tmp_path / "vec", IDENTITY)
+        slot = _recording_slot(tmp_path, _RecordingBackend())
+        target = slot.fresh()
+        slot.discard_failed_rebuild(target)
+        assert slot.current() is None
+        with pytest.raises(RuntimeError, match="closed"):
+            target.count  # noqa: B018
+        assert slot.get(rebuild=None).count == 1
+        slot.close()
+
+    def test_a_different_installed_store_is_left_open(self, tmp_path: Path) -> None:
+        slot = _slot(tmp_path / "vec")
+        failed = slot.fresh()
+        replacement = slot.fresh()
+        slot.discard_failed_rebuild(failed)
+        assert slot.current() is replacement
+        assert replacement.count == 0
+        slot.close()
+
+    @pytest.mark.parametrize("injected", [False, True])
+    def test_discard_leaves_caller_owned_or_unowned_stores_alone(
+        self, injected: bool
+    ) -> None:
+        store = NumpySidecarBackend().open(None, IDENTITY)
+        slot = _slot(None, store=store) if injected else _slot(None, owns_files=False)
+        target = slot.get(rebuild=None)
+        slot.discard_failed_rebuild(target)
+        assert slot.current() is target
+        assert target.count == 0
+        slot.close()
+        store.close()
+
+
 class _SlowOpeningBackend(_RecordingBackend):
     """A recording backend whose open waits until it is let go."""
 

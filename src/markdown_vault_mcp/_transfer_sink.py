@@ -231,8 +231,9 @@ class VaultTransferSink:
 
         The handle is the vault-relative path itself. Download validation is
         stat-only (existence without a read); upload validation checks the
-        destination is a note or an allowed attachment outside git submodules,
-        and rejects existing files when overwrite protection is enabled.
+        destination is a note or an allowed attachment outside git submodules
+        and nested repositories, and rejects existing files when overwrite
+        protection is enabled.
         ``kind`` selects which.
 
         Args:
@@ -247,9 +248,9 @@ class VaultTransferSink:
             ToolError: At INFO, rejecting the ref: path traversal, a missing
                 download source, a disallowed attachment extension, a bundle
                 ref with OKF disabled, a bundle scope naming a folder that does
-                not exist, an upload destination inside a git submodule, or
-                an existing upload destination when overwrite protection is
-                enabled.
+                not exist, an upload destination inside a git submodule or
+                nested repository, or an existing upload destination when
+                overwrite protection is enabled.
             ConfigurationError: When the lifespan built no vault (the
                 configured directory does not exist): a link must not be
                 minted that can only fail when followed.

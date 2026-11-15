@@ -311,6 +311,7 @@ def index(
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotConfiguredError,
         EmbeddingsNotPublishedError,
+        EmbeddingsRebuildFailedError,
         StoreBusyError,
     )
 
@@ -330,7 +331,7 @@ def index(
             typer.echo(f"Embedded {n} chunks")
         except EmbeddingsNotConfiguredError:
             pass  # embeddings not configured
-        except EmbeddingsNotPublishedError as exc:
+        except (EmbeddingsNotPublishedError, EmbeddingsRebuildFailedError) as exc:
             typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
             raise typer.Exit(1) from exc
     except StoreBusyError as exc:
@@ -638,6 +639,7 @@ def embeddings_import(
     from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotPublishedError,
+        EmbeddingsRebuildFailedError,
         StoreOpenError,
     )
     from markdown_vault_mcp.managers.embedding_import import (
@@ -663,7 +665,7 @@ def embeddings_import(
     except ImportRefused as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
-    except EmbeddingsNotPublishedError as exc:
+    except (EmbeddingsNotPublishedError, EmbeddingsRebuildFailedError) as exc:
         typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
         raise typer.Exit(1) from exc
     except StoreOpenError as exc:
