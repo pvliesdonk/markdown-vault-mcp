@@ -148,7 +148,48 @@ A few boundaries keep this predictable, and they are also its limits. Maintenanc
 
 One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
 
-To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Removing those blocks is a manual edit: the server cannot tell a block it stacked from one the log quotes on purpose, so it leaves all of them alone.
+To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Ordinary writes leave those blocks alone. The deliberate repair below requires review because the server cannot distinguish a block it stacked from one the log quotes on purpose.
+
+## Repairing legacy log frontmatter
+
+Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the
+start of `log.md`. To repair one affected file, call
+[`okf_preview_log_repair`](../reference/tools/writer.md#okf_preview_log_repair)
+with its vault-relative path, for example `guides/log.md`. Preview changes
+nothing and is available on a read-only server when OKF tools are visible.
+The [security model](../security-model.md) describes the write boundary.
+
+Review the proposed removal with the operator. The preview gives the exact
+removed text, its base64 bytes, byte offsets, and old and proposed etags.
+Matching blocks alone do not prove the old defect created them. Preserve
+intentional examples or anything whose purpose is uncertain. `no_candidate`
+means the shape is outside this narrow repair; review it manually.
+
+After the operator authorizes that exact removal, pass the preview's
+`approval` object to
+[`okf_apply_log_repair`](../reference/tools/writer.md#okf_apply_log_repair),
+changing only `operator_reviewed` to `true`, with the same `path`. This is the
+client's explicit review assertion, not a server check that a person was
+present. A stale or modified approval requires a fresh preview and review.
+The same two methods are available through `Vault.writer` in the library.
+
+Apply first retains the complete original as the adjacent
+`log.md.frontmatter-repair.bak`, then removes only the approved repeated units.
+It keeps the opening frontmatter, provenance fields, line endings and all
+remaining content byte for byte. The recovery file is restricted to the
+server account on systems that enforce Unix file modes and is not indexed as
+a Markdown note. Keep it until the operator has checked the result. The
+server also reports the recovery file to its configured write callback; a
+successful response does not guarantee it has reached a remote repository.
+
+Any existing recovery entry blocks apply, even if its bytes match. After a
+failure, inspect both the target and recovery file before retrying. The error
+says whether target replacement was attempted; the recovery file may be
+complete, partial, or absent. Preserve evidence elsewhere before deliberately
+removing an obstructing recovery entry outside this operation. Apply never
+reuses or deletes it. Coordinate with other editors while repairing: the
+server lock does not stop external writes, and this is not a transaction or a
+power-loss recovery guarantee.
 
 ## Using OKF with PARA or Zettelkasten
 

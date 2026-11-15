@@ -50,6 +50,7 @@ _ATTACHING_NOT_DRIVEN = (
     "okf_convert_links",
     "okf_generate_index",
     "okf_seed_log",
+    "okf_apply_log_repair",
     "okf_verify",
 )
 
@@ -134,6 +135,36 @@ class TestUnsyncedCloneIsReported:
         assert payload["remote"]["state"] == REMOTE_STATE_UNSYNCED
         assert payload["remote"]["reason"] == PUSH_REASON_NON_FAST_FORWARD
         assert "committed locally" in payload["remote"]["detail"]
+
+    async def test_log_repair_reports_the_unsynced_remote(
+        self,
+        git_repo_pair: GitRepoPair,
+        managed_vault: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+        _seed_remote_commit(git_repo_pair, clone_name="clone_log_repair")
+        (managed_vault / "local.md").write_text("# local\n")
+        _run_git(managed_vault, "add", "local.md")
+        _run_git(managed_vault, "commit", "-m", "local")
+        original = b"---\ntitle: Log\n---\n\n" * 3 + b"# Log\n"
+        (managed_vault / "log.md").write_bytes(original)
+        async with Client(make_server()) as client:
+            await _strand_the_clone(client)
+            preview = _parse_tool_data(
+                await client.call_tool(
+                    "okf_preview_log_repair",
+                    {"path": "log.md"},
+                )
+            )
+            approval = {**preview["approval"], "operator_reviewed": True}
+            result = await client.call_tool(
+                "okf_apply_log_repair",
+                {"path": "log.md", "approval": approval},
+            )
+        payload = _parse_tool_data(result)
+        assert payload["remote"]["state"] == REMOTE_STATE_UNSYNCED
+        assert (managed_vault / payload["recovery_path"]).read_bytes() == original
 
     @pytest.mark.usefixtures("managed_vault")
     async def test_a_healthy_clone_says_nothing(self) -> None:

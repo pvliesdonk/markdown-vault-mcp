@@ -35,6 +35,15 @@ An authenticated caller has every tool the instance exposes. Each tool runs with
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach; kept across copier update -->
 Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as `search`, `read` and `get_history` only read the vault. Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch` and the OKF write tools) change files in it. `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write tool. `reindex` and `build_embeddings` stay available in that mode, since they rebuild the index and leave notes untouched.
 
+The deliberate [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter)
+also creates one fixed adjacent recovery artifact,
+`log.md.frontmatter-repair.bak`, holding the complete original before changing
+the log. It never overwrites an existing recovery entry. The caller's
+`operator_reviewed` assertion authorizes one exact proposed removal; it does
+not prove human presence or generated origin. Preview is read-only. Apply
+uses the normal write and nested-repository gates and leaves the recovery
+artifact for operator inspection.
+
 Some tools send data beyond the vault:
 
 - **`fetch`** downloads an `http` or `https` URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.

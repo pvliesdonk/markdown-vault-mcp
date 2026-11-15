@@ -522,6 +522,74 @@ class TestOkfMigrationTools:
         data = _parse_tool_data(result)
         assert data["path"] == "log.md"
 
+    async def test_log_repair_preview_and_apply(self, okf_vault: Path) -> None:
+        from pathlib import Path
+
+        from fastmcp.exceptions import ToolError
+
+        original = Path("tests/fixtures/okf_log_repair/stacked.md").read_bytes()
+        (okf_vault / "log.md").write_bytes(original)
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            preview = _parse_tool_data(
+                await client.call_tool(
+                    "okf_preview_log_repair",
+                    {"path": "log.md"},
+                )
+            )
+            approval = preview["approval"]
+            with pytest.raises(ToolError, match="operator_reviewed"):
+                await client.call_tool(
+                    "okf_apply_log_repair",
+                    {
+                        "path": "log.md",
+                        "approval": approval,
+                    },
+                )
+            approval["operator_reviewed"] = True
+            applied = _parse_tool_data(
+                await client.call_tool(
+                    "okf_apply_log_repair",
+                    {
+                        "path": "log.md",
+                        "approval": approval,
+                    },
+                )
+            )
+            await wait_for_mcp_writer_drain(client)
+            read = _structured(await client.call_tool("read", {"path": "log.md"}))
+            assert read["content"].count("title: Log") == 1
+            assert read["etag"] == applied["etag"]
+            with pytest.raises(ToolError, match="okf_preview_log_repair"):
+                await client.call_tool(
+                    "okf_apply_log_repair",
+                    {
+                        "path": "log.md",
+                        "approval": approval,
+                    },
+                )
+        assert (okf_vault / applied["recovery_path"]).read_bytes() == original
+
+    async def test_log_repair_preview_available_read_only(
+        self,
+        okf_vault: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+        (okf_vault / "log.md").write_text("# Log\n", encoding="utf-8")
+        async with Client(make_server()) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            assert "okf_preview_log_repair" in tools
+            assert "okf_apply_log_repair" not in tools
+            preview = _parse_tool_data(
+                await client.call_tool(
+                    "okf_preview_log_repair",
+                    {"path": "log.md"},
+                )
+            )
+        assert preview["status"] == "no_candidate"
+        assert preview["approval"] is None
+
     async def test_seed_log_refuses_overwrite_as_tool_error(self) -> None:
         from fastmcp.exceptions import ToolError
 
@@ -538,7 +606,16 @@ class TestOkfMigrationTools:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
         async with Client(make_server()) as client:
             names = {t.name for t in await client.list_tools()}
-        assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)
+        assert not (
+            {
+                "okf_convert_links",
+                "okf_generate_index",
+                "okf_seed_log",
+                "okf_preview_log_repair",
+                "okf_apply_log_repair",
+            }
+            & names
+        )
 
     async def test_tools_hidden_when_read_only(
         self, monkeypatch: pytest.MonkeyPatch

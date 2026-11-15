@@ -506,6 +506,78 @@ distinct days), plus:
 ```
 <!-- DOMAIN-EXAMPLE-okf_seed_log-END -->
 
+## `okf_preview_log_repair`
+
+**OKF: Preview Legacy Log Repair.** Read-only. Idempotent. Tags: `okf`.
+
+Preview removing adjacent repeated frontmatter from one legacy log.md;
+returns exact candidate bytes and an unapproved apply request.
+
+Identical bytes do not establish origin. Obtain the operator's review and
+authorization of the exact removal before calling `okf_apply_log_repair`.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Vault-relative path of the affected log.md. |
+
+**Returns**
+
+Candidate status, original and proposed byte etags, half-open byte
+span, removal text and base64, and an approval object with
+`operator_reviewed` false. No candidate means manual review is needed.
+
+<!-- DOMAIN-EXAMPLE-okf_preview_log_repair-START -->
+To inspect an affected log, call `okf_preview_log_repair` with:
+
+```json
+{"path": "guides/log.md"}
+```
+
+For three copies of `---\ntitle: Log\n---\n\n` followed by the log body,
+the candidate removes two blocks: bytes 20 through 59. The result includes
+`removal_start: 20`, `removal_end: 60`, `removed_blocks: 2`, and the exact
+removal in text and base64. Show that removal to the operator; matching bytes
+alone cannot establish why the author put them there. See the
+[repair workflow](../../use/okf.md#repairing-legacy-log-frontmatter).
+<!-- DOMAIN-EXAMPLE-okf_preview_log_repair-END -->
+
+## `okf_apply_log_repair`
+
+**OKF: Apply Legacy Log Repair.** Destructive. Tags: `okf`, `write`.
+
+Apply a reviewed legacy log repair, retaining the complete original in an
+adjacent recovery artifact; returns its path and the new byte etag.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Exact vault-relative log.md path used for the preview. |
+| `approval` | `object` | required | Approval from `okf_preview_log_repair` with `operator_reviewed` set to true only after the operator authorizes that exact removal. |
+
+**Returns**
+
+Path, new etag, `recovery_path`, `original_etag` and `removed_blocks`;
+remote health is included when the clone cannot reach its remote.
+
+**Outcomes and errors**
+
+- InvalidRequestError: Approval is stale or the recovery path is occupied; obtain a fresh preview and operator review before retrying.
+- ToolError: Retention or a later step failed; inspect the target and recovery artifact before retrying. The target may already be changed.
+
+<!-- DOMAIN-EXAMPLE-okf_apply_log_repair-START -->
+After the operator authorizes the exact preview for `guides/log.md`, copy its
+`approval` object and change only `operator_reviewed` to `true`. Pass that
+object as `approval` with `path: "guides/log.md"` to `okf_apply_log_repair`.
+For the three-block example above, the result names
+`guides/log.md.frontmatter-repair.bak`, reports `removed_blocks: 2`, and gives
+the repaired file's etag. The backup holds all three original blocks and the
+body; the log retains its opening block and body exactly. Inspect both files
+before removing the recovery artifact outside this operation.
+<!-- DOMAIN-EXAMPLE-okf_apply_log_repair-END -->
+
 ## `okf_verify`
 
 **OKF: Verify Note.** Changes state, not destructive. Tags: `okf`, `okf-enforce`, `write`.

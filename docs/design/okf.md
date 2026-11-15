@@ -650,7 +650,60 @@ with `parse_note` about where the block ends, and returning the remainder
 unnormalised. Only the block that *opens* the text comes off: an identical
 block further down is body, because separating "stacked by the defect" from
 "quoted on purpose" needs a rule about body content that this layer does not
-have. Repairing files the defective releases already stacked is #1403.
+have. Repairing files the defective releases already stacked is #1403,
+through the deliberate operation below.
+
+### Deliberate legacy log repair (#1403)
+
+`okf_preview_log_repair(path)` reads one bounded raw UTF-8 snapshot of a
+vault-relative `log.md`. It recognizes an opening YAML mapping delimited by
+`---` and followed by one blank line, then an immediate run of byte-identical
+copies of that whole unit. LF and CRLF units and a leading UTF-8 BOM are
+supported. A differing or interleaved adjacent block, malformed mapping, or
+unsupported shape returns `no_candidate`; no bytes change. The resolved
+target must also be named `log.md`.
+
+Equality establishes only a structural candidate, not generated origin. An
+authored example can have the same bytes. Preview returns `review_required`,
+the exact removal as UTF-8 text and base64, its half-open byte span, original
+and proposed etags, count, and an unapproved assertion. The caller must obtain
+operator review and authorization of that exact removal before setting
+`approval.operator_reviewed=true` for `okf_apply_log_repair(path, approval)`.
+The assertion binds the path, complete snapshot etag, removal span and bytes,
+and proposed output etag. It is neither a secret nor proof of human presence;
+the calling client is responsible for its assertion. The server does not infer
+authorization from equality, frontmatter, a filename, or a copied binding.
+
+`DocumentManager` owns application under the shared write lock, with existing
+writability, path, nested-repository and read-limit gates. It recomputes the
+proposal and validates the assertion before creating the adjacent
+`log.md.frontmatter-repair.bak`. Creation is exclusive: every existing entry,
+including an equal copy, directory, or dangling symlink, is a collision.
+The copy is restricted to mode `0600` before content is written and its bytes
+are verified against the complete original. Its write notification completes
+before replacement is attempted. The target etag is checked again after
+retention, then the approved span is spliced out through the existing atomic
+byte writer. The opening unit, BOM, all other bytes, and supplied provenance
+claims stay identical. Only the target is marked dirty for indexing.
+
+The recovery artifact remains after success or failure. Failures after a
+retention attempt identify it and whether target replacement was attempted;
+the artifact may be complete, partial, or absent. A notification failure after
+replacement reports possible mutation, never rollback. No automatic retry,
+reuse, cleanup, or reversal occurs. Operators inspect both paths and preserve
+the evidence elsewhere before deliberately removing an obstructing artifact.
+The lock serializes this server's writes, not external editors. This is not a
+transaction or a power-loss durability guarantee, and the backup's ordinary
+write notification does not guarantee a remote push.
+
+The library methods live on `Vault.writer`. Preview remains available on a
+read-only server; apply is write-tagged and reports remote health. Both tools
+use the existing OKF visibility rules. Repair bypasses provenance enrichment
+and convention maintenance; ordinary writes still never clean the body.
+No parser, index-semantics, configuration, CLI or editorial-event behavior
+changes. `log.md` can retain frontmatter under the recorded role contract
+([OKF v0.2 §9](reference/okf-v0.2.md)); the index-only restriction is not
+applied to logs.
 
 ### Export
 

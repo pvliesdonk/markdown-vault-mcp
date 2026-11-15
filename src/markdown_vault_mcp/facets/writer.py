@@ -20,6 +20,11 @@ if TYPE_CHECKING:
     from typing import Any
 
     from markdown_vault_mcp._okf_convention import ConventionMaintainer
+    from markdown_vault_mcp._okf_log_repair import (
+        LogRepairApproval,
+        LogRepairPreview,
+        LogRepairResult,
+    )
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
@@ -114,6 +119,31 @@ class WriterFacet:
         if self._okf_migrate is None:
             raise RuntimeError("OKF migration manager is not configured")
         return self._okf_migrate
+
+    def okf_preview_log_repair(self, path: str) -> LogRepairPreview:
+        """Preview exact candidate bytes for an operator to review.
+
+        Args:
+            path: Vault-relative path ending in log.md.
+
+        Returns:
+            A candidate with an unapproved assertion, or a manual-review explanation.
+        """
+        return self._doc_mgr.okf_preview_log_repair(path)
+
+    def okf_apply_log_repair(
+        self, path: str, approval: LogRepairApproval
+    ) -> LogRepairResult:
+        """Apply an operator-reviewed legacy repair, retaining the complete original.
+
+        Args:
+            path: Exact log.md path used for the preview.
+            approval: The preview assertion with operator_reviewed explicitly true.
+
+        Returns:
+            The resulting byte etag and adjacent recovery artifact path.
+        """
+        return self._doc_mgr.okf_apply_log_repair(path, approval)
 
     def okf_convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links (#963).
