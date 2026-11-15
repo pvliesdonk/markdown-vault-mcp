@@ -22,6 +22,11 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp.bundle_inventory import (
+    BundleInspection,
+    BundleInspectionRequest,
+    BundleInspector,
+)
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -229,6 +234,22 @@ class DocumentManager:
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
+
+    def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
+        """Inspect one selected directory independently of index admission.
+
+        Args:
+            request: Explicit bundle root, directory and observation cap.
+
+        Returns:
+            Current policy-visible observations, without content or write authority.
+        """
+        return BundleInspector(
+            self._source_dir,
+            self._exclude_patterns or (),
+            self._artifacts.extensions(),
+            self._max_note_read_bytes,
+        ).inspect(request)
 
     # ------------------------------------------------------------------
     # Validation helpers

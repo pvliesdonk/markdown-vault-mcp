@@ -19,6 +19,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any, Literal
 
+    from markdown_vault_mcp.bundle_inventory import (
+        BundleInspection,
+        BundleInspectionRequest,
+    )
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
@@ -77,6 +81,17 @@ class ReaderFacet:
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
         self._okf_audit = okf_audit
+
+    def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
+        """Inspect one explicitly selected bundle directory before or after indexing.
+
+        Args:
+            request: Explicit bundle root, relative directory and bounded entry limit.
+
+        Returns:
+            Live disk observations; search admission is not evaluated.
+        """
+        return self._doc_mgr.inspect_bundle(request)
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
