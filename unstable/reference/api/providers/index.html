@@ -3502,6 +3502,9 @@
 
 <h1 id="embedding-providers">Embedding Providers<a class="headerlink" href="#embedding-providers" title="Permanent link">&para;</a></h1>
 <p>The <code>providers</code> module defines an abstract base class for embedding providers and four concrete implementations for OpenAI, Voyage AI, Ollama, and FastEmbed.</p>
+<p>The installed package carries its type annotations through a PEP 561 marker.
+Type checkers can check subclasses of <code>EmbeddingProvider</code> against the installed
+library without adding the source checkout to their search path.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_embedding_provider</span>
 

@@ -3169,7 +3169,11 @@ did. A call that touched many files, such as <code>move_folder</code>, <code>ren
 <code>update_links=True</code>, or <code>okf_convert_links</code>, produces one commit with the
 subject <code>&lt;tool&gt;: N files</code>, where a per-file boundary produced one commit per
 file (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264">#1264</a>).
-No setting changes this. In managed mode, the deferred push sends
+With <code>OKF_WRITE</code> enabled, a single-note <code>write</code>, <code>edit</code> or <code>append</code> keeps
+that note's path in the subject. Its automatic index and log updates remain
+in the same commit; they do not replace the note's subject with a file count.
+Direct writes to <code>index.md</code> or <code>log.md</code> still name their own path.</p>
+<p>No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.</p>
 <h2 id="getting-an-overwritten-note-back">Getting an overwritten note back<a class="headerlink" href="#getting-an-overwritten-note-back" title="Permanent link">&para;</a></h2>

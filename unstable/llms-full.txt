@@ -2732,7 +2732,9 @@ Use this guide to choose and configure the right git mode for your deployment.
 
 ## What a commit covers
 
-In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many files, such as `move_folder`, `rename` with `update_links=True`, or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
+In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many files, such as `move_folder`, `rename` with `update_links=True`, or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit` or `append` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path.
+
+No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
 
 ## Getting an overwritten note back
 
@@ -3341,6 +3343,8 @@ A `verified` entry is also a claim about the note as it stood when the entry was
 With the layer on, the server also maintains a folder's reserved files as a side effect of writing into it. After a successful `write` or `edit` on a note, it appends a dated `**Update**` bullet to that folder's `log.md` (creating the log, and the day's `## YYYY-MM-DD` section, when needed) and regenerates the folder's `index.md` listing so a new note shows up without a manual step. A note written into a folder with no `index.md` is listed from the nearest folder above that has one, and each level in between gets its own `index.md`. That covers the upkeep the advisory layer otherwise asks the agent to do by hand, on the write paths below and no others.
 
 A `delete`, `rename` or `move_folder` keeps the listings current too. A deleted note drops out of its folder's `index.md`. A renamed note leaves its old folder's listing and appears in its new folder's, as a write there would. After a folder move, every `index.md` that moved with it is regenerated for its new paths, and so are the listings of the old and the new parent folder. When a note or folder lands several levels below the nearest folder with an `index.md`, that folder's listing is regenerated and each level in between gets one, so no listing points at a missing file. These changes add no `log.md` entry. A rename to or from `index.md` or `log.md` leaves the listings alone, so renaming a note onto a reserved name keeps its content.
+
+After a folder move, the refresh skips git submodule folders and their descendants. It still updates ordinary containing folders and their other descendants, without attempting to rewrite submodule listings. The [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/#submodules-in-the-vault) explains the read-only boundary.
 
 A few boundaries keep this predictable, and they are also its limits. Maintenance runs only on an active bundle. A write whose target is itself a reserved file does not trigger it. The `okf_verify` tool and the one-shot migration transforms are exempt, so an attestation or a mechanical rewrite does not churn the reserved files. Only one listing is regenerated per write: that of the folder directly containing the note, or, when it has no `index.md`, that of the nearest folder above it with one. A folder's own listing is not otherwise refreshed when a note lands in one of its subfolders. A failure to update a reserved file is logged and skipped; it never fails or rolls back the note write that triggered it, so a listing can silently fall behind.
 
@@ -4881,7 +4885,7 @@ The image carries the same command. Run inside the container, it reads the serve
 docker compose exec -u appuser markdown-vault-mcp markdown-vault-mcp search "release notes"
 ```
 
-Run it as `appuser`, the user the server runs as. As root, which is what `docker exec` uses by default, a vault that is a git checkout fails with `Managed mode requires SOURCE_DIR to be empty or a git repository`, because git refuses a checkout owned by another user.
+Running as `appuser` uses the same file permissions as the server. Local search also works as root on a service-owned Git checkout: like the other local readers, it ignores managed Git credentials and reads the existing files without cloning or synchronizing them. File permissions still apply.
 
 The command also prints the server's startup log lines on stderr. Set `MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING` for the call to keep the terminal to the results. An alias for a container started with `docker run --name my-vault` puts both in one word:
 
@@ -10208,7 +10212,7 @@ Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam (#1229): the
 
 Validate startup git settings for token-authenticated workflows.
 
-### `on_write_batch(items, tool_name)`
+### `on_write_batch(items, tool_name, *, primary_paths=None)`
 
 Commit every write from one tool call as a single commit.
 
@@ -10216,10 +10220,11 @@ Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary 
 
 Parameters:
 
-| Name        | Type                       | Description                                           | Default    |
-| ----------- | -------------------------- | ----------------------------------------------------- | ---------- |
-| `items`     | `Sequence[WriteBatchItem]` | The tool call's writes, in the order they were fired. | *required* |
-| `tool_name` | `str`                      | The MCP tool that produced them.                      | *required* |
+| Name            | Type                       | Description                                           | Default                                                                                    |
+| --------------- | -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `items`         | `Sequence[WriteBatchItem]` | The tool call's writes, in the order they were fired. | *required*                                                                                 |
+| `tool_name`     | `str`                      | The MCP tool that produced them.                      | *required*                                                                                 |
+| `primary_paths` | \`frozenset[Path]          | None\`                                                | Paths written outside secondary maintenance, or None to retain the ordinary batch subject. |
 
 ### `__call__(path, content, operation, *, old_path=None, principal=None)`
 
@@ -10662,6 +10667,8 @@ Load :class:`ProjectConfig` from `MARKDOWN_VAULT_MCP_*` env vars.
 # Embedding Providers
 
 The `providers` module defines an abstract base class for embedding providers and four concrete implementations for OpenAI, Voyage AI, Ollama, and FastEmbed.
+
+The installed package carries its type annotations through a PEP 561 marker. Type checkers can check subclasses of `EmbeddingProvider` against the installed library without adding the source checkout to their search path.
 
 ## Quick Start
 
