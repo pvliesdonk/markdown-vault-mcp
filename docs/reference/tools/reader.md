@@ -640,6 +640,17 @@ Informational rules, not deviations:
   exporting.
 - `missing_recommended`: notes without the recommended `title` or
   `description`.
+- `missing_freshness`: assessed notes with no expiry supplied.
+
+Evidence observations leave `conformant_notes` unchanged:
+
+- `malformed_freshness`, `malformed_review`: assessed notes with
+  unsupported expiry or malformed review records.
+- `evidence_unavailable`: discovered notes not assessed for evidence
+  because reading/parsing failed or the read cap was exceeded.
+
+Evidence findings cover discovered, non-excluded concepts, not
+complete traversal, truth, or editorial-policy compliance.
 
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

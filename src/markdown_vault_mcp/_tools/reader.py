@@ -959,6 +959,17 @@ def register(mcp: FastMCP) -> None:
               exporting.
             - missing_recommended: notes without the recommended `title` or
               `description`.
+            - missing_freshness: assessed notes with no expiry supplied.
+
+            Evidence observations leave conformant_notes unchanged:
+
+            - malformed_freshness, malformed_review: assessed notes with
+              unsupported expiry or malformed review records.
+            - evidence_unavailable: discovered notes not assessed for evidence
+              because reading/parsing failed or the read cap was exceeded.
+
+            Evidence findings cover discovered, non-excluded concepts, not
+            complete traversal, truth, or editorial-policy compliance.
         """
         report = await asyncio.to_thread(vault.reader.okf_validate)
         return asdict(report)
