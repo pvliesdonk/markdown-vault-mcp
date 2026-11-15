@@ -174,7 +174,7 @@ class ConventionMaintainer:
                 self._refresh_index(folder)
 
     def subtree_folders(self, root: str) -> list[str]:
-        """Return *root* and every non-hidden folder below it, vault-relative.
+        """Return vault-owned non-hidden folders under *root*, vault-relative.
 
         After a folder move these are the folders whose ``index.md`` moved
         along, still listing the old paths (#1609).
@@ -183,15 +183,25 @@ class ConventionMaintainer:
             root: Vault-relative folder (``""`` for the vault root).
 
         Returns:
-            *root* first, then its descendants in walk order; only *root*
-            when no vault directory is known.
+            *root* first, then its descendants in walk order, omitting git
+            submodules and their descendants. Empty when *root* is inside a
+            submodule; only *root* when no vault directory is known.
         """
+        if self._doc_mgr.in_submodule(root):
+            return []
         if self._source_dir is None:
             return [root]
         base = self._source_dir / root if root else self._source_dir
         found = [root]
         for dirpath, dirnames, _files in os.walk(base):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if not d.startswith(".")
+                and not self._doc_mgr.in_submodule(
+                    Path(dirpath, d).relative_to(self._source_dir).as_posix()
+                )
+            )
             for name in dirnames:
                 found.append(
                     Path(dirpath, name).relative_to(self._source_dir).as_posix()

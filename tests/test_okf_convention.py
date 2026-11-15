@@ -13,17 +13,21 @@ Two layers:
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 
 import frontmatter as fm
 import pytest
 
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
+from tests.fixtures.git import make_superproject
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -63,6 +67,10 @@ class _FakeDoc:
         self.raise_on_write = False
         #: Stands in for an existing log.md: ``(body, frontmatter)`` or None.
         self.existing: tuple[str, dict[str, Any]] | None = None
+
+    def in_submodule(self, _path: str) -> bool:
+        "Return false for a document manager without a git guard."
+        return False
 
     def read(self, _path: str) -> Any:
         """Model ``DocumentManager.read``: ``content`` is the *whole file*.
@@ -504,6 +512,28 @@ def _index_links_broken(vault: Vault) -> list[str]:
 
 
 class TestIndexRefreshOnStructuralChanges:
+    def test_move_folder_forwards_maintainer_folders(
+        self, enforced_vault: Vault, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        enforced_vault.writer.write("guides/sub/child/a.md", "# A\n\nx\n")
+        wait_for_writer_drain(enforced_vault)
+        maintainer = enforced_vault.writer._convention_maintainer
+        assert maintainer is not None
+        folders = ["b", "b/child"]
+        walk = Mock(return_value=folders)
+        refresh = Mock()
+        monkeypatch.setattr(maintainer, "subtree_folders", walk)
+        monkeypatch.setattr(maintainer, "refresh_indexes", refresh)
+
+        enforced_vault.writer.move_folder("guides/sub", "b")
+
+        walk.assert_called_once_with("b")
+        refresh.assert_called_once_with(
+            [*folders, "guides"],
+            trigger_paths=["guides/sub", "b"],
+            create=[""],
+        )
+
     def test_delete_drops_the_note_from_its_folder_index(
         self, enforced_vault: Vault
     ) -> None:
@@ -577,14 +607,54 @@ class TestRefreshIndexesGuards:
         maintainer.refresh_indexes(["a"], trigger_paths=["a/index.md"])
         assert migrate.index_calls == []
 
-    def test_one_failure_does_not_stop_the_others(self) -> None:
+    def test_one_failure_does_not_stop_the_others(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         maintainer, migrate = self._maintainer()
         migrate.raise_on_index = True
         maintainer.refresh_indexes(["a", "b"], trigger_paths=["a/x.md"])
         assert migrate.index_calls == []  # both attempted, both raised, none raised out
+        failures = [
+            r for r in caplog.records if r.msg.startswith("okf_convention_index_failed")
+        ]
+        assert len(failures) == 2
+        assert all(r.levelno == logging.WARNING and r.exc_info for r in failures)
 
 
 class TestMaintainerFolderWalks:
+    @pytest.mark.parametrize(
+        ("root", "expected"),
+        [
+            ("b", ["b", "b/alpha", "b/subway", "b/subway/deep"]),
+            ("b/sub", []),
+            ("b/sub/deeper", []),
+            ("", ["", "b", "b/alpha", "b/subway", "b/subway/deep"]),
+        ],
+    )
+    def test_subtree_folders_omits_submodules(
+        self, tmp_path: Path, root: str, expected: list[str]
+    ) -> None:
+        source = make_superproject(tmp_path, sub="b/sub")
+        for rel in ("b/sub/deeper", "b/subway/deep", "b/alpha", "b/.hidden/child"):
+            (source / rel).mkdir(parents=True, exist_ok=True)
+        vault = Vault(
+            source_dir=source,
+            settings=VaultSettings(read_only=False),
+            git_strategy=GitWriteStrategy(
+                enable_pull=False, enable_push=False, git_lfs=False, repo_path=source
+            ),
+        )
+        try:
+            maintainer = ConventionMaintainer(
+                doc_mgr=vault._doc_mgr,
+                okf_migrate=_FakeMigrate(),  # type: ignore[arg-type]
+                detector=_FakeDetector(True),  # type: ignore[arg-type]
+                source_dir=source,
+            )
+            assert maintainer.subtree_folders(root) == expected
+        finally:
+            vault.close()
+
     def _maintainer(self, source_dir: Path | None) -> ConventionMaintainer:
         return ConventionMaintainer(
             doc_mgr=_FakeDoc(),  # type: ignore[arg-type]
