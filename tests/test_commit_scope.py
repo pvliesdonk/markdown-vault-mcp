@@ -592,6 +592,49 @@ class TestBatchCommitsForReal:
         assert len(_subjects(repo)) == before + 1
         assert _files_in_head(repo) == {"note.md", "index.md", "log.md"}
 
+    @pytest.mark.parametrize("okf", [False, True])
+    @pytest.mark.parametrize("backlinks", [False, True])
+    def test_rename_subject_keeps_both_paths_with_derived_writes(
+        self, tmp_path: Path, okf: bool, backlinks: bool
+    ) -> None:
+        """A rename names its source and destination, not its consequences."""
+        from markdown_vault_mcp.git._run import run_git
+        from markdown_vault_mcp.vault import Vault, VaultSettings
+
+        repo = _repo(tmp_path)
+        if backlinks:
+            (repo / "source.md").write_text("[Note](note.md)\n", encoding="utf-8")
+            run_git(str(repo), "add", "source.md")
+            run_git(str(repo), "commit", "-m", "seed backlink")
+        strategy = self._strategy(repo)
+        vault = Vault(
+            source_dir=repo,
+            settings=VaultSettings(
+                read_only=False, okf_mode="on" if okf else "off", okf_write=okf
+            ),
+            on_write=strategy,
+        )
+        vault.index.build_index()
+        before = len(_subjects(repo))
+        try:
+            with bound_commit_scope("rename") as scope:
+                result = vault.writer.rename("note.md", "renamed.md", update_links=True)
+                vault.end_commit_scope(scope)
+        finally:
+            vault.close()
+            strategy.close()
+
+        assert _subjects(repo)[0] == "rename: note.md -> renamed.md"
+        assert len(_subjects(repo)) == before + 1
+        assert result.updated_links == int(backlinks)
+        expected = {"renamed.md"}
+        if backlinks:
+            expected.add("source.md")
+            assert "renamed.md" in (repo / "source.md").read_text(encoding="utf-8")
+        if okf:
+            expected.add("index.md")
+        assert _files_in_head(repo) == expected
+
     @pytest.mark.parametrize(
         ("primary_names", "expected"),
         [

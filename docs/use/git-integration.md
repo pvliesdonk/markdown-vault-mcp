@@ -30,14 +30,18 @@ filenames retain the same spelling when Git decides which paths to stage.
 In both git modes, the commit boundary is the MCP tool call, not the file.
 A call that wrote one file commits under that file's path
 (`write: notes/one.md`), so an ordinary vault's log reads as it always
-did. A call that touched many files, such as `move_folder`, `rename` with
-`update_links=True`, or `okf_convert_links`, produces one commit with the
+did. A call that touched many primary files, such as `move_folder` or
+`okf_convert_links`, produces one commit with the
 subject `<tool>: N files`, where a per-file boundary produced one commit per
 file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)).
 With `OKF_WRITE` enabled, a single-note `write`, `edit` or `append` keeps
 that note's path in the subject. Its automatic index and log updates remain
 in the same commit; they do not replace the note's subject with a file count.
 Direct writes to `index.md` or `log.md` still name their own path.
+A single-note rename names both paths, for example
+`rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites
+backlinks or OKF refreshes index listings. Those derived writes stay in the
+same commit. Multi-file folder moves still use the existing batch summary.
 
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls

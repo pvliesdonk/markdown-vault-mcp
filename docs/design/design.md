@@ -6528,7 +6528,8 @@ the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
 subject when the call staged exactly one path.
 
-OKF content-write maintenance marks its secondary writes with
+OKF content-write maintenance, index-listing refreshes, and single-note
+rename backlink notifications mark their secondary writes with
 `auxiliary_commit_writes`. The dispatcher snapshots this context beside each
 queued write, not on the worker. It sends the primary paths through the
 separate `ACCEPTS_PRIMARY_PATHS_ATTR` opt-in: existing batch callbacks still
@@ -6539,7 +6540,12 @@ paths, or a failed primary stage retains the batch count. A direct batch caller
 that supplies no provenance also retains its existing subject. Names and item
 order never establish maintenance provenance; a user's own `index.md` write
 is primary. This changes only the subject, not write authority or commit scope
-(#1675).
+(#1675). Rename subjects use the callback's existing `old_path` to name both
+source and destination; callbacks without that path retain the destination-only
+subject. The primary item carries its old path through subject selection,
+without changing the callback tuple. Multi-file folder moves retain their
+batch summary; exact folder roots are not inferred from the moved files
+(#1676, single-note slice).
 
 Three properties this depends on:
 
