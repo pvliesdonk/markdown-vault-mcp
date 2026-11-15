@@ -672,7 +672,7 @@ operator review and authorization of that exact removal before setting
 The assertion binds the path, complete snapshot etag, removal span and bytes,
 and proposed output etag. It is neither a secret nor proof of human presence;
 the calling client is responsible for its assertion. The server does not infer
-authorization from equality, frontmatter, a filename, or a copied binding.
+authorization from equality, frontmatter, a filename, or a copied approval.
 
 `DocumentManager` owns application under the shared write lock, with existing
 writability, path, nested-repository and read-limit gates. It recomputes the

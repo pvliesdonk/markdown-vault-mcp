@@ -1154,7 +1154,7 @@ def register(mcp: FastMCP) -> None:
             path: Vault-relative path of the affected log.md.
 
         Returns:
-            Candidate status, original and proposed byte etags, half-open byte
+            Candidate status, original and proposed byte `etag` values, half-open byte
             span, removal text and base64, and an approval object with
             operator_reviewed false. No candidate means manual review is needed.
         """

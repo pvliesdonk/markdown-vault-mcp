@@ -114,6 +114,8 @@ def test_preserves_opening_metadata_and_suffix_bytes(
         UNIT + UNIT.replace(b"Log", b"Other") + SUFFIX,
         UNIT * 2 + b"---\ntitle: Other\n---\n\n" + SUFFIX,
         b"---\nbad: [\n---\n\n" * 3,
+        b"---\nupdated: 2026-02-30\n---\n\n" * 3,
+        b"---\ndate: 2026-99-99\n---\n\n" * 3,
         b"---\n- list\n---\n\n" * 3,
         UNIT.replace(b"\n\n", b"\n") * 3,
     ],
@@ -149,7 +151,6 @@ def test_identical_authored_example_still_needs_explicit_review(
         ("removal_start", 0),
         ("removal_end", 0),
         ("removal_base64", ""),
-        ("binding", "forged"),
     ],
 )
 def test_tampered_approval_is_refused_before_retention(

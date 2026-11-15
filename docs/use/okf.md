@@ -155,12 +155,12 @@ To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the re
 Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the
 start of `log.md`. To repair one affected file, call
 [`okf_preview_log_repair`](../reference/tools/writer.md#okf_preview_log_repair)
-with its vault-relative path, for example `guides/log.md`. Preview changes
+with its vault-relative path, such as `guides/log.md`. Preview changes
 nothing and is available on a read-only server when OKF tools are visible.
 The [security model](../security-model.md) describes the write boundary.
 
 Review the proposed removal with the operator. The preview gives the exact
-removed text, its base64 bytes, byte offsets, and old and proposed etags.
+removed text, its base64 bytes, byte offsets, and old and proposed `etag` values.
 Matching blocks alone do not prove the old defect created them. Preserve
 intentional examples or anything whose purpose is uncertain. `no_candidate`
 means the shape is outside this narrow repair; review it manually.

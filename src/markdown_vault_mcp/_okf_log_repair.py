@@ -7,7 +7,6 @@ caller assertion authorizes the reviewed removal; no ordinary write uses this.
 from __future__ import annotations
 
 import base64
-import json
 import re
 from typing import TYPE_CHECKING, Literal
 
@@ -39,7 +38,6 @@ class LogRepairApproval(BaseModel):
     removal_start: int
     removal_end: int
     removal_base64: str
-    binding: str
     operator_reviewed: bool = False
 
 
@@ -104,7 +102,10 @@ def _unit_length(data: bytes) -> int:
         return 0
     try:
         mapping = yaml.safe_load(match["yaml"].decode("utf-8"))
-    except yaml.YAMLError:
+    except (yaml.YAMLError, ValueError):
+        # PyYAML timestamp construction can raise ValueError, as normalized
+        # by scanner.parse_frontmatter. Keep safe_load here to reject a
+        # non-mapping explicitly; frontmatter's Post always exposes a dict.
         return 0
     return match.end() if isinstance(mapping, dict) else 0
 
@@ -141,13 +142,6 @@ def preview_log_repair(path: str, original: bytes) -> LogRepairPreview:
     removal = original[start:end]
     encoded = base64.b64encode(removal).decode("ascii")
     new_etag = compute_etag(original[:start] + original[end:])
-    binding = compute_etag(
-        json.dumps(
-            [path, etag, new_etag, start, end, encoded],
-            ensure_ascii=True,
-            separators=(",", ":"),
-        ).encode("ascii")
-    )
     approval = LogRepairApproval(
         path=path,
         etag=etag,
@@ -155,7 +149,6 @@ def preview_log_repair(path: str, original: bytes) -> LogRepairPreview:
         removal_start=start,
         removal_end=end,
         removal_base64=encoded,
-        binding=binding,
     )
     return LogRepairPreview(
         path=path,
