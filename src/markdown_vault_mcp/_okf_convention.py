@@ -27,6 +27,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
@@ -135,7 +136,7 @@ class ConventionMaintainer:
         if not self._detector.state().active:
             return
         folder = folder_of(path)
-        with okf_write_suppressed():
+        with okf_write_suppressed(), auxiliary_commit_writes():
             self._append_log(folder, path, operation)
             # A note in a folder without an index is listed from the nearest
             # indexed level, which indexes every missing level below (#1647).
