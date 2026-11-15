@@ -780,6 +780,7 @@ class TestToolManifest:
             "get_similar",
             "get_toc",
             "git_sync",
+            "list_changed_files",
             "list_documents",
             "list_folders",
             "list_tags",
