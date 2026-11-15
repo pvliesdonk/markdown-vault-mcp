@@ -820,12 +820,13 @@ versus commit at startup is still the owner's call, and [#1938][1938], whose
 "after 015" postponement has passed. Contributor-proposed features have no
 package until their issues are accepted.
 
-`stated` — The v6.1.1 cut, a fix outside any package, had renamed `020` to
-`v6.1.1 first-class-library` and closed it with its open items still attached.
-The owner reopened it as `024`, above `023`, so the next cut, the `021` fixes,
-does not consume it again while the template fix for
-[fastmcp-server-template#885](https://github.com/pvliesdonk/fastmcp-server-template/issues/885)
-is in progress.
+`evidenced` — The v6.1.1 cut, a fix outside any package, renamed `020` to
+`v6.1.1 first-class-library` and closed it with its open items still attached
+(Release run 42457174500's package step; milestone #13). The template defect is
+[fastmcp-server-template#885](https://github.com/pvliesdonk/fastmcp-server-template/issues/885).
+
+`stated` — The owner reopened it as `024`, above `023`, so that the next cut,
+the `021` fixes, does not consume it again before that defect is fixed.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
