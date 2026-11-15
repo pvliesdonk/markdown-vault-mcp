@@ -505,6 +505,9 @@ contributed PRs need an owner decision before review. `023` holds bugs the
 contributors reported, which join after their issues are accepted. The order
 follows from that: the least open decision ships first.
 
+`stated` — `020 first-class-library` is renumbered `024`, after `023` and before
+`025` (15 November 2026). Its milestone keeps its identity and membership.
+
 `derived` — **[025 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
 (minor)** follows `020` with the read-only submodule epic [#1561][1561], less the
 refusal that moved to `015`.
@@ -816,6 +819,13 @@ Moved [#1754][1754] from `030` to `021`. `022` carries [#1678][1678], where repo
 versus commit at startup is still the owner's call, and [#1938][1938], whose
 "after 015" postponement has passed. Contributor-proposed features have no
 package until their issues are accepted.
+
+`stated` — The v6.1.1 cut, a fix outside any package, had renamed `020` to
+`v6.1.1 first-class-library` and closed it with its open items still attached.
+The owner reopened it as `024`, above `023`, so the next cut, the `021` fixes,
+does not consume it again while the template fix for
+[fastmcp-server-template#885](https://github.com/pvliesdonk/fastmcp-server-template/issues/885)
+is in progress.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
