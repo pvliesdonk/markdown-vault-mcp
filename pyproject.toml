@@ -295,6 +295,10 @@ build-backend = "hatchling.build"
 constraint-dependencies = [
   "numpy<2.5", # until: https://github.com/pvliesdonk/fastmcp-server-template/issues/547
 ]
+# The docs toolchain resolves only for interpreters soupsieve >=3.0.2 supports:
+# below 3.11.5 uv forked to soupsieve 2.10, which three advisories cover (#2117).
+# CI builds the docs on newer interpreters; the package floor stays 3.11.
+dependency-groups = { docs = { requires-python = ">=3.11.5" } }
 # PROJECT-UV-END
 
 [tool.hatch.build.targets.wheel]
