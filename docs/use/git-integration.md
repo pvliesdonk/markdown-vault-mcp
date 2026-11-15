@@ -38,7 +38,7 @@ With `OKF_WRITE` enabled, a single-note `write`, `edit` or `append` keeps
 that note's path in the subject. Its automatic index and log updates remain
 in the same commit; they do not replace the note's subject with a file count.
 Direct writes to `index.md` or `log.md` still name their own path.
-A single-note rename names both paths, for example
+A single-note rename names both paths:
 `rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites
 backlinks or OKF refreshes index listings. Those derived writes stay in the
 same commit. Multi-file folder moves still use the existing batch summary.
