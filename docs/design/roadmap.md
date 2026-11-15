@@ -501,7 +501,8 @@ the contributed pull requests open on that date.
 `derived` — **Patch intent for all three.** `021` holds owner-filed bugs whose
 contributed fixes are small, and the test-only de-flake work lands first inside
 it, so that CI is quiet for everything after. `022` holds owner-filed bugs whose
-contributed PRs need an owner decision before review. `023` holds bugs the
+contributed PRs need an owner decision before review, and since `021` shipped
+it also takes the small owner-filed fixes that need none. `023` holds bugs the
 contributors reported, which join after their issues are accepted. The order
 follows from that: the least open decision ships first.
 
@@ -828,6 +829,24 @@ package until their issues are accepted.
 `stated` — The owner reopened it as `024`, above `023`, so that the next cut,
 the `021` fixes, does not consume it again before that defect is fixed.
 
+### 15 November 2026 — place the pull requests contributed after packaging
+
+`evidenced` — `021` shipped as v6.1.2 (milestone #22, now titled
+`v6.1.2 backlog-fixes`; commit 495afd1f).
+
+`stated` — The owner committed the small owner-filed work contributed since
+then to `022`, so that it ships in that cut rather than a docs-only one: [#1755][1755], [#1676][1676], [#1294][1294], [#1368][1368] and
+[#1598][1598]. They also committed [#1403][1403] to `022`, because its
+contributed PR proposes a deliberate repair and that choice is theirs.
+
+`stated` — The owner accepts PR #2127 as a standalone refactor, reviewed on its
+merits. The direction of [#1232][1232], several vaults behind one server, stays
+open and unrefined.
+
+`derived` — [#2121][2121] is a contributor-proposed feature, so it has no
+package until it is accepted. [#1442][1442] waits on [#1610][1610], as
+[#1606][1606] does.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -839,6 +858,7 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [1245]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245
 [1272]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1272
 [1293]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1293
+[1294]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1294
 [1299]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299
 [1307]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1307
 [1308]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1308
@@ -850,6 +870,7 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [1377]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1377
 [1383]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1383
 [1390]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1390
+[1403]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403
 [1412]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412
 [1425]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425
 [1436]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1436
@@ -895,13 +916,16 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [1565]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1565
 [1566]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1566
 [1567]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1567
+[1598]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1598
 [1640]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1640
 [1665]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1665
 [1666]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1666
+[1676]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676
 [1728]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728
 [1606]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1606
 [1610]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1610
 [1678]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678
+[1755]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1755
 [1938]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938
 [1730]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1730
 [1733]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1733
@@ -926,5 +950,6 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [2019]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2019
 [2021]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2021
 [2022]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2022
+[2121]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2121
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
