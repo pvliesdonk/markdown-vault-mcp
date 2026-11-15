@@ -2781,6 +2781,122 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v612" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v6.1.2
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v6.1.2">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrading_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nested-repositories-are-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nested repositories are read-only
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#search-by-meaning-reports-a-failed-model-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search by meaning reports a failed model change
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#links-and-indexing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Links and indexing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git history
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#terminal-reads-in-a-container" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal reads in a container
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#type-hints-for-library-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type hints for library users
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vault-explorer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vault explorer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contributors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2802,7 +2918,7 @@
 
 
 <h1 id="61">6.1<a class="headerlink" href="#61" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: 25db173cd9085b7241bd9d59bebadc77369671fe -->
+<!-- notes-range-end: d5d70571f8a91f81b0c1e451b5fd74a6b914f68b -->
 
 <!-- RELEASE-SUMMARY v6.1.0 START -->
 <p>This release brings the vault to the terminal. The <code>markdown-vault-mcp</code>
@@ -3008,6 +3124,155 @@ words of <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2036">
 title and an H1 in the outline". The first line now keeps its indentation;
 every other note reads exactly as before
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2038">#2038</a>).</p>
+<h2 id="v612">v6.1.2<a class="headerlink" href="#v612" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v6.1.2 START -->
+<p>This release closes gaps where a change looked saved but wasn't, or a failure
+came back as an empty answer. In a Git-backed vault, a plain Git repository
+nested inside the vault is now read-only, like a submodule. Upload links,
+<code>fetch</code> and the OKF refresh refuse such a destination up front. A search by
+meaning after an embedding model change reports a failed rebuild instead of
+returning nothing. Wikilinks with a <code>]</code> in the target resolve as in Obsidian.
+Commit subjects name the note when OKF maintenance is on. Local terminal
+reads work as root and stop printing startup logs. The package ships its type
+hints. The first start rebuilds the text index once; see
+<a href="#upgrading">Upgrading</a>.</p>
+<!-- RELEASE-SUMMARY v6.1.2 END -->
+
+<h3 id="upgrading_2">Upgrading<a class="headerlink" href="#upgrading_2" title="Permanent link">&para;</a></h3>
+<p>No step is required for most deployments.</p>
+<ul>
+<li><strong>If your Git-backed vault holds a folder with its own <code>.git</code> that is not a
+  registered submodule, and something writes notes into it:</strong> those writes
+  now fail with an error naming the nested repository. Before this release
+  they reported success but were never committed. Change those files in
+  their own repository, or move the destination outside it
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1949">#1949</a>).</li>
+<li><strong>If you used <code>-e MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING</code> to keep startup logs
+  out of <code>docker exec</code> reads:</strong> you can drop it. Pass <code>-v</code> when you want the
+  routine logs back.</li>
+<li><strong>If your Python code type-checks against <code>markdown_vault_mcp</code>:</strong> mypy now
+  reads the package's type hints, so code that passed against an untyped
+  package can report new type errors. Nothing changes at runtime.</li>
+</ul>
+<p><strong>Clients:</strong> nothing beyond reconnecting; the tool surface is unchanged.
+Two cases that looked like success now return errors: a write into a nested
+repository and a search by meaning after a failed model-change rebuild.</p>
+<p><strong>State:</strong> kept. The first start after upgrading rebuilds the text index
+once, automatically, because this release changes which wikilinks are read
+from a note. The embeddings are kept: the rebuild re-embeds only notes whose
+sections changed, and this release changes no sections.</p>
+<p><strong>Security posture:</strong> none. Nested repositories become read-only for the
+server's write tools. Reads, search and download links still reach them.</p>
+<h3 id="nested-repositories-are-read-only">Nested repositories are read-only<a class="headerlink" href="#nested-repositories-are-read-only" title="Permanent link">&para;</a></h3>
+<p>Since 6.0 the server refuses to change files inside a Git submodule of a
+Git-backed vault: a change there never reaches the vault's own commits. That
+check missed a plain repository nested in the vault: a folder with its own
+<code>.git</code> that isn't a registered submodule. A write there reported
+success but "is never committed"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1949">#1949</a>).</p>
+<p>The server now refuses writes into a nested repository as it does for a
+submodule, including a repository created after the server started
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2088">#2088</a>).
+The error names the argument and the nested repository. Reading and
+searching those files still work. A vault without Git refuses nothing.</p>
+<p>Three callers reached that refusal only after doing other work
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950">#1950</a>).
+They now refuse up front:</p>
+<ul>
+<li><a href="../../reference/tools/transfer/#create_upload_link"><code>create_upload_link</code></a> refuses a protected
+  <code>ref</code> before it creates a link, instead of handing out a link whose upload
+  then failed (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2101">#2101</a>).</li>
+<li><code>fetch</code> refuses a protected <code>path</code> before it downloads anything
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2103">#2103</a>).</li>
+<li>After <code>move_folder</code>, the OKF index refresh skips these folders instead of
+  logging <code>okf_convention_index_failed</code> with a traceback
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2104">#2104</a>).</li>
+</ul>
+<p>The <a href="../../use/git-integration/#submodules-and-nested-repositories-in-the-vault">Git integration guide</a>
+describes the boundary.</p>
+<h3 id="search-by-meaning-reports-a-failed-model-change">Search by meaning reports a failed model change<a class="headerlink" href="#search-by-meaning-reports-a-failed-model-change" title="Permanent link">&para;</a></h3>
+<p>When the embedding model or its vector size changes, the server rebuilds the
+embeddings on the next search by meaning. If every batch of that rebuild
+failed because the provider was down,
+"the search returns <code>[]</code> and so does every later search. The caller gets no
+error"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1946">#1946</a>).</p>
+<p>Semantic and hybrid searches now fail with an error that says the rebuild
+failed, that the request was fine, and to retry later or search by keyword.
+Each later search tries the rebuild again and recovers once the provider
+does. <code>admin index</code> and <code>admin embeddings import</code> print the same failure and
+exit with status 1
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2081">#2081</a>). The
+<a href="../../use/embeddings/#common-to-all-providers">embeddings guide</a> covers
+model changes.</p>
+<h3 id="links-and-indexing">Links and indexing<a class="headerlink" href="#links-and-indexing" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>A <code>]</code> inside a wikilink target.</strong> "A single <code>]</code> inside a wikilink target
+  ends the link for the scanner, but not for Obsidian, where only <code>]]</code> does"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1384">#1384</a>).
+  <code>[[Sq]uare]]</code> now links to <code>Sq]uare.md</code>, for backlinks, broken-link
+  reports and renames alike
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2089">#2089</a>).
+  This is the change behind the one-time index rebuild.</li>
+<li><strong>Slow indexing of long backtick or space runs.</strong> Link extraction took
+  time growing with the square of an unmatched run of backticks, or of
+  spaces before a link title: "Doubling the run roughly quadruples the time"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1749">#1749</a>).
+  Both cases now run in linear time with the same results. For a
+  16,000-character backtick run the PR measured 3.359 s before and
+  0.00256 s after
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2084">#2084</a>).</li>
+</ul>
+<h3 id="git-history">Git history<a class="headerlink" href="#git-history" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Commit subjects name the note.</strong> With OKF maintenance on, a single-note
+  write, edit or append committed as <code>edit: 3 files</code>, because the folder's
+  <code>index.md</code> and <code>log.md</code> were counted. The owner's report in
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1675">#1675</a>:
+  "Every commit is as an edit for 3 files." The subject now names the note,
+  and the <code>index.md</code> and <code>log.md</code> updates still land in the same commit
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2091">#2091</a>).</li>
+<li><strong>Carriage returns in filenames.</strong> A note whose name contains a carriage
+  return, which can only arrive from outside the server, "comes back from
+  <code>get_history</code> with that byte rewritten to a newline, so the path names a
+  file that does not exist"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1290">#1290</a>).
+  History, rename tracking, revision reads and conflict recovery now keep
+  the name as Git wrote it
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2092">#2092</a>,
+  <a href="../../use/git-integration/">guide</a>).</li>
+</ul>
+<h3 id="terminal-reads-in-a-container">Terminal reads in a container<a class="headerlink" href="#terminal-reads-in-a-container" title="Permanent link">&para;</a></h3>
+<p>Running <code>markdown-vault-mcp search</code> through <code>docker exec</code> as root on a Git
+checkout owned by the service user failed with "Managed mode requires
+SOURCE_DIR to be empty or a git repository"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1999">#1999</a>).
+Local <code>search</code> now skips the managed Git checks, as <code>read</code>, <code>list</code> and the
+other read commands already did. It never clones or syncs
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2097">#2097</a>).</p>
+<p>The same issue reported that "every successful call also writes the server's
+startup log lines (JSON, INFO) to stderr, interleaved with the results."
+Local read commands now print only warnings and errors; <code>-v</code> or
+<code>MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG</code> brings the routine lines back
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2100">#2100</a>). The
+<a href="../../use/terminal/">terminal guide</a> shows the updated alias.</p>
+<h3 id="type-hints-for-library-users">Type hints for library users<a class="headerlink" href="#type-hints-for-library-users" title="Permanent link">&para;</a></h3>
+<p>The package now ships a <code>py.typed</code> marker, so mypy checks code that uses
+<code>markdown_vault_mcp</code> against its type hints instead of skipping it with
+"module is installed, but missing library stubs or py.typed marker"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1911">#1911</a>).
+Thanks to <a href="https://github.com/tstotzer">@tstotzer</a> for
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2026">#2026</a>.</p>
+<h3 id="vault-explorer">Vault explorer<a class="headerlink" href="#vault-explorer" title="Permanent link">&para;</a></h3>
+<p>Screen readers now announce the search box in the
+<a href="../../use/vault-explorer/">vault explorer</a> as "Search vault" and the context
+heading as "Context" while the first note loads, where it used to be empty
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1754">#1754</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2096">#2096</a>).</p>
+<h3 id="contributors">Contributors<a class="headerlink" href="#contributors" title="Permanent link">&para;</a></h3>
+<p>Every fix in this release except the type marker came from
+<a href="https://github.com/salmonumbrella">@salmonumbrella</a>, who sent the pull
+requests for issues the maintainer had filed.</p>
 <!-- PATCH-RELEASES-END -->
 
 
