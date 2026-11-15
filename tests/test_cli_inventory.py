@@ -195,20 +195,22 @@ def test_cli_no_index_or_content_collaborators(
     assert "unavailable" in missing.output
 
 
-def test_metadata_failures_and_symlinks_are_generic(tmp_path: Path) -> None:
+@pytest.mark.parametrize("unavailable", ["unreadable.md", "excluded-directory"])
+def test_metadata_failures_and_symlinks_are_generic(
+    tmp_path: Path, unavailable: str
+) -> None:
     entries = []
     for name, mode in [
         ("link.md", stat.S_IFLNK),
         ("pipe", stat.S_IFIFO),
         (".hidden", stat.S_IFLNK),
         ("excluded.md", stat.S_IFLNK),
-        ("unreadable.md", stat.S_IFREG),
+        (unavailable, stat.S_IFREG),
     ]:
         entry = MagicMock(spec=os.DirEntry)
         entry.name, entry.path = name, str(tmp_path / name)
-        entry.is_dir.return_value = False
         entry.stat.return_value = SimpleNamespace(st_mode=mode)
-        if name == "unreadable.md":
+        if name == unavailable:
             entry.stat.side_effect = PermissionError("never print this path")
         entries.append(entry)
     stream = MagicMock()
@@ -219,7 +221,7 @@ def test_metadata_failures_and_symlinks_are_generic(tmp_path: Path) -> None:
         result = scan_current_files(
             tmp_path,
             Window(_START, _END),
-            VaultSettings(exclude_patterns=["excluded.md"]),
+            VaultSettings(exclude_patterns=["excluded.md", "excluded-directory"]),
             ScanLimits(),
         )
     assert walk.call_count == 1
@@ -227,7 +229,9 @@ def test_metadata_failures_and_symlinks_are_generic(tmp_path: Path) -> None:
     assert result["incomplete_reasons"] == ["entry_unavailable", "unsupported_symlink"]
     assert result["complete"] is False
     entries[2].stat.assert_not_called()
-    entries[3].stat.assert_not_called()
+    # A no-follow stat distinguishes a same-named directory from a file;
+    # an excluded file still contributes no row or diagnostic.
+    entries[3].stat.assert_called_once_with(follow_symlinks=False)
     assert "unreadable" not in json.dumps(result)
 
 

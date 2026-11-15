@@ -157,11 +157,11 @@ class _Scan:
         # name need not match any of its files under fnmatch semantics.
         if entry.name.startswith("."):
             return None
-        if entry.is_dir(follow_symlinks=False):
+        info = entry.stat(follow_symlinks=False)
+        if stat.S_ISDIR(info.st_mode):
             return None if _should_prune_dir(relative, *self.prune) else path
         if any(fnmatch.fnmatch(relative, p) for p in self.excludes):
             return None
-        info = entry.stat(follow_symlinks=False)
         if stat.S_ISLNK(info.st_mode):
             self.reasons.add("unsupported_symlink")
         if not stat.S_ISREG(info.st_mode):
