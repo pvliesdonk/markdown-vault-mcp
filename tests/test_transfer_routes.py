@@ -23,7 +23,7 @@ from fastmcp_pvl_core import ServerConfig, TransferLinks
 from httpx import ASGITransport, AsyncClient
 
 from markdown_vault_mcp.config import ProjectConfig
-from tests.fixtures.git import make_superproject
+from tests.fixtures.git import make_nested_repository, make_superproject
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -167,6 +167,24 @@ async def test_upload_link_refuses_submodule_before_minting(
     assert failures[0].levelname == "INFO"
     assert failures[0].exc_info is None
     assert "Pass a ref outside 'sub/'" in failures[0].getMessage()
+
+
+async def test_upload_link_refuses_nested_repository(tmp_path: Path) -> None:
+    """A plain nested repository is protected like a submodule (#1949)."""
+    source = make_nested_repository(tmp_path)
+    config = replace(
+        _config(source, base_url="https://mcp.example.com"),
+        index_path=tmp_path / "index.db",
+        boot_reindex=False,
+        file_watcher=False,
+        git_lfs=False,
+    )
+    server = make_server(transport="http", config=config)
+    async with Client(server) as client:
+        with patch.object(TransferLinks, "mint_upload", new_callable=AsyncMock) as mint:
+            with pytest.raises(ToolError, match=r"ref 'sub/new.md' is inside .*'sub'"):
+                await client.call_tool("create_upload_link", {"ref": "sub/new.md"})
+            mint.assert_not_awaited()
 
 
 @pytest.mark.parametrize("path", ["note.md", "pic.png"])

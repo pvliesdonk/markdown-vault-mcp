@@ -92,6 +92,19 @@ def git_repo_pair(tmp_path: Path) -> GitRepoPair:
     return GitRepoPair(remote_path=remote, local_path=local)
 
 
+def _make_outer_repository(tmp_path: Path, vault: str) -> tuple[Path, Path]:
+    """Create and stage the common outer fixture before layout-specific commits."""
+    repo = tmp_path / "repo"
+    source = repo / vault
+    source.mkdir(parents=True)
+    _run_git(repo, "init", "-q", "--initial-branch=main")
+    _run_git(repo, "config", "user.email", "test@example.com")
+    _run_git(repo, "config", "user.name", "Test User")
+    (source / "top.md").write_text("# Top\n")
+    _run_git(repo, "add", ".")
+    return repo, source
+
+
 def make_superproject(
     tmp_path: Path,
     *,
@@ -129,17 +142,35 @@ def make_superproject(
     _run_git(upstream, "add", ".")
     _run_git(upstream, "commit", "-qm", "initial")
 
-    repo = tmp_path / "repo"
-    source = repo / vault if vault else repo
-    source.mkdir(parents=True)
-    _run_git(repo, "init", "-q", "--initial-branch=main")
-    _run_git(repo, "config", "user.email", "test@example.com")
-    _run_git(repo, "config", "user.name", "Test User")
-    (source / "top.md").write_text("# Top\n")
-    _run_git(repo, "add", ".")
+    repo, source = _make_outer_repository(tmp_path, vault)
     add = ["-c", "protocol.file.allow=always", "submodule", "add", "-q"]
     _run_git(repo, *add, str(upstream), f"{vault}/{sub}" if vault else sub)
     if vault:
         _run_git(repo, *add, str(upstream), "other")
     _run_git(repo, "commit", "-qm", "add submodule")
+    return source
+
+
+def make_nested_repository(
+    tmp_path: Path,
+    *,
+    vault: str = "",
+    sub: str = "sub",
+) -> Path:
+    """Build a vault holding a plain repository with no gitlink (#1949).
+
+    Args:
+        tmp_path: A fresh directory to build under.
+        vault: The vault's folder within the enclosing repository.
+        sub: The plain repository's path within the vault.
+
+    Returns:
+        The vault directory, with top.md committed in its enclosing repository.
+    """
+    repo, source = _make_outer_repository(tmp_path, vault)
+    _run_git(repo, "commit", "-qm", "initial")
+    nested = source / sub
+    nested.mkdir(parents=True)
+    _run_git(nested, "init", "-q", "--initial-branch=main")
+    (nested / "note.md").write_text("# Upstream\n")
     return source

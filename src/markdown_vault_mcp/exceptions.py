@@ -73,28 +73,28 @@ class NoteTooLargeError(InvalidRequestError):
 
 
 _NEVER_COMMITTED = (
-    "this server does not change files in a submodule, so the change would "
+    "this server does not change files in these repositories, so the change would "
     "never be committed"
 )
 
 
 class SubmodulePathError(InvalidRequestError):
-    """Raised when a write targets a git submodule inside the vault (#1564).
+    """Raised for a write into a submodule or nested repository (#1564, #1949).
 
-    Every git command addresses the superproject, which refuses to stage a
-    path inside a submodule, so the write would land on disk and never reach
-    git. The caller can pick a path outside the submodule, so it is an
+    Every git command addresses the enclosing repository, which cannot stage
+    these files, so a write would land on disk and never reach git. The caller
+    can pick a path outside the protected repository, so it is an
     :class:`InvalidRequestError`. The constructors name the argument, the path
-    sent and the submodule's vault-relative path.
+    sent and the repository's vault-relative path.
     """
 
     @classmethod
     def inside(cls, argument: str, path: str, submodule: str) -> SubmodulePathError:
-        """A path inside the submodule, or the submodule itself."""
+        """A path inside the protected repository, or the repository itself."""
         return cls(
-            f"{argument} {path!r} is inside the git submodule {submodule!r}; "
+            f"{argument} {path!r} is inside the git submodule or nested repository {submodule!r}; "
             f"{_NEVER_COMMITTED}. Pass {_article(argument)} {argument} outside "
-            f"'{submodule}/', or change the file in the submodule's own "
+            f"'{submodule}/', or change the file in its own "
             "repository."
         )
 
@@ -102,21 +102,21 @@ class SubmodulePathError(InvalidRequestError):
     def into(
         cls, argument: str, path: str, submodule: str, landing: str
     ) -> SubmodulePathError:
-        """A folder move that would put the file *landing* inside the submodule."""
+        """A folder move that would put *landing* inside a protected repository."""
         return cls(
             f"{argument} {path!r} would move a file to {landing!r}, inside the "
-            f"git submodule {submodule!r}; {_NEVER_COMMITTED}. Pass "
+            f"git submodule or nested repository {submodule!r}; {_NEVER_COMMITTED}. Pass "
             f"{_article(argument)} {argument} where no moved file lands inside "
-            "a submodule."
+            "a submodule or nested repository."
         )
 
     @classmethod
     def holds(cls, argument: str, path: str, submodule: str) -> SubmodulePathError:
-        """A folder with the submodule somewhere below it."""
+        """A folder with a protected repository somewhere below it."""
         return cls(
-            f"{argument} {path!r} holds the git submodule {submodule!r}; "
+            f"{argument} {path!r} holds the git submodule or nested repository {submodule!r}; "
             f"{_NEVER_COMMITTED}. Pass {_article(argument)} {argument} that "
-            "holds no submodule."
+            "holds no submodule or nested repository."
         )
 
 
