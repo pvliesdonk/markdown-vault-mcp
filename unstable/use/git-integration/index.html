@@ -1303,6 +1303,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#filenames-from-outside-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filenames from outside the server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-a-commit-covers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2943,6 +2954,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#filenames-from-outside-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filenames from outside the server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-a-commit-covers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3161,6 +3183,12 @@
 <li><strong>No-git</strong> (default)
    The vault is treated as a plain directory with no git operations.</li>
 </ol>
+<h2 id="filenames-from-outside-the-server">Filenames from outside the server<a class="headerlink" href="#filenames-from-outside-the-server" title="Permanent link">&para;</a></h2>
+<p>Notes created through Git or directly on disk can carry carriage returns
+(<code>CR</code>) or carriage-return/newline pairs (<code>CRLF</code>) in their filenames.
+History, rename tracking, revision reads and conflict recovery preserve those
+characters, along with newlines, tabs and supported non-ASCII names. Ignored
+filenames retain the same spelling when Git decides which paths to stage.</p>
 <h2 id="what-a-commit-covers">What a commit covers<a class="headerlink" href="#what-a-commit-covers" title="Permanent link">&para;</a></h2>
 <p>In both git modes, the commit boundary is the MCP tool call, not the file.
 A call that wrote one file commits under that file's path
