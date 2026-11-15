@@ -645,6 +645,39 @@ Informational rules, not deviations:
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-okf_validate-END -->
 
+## `list_changed_files`
+
+**List Changed Files.** Read-only. Idempotent.
+
+List current Markdown and allowed attachments by filesystem modification time.
+
+Use this instead of indexed listings to include untyped or malformed notes.
+Covers the served vault only, omitting dot paths, exclusions and symlinks;
+returns relative paths and completeness, not deleted files or earlier changes.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `start` | `string` | required | Inclusive RFC3339 timestamp with Z or an explicit UTC offset. |
+| `end` | `string` | required | Exclusive RFC3339 timestamp with Z or an explicit UTC offset, after start. |
+| `max_entries` | `integer` | `100000` | Maximum directory entries to visit, 1 to 1000000; omit for 100000. |
+| `max_seconds` | `number` | `10.0` | Cooperative traversal time budget, 0.001 to 300 seconds; omit for 10. |
+
+**Returns**
+
+UTC bounds, interval, current-file basis, complete, `incomplete_reasons`,
+and path-sorted items with path, kind and `modified_at`. At most 1000
+items and 1000000 bytes of escaped item JSON; `result_limit` marks
+partial output. An empty partial result does not establish absence.
+No host paths or file contents. A live scan is not an atomic snapshot.
+Cancellation stops at the next scan checkpoint; blocked filesystem
+calls cannot be interrupted.
+
+<!-- DOMAIN-EXAMPLE-list_changed_files-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-list_changed_files-END -->
+
 ## `query_documents`
 
 **Query Notes.** Read-only. Idempotent.

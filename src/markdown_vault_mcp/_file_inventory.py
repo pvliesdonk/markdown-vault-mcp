@@ -1,8 +1,9 @@
-"""Bounded, metadata-only current-file inventory for the local CLI (#2121)."""
+"""Bounded, metadata-only current-file inventory for the CLI and MCP (#2121)."""
 
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import re
 import stat
@@ -25,6 +26,7 @@ from markdown_vault_mcp.utils.fs import _dir_prune_rules, _should_prune_dir
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from threading import Event
 
     from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 
@@ -116,6 +118,9 @@ class ScanLimits:
 
     entries: int = 100_000
     seconds: float = 10.0
+    items: int | None = None
+    result_bytes: int | None = None
+    cancel: Event | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -127,6 +132,7 @@ class _Scan:
     items: list[dict[str, Any]] = field(default_factory=list)
     reasons: set[str] = field(default_factory=set)
     visited: int = 0
+    result_bytes: int = 0
     deadline: float = field(init=False)
     excludes: tuple[str, ...] = field(init=False)
     prune: tuple[list[str], list[str]] = field(init=False)
@@ -141,6 +147,13 @@ class _Scan:
         )
 
     def stopped(self) -> bool:
+        if self.limits.cancel is not None and self.limits.cancel.is_set():
+            self.reasons.add("cancelled")
+            return True
+        if self.limits.items is not None and len(self.items) >= self.limits.items:
+            self.reasons.add("result_limit")
+        if "result_limit" in self.reasons:
+            return True
         if self.visited >= self.limits.entries:
             self.reasons.add("scan_limit")
             return True
@@ -157,25 +170,34 @@ class _Scan:
         # name need not match any of its files under fnmatch semantics.
         if entry.name.startswith("."):
             return None
+        excluded = any(fnmatch.fnmatch(relative, p) for p in self.excludes)
         info = entry.stat(follow_symlinks=False)
         if stat.S_ISDIR(info.st_mode):
             return None if _should_prune_dir(relative, *self.prune) else path
-        if any(fnmatch.fnmatch(relative, p) for p in self.excludes):
+        if excluded:
             return None
         if stat.S_ISLNK(info.st_mode):
             self.reasons.add("unsupported_symlink")
-        if not stat.S_ISREG(info.st_mode):
-            return None
         kind = "markdown" if is_note(relative) else "attachment"
-        if kind == "attachment" and (
-            has_md_suffix(path) or not is_allowed_artifact(path, self.extensions)
+        if not stat.S_ISREG(info.st_mode) or (
+            kind == "attachment"
+            and (has_md_suffix(path) or not is_allowed_artifact(path, self.extensions))
         ):
             return None
         if self.window.lower <= info.st_mtime_ns < self.window.upper:
-            self.items.append(
+            self.append(
                 {"path": relative, "kind": kind, "modified_at": _utc(info.st_mtime_ns)}
             )
         return None
+
+    def append(self, item: dict[str, Any]) -> None:
+        if self.limits.result_bytes is not None:
+            size = len(json.dumps(item, ensure_ascii=True).encode("ascii")) + 2
+            if self.result_bytes + size > self.limits.result_bytes:
+                self.reasons.add("result_limit")
+                return
+            self.result_bytes += size
+        self.items.append(item)
 
     def directory(self, directory: Path, root_descriptor: int) -> list[Path]:
         children: list[Path] = []
