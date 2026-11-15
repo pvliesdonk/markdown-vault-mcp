@@ -138,6 +138,7 @@ async def test_stop_closes_the_collaborators_it_built_after_the_vault(
     service = Service(ProjectConfig(source_dir=tmp_path))
     await service.start()
     await service.stop()
+    await service.stop()
 
     assert [spy.closed for spy in spies] == [1]
 
@@ -360,12 +361,11 @@ async def test_a_vault_that_fails_to_start_after_the_wait_is_logged_and_stopped(
             raise outcome
         return outcome
 
-    async def serve(self: Service, vault: Any, _s: object, _i: object) -> None:
-        self._vault = vault
+    async def start_runtime(_self: object) -> None:
         raise RuntimeError("the boot jobs could not be submitted")
 
     monkeypatch.setattr(Service, "_build_vault", build)
-    monkeypatch.setattr(Service, "_serve", serve)
+    monkeypatch.setattr(domain_mod._VaultRuntime, "start", start_runtime)
     service = Service(ProjectConfig(source_dir=tmp_path))
     with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.domain"):
         await service.start()
