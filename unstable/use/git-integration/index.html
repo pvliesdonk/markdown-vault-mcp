@@ -1458,10 +1458,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#submodules-in-the-vault" class="md-nav__link">
+  <a href="#submodules-and-nested-repositories-in-the-vault" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Submodules in the vault
+        Submodules and nested repositories in the vault
       
     </span>
   </a>
@@ -3098,10 +3098,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#submodules-in-the-vault" class="md-nav__link">
+  <a href="#submodules-and-nested-repositories-in-the-vault" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Submodules in the vault
+        Submodules and nested repositories in the vault
       
     </span>
   </a>
@@ -3562,15 +3562,18 @@ it.</p>
 <li>GitLab: <code>oauth2</code></li>
 <li>Bitbucket: account username</li>
 </ul>
-<h2 id="submodules-in-the-vault">Submodules in the vault<a class="headerlink" href="#submodules-in-the-vault" title="Permanent link">&para;</a></h2>
-<p>A git submodule inside the vault is read-only. Its notes are indexed and searchable like any folder, but git refuses to commit a change inside a submodule from the vault's own repository, so a change there would be lost. In managed and commit-only mode every write tool refuses a path inside a submodule and names it, and nothing is written. This applies to <code>write</code>, <code>append</code>, <code>edit</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, the attachment writes and the OKF tools.</p>
+<h2 id="submodules-and-nested-repositories-in-the-vault">Submodules and nested repositories in the vault<a class="headerlink" href="#submodules-and-nested-repositories-in-the-vault" title="Permanent link">&para;</a></h2>
+<p>A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to <code>write</code>, <code>append</code>, <code>edit</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, attachment writes and OKF tools at their existing write checks.</p>
 <ul>
-<li><code>create_upload_link</code> refuses a <code>ref</code> inside a submodule before creating a link, for notes and attachments. Choose a destination outside that submodule. Download links can still read its files.</li>
-<li>Change those files in the repository the submodule comes from instead.</li>
-<li><code>move_folder</code> refuses to move a folder that holds a submodule, but you can move a folder next to one.</li>
-<li>A <code>rename</code> or <code>move_folder</code> that would rewrite links inside a submodule leaves those notes as they are and reports them: in <code>hint</code> for a rename, in <code>failed_links</code> for a folder move.</li>
+<li><code>create_upload_link</code> refuses a <code>ref</code> inside a protected repository before creating a link, for notes and attachments. Choose a destination outside that repository. Download links can still read its files.</li>
+<li>Change those files in their own repository instead.</li>
+<li><code>move_folder</code> refuses to move a folder that holds a protected repository, but you can move a folder next to one.</li>
+<li>A <code>rename</code> or <code>move_folder</code> that would rewrite links inside a protected repository leaves those notes as they are and reports them: in <code>hint</code> for a rename, in <code>failed_links</code> for a folder move.</li>
 <li>A submodule whose folder is empty (never initialised) is refused too.</li>
+<li>Plain repositories need no <code>gitlink</code> or <code>.gitmodules</code> registration. Both <code>.git</code> directories and valid <code>.git</code> files are detected, including ones created after startup or with working trees Git cannot open. An unreadable <code>.git</code> file up to Git's 1 MiB limit raises an I/O error. Larger markers are inert. The vault's own repository is allowed.</li>
+<li>Bulk OKF link conversion skips protected notes. Index generation can link to their existing <code>index.md</code> but does not write it.</li>
 </ul>
+<p>Fetch downloads can still do other work before they reach the refusal (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950">#1950</a>).</p>
 <p>In no-git mode nothing is committed, so nothing is refused.</p>
 <h2 id="git-lfs">Git LFS<a class="headerlink" href="#git-lfs" title="Permanent link">&para;</a></h2>
 <p>If your vault tracks large files (PDFs, images) with <a href="https://git-lfs.com">Git LFS</a>, the server runs <code>git lfs pull</code> on startup to resolve LFS pointers into actual file content. This is enabled by default.</p>
