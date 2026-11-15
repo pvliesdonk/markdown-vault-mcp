@@ -7,6 +7,10 @@ kind: reference
 
 The `providers` module defines an abstract base class for embedding providers and four concrete implementations for OpenAI, Voyage AI, Ollama, and FastEmbed.
 
+The installed package carries its type annotations through a PEP 561 marker.
+Type checkers can check subclasses of `EmbeddingProvider` against the installed
+library without adding the source checkout to their search path.
+
 ## Quick Start
 
 ```python { .fragment }

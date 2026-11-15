@@ -11,16 +11,19 @@ adopted as-is with no downstream mutation. The sink logic itself is covered by
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import ServerConfig
+from fastmcp_pvl_core import ServerConfig, TransferLinks
 from httpx import ASGITransport, AsyncClient
 
 from markdown_vault_mcp.config import ProjectConfig
+from tests.fixtures.git import make_superproject
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -122,6 +125,48 @@ async def test_create_upload_link_hidden_in_read_only(tmp_path: Path) -> None:
     )
     assert not await _has_tool(server, "create_upload_link")
     assert await _has_tool(server, "create_download_link")
+
+
+@pytest.mark.parametrize("path", ["sub/new.md", "sub/new.png"])
+async def test_upload_link_refuses_submodule_before_minting(
+    tmp_path: Path, path: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The live link tool refuses a submodule destination before minting."""
+    source = make_superproject(tmp_path)
+    caplog.set_level(logging.INFO, logger="fastmcp.middleware.requests")
+    before = (source / "sub/note.md").read_bytes()
+    config = replace(
+        _config(source, base_url="https://mcp.example.com"),
+        index_path=tmp_path / "index.db",
+        boot_reindex=False,
+        file_watcher=False,
+        git_lfs=False,
+    )
+    server = make_server(transport="http", config=config)
+    async with Client(server) as client:
+        with patch.object(TransferLinks, "mint_upload", new_callable=AsyncMock) as mint:
+            with pytest.raises(ToolError, match=rf"ref '{path}' is inside .*'sub'"):
+                await client.call_tool("create_upload_link", {"ref": path})
+            mint.assert_not_awaited()
+        download = await client.call_tool(
+            "create_download_link", {"ref": "sub/note.md"}
+        )
+        assert "/transfer/" in download.data["url"]
+        ordinary = await client.call_tool(
+            "create_upload_link", {"ref": "subway/new.md"}
+        )
+        assert "/transfer/" in ordinary.data["url"]
+    assert not (source / path).exists()
+    assert (source / "sub/note.md").read_bytes() == before
+    failures = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("tool_call_failed tool=create_upload_link")
+    ]
+    assert len(failures) == 1
+    assert failures[0].levelname == "INFO"
+    assert failures[0].exc_info is None
+    assert "Pass a ref outside 'sub/'" in failures[0].getMessage()
 
 
 @pytest.mark.parametrize("path", ["note.md", "pic.png"])
