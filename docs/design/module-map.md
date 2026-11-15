@@ -169,4 +169,6 @@ src/markdown_vault_mcp/
   _cli_admin.py        -- the admin group (index, reindex, embeddings import) and the hidden aliases for their old names (#2005)
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
+  _cli_inventory.py    -- local changed-files JSON command; no index or remote backend (#2121)
+  _file_inventory.py   -- bounded metadata-only UTC-window observation of eligible current files (#2121)
 ```

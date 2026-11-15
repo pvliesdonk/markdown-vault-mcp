@@ -72,6 +72,35 @@ assembled call graph.
 Design spec: `docs/superpowers/specs/2026-04-20-fastmcp-core-and-copier-template-design.md`.
 Adoption plan: `docs/superpowers/plans/2026-04-20-fastmcp-pvl-core-extraction.md`.
 
+## Local current-file inventory
+
+`changed-files` (#2121) is a local-only, metadata-only CLI view of surviving
+eligible Markdown and allowlisted attachments in a required RFC3339
+`[start,end)` interval. It uses exact filesystem mtime comparisons, independent
+of frontmatter validity, search admission, indexed clocks and index readiness.
+The root is selected from local configuration or `--source-dir`, resolved, and
+included in the JSON result. Configured remote profiles require `--local`.
+No Vault, storage/provider collaborator, git sync or content parser is built.
+Every directory component is opened relative to a held parent descriptor with
+no-follow flags. Platforms without the required operations return an incomplete
+`unsupported_platform` result, with no pathname-based fallback.
+
+This command's conservative visibility is explicit: configured effective
+exclusions (including conventions files) and all dot paths are omitted.
+Symlinks inside the selected root are not followed and visible skipped links
+make the observation incomplete. Existing scanner and reader semantics are
+unchanged; this does not settle #1610. Entry and cooperative time bounds,
+walk/stat failures produce generic partial
+reason codes without skipped paths or hidden counts. A live scan is not atomic.
+
+The JSON envelope names the root, UTC bounds, interval, current-file-mtime
+basis, completeness, reasons and sorted path/kind/mtime records. Exit 1 keeps
+partial JSON; exit 2 rejects invalid inputs. This is a narrow inventory slice
+related to #1442, not bundle-role classification. It adds no durable observation
+or event semantics for #1414: no additions, deletions, prior names, earlier
+modifications or authorship are inferred. It performs no automatic pruning,
+index writes or OKF metadata changes.
+
 ## Architecture
 
 Two packages, one dependency edge (eventual):
