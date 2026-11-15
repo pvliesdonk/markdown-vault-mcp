@@ -1898,6 +1898,38 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Exact-note citation inspection (#1446, bounded slice)
+
+`ReaderFacet.inspect_citations(path)` and the additive `inspect_citations` MCP
+tool inspect one explicitly selected `.md` note through the existing whole-note
+reader. There is no index-readiness requirement, bundle declaration gate or
+change to OKF annotations. `okf.py`, link scanning, graph navigation and index
+semantics are unchanged. This is a partial implementation of #1446, not a
+vault-wide evidence audit or reverse dependency engine.
+
+`citations.inspect_citation_text` takes only the returned content string. It
+parses its metadata and body together, never using `NoteContent.frontmatter` or
+`etag`: `DocumentManager.read` currently obtains those from a separate disk read.
+The SHA-256 covers LF-normalized returned text encoded as UTF-8, explicitly not
+raw file identity or an optimistic-concurrency token. A newer malformed
+frontmatter snapshot raises `DocumentUnreadableError`, not an empty report.
+
+A direct `markdown-it-py` dependency supplies CommonMark block/inline contexts.
+The narrow extension recognizes literal non-whitespace footnote labels, excludes
+navigation links/images/wikilinks, and omits definition blocks rather than
+interpreting their prose as provenance. Exact IDs join to source-list positions;
+duplicate IDs stay ambiguous even when records are identical. Source metadata
+and extension keys remain literal parsed values; optional absent IDs are listed
+as unkeyed, while malformed shapes are separate observations. Citation IDs remain
+stable under source reordering; response-local list indices do not.
+
+Scope and syntax limits accompany every result. Nothing fetches sources,
+traverses another note, infers evidentiary support or truth, writes metadata,
+redefines index rows, or widens access. Source strings are data, not instructions.
+The [user guide](../use/okf.md#inspect-citations-in-one-note) states the supported
+syntax and the [OKF reference](reference/okf-v0.2.md#citation-joins-checked-2026-11-15)
+records the current source/footnote distinction.
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)

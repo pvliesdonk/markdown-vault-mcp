@@ -13,6 +13,10 @@ verified:
 stale_after: 2027-03-06
 status: stable
 sources:
+  - id: spec-current
+    title: Open Knowledge Format v0.2, current canonical specification, section 5.1
+    resource: https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md
+    accessed: 2026-11-15
   - id: spec
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
     resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/62432a0954/okf/SPEC.md
@@ -287,3 +291,14 @@ tree, 2026-09-07].
   (`usage_count`, `usage_window`): nothing here reads or writes them.
 - The v0.1 fallbacks (`timestamp`, `# Citations`): the server neither reads
   nor migrates them, and no test covers a v0.1 bundle.
+
+## Citation joins (checked 2026-11-15)
+
+- [source: spec-current] Section 5.1 makes `id` optional and `resource` required
+  within each source entry; a resource may describe a population rather than
+  something followable. [pins: tests/test_citations.py::test_literal_join_and_stable_ids]
+- [source: spec-current] Claim-level footnote labels key into `sources` entries;
+  footnote definition prose is not that entry. [pins: tests/test_citations.py::test_non_citation_contexts]
+- [source: spec-current] Source signals record attribution, not a stored
+  credibility verdict. The [bounded inspection design](../design.md#exact-note-citation-inspection-1446-bounded-slice)
+  therefore reports literal joins without evaluating support.

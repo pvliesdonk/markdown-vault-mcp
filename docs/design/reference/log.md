@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-15
+
+- **Update**: Rechecked the canonical OKF specification's source/footnote join
+  semantics for exact-note citation inspection; recorded the dated subsection
+  in [Open Knowledge Format v0.2](okf-v0.2.md#citation-joins-checked-2026-11-15).
+
 ## 2026-11-14
 
 - [Git history and revision queries](git-history-queries.md): added Python's

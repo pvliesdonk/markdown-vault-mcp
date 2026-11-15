@@ -66,6 +66,49 @@ verified:
 ---
 ```
 
+## Inspect citations in one note
+
+Call `inspect_citations(path="research/note.md")` for an exact path you found with
+`search` or `list_documents`. The library equivalent is
+`vault.reader.inspect_citations("research/note.md")`. This opt-in read works
+without a bundle declaration, including when OKF annotations are off.
+
+It joins body markers such as `[^handbook]` to frontmatter `sources` entries whose
+`id` is exactly `handbook`. The result includes the literal parsed source records,
+unknown fields included. `source_indices` identifies matching records by their
+zero-based positions in that response. Those positions can change when sources
+are reordered; the exact string `id` is the stable key. Labels are not trimmed,
+case-folded or coerced from numbers.
+
+- `matched`: exactly one source entry has the label's ID, even if that entry has
+  a separately reported source-shape issue.
+- `ambiguous`: multiple entries have that ID, even if their resources are equal.
+- `unmatched`: no entry has that ID. This may be an ordinary explanatory footnote,
+  not a broken citation.
+
+The report also lists duplicate IDs whether cited or not, entries without IDs,
+and source-shape issues. An ID is optional; an entry without one is not invalid.
+A resource can be a URL, path or scope description. No resource is opened or
+checked for reachability, and a match says nothing about truth or support.
+
+### Syntax coverage
+
+The reader uses CommonMark block and inline parsing with a small literal marker
+extension. It recognizes single-line labels with no whitespace, brackets or
+backslashes. It skips code spans and fences, escaped markers, HTML blocks and
+attributes, navigation links, images, wikilinks, and footnote definition blocks.
+A citation beside inline code or a navigation link is still recognized. Footnote
+definition prose never supplies the source join. Other Markdown dialect
+extensions are not interpreted; an empty result is not an exhaustive citation
+audit. The response's `syntax` and `scope` fields retain these limits.
+
+The existing whole-note read limits apply. The source list and body are parsed
+from one returned content string. `returned_text_sha256` hashes that complete
+string after line endings are normalized to LF and it is encoded as UTF-8. It
+is not the file's raw-byte etag or a portable file identity, and cannot be used
+as `if_match`. No index refresh, traversal, metadata write or permission change
+is part of this call. See the [tool reference](../reference/tools/reader.md#inspect_citations).
+
 ## Migrating an existing vault
 
 Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.
