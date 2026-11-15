@@ -88,8 +88,9 @@ case-folded or coerced from numbers.
 
 The report also lists duplicate IDs whether cited or not, entries without IDs,
 and source-shape issues. An ID is optional; an entry without one is not invalid.
-A resource can be a URL, path or scope description. No resource is opened or
-checked for reachability, and a match says nothing about truth or support.
+A resource may describe a scope rather than a location. URLs and paths are also
+accepted. The inspector does not open resources or check whether they exist. It
+does not assess whether a source supports a claim or whether the claim is true.
 
 ### Syntax coverage
 

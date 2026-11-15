@@ -240,3 +240,15 @@ def test_newer_unparseable_snapshot_is_unreadable_not_empty() -> None:
     with pytest.raises(DocumentUnreadableError) as exc:
         reader.inspect_citations("one.md")
     assert isinstance(exc.value.__cause__, yaml.YAMLError)
+
+
+@pytest.mark.parametrize("body", ["[^a](", "[^a][]", "[^a][undefined]"])
+def test_incomplete_navigation_shapes_are_not_citations(body: str) -> None:
+    assert inspect_citation_text("one.md", body).citations == []
+
+
+def test_definition_interrupts_paragraph_without_becoming_a_marker() -> None:
+    report = inspect_citation_text(
+        "one.md", "Claim[^a]\n[^definition]: prose[^hidden]\n"
+    )
+    assert [citation.id for citation in report.citations] == ["a"]

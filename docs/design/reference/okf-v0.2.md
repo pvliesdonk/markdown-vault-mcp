@@ -181,8 +181,9 @@ months, not twelve.
   search hits. [source: spec] (§5.1)
   [pins: tests/test_okf.py::TestDeriveAnnotation::test_read_mode_includes_sources, tests/test_okf.py::TestDeriveAnnotation::test_search_mode_counts_sources]
 - Per-claim attribution is a markdown footnote whose label is a
-  `sources[].id`, "keyed rather than positional". Nothing here depends on
-  it. [source: spec] (§5.1)
+  `sources[].id`, "keyed rather than positional". The [bounded citation
+  inspector](../design.md#exact-note-citation-inspection-1446-bounded-slice)
+  implements this literal join. [source: spec] (§5.1)
 
 ### Links and paths (§6)
 

@@ -3,8 +3,9 @@
 A thin view exposing search, document reads, listing, table-of-contents,
 similarity, recent, context, stats, attachment reads, and git history, diff
 and revision reads.
-Each method delegates 1:1 to one collaborator (:class:`SearchManager`,
-:class:`DocumentManager`, or :class:`GitQueryManager`); the bucket-3 methods
+Queries delegate to :class:`SearchManager`, :class:`DocumentManager` or
+:class:`GitQueryManager`; citation inspection analyzes one returned note-text
+snapshot with the pure citation reader. The bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via

@@ -250,8 +250,8 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             Literal sources, citation IDs with occurrence counts and zero-based
-            source indices, source-shape issues, duplicate IDs, and unkeyed source
-            indices. Matched means one exact ID, not that the source supports a
+            source indices, source-shape issues, duplicate IDs, and indices of source
+            entries without IDs. Matched means one exact ID, not that the source supports a
             claim. Unmatched labels may be ordinary footnotes. The scope and syntax
             fields describe coverage. returned_text_sha256 hashes the LF-normalized
             returned text encoded as UTF-8; it is not a raw-file etag, a portable
