@@ -11,6 +11,7 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from markdown_vault_mcp.config_sections import VaultSettings
+from markdown_vault_mcp.exceptions import EmbeddingsRebuildFailedError
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
 from tests.fixtures.vector_store_files import stored_vector_files
@@ -69,9 +70,9 @@ def _assert_failed_transition(
         second.index.build_index()
         for _ in range(2):
             if recovery == "force":
-                with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
+                with pytest.raises(EmbeddingsRebuildFailedError):
                     second.index.build_embeddings(force=True)
-            with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
+            with pytest.raises(EmbeddingsRebuildFailedError):
                 second.reader.search("Apples and pears.", mode=mode)
         failed_calls = 4 if recovery == "force" else 2
         assert current.document_calls == failed_calls
@@ -169,9 +170,9 @@ def test_an_empty_model_transition_requires_an_authoritative_index(
                 assert second.reader.search("Apples", mode=mode) == []
             else:
                 if force:
-                    with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
+                    with pytest.raises(EmbeddingsRebuildFailedError):
                         second.index.build_embeddings(force=True)
-                with pytest.raises(RuntimeError, match=r"(?i)fail|rebuild"):
+                with pytest.raises(EmbeddingsRebuildFailedError):
                     second.reader.search("Apples", mode=mode)
         if authoritative:
             assert second.index.embeddings_status()["generation"] == (2 if force else 1)

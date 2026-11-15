@@ -1305,6 +1305,7 @@ operator learns why the note was left out.
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match (for a tolerant `rename()`, nor do recorded link rewrites lead from it; #1492) |
 | `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
+| `EmbeddingsRebuildFailedError` | `search()` (semantic/hybrid mode), `build_embeddings()` | A changed model or dimension needed a rebuild and it published nothing, so the old vectors cannot answer; the next call retries (#1946). A subclass of `RuntimeError` |
 | `SummarizeTimeoutError` | `summarize()` | The summarization backend outran its per-request budget; the caller can ask for less. A subclass of `InvalidRequestError` and of `RuntimeError`, the type a timeout had before (#1608) |
 | `NoteTooLargeError` | `read()` | A whole-note read is over `max_note_read_bytes`; the caller can read by section. A subclass of `InvalidRequestError`, with its own type so `summarize()` can report the skip's reason (#1637) |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
@@ -4661,7 +4662,8 @@ An automatic or forced model or dimension transition must publish a compatible
 generation before its search succeeds (#1946). `rebuild_after_fault` uses
 `_full_build`'s `RebuildOutcome.published`: an authoritative empty generation
 counts as success, but failed batches or an incomplete empty walk that
-publish nothing raise `RuntimeError`. The slot discards and closes that
+publish nothing raise `EmbeddingsRebuildFailedError`, a `RuntimeError`
+the tool layer reports at WARNING as retry-later. The slot discards and closes that
 exact owned replacement, leaving the previous stored files untouched.
 Later reads reopen those files and retry the transition; they fail again
 while the provider is down and recover once a compatible generation

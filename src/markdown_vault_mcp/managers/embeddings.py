@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from markdown_vault_mcp.exceptions import (
     EmbeddingsNotConfiguredError,
     EmbeddingsNotPublishedError,
+    EmbeddingsRebuildFailedError,
     StoreCorruptError,
     StoreIncompatibleError,
 )
@@ -254,7 +255,8 @@ class EmbeddingsManager:
 
         Raises:
             EmbeddingsNotConfiguredError: If no embedding provider is configured.
-            RuntimeError: If an incompatible store's rebuild publishes no generation.
+            EmbeddingsRebuildFailedError: If an incompatible store's rebuild
+                publishes no generation.
             StoreOpenError: If the store still will not open, or a damaged
                 one cannot be moved aside.
         """
@@ -282,7 +284,8 @@ class EmbeddingsManager:
         read retries the preserved store's identity mismatch (#1946).
 
         Raises:
-            RuntimeError: If the rebuild publishes no compatible generation.
+            EmbeddingsRebuildFailedError: If the rebuild publishes no
+                compatible generation.
         """
         if self._slot is None:  # pragma: no cover - caller requires vectors
             raise RuntimeError(_NO_RECONCILER)
@@ -292,10 +295,7 @@ class EmbeddingsManager:
                 store, self._slot.identity, donor=donor, reuse_own=reuse_own
             )
             if not outcome.published:
-                raise RuntimeError(
-                    "The embedding rebuild failed: no compatible embeddings "
-                    "were published. Retry the rebuild after the provider or index recovers."
-                )
+                raise EmbeddingsRebuildFailedError()
             return outcome.embedded
         except Exception:
             self._slot.discard_failed_rebuild(store)
@@ -384,7 +384,8 @@ class EmbeddingsManager:
                 a store that already holds vectors but a provider batch
                 failed: nothing was published and the existing embeddings
                 stay (#1505).
-            RuntimeError: If a forced incompatible rebuild publishes no generation.
+            EmbeddingsRebuildFailedError: If a forced incompatible rebuild
+                publishes no generation.
         """
         self._require_vectors()
         if self._embedding_provider is None or self._slot is None:
