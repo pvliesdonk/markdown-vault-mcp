@@ -2064,7 +2064,8 @@ class TestFetchTool:
         with patch(self._FETCH_URL_SEAM, mock_fetch):
             async with Client(make_server()) as client:
                 with pytest.raises(
-                    ToolError, match="is inside the git submodule 'sub'"
+                    ToolError,
+                    match="is inside the git submodule or nested repository 'sub'",
                 ) as caught:
                     await client.call_tool(
                         "fetch", {"url": "https://example.com/source", "path": path}
