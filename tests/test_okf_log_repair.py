@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 UNIT = b"---\ntitle: Log\n---\n\n"
 SUFFIX = b"# Log\n\n## 2026-09-07\n\n- **Update**: wrote `a.md`\n"
-STACKED = Path("tests/fixtures/okf_log_repair/stacked.md").read_bytes()
+STACKED = Path("tests/fixtures/okf_log_repair/stacked.md.txt").read_bytes()
 BACKUP = "log.md.frontmatter-repair.bak"
 
 

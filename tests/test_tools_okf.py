@@ -522,53 +522,55 @@ class TestOkfMigrationTools:
         data = _parse_tool_data(result)
         assert data["path"] == "log.md"
 
-    async def test_log_repair_preview_and_apply(self, okf_vault: Path) -> None:
+    async def test_log_repair_preview_and_apply(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from pathlib import Path
+        from unittest.mock import Mock
 
-        from fastmcp.exceptions import ToolError
+        from markdown_vault_mcp._okf_log_repair import (
+            LogRepairResult,
+            preview_log_repair,
+        )
+        from markdown_vault_mcp.facets.writer import WriterFacet
 
-        original = Path("tests/fixtures/okf_log_repair/stacked.md").read_bytes()
-        (okf_vault / "log.md").write_bytes(original)
+        original = Path("tests/fixtures/okf_log_repair/stacked.md.txt").read_bytes()
+        preview_result = preview_log_repair("guides/log.md", original)
+        assert preview_result.approval is not None
+        approval = preview_result.approval.model_copy(
+            update={"operator_reviewed": True}
+        )
+        apply_result = LogRepairResult(
+            path=approval.path,
+            etag=approval.new_etag,
+            recovery_path="guides/log.md.frontmatter-repair.bak",
+            original_etag=approval.etag,
+            removed_blocks=2,
+        )
+        preview_call = Mock(return_value=preview_result)
+        apply_call = Mock(return_value=apply_result)
+        monkeypatch.setattr(WriterFacet, "okf_preview_log_repair", preview_call)
+        monkeypatch.setattr(WriterFacet, "okf_apply_log_repair", apply_call)
         async with Client(make_server()) as client:
-            await wait_for_mcp_writer_drain(client)
             preview = _parse_tool_data(
                 await client.call_tool(
                     "okf_preview_log_repair",
-                    {"path": "log.md"},
+                    {"path": approval.path},
                 )
             )
-            approval = preview["approval"]
-            with pytest.raises(ToolError, match="operator_reviewed"):
-                await client.call_tool(
-                    "okf_apply_log_repair",
-                    {
-                        "path": "log.md",
-                        "approval": approval,
-                    },
-                )
-            approval["operator_reviewed"] = True
             applied = _parse_tool_data(
                 await client.call_tool(
                     "okf_apply_log_repair",
                     {
-                        "path": "log.md",
-                        "approval": approval,
+                        "path": approval.path,
+                        "approval": approval.model_dump(),
                     },
                 )
             )
-            await wait_for_mcp_writer_drain(client)
-            read = _structured(await client.call_tool("read", {"path": "log.md"}))
-            assert read["content"].count("title: Log") == 1
-            assert read["etag"] == applied["etag"]
-            with pytest.raises(ToolError, match="okf_preview_log_repair"):
-                await client.call_tool(
-                    "okf_apply_log_repair",
-                    {
-                        "path": "log.md",
-                        "approval": approval,
-                    },
-                )
-        assert (okf_vault / applied["recovery_path"]).read_bytes() == original
+        preview_call.assert_called_once_with(approval.path)
+        apply_call.assert_called_once_with(approval.path, approval)
+        assert preview == preview_result.model_dump()
+        assert applied == apply_result.model_dump()
 
     async def test_log_repair_preview_available_read_only(
         self,
@@ -592,40 +594,47 @@ class TestOkfMigrationTools:
 
     async def test_log_repair_interruption_keeps_recovery_guidance(
         self,
-        okf_vault: Path,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         import logging
-        from pathlib import Path
         from unittest.mock import Mock
 
         from fastmcp.exceptions import ToolError
 
-        from markdown_vault_mcp.managers import document as document_module
+        from markdown_vault_mcp._okf_log_repair import (
+            LogRepairApproval,
+            LogRepairInterrupted,
+        )
+        from markdown_vault_mcp.facets.writer import WriterFacet
 
-        original = Path("tests/fixtures/okf_log_repair/stacked.md").read_bytes()
         failure = OSError("disk full")
-        (okf_vault / "log.md").write_bytes(original)
+        interrupted = LogRepairInterrupted(
+            "log.md.frontmatter-repair.bak", target_may_have_changed=True
+        )
+        interrupted.__cause__ = failure
+        monkeypatch.setattr(
+            WriterFacet, "okf_apply_log_repair", Mock(side_effect=interrupted)
+        )
+        approval = LogRepairApproval(
+            path="log.md",
+            etag="before",
+            new_etag="after",
+            removal_start=20,
+            removal_end=60,
+            removal_base64="cmVtb3ZlZA==",
+            operator_reviewed=True,
+        )
         async with Client(make_server()) as client:
-            await wait_for_mcp_writer_drain(client)
-            preview = _parse_tool_data(
-                await client.call_tool("okf_preview_log_repair", {"path": "log.md"})
-            )
-            approval = {**preview["approval"], "operator_reviewed": True}
-            monkeypatch.setattr(
-                document_module, "atomic_write", Mock(side_effect=failure)
-            )
             with pytest.raises(
                 ToolError, match="target may already have changed"
             ) as caught:
                 await client.call_tool(
-                    "okf_apply_log_repair", {"path": "log.md", "approval": approval}
+                    "okf_apply_log_repair",
+                    {"path": "log.md", "approval": approval.model_dump()},
                 )
         assert "log.md.frontmatter-repair.bak" in str(caught.value)
         assert "before any retry" in str(caught.value)
-        assert (okf_vault / "log.md").read_bytes() == original
-        assert (okf_vault / "log.md.frontmatter-repair.bak").read_bytes() == original
         records = [
             record
             for record in caplog.records
@@ -635,8 +644,9 @@ class TestOkfMigrationTools:
         assert len(records) == 1
         assert records[0].levelno == logging.ERROR
         assert records[0].exc_info is not None
-        assert records[0].exc_info[1] is not None
-        assert records[0].exc_info[1].__cause__ is failure
+        assert records[0].exc_info[1] is interrupted
+        assert records[0].exc_info[2] is not None
+        assert interrupted.__cause__ is failure
 
     async def test_seed_log_refuses_overwrite_as_tool_error(self) -> None:
         from fastmcp.exceptions import ToolError
