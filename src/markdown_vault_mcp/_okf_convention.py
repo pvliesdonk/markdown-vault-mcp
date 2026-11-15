@@ -27,6 +27,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
@@ -135,7 +136,7 @@ class ConventionMaintainer:
         if not self._detector.state().active:
             return
         folder = folder_of(path)
-        with okf_write_suppressed():
+        with okf_write_suppressed(), auxiliary_commit_writes():
             self._append_log(folder, path, operation)
             # A note in a folder without an index is listed from the nearest
             # indexed level, which indexes every missing level below (#1647).
@@ -173,7 +174,7 @@ class ConventionMaintainer:
                 self._refresh_index(folder)
 
     def subtree_folders(self, root: str) -> list[str]:
-        """Return *root* and every non-hidden folder below it, vault-relative.
+        """Return vault-owned non-hidden folders under *root*, vault-relative.
 
         After a folder move these are the folders whose ``index.md`` moved
         along, still listing the old paths (#1609).
@@ -182,15 +183,25 @@ class ConventionMaintainer:
             root: Vault-relative folder (``""`` for the vault root).
 
         Returns:
-            *root* first, then its descendants in walk order; only *root*
-            when no vault directory is known.
+            *root* first, then its descendants in walk order, omitting git
+            submodules and their descendants. Empty when *root* is inside a
+            submodule; only *root* when no vault directory is known.
         """
+        if self._doc_mgr.in_submodule(root):
+            return []
         if self._source_dir is None:
             return [root]
         base = self._source_dir / root if root else self._source_dir
         found = [root]
         for dirpath, dirnames, _files in os.walk(base):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if not d.startswith(".")
+                and not self._doc_mgr.in_submodule(
+                    Path(dirpath, d).relative_to(self._source_dir).as_posix()
+                )
+            )
             for name in dirnames:
                 found.append(
                     Path(dirpath, name).relative_to(self._source_dir).as_posix()
