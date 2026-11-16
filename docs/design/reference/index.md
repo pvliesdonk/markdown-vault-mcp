@@ -8,6 +8,9 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [LEANN query-time embedding recomputation](leann.md) — the external
+  technique behind the deferred #1368 proposal; project revisit criteria
+  remain in the embedding-store design.
 - [CLI reader test logging lifetimes](cli-test-logging.md) — pytest capture
   teardown, root handlers and separate live destinations in the reader harness.
 - [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md) —

@@ -192,7 +192,62 @@ A few boundaries keep this predictable, and they are also its limits. Maintenanc
 
 One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
 
-To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Removing those blocks is a manual edit: the server cannot tell a block it stacked from one the log quotes on purpose, so it leaves all of them alone.
+To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Ordinary writes leave those blocks alone. The deliberate repair below requires review because the server cannot distinguish a block it stacked from one the log quotes on purpose.
+
+## Repairing legacy log frontmatter
+
+Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the
+start of `log.md`. The [`admin repair-log`](../reference/cli.md#markdown-vault-mcp-admin-repair-log)
+command repairs one such file at a time. Without `--apply` it only previews.
+As an operator command rather than an MCP tool, it is out of every client's
+reach.
+
+Preview the affected log with its vault-relative path:
+
+```bash
+markdown-vault-mcp admin repair-log guides/log.md
+```
+
+The preview prints the exact bytes it would remove, with their byte offsets,
+between `>>> removal begins` and `<<< removal ends`. Below them it prints the
+command that applies the removal. It keeps the opening block and removes only the
+identical copies directly after it. Matching blocks alone do not prove the old
+defect wrote them: a log can quote its own frontmatter on purpose. Apply only
+when nothing in the removal was written deliberately. `Nothing to repair`
+means the file holds no supported repeated run: differing, interleaved or
+malformed blocks are left for you to edit by hand.
+
+To apply, run the printed command. It carries the `etag` of the log as you
+previewed it:
+
+```bash
+markdown-vault-mcp admin repair-log guides/log.md --apply <etag>
+```
+
+If the log changed after the preview, apply refuses and changes nothing;
+preview it again and review the new removal. Apply first keeps the complete
+original as `log.md.frontmatter-repair.bak` beside the log, then removes only
+the previewed repeats. The opening frontmatter, provenance fields, line endings
+and the rest of the file stay byte for byte; no `log.md` entry or provenance
+stamp is added. On systems that enforce Unix file modes, only the account
+that ran the command can read the recovery file. It is not indexed as a note.
+In a Git-backed vault both files are committed like any other write. Keep the
+recovery file until you have checked the result. The same preview and apply
+are available to library callers as `Vault.writer.okf_preview_log_repair` and
+`Vault.writer.okf_apply_log_repair`.
+
+Any existing recovery entry blocks apply, even one with the same bytes. If
+apply stops part-way, its error says whether the log may already have
+changed. The recovery file may then be partial or missing, so inspect both
+files. Apply never reuses or deletes the recovery file: move it somewhere safe
+before a retry.
+
+Stop the server before applying. Apply refuses while a server holds the
+on-disk index (`MARKDOWN_VAULT_MCP_INDEX_PATH`), but a server with an
+in-memory index, another editor, or a sync tool writing the same file is not
+detected. Apply is not a transaction and gives no guarantee across a power
+loss. Apply does not update the search index. The next `admin reindex`, or
+the reindex the server runs when it starts, finds the changed log.
 
 ## Using OKF with PARA or Zettelkasten
 
