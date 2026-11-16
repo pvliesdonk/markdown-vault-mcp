@@ -69,6 +69,17 @@ def test_unclosed_fence_refuses_append(opener: str, existing_date: str) -> None:
         append_okf_log_entry(text, date="2026-08-09", summary="new event")
 
 
+def test_unclosed_fence_without_a_header_refuses_append() -> None:
+    with pytest.raises(ValueError, match="unclosed code fence"):
+        append_okf_log_entry("```\n## fake\n", date="2026-08-09", summary="new event")
+
+
+def test_only_fenced_date_does_not_supply_a_real_section() -> None:
+    text = "# Log\n\n```\n## 2026-08-09\n```\n"
+    out = append_okf_log_entry(text, date="2026-08-09", summary="new event")
+    assert out == text + "\n## 2026-08-09\n\n- new event\n"
+
+
 def test_backtick_in_info_is_not_an_opening_fence() -> None:
     text = "# Log\n\n```not`a-fence\n\n## 2026-08-09\n\n- old\n"
     out = append_okf_log_entry(text, date="2026-08-09", summary="new event")
