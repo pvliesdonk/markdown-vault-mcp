@@ -66,8 +66,8 @@ An external repair shows at the next such check or at restart, with
 `git_worktree_clean` in the log. After that, ordinary pending writes do not
 open another startup warning.
 
-A failed inspection keeps any existing warning and is retried at the next
-commit or sync. The server logs `git_worktree_check_failed` for the first
+A failed inspection keeps any existing warning and is retried at the first
+commit or sync a minute later. The server logs `git_worktree_check_failed` for the first
 failure only.
 
 ## Getting an overwritten note back

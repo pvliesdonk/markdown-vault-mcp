@@ -6571,19 +6571,28 @@ commit). At construction with `repo_path`
 or explicit lifecycle startup, the strategy inspects the full repository with
 read-only `git status --porcelain=v1 -z`, including untracked but not ignored
 files. Submodules (`--ignore-submodules=all`) and untracked plain nested
-repositories do not count: the server never writes into either, and a pull
-does not update a submodule checkout, so they would hold the condition open
-indefinitely. Startup dirt opens an independent `uncommitted_changes` health condition
-and logs `git_worktree_dirty` at WARNING, before a startup pull. Commit-only
-vaults report it too. Successful remote operations cannot clear it; only a
-successful clean status after a commit or during sync does so, logging
-`git_worktree_clean`. Failed inspection leaves the condition untouched,
-logs `git_worktree_check_failed` once per failing run, and is retried at the
-next commit or sync, including when the first startup inspection failed. Once clean, sampling stops to avoid labeling
-ordinary asynchronous writes as leftover startup work. Health reads remain
-lock-free cached observations; external repair is reflected at the next
-commit/sync check or restart. Direct lazy callbacks without `repo_path` or a
-startup lifecycle call do not claim to have observed the startup tree.
+repositories do not count: the server never writes into either, and a
+fast-forward that bumps a gitlink leaves the submodule checkout behind
+(` M sub`, `docs/design/reference/git-submodules.md`), so they would hold
+the condition open indefinitely. The cost: an operator's staged gitlink bump
+is not reported either. Startup dirt opens an independent
+`uncommitted_changes` health condition and logs `git_worktree_dirty` at
+WARNING, before a startup pull. WARNING, not ERROR: the server keeps working,
+and in a vault a person also edits the dirt is often their work in progress.
+Commit-only vaults report it too. Successful remote operations cannot clear
+it; only a successful clean status after a commit or during sync does so,
+logging `git_worktree_clean`. A failed inspection leaves the condition
+untouched and logs `git_worktree_check_failed` once per failing run. It is
+retried at the first commit or sync after a 60-second back-off, also when
+the first startup inspection failed, so a status that always times out
+stalls the strategy lock once per back-off rather than once per commit. A
+first successful inspection that happens after a commit can count a write
+still waiting for its own commit as dirt; the next clean observation clears
+it. Once clean, sampling stops to avoid labeling ordinary asynchronous
+writes as leftover startup work. Health reads remain lock-free cached
+observations; external repair is reflected at the next commit/sync check or
+restart. Direct lazy callbacks without `repo_path` or a startup lifecycle
+call do not claim to have observed the startup tree.
 
 **Deferred push mechanics**: the timer and pending-flag state live in a
 composed `PushScheduler` collaborator (`git/push_scheduler.py`, #893). It

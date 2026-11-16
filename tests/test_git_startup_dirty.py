@@ -211,10 +211,12 @@ def test_worktree_and_remote_recovery_are_reported_independently(
 def test_failed_status_does_not_clear_dirty_health(
     git_repo_pair: GitRepoPair,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed or timed-out observation is not evidence that work was saved."""
     import subprocess
 
+    monkeypatch.setattr("markdown_vault_mcp.git.strategy._WORKTREE_RETRY_S", 0.0)
     repo = git_repo_pair.local_path
     (repo / "README.md").write_text("pending\n")
     strategy = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
@@ -251,11 +253,14 @@ def test_subdirectory_vault_reports_changes_in_its_repository(
 
 
 def test_first_failed_check_is_retried_after_a_commit(
-    git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
+    git_repo_pair: GitRepoPair,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A startup inspection that failed is retried, warning only once."""
     import subprocess
 
+    monkeypatch.setattr("markdown_vault_mcp.git.strategy._WORKTREE_RETRY_S", 0.0)
     repo = git_repo_pair.local_path
     (repo / "other.md").write_text("left behind\n")
     real_run = subprocess.run
@@ -334,3 +339,34 @@ def test_status_parser(tmp_path: Path, status: bytes, dirty: bool) -> None:
     (tmp_path / "nested" / ".git").mkdir(parents=True)
     (tmp_path / "plain").mkdir()
     assert _has_uncommitted_changes(status, tmp_path) is dirty
+
+
+def test_failed_check_backs_off_before_retrying(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    """A status that keeps failing is not rerun on every commit."""
+    import subprocess
+
+    repo = git_repo_pair.local_path
+    strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
+    try:
+        calls = 0
+
+        def status_times_out(*_a: object, **_k: object) -> object:
+            nonlocal calls
+            calls += 1
+            raise subprocess.TimeoutExpired("git", 10)
+
+        with (
+            patch("subprocess.run", side_effect=status_times_out),
+            strategy._lock,
+        ):
+            strategy._observe_worktree(repo)
+            strategy._observe_worktree(repo)
+        assert calls == 1
+        strategy._worktree_retry_at = 0.0  # back-off elapsed
+        with strategy._lock:
+            strategy._observe_worktree(repo)
+        assert strategy._worktree_retry_at is None
+    finally:
+        strategy.close()

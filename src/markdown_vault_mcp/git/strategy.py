@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -100,6 +101,8 @@ _LOOP_PULL = _PullEntry("Git pull", timer_driven=True)
 #: Bound on the working-tree inspection that reports uncommitted work (#1678).
 #: It runs under the strategy lock, so a hung status must not hold writes.
 _WORKTREE_STATUS_TIMEOUT_S = 10
+#: Wait before inspecting again after a failed inspection.
+_WORKTREE_RETRY_S = 60.0
 
 
 class GitWriteStrategy:
@@ -203,10 +206,11 @@ class GitWriteStrategy:
         self._repo_path: Path | None = repo_path
         self._write_init_done = False
         # Uncommitted-work reporting (#1678), all guarded by ``_lock``:
-        # wanted once startup asked for it, checked once a status succeeded.
+        # wanted once startup asked for it, checked once a status succeeded,
+        # and a monotonic retry time while inspections keep failing.
         self._worktree_wanted = False
         self._worktree_checked = False
-        self._worktree_check_failing = False
+        self._worktree_retry_at: float | None = None
         # ONE strategy-wide lock, shared with both collaborators below.
         self._lock = threading.Lock()
         self._bootstrap = RepoBootstrap(
@@ -320,9 +324,13 @@ class GitWriteStrategy:
         clean tree is observed, stop probing: new dirt may be a normal write
         awaiting its asynchronous callback, not leftover startup work. A
         failed inspection leaves the condition as it was and is retried at
-        the next commit or sync; it logs at WARNING once per failing run.
+        the first commit or sync after a back-off, so a status that always
+        times out stalls the lock once per back-off, not once per commit.
         """
         if self._worktree_checked and not self._health.worktree_dirty():
+            return
+        retry_at = self._worktree_retry_at
+        if retry_at is not None and time.monotonic() < retry_at:
             return
         try:
             result = subprocess.run(
@@ -345,21 +353,29 @@ class GitWriteStrategy:
                 timeout=_WORKTREE_STATUS_TIMEOUT_S,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            error = type(exc).__name__
-            if self._worktree_check_failing:
-                logger.debug("git_worktree_check_still_failing error=%s", error)
-            else:
-                self._worktree_check_failing = True
-                logger.warning(
-                    "git_worktree_check_failed action=inspect_git_status error=%s",
-                    error,
-                )
+            self._record_worktree_check_failure(exc)
             return
-        self._worktree_check_failing = False
+        self._worktree_retry_at = None
         self._worktree_checked = True
         self._health.worktree_observed(
             dirty=_has_uncommitted_changes(result.stdout, git_root)
         )
+
+    def _record_worktree_check_failure(self, exc: BaseException) -> None:
+        """Back off after a failed inspection, warning once per failing run.
+
+        Args:
+            exc: The failure; only its type is logged, never git's stderr.
+        """
+        error = type(exc).__name__
+        if self._worktree_retry_at is None:
+            logger.warning(
+                "git_worktree_check_failed action=inspect_git_status error=%s",
+                error,
+            )
+        else:
+            logger.debug("git_worktree_check_still_failing error=%s", error)
+        self._worktree_retry_at = time.monotonic() + _WORKTREE_RETRY_S
 
     def _ensure_write_init(self) -> None:
         """One-time initialisation for the write path (remote/push/LFS)."""
@@ -2063,6 +2079,8 @@ def _has_uncommitted_changes(status: bytes, git_root: Path) -> bool:
     Returns:
         ``True`` when any record names a change outside nested repositories.
     """
+    if not status:
+        return False
     records = iter(status.split(b"\0"))
     for record in records:
         if len(record) < 4:
