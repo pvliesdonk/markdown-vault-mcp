@@ -40,7 +40,7 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 
 - **Type**: the free-text `type` field, such as `Playbook`, `Metric`, or `Reference`.
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
-- **Recorded review tier**: `trust_tier` describes supplied review claims. Only records with an actor and an offset-aware `at` count; malformed entries do not promote the tier. The server does not certify the reviewer, truth, or applicability to the current revision.
+- **Recorded review tier**: `trust_tier` describes supplied review claims. A record with a usable `human:<id>` actor and an offset-aware `at` gives `human-reviewed`; otherwise, usable records give `machine-confirmed`, and no usable record gives `unverified`. Malformed entries do not promote the tier. The server does not certify the reviewer, truth, or applicability to the current revision.
 - **Evidence**: `freshness.state` distinguishes `missing`, `malformed`, `unexpired`, and `expired`. `review` separates recorded and malformed entry counts. Whole reads include the parsed values under `recorded`; compact results keep the summary. `stale: false` includes absent or malformed expiry, so it does not establish freshness.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
 

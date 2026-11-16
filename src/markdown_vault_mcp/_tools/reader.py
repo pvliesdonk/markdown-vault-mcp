@@ -104,8 +104,8 @@ def register(mcp: FastMCP) -> None:
               the vault is an active OKF bundle. Carries `type` (when
               declared), `status` (defaults to `"stable"`), `stale`
               (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
-              `"machine-confirmed"` / `"human-reviewed"`), and
-              `sources_count` (when the note cites sources).
+              `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
+              and `sources_count` (when the note cites sources).
             - sections (list[dict]): Up to `chunks_per_file` best-matching
               sections, each with:
 
@@ -190,9 +190,9 @@ def register(mcp: FastMCP) -> None:
             section= to get the full document's frontmatter),
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
             On an active OKF bundle, whole-document reads also carry
-            an 'okf' dict (type, status, stale, trust_tier, and the note's
-            'sources' list when present); section reads omit it because they
-            carry no frontmatter to derive it from.
+            an 'okf' dict (type, status, stale, trust_tier, freshness, review,
+            recorded, and the note's 'sources' list when present). Section reads omit
+            it because they carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),
             etag (SHA-256 hex str or null).
@@ -821,8 +821,8 @@ def register(mcp: FastMCP) -> None:
               them when writing to or proposing links involving this note;
               some folders are self-contained by design.
             - okf (dict, optional): OKF read annotation for this note
-              (type, status, stale, trust_tier, sources_count). Present
-              only when the vault is an active OKF bundle.
+              (type, status, stale, trust_tier, freshness, review, sources_count).
+              Present only when the vault is an active OKF bundle.
 
             Index freshness is reported out-of-band in the response's
             `_meta.index_stale` field: True when the IndexWriter had
