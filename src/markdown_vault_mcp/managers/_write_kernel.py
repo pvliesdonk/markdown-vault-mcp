@@ -6,17 +6,20 @@ same way: atomically, and under the same etag precondition. These are the
 genuinely pure parts of that — they read no manager state — so they live here
 as module functions rather than being inherited or copied.
 
-The umask handling is load-bearing: :mod:`tempfile` hardcodes ``0o600``, so a
-freshly-created file is chmod'd after the replace to match what a plain
-``open(path, "w")`` would have produced.
+Private staging uses :mod:`tempfile`'s ``0o600``. For new files, an empty
+sibling probe obtains the mode a plain create receives from the kernel,
+including default ACLs; that mode is applied before publication. See
+``docs/design/reference/file-creation-permissions.md``.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import stat
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 
 from markdown_vault_mcp.exceptions import ConcurrentModificationError
@@ -52,9 +55,30 @@ def _process_umask() -> int:
     return _umask
 
 
-def new_file_mode() -> int:
-    """Mode for a freshly-created file, matching a plain ``open(path, "w")``."""
-    return 0o666 & ~_process_umask()
+def new_file_mode(parent: Path | None = None) -> int:
+    """Return the mode a plain file creation receives.
+
+    Args:
+        parent: Destination directory, including its default ACL policy.
+            Omit for the legacy umask-only calculation.
+
+    Returns:
+        Permission bits assigned by the kernel, or the umask-only mode.
+    """
+    if parent is None:
+        return 0o666 & ~_process_umask()
+    for _ in range(100):
+        probe = parent / f".mode-{uuid.uuid4().hex}.tmp"
+        try:
+            fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        except FileExistsError:
+            continue
+        try:
+            return stat.S_IMODE(os.fstat(fd).st_mode)
+        finally:
+            os.close(fd)
+            probe.unlink()
+    raise FileExistsError("Could not create an exclusive permission probe")
 
 
 def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:
@@ -87,42 +111,35 @@ def atomic_write(abs_path: Path, data: str | bytes) -> None:
     """Write *data* to *abs_path* atomically via a sibling tempfile.
 
     The temp file lands with :meth:`Path.replace` semantics; permission
-    bits are preserved when the target already exists. A freshly-created
-    target is chmod'd to ``0o666 & ~umask`` after the replace so fresh
-    writes honour the process umask (matching a plain ``open``) instead
-    of the ``0o600`` ``tempfile`` hardcodes. On failure the temp file is
-    removed and the original is left untouched.
+    bits are preserved when the target already exists. New files receive
+    the mode of a plain create in their directory, honoring the umask or
+    inherited default ACL. Content is staged privately; final permissions
+    are set before replacement. On failure the temp file is removed and
+    the original is left untouched.
 
     Args:
         abs_path: Absolute destination path.
         data: Text (written UTF-8) or raw bytes.
     """
     existed = is_regular_file(abs_path)
-    if isinstance(data, str):
-        with tempfile.NamedTemporaryFile(
-            dir=abs_path.parent,
-            mode="w",
-            encoding="utf-8",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp.write(data)
-            tmp_name = tmp.name
-    else:
-        with tempfile.NamedTemporaryFile(
-            dir=abs_path.parent,
-            mode="wb",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp.write(data)
-            tmp_name = tmp.name
-    if existed:
-        shutil.copymode(abs_path, tmp_name)
+    text = isinstance(data, str)
+    tmp_path: Path | None = None
     try:
-        Path(tmp_name).replace(abs_path)
+        with tempfile.NamedTemporaryFile(
+            dir=abs_path.parent,
+            mode="w" if text else "wb",
+            encoding="utf-8" if text else None,
+            suffix=".tmp",
+            delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(data)
+        if existed:
+            shutil.copymode(abs_path, tmp_path)
+        else:
+            tmp_path.chmod(new_file_mode(abs_path.parent))
+        tmp_path.replace(abs_path)
     except Exception:
-        Path(tmp_name).unlink(missing_ok=True)
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
         raise
-    if not existed:
-        abs_path.chmod(new_file_mode())

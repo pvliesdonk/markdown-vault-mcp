@@ -3603,6 +3603,21 @@ isolated unit testing and clear dependency boundaries. Pure utility functions
 live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
 ``utils/links.py`` (link target computation and replacement).
 
+#### Atomic file permissions
+
+`managers/_write_kernel.py` owns atomic note and attachment writes (#2054).
+New-file permissions come from an empty, exclusively created sibling probe
+requested with mode `0666`, so the kernel applies the directory's default ACL
+or the process umask. The probe contains no note content and is removed after
+its mode is read. The actual staging file remains private while content is
+written; its inherited ACL entries remain in place, and its final mode is set
+before `Path.replace` publishes it. Existing files keep the same `copymode`
+policy. Permission errors propagate before publication and staging is cleaned.
+No target placeholder or process-umask change is needed for a new write.
+The no-argument `new_file_mode()` helper retains its legacy umask-only result.
+See [file creation permissions](reference/file-creation-permissions.md) for the
+external rules and focused regressions.
+
 #### Facets (`facets/`, #604)
 
 The ``facets/`` package groups the formerly flat ``Vault`` surface into

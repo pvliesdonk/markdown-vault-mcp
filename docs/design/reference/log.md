@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-16
+
+- New: [File creation permissions and default ACLs](file-creation-permissions.md),
+  for #2054. Checked Linux ACL inheritance, chmod masks and private staging;
+  reproduced the new-file group-write loss against plain creation.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
