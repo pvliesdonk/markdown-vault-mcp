@@ -41,7 +41,9 @@ class TestContextCardHTML:
 
     async def test_context_header_elements(self) -> None:
         html = await get_app_html()
-        assert 'id="ctx-title"' in html
+        heading = re.search(r'<h2 id="ctx-title">([^<]*)</h2>', html)
+        assert heading is not None
+        assert heading.group(1).strip() == "Context"
         assert 'id="ctx-breadcrumb"' in html  # folder breadcrumb
         assert 'id="ctx-chips"' in html  # type/status chips
         assert 'id="ctx-modified"' in html  # relative timestamp

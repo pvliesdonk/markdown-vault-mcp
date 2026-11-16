@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from typing import Any
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from typer.testing import CliRunner
 
@@ -53,28 +53,39 @@ def test_path_command_preserves_native_object(remote: bool, mode: str) -> None:
 
 
 @given(st.text(st.integers(0, 0x10FFFF).map(chr)), st.booleans())
+@example(coverage="\ud800\udc00", truncated=False)
+@example(coverage="\ud800\udc00", truncated=True)
+@example(coverage="\U00010000\U0010ffff", truncated=False)
+@example(coverage="\ud800", truncated=False)
+@example(coverage="\udc00", truncated=True)
+@example(coverage="\udc00\ud800", truncated=False)
+@example(coverage=r"\ud800\udc00", truncated=True)
+@example(
+    coverage='"\\\r\n\x1b\x85\u202e\u2028\u2029OK query path count=99', truncated=True
+)
 @settings(max_examples=100, deadline=None)
 def test_path_receipts_round_trip_without_header_injection(
     coverage: str, truncated: bool
 ) -> None:
-    """Escaped typed receipts retain their values without changing record counts."""
+    """Escaped receipts retain decoded JSON values without changing record counts."""
     data: dict[str, Any] = {
         "items": [{"path": "note.md", "frontmatter": {"label": coverage}}],
         "coverage": coverage,
         "reasons": [coverage],
         "truncated": truncated,
     }
+    expected = json.loads(json.dumps(data))
     output = io.StringIO()
     with redirect_stdout(output):
         render_reply("query path", RemoteReply(data), "agent")
     header, record = output.getvalue().splitlines()
     prefix, receipt = header.split(" coverage=", 1)
     value, end = json.JSONDecoder().raw_decode(receipt)
-    assert value == coverage
+    assert value == expected["coverage"]
     assert receipt[end:] == f" truncated={str(truncated).lower()}"
     assert "count=1 " in prefix
     assert "index_stale=unknown" in prefix
-    assert json.loads(record) == data
+    assert json.loads(record) == expected
     assert "\x1b" not in output.getvalue()
 
 

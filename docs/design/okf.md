@@ -515,7 +515,11 @@ Tool tags following switches: #1412.
   `rename` or `move_folder` refreshes the listings it made stale, through
   `ConventionMaintainer.refresh_indexes` with the same guards (#1609): the
   deleted note's folder; a renamed note's old folder; after a folder move,
-  every folder of the moved subtree and the old parent. Of those, only
+  every vault-owned folder of the moved subtree and the old parent. The
+  subtree walk omits a root inside a git submodule and prunes submodule
+  directories before descent, using `DocumentManager.in_submodule` (#1950).
+  Ordinary containing folders and non-hidden descendants retain their
+  sorted walk order; no submodule listing refresh is attempted. Of those, only
   folders that already carry an `index.md` are refreshed. The destination
   is reached as a write reaches it: through its indexed anchor (for a move,
   the anchor of the new parent), whose regeneration lists it and indexes

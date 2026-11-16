@@ -188,8 +188,7 @@ name = "beautifulsoup4"
 version = "4.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "soupsieve", version = "2.10", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11.5'" },
-    { name = "soupsieve", version = "4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11.5'" },
+    { name = "soupsieve" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
@@ -1882,7 +1881,7 @@ wheels = [
 
 [[package]]
 name = "markdown-vault-mcp"
-version = "6.1.1"
+version = "6.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1955,12 +1954,15 @@ dev = [
     { name = "types-pyyaml" },
 ]
 docs = [
-    { name = "mike" },
-    { name = "mkdocs-llmstxt" },
-    { name = "mkdocs-material" },
-    { name = "mkdocs-redirects" },
-    { name = "mkdocstrings", extra = ["python"] },
+    { name = "mike", marker = "python_full_version >= '3.11.5'" },
+    { name = "mkdocs-llmstxt", marker = "python_full_version >= '3.11.5'" },
+    { name = "mkdocs-material", marker = "python_full_version >= '3.11.5'" },
+    { name = "mkdocs-redirects", marker = "python_full_version >= '3.11.5'" },
+    { name = "mkdocstrings", extra = ["python"], marker = "python_full_version >= '3.11.5'" },
 ]
+
+[package.group-requires-python]
+docs = ">=3.11.5"
 
 [package.metadata]
 requires-dist = [
@@ -2013,11 +2015,11 @@ dev = [
     { name = "types-pyyaml", specifier = ">=6" },
 ]
 docs = [
-    { name = "mike", specifier = ">=2" },
-    { name = "mkdocs-llmstxt", specifier = ">=0.5" },
-    { name = "mkdocs-material", specifier = ">=9.7.6" },
-    { name = "mkdocs-redirects", specifier = ">=1.2" },
-    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.28" },
+    { name = "mike", marker = "python_full_version >= '3.11.5'", specifier = ">=2" },
+    { name = "mkdocs-llmstxt", marker = "python_full_version >= '3.11.5'", specifier = ">=0.5" },
+    { name = "mkdocs-material", marker = "python_full_version >= '3.11.5'", specifier = ">=9.7.6" },
+    { name = "mkdocs-redirects", marker = "python_full_version >= '3.11.5'", specifier = ">=1.2" },
+    { name = "mkdocstrings", extras = ["python"], marker = "python_full_version >= '3.11.5'", specifier = ">=0.28" },
 ]
 
 [[package]]
@@ -2340,8 +2342,7 @@ dependencies = [
     { name = "mkdocs-material-extensions" },
     { name = "paginate" },
     { name = "pygments" },
-    { name = "pymdown-extensions", version = "12.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11.5'" },
-    { name = "pymdown-extensions", version = "13.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11.5'" },
+    { name = "pymdown-extensions" },
     { name = "requests" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e2/b2/dee93bf227b481e28ba4d800c322dffc41b16d524ae84ca8d85aa7ec3a81/mkdocs_material-9.8.1.tar.gz", hash = "sha256:cddae7d77bb98d1d347aa68ee252ab40926171a1b34ba8777c44e16de9629f00", size = 4160481, upload-time = "2026-11-07T13:05:04.482Z" }
@@ -2381,8 +2382,7 @@ dependencies = [
     { name = "markupsafe" },
     { name = "mkdocs" },
     { name = "mkdocs-autorefs" },
-    { name = "pymdown-extensions", version = "12.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11.5'" },
-    { name = "pymdown-extensions", version = "13.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11.5'" },
+    { name = "pymdown-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/27/cc/e3ed8b16851f5d664dffcf8f55fc60d0d3f736a3edca21d1508105d1255a/mkdocstrings-1.0.8.tar.gz", hash = "sha256:b50fc326230906425c82ee9ec59b80e5db00892b2b593d4d0b841a0d4acf537b", size = 107444, upload-time = "2026-10-19T15:43:02.157Z" }
 wheels = [
@@ -3613,31 +3613,8 @@ crypto = [
 
 [[package]]
 name = "pymdown-extensions"
-version = "12.3"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version < '3.11.5'",
-]
-dependencies = [
-    { name = "markdown" },
-    { name = "pyyaml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/fe/ac50ee24a80a1b344e643f6fb626063cc7041b978cd1dd9a7f9963ae1cd1/pymdown_extensions-12.3.tar.gz", hash = "sha256:a7f2a4e0bc60c6e6babfa7922cfb3b01cd640eb00fb208f3c582e12bae00ea67", size = 870532, upload-time = "2026-10-14T22:40:43.252Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/d0/758afe732c2da502c051b4d03ff88daa3c0fc1a1e671e6c5a6318177bab4/pymdown_extensions-12.3-py3-none-any.whl", hash = "sha256:345493a8e3497e24382902903a1c43a28e34a52f2b7571a1c9641429b820ca74", size = 277597, upload-time = "2026-10-14T22:40:41.543Z" },
-]
-
-[[package]]
-name = "pymdown-extensions"
 version = "13.0"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.15'",
-    "python_full_version == '3.14.*'",
-    "python_full_version == '3.13.*'",
-    "python_full_version == '3.12.*'",
-    "python_full_version >= '3.11.5' and python_full_version < '3.12'",
-]
 dependencies = [
     { name = "markdown" },
     { name = "pyyaml" },
@@ -4163,27 +4140,8 @@ wheels = [
 
 [[package]]
 name = "soupsieve"
-version = "2.10"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version < '3.11.5'",
-]
-sdist = { url = "https://files.pythonhosted.org/packages/71/c3/1b817965ac12dc002d7c9cd7dfffdd7d4fbf9b45763ef2ffe7b86ee94670/soupsieve-2.10.tar.gz", hash = "sha256:49e9380d7d2905463583bafe285e818c7366a9ed7b3aee221c1ac79c905d8bc0", size = 124337, upload-time = "2026-09-24T02:36:35.048Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/66/87/5ed59e1d0290564e2027ed066c52b059892c4637741337fc0967183c8d4d/soupsieve-2.10-py3-none-any.whl", hash = "sha256:8596eb8967d744174820280fa62b4542a2e955bfaccca73ed8a13c6eb8e9b502", size = 38019, upload-time = "2026-09-24T02:36:33.709Z" },
-]
-
-[[package]]
-name = "soupsieve"
 version = "4.1"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.15'",
-    "python_full_version == '3.14.*'",
-    "python_full_version == '3.13.*'",
-    "python_full_version == '3.12.*'",
-    "python_full_version >= '3.11.5' and python_full_version < '3.12'",
-]
 sdist = { url = "https://files.pythonhosted.org/packages/95/48/21a393ff731b8f928fa4f8176f9a7ceba2252ee60a5149f25b45c292aa5c/soupsieve-4.1.tar.gz", hash = "sha256:ca9abf7126667010d8f6e9b39bfc1bc3b23c8aed9bcb0f54a754dde969bb8aab", size = 161955, upload-time = "2026-11-10T01:59:50.399Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/73/6a2087c72975cfc07394623bca8d17654342ea4055ae368deafe5a81a542/soupsieve-4.1-py3-none-any.whl", hash = "sha256:e4d667b3974ce6e038e7390486b8093369854a1d345ffdd4c121dfc4a782e809", size = 52302, upload-time = "2026-11-10T01:59:48.571Z" },
