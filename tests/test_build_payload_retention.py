@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.interfaces import ListsNoteStates
 from markdown_vault_mcp.managers import index as index_module
 from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.scanner import HeadingChunker
@@ -25,6 +26,18 @@ if TYPE_CHECKING:
 
 class _Payload(str):
     """Weak-referenceable text that really reaches the keyword writer."""
+
+
+class _WithoutNoteStates:
+    """A keyword index lacking the optional ``list_note_states`` reader."""
+
+    def __init__(self, inner: FTSIndex) -> None:
+        self._inner = inner
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "list_note_states":
+            raise AttributeError(name)
+        return getattr(self._inner, name)
 
 
 @pytest.fixture
@@ -193,6 +206,43 @@ def test_database_error_propagates_without_advancing_tracker(
 
 
 @pytest.mark.parametrize("force", [False, True])
+def test_build_aborted_mid_scan_is_repaired_by_the_next_build(
+    tmp_path: Path,
+    build_parts: tuple[IndexManager, FTSIndex, ChangeTracker],
+    monkeypatch: pytest.MonkeyPatch,
+    force: bool,
+) -> None:
+    """An abort after some rows were written leaves the tracker for a rerun."""
+    manager, fts, tracker = build_parts
+    root = tmp_path / "vault"
+    for name in ("a.md", "b.md", "gone.md", "z.md"):
+        (root / name).write_text(f"# {name}\n\noldword\n", encoding="utf-8")
+    manager.build_index()
+    state_before = tracker._load_state()
+    (root / "a.md").write_text("# A\n\nnewword\n", encoding="utf-8")
+    (root / "gone.md").unlink()
+    original_upsert = fts.upsert_note
+
+    def locked_at_z(note: ParsedNote) -> int:
+        if note.path == "z.md":
+            raise sqlite3.OperationalError("synthetic locked writer")
+        return original_upsert(note)
+
+    monkeypatch.setattr(fts, "upsert_note", locked_at_z)
+    with pytest.raises(sqlite3.OperationalError, match="synthetic locked writer"):
+        manager.build_index(force=force)
+    assert tracker._load_state() == state_before
+    monkeypatch.setattr(fts, "upsert_note", original_upsert)
+    stats = manager.build_index()
+    assert stats.documents_indexed == 3
+    assert {row["path"] for row in fts.list_notes()} == {"a.md", "b.md", "z.md"}
+    assert fts.get_note("a.md")["title"] == "A"
+    hashes = tracker._load_state()[0]
+    assert set(hashes) == {"a.md", "b.md", "z.md"}
+    assert all(hashes.values())
+
+
+@pytest.mark.parametrize("force", [False, True])
 @pytest.mark.parametrize("excluded", [False, True])
 def test_rebuild_does_not_reload_corpus_frontmatter(
     tmp_path: Path,
@@ -242,11 +292,12 @@ def test_projected_state_rows_preserve_values_and_public_metadata(
         )
     (root / "bad.md").write_bytes(b"\xff")
     manager.build_index()
-    reader = getattr(fts, "list_note_states", None)
-    assert callable(reader), "projected state reader is unavailable"
+    assert isinstance(fts, ListsNoteStates)
     full_rows = fts.list_notes()
     keys = ("path", "title", "content_hash", "modified_at")
-    assert reader() == [{key: row[key] for key in keys} for row in full_rows]
+    assert fts.list_note_states() == [
+        {key: row[key] for key in keys} for row in full_rows
+    ]
     assert [row["path"] for row in full_rows] == ["a.md", "z.md"]
     assert all(row["frontmatter_json"] for row in full_rows)
     assert [row["path"] for row in fts.list_tombstones()] == ["bad.md"]
@@ -269,7 +320,8 @@ def test_indexes_without_optional_projection_remain_compatible(
     assert old_row is not None
     old_hash = old_row["content_hash"]
     (root / "deleted.md").unlink()
-    monkeypatch.delattr(FTSIndex, "list_note_states")
+    monkeypatch.setattr(manager, "_fts", _WithoutNoteStates(fts))
+    assert not isinstance(manager._fts, ListsNoteStates)
     assert manager.build_index(force=force).documents_indexed == 1
     assert fts.get_note("deleted.md") is None
     assert [row["path"] for row in fts.list_notes()] == ["a.md"]

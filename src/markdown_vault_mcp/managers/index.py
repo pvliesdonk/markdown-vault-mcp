@@ -23,6 +23,7 @@ import yaml
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
 from markdown_vault_mcp.fts_index import should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
+from markdown_vault_mcp.interfaces import ListsNoteStates
 from markdown_vault_mcp.managers.embeddings import (
     _EMBED_KEPT,
     _EMBEDDING_BATCH_SIZE,
@@ -84,6 +85,16 @@ class _KeptRows:
 
     notes: list[ParsedNote] = field(default_factory=list)
     skip_reasons: dict[str, dict[str, str]] = field(default_factory=dict)
+
+
+@dataclass
+class _ScanResult:
+    """What a build's scan left: thin note states, counts and walk errors."""
+
+    notes: list[ParsedNote] = field(default_factory=list)
+    chunks: int = 0
+    errored: int = 0
+    walk_errors: list[OSError] = field(default_factory=list)
 
 
 def _unhashed_state_note(row: dict[str, Any]) -> ParsedNote:
@@ -415,17 +426,15 @@ class IndexManager:
         return dropped
 
     def _build_state_rows(self) -> list[dict[str, Any]]:
-        """Read thin cleanup state, falling back for third-party indexes."""
-        reader = getattr(self._fts, "list_note_states", None)
-        if not callable(reader):
-            return self._fts.list_notes()
-        rows: list[dict[str, Any]] = reader()
-        return rows
+        """Read live notes' build state, frontmatter-free where the index can (#1938)."""
+        if isinstance(self._fts, ListsNoteStates):
+            return self._fts.list_note_states()
+        return self._fts.list_notes()
 
     def _wipe_for_rebuild(
         self, keep: tuple[str, ...], *, spare: set[str], force: bool
     ) -> _KeptRows:
-        """Delete every row a build replaces, sparing unread folders (#1929).
+        """Delete every row the build did not rewrite, sparing unread folders (#1929).
 
         A directory the walk could not read is not an authoritative absence
         (#1625, #1785): the notes and tombstones under it keep their rows,
@@ -451,7 +460,7 @@ class IndexManager:
                 kept.notes.append(_unhashed_state_note(row))
             else:
                 self._fts.delete_by_path(row["path"])
-        # list_notes() is live-only, so tombstones need their own wipe;
+        # The state rows are live-only, so tombstones need their own wipe;
         # the scan re-creates one per still-skipped candidate.
         for row in self._fts.list_tombstones():
             if is_under(row["path"], keep):
@@ -565,10 +574,6 @@ class IndexManager:
         state = _unhashed_state_note(
             {"path": note.path, "title": note.title, "modified_at": note.modified_at}
         )
-        if force:
-            # A forced build must not retain this readable path's prior row
-            # if its replacement fails. Non-forced upserts replace in place.
-            self._fts.delete_by_path(note.path)
         try:
             chunks = self._fts.upsert_note(note)
         except sqlite3.OperationalError:
@@ -577,8 +582,40 @@ class IndexManager:
             raise
         except Exception:
             logger.warning("build_index_index_failed path=%s", note.path, exc_info=True)
+            if force:
+                # The failed upsert rolled back, leaving the prior row; a
+                # forced build keeps no row it could not rewrite.
+                self._fts.delete_by_path(note.path)
             return state, 0, True
         return replace(state, content_hash=note.content_hash), chunks, False
+
+    def _scan_and_index(
+        self, *, force: bool, on_skip: Callable[[SkippedFile], None]
+    ) -> _ScanResult:
+        """Index each note as the scan yields it, keeping only its state (#1938)."""
+        result = _ScanResult()
+        for note in scan_directory(
+            self._source_dir,
+            required_frontmatter=self._required_frontmatter,
+            chunk_strategy=self._chunk_strategy,
+            exclude_patterns=self._exclude_patterns,
+            on_skip=on_skip,
+            title_field=self._title_field,
+            attachment_extensions=self._attachment_extensions,
+            on_walk_error=result.walk_errors.append,
+        ):
+            state, chunks, failed = self._index_build_note(note, force=force)
+            result.notes.append(state)
+            result.chunks += chunks
+            result.errored += failed
+            del note
+        for exc in result.walk_errors:
+            # Not swallowed (#1785): an unreadable directory makes the scan
+            # incomplete, and the build says so instead of claiming a full one.
+            logger.warning(
+                "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
+            )
+        return result
 
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index.
@@ -596,8 +633,9 @@ class IndexManager:
         flag after this method returns.
 
         Args:
-            force: When ``True``, drop each readable path's old row before
-                rewriting, sparing what the walk could not read.
+            force: When ``True``, keep no old row the build does not rewrite,
+                a readable note that fails to index included, sparing what
+                the walk could not read.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
@@ -623,31 +661,9 @@ class IndexManager:
             skip_reasons[sf.path] = {"category": sf.category, "detail": sf.detail}
             skip_files[sf.path] = sf
 
-        walk_errors: list[OSError] = []
-        notes: list[ParsedNote] = []
-        total_chunks = 0
-        errored = 0
-        for note in scan_directory(
-            self._source_dir,
-            required_frontmatter=self._required_frontmatter,
-            chunk_strategy=self._chunk_strategy,
-            exclude_patterns=self._exclude_patterns,
-            on_skip=_collect_skip,
-            title_field=self._title_field,
-            attachment_extensions=self._attachment_extensions,
-            on_walk_error=walk_errors.append,
-        ):
-            state, chunks, failed = self._index_build_note(note, force=force)
-            notes.append(state)
-            total_chunks += chunks
-            errored += failed
-            del note
-        for exc in walk_errors:
-            # Not swallowed (#1785): an unreadable directory makes the scan
-            # incomplete, and the build says so instead of claiming a full one.
-            logger.warning(
-                "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
-            )
+        scan = self._scan_and_index(force=force, on_skip=_collect_skip)
+        notes, total_chunks, errored = scan.notes, scan.chunks, scan.errored
+        walk_errors = scan.walk_errors
         # Wait for complete unread-prefix evidence before pruning old rows.
         # Parsed paths have already been attempted: spare their fresh rows
         # and, without force, the old row of a failed replacement (#1965).
