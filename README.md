@@ -85,6 +85,10 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
+
+For VS Code or Goose Desktop, use the
+[remote vault connection examples](docs/get-started/http-client.md#vs-code-connect-to-this-vault)
+or the [local Goose configuration](docs/get-started/installation.md#goose-desktop-local-vault).
 <!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration
