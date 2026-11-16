@@ -2867,6 +2867,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#build-state-listing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build-state listing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.ListsNoteStates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ListsNoteStates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ListsNoteStates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.ListsNoteStates.list_note_states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_note_states
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4065,6 +4104,45 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-state-listing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build-state listing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.ListsNoteStates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ListsNoteStates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ListsNoteStates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.ListsNoteStates.list_note_states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_note_states
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -7335,6 +7413,85 @@ The MCP tools and reader methods share these predicates; internal <code>order</c
       </tbody>
     </table>
 
+
+    </div>
+
+</div><!-- vale on -->
+
+<h2 id="build-state-listing">Build-state listing<a class="headerlink" href="#build-state-listing" title="Permanent link">&para;</a></h2>
+<p>A build's final sweep needs each live note's path, title, hash and
+modification time, not its frontmatter. A keyword index that has the
+optional <code>ListsNoteStates</code> protocol returns exactly those four fields, and
+<code>FTSIndex</code> does. A custom keyword backend without it keeps working: the build
+reads the same fields through <code>list_notes()</code>, at the cost of loading every
+note's frontmatter.</p>
+<!-- vale off -->
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.interfaces.ListsNoteStates" class="doc doc-heading">
+            <code>ListsNoteStates</code>
+
+
+<a href="#markdown_vault_mcp.interfaces.ListsNoteStates" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="typing.Protocol">Protocol</span></code></p>
+
+
+
+        <p>A keyword index that lists live notes' build state alone (#1938); optional.</p>
+<p>A build's final sweep and exclusion purge need each live note's path,
+title, hash and modification time. An index without this reads them
+through :meth:<code>KeywordIndex.list_notes</code>, frontmatter included.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.interfaces.ListsNoteStates.list_note_states" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">list_note_states</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.interfaces.ListsNoteStates.list_note_states" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return <code>path</code>, <code>title</code>, <code>content_hash</code> and <code>modified_at</code> per live note.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
 
     </div>
 
