@@ -21,8 +21,10 @@ import pytest
 from markdown_vault_mcp._commit_scope import (
     CommitScope,
     CommitScopeMiddleware,
+    auxiliary_commit_writes,
     bound_commit_scope,
     current_commit_scope,
+    is_auxiliary_commit_write,
 )
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
@@ -51,6 +53,25 @@ class _BatchRecorder:
 
     def on_write_batch(self, items: Sequence[WriteBatchItem], tool_name: str) -> None:
         self.batches.append((tool_name, [item[0] for item in items]))
+
+
+class _PrimaryRecorder(_BatchRecorder):
+    accepts_primary_paths = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.primary: list[frozenset[Path] | None] = []
+
+    def on_write_batch(
+        self,
+        items: Sequence[WriteBatchItem],
+        tool_name: str,
+        *,
+        primary_paths: frozenset[Path] | None = None,
+    ) -> None:
+        assert all(len(item) == 4 for item in items)
+        super().on_write_batch(items, tool_name)
+        self.primary.append(primary_paths)
 
 
 class _PlainRecorder:
@@ -99,6 +120,38 @@ class TestGrouping:
         assert cb.batches == [
             ("okf_convert_links", [Path(f"{i}.md") for i in range(5)])
         ]
+
+    @pytest.mark.parametrize("aware", [False, True])
+    def test_primary_provenance_is_snapshotted_without_changing_legacy_batches(
+        self, aware: bool
+    ) -> None:
+        cb = _PrimaryRecorder() if aware else _BatchRecorder()
+        dispatcher = WriteCallbackDispatcher(cb)
+        with bound_commit_scope("write") as first:
+            # Reserved names can be primary, and arbitrary names secondary.
+            dispatcher.fire(Path("index.md"), "manual", "write")
+            with (
+                pytest.raises(RuntimeError, match="maintenance failed"),
+                auxiliary_commit_writes(),
+            ):
+                dispatcher.fire(Path("derived.md"), "derived", "write")
+                raise RuntimeError("maintenance failed")
+            assert not is_auxiliary_commit_write()
+            with bound_commit_scope("write") as second:
+                dispatcher.fire(Path("other.md"), "other", "write")
+                dispatcher.end_scope(second)
+            dispatcher.end_scope(first)
+        dispatcher.close()
+
+        assert cb.batches == [
+            ("write", [Path("other.md")]),
+            ("write", [Path("index.md"), Path("derived.md")]),
+        ]
+        if isinstance(cb, _PrimaryRecorder):
+            assert cb.primary == [
+                frozenset({Path("other.md")}),
+                frozenset({Path("index.md")}),
+            ]
 
     def test_a_scope_that_wrote_nothing_produces_no_batch(self) -> None:
         cb = _BatchRecorder()
@@ -504,6 +557,78 @@ class TestBatchCommitsForReal:
         strategy.close()
 
         assert _subjects(repo)[0] == "write: one.md"
+
+    @pytest.mark.parametrize("tool", ["write", "edit", "append"])
+    def test_okf_single_note_commit_keeps_its_path(
+        self, tmp_path: Path, tool: str
+    ) -> None:
+        """Maintenance stays in the commit without replacing the note's subject."""
+        from markdown_vault_mcp.vault import Vault, VaultSettings
+
+        repo = _repo(tmp_path)
+        strategy = self._strategy(repo)
+        vault = Vault(
+            source_dir=repo,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+            on_write=strategy,
+        )
+        vault.index.build_index()
+        before = len(_subjects(repo))
+        try:
+            with bound_commit_scope(tool) as scope:
+                if tool == "write":
+                    vault.writer.write("note.md", "# Changed\n")
+                elif tool == "edit":
+                    vault.writer.edit("note.md", "# Note", "# Changed")
+                else:
+                    vault.writer.append("note.md", "More.\n")
+                vault.end_commit_scope(scope)
+        finally:
+            vault.close()
+            strategy.close()
+
+        operation = "write" if tool == "write" else "edit"
+        assert _subjects(repo)[0] == f"{operation}: note.md"
+        assert len(_subjects(repo)) == before + 1
+        assert _files_in_head(repo) == {"note.md", "index.md", "log.md"}
+
+    @pytest.mark.parametrize(
+        ("primary_names", "expected"),
+        [
+            (None, "write: 2 files"),
+            (("note.md", "index.md"), "write: 2 files"),
+            (("index.md",), "write: index.md"),
+            ((), "write: 2 files"),
+            (("missing.md",), "write: 2 files"),
+        ],
+    )
+    def test_batch_subject_uses_explicit_provenance_not_reserved_names(
+        self,
+        tmp_path: Path,
+        primary_names: tuple[str, ...] | None,
+        expected: str,
+    ) -> None:
+        repo = _repo(tmp_path)
+        strategy = self._strategy(repo)
+        items: list[WriteBatchItem] = []
+        for name in ("note.md", "index.md"):
+            path = repo / name
+            path.write_text("# Changed\n", encoding="utf-8")
+            items.append((path, "write", None, None))
+        if primary_names == ("missing.md",):
+            items.insert(0, (repo / "missing.md", "write", None, None))
+        primary = (
+            frozenset(repo / name for name in primary_names)
+            if primary_names is not None
+            else None
+        )
+        try:
+            strategy.on_write_batch(items, "write", primary_paths=primary)
+        finally:
+            strategy.close()
+
+        assert _subjects(repo)[0] == expected
+        assert _files_in_head(repo) == {"note.md", "index.md"}
 
     def test_a_batch_of_identical_content_commits_nothing(self, tmp_path: Path) -> None:
         """Rewriting the same bytes stages no diff, so there is nothing to commit."""

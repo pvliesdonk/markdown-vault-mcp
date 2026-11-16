@@ -1,3 +1,7 @@
+---
+last_edited: 2026-11-14
+---
+
 # markdown-vault-mcp: Design Specification v2
 
 > Generic markdown vault MCP with hybrid search.
@@ -48,6 +52,13 @@ vault becomes another.
    tool by downstream projects like QuestFoundry). The `Vault` class is
    the primary interface; MCP is one consumer, not the only one. Other
    libraries (LangChain, LlamaIndex, and so on) may wrap `Vault` directly.
+
+The installed library advertises its inline annotations with
+`markdown_vault_mcp/py.typed` (#1911). The wheel must let a type checker accept
+a correctly typed `EmbeddingProvider` subclass and reject an incorrect return
+annotation in a consumer outside the source tree. This does not change the
+runtime import surface or split the distribution; the external packaging rule
+is recorded in [Python packaging boundaries](reference/python-packaging-boundaries.md).
 
 ## Shared Infrastructure
 
@@ -943,7 +954,13 @@ operations (`read`, `write`, `edit`, `delete`, `rename`,
 `stats`, `list_folders`, `list_tags`, `get_recent`,
 `get_orphan_notes`, `get_most_linked`, `get_broken_links`) work on an
 unbuilt index: bucket-1 hits disk directly; bucket-2 queries
-whatever is currently in the index (empty on cold start). So the CLI
+whatever is currently in the index (empty on cold start). Local CLI read
+dispatch suppresses logs through INFO for the duration of the local adapter,
+preserving any stricter existing global disable threshold. Effective root DEBUG
+keeps diagnostics enabled. The exact previous threshold is restored after success,
+failure or interruption. This policy leaves root handlers, server/admin logging
+and remote credential-log suppression unchanged (#1999). It does not change local
+search construction or managed Git ownership validation. So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
@@ -1282,12 +1299,13 @@ operator learns why the note was left out.
 |-|-|-|
 | `InvalidRequestError` | The path helpers; `read()`, `get_toc()`, `edit()`, `append()`, `write()` and `move_folder()` arguments; search's `chunks_per_file`; the OKF `stale` filter; `get_diff()`'s ref; revision reads; attachment paths (a `.md` path, an extension off the allowlist); `summarize()` arguments, and paths that hold no note that exists within the read limit | The caller's request cannot be served as sent: an argument out of range or missing, a path outside the vault or of the wrong type, a heading that does not exist. A `ValueError` subclass, so `except ValueError` still catches it (#1608) |
 | `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`/`read_attachment()`/`attachment_size()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
-| `SubmodulePathError` | `write()`, `append()`, `edit()`, `delete()`, `rename()`, `move_folder()`, `write_attachment()`, `okf_convert_links()`, `okf_generate_index()`, `okf_seed_log()` | The path lies in a git submodule, or the folder holds one, so git would never commit the change (#1564). A subclass of `InvalidRequestError` |
+| `SubmodulePathError` | `write()`, `append()`, `edit()`, `delete()`, `rename()`, `move_folder()`, `write_attachment()`, `okf_convert_links()`, `okf_generate_index()`, `okf_seed_log()` | The path lies in a git submodule or plain nested repository, or the folder holds one, so git would never commit the change (#1564, #1949). A subclass of `InvalidRequestError` |
 | `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()`; `build_embeddings(force=True)` | `read_only=True`; for a forced rebuild, a vault built with `owns_index_files=False`, which never creates or replaces the embedding store's files (#1778) |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match (for a tolerant `rename()`, nor do recorded link rewrites lead from it; #1492) |
 | `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
+| `EmbeddingsRebuildFailedError` | `search()` (semantic/hybrid mode), `build_embeddings()` | A changed model or dimension needed a rebuild and it published nothing, so the old vectors cannot answer; the next call retries (#1946). A subclass of `RuntimeError` |
 | `SummarizeTimeoutError` | `summarize()` | The summarization backend outran its per-request budget; the caller can ask for less. A subclass of `InvalidRequestError` and of `RuntimeError`, the type a timeout had before (#1608) |
 | `NoteTooLargeError` | `read()` | A whole-note read is over `max_note_read_bytes`; the caller can read by section. A subclass of `InvalidRequestError`, with its own type so `summarize()` can report the skip's reason (#1637) |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
@@ -2208,8 +2226,12 @@ upload, the fully-read (size-capped) body.
 - **Validation** (`validate(ref, kind)`): runs at link creation. Download
   validates existence stat-only, so minting a link for a large attachment never
   reads it; upload validates the destination is a note or an allowed attachment
-  extension and rejects an existing file when
+  extension outside any git submodule and rejects an existing file when
   `ProjectConfig.write_protect_existing` is true. Both reject path traversal.
+  Upload validation uses the live document manager's existing submodule guard
+  before minting a capability, naming the `ref` argument in an INFO rejection;
+  downloads remain available inside submodules. The locked upload write still
+  performs its own guard check in case the submodule boundary changes later.
   Setting `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly allows
   existing destinations at link creation and blind replacement during upload.
   A rejection is a `ToolError` at INFO that tells the model what to pass
@@ -2249,9 +2271,10 @@ Two MCP tools create tokens and return the capability URL:
   read-only mode). Validates that `path` exists before minting the token (fail-fast).
   Returns `{url, path, expires_at, expires_in_seconds}`.
 - **`create_upload_link(path, ttl_seconds=None)`**: write tool (hidden in
-  read-only mode). Validates the destination path (traversal + extension check)
-  at link-creation time, rejecting existing files under the default overwrite
-  protection before minting a capability. Returns the same shape.
+  read-only mode). Validates the destination path (traversal, extension and
+  submodule boundary checks) at link-creation time, rejecting existing files
+  under the default overwrite protection before minting a capability. Returns
+  the same shape.
 
 Both tools require `MARKDOWN_VAULT_MCP_BASE_URL` and raise `ValueError` when it
 is unset. Both tools are hidden when the transport is stdio (no HTTP server to
@@ -3235,7 +3258,7 @@ and nothing surfaces which file is responsible.
 
 `_find_wikilink` replaces the pattern with a scan, and the reason it is
 linear rather than merely faster is worth stating: those retries all ask the
-same question. A target ends at the first `]`, `|` or line ending after the
+same question. A target ends at the first `]]`, `|` or line ending after the
 `[[`, and that stop is the same character whichever `[[` of a run opened it;
 everything the match then needs is read from the stop onwards. So a failure
 at the stop is a failure for every opener before it, and the search resumes
@@ -3252,10 +3275,11 @@ a second route, where the alias search *succeeded* and the `]]` test failed.
 Caught in review on #1524 by reading the argument rather than by the tests,
 which measured only bare `[` — all three shapes are pinned now, by a growth
 ratio and by a wall clock chosen to be one the defect actually crosses. The
-same shared-stop reasoning licenses the alias resume: the first `]` after
-the pipe is the same character for every opener behind it, so they all fail
-with it. The pipe shape is the realistic one, not the exotic one: an
-unfenced markdown table pasted into a note is a wall of `|`.
+single-bracket target correction (#1384) changes that recovery: after an
+alias fails, retry openers following its pipe, since `[[a|text [[Sq]uare]]`
+contains a valid inner target. Cache the next alias-closing bracket across
+those retries instead of searching for it again. Both target scans and
+uncached alias searches advance monotonically, preserving linear work.
 
 | Input | before | after |
 | --- | --- | --- |
@@ -3272,15 +3296,26 @@ for 4000 → 8000 → 16000. **A guard on the scanned unit**, the issue's own
 suggested direction, was not pursued: refusing to link-scan a bracket-dense
 body drops real rows to bound a cost the scan simply removes.
 
-The scan changes no row for any input, so there is no
-`INDEX_SEMANTICS_VERSION` note — a claim carried by the same differential
-property the escape-aware scans use (`tests/test_links_wikilink_scan.py`):
-it agrees with the pattern on *every* string up to length 8 over the five
-characters that pattern can distinguish, and on 400k random strings over a
-wider alphabet. The departures the pattern carried are carried too: a single
-`]` still ends the target where Obsidian needs `]]` (#1384), an embed is
-still indexed as a link, and the leftmost `[[` still wins, so `[[[a]]` links
-`[a`.
+The original scan preserved the replaced pattern's rows (#1343). Since
+#1384, a single `]` is allowed in the target: `[[Sq]uare]]` now links to
+`Sq]uare.md`, matching the observed Obsidian behavior. A closing pair ends
+the target, so the shared-stop argument still holds. Pipes and line endings
+remain target boundaries; the alias grammar is unchanged. The exhaustive
+short-input property in `tests/test_links_wikilink_scan.py` compares the
+scan to this updated grammar. `INDEX_SEMANTICS_VERSION` 12 rebuilds stored
+link rows, since version 11 shipped in v6.1.1. Embeds are still indexed as
+links and the leftmost `[[` still wins, so `[[[a]]` links `[a`.
+
+**Backtick and title-separator runs (#1749).** Inline-code matching and
+trailing link-title matching start only at the beginning of a backtick or
+space/tab run, respectively. Retrying at each interior character reached the
+same following text after scanning the rest of the run, making an unmatched
+run quadratic. A negative lookbehind after the first character prevents those
+redundant retries while retaining the engine's fast search for that first
+character, without changing the matched spans. The title pattern remains shared
+by extraction and rewriting. Differential tests against the old patterns and
+owner-level time bounds are in `tests/test_links_regex_runs.py`; no stored-row
+semantics change or `INDEX_SEMANTICS_VERSION` bump is needed.
 
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"
@@ -4623,6 +4658,19 @@ propagates, and such a process never creates or replaces the files (a
 forced rebuild raises `ReadOnlyError` before embedding); unavailable and
 unsupported always propagate. `SearchManager` embeds queries itself.
 
+An automatic or forced model or dimension transition must publish a compatible
+generation before its search succeeds (#1946). `rebuild_after_fault` uses
+`_full_build`'s `RebuildOutcome.published`: an authoritative empty generation
+counts as success, but failed batches or an incomplete empty walk that
+publish nothing raise `EmbeddingsRebuildFailedError`, a `RuntimeError`
+the tool layer reports at WARNING as retry-later. The slot discards and closes that
+exact owned replacement, leaving the previous stored files untouched.
+Later reads reopen those files and retry the transition; they fail again
+while the provider is down and recover once a compatible generation
+publishes. Old incompatible vectors never answer the new provider's queries.
+First builds without stored vectors still warn when all batches fail;
+low-level slot callbacks may still install an empty fresh store.
+
 **Writes (#1778).** `IndexManager` and `EmbeddingsManager` take the slot
 and write the store directly; each site keeps its algorithm (convergence
 diff, dirty flush, purge loops) and changes only how it mutates. A
@@ -5064,9 +5112,9 @@ opt-in, since it writes a whole vault into the database it is given.
 `DIR/<git sha>[-dirty]-<size>-<UTC time>.json` and prints the tables.
 
 The harness is strict-typed. Gate 3 (`uv run mypy src/ tests/`) checks it
-through the tests' imports; on its own, check it as a package with the
-source tree on the path, `MYPYPATH=src uv run mypy -p scripts.envelope`,
-since the installed package has no `py.typed` marker yet (#1911).
+through the tests' imports; on its own, check it as a package with
+`uv run mypy -p scripts.envelope`. The installed library exposes its
+annotations through its `py.typed` marker (#1911).
 
 **Inputs.** A seeded synthetic vault (`synth.generate_vault`): notes of six
 H2 sections in a 1,000-word vocabulary, one folder in ten holding the notes
@@ -5764,6 +5812,12 @@ upstream FastMCP #4952).
   applies (attachment limit vs. uncapped markdown) and the operator-facing
   size-limit message naming `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
 
+  Before calling `fetch_url`, the tool validates the destination through the
+  existing note or attachment path validator and asks the live document
+  manager's submodule guard about `path`. A destination in a submodule or
+  nested repository is refused at INFO before a download starts. The final guarded write still checks
+  ownership, overwrite protection and `if_match` when saving the bytes.
+
   **Redirects are followed, and every hop re-runs that chain** (#1116).
   Through 3.1 the primitive refused every 3xx outright; from the 4.11.2
   floor the guard lives in the transport httpx sends each hop through, so a
@@ -5921,13 +5975,15 @@ first-party prompt is a packaging defect.
 
 The CLI selects its backend before evaluating server configuration. A nonsecret TOML profile, client environment and explicit command options select the complete MCP HTTP endpoint; `--local` chooses the existing local index behavior. `serve`, `index` and `reindex` remain local. Credentials resolve only after remote selection. A nonempty client-token variable takes precedence; an empty value leaves the profile's named token source in effect, and that selected source must be nonempty. The client never borrows inbound-server or provider credentials.
 
-Remote search uses the installed native MCP client with function-local imports, tool/schema discovery once per invocation, the original search array and out-of-band freshness metadata. One deadline bounds initialization and the read. Errors never trigger local execution or disclose transport exception text. `_cli_read` is the stable import seam for lazy read dispatch, currently implemented beside the transport. Local disk-index freshness is unknown. The [SDK reference](reference/fastmcp-4.md#http-read-client) records the external APIs this depends on. Client environment fields are declared in the presentation contract because they are independent of ProjectConfig.
+Remote search uses the installed native MCP client with function-local imports, tool/schema discovery once per invocation, the original search array and out-of-band freshness metadata. One deadline bounds initialization and the read. Errors never trigger local execution or disclose transport exception text. `_cli_read` is the stable import seam for lazy read dispatch, currently implemented beside the transport. Local search ignores managed Git URL and token settings before collaborator construction, just as the other local readers do (#1999). It reads the existing checkout without cloning or synchronizing it, including when Git refuses repository discovery because the shell user differs from the checkout owner. Admin and server construction retain their managed-mode checks; Git trust configuration is unchanged. Local disk-index freshness is unknown. The [SDK reference](reference/fastmcp-4.md#http-read-client) records the external APIs this depends on. Client environment fields are declared in the presentation contract because they are independent of ProjectConfig.
 
 Search retains its keyword default. Explicit `auto` omits mode at either boundary; selected filters, section caps, snippet widths and remote drain requests retain native semantics. Optional controls are omitted when unset, so an older server need not advertise them for an ordinary search. Connection selection is resolved once before local-only option checks and dispatch. The shared runner also accepts that resolved snapshot without rereading the profile or credentials.
 
 `_read_payloads` contains SDK-independent controls and shape validation. Local and MCP search adapters inject the native OKF annotation function after one bundle observation; the helper does no I/O and preserves result order, sections, frontmatter and scores. Existing computed OKF filter/ranking semantics remain unchanged. Note and attachment reads retain their existing boundary policies.
 
 `_cli_output.render_reply` preserves bare-array search JSON and emits stale warnings only on stderr. Agent output uses one fixed header and JSON records, with JSON-compatible escapes for all control code points, including supplementary Unicode. Freshness accepts only observed Boolean values; absent or malformed observations remain unknown. Requested mode comes from validated options; actual mode comes from hits and is unknown for an empty result. Broken output pipes close cleanly, including the final interpreter flush. Invalid CLI controls fail before backend construction, and malformed remote payloads fail before output.
+
+Agent record and path-receipt properties compare decoded JSON values: [RFC 8259 §7](https://www.rfc-editor.org/rfc/rfc8259#section-7) represents supplementary characters with escaped UTF-16 surrogate pairs, so a JSON round trip need not preserve a Python string's separate surrogate code points. Their generators still include all code points to check terminal escaping and record framing.
 
 The reader CLI exposes `read`, `list`, `folders`, `tags`, `stats`, `recent`, `toc`, `similar` and `context` through the same lazy runner. Remote reads send native tool arguments without loading local configuration. Local readers canonicalize the selected source root before constructing native facets, so relative paths and directory aliases retain the same note identities. A configured disk index opens read-only and `IndexFacet.use_existing_index` adopts its completed-build marker without scanning or submitting a build, including for empty indexes. Incomplete builds refuse. Stored provenance remains authoritative even when the shell uses different build settings. An unconfigured index is built in memory only for indexed reads. They read an existing checkout without cloning or synchronizing a managed Git source and never build embeddings. Similarity requires existing stored vectors and retains the native unavailable outcome. Context retains conventions and OKF enrichment; statistics retain the OKF summary.
 
@@ -6280,6 +6336,8 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 
 **View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation; keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.
 
+**Accessible names** (#1754): the Vault Browser search input has the persistent name `Search vault`, including when populated. The Context Card starts hidden with a `Context` heading; that nonempty heading remains when the first request reveals the card before its response. Success replaces it with the note title or filename, later pending requests retain the previous title, and null results or failures hide the card.
+
 **Host context updates**: the Graph Explorer calls `app.updateContext(...)` whenever the active note or the visible neighborhood changes, supplying the active path, title, visible node count, and visible link count. The exact wording of the string is an internal detail of the SPA; clients should read the structured fields (path/title/counts) rather than parse the string.
 
 **Vendored dependencies** (bundled inline at build time via `scripts/vendor_spa.py`):
@@ -6382,12 +6440,13 @@ framing, identity) is recorded with sources and dates in
 [`reference/git-history-queries.md`](reference/git-history-queries.md); this section records what the
 project does with it and why.
 
-A submodule inside the vault is read-only. The git root is discovered once
-from `SOURCE_DIR`, so a submodule's notes are scanned like any folder while
+A submodule or real nested repository inside the vault is read-only. The git
+root is discovered once from `SOURCE_DIR`, so a submodule's notes are scanned like any folder while
 every git command addresses the superproject, which refuses to stage them and
-reports no history for them. A write there would land on disk and never be
-committed, so the write tools refuse it before touching disk with a
-`SubmodulePathError` naming the argument and the submodule (#1564): `write`,
+reports no history for them. Plain repositories may silently stage nothing.
+A write there would land on disk and never be committed, so the existing
+mutation checks refuse it with a `SubmodulePathError` naming the argument and
+the repository (#1564, #1949): `write`,
 `append`, `edit`, `delete`, `rename` (either path), the attachment writes, and
 `move_folder` when `old_dir` lies in or holds a submodule or a moved file would
 land inside one (a `new_dir` that merely holds one is fine). The OKF tools
@@ -6395,26 +6454,39 @@ refuse a `folder` inside a submodule and otherwise leave submodules out:
 `okf_convert_links` skips their notes (logged
 `okf_convert_links_submodule_notes_skipped`), and `okf_generate_index` never
 writes their `index.md`, pointing at one only when the submodule ships its
-own. The gitlinks in the index (mode `160000`)
-decide, so a deinitialised submodule is refused too; `git/submodules.py`'s
+own. These same refusal and skip rules cover plain nested repositories.
+The gitlinks in the index (mode `160000`)
+identify submodules, so a deinitialised submodule is refused too; `git/submodules.py`'s
 `SubmoduleGuard` reads them again only when the index file changes. When git
 cannot list them it logs `submodule_list_failed`, keeps the submodules it last
-listed and asks again on the next write; a guard that never listed any, or
-whose vault is in no repository (`submodule_guard_inactive`), refuses
-nothing. Paths are compared after `resolve()`, so a symlink
+listed and asks again on the next write. That fallback concerns gitlinks
+only; live marker discovery remains independent of index listing failures.
+Plain repository discovery validates `.git` metadata with native
+`rev-parse --resolve-git-dir`, consuming status only, strictly below the vault
+root. Regular gitfiles up to Git's 1 MiB limit are first read as bytes, with
+bounded allocation if they grow; read and Git launch faults propagate. Larger
+markers and readable invalid markers remain inert. File and inside-only queries
+check ancestors; holding queries walk the target, without
+following directory symlinks or entering `.git` metadata, and stop at the
+first repository. Inert markers do not hide real descendants. No filesystem
+results are cached: marker creation/removal affects the next query even if
+the outer index is unchanged. Containing boundaries precede holding-only
+matches. Denied stat/walk inspection propagates as an I/O fault.
+A vault in no repository (`submodule_guard_inactive`) refuses nothing.
+Paths are compared after `resolve()`, so a symlink
 into a submodule is refused, but case is not folded: on a case-insensitive
 file system a path spelled `SUB/` is not recognised. A rename or folder move
 whose backlinks come from a note inside a submodule goes ahead and leaves that
 note unrewritten, logged at INFO as `link_rewrite_source_skipped
-reason=submodule`; a `rename` names it in `hint`, a `move_folder` in
-`failed_links`. A `move_folder` that would land a file inside a submodule is
+reason=submodule`; a `rename` names it in a best-effort `hint`, a `move_folder` in
+`failed_links`. Hint inspection faults do not interrupt index updates or Git
+notifications. A `move_folder` that would land a file inside a submodule is
 refused before its collision check, naming that file.
 The refusal applies in managed and commit-only mode; a vault outside a
 repository, a read-only vault and a library `Vault` without a git strategy
-refuse nothing, since nothing is committed there. A plain repository nested
-in the vault that is not a submodule is not detected (#1949), and upload links,
-`fetch` and the OKF index refresh after a folder move reach the refusal only
-after other work (#1950). What git does there is recorded in
+refuse nothing, since nothing is committed there. `create_upload_link` and
+`fetch` refuse a protected destination before minting a link or downloading
+(#1950). What git does there is recorded in
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 
@@ -6455,6 +6527,19 @@ item. The worker buffers writes by token and dispatches each group once, via
 the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
 subject when the call staged exactly one path.
+
+OKF content-write maintenance marks its secondary writes with
+`auxiliary_commit_writes`. The dispatcher snapshots this context beside each
+queued write, not on the worker. It sends the primary paths through the
+separate `ACCEPTS_PRIMARY_PATHS_ATTR` opt-in: existing batch callbacks still
+receive the same two arguments and four-field items. When there is exactly
+one primary path and its item stages successfully, Git names that note in the
+subject while still committing every staged item. No primary, several primary
+paths, or a failed primary stage retains the batch count. A direct batch caller
+that supplies no provenance also retains its existing subject. Names and item
+order never establish maintenance provenance; a user's own `index.md` write
+is primary. This changes only the subject, not write authority or commit scope
+(#1675).
 
 Three properties this depends on:
 
@@ -6904,7 +6989,7 @@ Safety branch mode for push failures is tracked separately (see #119).
 **Git history queries** (`log -z` framing, `--follow`, rename detection and
 date semantics in [`reference/git-history-queries.md`](reference/git-history-queries.md) § History queries): `GitWriteStrategy` exposes read-only methods for querying the git commit log and reading historical content, none of which modify repository state:
 
-- `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. A repository with no commit yet (unborn HEAD, where `git log` exits 128) has an empty history rather than a failure, and a `since_timestamp` diff there is empty too: `rev-parse --verify --quiet HEAD` is checked first, and its exit 1 counts as unborn only while `symbolic-ref -q HEAD` still names a branch, so an unreadable branch ref stays a fault (#1608). Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) pinned to `--find-renames=30` with `-c diff.renameLimit`, returns no per-commit paths, is filtered to the note's own lineage (see the lineage boundary below, #1285), and is supplemented with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306); a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary. The log runs under `-z` (#1282), which NUL-frames both the header fields and the `--name-only` paths: git's default `core.quotePath` otherwise renders a non-ASCII name octal-escaped inside double quotes, and `paths_changed` would carry paths no other tool accepts. `-z` is preferred over `-c core.quotePath=false` because it also covers the names git quotes unconditionally — a double quote, tab, or newline in the path — and it is what the `get_file_at_ref` walk already uses. One byte class still does not survive: the reply is decoded through `subprocess`'s text mode, whose universal-newline translation rewrites a lone `\r` and collapses a `\r\n` pair, so a path carrying either comes back altered even under `-z` (#1290) — a property this reader shares with every other `-z` reader in the module.
+- `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. A repository with no commit yet (unborn HEAD, where `git log` exits 128) has an empty history rather than a failure, and a `since_timestamp` diff there is empty too: `rev-parse --verify --quiet HEAD` is checked first, and its exit 1 counts as unborn only while `symbolic-ref -q HEAD` still names a branch, so an unreadable branch ref stays a fault (#1608). Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) pinned to `--find-renames=30` with `-c diff.renameLimit`, returns no per-commit paths, is filtered to the note's own lineage (see the lineage boundary below, #1285), and is supplemented with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306); a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary. The log runs under `-z` (#1282), which NUL-frames both the header fields and the `--name-only` paths: git's default `core.quotePath` otherwise renders a non-ASCII name octal-escaped inside double quotes, and `paths_changed` would carry paths no other tool accepts. `-z` is preferred over `-c core.quotePath=false` because it also covers the names git quotes unconditionally — a double quote, tab, or newline in the path — and it is what the `get_file_at_ref` walk already uses. Path-bearing NUL streams use `run_git_capturing(preserve_newlines=True)` (#1290): stdout is captured as bytes and strictly decoded with Python's existing default text encoding, preserving lone `\r` and `\r\n` pairs. The same capture mode serves rename/lineage walks, revision tree entries, conflict path discovery and ignored-path echoes; patch bodies and note content keep their separate text decoding. Stderr retains ordinary text newline normalization. This establishes CR/CRLF identity, not support for arbitrary filename encodings; Python's newline behavior is recorded in the linked reference.
 - `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,64}` — the upper bound admits the 64-hex commit IDs a `--object-format=sha256` repository yields, #1284), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. A caller's SHA is checked first with `rev-parse --verify --quiet <sha>^{commit}`, and one that names no commit is an `InvalidRequestError`; the full id it prints replaces the caller's prefix, which a blob may share. A later git failure that stops the diff is then the repository's, raised as a plain `ValueError` carrying git's stderr (#1608; the git facts are in `reference/git-history-queries.md`). Through the tool layer (Error Handling), an `InvalidRequestError` reaches the model at INFO and any other `ValueError` is a fault the boundary logs with its traceback, answering with a fixed message so git's stderr, which can name server paths, never reaches the model. The `per_commit=True` walk (`_per_commit_rows`) enumerates commits with `git log -z --follow --name-only --find-renames=30`, filters them to the note's own lineage (the boundary below, #1285), supplements them with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306), and reuses each block's path as the pathspec for that commit's diff, so the same `-z` framing is what keeps a non-ASCII note's per-commit diff from coming back empty (#1282). The patch and `--stat` payloads are a separate half of that fix: they name files in their own body, nothing parses them, and they are handed to the caller as text — so `_range_diff`, `_root_commit_diff`, and the per-commit `git diff` render them under `-c core.quotePath=false` rather than under `-z`. Rendering and framing are different problems and take different tools: `-z` is not available for a patch body, and the config override cannot be trusted where output is parsed, because it leaves the unconditionally-quoted names quoted.
 
 - `_lineage(git_root, path, cur_rel, env, *, rev_range=None)` (#1285): the boundary both single-note readers above are filtered by. `git log --follow` does not stop at the commit that created the file it follows: where a name was freed by a rename or a delete and later reused, it walks past that boundary and reports the *previous* occupant's commits under today's note. So the boundary is established from git's own records — `git -c diff.renameLimit=2000 log -z --follow --name-status --find-renames=30 [<range>] -- <path>` walked newest-first carrying a tracked path, exactly as the `get_file_at_ref` walk does, stopping at the `A` (or `C`) record that creates the tracked note. It returns the lineage's commit SHAs and whether that creation was reached. Three properties are load-bearing. It is **its own invocation** rather than a reading of the caller's stream, because `--since` / `--until` and the `-n` cap trim what the caller's `git log` returns and a window that excludes the note's creation would leave no birth record to stop at. It pins **`--find-renames=30`** (#338) because at git's 50% default a commit that renames and substantially rewrites a note reports as a plain `A`, indistinguishable from a reuse. Its callers pin the same threshold (#1297): while they left it to git, this walk followed *further* than the stream it was filtering, and the extra commits it knew about were ones the caller had never listed — a revision `read` served but `get_history` did not report. One threshold across every rename-crossing query is what makes the filter a filter. And a failed invocation returns **unknown rather than empty** (`shas=None`), so a caller falls back to its previous behaviour instead of discarding every commit. Records that do not name the tracked path are ignored rather than treated as a break in identity: a range-bounded walk can hide the rename that would have retargeted it, and dropping the note's own commits on that evidence is worse than following a name one commit too far. The exception is a block that names exactly one path and not the tracked one: a single-path `--follow` walk reports only the path it is following, so git has retargeted the walk itself, and that path is adopted (`_followed_name`, #1779). From git 2.56, `--follow` crosses a rename made while resolving a merge this way, with no `R` record for the merge; without adopting the name, the creation record under the earlier name went unrecognised and an earlier owner of that name had its commits reported. The single-range `get_file_diff` uses the same walk over `<ref>..HEAD`: when it reports the note was created inside that range, the diff is taken against the empty tree instead of `<ref>`, so the note reads as the creation it is rather than pairing one note's content against another's. One shape this cannot see, because git does not record it either: a commit that renames a note away **and** creates a new one under the freed name in the same commit reports as a plain `M` on that path, which is also what defeats `get_file_at_ref`'s walk.
@@ -7147,6 +7232,17 @@ real release runs. No committed manifest bump is needed for the bundle.
 23. ifcraftcorpus becomes thin wrapper + domain tools + subagent prompts
 
 ## Testing Strategy
+
+The PostgreSQL fixture normally removes its own disposable container at teardown.
+After a killed pytest process (#1952), the next `start_container` also reclaims
+version-labeled containers only when native Linux initial PID/user namespaces,
+boot, hostname and UID match and signal zero proves the creator PID absent.
+Live/reused PIDs, permission failures, foreign or legacy labels and unsupported
+platforms/namespaces remain untouched. Recovery uses inspected full container
+IDs, has a shared ten-second budget, and never runs on the external-DSN path.
+See [container ownership evidence and limits](reference/test-postgres-container-ownership.md).
+`tests/test_postgres_cleanup.py` covers the guards and a real SIGKILL regression
+in the existing PostgreSQL-range CI; normal startup failure logs remain available.
 
 - **Fixtures**: `tests/fixtures/` directory with sample vault documents in
   several shapes: no frontmatter, minimal frontmatter, full frontmatter,
