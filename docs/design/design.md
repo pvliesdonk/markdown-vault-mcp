@@ -838,8 +838,13 @@ Two methods manage the index:
   `IndexStats(walk_complete=False)`. `force=True` drops and rebuilds from
   scratch, except under a directory its walk could not read: those notes and
   tombstones keep their rows, and so their vectors, since the absence is not
-  authoritative (#1929). The scan runs first, the wipe after it spares every
-  path under a reported directory (an unreadable root spares all), and the
+  authoritative (#1929). Each parsed note is indexed as the scan yields it,
+  then only its path, title, modification time and tracker hash are retained
+  (#1938). A note whose upsert fails keeps its prior row in a non-forced
+  build and loses it in a forced one. Once the
+  scan finishes, a final sweep removes obsolete rows, sparing parsed paths
+  and every path under a reported unreadable directory (an unreadable root
+  spares all). The
   kept notes enter the tracker state with an empty hash, so the first scan
   that reads them re-parses them under the current pipeline and a note
   deleted meanwhile is deleted. The tracker writes a recorded hash back for
@@ -855,7 +860,15 @@ Two methods manage the index:
   it again. A note whose upsert fails with a per-note error enters the
   tracker with an empty hash too, so the next reindex retries its unchanged
   bytes (#1982). Successful notes keep their hashes; database-level errors
-  still fail the build. When a
+  still fail the build. Cleanup reads path, title, hash and modification time through the
+  optional `ListsNoteStates` protocol, which `FTSIndex` implements, so the
+  final sweep and exclusion purge do not reload corpus frontmatter.
+  `list_notes()` and the required keyword protocol retain their existing
+  shapes; a keyword index without the protocol is read through `list_notes()`.
+  Scan bookkeeping still grows with note paths, titles, hashes and skip
+  records, alongside the largest parsed note and SQLite's caches. This is
+  not a constant whole-process memory bound, and embedding preparation and
+  publication have separate payload costs. When a
   persistent `index_path` contains documents that now match
   `exclude_patterns`, they are purged from the FTS and vector indexes
   after the scan (a non-forced build's wipe leaves them to that purge), but
@@ -5294,6 +5307,35 @@ defaults breaks no released surface and carries no `!`. The package's
 release kind is not decided here: knope cuts it from the commits, and
 library changes already on the trunk since v5.1.0 carry `!`.
 
+### Deferred query-time recomputation (#1368)
+
+[#1368](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1368) records
+LEANN as a technique to revisit, not planned implementation. The
+[external reference](reference/leann.md) explains how it trades stored
+embeddings for graph-guided recomputation. It is not a drop-in replacement
+for the exact scans described above.
+
+Revisit only when all three conditions hold:
+
+1. A graph-based approximate-nearest-neighbor (ANN) backend has already been
+   adopted behind the embedding-store contract.
+2. A single vault's vector storage is roughly 1 GiB or more, evaluated against
+   the host's memory budget, or indexing a larger non-vault corpus is proposed.
+   For float32 vectors, use `4 × chunks × dimensions` bytes, not a fixed
+   chunk count: 1 GiB is about 350k chunks at 768 dimensions or 262k at 1024.
+3. Query latency with recomputation has been measured on the actual deployment,
+   including its encoder, batching and provider round trips, rather than
+   inferred from the paper's hardware.
+
+The historical numpy sidecar threshold does not make stored bytes equivalent
+to resident memory: SQLite is now streamed by default, and
+`embeddings_status` reports `stored_bytes` and `resident_vector_bytes`
+separately. First assess the existing stores against the
+[measured operating envelope](operating-envelope.md). The current mitigation
+is bounded-memory streaming, not an ANN index; float16/int8 are not implemented
+and would require a recall decision (decision 33 below). No new backend,
+telemetry or benchmark is implied by recording these criteria.
+
 ### `providers.py`: Embedding Providers
 
 Copied from ifcraftcorpus, adapted:
@@ -6528,7 +6570,8 @@ the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
 subject when the call staged exactly one path.
 
-OKF content-write maintenance marks its secondary writes with
+OKF content-write maintenance, index-listing refreshes, and single-note
+rename backlink notifications mark their secondary writes with
 `auxiliary_commit_writes`. The dispatcher snapshots this context beside each
 queued write, not on the worker. It sends the primary paths through the
 separate `ACCEPTS_PRIMARY_PATHS_ATTR` opt-in: existing batch callbacks still
@@ -6539,7 +6582,14 @@ paths, or a failed primary stage retains the batch count. A direct batch caller
 that supplies no provenance also retains its existing subject. Names and item
 order never establish maintenance provenance; a user's own `index.md` write
 is primary. This changes only the subject, not write authority or commit scope
-(#1675).
+(#1675). Rename subjects use the callback's existing `old_path` to name both
+source and destination; callbacks without that path retain the destination-only
+subject. The primary item carries its old path through subject selection,
+without changing the callback tuple. A path fired more than once (a renamed
+note whose self-link is rewritten) counts as one primary path, named by its
+first item. Multi-file folder moves retain their
+batch summary; exact folder roots are not inferred from the moved files
+(#1676, single-note slice).
 
 Three properties this depends on:
 

@@ -340,7 +340,8 @@ class GitWriteStrategy:
     #: #1264 reports, not a preference to configure. See
     #: :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`.
     accepts_batch: bool = True
-    #: Preserve the note subject when secondary OKF writes share its batch.
+    #: Preserve the note subject when secondary writes (OKF maintenance, a
+    #: rename's backlink rewrites) share its batch.
     accepts_primary_paths: bool = True
 
     def on_write_batch(
@@ -2274,7 +2275,7 @@ def _stage_and_commit(
 
     _commit_staged(
         root,
-        _write_subject(git_root, path, operation),
+        _write_subject(git_root, path, operation, old_path),
         _CommitIdentity(commit_name, commit_email, author_name, author_email),
         scope,
     )
@@ -2282,10 +2283,16 @@ def _stage_and_commit(
     logger.info("git_committed path=%s operation=%s", rel_path, operation)
 
 
-def _write_subject(git_root: Path, path: Path, operation: WriteOperation) -> str:
-    """Format a note's operation and repository-relative path."""
+def _write_subject(
+    git_root: Path, path: Path, operation: WriteOperation, old_path: Path | None = None
+) -> str:
+    """Format a note's operation and paths, including a known rename source."""
     with contextlib.suppress(ValueError):
         path = path.relative_to(git_root)
+    if operation == "rename" and old_path is not None:
+        with contextlib.suppress(ValueError):
+            old_path = old_path.relative_to(git_root)
+        return f"rename: {old_path} -> {path}"
     return f"{operation}: {path}"
 
 
@@ -2359,7 +2366,7 @@ def _stage_and_commit_batch(
 
     root = str(git_root)
     staged = 0
-    primary: list[tuple[Path, WriteOperation]] = []
+    primary: list[tuple[Path, WriteOperation, Path | None]] = []
     scope: list[str] = []
     whole_repo = False
     for path, operation, old_path, _principal in items:
@@ -2375,8 +2382,14 @@ def _stage_and_commit_batch(
         if item_scope is None:
             continue
         staged += 1
-        if primary_paths is not None and path in primary_paths:
-            primary.append((path, operation))
+        # A path fired twice (a renamed note rewriting its own self-link) is
+        # still one primary write; its first item, the rename, names it.
+        if (
+            primary_paths is not None
+            and path in primary_paths
+            and all(seen != path for seen, _op, _old in primary)
+        ):
+            primary.append((path, operation, old_path))
         # An empty item scope is the unscoped legacy rename, which stages
         # repository-wide; the batch's check can be no narrower than that.
         whole_repo = whole_repo or not item_scope
@@ -2394,8 +2407,8 @@ def _stage_and_commit_batch(
     noun = "file" if staged == 1 else "files"
     subject = f"{tool_name}: {staged} {noun}"
     if primary_paths is not None and len(primary_paths) == len(primary) == 1:
-        path, operation = primary[0]
-        subject = _write_subject(git_root, path, operation)
+        path, operation, old_path = primary[0]
+        subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
 

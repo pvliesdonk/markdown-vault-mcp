@@ -15,17 +15,17 @@ fail() { echo "::error::$1"; exit 1; }
 PLUGIN_JSON=".claude-plugin/plugin/.claude-plugin/plugin.json"
 MCP_JSON=".claude-plugin/plugin/.mcp.json"
 
-test -f "$PLUGIN_JSON" || fail "$PLUGIN_JSON missing"
-test -f "$MCP_JSON" || fail "$MCP_JSON missing"
-test -f ".claude-plugin/plugin/skills/vault-workflow/SKILL.md" \
+[[ -f "$PLUGIN_JSON" ]] || fail "$PLUGIN_JSON missing"
+[[ -f "$MCP_JSON" ]] || fail "$MCP_JSON missing"
+[[ -f ".claude-plugin/plugin/skills/vault-workflow/SKILL.md" ]] \
   || fail "vault-workflow skill missing from plugin"
-test -f ".claude-plugin/plugin/skills/vault-summarize/SKILL.md" \
+[[ -f ".claude-plugin/plugin/skills/vault-summarize/SKILL.md" ]] \
   || fail "vault-summarize skill missing from plugin"
-test -f ".claude-plugin/plugin/agents/vault-mapper.md" \
+[[ -f ".claude-plugin/plugin/agents/vault-mapper.md" ]] \
   || fail "vault-mapper agent missing from plugin"
-test -f ".claude-plugin/plugin/skills/vault-setup/SKILL.md" \
+[[ -f ".claude-plugin/plugin/skills/vault-setup/SKILL.md" ]] \
   || fail "vault-setup skill missing from plugin"
-test -x ".claude-plugin/plugin/scripts/doctor.sh" \
+[[ -x ".claude-plugin/plugin/scripts/doctor.sh" ]] \
   || fail "doctor.sh missing or not executable in plugin"
 jq -e '.hooks.SessionStart' ".claude-plugin/plugin/hooks/hooks.json" > /dev/null \
   || fail "hooks.json missing its SessionStart doctor entry"

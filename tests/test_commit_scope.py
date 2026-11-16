@@ -29,7 +29,8 @@ from markdown_vault_mcp._commit_scope import (
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
+    from typing import Any
 
     from markdown_vault_mcp.types import WriteBatchItem
 
@@ -591,6 +592,133 @@ class TestBatchCommitsForReal:
         assert _subjects(repo)[0] == f"{operation}: note.md"
         assert len(_subjects(repo)) == before + 1
         assert _files_in_head(repo) == {"note.md", "index.md", "log.md"}
+
+    @pytest.mark.parametrize("okf", [False, True])
+    @pytest.mark.parametrize("backlinks", [False, True])
+    def test_rename_subject_keeps_both_paths_with_derived_writes(
+        self, tmp_path: Path, okf: bool, backlinks: bool
+    ) -> None:
+        """A rename names its source and destination, not its consequences."""
+        from markdown_vault_mcp.git._run import run_git
+        from markdown_vault_mcp.vault import Vault, VaultSettings
+
+        repo = _repo(tmp_path)
+        if backlinks:
+            (repo / "source.md").write_text("[Note](note.md)\n", encoding="utf-8")
+            run_git(str(repo), "add", "source.md")
+            run_git(str(repo), "commit", "-m", "seed backlink")
+        strategy = self._strategy(repo)
+        vault = Vault(
+            source_dir=repo,
+            settings=VaultSettings(
+                read_only=False, okf_mode="on" if okf else "off", okf_write=okf
+            ),
+            on_write=strategy,
+        )
+        vault.index.build_index()
+        before = len(_subjects(repo))
+        try:
+            with bound_commit_scope("rename") as scope:
+                result = vault.writer.rename("note.md", "renamed.md", update_links=True)
+                vault.end_commit_scope(scope)
+        finally:
+            vault.close()
+            strategy.close()
+
+        assert _subjects(repo)[0] == "rename: note.md -> renamed.md"
+        assert len(_subjects(repo)) == before + 1
+        assert result.updated_links == int(backlinks)
+        expected = {"renamed.md"}
+        if backlinks:
+            expected.add("source.md")
+            assert "renamed.md" in (repo / "source.md").read_text(encoding="utf-8")
+        if okf:
+            expected.add("index.md")
+        assert _files_in_head(repo) == expected
+
+    def _run_in_scope(self, repo: Path, tool: str, op: Callable[[Any], object]) -> None:
+        """Run *op* against a fresh vault on *repo* inside one tool's scope."""
+        from markdown_vault_mcp.vault import Vault, VaultSettings
+
+        strategy = self._strategy(repo)
+        vault = Vault(
+            source_dir=repo,
+            settings=VaultSettings(read_only=False),
+            on_write=strategy,
+        )
+        vault.index.build_index()
+        try:
+            with bound_commit_scope(tool) as scope:
+                op(vault)
+                vault.end_commit_scope(scope)
+        finally:
+            vault.close()
+            strategy.close()
+
+    def test_rename_of_self_linking_note_keeps_both_paths(self, tmp_path: Path) -> None:
+        """The renamed note's own link rewrite does not count as a second note."""
+        from markdown_vault_mcp.git._run import run_git
+
+        repo = _repo(tmp_path)
+        (repo / "note.md").write_text("[Me](note.md)\n", encoding="utf-8")
+        run_git(str(repo), "commit", "-am", "self link")
+
+        self._run_in_scope(
+            repo,
+            "rename",
+            lambda v: v.writer.rename("note.md", "renamed.md", update_links=True),
+        )
+
+        assert _subjects(repo)[0] == "rename: note.md -> renamed.md"
+        assert "renamed.md" in (repo / "renamed.md").read_text(encoding="utf-8")
+
+    def test_okf_delete_names_the_note_despite_index_refresh(
+        self, tmp_path: Path
+    ) -> None:
+        """A delete's index-listing refresh does not replace its subject."""
+        from markdown_vault_mcp.vault import Vault, VaultSettings
+
+        repo = _repo(tmp_path)
+        strategy = self._strategy(repo)
+        vault = Vault(
+            source_dir=repo,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+            on_write=strategy,
+        )
+        vault.index.build_index()
+        try:
+            for name in ("seed.md", "other.md"):
+                with bound_commit_scope("write") as scope:
+                    vault.writer.write(name, f"# {name}\n")
+                    vault.end_commit_scope(scope)
+            assert vault._write_callback.drain(timeout=10) is True
+            assert "other.md" in (repo / "index.md").read_text(encoding="utf-8")
+            with bound_commit_scope("delete") as scope:
+                vault.writer.delete("other.md")
+                vault.end_commit_scope(scope)
+        finally:
+            vault.close()
+            strategy.close()
+
+        assert _subjects(repo)[0] == "delete: other.md"
+        assert "index.md" in _files_in_head(repo)
+
+    def test_multi_file_folder_move_keeps_batch_summary(self, tmp_path: Path) -> None:
+        """A folder move of several notes still commits under the file count."""
+        from markdown_vault_mcp.git._run import run_git
+
+        repo = _repo(tmp_path)
+        (repo / "a").mkdir()
+        (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
+        (repo / "a" / "y.md").write_text("y\n", encoding="utf-8")
+        run_git(str(repo), "add", "a")
+        run_git(str(repo), "commit", "-m", "folder")
+
+        self._run_in_scope(
+            repo, "move_folder", lambda v: v.writer.move_folder("a", "b")
+        )
+
+        assert _subjects(repo)[0] == "move_folder: 2 files"
 
     @pytest.mark.parametrize(
         ("primary_names", "expected"),
