@@ -77,6 +77,16 @@ class TestImportIsLight:
         )
         assert result.returncode == 0, result.stderr
 
+    @pytest.mark.parametrize("module", ["_commit_scope", "write_callback"])
+    def test_commit_scope_does_not_import_fastmcp(self, module: str) -> None:
+        """Library commit scope state and dispatcher must not load FastMCP."""
+        self._run(
+            f"import sys; import markdown_vault_mcp.{module}; "
+            "loaded = {m for m in sys.modules if m == 'fastmcp' "
+            "or m.startswith('fastmcp.')}; "
+            "assert not loaded, f'commit scope loaded FastMCP: {sorted(loaded)}'"
+        )
+
     def test_package_import_is_light(self):
         """``import markdown_vault_mcp`` must not pull in the heavy deps."""
         self._run(

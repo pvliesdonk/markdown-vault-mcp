@@ -20,12 +20,12 @@ import pytest
 
 from markdown_vault_mcp._commit_scope import (
     CommitScope,
-    CommitScopeMiddleware,
     auxiliary_commit_writes,
     bound_commit_scope,
     current_commit_scope,
     is_auxiliary_commit_write,
 )
+from markdown_vault_mcp._server_commit_scope import CommitScopeMiddleware
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:

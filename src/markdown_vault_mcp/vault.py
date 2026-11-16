@@ -1076,7 +1076,7 @@ class Vault:
         """Close a tool call's commit scope, grouping its writes into one commit.
 
         Called by
-        :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware` when a
+        :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware` when a
         tool call returns. Never blocks: the marker is queued behind the writes
         that call fired, and the dispatcher flushes it in order.
 

@@ -6562,7 +6562,7 @@ under that file's own path (`write: notes/one.md`), so ordinary writes read in
 `git log` exactly as they did before. What remains is the bulk case, which is
 the defect #1264 reports rather than a preference to configure.
 
-`CommitScopeMiddleware` (`_commit_scope.py`) binds a `CommitScope` —
+`CommitScopeMiddleware` (`_server_commit_scope.py`) binds a `CommitScope` —
 a process-unique token plus the tool name — for the duration of each
 `on_call_tool`, and `WriteCallbackDispatcher.fire` snapshots it into the queue
 item. The worker buffers writes by token and dispatches each group once, via
