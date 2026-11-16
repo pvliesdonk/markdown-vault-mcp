@@ -966,12 +966,13 @@ def _log_section_lines(lines: list[str]) -> list[int]:
     """Locate top-level H2 boundaries without interpreting fenced examples.
 
     Use the scanner's fence grammar, including tilde and longer closers. The
-    final blank sentinel is yielded only outside a fence; refusing an unclosed
-    block avoids appending a real entry as code or inventing a closing fence.
+    final blank sentinel is yielded only outside a fence. An unclosed block
+    retains the legacy raw-heading behavior: inserting before its opener can
+    change Markdown list nesting, and refusing it would change the public API.
     """
     visible = list(_unfenced_lines([*lines, ""]))
     if not visible or visible[-1][0] != len(lines):
-        raise ValueError("Cannot append to log.md with an unclosed code fence")
+        return [index for index, line in enumerate(lines) if line.startswith("## ")]
     return [index for index, line in visible if line.startswith("## ")]
 
 
@@ -991,8 +992,9 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
 
     Existing content — the header, older sections, and any hand-written prose
     under a date — is preserved verbatim; only the one bullet is inserted.
-    Top-level fenced examples do not supply section boundaries. An unclosed
-    fence is refused rather than hiding the new entry inside code.
+    Closed top-level fenced examples do not supply section boundaries. If any
+    fence is unclosed, the whole body retains legacy heading detection; an
+    appended entry can still end up inside code in that case.
 
     Args:
         text: The current ``log.md`` **body**, frontmatter excluded, or
@@ -1007,9 +1009,6 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
 
     Returns:
         The updated body (always newline-terminated).
-
-    Raises:
-        ValueError: The body contains an unclosed top-level code fence.
     """
     heading = f"## {date}"
     bullet = f"- {summary}"

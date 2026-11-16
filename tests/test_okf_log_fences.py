@@ -22,8 +22,9 @@ if TYPE_CHECKING:
     [("```markdown", "```"), ("~~~md", "~~~"), ("````", "`````"), ("   ~~~", "  ~~~~")],
 )
 @pytest.mark.parametrize("position", ["preamble", "current", "older"])
+@pytest.mark.parametrize("ending", ["\n", "\r\n", ""])
 def test_append_preserves_fenced_examples(
-    opener: str, closer: str, position: str
+    opener: str, closer: str, position: str, ending: str
 ) -> None:
     """A fake H2 neither captures an entry nor creates a date section."""
     example = f"{opener}\n## 2026-08-09\n- quoted entry\n{closer}\n"
@@ -35,6 +36,7 @@ def test_append_preserves_fenced_examples(
         text = header + "## 2026-08-01\n\n" + example
     else:
         text = header + section + "\n" + example
+    text = text.replace("\n", ending) if ending else text.rstrip("\n")
     out = append_okf_log_entry(text, date="2026-08-09", summary="new event")
     assert example in out
     tokens = MarkdownIt("commonmark").parse(out)
@@ -61,17 +63,43 @@ def test_only_matching_fence_closes_example(example: str) -> None:
     assert out == text + "- new event\n"
 
 
-@pytest.mark.parametrize("opener", ["```", "~~~", "   ````md"])
-@pytest.mark.parametrize("existing_date", ["2026-08-09", "2026-08-01"])
-def test_unclosed_fence_refuses_append(opener: str, existing_date: str) -> None:
-    text = f"# Log\n\n## {existing_date}\n\n{opener}\n## fake\n"
-    with pytest.raises(ValueError, match="unclosed code fence"):
-        append_okf_log_entry(text, date="2026-08-09", summary="new event")
-
-
-def test_unclosed_fence_without_a_header_refuses_append() -> None:
-    with pytest.raises(ValueError, match="unclosed code fence"):
-        append_okf_log_entry("```\n## fake\n", date="2026-08-09", summary="new event")
+@pytest.mark.parametrize("opener", ["```", "~~~", "````md"])
+@pytest.mark.parametrize("indent", ["", " ", "  ", "   "])
+@pytest.mark.parametrize("ending", ["\n", "\r\n", ""])
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("{f}\n## fake\n", "{f}\n\n## 2026-08-09\n\n- new event\n\n## fake\n"),
+        ("{f}\n## 2026-08-09\n", "{f}\n## 2026-08-09\n- new event\n"),
+        ("{f}\nexample\n", "{f}\nexample\n\n## 2026-08-09\n\n- new event\n"),
+        (
+            "# Log\n\n## 2026-08-09\n\n{f}\n## fake\n",
+            "# Log\n\n## 2026-08-09\n\n{f}\n- new event\n## fake\n",
+        ),
+        (
+            "# Log\n\n## 2026-08-01\n\n{f}\n## fake\n",
+            "# Log\n\n## 2026-08-09\n\n- new event\n\n## 2026-08-01\n\n{f}\n## fake\n",
+        ),
+        (
+            "# Log\n\n## 2026-08-09\n\n## 2026-08-01\n\n{f}\n## fake\n",
+            "# Log\n\n## 2026-08-09\n- new event\n\n## 2026-08-01\n\n{f}\n## fake\n",
+        ),
+        (
+            "~~~\n## 2026-08-09\n~~~\n{f}\n## fake\n",
+            "~~~\n## 2026-08-09\n~~~\n{f}\n- new event\n## fake\n",
+        ),
+    ],
+)
+def test_unclosed_fence_retains_legacy_output(
+    opener: str, indent: str, ending: str, text: str, expected: str
+) -> None:
+    """An unmatched opener preserves raw-heading placement, even inside code."""
+    text = text.format(f=indent + opener)
+    expected = expected.format(f=indent + opener)
+    text = text.replace("\n", ending) if ending else text.rstrip("\n")
+    assert (
+        append_okf_log_entry(text, date="2026-08-09", summary="new event") == expected
+    )
 
 
 def test_only_fenced_date_does_not_supply_a_real_section() -> None:
@@ -91,7 +119,7 @@ def test_backtick_in_info_is_not_an_opening_fence() -> None:
 def test_maintained_write_preserves_log_examples(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, closed: bool, operation: str
 ) -> None:
-    """Failure leaves the log untouched, warns, and preserves the primary save."""
+    """Maintenance preserves closed examples and legacy unclosed behavior."""
     root = tmp_path / "vault"
     root.mkdir()
     (root / "note.md").write_text("# Note\n\nBefore.\n", encoding="utf-8")
@@ -119,17 +147,15 @@ def test_maintained_write_preserves_log_examples(
         saved = vault.reader.read("note.md")
         assert saved is not None and "After." in saved.content
         assert (root / "index.md").exists()
+        result = log.read_text(encoding="utf-8")
+        assert "custom: kept" in result
+        tokens = MarkdownIt("commonmark").parse(result)
         if closed:
-            result = log.read_text(encoding="utf-8")
-            assert example in result and "custom: kept" in result
-            assert any(
-                t.type == "inline" and "`note.md`" in t.content
-                for t in MarkdownIt("commonmark").parse(result)
-            )
-            assert "okf_convention_log_failed" not in caplog.text
+            assert example in result
+            assert any(t.type == "inline" and "`note.md`" in t.content for t in tokens)
         else:
-            assert log.read_bytes() == original
-            assert "okf_convention_log_failed path=log.md" in caplog.text
-            assert "unclosed code fence" in caplog.text
+            # Existing behavior is intentionally retained, not silently repaired.
+            assert any(t.type == "fence" and "`note.md`" in t.content for t in tokens)
+        assert "okf_convention_log_failed" not in caplog.text
     finally:
         vault.close()
