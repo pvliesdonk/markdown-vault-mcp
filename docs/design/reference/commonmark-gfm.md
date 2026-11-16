@@ -207,6 +207,7 @@ Python 3.13.
   `` ```\n[a](x.md)\n `` no link; 4 backticks not closed by 3; backticks not
   closed by `~~~`]
   [pins: tests/test_links.py::TestCodeBlockExclusion::test_link_in_fenced_code_excluded, tests/test_links.py::TestCodeBlockExclusion::test_link_after_fenced_code_extracted]
+  [pins: tests/test_okf_log_fences.py::test_append_preserves_fenced_examples, tests/test_okf_log_fences.py::test_only_matching_fence_closes_example]
 - The info string (trimmed text after the opener; no backticks after a
   backtick fence, Ex. 145) is not inline content: `` ``` [a](x.md) `` on a
   fence line is not a link. [source: cm] [observed: markdown-it-py 3.0.0,

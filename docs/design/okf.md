@@ -534,6 +534,17 @@ Tool tags following switches: #1412.
   warning can ride the existing write-result `conventions`/advisory channel
   without a new mechanism.
 
+Log appends use the scanner’s top-level fence rules when locating `## `
+section boundaries, so headings quoted in backtick or tilde code blocks do
+not receive real entries. This shares the scanner’s documented container
+limitations, not a full Markdown block parser (see
+[CommonMark reference](reference/commonmark-gfm.md#code-spans-and-fenced-code-61-45)).
+An unclosed fence causes the append helper to raise `ValueError` before
+rewriting the log; the maintainer logs its existing failure warning and still
+refreshes navigation. It does not invent a closing delimiter or modify the
+existing log. Date grouping and per-write maintenance otherwise remain the
+shipped behavior, not the editorial-event design of #1416.
+
 Concurrency note: log-append and index-refresh are secondary writes riding an
 existing primary write; they flow through the same single-writer index path
 and git-commit callback as any other write, and failures degrade to a logged
