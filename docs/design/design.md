@@ -1913,7 +1913,7 @@ the spec itself says, dated and sourced, in
   Independently of detection mode, every note's `modified_at` uses a parseable
   offset-aware `generated.at`, falling back to file mtime. The existing SQL
   recent ordering, limit and exact-query time predicates use that stored float;
-  live reads use the same parser. Index semantics version 12 rebuilds older
+  live reads use the same parser. Index semantics version 13 rebuilds older
   stored rows even when the note bytes are unchanged (#2057). Byte hashes
   remain the freshness authority, including when `generated.at` moves backward.
   Attachments retain file mtime.

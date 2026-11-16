@@ -497,11 +497,11 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: ``content_chars`` gain the indentation. Every other note's rows are
 #: byte-identical, so no other note's embeddings are recomputed.
 #:
-#: Version 12 (#2057) derives documents.modified_at from an offset-aware
-#: generated.at when present, falling back to disk mtime. Version 11 shipped
-#: in v6.1.1 (git tag --contains 30fcc065), so unchanged hashes must re-parse
-#: once to replace their stored mtime with the content's declared instant.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#2057) derives documents.modified_at from an offset-aware
+#: generated.at when present, falling back to disk mtime. Version 12 shipped
+#: in v6.1.2 for #1384, so unchanged hashes must re-parse once more to replace
+#: their stored mtime with the content's declared instant.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):

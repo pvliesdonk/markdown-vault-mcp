@@ -349,8 +349,9 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
     assert _stored_semantics_version(db) == INDEX_SEMANTICS_VERSION
 
 
+@pytest.mark.parametrize("stored_version", [11, 12])
 def test_generated_clock_replaces_persisted_mtime_without_byte_changes(
-    tmp_path: Path,
+    tmp_path: Path, stored_version: int,
 ) -> None:
     """An upgrade replaces old clock rows even when their hashes still match."""
     path = tmp_path / "a.md"
@@ -364,11 +365,12 @@ def test_generated_clock_replaces_persisted_mtime_without_byte_changes(
         coord.build_index()
     finally:
         coord.close(timeout=5)
-    # Stand in for the shipped version-11 derivation, including its valid hash.
+    # Both v6.1.1 (11) and v6.1.2 (12) stored mtime with a valid hash.
     with sqlite3.connect(db) as conn:
         conn.execute("UPDATE documents SET modified_at = 1234567890")
         conn.execute(
-            "UPDATE meta SET value = '11' WHERE key = 'index_semantics_version'"
+            "UPDATE meta SET value = ? WHERE key = 'index_semantics_version'",
+            (str(stored_version),),
         )
     upgraded = make_coordinator(tmp_path, db=db)
     try:
