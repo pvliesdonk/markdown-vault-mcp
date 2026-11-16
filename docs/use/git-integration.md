@@ -1,5 +1,5 @@
 ---
-last_edited: 2026-11-14
+last_edited: 2026-11-16
 description: "Choose a git mode for the vault, configure commits, pushes and pulls, and read history back."
 kind: how-to
 ---
@@ -520,6 +520,10 @@ A git submodule or plain Git repository nested inside the vault is read-only. It
 - A submodule whose folder is empty (never initialised) is refused too.
 - Plain repositories need no `gitlink` or `.gitmodules` registration. Both `.git` directories and valid `.git` files are detected, including ones created after startup or with working trees Git cannot open. An unreadable `.git` file up to Git's 1 MiB limit raises an I/O error. Larger markers are inert. The vault's own repository is allowed.
 - Bulk OKF link conversion skips protected notes. Index generation can link to their existing `index.md` but does not write it.
+
+`get_history`, `get_diff` and `read` with `revision` name the separate repository when the requested path is inside a submodule or nested repository. They do not query that repository's history. This also applies to an empty, uninitialised submodule. Inspect its history in its own repository instead.
+
+Whole-vault history, a containing folder's history and history of the submodule directory itself still describe the vault repository, including changes to its submodule pointers. A vault rooted in the submodule itself reads that repository's history normally. Ordinary reads of the files on disk are unchanged.
 
 In no-git mode nothing is committed, so nothing is refused.
 
