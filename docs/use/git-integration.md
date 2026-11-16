@@ -17,6 +17,18 @@ Use this guide to choose and configure the right git mode for your deployment.
 3. **No-git** (default)
    The vault is treated as a plain directory with no git operations.
 
+## Runtime Git version
+
+For a Git-backed vault, startup logs `git_runtime_version` at INFO with the
+output of `git --version`. This identifies the Git executable on the server's
+`PATH`, not Git on your MCP client's computer. Include that value when
+reporting a Git problem. A container uses Git inside the container, so do not
+substitute the host's version.
+
+The diagnostic does not enforce a minimum version or certify compatibility.
+A failed version probe is logged at DEBUG and does not block startup. A
+plain-directory vault does not emit this diagnostic.
+
 ## Filenames from outside the server
 
 Notes created through Git or directly on disk can carry carriage returns

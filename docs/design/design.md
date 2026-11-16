@@ -6474,6 +6474,13 @@ ifcraftcorpus).
 
 ### Write + Git Integration
 
+Startup validation reports `git --version` once per `RepoBootstrap` when a
+Git repository is found, using `git_runtime_version` at INFO (#1312). The
+five-second probe is diagnostic only: failure logs at DEBUG without changing
+startup behavior. No-git mode skips it. This identifies the actual runtime;
+it neither declares a supported minimum nor substitutes for a Git-version
+matrix or verification of a published image's contents.
+
 What git itself does at every point this section relies on it (how a push is
 refused and in what words, credentials, URL forms, pathspec magic, `log -z`
 framing, identity) is recorded with sources and dates in
