@@ -381,37 +381,23 @@ class TestMiddleware:
         context = _FakeMiddlewareContext("write", None)
         seen: list[CommitScope | None] = []
 
-        # No vault lookup happens, so an unpatched get_vault must not be hit.
-        assert await self._run(middleware, context, seen) == "ok"
-
-    @pytest.mark.asyncio
-    async def test_an_unexpected_close_failure_does_not_destroy_the_result(
-        self,
-    ) -> None:
-        """Bookkeeping runs in a ``finally``; anything it raises replaces the
-        tool's result. Only RuntimeError/AttributeError were caught at first,
-        so a ValueError from get_vault destroyed a successful call."""
-        middleware = CommitScopeMiddleware()
-        context = _FakeMiddlewareContext("write", object())
-        seen: list[CommitScope | None] = []
-
-        with mock.patch(
-            "markdown_vault_mcp.domain.get_vault",
-            side_effect=ValueError("something unexpected"),
-        ):
+        with mock.patch("markdown_vault_mcp.domain.get_vault") as get_vault:
             assert await self._run(middleware, context, seen) == "ok"
+        get_vault.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_a_vault_that_is_not_up_does_not_fail_the_tool_call(self) -> None:
-        """Tool listing before startup must not raise out of the middleware."""
+    @pytest.mark.parametrize(
+        "error", [RuntimeError("Vault not initialised"), ValueError("unexpected")]
+    )
+    async def test_close_failure_does_not_destroy_the_result(
+        self, error: Exception
+    ) -> None:
+        """A bookkeeping failure must not replace a tool's result."""
         middleware = CommitScopeMiddleware()
         context = _FakeMiddlewareContext("write", object())
         seen: list[CommitScope | None] = []
 
-        with mock.patch(
-            "markdown_vault_mcp.domain.get_vault",
-            side_effect=RuntimeError("Vault not initialised"),
-        ):
+        with mock.patch("markdown_vault_mcp.domain.get_vault", side_effect=error):
             assert await self._run(middleware, context, seen) == "ok"
 
 

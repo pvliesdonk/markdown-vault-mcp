@@ -6,8 +6,8 @@ produced **2,595 commits for one logical migration**, and every concurrent MCP
 write queued behind 2,595 sequential ``git commit`` invocations until the call
 timed out.
 
-The server middleware supplies the missing boundary. It
-binds a scope for the duration of each tool call; the dispatcher snapshots that
+The server middleware supplies the missing boundary. It binds a scope for the
+duration of each tool call; the dispatcher snapshots that
 scope when a write is fired and groups the call's writes into **one** commit.
 A call that touched many files is named after the tool that caused them; a call
 that touched exactly one keeps that file's own path as the subject. Secondary
