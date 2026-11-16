@@ -15,6 +15,8 @@ from tests.fixtures.git import make_nested_repository, make_superproject
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from fastmcp import FastMCP
+
 
 @pytest.mark.parametrize("operation", ["history", "diff", "commits", "revision"])
 @pytest.mark.parametrize("layout", ["submodule", "deinitialized", "nested", "subvault"])
@@ -78,10 +80,20 @@ def test_vault_rooted_in_submodule_reads_its_own_history(tmp_path: Path) -> None
     assert manager.read_at_revision("note.md", history[0].sha).content == "# Upstream\n"
 
 
+@pytest.fixture
+def submodule_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastMCP:
+    """Build the read-only test server before entering an async client loop."""
+    from markdown_vault_mcp.server import make_server
+
+    source = make_superproject(tmp_path)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    return make_server()
+
+
 @pytest.mark.parametrize("tool", ["get_history", "get_diff", "read"])
 async def test_tool_reports_separate_history_without_server_fault(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    submodule_server: FastMCP,
     caplog: pytest.LogCaptureFixture,
     tool: str,
 ) -> None:
@@ -90,17 +102,12 @@ async def test_tool_reports_separate_history_without_server_fault(
 
     from fastmcp import Client
 
-    from markdown_vault_mcp.server import make_server
-
-    source = make_superproject(tmp_path)
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
     arguments = {"path": "sub/note.md"}
     if tool == "get_diff":
         arguments["since_sha"] = "abcd"
     elif tool == "read":
         arguments["revision"] = "abcd"
-    async with Client(make_server()) as client:
+    async with Client(submodule_server) as client:
         caplog.clear()
         with caplog.at_level(logging.DEBUG):
             result = await client.call_tool_mcp(tool, arguments)
