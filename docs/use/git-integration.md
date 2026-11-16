@@ -1,5 +1,5 @@
 ---
-last_edited: 2026-11-14
+last_edited: 2026-11-16
 description: "Choose a git mode for the vault, configure commits, pushes and pulls, and read history back."
 kind: how-to
 ---
@@ -382,6 +382,55 @@ the [`git_sync` tool reference](../reference/tools/git.md#git_sync).
 `git_sync` is hidden when the deployment isn't in managed git mode (no
 `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when
 `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
+
+## Recurring conflicts on append-heavy notes
+
+If several writers keep appending to the same note, first agree whether its
+entries can appear in any order. Prefer separate notes or coordinate writers
+when order matters. Do the same if existing entries are edited or metadata
+changes alongside the text. Keep the normal conflict handling for those files.
+
+For an append-only note, Git's built-in `union` merge driver is an
+opt-in alternative. It combines lines from both sides instead of leaving
+conflict markers. It does not understand Markdown structure or YAML
+frontmatter, and it can silently retain competing edits. A successful sync
+does not establish that the combined note is correct. Git warns
+that added lines may appear in an arbitrary order; review the result.
+See [Git's merge-driver documentation](https://git-scm.com/docs/gitattributes#_built_in_merge_drivers).
+
+To try this for one agreed note, add a matching entry to the vault repository's
+`.gitattributes`, using the path relative to that file. With
+`.gitattributes` at the repository root:
+
+```text
+journal/append-only.md merge=union
+```
+
+Commit and share that file through your normal Git workflow before concurrent
+edits. Do not apply `merge=union` to all Markdown files: the attribute covers
+the whole file, including frontmatter, not just its appended section. Test it
+on disposable copies with the same clients and Git settings before adopting
+it for a shared vault. The server does not add this attribute for you.
+
+### Where merge drivers apply
+
+In managed mode, a diverged pull first runs native `git rebase`, and Git
+applies the repository's merge attributes during that rebase as it does in
+any other merge. A conflict that Git resolves there never reaches the
+server's sibling resolver.
+
+If Git still reports paths with unresolved conflicts, the server's resolver
+does not call merge drivers again: it preserves the local versions as siblings
+and takes the upstream versions at the original paths, as described under
+[Manual sync](#manual-sync-git_sync-tool). An attribute is not a repair for
+existing siblings or a guarantee that every conflict will disappear.
+
+In commit-only mode the server never pulls; the client that performs the
+merge decides whether the attribute is used. Check every writer: a Git client
+implemented without native Git need not support `.gitattributes`. Custom
+merge drivers also need their command configured on each participating host;
+committing the attribute alone does not install a driver. The built-in
+`union` driver needs no custom command.
 
 ## When the clone stops reaching its remote
 
