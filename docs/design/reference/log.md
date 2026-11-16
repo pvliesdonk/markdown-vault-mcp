@@ -1,5 +1,12 @@
 # Reference research log
 
+## 2026-11-15
+
+- New: [LEANN query-time embedding recomputation](leann.md), for #1368.
+  Cross-checked the technique against paper v2, §§1, 3–4.2 and 7.1,
+  and the upstream README. No implementation or deployment benchmark.
+  Next review: 2027-05-15.
+
 ## 2026-11-14
 
 - [Git history and revision queries](git-history-queries.md): added Python's

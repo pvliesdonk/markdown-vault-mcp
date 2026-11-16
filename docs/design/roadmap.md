@@ -495,33 +495,44 @@ blocking the library research, which can run concurrently.
 `stated` — **[021 backlog-fixes](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/22)**,
 **[022 startup-and-memory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/23)**
 and **[023 reported-bugs](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/24)**
-come before `025`, in that order (15 November 2026). Each draws its issues from
+come before `028`, in that order (15 November 2026). Each draws its issues from
 the contributed pull requests open on that date.
 
 `derived` — **Patch intent for all three.** `021` holds owner-filed bugs whose
 contributed fixes are small, and the test-only de-flake work lands first inside
 it, so that CI is quiet for everything after. `022` holds owner-filed bugs whose
-contributed PRs need an owner decision before review. `023` holds bugs the
+contributed PRs need an owner decision before review, and since `021` shipped
+it also takes the small owner-filed fixes that need none. `023` holds bugs the
 contributors reported, which join after their issues are accepted. The order
 follows from that: the least open decision ships first.
 
-`stated` — `020 first-class-library` is renumbered `024`, after `023` and before
-`025` (15 November 2026). Its milestone keeps its identity and membership.
+`stated` — **[024 okf-evidence](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/25)**
+follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
+[#1413][1413], [#1444][1444] and [#1446][1446] (16 November 2026).
 
-`derived` — **[025 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
-(minor)** follows `020` with the read-only submodule epic [#1561][1561], less the
+`derived` — **Major intent**, because the owner kept the breaking marker on
+the [#1444][1444] fix: malformed review records no longer promote
+`derive_trust_tier`.
+
+`stated` — `020 first-class-library` is renumbered `027` and `025
+submodules-read` is renumbered `028`, so that `024` fits after `023` and the
+order is otherwise unchanged (16 November 2026). Each milestone keeps its
+identity and membership.
+
+`derived` — **[028 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
+(minor)** follows `027` (the `020` of the sections above) with the read-only submodule epic [#1561][1561], less the
 refusal that moved to `015`.
 
 `stated` — **[030 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**
 collects the open MCP app issues as one cut (7 October 2026).
 
 `derived` — **Minor intent**, because [#1198][1198] is a feature; the rest are
-defects and decay. The owner set the ordinal, which places it after `025` and
+defects and decay. The owner set the ordinal, which places it after `028` and
 before `060`. § Usable vault views has the argument.
 
 `derived` — **[060 submodules-write](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/16)
 (minor, provisional)** ships the writable-submodule epic [#1562][1562] atomically,
-refined after `025` lands. § Vaults with git submodules has the argument.
+refined after `028` lands. § Vaults with git submodules has the argument.
 
 ### Follow-up slices after `020`
 
@@ -828,6 +839,36 @@ package until their issues are accepted.
 `stated` — The owner reopened it as `024`, above `023`, so that the next cut,
 the `021` fixes, does not consume it again before that defect is fixed.
 
+### 15 November 2026 — place the pull requests contributed after packaging
+
+`evidenced` — `021` shipped as v6.1.2 (milestone #22, now titled
+`v6.1.2 backlog-fixes`; commit 495afd1f).
+
+`stated` — The owner committed the small owner-filed work contributed since
+then to `022`, so that it ships in that cut rather than a docs-only one: [#1755][1755], [#1676][1676], [#1294][1294], [#1368][1368] and
+[#1598][1598]. They also committed [#1403][1403] to `022`, because its
+contributed PR proposes a deliberate repair and that choice is theirs.
+
+`stated` — The owner accepts PR #2127 as a standalone refactor, reviewed on its
+merits. The direction of [#1232][1232], several vaults behind one server, stays
+open and unrefined.
+
+`derived` — [#2121][2121] is a contributor-proposed feature, so it has no
+package until it is accepted. [#1442][1442] waits on [#1610][1610], as
+[#1606][1606] does.
+
+### 16 November 2026 — package the contributed OKF evidence work as `024`
+
+`stated` — The owner packaged three contributed features under [epic
+#1425][1425] as `024 okf-evidence`, after `023`: [#1413][1413], [#1444][1444] and
+[#1446][1446]. They kept the breaking marker on the [#1444][1444] fix, so the
+package is a major. To fit it in, `020 first-class-library` (the `024` of 15
+November) became `027` and `025 submodules-read` became `028`. Earlier
+mentions of those ordinals describe the record at the time.
+
+`derived` — [#1566][1566], which a contributed PR closes, was already in
+`028` (then `025`) and stays there.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -839,6 +880,7 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [1245]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245
 [1272]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1272
 [1293]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1293
+[1294]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1294
 [1299]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299
 [1307]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1307
 [1308]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1308
@@ -850,12 +892,15 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [1377]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1377
 [1383]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1383
 [1390]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1390
+[1403]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403
 [1412]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412
+[1413]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1413
 [1425]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425
 [1436]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1436
 [1442]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1442
 [1443]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1443
 [1444]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1444
+[1446]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1446
 [1462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1462
 [1467]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1467
 [1468]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1468
@@ -895,13 +940,16 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [1565]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1565
 [1566]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1566
 [1567]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1567
+[1598]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1598
 [1640]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1640
 [1665]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1665
 [1666]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1666
+[1676]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676
 [1728]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728
 [1606]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1606
 [1610]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1610
 [1678]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678
+[1755]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1755
 [1938]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938
 [1730]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1730
 [1733]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1733
@@ -926,5 +974,6 @@ the `021` fixes, does not consume it again before that defect is fixed.
 [2019]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2019
 [2021]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2021
 [2022]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2022
+[2121]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2121
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
