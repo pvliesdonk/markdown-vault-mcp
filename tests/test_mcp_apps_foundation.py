@@ -11,8 +11,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastmcp import Client
+from fastmcp.server.providers.addressing import hash_tool
 
 from markdown_vault_mcp._server_apps import (
+    _APP_NAME,
     _APP_TOOL_NAMES,
     _app_tool_meta,
     _hashed,
@@ -947,5 +949,9 @@ class TestSPARewriteValidation:
         """FastMCP 4 strips the old private ``_tool_hash`` metadata key."""
         name = "vault_list"
         fastmcp_meta = _app_tool_meta(name)["fastmcp"]
-        assert fastmcp_meta["tool_hash"] == _hashed(name).split("_", 1)[0]
+        tool_hash = hash_tool(_APP_NAME, name)
+        assert fastmcp_meta["tool_hash"] == tool_hash
+        # The callable name carries the same hash; fastmcp 4.2 prefixes it
+        # with "__", so match the hash and name rather than the layout.
+        assert _hashed(name).endswith(f"{tool_hash}_{name}")
         assert "_tool_hash" not in fastmcp_meta
