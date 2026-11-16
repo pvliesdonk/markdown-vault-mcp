@@ -340,7 +340,8 @@ class GitWriteStrategy:
     #: #1264 reports, not a preference to configure. See
     #: :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`.
     accepts_batch: bool = True
-    #: Preserve the note subject when secondary OKF writes share its batch.
+    #: Preserve the note subject when secondary writes (OKF maintenance, a
+    #: rename's backlink rewrites) share its batch.
     accepts_primary_paths: bool = True
 
     def on_write_batch(
@@ -2381,7 +2382,13 @@ def _stage_and_commit_batch(
         if item_scope is None:
             continue
         staged += 1
-        if primary_paths is not None and path in primary_paths:
+        # A path fired twice (a renamed note rewriting its own self-link) is
+        # still one primary write; its first item, the rename, names it.
+        if (
+            primary_paths is not None
+            and path in primary_paths
+            and all(seen != path for seen, _op, _old in primary)
+        ):
             primary.append((path, operation, old_path))
         # An empty item scope is the unscoped legacy rename, which stages
         # repository-wide; the batch's check can be no narrower than that.

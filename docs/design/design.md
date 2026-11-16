@@ -6543,7 +6543,9 @@ is primary. This changes only the subject, not write authority or commit scope
 (#1675). Rename subjects use the callback's existing `old_path` to name both
 source and destination; callbacks without that path retain the destination-only
 subject. The primary item carries its old path through subject selection,
-without changing the callback tuple. Multi-file folder moves retain their
+without changing the callback tuple. A path fired more than once (a renamed
+note whose self-link is rewritten) counts as one primary path, named by its
+first item. Multi-file folder moves retain their
 batch summary; exact folder roots are not inferred from the moved files
 (#1676, single-note slice).
 
