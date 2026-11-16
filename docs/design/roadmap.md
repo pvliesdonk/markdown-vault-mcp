@@ -495,7 +495,7 @@ blocking the library research, which can run concurrently.
 `stated` — **[021 backlog-fixes](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/22)**,
 **[022 startup-and-memory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/23)**
 and **[023 reported-bugs](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/24)**
-come before `025`, in that order (15 November 2026). Each draws its issues from
+come before `028`, in that order (15 November 2026). Each draws its issues from
 the contributed pull requests open on that date.
 
 `derived` — **Patch intent for all three.** `021` holds owner-filed bugs whose
@@ -506,23 +506,33 @@ it also takes the small owner-filed fixes that need none. `023` holds bugs the
 contributors reported, which join after their issues are accepted. The order
 follows from that: the least open decision ships first.
 
-`stated` — `020 first-class-library` is renumbered `024`, after `023` and before
-`025` (15 November 2026). Its milestone keeps its identity and membership.
+`stated` — **[024 okf-evidence](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/25)**
+follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
+[#1413][1413], [#1444][1444] and [#1446][1446] (16 November 2026).
 
-`derived` — **[025 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
-(minor)** follows `020` with the read-only submodule epic [#1561][1561], less the
+`derived` — **Major intent**, because the owner kept the breaking marker on
+the [#1444][1444] fix: malformed review records no longer promote
+`derive_trust_tier`.
+
+`stated` — `020 first-class-library` is renumbered `027` and `025
+submodules-read` is renumbered `028`, so that `024` fits after `023` and the
+order is otherwise unchanged (16 November 2026). Each milestone keeps its
+identity and membership.
+
+`derived` — **[028 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
+(minor)** follows `027` (the `020` of the sections above) with the read-only submodule epic [#1561][1561], less the
 refusal that moved to `015`.
 
 `stated` — **[030 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**
 collects the open MCP app issues as one cut (7 October 2026).
 
 `derived` — **Minor intent**, because [#1198][1198] is a feature; the rest are
-defects and decay. The owner set the ordinal, which places it after `025` and
+defects and decay. The owner set the ordinal, which places it after `028` and
 before `060`. § Usable vault views has the argument.
 
 `derived` — **[060 submodules-write](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/16)
 (minor, provisional)** ships the writable-submodule epic [#1562][1562] atomically,
-refined after `025` lands. § Vaults with git submodules has the argument.
+refined after `028` lands. § Vaults with git submodules has the argument.
 
 ### Follow-up slices after `020`
 
@@ -847,6 +857,18 @@ open and unrefined.
 package until it is accepted. [#1442][1442] waits on [#1610][1610], as
 [#1606][1606] does.
 
+### 16 November 2026 — package the contributed OKF evidence work as `024`
+
+`stated` — The owner packaged three contributed features under [epic
+#1425][1425] as `024 okf-evidence`, after `023`: [#1413][1413], [#1444][1444] and
+[#1446][1446]. They kept the breaking marker on the [#1444][1444] fix, so the
+package is a major. To fit it in, `020 first-class-library` (the `024` of 15
+November) became `027` and `025 submodules-read` became `028`. Earlier
+mentions of those ordinals describe the record at the time.
+
+`derived` — [#1566][1566], which a contributed PR closes, was already in
+`028` (then `025`) and stays there.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -872,11 +894,13 @@ package until it is accepted. [#1442][1442] waits on [#1610][1610], as
 [1390]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1390
 [1403]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403
 [1412]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412
+[1413]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1413
 [1425]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425
 [1436]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1436
 [1442]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1442
 [1443]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1443
 [1444]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1444
+[1446]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1446
 [1462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1462
 [1467]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1467
 [1468]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1468
