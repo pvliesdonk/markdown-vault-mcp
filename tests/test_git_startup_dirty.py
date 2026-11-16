@@ -293,6 +293,8 @@ def test_nested_repositories_and_lagging_submodules_are_not_dirt(
     sub = tmp_path / "sub"
     sub.mkdir()
     _run_git(sub, "init", "-q")
+    _run_git(sub, "config", "user.email", "test@example.com")
+    _run_git(sub, "config", "user.name", "Test User")
     _run_git(sub, "commit", "-q", "--allow-empty", "-m", "s1")
     _run_git(
         repo,
