@@ -35,15 +35,6 @@ An authenticated caller has every tool the instance exposes. Each tool runs with
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach; kept across copier update -->
 Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as `search`, `read` and `get_history` only read the vault. Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch` and the OKF write tools) change files in it. `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write tool. `reindex` and `build_embeddings` stay available in that mode, since they rebuild the index and leave notes untouched.
 
-The deliberate [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter)
-also creates one fixed adjacent recovery artifact,
-`log.md.frontmatter-repair.bak`, holding the complete original before changing
-the log. It never overwrites an existing recovery entry. The caller's
-`operator_reviewed` assertion authorizes one exact proposed removal; it does
-not prove human presence or generated origin. Preview is read-only. Apply
-uses the normal write and nested-repository gates and leaves the recovery
-artifact for operator inspection.
-
 Some tools send data beyond the vault:
 
 - **`fetch`** downloads an `http` or `https` URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.
@@ -54,6 +45,8 @@ Some tools send data beyond the vault:
 
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.
 The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the [CLI reference](reference/cli.md#search-a-hosted-vault).
+
+The [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log, readable only by the account that ran it, and never overwrites an existing one. In a Git-backed vault that copy is committed and pushed like any other write.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
 
 ## What answers without a credential

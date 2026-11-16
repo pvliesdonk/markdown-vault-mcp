@@ -23,14 +23,13 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp._okf_log_repair import (
-    LogRepairApproval,
     LogRepairCollision,
     LogRepairInterrupted,
     LogRepairPreview,
     LogRepairResult,
     preview_log_repair,
+    require_reviewed,
     retain_original,
-    validate_approval,
 )
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
@@ -409,21 +408,21 @@ class DocumentManager:
         return abs_path
 
     # ------------------------------------------------------------------
-    # Read operations
+    # Legacy log repair (#1403)
     # ------------------------------------------------------------------
 
     def _log_repair_snapshot(self, path: str) -> tuple[Path, bytes]:
         """Read a bounded raw snapshot of exactly one vault-relative log.md."""
         if Path(path).is_absolute():
             raise InvalidRequestError(
-                f"path {path!r} must be vault-relative. Call okf_preview_log_repair "
-                "with the affected log.md path relative to the vault root."
+                f"path {path!r} must be vault-relative. Name the affected log.md "
+                "relative to the vault root."
             )
         abs_path = self._validate_path(path)
         if Path(path).name != "log.md" or abs_path.name != "log.md":
             raise InvalidRequestError(
-                f"path {path!r} must name log.md. Call okf_preview_log_repair "
-                "with the vault-relative path of the affected log."
+                f"path {path!r} must name log.md. Name the vault-relative path "
+                "of the affected log."
             )
         try:
             if not stat.S_ISREG(abs_path.stat().st_mode):
@@ -433,8 +432,8 @@ class DocumentManager:
                 original = stream.read(cap + 1 if cap > 0 else -1)
             if cap > 0 and len(original) > cap:
                 raise NoteTooLargeError(
-                    f"Log {path!r} exceeds the preview read limit. Ask the operator "
-                    "to review it outside okf_preview_log_repair; nothing was changed."
+                    f"Log {path!r} exceeds the note read limit. Review and repair "
+                    "it by hand; nothing was changed."
                 )
             original.decode("utf-8")
         except (FileNotFoundError, NotADirectoryError) as exc:
@@ -456,20 +455,20 @@ class DocumentManager:
             _, original = self._log_repair_snapshot(path)
             return preview_log_repair(path, original)
 
-    def okf_apply_log_repair(
-        self, path: str, approval: LogRepairApproval
-    ) -> LogRepairResult:
-        """Apply an explicitly reviewed splice after retaining the complete original.
+    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
+        """Apply a reviewed splice after retaining the complete original.
 
         Args:
             path: Exact vault-relative log.md path used for the preview.
-            approval: Preview assertion with operator_reviewed explicitly true.
+            etag: The ``etag`` of the preview the operator reviewed.
 
         Returns:
             New byte etag and the adjacent complete-original recovery path.
 
         Raises:
-            InvalidRequestError: Approval is stale or the recovery path is occupied.
+            ConcurrentModificationError: The log changed since that preview.
+            InvalidRequestError: No candidate remains, or the recovery path
+                is occupied.
             LogRepairInterrupted: Retention or a later step failed; inspect before retry.
         """
         self.ensure_writable()
@@ -477,7 +476,7 @@ class DocumentManager:
             abs_path, original = self._log_repair_snapshot(path)
             self._refuse_submodule(abs_path, "path", path)
             preview = preview_log_repair(path, original)
-            validate_approval(preview, approval)
+            require_reviewed(preview, etag)
             recovery = abs_path.with_name("log.md.frontmatter-repair.bak")
             recovery_path = recovery.relative_to(self._source_dir.resolve()).as_posix()
             target_attempted = False
@@ -506,6 +505,10 @@ class DocumentManager:
                 original_etag=preview.etag,
                 removed_blocks=preview.removed_blocks,
             )
+
+    # ------------------------------------------------------------------
+    # Read operations
+    # ------------------------------------------------------------------
 
     def read(self, path: str, *, section: str | None = None) -> NoteContent | None:
         """Read a document or a single section from disk.

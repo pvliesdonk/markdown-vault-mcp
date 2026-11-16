@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import stat
 import threading
 from pathlib import Path
@@ -11,8 +10,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from markdown_vault_mcp._okf_log_repair import LogRepairApproval, LogRepairInterrupted
+from markdown_vault_mcp._okf_log_repair import LogRepairInterrupted
 from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
     DocumentNotFoundError,
     DocumentUnreadableError,
     InvalidRequestError,
@@ -52,10 +52,10 @@ def manager(tmp_path: Path) -> Iterator[DocumentManager]:
     fts.close()
 
 
-def _approved(manager: DocumentManager, path: str = "log.md") -> LogRepairApproval:
+def _reviewed(manager: DocumentManager, path: str = "log.md") -> str:
     preview = manager.okf_preview_log_repair(path)
-    assert preview.approval is not None
-    return preview.approval.model_copy(update={"operator_reviewed": True})
+    assert preview.status == "review_required"
+    return preview.etag
 
 
 def test_historical_fixture_preview_and_exact_apply(
@@ -69,12 +69,11 @@ def test_historical_fixture_preview_and_exact_apply(
     assert preview.removal_start == len(UNIT)
     assert preview.removal_end == len(UNIT) * 3
     assert preview.removal_text == (UNIT * 2).decode()
-    assert base64.b64decode(preview.removal_base64) == UNIT * 2
     assert preview.etag == compute_etag(STACKED)
     assert preview.new_etag == compute_etag(UNIT + SUFFIX)
     assert "origin" in preview.explanation
     assert not (tmp_path / BACKUP).exists()
-    result = writer.okf_apply_log_repair("log.md", _approved(manager))
+    result = writer.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert result.recovery_path == BACKUP
     assert result.etag == preview.new_etag
     assert (tmp_path / "log.md").read_bytes() == UNIT + SUFFIX
@@ -99,7 +98,7 @@ def test_preserves_opening_metadata_and_suffix_bytes(
     suffix = "# Lög\r\n\n  trailing spaces  \r\n\n---\nquoted\n---".encode()
     original = prefix + unit * 3 + suffix
     (tmp_path / "log.md").write_bytes(original)
-    manager.okf_apply_log_repair("log.md", _approved(manager))
+    manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert (tmp_path / "log.md").read_bytes() == prefix + unit + suffix
     assert (tmp_path / BACKUP).read_bytes() == original
 
@@ -126,52 +125,31 @@ def test_unsupported_or_ambiguous_shapes_are_left_alone(
     (tmp_path / "log.md").write_bytes(raw)
     preview = manager.okf_preview_log_repair("log.md")
     assert preview.status == "no_candidate"
-    assert preview.approval is None
+    assert preview.new_etag is None
     assert (tmp_path / "log.md").read_bytes() == raw
     assert not (tmp_path / BACKUP).exists()
 
 
-def test_identical_authored_example_still_needs_explicit_review(
+def test_apply_without_a_candidate_is_refused(
     manager: DocumentManager, tmp_path: Path
 ) -> None:
-    preview = manager.okf_preview_log_repair("log.md")
-    assert preview.approval is not None
-    with pytest.raises(InvalidRequestError, match="operator_reviewed"):
-        manager.okf_apply_log_repair("log.md", preview.approval)
-    assert (tmp_path / "log.md").read_bytes() == STACKED
+    raw = UNIT + SUFFIX
+    (tmp_path / "log.md").write_bytes(raw)
+    with pytest.raises(InvalidRequestError, match="no supported repeated"):
+        manager.okf_apply_log_repair("log.md", etag=compute_etag(raw))
+    assert (tmp_path / "log.md").read_bytes() == raw
     assert not (tmp_path / BACKUP).exists()
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("path", "other/log.md"),
-        ("etag", "stale"),
-        ("new_etag", "wrong"),
-        ("removal_start", 0),
-        ("removal_end", 0),
-        ("removal_base64", ""),
-    ],
-)
-def test_tampered_approval_is_refused_before_retention(
-    manager: DocumentManager, tmp_path: Path, field: str, value: Any
-) -> None:
-    approval = _approved(manager).model_copy(update={field: value})
-    with pytest.raises(InvalidRequestError, match="okf_preview_log_repair"):
-        manager.okf_apply_log_repair("log.md", approval)
-    assert not (tmp_path / BACKUP).exists()
-    assert (tmp_path / "log.md").read_bytes() == STACKED
-
-
-def test_stale_and_replayed_approval(manager: DocumentManager, tmp_path: Path) -> None:
-    approval = _approved(manager)
+def test_stale_and_replayed_etag(manager: DocumentManager, tmp_path: Path) -> None:
+    etag = _reviewed(manager)
     (tmp_path / "log.md").write_bytes(STACKED + b"new entry\n")
-    with pytest.raises(InvalidRequestError, match="okf_preview_log_repair"):
-        manager.okf_apply_log_repair("log.md", approval)
+    with pytest.raises(ConcurrentModificationError):
+        manager.okf_apply_log_repair("log.md", etag=etag)
     assert not (tmp_path / BACKUP).exists()
-    manager.okf_apply_log_repair("log.md", _approved(manager))
-    with pytest.raises(InvalidRequestError, match="okf_preview_log_repair"):
-        manager.okf_apply_log_repair("log.md", approval)
+    manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
+    with pytest.raises(ConcurrentModificationError):
+        manager.okf_apply_log_repair("log.md", etag=etag)
 
 
 @pytest.mark.parametrize("collision", ["equal", "different", "directory", "symlink"])
@@ -186,7 +164,7 @@ def test_every_recovery_collision_is_refused(
     else:
         backup.write_bytes(STACKED if collision == "equal" else b"precious")
     with pytest.raises(InvalidRequestError, match="recovery"):
-        manager.okf_apply_log_repair("log.md", _approved(manager))
+        manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert (tmp_path / "log.md").read_bytes() == STACKED
     if collision in {"equal", "different"}:
         assert backup.read_bytes() == (STACKED if collision == "equal" else b"precious")
@@ -199,9 +177,9 @@ def test_read_only_can_preview_but_cannot_apply(
     manager: DocumentManager, tmp_path: Path
 ) -> None:
     manager._read_only = True
-    approval = _approved(manager)
+    etag = _reviewed(manager)
     with pytest.raises(ReadOnlyError):
-        manager.okf_apply_log_repair("log.md", approval)
+        manager.okf_apply_log_repair("log.md", etag=etag)
     assert not (tmp_path / BACKUP).exists()
 
 
@@ -248,7 +226,7 @@ def test_notifications_precede_target_and_do_not_stamp(
     manager._mark_paths_dirty = dirty
     enricher = Mock(side_effect=AssertionError("must not stamp"))
     manager._okf_write_enrich = enricher
-    manager.okf_apply_log_repair("log.md", _approved(manager))
+    manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert seen == [BACKUP, "log.md"]
     dirty.assert_called_once_with(["log.md"])
     enricher.assert_not_called()
@@ -263,7 +241,7 @@ def test_partial_failure_retains_evidence_and_reports_state(
     monkeypatch: pytest.MonkeyPatch,
     stage: str,
 ) -> None:
-    approval = _approved(manager)
+    etag = _reviewed(manager)
     if stage == "retention":
         original_open = Path.open
 
@@ -286,7 +264,7 @@ def test_partial_failure_retains_evidence_and_reports_state(
 
         manager._notifier._callback = fail_notify
     with pytest.raises(LogRepairInterrupted) as caught:
-        manager.okf_apply_log_repair("log.md", approval)
+        manager.okf_apply_log_repair("log.md", etag=etag)
     assert caught.value.recovery_path == BACKUP
     assert caught.value.target_may_have_changed == (
         stage in {"replace", "target_notify"}
@@ -305,7 +283,7 @@ def test_target_is_rechecked_after_retention(
 
     manager._notifier._callback = external_edit
     with pytest.raises(LogRepairInterrupted, match="recovery"):
-        manager.okf_apply_log_repair("log.md", _approved(manager))
+        manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert (tmp_path / "log.md").read_bytes() == b"external edit"
     assert (tmp_path / BACKUP).read_bytes() == STACKED
 
@@ -345,30 +323,20 @@ def test_nested_log_collision_names_exact_recovery_path(
         InvalidRequestError, match=r"guides/log\.md\.frontmatter-repair\.bak"
     ):
         manager.okf_apply_log_repair(
-            "guides/log.md", _approved(manager, "guides/log.md")
+            "guides/log.md", etag=_reviewed(manager, "guides/log.md")
         )
     assert (tmp_path / "guides/log.md").read_bytes() == STACKED
-
-
-@pytest.mark.parametrize("truthy", [1, "true", "false"])
-def test_review_acknowledgment_is_not_merely_truthy(
-    manager: DocumentManager, tmp_path: Path, truthy: Any
-) -> None:
-    approval = _approved(manager).model_copy(update={"operator_reviewed": truthy})
-    with pytest.raises(InvalidRequestError, match="operator_reviewed"):
-        manager.okf_apply_log_repair("log.md", approval)
-    assert not (tmp_path / BACKUP).exists()
 
 
 def test_nested_repository_gate_precedes_retention(
     manager: DocumentManager, tmp_path: Path
 ) -> None:
-    approval = _approved(manager)
+    etag = _reviewed(manager)
     guard = Mock()
     guard.refuse.side_effect = SubmodulePathError("nested repository")
     manager._submodule_guard = guard
     with pytest.raises(SubmodulePathError):
-        manager.okf_apply_log_repair("log.md", approval)
+        manager.okf_apply_log_repair("log.md", etag=etag)
     assert not (tmp_path / BACKUP).exists()
 
 
@@ -382,6 +350,6 @@ def test_failed_retention_verification_keeps_target(
 
     monkeypatch.setattr(Path, "read_bytes", incorrect_copy)
     with pytest.raises(LogRepairInterrupted):
-        manager.okf_apply_log_repair("log.md", _approved(manager))
+        manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert original_read(tmp_path / "log.md") == STACKED
     assert original_read(tmp_path / BACKUP) == STACKED

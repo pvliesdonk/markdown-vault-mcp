@@ -1,19 +1,22 @@
 """Exact-byte proposals for the legacy stacked log frontmatter defect (#1403).
 
-Matching bytes identify a candidate, never its origin. Only an explicit
-caller assertion authorizes the reviewed removal; no ordinary write uses this.
+Matching bytes identify a candidate, never its origin. Only an operator who
+reviewed the preview authorizes the removal, by applying it for the etag the
+preview reported; no ordinary write uses this.
 """
 
 from __future__ import annotations
 
-import base64
 import re
 from typing import TYPE_CHECKING, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
+    InvalidRequestError,
+)
 from markdown_vault_mcp.hashing import compute_etag
 
 if TYPE_CHECKING:
@@ -22,27 +25,13 @@ if TYPE_CHECKING:
 _UNIT = re.compile(rb"---(?P<nl>\r?\n)(?P<yaml>.*?)(?P=nl)---(?P=nl)(?P=nl)", re.DOTALL)
 _REVIEW = (
     "Identical adjacent blocks are a candidate, not proof of generated origin. "
-    "Have the operator review the exact removal and retained opening block. "
-    "Only after authorization, pass approval to okf_apply_log_repair with "
-    "operator_reviewed=true; leave authored or uncertain content unchanged."
+    "Review the exact removal and the retained opening block, and apply it "
+    "only if nothing removed was written on purpose."
 )
 
 
-class LogRepairApproval(BaseModel):
-    """Caller assertion bound to one snapshot and its exact proposed removal."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    path: str
-    etag: str
-    new_etag: str
-    removal_start: int
-    removal_end: int
-    removal_base64: str
-    operator_reviewed: bool = False
-
-
 class LogRepairPreview(BaseModel):
-    """Read-only candidate evidence, including an unapproved apply request."""
+    """Read-only candidate evidence for an operator to review."""
 
     path: str
     etag: str
@@ -53,8 +42,6 @@ class LogRepairPreview(BaseModel):
     removal_end: int = 0
     removed_blocks: int = 0
     removal_text: str = ""
-    removal_base64: str = ""
-    approval: LogRepairApproval | None = None
 
 
 class LogRepairResult(BaseModel):
@@ -85,9 +72,9 @@ class LogRepairInterrupted(RuntimeError):
             else "This repair did not replace the target."
         )
         super().__init__(
-            f"Log repair stopped; {state} Tell the operator to inspect the target "
-            f"and recovery artifact {recovery_path!r} before any retry; the artifact "
-            "may be complete, partial, or absent. Existing artifacts are never reused."
+            f"Log repair stopped; {state} Inspect the target and the recovery "
+            f"artifact {recovery_path!r} before any retry; the artifact may be "
+            "complete, partial, or absent. Existing artifacts are never reused."
         )
 
 
@@ -118,7 +105,7 @@ def preview_log_repair(path: str, original: bytes) -> LogRepairPreview:
         original: Complete UTF-8 snapshot, without newline normalization.
 
     Returns:
-        Candidate evidence with an unapproved assertion, or a review explanation.
+        Candidate evidence to review, or an explanation that there is none.
     """
     etag = compute_etag(original)
     absent = LogRepairPreview(
@@ -140,16 +127,7 @@ def preview_log_repair(path: str, original: bytes) -> LogRepairPreview:
     if end == start or suffix.startswith((b"---\n", b"---\r\n")):
         return absent
     removal = original[start:end]
-    encoded = base64.b64encode(removal).decode("ascii")
     new_etag = compute_etag(original[:start] + original[end:])
-    approval = LogRepairApproval(
-        path=path,
-        etag=etag,
-        new_etag=new_etag,
-        removal_start=start,
-        removal_end=end,
-        removal_base64=encoded,
-    )
     return LogRepairPreview(
         path=path,
         etag=etag,
@@ -160,37 +138,31 @@ def preview_log_repair(path: str, original: bytes) -> LogRepairPreview:
         removal_end=end,
         removed_blocks=(end - start) // length,
         removal_text=removal.decode("utf-8"),
-        removal_base64=encoded,
-        approval=approval,
     )
 
 
-def validate_approval(preview: LogRepairPreview, approval: LogRepairApproval) -> None:
-    """Require an explicit review assertion matching this exact proposal.
+def require_reviewed(preview: LogRepairPreview, reviewed_etag: str) -> None:
+    """Require that the operator reviewed this exact proposal.
+
+    The proposal is a pure function of the path and the snapshot bytes, so the
+    snapshot etag the operator reviewed binds the whole removal.
 
     Args:
         preview: Fresh proposal from the current bytes under the write lock.
-        approval: Operator-reviewed assertion supplied by the caller.
+        reviewed_etag: The etag the reviewed preview reported.
 
     Raises:
-        InvalidRequestError: If approval is absent, stale, or for another removal.
+        ConcurrentModificationError: The log changed since that preview.
+        InvalidRequestError: The current log holds no candidate to remove.
     """
-    if (
-        not isinstance(approval, LogRepairApproval)
-        or approval.operator_reviewed is not True
-    ):
-        raise InvalidRequestError(
-            "approval.operator_reviewed must be true only after the operator "
-            "reviews and authorizes the exact removal from okf_preview_log_repair."
+    if reviewed_etag != preview.etag:
+        raise ConcurrentModificationError(
+            preview.path, expected=reviewed_etag, actual=preview.etag
         )
-    expected = preview.approval
-    if expected is None or approval.model_dump(
-        exclude={"operator_reviewed"}
-    ) != expected.model_dump(exclude={"operator_reviewed"}):
+    if preview.status != "review_required":
         raise InvalidRequestError(
-            f"approval does not match the current removal for path {preview.path!r}. "
-            "Call okf_preview_log_repair with path again and obtain fresh operator "
-            "authorization before calling okf_apply_log_repair; do not replay approval."
+            f"Log {preview.path!r} holds no supported repeated frontmatter to "
+            "remove; nothing was changed."
         )
 
 
@@ -210,9 +182,9 @@ def retain_original(recovery: Path, original: bytes, *, recovery_path: str) -> N
         stream = recovery.open("xb")
     except FileExistsError as exc:
         raise LogRepairCollision(
-            f"The recovery artifact {recovery_path!r} already exists. "
-            "Ask the operator to inspect and preserve it before retrying "
-            "okf_apply_log_repair; this call never reuses a recovery artifact."
+            f"The recovery artifact {recovery_path!r} already exists. Inspect it "
+            "and preserve it elsewhere before retrying; a repair never reuses a "
+            "recovery artifact."
         ) from exc
     with stream:
         recovery.chmod(0o600)

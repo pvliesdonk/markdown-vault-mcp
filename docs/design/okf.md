@@ -655,6 +655,11 @@ through the deliberate operation below.
 
 ### Deliberate legacy log repair (#1403)
 
+The repair is an operator command, `markdown-vault-mcp admin repair-log`, over
+library methods on `Vault.writer`. It is not an MCP tool: a one-off historical
+repair does not earn permanent tool surface, and the review it needs is a
+person reading the exact bytes, which a CLI run provides directly.
+
 `okf_preview_log_repair(path)` reads one bounded raw UTF-8 snapshot of a
 vault-relative `log.md`. It recognizes an opening YAML mapping delimited by
 `---` and followed by one blank line, then an immediate run of byte-identical
@@ -664,19 +669,20 @@ unsupported shape returns `no_candidate`; no bytes change. The resolved
 target must also be named `log.md`.
 
 Equality establishes only a structural candidate, not generated origin. An
-authored example can have the same bytes. Preview returns `review_required`,
-the exact removal as UTF-8 text and base64, its half-open byte span, original
-and proposed etags, count, and an unapproved assertion. The caller must obtain
-operator review and authorization of that exact removal before setting
-`approval.operator_reviewed=true` for `okf_apply_log_repair(path, approval)`.
-The assertion binds the path, complete snapshot etag, removal span and bytes,
-and proposed output etag. It is neither a secret nor proof of human presence;
-the calling client is responsible for its assertion. The server does not infer
-authorization from equality, frontmatter, a filename, or a copied approval.
+authored example can have the same bytes. Preview returns `review_required`
+with the exact removal, its half-open byte span, the snapshot etag, the
+proposed output etag and the block count. The proposal is a pure function of
+the path and the snapshot bytes, so the snapshot etag binds the whole removal:
+`okf_apply_log_repair(path, etag=...)` recomputes the proposal under the write
+lock and refuses with `ConcurrentModificationError` unless the current etag is
+the reviewed one, and with `InvalidRequestError` when no candidate remains. The
+command prints the removal and the apply command carrying that etag; running
+the apply is the operator's authorization. The server never infers it from
+equality, frontmatter or a filename.
 
 `DocumentManager` owns application under the shared write lock, with existing
 writability, path, nested-repository and read-limit gates. It recomputes the
-proposal and validates the assertion before creating the adjacent
+proposal and checks the etag before creating the adjacent
 `log.md.frontmatter-repair.bak`. Creation is exclusive: every existing entry,
 including an equal copy, directory, or dangling symlink, is a collision.
 The copy is restricted to mode `0600` before content is written and its bytes
@@ -690,18 +696,21 @@ The recovery artifact remains after success or failure. Failures after a
 retention attempt identify it and whether target replacement was attempted;
 the artifact may be complete, partial, or absent. A notification failure after
 replacement reports possible mutation, never rollback. No automatic retry,
-reuse, cleanup, or reversal occurs. Operators inspect both paths and preserve
-the evidence elsewhere before deliberately removing an obstructing artifact.
-The lock serializes this server's writes, not external editors. This is not a
-transaction or a power-loss durability guarantee, and the backup's ordinary
-write notification does not guarantee a remote push.
+reuse, cleanup, or reversal occurs.
 
-The library methods live on `Vault.writer`. Preview remains available on a
-read-only server; apply is write-tagged and reports remote health. Both tools
-use the existing OKF visibility rules. Repair bypasses provenance enrichment
-and convention maintenance; ordinary writes still never clean the body.
-No parser, index-semantics, configuration, CLI or editorial-event behavior
-changes. `log.md` can retain frontmatter under the recorded role contract
+Preview builds a vault with an in-memory index and Git settings ignored, so it
+runs beside a server without touching its index, state or checkout. Apply
+builds an owning vault, as `admin index` does: a server holding the on-disk
+index's writer lock makes it refuse before anything is written. Nothing
+excludes a server with an in-memory index, external editors or sync tools; the
+write lock serializes only this process's writes. This is not a transaction or
+a power-loss durability guarantee. In a Git-backed vault both the backup and
+the log are committed through the ordinary write callback.
+
+Repair bypasses provenance enrichment and convention maintenance; ordinary
+writes still never clean the body. No parser or index-semantics behavior
+changes: the repair changes file bytes, and the hash-based indexer picks them
+up. `log.md` can retain frontmatter under the recorded role contract
 ([OKF v0.2 §9](reference/okf-v0.2.md)); the index-only restriction is not
 applied to logs.
 

@@ -153,43 +153,57 @@ To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the re
 ## Repairing legacy log frontmatter
 
 Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the
-start of `log.md`. To repair one affected file, call
-[`okf_preview_log_repair`](../reference/tools/writer.md#okf_preview_log_repair)
-with its vault-relative path, such as `guides/log.md`. Preview changes
-nothing and is available on a read-only server when OKF tools are visible.
-The [security model](../security-model.md) describes the write boundary.
+start of `log.md`. The [`admin repair-log`](../reference/cli.md#markdown-vault-mcp-admin-repair-log)
+command repairs one such file at a time. Without `--apply` it only previews.
+As an operator command rather than an MCP tool, it is out of every client's
+reach.
 
-Review the proposed removal with the operator. The preview gives the exact
-removed text, its base64 bytes, byte offsets, and old and proposed `etag` values.
-Matching blocks alone do not prove the old defect created them. Preserve
-intentional examples or anything whose purpose is uncertain. `no_candidate`
-means the shape is outside this narrow repair; review it manually.
+Preview the affected log with its vault-relative path:
 
-After the operator authorizes that exact removal, pass the preview's
-`approval` object to
-[`okf_apply_log_repair`](../reference/tools/writer.md#okf_apply_log_repair),
-changing only `operator_reviewed` to `true`, with the same `path`. This is the
-client's explicit review assertion, not a server check that a person was
-present. A stale or modified approval requires a fresh preview and review.
-The same two methods are available through `Vault.writer` in the library.
+```bash
+markdown-vault-mcp admin repair-log guides/log.md
+```
 
-Apply first retains the complete original as the adjacent
-`log.md.frontmatter-repair.bak`, then removes only the approved repeated units.
-It keeps the opening frontmatter, provenance fields, line endings and all
-remaining content byte for byte. The recovery file is restricted to the
-server account on systems that enforce Unix file modes and is not indexed as
-a Markdown note. Keep it until the operator has checked the result. The
-server also reports the recovery file to its configured write callback; a
-successful response does not guarantee it has reached a remote repository.
+The preview prints the exact bytes it would remove, with their byte offsets,
+between `>>> removal begins` and `<<< removal ends`. Below them it prints the
+command that applies the removal. It keeps the opening block and removes only the
+identical copies directly after it. Matching blocks alone do not prove the old
+defect wrote them: a log can quote its own frontmatter on purpose. Apply only
+when nothing in the removal was written deliberately. `Nothing to repair`
+means the file holds no supported repeated run: differing, interleaved or
+malformed blocks are left for you to edit by hand.
 
-Any existing recovery entry blocks apply, even if its bytes match. After a
-failure, inspect both the target and recovery file before retrying. The error
-says whether target replacement was attempted; the recovery file may be
-complete, partial, or absent. Preserve evidence elsewhere before deliberately
-removing an obstructing recovery entry outside this operation. Apply never
-reuses or deletes it. Coordinate with other editors while repairing: the
-server lock does not stop external writes, and this is not a transaction or a
-power-loss recovery guarantee.
+To apply, run the printed command. It carries the `etag` of the log as you
+previewed it:
+
+```bash
+markdown-vault-mcp admin repair-log guides/log.md --apply <etag>
+```
+
+If the log changed after the preview, apply refuses and changes nothing;
+preview it again and review the new removal. Apply first keeps the complete
+original as `log.md.frontmatter-repair.bak` beside the log, then removes only
+the previewed repeats. The opening frontmatter, provenance fields, line endings
+and the rest of the file stay byte for byte; no `log.md` entry or provenance
+stamp is added. On systems that enforce Unix file modes, only the account
+that ran the command can read the recovery file. It is not indexed as a note.
+In a Git-backed vault both files are committed like any other write. Keep the
+recovery file until you have checked the result. The same preview and apply
+are available to library callers as `Vault.writer.okf_preview_log_repair` and
+`Vault.writer.okf_apply_log_repair`.
+
+Any existing recovery entry blocks apply, even one with the same bytes. If
+apply stops part-way, its error says whether the log may already have
+changed. The recovery file may then be partial or missing, so inspect both
+files. Apply never reuses or deletes the recovery file: move it somewhere safe
+before a retry.
+
+Stop the server before applying. Apply refuses while a server holds the
+on-disk index (`MARKDOWN_VAULT_MCP_INDEX_PATH`), but a server with an
+in-memory index, another editor, or a sync tool writing the same file is not
+detected. Apply is not a transaction and gives no guarantee across a power
+loss. The server reindexes the repaired log by its changed content when it
+next starts.
 
 ## Using OKF with PARA or Zettelkasten
 

@@ -34,7 +34,6 @@ from mcp.types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from markdown_vault_mcp._okf_log_repair import LogRepairApproval, LogRepairInterrupted
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
@@ -1128,87 +1127,6 @@ def register(mcp: FastMCP) -> None:
         except FileExistsError as exc:
             raise ToolError(str(exc), log_level=logging.INFO) from exc
         return attach_remote_health(vault, asdict(result))
-
-    @mcp.tool(
-        tags={"okf"},
-        icons=_TOOL_ICONS["okf_seed_log"],
-        annotations={
-            "title": "OKF: Preview Legacy Log Repair",
-            "read_only_hint": True,
-            "destructive_hint": False,
-            "idempotent_hint": True,
-        },
-    )
-    @tool_boundary
-    @library_outcomes
-    async def okf_preview_log_repair(
-        path: str, vault: Vault = Depends(get_vault)
-    ) -> dict[str, Any]:
-        """Preview removing adjacent repeated frontmatter from one legacy log.md;
-        returns exact candidate bytes and an unapproved apply request.
-
-        Identical bytes do not establish origin. Obtain the operator's review and
-        authorization of the exact removal before calling okf_apply_log_repair.
-
-        Args:
-            path: Vault-relative path of the affected log.md.
-
-        Returns:
-            Candidate status, original and proposed byte `etag` values, half-open byte
-            span, removal text and base64, and an approval object with
-            operator_reviewed false. No candidate means manual review is needed.
-        """
-        result = await asyncio.to_thread(vault.writer.okf_preview_log_repair, path)
-        return result.model_dump()
-
-    @mcp.tool(
-        tags={"okf", "write"},
-        icons=_TOOL_ICONS["okf_seed_log"],
-        annotations={
-            "title": "OKF: Apply Legacy Log Repair",
-            "read_only_hint": False,
-            "destructive_hint": True,
-            "idempotent_hint": False,
-        },
-    )
-    @tool_boundary
-    @library_outcomes
-    async def okf_apply_log_repair(
-        path: str, approval: LogRepairApproval, vault: Vault = Depends(get_vault)
-    ) -> dict[str, Any]:
-        """Apply a reviewed legacy log repair, retaining the complete original in an
-        adjacent recovery artifact; returns its path and the new byte etag.
-
-        Args:
-            path: Exact vault-relative log.md path used for the preview.
-            approval: Approval from okf_preview_log_repair with operator_reviewed
-                set to true only after the operator authorizes that exact removal.
-
-        Returns:
-            Path, new etag, recovery_path, original_etag and removed_blocks;
-            remote health is included when the clone cannot reach its remote.
-
-        Raises:
-            InvalidRequestError: Approval is stale or the recovery path is occupied;
-                obtain a fresh preview and operator review before retrying.
-            ToolError: Retention or a later step failed; inspect the target and
-                recovery artifact before retrying. The target may already be changed.
-        """
-        try:
-            with write_identity_scope(okf_intent=False):
-                result = await asyncio.to_thread(
-                    vault.writer.okf_apply_log_repair, path, approval
-                )
-        except LogRepairInterrupted as exc:
-            logger.exception(
-                "log_repair_interrupted path=%s recovery_path=%s "
-                "target_may_have_changed=%s",
-                path,
-                exc.recovery_path,
-                exc.target_may_have_changed,
-            )
-            raise ToolError(str(exc)) from exc
-        return attach_remote_health(vault, result.model_dump())
 
     @mcp.tool(
         tags={"okf", "write", "okf-enforce"},

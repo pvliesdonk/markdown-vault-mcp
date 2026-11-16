@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp._okf_convention import ConventionMaintainer
     from markdown_vault_mcp._okf_log_repair import (
-        LogRepairApproval,
         LogRepairPreview,
         LogRepairResult,
     )
@@ -127,23 +126,23 @@ class WriterFacet:
             path: Vault-relative path ending in log.md.
 
         Returns:
-            A candidate with an unapproved assertion, or a manual-review explanation.
+            The exact candidate removal and the snapshot ``etag`` that applying
+            it requires, or an explanation that there is no candidate.
         """
         return self._doc_mgr.okf_preview_log_repair(path)
 
-    def okf_apply_log_repair(
-        self, path: str, approval: LogRepairApproval
-    ) -> LogRepairResult:
+    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
         """Apply an operator-reviewed legacy repair, retaining the complete original.
 
         Args:
             path: Exact log.md path used for the preview.
-            approval: The preview assertion with operator_reviewed explicitly true.
+            etag: The ``etag`` of the preview the operator reviewed; a log
+                changed since then is refused.
 
         Returns:
             The resulting byte etag and adjacent recovery artifact path.
         """
-        return self._doc_mgr.okf_apply_log_repair(path, approval)
+        return self._doc_mgr.okf_apply_log_repair(path, etag=etag)
 
     def okf_convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links (#963).
