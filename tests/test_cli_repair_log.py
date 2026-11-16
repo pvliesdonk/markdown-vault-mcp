@@ -167,3 +167,19 @@ def test_a_git_vault_commits_the_repair_and_the_original(
         capture_output=True,
     ).stdout
     assert committed == STACKED
+
+
+def test_preview_prints_a_command_that_runs_as_shown(vault: Path) -> None:
+    folder = vault / "my notes"
+    folder.mkdir()
+    (folder / "log.md").write_bytes(STACKED)
+    result = runner.invoke(
+        app,
+        ["admin", "repair-log", "my notes/log.md", "--source-dir", str(vault)],
+    )
+    assert result.exit_code == 0, result.output
+    command = result.stdout.split("To remove it, run: ")[1].strip()
+    assert command == (
+        f"markdown-vault-mcp admin repair-log 'my notes/log.md' --source-dir "
+        f"{vault} --apply {compute_etag(STACKED)}"
+    )

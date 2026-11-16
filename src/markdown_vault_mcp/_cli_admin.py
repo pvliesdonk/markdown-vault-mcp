@@ -101,7 +101,7 @@ def repair_log(
 
     try:
         if apply is None:
-            _print_preview(_preview(path, source_dir))
+            _print_preview(_preview(path, source_dir), source_dir)
         else:
             _apply(path, source_dir, apply)
     except MarkdownMCPError as exc:
@@ -124,8 +124,10 @@ def _preview(path: str, source_dir: str | None) -> LogRepairPreview:
         built.close()
 
 
-def _print_preview(preview: LogRepairPreview) -> None:
-    """Print the exact removal and the command that applies it."""
+def _print_preview(preview: LogRepairPreview, source_dir: str | None) -> None:
+    """Print the exact removal and the command that applies it, quoted to paste."""
+    import shlex
+
     if preview.status != "review_required":
         typer.echo(f"Nothing to repair in {preview.path}. {preview.explanation}")
         return
@@ -139,10 +141,11 @@ def _print_preview(preview: LogRepairPreview) -> None:
     typer.echo(">>> removal begins")
     typer.echo(preview.removal_text, nl=False)
     typer.echo("<<< removal ends")
-    typer.echo(
-        "To remove it, run: markdown-vault-mcp admin repair-log "
-        f"{preview.path} --apply {preview.etag}"
-    )
+    words = ["markdown-vault-mcp", "admin", "repair-log", preview.path]
+    if source_dir:
+        words += ["--source-dir", source_dir]
+    words += ["--apply", preview.etag]
+    typer.echo(f"To remove it, run: {shlex.join(words)}")
 
 
 def _apply(path: str, source_dir: str | None, etag: str) -> None:
