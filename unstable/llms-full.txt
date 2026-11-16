@@ -2743,6 +2743,16 @@ In both git modes, the commit boundary is the MCP tool call, not the file. A cal
 
 No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
 
+## Uncommitted files at startup
+
+Startup inspects the repository's working tree and staging area in both git modes, even with periodic pulls disabled. If it finds changes, it logs `git_worktree_dirty`. `sync_health()` reports `reason=uncommitted_changes`, which also appears in the `remote` diagnostic on write-tool results. Ignored files do not trigger this warning; files Git reports as `untracked` do. Changes inside submodules and plain repositories nested in the vault do not, because the server never writes into them.
+
+The server cannot tell whether a crash or an operator left those changes. It does not automatically commit or discard them. Inspect `git status` in the repository, preserve the files you need, and commit or resolve the changes yourself. If the vault is a subdirectory, the check covers its whole repository, since git sync acts on that repository.
+
+The health result caches the startup observation. The server checks outstanding startup changes after its commits and during sync, and only a clean tree clears the warning. A successful push or pull alone does not. An external repair shows at the next such check or at restart, with `git_worktree_clean` in the log. After that, ordinary pending writes do not open another startup warning.
+
+A failed inspection keeps any existing warning and is retried at the first commit or sync a minute later. The server logs `git_worktree_check_failed` for the first failure only.
+
 ## Getting an overwritten note back
 
 On a git-backed vault, a `write` that replaces an existing note returns `previous_revision`: the commit holding the content it replaced. Pass that SHA to `read` as `revision=` and the replaced content comes back, ready to write again:
@@ -10303,19 +10313,19 @@ On startup, any unpushed local commits (from a previous crash) are pushed immedi
 
 Parameters:
 
-| Name           | Type    | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                    |
-| -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `token`        | \`str   | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                           |
-| `username`     | `str`   | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                         |
-| `repo_url`     | \`str   | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                       |
-| `managed`      | `bool`  | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                    |
-| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                     |
-| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                     |
-| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                     |
-| `commit_name`  | \`str   | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                 |
-| `commit_email` | \`str   | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                               |
-| `git_lfs`      | `bool`  | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                     |
-| `repo_path`    | \`Path  | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
+| Name           | Type    | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                                                                           |
+| -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token`        | \`str   | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                                                                                  |
+| `username`     | `str`   | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                                                                                |
+| `repo_url`     | \`str   | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                                                                              |
+| `managed`      | `bool`  | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                                                                           |
+| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                                                                            |
+| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                                                                            |
+| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                                                                            |
+| `commit_name`  | \`str   | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                                                                        |
+| `commit_email` | \`str   | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                                                                                      |
+| `git_lfs`      | `bool`  | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                                                                            |
+| `repo_path`    | \`Path  | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation and reporting uncommitted files without modifying them. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
 
 Author identity arrives per write as a resolved `principal`. OIDC claim-key registration belongs to :func:`markdown_vault_mcp._identity.configure_identity_claims`, not this constructor. The removed claim keywords raise :exc:`TypeError`; `git_lfs` and `repo_path` must be passed by keyword (#1236).
 
@@ -10336,7 +10346,7 @@ Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam (#1229): the
 
 ### `validate_startup(repo_path)`
 
-Validate startup git settings for token-authenticated workflows.
+Validate git settings and report uncommitted startup work.
 
 ### `on_write_batch(items, tool_name, *, primary_paths=None)`
 
@@ -10477,7 +10487,7 @@ Raises:
 
 ### `sync_health()`
 
-Report whether this clone is known not to be reaching its remote.
+Report uncommitted startup work or known replication failure.
 
 Read without taking the strategy-wide lock, so a write response never blocks behind an in-flight pull.
 
@@ -10486,6 +10496,8 @@ Returns:
 | Name | Type         | Description |
 | ---- | ------------ | ----------- |
 | `A`  | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
 |      | \`SyncHealth | None\`      |
 |      | \`SyncHealth | None\`      |
 |      | \`SyncHealth | None\`      |
@@ -10532,7 +10544,9 @@ Parameters:
 
 ### `start(*, repo_path, pull_interval_s, on_pull=None, on_tick=None)`
 
-Start a periodic fetch + ff-only update loop in a daemon thread.
+Inspect startup changes and start a periodic fetch + ff-only loop.
+
+Uncommitted startup work is reported even when pulling or the loop is disabled. A closed strategy performs neither operation.
 
 Parameters:
 

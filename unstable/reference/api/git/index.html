@@ -3610,8 +3610,8 @@ first write is committed.  Requires <code>git-lfs</code> to be on
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Optional repository path used for startup validation.
-When set together with <code>token</code>, startup raises
+                <p>Optional repository path used for startup validation and
+reporting uncommitted files without modifying them. When set together with <code>token</code>, startup raises
 :class:<code>~markdown_vault_mcp.exceptions.ConfigurationError</code>
 if <code>origin</code> uses SSH transport instead of HTTPS.</p>
               </div>
@@ -3691,7 +3691,7 @@ private attribute before the promotion.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Validate startup git settings for token-authenticated workflows.</p>
+        <p>Validate git settings and report uncommitted startup work.</p>
 
 
     </div>
@@ -4382,7 +4382,7 @@ soon as either of them lands.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Report whether this clone is known not to be reaching its remote.</p>
+        <p>Report uncommitted startup work or known replication failure.</p>
 <p>Read without taking the strategy-wide lock, so a write response never
 blocks behind an in-flight pull.</p>
 
@@ -4412,7 +4412,7 @@ blocks behind an in-flight pull.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>clone is unsynced, or <code>None</code> when it is reaching its remote (or</p>
+                <p>clone has uncommitted startup work or a remote failure, otherwise</p>
               </div>
             </td>
           </tr>
@@ -4422,7 +4422,7 @@ blocks behind an in-flight pull.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>has never tried — a commit-only vault never pushes, so it never</p>
+                <p><code>None</code>. Startup dirt is rechecked after commits and during</p>
               </div>
             </td>
           </tr>
@@ -4432,7 +4432,27 @@ blocks behind an in-flight pull.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>reports anything).</p>
+                <p>sync, not by this lock-free read; external repairs become visible</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="markdown_vault_mcp.git.health.SyncHealth">SyncHealth</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>at the next such operation or restart. Commit-only vaults can</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="markdown_vault_mcp.git.health.SyncHealth">SyncHealth</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>report startup dirt even though they never try a remote.</p>
               </div>
             </td>
           </tr>
@@ -4665,7 +4685,9 @@ the dispatcher worker has died.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Start a periodic fetch + ff-only update loop in a daemon thread.</p>
+        <p>Inspect startup changes and start a periodic fetch + ff-only loop.</p>
+<p>Uncommitted startup work is reported even when pulling or the loop
+is disabled. A closed strategy performs neither operation.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
