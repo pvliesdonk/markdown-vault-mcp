@@ -49,6 +49,33 @@ No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
+## Uncommitted files at startup
+
+Startup inspects the repository's working tree and staging area in both git
+modes, even with periodic pulls disabled. If it finds changes, it logs
+`git_worktree_dirty`. `sync_health()` reports `reason=uncommitted_changes`,
+which also appears in the `remote` diagnostic on write-tool results.
+Ignored files do not trigger this warning; files Git reports as `untracked` do.
+Changes inside submodules and plain repositories nested in the vault do
+not, because the server never writes into them.
+
+The server cannot tell whether a crash or an operator left those changes.
+It does not automatically commit or discard them. Inspect `git status` in
+the repository, preserve the files you need, and commit or resolve the
+changes yourself. If the vault is a subdirectory, the check covers its
+whole repository, since git sync acts on that repository.
+
+The health result caches the startup observation. The server checks
+outstanding startup changes after its commits and during sync, and only a
+clean tree clears the warning. A successful push or pull alone does not.
+An external repair shows at the next such check or at restart, with
+`git_worktree_clean` in the log. After that, ordinary pending writes do not
+open another startup warning.
+
+A failed inspection keeps any existing warning and is retried at the first
+commit or sync a minute later. The server logs `git_worktree_check_failed` for the first
+failure only.
+
 ## Getting an overwritten note back
 
 On a git-backed vault, a `write` that replaces an existing note returns
