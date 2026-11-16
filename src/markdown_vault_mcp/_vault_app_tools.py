@@ -146,12 +146,9 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         Returns:
             Dict with path, title, folder, frontmatter, modified_at, backlinks,
             outlinks, similar, folder_notes, and tags; see 'get_context' for
-            field details. Returns `{"error": "..."}` if the note is not found.
+            field details.
         """
-        try:
-            ctx = await asyncio.to_thread(vault.reader.get_context, path)
-        except ValueError:
-            return {"error": f"Note not found: {path}"}
+        ctx = await asyncio.to_thread(vault.reader.get_context, path)
         return asdict(ctx)
 
     @mcp.tool(
@@ -185,14 +182,7 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
             - view (str): Always `"context"`.
             - summary (str): Text summary with backlink, outlink, and similarity counts.
         """
-        try:
-            ctx = await asyncio.to_thread(vault.reader.get_context, path)
-        except ValueError:
-            return {
-                "path": path,
-                "view": "context",
-                "summary": f"Note not found: {path}",
-            }
+        ctx = await asyncio.to_thread(vault.reader.get_context, path)
         summary_parts = [
             f"Context for: {ctx.title} ({path})",
             f"Folder: {ctx.folder}",
@@ -480,14 +470,11 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         Returns:
             List of result dicts, each with path (str), title (str),
             snippet (str, first 200 chars of matched chunk), and
-            score (float). Returns `[{"error": "..."}]` on search failure.
+            score (float).
         """
-        try:
-            results = await asyncio.to_thread(
-                vault.reader.search, query, limit=limit, mode=mode
-            )
-        except ValueError as exc:
-            return [{"error": str(exc)}]
+        results = await asyncio.to_thread(
+            vault.reader.search, query, limit=limit, mode=mode
+        )
         # GroupedResult.sections is non-empty for any hit returned by
         # SearchManager.search; pull the snippet from the top section.
         # The SPA browser view consumes a flat {path, title, snippet,

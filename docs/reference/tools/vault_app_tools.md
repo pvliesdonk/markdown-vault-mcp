@@ -61,7 +61,7 @@ Not visible to the LLM.
 
 Dict with path, title, folder, frontmatter, `modified_at`, backlinks,
 outlinks, similar, `folder_notes`, and tags; see '`get_context`' for
-field details. Returns `{"error": "..."}` if the note is not found.
+field details.
 
 <!-- DOMAIN-EXAMPLE-vault_context-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -255,7 +255,7 @@ Not visible to the LLM.
 
 List of result dicts, each with path (str), title (str),
 snippet (str, first 200 chars of matched chunk), and
-score (float). Returns `[{"error": "..."}]` on search failure.
+score (float).
 
 <!-- DOMAIN-EXAMPLE-vault_search-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

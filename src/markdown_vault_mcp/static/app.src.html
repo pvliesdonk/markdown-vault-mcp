@@ -567,11 +567,14 @@ function escHtml(s) {
 
 /** Extract parsed JSON from a CallToolResult ({content: [{type:'text', text:'...'}]}).
  *  Returns the parsed object, or null if no text content found.
- *  Throws Error with descriptive message on malformed JSON. */
+ *  Throws Error with the server's message when the result is a tool error
+ *  (isError: callServerTool resolves rather than rejects for these), and
+ *  with a descriptive message on malformed JSON. */
 function parseToolResult(result) {
   if (!result) return null;
   if (result.content && Array.isArray(result.content)) {
     const tb = result.content.find(c => c.type === 'text');
+    if (result.isError) throw new Error(tb ? tb.text : 'Tool call failed');
     if (tb) {
       try { return JSON.parse(tb.text); }
       catch (e) { throw new Error('Invalid JSON in tool result: ' + e.message); }
