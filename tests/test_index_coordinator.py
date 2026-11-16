@@ -351,7 +351,8 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("stored_version", [11, 12])
 def test_generated_clock_replaces_persisted_mtime_without_byte_changes(
-    tmp_path: Path, stored_version: int,
+    tmp_path: Path,
+    stored_version: int,
 ) -> None:
     """An upgrade replaces old clock rows even when their hashes still match."""
     path = tmp_path / "a.md"
