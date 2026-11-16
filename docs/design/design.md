@@ -6565,15 +6565,21 @@ what a delete or rename sweeps in; only the commit is shared.
 Startup recovery: `GitWriteStrategy` checks for unpushed local commits
 (`git log origin/<branch>..HEAD`) on first invocation and pushes them before
 accepting new writes. Uncommitted files are not safe to recover automatically:
-they may belong to an operator, not the server. At construction with `repo_path`
+they may belong to an operator, not the server. The server reports them and
+never commits them at startup (owner ruling on #1678, 2026-11-16: report, not
+commit). At construction with `repo_path`
 or explicit lifecycle startup, the strategy inspects the full repository with
 read-only `git status --porcelain=v1 -z`, including untracked but not ignored
-files. Startup dirt opens an independent `uncommitted_changes` health condition
+files. Submodules (`--ignore-submodules=all`) and untracked plain nested
+repositories do not count: the server never writes into either, and a pull
+does not update a submodule checkout, so they would hold the condition open
+indefinitely. Startup dirt opens an independent `uncommitted_changes` health condition
 and logs `git_worktree_dirty` at WARNING, before a startup pull. Commit-only
 vaults report it too. Successful remote operations cannot clear it; only a
 successful clean status after a commit or during sync does so, logging
-`git_worktree_clean`. Failed inspection leaves the condition untouched and
-logs `git_worktree_check_failed`. Once clean, sampling stops to avoid labeling
+`git_worktree_clean`. Failed inspection leaves the condition untouched,
+logs `git_worktree_check_failed` once per failing run, and is retried at the
+next commit or sync, including when the first startup inspection failed. Once clean, sampling stops to avoid labeling
 ordinary asynchronous writes as leftover startup work. Health reads remain
 lock-free cached observations; external repair is reflected at the next
 commit/sync check or restart. Direct lazy callbacks without `repo_path` or a

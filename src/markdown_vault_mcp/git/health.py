@@ -45,6 +45,7 @@ from markdown_vault_mcp.git.types import (
     PUSH_REASON_NON_FAST_FORWARD,
     PUSH_REASON_PUSH_FAILED,
     REMOTE_STATE_UNSYNCED,
+    WORKTREE_REASON_UNCOMMITTED_CHANGES,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,8 +65,6 @@ _PULL_CONDITIONS = frozenset(
         PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS,
     }
 )
-
-_UNCOMMITTED = "uncommitted_changes"
 
 _Kind = Literal["push", "pull", "worktree"]
 
@@ -128,8 +127,9 @@ class SyncHealth:
             a pull failure. ``uncommitted_changes`` outranks both: those
             files are not safely recorded in a commit in the first place.
         since: When the first outstanding condition was observed, in UTC.
-            Dates the outage: it does not move when a second condition opens, nor when one of two closes while the other still holds, and
-            it restarts only after the clone has actually recovered.
+            Dates the outage: it does not move when a second condition
+            opens, nor when one of two closes while the other still holds,
+            and it restarts only after every condition has cleared.
     """
 
     state: str
@@ -152,10 +152,10 @@ class SyncHealth:
             "reason": self.reason,
             "since": since,
             "detail": (
-                "Uncommitted changes were found in this vault's Git working tree. "
-                "They were not automatically committed or discarded. Inspect "
-                "git status and preserve or commit them before syncing."
-                if self.reason == _UNCOMMITTED
+                "This vault's Git working tree holds changes the server did "
+                "not commit, and it neither commits nor discards them. Tell "
+                "the user so they can commit or discard them in the repository."
+                if self.reason == WORKTREE_REASON_UNCOMMITTED_CHANGES
                 else f"This vault's git clone is not reaching its remote "
                 f"({self.reason}). A git health warning has been outstanding "
                 f"since {since}. Your content is committed locally only and is "
@@ -198,6 +198,15 @@ class SyncHealthTracker:
         """
         return self._snapshot
 
+    def worktree_dirty(self) -> bool:
+        """Return whether the uncommitted-changes condition is open.
+
+        Returns:
+            ``True`` from a dirty observation until a clean one.
+        """
+        with self._lock:
+            return "worktree" in self._reasons
+
     def worktree_observed(self, *, dirty: bool) -> None:
         """Record a startup-dirty tree, or a later observation that it is clean.
 
@@ -208,7 +217,11 @@ class SyncHealthTracker:
             dirty: Whether the inspected index or working tree has changes.
         """
         if dirty:
-            self._open("worktree", _UNCOMMITTED, frozenset({_UNCOMMITTED}))
+            self._open(
+                "worktree",
+                WORKTREE_REASON_UNCOMMITTED_CHANGES,
+                frozenset({WORKTREE_REASON_UNCOMMITTED_CHANGES}),
+            )
         else:
             self._close("worktree")
 

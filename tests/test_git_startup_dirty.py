@@ -53,7 +53,7 @@ def test_startup_reports_but_preserves_uncommitted_work(
         health = strategy.sync_health()
         assert health is not None
         assert health.reason == "uncommitted_changes"
-        assert "not automatically committed" in health.as_payload()["detail"]
+        assert "neither commits nor discards" in health.as_payload()["detail"]
         assert "git_worktree_dirty" in caplog.text
         assert _run_git(repo, "status", "--porcelain=v1", "-z") == before
         assert _run_git(repo, "rev-parse", "HEAD") == head
@@ -248,3 +248,89 @@ def test_subdirectory_vault_reports_changes_in_its_repository(
         assert strategy.sync_health() is not None
     finally:
         strategy.close()
+
+
+def test_first_failed_check_is_retried_after_a_commit(
+    git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A startup inspection that failed is retried, warning only once."""
+    import subprocess
+
+    repo = git_repo_pair.local_path
+    (repo / "other.md").write_text("left behind\n")
+    real_run = subprocess.run
+
+    def status_times_out(args: list[str], *a: object, **k: object) -> object:
+        if "status" in args:
+            raise subprocess.TimeoutExpired("git", 10)
+        return real_run(args, *a, **k)  # type: ignore[call-overload]
+
+    with patch("subprocess.run", side_effect=status_times_out):
+        strategy = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+        with strategy._lock:
+            strategy._observe_worktree(repo)
+    try:
+        assert strategy.sync_health() is None
+        assert caplog.text.count("git_worktree_check_failed") == 1
+        strategy(repo / "README.md", "written\n", "write")
+        health = strategy.sync_health()
+        assert health is not None
+        assert health.reason == "uncommitted_changes"
+    finally:
+        strategy.close()
+
+
+def test_nested_repositories_and_lagging_submodules_are_not_dirt(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    """Read-only nested layouts stay listed by git but are not server work."""
+    repo = git_repo_pair.local_path
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    _run_git(sub, "init", "-q")
+    _run_git(sub, "commit", "-q", "--allow-empty", "-m", "s1")
+    _run_git(
+        repo,
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "-q",
+        str(sub),
+        "sm",
+    )
+    _run_git(repo, "commit", "-q", "-m", "add submodule")
+    _run_git(sub, "commit", "-q", "--allow-empty", "-m", "s2")
+    _run_git(repo / "sm", "fetch", "-q")
+    _run_git(repo / "sm", "checkout", "-q", "FETCH_HEAD")
+    (repo / "sm" / "junk.md").write_text("inside the submodule\n")
+    nested = repo / "nested"
+    nested.mkdir()
+    _run_git(nested, "init", "-q")
+    (nested / "x.md").write_text("nested\n")
+    assert _run_git(repo, "status", "--porcelain=v1")  # git still lists both
+    strategy = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    try:
+        assert strategy.sync_health() is None
+    finally:
+        strategy.close()
+
+
+@pytest.mark.parametrize(
+    ("status", "dirty"),
+    [
+        (b"", False),
+        (b"?? nested/\0", False),
+        (b"?? plain/\0", True),
+        (b"?? nested/\0 M a.md\0", True),
+        (b"R  new.md\0old.md\0", True),
+        (b"?? nested/\0R  nested/\0x\0", True),
+    ],
+)
+def test_status_parser(tmp_path: Path, status: bytes, dirty: bool) -> None:
+    """Only untracked directories holding a repository are discounted."""
+    from markdown_vault_mcp.git.strategy import _has_uncommitted_changes
+
+    (tmp_path / "nested" / ".git").mkdir(parents=True)
+    (tmp_path / "plain").mkdir()
+    assert _has_uncommitted_changes(status, tmp_path) is dirty

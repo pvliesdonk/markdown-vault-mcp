@@ -148,7 +148,7 @@ class TestUnsyncedCloneIsReported:
             )
             payload = _parse_tool_data(result)
             assert payload["remote"]["reason"] == "uncommitted_changes"
-            assert "not automatically committed" in payload["remote"]["detail"]
+            assert "neither commits nor discards" in payload["remote"]["detail"]
         assert leftover.read_text() == "not committed before restart\n"
         assert "?? leftover.md" in _run_git(managed_vault, "status", "--porcelain")
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import re
 import subprocess
 import threading
@@ -95,6 +96,10 @@ class _PullEntry:
 _INTERACTIVE_PULL = _PullEntry("Git force_pull")
 _STARTUP_PULL = _PullEntry("Git pull")
 _LOOP_PULL = _PullEntry("Git pull", timer_driven=True)
+
+#: Bound on the working-tree inspection that reports uncommitted work (#1678).
+#: It runs under the strategy lock, so a hung status must not hold writes.
+_WORKTREE_STATUS_TIMEOUT_S = 10
 
 
 class GitWriteStrategy:
@@ -197,7 +202,11 @@ class GitWriteStrategy:
         # is only set when the periodic pull loop is started via ``start()``.
         self._repo_path: Path | None = repo_path
         self._write_init_done = False
+        # Uncommitted-work reporting (#1678), all guarded by ``_lock``:
+        # wanted once startup asked for it, checked once a status succeeded.
+        self._worktree_wanted = False
         self._worktree_checked = False
+        self._worktree_check_failing = False
         # ONE strategy-wide lock, shared with both collaborators below.
         self._lock = threading.Lock()
         self._bootstrap = RepoBootstrap(
@@ -301,6 +310,7 @@ class GitWriteStrategy:
         self._bootstrap.validate_startup(repo_path)
         if self._git_root is not None:
             with self._lock:
+                self._worktree_wanted = True
                 self._observe_worktree(self._git_root)
 
     def _observe_worktree(self, git_root: Path) -> None:
@@ -308,12 +318,11 @@ class GitWriteStrategy:
 
         Never infer who owns a change or recover it automatically. Once a
         clean tree is observed, stop probing: new dirt may be a normal write
-        awaiting its asynchronous callback, not leftover startup work.
+        awaiting its asynchronous callback, not leftover startup work. A
+        failed inspection leaves the condition as it was and is retried at
+        the next commit or sync; it logs at WARNING once per failing run.
         """
-        health = self._health.snapshot()
-        if self._worktree_checked and (
-            health is None or health.reason != "uncommitted_changes"
-        ):
+        if self._worktree_checked and not self._health.worktree_dirty():
             return
         try:
             result = subprocess.run(
@@ -326,17 +335,31 @@ class GitWriteStrategy:
                     "--porcelain=v1",
                     "-z",
                     "--untracked-files=normal",
-                    "--ignore-submodules=none",
+                    # The server never writes into a submodule, and a pull
+                    # does not update one: a lagging or dirty submodule is
+                    # not leftover work of this server (#1564).
+                    "--ignore-submodules=all",
                 ],
                 capture_output=True,
                 check=True,
-                timeout=10,
+                timeout=_WORKTREE_STATUS_TIMEOUT_S,
             )
-        except (OSError, subprocess.SubprocessError):
-            logger.warning("git_worktree_check_failed action=inspect_git_status")
+        except (OSError, subprocess.SubprocessError) as exc:
+            error = type(exc).__name__
+            if self._worktree_check_failing:
+                logger.debug("git_worktree_check_still_failing error=%s", error)
+            else:
+                self._worktree_check_failing = True
+                logger.warning(
+                    "git_worktree_check_failed action=inspect_git_status error=%s",
+                    error,
+                )
             return
+        self._worktree_check_failing = False
         self._worktree_checked = True
-        self._health.worktree_observed(dirty=bool(result.stdout))
+        self._health.worktree_observed(
+            dirty=_has_uncommitted_changes(result.stdout, git_root)
+        )
 
     def _ensure_write_init(self) -> None:
         """One-time initialisation for the write path (remote/push/LFS)."""
@@ -1606,7 +1629,7 @@ class GitWriteStrategy:
         observer = self._commit_observer
         parent = self._try_head_sha(git_root) if observer is not None else None
         yield
-        if self._worktree_checked:
+        if self._worktree_wanted:
             self._observe_worktree(git_root)
         if observer is None or parent is None:
             return
@@ -2024,6 +2047,34 @@ def _sanitize_git_identity(value: str) -> str:
     interpolating them into the ``--author`` string.
     """
     return _GIT_IDENTITY_UNSAFE.sub("", value)
+
+
+def _has_uncommitted_changes(status: bytes, git_root: Path) -> bool:
+    """Answer whether ``git status --porcelain=v1 -z`` output reports work.
+
+    An untracked directory that is itself a plain nested repository is not
+    uncommitted work: the server refuses writes into one (#1949), so the
+    superproject keeps listing it however its owner commits.
+
+    Args:
+        status: The raw NUL-separated status records.
+        git_root: The working-tree root the paths are relative to.
+
+    Returns:
+        ``True`` when any record names a change outside nested repositories.
+    """
+    records = iter(status.split(b"\0"))
+    for record in records:
+        if len(record) < 4:
+            continue
+        code, path = record[:2], os.fsdecode(record[3:])
+        if code[:1] in (b"R", b"C"):
+            # The rename or copy source follows as its own record.
+            next(records, None)
+        untracked_dir = code == b"??" and path.endswith("/")
+        if not (untracked_dir and os.path.lexists(git_root / path / ".git")):
+            return True
+    return False
 
 
 def _is_tracked(root: str, path: Path) -> bool:
