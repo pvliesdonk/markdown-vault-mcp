@@ -663,7 +663,69 @@ with `parse_note` about where the block ends, and returning the remainder
 unnormalised. Only the block that *opens* the text comes off: an identical
 block further down is body, because separating "stacked by the defect" from
 "quoted on purpose" needs a rule about body content that this layer does not
-have. Repairing files the defective releases already stacked is #1403.
+have. Repairing files the defective releases already stacked is #1403,
+through the deliberate operation below.
+
+### Deliberate legacy log repair (#1403)
+
+The repair is an operator command, `markdown-vault-mcp admin repair-log`, over
+library methods on `Vault.writer`. It is not an MCP tool: a one-off historical
+repair does not earn permanent tool surface, and the review it needs is a
+person reading the exact bytes, which a CLI run provides directly.
+
+`okf_preview_log_repair(path)` reads one bounded raw UTF-8 snapshot of a
+vault-relative `log.md`. It recognizes an opening YAML mapping delimited by
+`---` and followed by one blank line, then an immediate run of byte-identical
+copies of that whole unit. LF and CRLF units and a leading UTF-8 BOM are
+supported. A differing or interleaved adjacent block, malformed mapping, or
+unsupported shape returns `no_candidate`; no bytes change. The resolved
+target must also be named `log.md`.
+
+Equality establishes only a structural candidate, not generated origin. An
+authored example can have the same bytes. Preview returns `review_required`
+with the exact removal, its half-open byte span, the snapshot etag, the
+proposed output etag and the block count. The proposal is a pure function of
+the path and the snapshot bytes, so the snapshot etag binds the whole removal:
+`okf_apply_log_repair(path, etag=...)` recomputes the proposal under the write
+lock and refuses with `ConcurrentModificationError` unless the current etag is
+the reviewed one, and with `InvalidRequestError` when no candidate remains. The
+command prints the removal and the apply command carrying that etag; running
+the apply is the operator's authorization. The server never infers it from
+equality, frontmatter or a filename.
+
+`DocumentManager` owns application under the shared write lock, with existing
+writability, path, nested-repository and read-limit gates. It recomputes the
+proposal and checks the etag before creating the adjacent
+`log.md.frontmatter-repair.bak`. Creation is exclusive: every existing entry,
+including an equal copy, directory, or dangling symlink, is a collision.
+The copy is restricted to mode `0600` before content is written and its bytes
+are verified against the complete original. Its write notification completes
+before replacement is attempted. The target etag is checked again after
+retention, then the approved span is spliced out through the existing atomic
+byte writer. The opening unit, BOM, all other bytes, and supplied provenance
+claims stay identical. Only the target is marked dirty for indexing.
+
+The recovery artifact remains after success or failure. Failures after a
+retention attempt identify it and whether target replacement was attempted;
+the artifact may be complete, partial, or absent. A notification failure after
+replacement reports possible mutation, never rollback. No automatic retry,
+reuse, cleanup, or reversal occurs.
+
+Preview builds a vault with an in-memory index and Git settings ignored, so it
+runs beside a server without touching its index, state or checkout. Apply
+builds an owning vault, as `admin index` does: a server holding the on-disk
+index's writer lock makes it refuse before anything is written. Nothing
+excludes a server with an in-memory index, external editors or sync tools; the
+write lock serializes only this process's writes. This is not a transaction or
+a power-loss durability guarantee. In a Git-backed vault both the backup and
+the log are committed through the ordinary write callback.
+
+Repair bypasses provenance enrichment and convention maintenance; ordinary
+writes still never clean the body. No parser or index-semantics behavior
+changes: the repair changes file bytes, and the hash-based indexer picks them
+up. `log.md` can retain frontmatter under the recorded role contract
+([OKF v0.2 §9](reference/okf-v0.2.md)); the index-only restriction is not
+applied to logs.
 
 ### Export
 

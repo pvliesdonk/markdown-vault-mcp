@@ -21,6 +21,7 @@ from markdown_vault_mcp.interfaces import (
     GraphStore,
     KeywordGraphIndex,
     KeywordIndex,
+    ListsNoteStates,
     RunsExactQueries,
 )
 from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery, PathQuery
@@ -42,8 +43,14 @@ class TestFTSIndexConformance:
 
     @pytest.mark.parametrize(
         "protocol",
-        [KeywordIndex, GraphStore, KeywordGraphIndex, RunsExactQueries],
-        ids=["keyword", "graph", "combined", "exact-queries"],
+        [
+            KeywordIndex,
+            GraphStore,
+            KeywordGraphIndex,
+            RunsExactQueries,
+            ListsNoteStates,
+        ],
+        ids=["keyword", "graph", "combined", "exact-queries", "note-states"],
     )
     def test_satisfies_facet(self, fts: FTSIndex, protocol: type) -> None:
         """One SQLite backend answers both concepts today."""
@@ -89,6 +96,7 @@ class TestFacetsAreIndependent:
         assert not isinstance(object(), KeywordIndex)
         assert not isinstance(object(), GraphStore)
         assert not isinstance(object(), RunsExactQueries)
+        assert not isinstance(object(), ListsNoteStates)
 
 
 class TestManagersAcceptAnyConformingStore:

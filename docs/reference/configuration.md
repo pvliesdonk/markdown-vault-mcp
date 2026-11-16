@@ -212,12 +212,25 @@ the protocol is unauthenticated. See
 ## Domain variables
 
 <!-- DOMAIN-CONFIG-VARS-START -->
+### How the settings interact
+
 !!! note "Configuration is validated at startup"
     Invalid numeric ranges and incompatible settings fail startup with a
     `ConfigurationError` naming the setting. The server does not silently
     replace invalid values with defaults.
 
-### Write safety
+Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made
+starting points live under `examples/`: `obsidian-readonly.env`,
+`obsidian-readwrite.env`, `obsidian-oidc.env`, and `ifcraftcorpus.env`.
+
+For HTTP authentication, a static bearer token is the simplest option. OIDC
+configuration and deployment examples are covered in the
+[authentication guide](../deploy/authentication.md) and
+[OIDC deployment guide](../deploy/oidc.md).
+
+The subsections below follow the order of the variable tables after them.
+
+#### Write safety {#write-safety}
 
 `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable
 servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`.
@@ -247,7 +260,15 @@ Direct Python construction with `VaultSettings` retains its library default,
 `write_protect_existing=False`. Settings assembled from `ProjectConfig` use
 the server default above.
 
-### Indexing and search
+#### Embeddings {#embeddings-and-summarization}
+
+When `EMBEDDING_PROVIDER` is unset, provider detection tries OpenAI when
+`OPENAI_API_KEY` exists, then a reachable Ollama server, then FastEmbed when its
+package is installed. Voyage is never auto-selected. An explicitly selected
+provider that cannot be configured fails startup; failed auto-detection logs a
+warning and leaves semantic search disabled.
+
+#### Indexing {#indexing-and-search}
 
 Persistent deployments normally put `INDEX_PATH`, `EMBEDDINGS_PATH`, and
 `STATE_PATH` outside content folders. The file watcher excludes the directories
@@ -261,19 +282,47 @@ embedding context; set it to `none` to keep fields filterable but not searchable
 Changing either field triggers the required one-time index or embedding rebuild
 on the next startup.
 
+#### Content {#content-and-transfer}
+
+Folder convention files guide clients before writes. OKF read semantics can be
+auto-detected from a root `index.md`; the separately gated OKF write layer adds
+provenance, invalidates stale verification, and maintains `log.md` and
+`index.md`. See the [OKF guide](../use/okf.md) for the trust and verification
+model.
+
+Attachments in hidden or excluded directories are never listed. Full note
+reads default to a 256 KiB limit and attachment reads to 1 MiB; section reads
+avoid loading an oversized note into the client context.
+
+#### Search tuning {#search-tuning-interactions}
+
 Ranking-only settings such as `CHUNKS_PER_FILE`, `SNIPPET_WORDS`, folder weights,
 and FTS weights take effect without reindexing. Chunk-size and overlap settings
 change the stored index and require `reindex`. Changing the embedding model or
 an explicit character cap rejects the warm-start shortcut and rebuilds
 automatically.
 
-### Embeddings and summarization
+#### Git sync {#synchronization}
 
-When `EMBEDDING_PROVIDER` is unset, provider detection tries OpenAI when
-`OPENAI_API_KEY` exists, then a reachable Ollama server, then FastEmbed when its
-package is installed. Voyage is never auto-selected. An explicitly selected
-provider that cannot be configured fails startup; failed auto-detection logs a
-warning and leaves semantic search disabled.
+Git has three modes: managed clone/pull/push with `GIT_REPO_URL`, commit-only
+when the source directory is already a repository, and plain filesystem mode.
+Token-authenticated remotes must use HTTPS.
+
+#### Change detection {#change-detection-interactions}
+
+A GitHub webhook can trigger an immediate pull and reindex in managed mode;
+periodic pull remains a fallback.
+
+The filesystem watcher is enabled by default when neither periodic git pull nor
+a live webhook owns change detection. Those mechanisms disable the watcher to
+avoid scanning a partially updated checkout. A webhook credential counts only
+where its endpoint exists: under `--transport stdio` there is no HTTP server to
+receive a delivery, so the watcher keeps running rather than leaving that
+deployment with no change detection at all. On macOS, set
+`FILE_WATCHER_ROOT_FLOOR=false` for a home-rooted vault if FSEvents causes
+repeated privacy prompts; root-level notes then rely on explicit scans.
+
+#### Summarize {#summarize-interactions}
 
 The optional `summarize` tool accepts any OpenAI-compatible chat-completions
 endpoint. An API key enables hosted providers; setting
@@ -296,52 +345,26 @@ nature: a local backend can disclose less than a hosted client model. The
 backend receives the notes' text as sent, while a subagent running the prompt
 can follow a link mid-summary to resolve a reference.
 
+#### Transfer {#transfer-interactions}
+
+One-time transfer links require HTTP or SSE transport plus `BASE_URL`. Their
+unguessable capability token is the authorization, and the persistent state
+backend stores token state. The tools are absent on stdio.
+
+#### Jobs {#jobs-interactions}
+
 Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native
 background tasks when the client supports them. Other clients receive an inline
 result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with
 `get_job_result`. A Redis tasks backend is durable and shared across workers;
 the default memory backend is process-local and does not survive restarts.
 
-### Synchronization
+### Vault
 
-Git has three modes: managed clone/pull/push with `GIT_REPO_URL`, commit-only
-when the source directory is already a repository, and plain filesystem mode.
-Token-authenticated remotes must use HTTPS. A GitHub webhook can trigger an
-immediate pull and reindex in managed mode; periodic pull remains a fallback.
-
-The filesystem watcher is enabled by default when neither periodic git pull nor
-a live webhook owns change detection. Those mechanisms disable the watcher to
-avoid scanning a partially updated checkout. A webhook credential counts only
-where its endpoint exists: under `--transport stdio` there is no HTTP server to
-receive a delivery, so the watcher keeps running rather than leaving that
-deployment with no change detection at all. On macOS, set
-`FILE_WATCHER_ROOT_FLOOR=false` for a home-rooted vault if FSEvents causes
-repeated privacy prompts; root-level notes then rely on explicit scans.
-
-### Content and transfer
-
-Folder convention files guide clients before writes. OKF read semantics can be
-auto-detected from a root `index.md`; the separately gated OKF write layer adds
-provenance, invalidates stale verification, and maintains `log.md` and
-`index.md`. See the [OKF guide](../use/okf.md) for the trust and verification
-model.
-
-Attachments in hidden or excluded directories are never listed. Full note
-reads default to a 256 KiB limit and attachment reads to 1 MiB; section reads
-avoid loading an oversized note into the client context.
-
-One-time transfer links require HTTP or SSE transport plus `BASE_URL`. Their
-unguessable capability token is the authorization, and the persistent state
-backend stores token state. The tools are absent on stdio.
-
-For HTTP authentication, a static bearer token is the simplest option. OIDC
-configuration and deployment examples are covered in the
-[authentication guide](../deploy/authentication.md) and
-[OIDC deployment guide](../deploy/oidc.md).
-
-Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made
-starting points live under `examples/`: `obsidian-readonly.env`,
-`obsidian-readwrite.env`, `obsidian-oidc.env`, and `ifcraftcorpus.env`.
+The tables from here on list every domain variable with its default and
+description, one table per group. The first holds the settings that belong
+to no group, starting with the vault path. [Write safety](#write-safety)
+explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 <!-- DOMAIN-CONFIG-VARS-END -->
 
 <!-- GENERATED-ENV-TABLE-REF-DOMAIN-START — generated by scripts/gen_config_surface.py; do not edit -->

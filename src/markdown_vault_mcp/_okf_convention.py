@@ -169,7 +169,7 @@ class ConventionMaintainer:
         if not self._maintains_after(trigger_paths):
             return
         wanted = [f for f in folders if self._has_index(f)]
-        with okf_write_suppressed():
+        with okf_write_suppressed(), auxiliary_commit_writes():
             for folder in dict.fromkeys([*wanted, *create]):
                 self._refresh_index(folder)
 
