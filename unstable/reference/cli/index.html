@@ -2403,6 +2403,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-repair-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin repair-log
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#markdown-vault-mcp-admin-embeddings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3443,6 +3454,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown-vault-mcp-admin-repair-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markdown-vault-mcp admin repair-log
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#markdown-vault-mcp-admin-embeddings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3488,7 +3510,7 @@
 
 <h1 id="command-line">Command line<a class="headerlink" href="#command-line" title="Permanent link">&para;</a></h1>
 <!-- DOMAIN-INTRO-START -->
-<p><code>serve</code> runs the server, and the <code>admin</code> group holds the commands that write: <code>admin index</code>, <code>admin reindex</code> and <code>admin embeddings import</code>. Their former top-level names, <code>index</code>, <code>reindex</code> and <code>embeddings import</code>, still work and name the new form on stderr. Every other command only reads. <code>admin index</code>, <code>admin reindex</code> and <code>search</code> work on the vault and its index directly, without a server; <code>search</code> and the reader commands below can also query a hosted MCP endpoint (see <a href="#search-a-hosted-vault">Search a hosted vault</a>). They read the same <code>MARKDOWN_VAULT_MCP_*</code> settings as <code>serve</code>, and <code>--source-dir</code> and <code>--index-path</code> override the vault and index locations. <code>admin index</code> and <code>admin reindex</code> also bring the embeddings up to date when an <a href="../../use/embeddings/">embedding provider</a> is configured and an index path, an embeddings path or a <a href="../../use/postgresql/">PostgreSQL store</a> keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or <code>admin index</code>) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by <code>index.db.lock</code> beside it, so they stop with the same error before writing either store and leave both as they were, as <code>admin embeddings import</code> does. <code>admin reindex</code> also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does <code>admin index</code> without <code>--force</code> when it has to rebuild the index, as after a settings change. <code>admin embeddings import</code> copies vectors from another store into the configured one (<a href="../../use/embeddings/#moving-vectors-between-stores">Moving vectors between stores</a>). Without an index path, <code>search</code> indexes the vault in memory for that one query and writes no file, not even one <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names, and loads the vectors stored at <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> instead of embedding the vault for the query. With neither path set and no PostgreSQL store, <code>--mode semantic</code> or <code>hybrid</code> with an <a href="../../use/embeddings/">embedding provider</a> configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, <code>search</code> reads the vectors from the database and embeds only the query. With an index path, <code>search</code> only reads the stored index and its vectors, which <code>admin index</code> and <code>admin reindex</code> keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the <code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code> stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, <code>--mode semantic</code> or <code>hybrid</code> stops with an error and leaves them as they are.</p>
+<p><code>serve</code> runs the server, and the <code>admin</code> group holds the commands that write: <code>admin index</code>, <code>admin reindex</code>, <code>admin embeddings import</code> and <code>admin repair-log</code>, which removes the frontmatter blocks old releases stacked in a <code>log.md</code> (<a href="../../use/okf/#repairing-legacy-log-frontmatter">Repairing legacy log frontmatter</a>). The first three's former top-level names, <code>index</code>, <code>reindex</code> and <code>embeddings import</code>, still work and name the new form on stderr. Every other command only reads. <code>admin index</code>, <code>admin reindex</code> and <code>search</code> work on the vault and its index directly, without a server; <code>search</code> and the reader commands below can also query a hosted MCP endpoint (see <a href="#search-a-hosted-vault">Search a hosted vault</a>). They read the same <code>MARKDOWN_VAULT_MCP_*</code> settings as <code>serve</code>, and <code>--source-dir</code> and <code>--index-path</code> override the vault and index locations. <code>admin index</code> and <code>admin reindex</code> also bring the embeddings up to date when an <a href="../../use/embeddings/">embedding provider</a> is configured and an index path, an embeddings path or a <a href="../../use/postgresql/">PostgreSQL store</a> keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or <code>admin index</code>) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by <code>index.db.lock</code> beside it, so they stop with the same error before writing either store and leave both as they were, as <code>admin embeddings import</code> does. <code>admin reindex</code> also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does <code>admin index</code> without <code>--force</code> when it has to rebuild the index, as after a settings change. <code>admin embeddings import</code> copies vectors from another store into the configured one (<a href="../../use/embeddings/#moving-vectors-between-stores">Moving vectors between stores</a>). Without an index path, <code>search</code> indexes the vault in memory for that one query and writes no file, not even one <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names, and loads the vectors stored at <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> instead of embedding the vault for the query. With neither path set and no PostgreSQL store, <code>--mode semantic</code> or <code>hybrid</code> with an <a href="../../use/embeddings/">embedding provider</a> configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, <code>search</code> reads the vectors from the database and embeds only the query. With an index path, <code>search</code> only reads the stored index and its vectors, which <code>admin index</code> and <code>admin reindex</code> keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the <code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code> stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, <code>--mode semantic</code> or <code>hybrid</code> stops with an error and leaves them as they are.</p>
 <h3 id="search-a-hosted-vault">Search a hosted vault<a class="headerlink" href="#search-a-hosted-vault" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">"release notes"</span><span class="w"> </span>--server<span class="w"> </span>https://vault.example/proxy/mcp<span class="w"> </span>--json
 </code></pre></div>
@@ -5494,7 +5516,7 @@ loading vector sidecars. Follow a returned path with <code>read</code>, <code>re
 </tbody>
 </table>
 <h2 id="markdown-vault-mcp-admin"><code>markdown-vault-mcp admin</code><a class="headerlink" href="#markdown-vault-mcp-admin" title="Permanent link">&para;</a></h2>
-<p>Commands that write the index or the stored vectors.</p>
+<p>Commands that write the index, the stored vectors or the vault.</p>
 <h2 id="markdown-vault-mcp-admin-index"><code>markdown-vault-mcp admin index</code><a class="headerlink" href="#markdown-vault-mcp-admin-index" title="Permanent link">&para;</a></h2>
 <p>Build the full-text search index.</p>
 <table>
@@ -5556,6 +5578,50 @@ loading vector sidecars. Follow a returned path with <code>read</code>, <code>re
 <td></td>
 <td>False</td>
 <td>Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="markdown-vault-mcp-admin-repair-log"><code>markdown-vault-mcp admin repair-log</code><a class="headerlink" href="#markdown-vault-mcp-admin-repair-log" title="Permanent link">&para;</a></h2>
+<p>Preview, then remove, frontmatter blocks stacked at the start of a log.md.</p>
+<p>Versions 4.1.0 and 4.2.0-rc.0 could repeat a log's frontmatter block. By
+default the command prints the exact repeats it would remove. Review them,
+since identical blocks can be written on purpose. Applying keeps the
+complete original as log.md.frontmatter-repair.bak beside the log.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PATH</code></td>
+<td>Vault-relative path of the affected log.md, such as guides/log.md.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Env var</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--source-dir</code></td>
+<td></td>
+<td></td>
+<td>Path to markdown vault (overrides $<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>).</td>
+</tr>
+<tr>
+<td><code>--apply</code></td>
+<td></td>
+<td></td>
+<td>Remove the blocks the preview showed, for the etag it printed; refused when the log changed since.</td>
 </tr>
 </tbody>
 </table>

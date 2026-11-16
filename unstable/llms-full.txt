@@ -89,6 +89,8 @@ Some tools send data beyond the vault:
 
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string. The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the [CLI reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/cli/#search-a-hosted-vault).
 
+The [legacy log repair](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
+
 ## What answers without a credential
 
 Some routes answer anyone who can reach the port, with authentication on or off:
@@ -3383,7 +3385,31 @@ A few boundaries keep this predictable, and they are also its limits. Maintenanc
 
 One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
 
-To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Removing those blocks is a manual edit: the server cannot tell a block it stacked from one the log quotes on purpose, so it leaves all of them alone.
+To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Ordinary writes leave those blocks alone. The deliberate repair below requires review because the server cannot distinguish a block it stacked from one the log quotes on purpose.
+
+## Repairing legacy log frontmatter
+
+Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the start of `log.md`. The [`admin repair-log`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/cli/#markdown-vault-mcp-admin-repair-log) command repairs one such file at a time. Without `--apply` it only previews. As an operator command rather than an MCP tool, it is out of every client's reach.
+
+Preview the affected log with its vault-relative path:
+
+```
+markdown-vault-mcp admin repair-log guides/log.md
+```
+
+The preview prints the exact bytes it would remove, with their byte offsets, between `>>> removal begins` and `<<< removal ends`. Below them it prints the command that applies the removal. It keeps the opening block and removes only the identical copies directly after it. Matching blocks alone do not prove the old defect wrote them: a log can quote its own frontmatter on purpose. Apply only when nothing in the removal was written deliberately. `Nothing to repair` means the file holds no supported repeated run: differing, interleaved or malformed blocks are left for you to edit by hand.
+
+To apply, run the printed command. It carries the `etag` of the log as you previewed it:
+
+```
+markdown-vault-mcp admin repair-log guides/log.md --apply <etag>
+```
+
+If the log changed after the preview, apply refuses and changes nothing; preview it again and review the new removal. Apply first keeps the complete original as `log.md.frontmatter-repair.bak` beside the log, then removes only the previewed repeats. The opening frontmatter, provenance fields, line endings and the rest of the file stay byte for byte; no `log.md` entry or provenance stamp is added. On systems that enforce Unix file modes, only the account that ran the command can read the recovery file. It is not indexed as a note. In a Git-backed vault both files are committed like any other write. Keep the recovery file until you have checked the result. The same preview and apply are available to library callers as `Vault.writer.okf_preview_log_repair` and `Vault.writer.okf_apply_log_repair`.
+
+Any existing recovery entry blocks apply, even one with the same bytes. If apply stops part-way, its error says whether the log may already have changed. The recovery file may then be partial or missing, so inspect both files. Apply never reuses or deletes the recovery file: move it somewhere safe before a retry.
+
+Stop the server before applying. Apply refuses while a server holds the on-disk index (`MARKDOWN_VAULT_MCP_INDEX_PATH`), but a server with an in-memory index, another editor, or a sync tool writing the same file is not detected. Apply is not a transaction and gives no guarantee across a power loss. Apply does not update the search index. The next `admin reindex`, or the reindex the server runs when it starts, finds the changed log.
 
 ## Using OKF with PARA or Zettelkasten
 
@@ -7334,7 +7360,7 @@ Summarize a folder or a set of notes with your own model, in batches that keep n
 
 # Command line
 
-`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex` and `admin embeddings import`. Their former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex`, `admin embeddings import` and `admin repair-log`, which removes the frontmatter blocks old releases stacked in a `log.md` ([Repairing legacy log frontmatter](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/#repairing-legacy-log-frontmatter)). The first three's former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
 
 ### Search a hosted vault
 
@@ -7902,7 +7928,7 @@ Discover exact paths before optional bounded typo matches.
 
 ## `markdown-vault-mcp admin`
 
-Commands that write the index or the stored vectors.
+Commands that write the index, the stored vectors or the vault.
 
 ## `markdown-vault-mcp admin index`
 
@@ -7923,6 +7949,21 @@ Incrementally reindex the vault.
 | `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                                                                                                                              |
 | `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`).                                                                                                                           |
 | `--force`      |         | False   | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
+
+## `markdown-vault-mcp admin repair-log`
+
+Preview, then remove, frontmatter blocks stacked at the start of a log.md.
+
+Versions 4.1.0 and 4.2.0-rc.0 could repeat a log's frontmatter block. By default the command prints the exact repeats it would remove. Review them, since identical blocks can be written on purpose. Applying keeps the complete original as log.md.frontmatter-repair.bak beside the log.
+
+| Argument | Description                                                        |
+| -------- | ------------------------------------------------------------------ |
+| `PATH`   | Vault-relative path of the affected log.md, such as guides/log.md. |
+
+| Option         | Env var | Default | Description                                                                                        |
+| -------------- | ------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                               |
+| `--apply`      |         |         | Remove the blocks the preview showed, for the etag it printed; refused when the log changed since. |
 
 ## `markdown-vault-mcp admin embeddings`
 
@@ -8910,6 +8951,40 @@ Parameters:
 | `convention_maintainer` | \`ConventionMaintainer   | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
 | `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                    |
 | `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.   |
+
+### `okf_preview_log_repair(path)`
+
+Preview exact candidate bytes for an operator to review.
+
+Parameters:
+
+| Name   | Type  | Description                           | Default    |
+| ------ | ----- | ------------------------------------- | ---------- |
+| `path` | `str` | Vault-relative path ending in log.md. | *required* |
+
+Returns:
+
+| Type               | Description                                                     |
+| ------------------ | --------------------------------------------------------------- |
+| `LogRepairPreview` | The exact candidate removal and the snapshot etag that applying |
+| `LogRepairPreview` | it requires, or an explanation that there is no candidate.      |
+
+### `okf_apply_log_repair(path, *, etag)`
+
+Apply an operator-reviewed legacy repair, retaining the complete original.
+
+Parameters:
+
+| Name   | Type  | Description                                                                         | Default    |
+| ------ | ----- | ----------------------------------------------------------------------------------- | ---------- |
+| `path` | `str` | Exact log.md path used for the preview.                                             | *required* |
+| `etag` | `str` | The etag of the preview the operator reviewed; a log changed since then is refused. | *required* |
+
+Returns:
+
+| Type              | Description                                                  |
+| ----------------- | ------------------------------------------------------------ |
+| `LogRepairResult` | The resulting byte etag and adjacent recovery artifact path. |
 
 ### `okf_convert_links(*, folder=None)`
 

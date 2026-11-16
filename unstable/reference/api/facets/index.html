@@ -2468,6 +2468,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_preview_log_repair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_preview_log_repair
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_apply_log_repair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_apply_log_repair
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_convert_links" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3769,6 +3791,28 @@
   
     <nav class="md-nav" aria-label="WriterFacet">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_preview_log_repair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_preview_log_repair
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_apply_log_repair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_apply_log_repair
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_convert_links" class="md-nav__link">
@@ -7358,6 +7402,177 @@ subprocesses each on a result nobody reads.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.writer.WriterFacet.okf_preview_log_repair" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">okf_preview_log_repair</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_preview_log_repair" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Preview exact candidate bytes for an operator to review.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Vault-relative path ending in log.md.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp._okf_log_repair.LogRepairPreview">LogRepairPreview</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The exact candidate removal and the snapshot <code>etag</code> that applying</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp._okf_log_repair.LogRepairPreview">LogRepairPreview</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>it requires, or an explanation that there is no candidate.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.writer.WriterFacet.okf_apply_log_repair" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">okf_apply_log_repair</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">etag</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_apply_log_repair" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Apply an operator-reviewed legacy repair, retaining the complete original.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Exact log.md path used for the preview.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>etag</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The <code>etag</code> of the preview the operator reviewed; a log
+changed since then is refused.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp._okf_log_repair.LogRepairResult">LogRepairResult</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The resulting byte etag and adjacent recovery artifact path.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 
