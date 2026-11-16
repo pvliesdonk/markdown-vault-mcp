@@ -838,8 +838,13 @@ Two methods manage the index:
   `IndexStats(walk_complete=False)`. `force=True` drops and rebuilds from
   scratch, except under a directory its walk could not read: those notes and
   tombstones keep their rows, and so their vectors, since the absence is not
-  authoritative (#1929). The scan runs first, the wipe after it spares every
-  path under a reported directory (an unreadable root spares all), and the
+  authoritative (#1929). Each parsed note is indexed as the scan yields it,
+  then only its path, title, modification time and tracker hash are retained
+  (#1938). A note whose upsert fails keeps its prior row in a non-forced
+  build and loses it in a forced one. Once the
+  scan finishes, a final sweep removes obsolete rows, sparing parsed paths
+  and every path under a reported unreadable directory (an unreadable root
+  spares all). The
   kept notes enter the tracker state with an empty hash, so the first scan
   that reads them re-parses them under the current pipeline and a note
   deleted meanwhile is deleted. The tracker writes a recorded hash back for
@@ -855,7 +860,15 @@ Two methods manage the index:
   it again. A note whose upsert fails with a per-note error enters the
   tracker with an empty hash too, so the next reindex retries its unchanged
   bytes (#1982). Successful notes keep their hashes; database-level errors
-  still fail the build. When a
+  still fail the build. Cleanup reads path, title, hash and modification time through the
+  optional `ListsNoteStates` protocol, which `FTSIndex` implements, so the
+  final sweep and exclusion purge do not reload corpus frontmatter.
+  `list_notes()` and the required keyword protocol retain their existing
+  shapes; a keyword index without the protocol is read through `list_notes()`.
+  Scan bookkeeping still grows with note paths, titles, hashes and skip
+  records, alongside the largest parsed note and SQLite's caches. This is
+  not a constant whole-process memory bound, and embedding preparation and
+  publication have separate payload costs. When a
   persistent `index_path` contains documents that now match
   `exclude_patterns`, they are purged from the FTS and vector indexes
   after the scan (a non-forced build's wipe leaves them to that purge), but
