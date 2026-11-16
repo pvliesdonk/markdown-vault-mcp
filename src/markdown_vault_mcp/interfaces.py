@@ -5,7 +5,9 @@ The managers depend on these concepts:
 - :class:`KeywordIndex` — the relational document store plus full-text search
   and the build-state bookkeeping the indexing pipeline keeps;
   :class:`RunsExactQueries` is the optional part an index implements to
-  answer exact population queries (#1842).
+  answer exact population queries (#1842), and :class:`ListsNoteStates`
+  the optional part that lists live notes' build state without their
+  frontmatter (#1938).
 - :class:`GraphStore` — the link graph.  Distinct from search because it
   answers a different question: *structure* (what links to what) rather than
   *relevance* (what matches a query).
@@ -385,6 +387,20 @@ class RunsExactQueries(Protocol):
         self, spec: NoteQuery, grouping: NoteGrouping
     ) -> NoteAggregate:
         """Group the exhaustive note population into bounded buckets."""
+        ...
+
+
+@runtime_checkable
+class ListsNoteStates(Protocol):
+    """A keyword index that lists live notes' build state alone (#1938); optional.
+
+    A build's final sweep and exclusion purge need each live note's path,
+    title, hash and modification time. An index without this reads them
+    through :meth:`KeywordIndex.list_notes`, frontmatter included.
+    """
+
+    def list_note_states(self) -> list[dict[str, Any]]:
+        """Return ``path``, ``title``, ``content_hash`` and ``modified_at`` per live note."""
         ...
 
 
