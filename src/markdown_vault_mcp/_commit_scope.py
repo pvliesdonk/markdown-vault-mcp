@@ -11,8 +11,9 @@ binds a scope for the duration of each tool call; the dispatcher snapshots that
 scope when a write is fired and groups the call's writes into **one** commit.
 A call that touched many files is named after the tool that caused them; a call
 that touched exactly one keeps that file's own path as the subject. Secondary
-OKF maintenance is marked separately so it can share that note's commit
-without replacing its path subject with a count.
+writes (OKF maintenance, a rename's backlink rewrites) are marked separately so
+they can share that note's commit without replacing its path subject with a
+count.
 
 The scope travels in a :class:`~contextvars.ContextVar` and is read in
 ``fire``, never on the dispatcher's worker thread — the same constraint that

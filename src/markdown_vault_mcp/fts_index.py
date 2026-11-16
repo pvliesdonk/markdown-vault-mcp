@@ -2113,6 +2113,27 @@ class FTSIndex:
         return dict(row)
 
     @_retry_on_locked
+    def list_note_states(self) -> list[dict[str, Any]]:
+        """Read thin live-note state without loading frontmatter or sections.
+
+        This optional capability supports index cleanup without retaining
+        the corpus's metadata payload. :meth:`list_notes` keeps its full
+        public metadata shape.
+
+        Returns:
+            Path-sorted dicts containing ``path``, ``title``, ``content_hash``
+            and ``modified_at`` for every live note.
+        """
+        rows = self._conn().execute(
+            """
+            SELECT path, title, content_hash, modified_at
+            FROM documents_live
+            ORDER BY path
+            """
+        )
+        return [dict(row) for row in rows.fetchall()]
+
+    @_retry_on_locked
     def list_notes(self, *, folder: str | None = None) -> list[dict[str, Any]]:
         """List all indexed documents, optionally filtered by folder.
 
