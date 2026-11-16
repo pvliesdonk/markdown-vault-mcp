@@ -883,6 +883,22 @@ class ProjectConfig:
             "wizard": {"group": "Git sync"},
         },
     )
+    git_submodule_remotes: tuple[str, ...] | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Comma-separated remote URLs that git submodules inside the "
+                "vault may be fetched from. Unset (the default) leaves "
+                "submodules as git leaves them. When set, every pull checks "
+                "out each clean submodule whose remote is listed at the commit "
+                "the vault records; other submodules are never fetched and are "
+                "reported in sync health. When set, GIT_TOKEN is never sent "
+                "to a submodule remote."
+            ),
+            "tags": ("git",),
+            "wizard": {"group": "Git sync"},
+        },
+    )
     file_watcher: bool = field(
         default=True,
         metadata={
@@ -1118,6 +1134,7 @@ class ProjectConfig:
             commit_email_claim=self.git_commit_email_claim,
             lfs=self.git_lfs,
             pull_interval_s=self.git_pull_interval_s,
+            submodule_remotes=self.git_submodule_remotes or (),
         )
 
     @property
@@ -1495,6 +1512,7 @@ class ProjectConfig:
             git_commit_name_claim=env(_ENV_PREFIX, "GIT_COMMIT_NAME_CLAIM") or None,
             git_commit_email_claim=env(_ENV_PREFIX, "GIT_COMMIT_EMAIL_CLAIM") or None,
             git_lfs=to_bool(env(_ENV_PREFIX, "GIT_LFS"), default=True),
+            git_submodule_remotes=opt_list(env(_ENV_PREFIX, "GIT_SUBMODULE_REMOTES")),
             file_watcher=to_bool(env(_ENV_PREFIX, "FILE_WATCHER"), default=True),
             file_watcher_debounce_s=env_float(
                 _ENV_PREFIX, "FILE_WATCHER_DEBOUNCE_S", 2.0
