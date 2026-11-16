@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import yaml
@@ -49,19 +50,89 @@ logger = logging.getLogger(__name__)
 _SHA_RE = r"[0-9a-f]{4,64}"
 
 
-def _reject_nul_date(name: str, value: str | None) -> None:
-    """Refuse a date argument holding a NUL byte before it reaches git's argv.
+# Keep a closed grammar: git's approximate parser silently ignores unknown text.
+_ISO_DATE = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    r"(?:[Tt ][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,6})?)?"
+    r"(?:Z|[+-](?:[01][0-9]|2[0-3]):?[0-5][0-9])?)?"
+)
+# Nine-digit quantities are read as absolute Unix timestamps by git before
+# its relative parser runs; zero-padded quantities can be silently ignored.
+_RELATIVE_QUANTITY = (
+    r"(?:0|[1-9][0-9]{0,7}) (?:second|minute|hour|day|week|month|year)s?"
+)
+_RELATIVE_DATE = re.compile(
+    rf"(?:now|today|yesterday|{_RELATIVE_QUANTITY}(?: {_RELATIVE_QUANTITY})* ago)",
+    re.IGNORECASE | re.ASCII,
+)
 
-    A NUL in a subprocess argument raises a plain ``ValueError``, which the
-    tool layer would report as a server fault (#1636).
+
+# Conservative upper bounds also protect git's signed-int duration arithmetic.
+_UNIT_SECONDS = {
+    "second": 1,
+    "minute": 60,
+    "hour": 3600,
+    "day": 86400,
+    "week": 604800,
+    "month": 31 * 86400,
+    "year": 366 * 86400,
+}
+
+_GIT_TIMESTAMP_MAX = 4102444799  # 2099-12-31T23:59:59Z (git's date.c).
+
+
+def _valid_relative_date(value: str) -> bool:
+    """Keep durations after the epoch and below git's signed-int arithmetic limit."""
+    if not _RELATIVE_DATE.fullmatch(value):
+        return False
+    quantities = re.findall(r"([0-9]+) ([a-z]+)", value.lower())
+    seconds = sum(int(n) * _UNIT_SECONDS[unit.rstrip("s")] for n, unit in quantities)
+    # Calendar month/year shifts and local timezone offsets need a day's margin.
+    return seconds <= min(2**31 - 1, datetime.now().timestamp() - 86400)
+
+
+def _valid_calendar_date(value: str) -> bool:
+    """Check the calendar and UTC bounds git's strict date parser supports."""
+    if not _ISO_DATE.fullmatch(value):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value)
+        # Date-only input keeps git's current local clock time on that date.
+        # Require the whole day to be representable, rather than a clock race.
+        end = (
+            parsed.replace(hour=23, minute=59, second=59)
+            if len(value) == 10
+            else parsed
+        )
+        return (
+            1970 <= parsed.year <= 2099
+            and 0 <= parsed.timestamp() <= end.timestamp() <= _GIT_TIMESTAMP_MAX
+        )
+    except (ValueError, OverflowError, OSError):
+        return False
+
+
+def _validate_date(name: str, value: str | None) -> None:
+    """Refuse unsupported date text before git can silently reinterpret it.
+
+    ISO calendar dates/times are checked for valid fields. Relative dates use
+    an explicit subset of git's grammar; accepted text is forwarded unchanged,
+    preserving git's local-time, relative-date and inclusive-boundary semantics.
 
     Raises:
-        InvalidRequestError: If *value* contains ``"\\x00"``.
+        InvalidRequestError: If *value* is not a supported date expression.
     """
-    if value is not None and "\x00" in value:
-        raise InvalidRequestError(
-            f"{name} {value!r} contains a NUL byte; pass the date without it."
-        )
+    if value is None or _valid_relative_date(value) or _valid_calendar_date(value):
+        return
+    tool = "get_diff" if name == "since_timestamp" else "get_history"
+    raise InvalidRequestError(
+        f"{name} {value!r} is not a supported date. Call {tool} with {name} "
+        "as an ISO calendar date/time within 1970-2099 "
+        "(such as '2026-04-01T00:00:00Z'), "
+        "'now', 'today', 'yesterday', or integer time quantities ending in "
+        "'ago' (such as '1 week ago'), staying after 1970 and within "
+        "git's numeric limits."
+    )
 
 
 class GitQueryManager:
@@ -130,10 +201,12 @@ class GitQueryManager:
                 configured attachment (e.g. ``"notes/alpha.md"``,
                 ``"assets/x.png"``) scopes to that file. ``None`` returns
                 vault-wide history.
-            since: ISO 8601 datetime string or git date expression (e.g.
-                ``"1 week ago"``).  Passed as ``--since`` to ``git log``.
+            since: ISO calendar date/time or relative date (e.g.
+                ``"1 week ago"``): integer second/minute/hour/day/week/month/year
+                quantities ending in ``ago``, or ``now``, ``today``, ``yesterday``.
+                Passed as ``--since`` to ``git log``.
                 ``None`` disables the filter.
-            until: ISO 8601 datetime string or git date expression, passed as
+            until: ISO calendar date/time or relative date, passed as
                 ``--until`` to ``git log``.  ``None`` disables the filter.
                 Both ``since`` and ``until`` boundaries are **inclusive**: a
                 commit whose committer date equals either endpoint is included
@@ -155,12 +228,12 @@ class GitQueryManager:
         Raises:
             InvalidRequestError: If *path* is provided but fails path
                 validation (a file with an unknown extension, path traversal,
-                a NUL byte), or *since* / *until* holds a NUL byte.
+                a NUL byte), or *since* / *until* is not a supported date.
         """
         if self._git_strategy is None:
             return []
-        _reject_nul_date("since", since)
-        _reject_nul_date("until", until)
+        _validate_date("since", since)
+        _validate_date("until", until)
         abs_path: Path | None = None
         is_dir = False
         if path is not None:
@@ -198,7 +271,8 @@ class GitQueryManager:
             since_sha: A commit SHA (full or abbreviated, at least 4 hex
                 digits) to diff from.  Mutually exclusive with
                 *since_timestamp*.
-            since_timestamp: ISO 8601 datetime string, resolved via
+            since_timestamp: A supported date in the same forms as ``since``
+                in :meth:`get_history`, resolved via
                 ``git rev-list --before=<ts> -1 HEAD`` to the most recent
                 commit at or before that instant.  Boundary is
                 **inclusive**: a commit whose committer date equals
@@ -235,7 +309,7 @@ class GitQueryManager:
                 *since_timestamp* is supplied, *since_sha* is not 4-64
                 lowercase hex digits or names no commit, or *path* has an
                 extension that is neither ``.md`` nor a configured attachment
-                type, or *since_timestamp* holds a NUL byte.
+                type, or *since_timestamp* is not a supported date.
             ValueError: If a git subprocess fails for any other reason.
         """
         if self._git_strategy is None:
@@ -245,7 +319,7 @@ class GitQueryManager:
             raise InvalidRequestError(
                 "Exactly one of 'since_sha' or 'since_timestamp' must be provided"
             )
-        _reject_nul_date("since_timestamp", since_timestamp)
+        _validate_date("since_timestamp", since_timestamp)
 
         abs_path = validate_history_path(
             path, self._source_dir, self._attachment_extensions
