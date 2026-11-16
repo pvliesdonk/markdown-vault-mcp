@@ -181,7 +181,8 @@ class WriterFacet:
             :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision`.
 
         Raises:
-            SubmodulePathError: If *path* lies inside a git submodule (#1564).
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
@@ -263,7 +264,8 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.EditResult`.
 
         Raises:
-            SubmodulePathError: If *path* lies inside a git submodule (#1564).
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
             EditConflictError: If *old_text* is not found or appears more than
                 once.
             ReadOnlyError: If the vault is read-only.
@@ -317,7 +319,8 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
-            SubmodulePathError: If *path* lies inside a git submodule (#1564).
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the file does not exist and
                 *create_if_missing* is ``False``.
@@ -355,7 +358,8 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
 
         Raises:
-            SubmodulePathError: If *path* lies inside a git submodule (#1564).
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
@@ -404,7 +408,7 @@ class WriterFacet:
 
         Raises:
             SubmodulePathError: If either path lies inside a git submodule
-                (#1564).
+                or nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match, and *tolerate_link_rewrites* does not accept it.
@@ -459,7 +463,8 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.MoveFolderResult`.
 
         Raises:
-            SubmodulePathError: If *old_dir* lies in or holds a git submodule,
+            SubmodulePathError: If *old_dir* lies in or holds a git submodule
+                or nested repository,
                 or a moved file would land inside one (#1564).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If *old_dir* is missing, not a directory,
@@ -504,7 +509,8 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
-            SubmodulePathError: If *path* lies inside a git submodule (#1564).
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied

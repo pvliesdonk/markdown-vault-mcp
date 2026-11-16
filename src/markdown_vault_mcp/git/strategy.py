@@ -22,11 +22,11 @@ import re
 import subprocess
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
-    from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
     from markdown_vault_mcp.git.types import RevisionQuery
@@ -340,11 +340,15 @@ class GitWriteStrategy:
     #: #1264 reports, not a preference to configure. See
     #: :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`.
     accepts_batch: bool = True
+    #: Preserve the note subject when secondary OKF writes share its batch.
+    accepts_primary_paths: bool = True
 
     def on_write_batch(
         self,
         items: Sequence[WriteBatchItem],
         tool_name: str,
+        *,
+        primary_paths: frozenset[Path] | None = None,
     ) -> None:
         """Commit every write from one tool call as a single commit.
 
@@ -357,6 +361,8 @@ class GitWriteStrategy:
         Args:
             items: The tool call's writes, in the order they were fired.
             tool_name: The MCP tool that produced them.
+            primary_paths: Paths written outside secondary maintenance, or
+                ``None`` to retain the ordinary batch subject.
         """
         if self._closed or not items:
             return
@@ -392,6 +398,7 @@ class GitWriteStrategy:
                         if effective_email != self._commit_email
                         else None,
                     ),
+                    primary_paths,
                 )
             if self._enable_push:
                 self._push_scheduler.schedule_push()
@@ -2026,12 +2033,14 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
     """
     if not paths:
         return set()
-    result = subprocess.run(
-        ["git", "-C", root, "check-ignore", "--no-index", "-z", "--stdin"],
+    result = run_git_capturing(
+        Path(root),
+        "check-ignore",
+        "--no-index",
+        "-z",
+        "--stdin",
         input="".join(f"{path}\0" for path in paths),
-        capture_output=True,
-        text=True,
-        check=False,
+        preserve_newlines=True,
     )
     if result.returncode not in (0, 1):
         # Warned rather than traced: when the paths turn out not to be excluded
@@ -2265,12 +2274,19 @@ def _stage_and_commit(
 
     _commit_staged(
         root,
-        f"{operation}: {rel_path}",
+        _write_subject(git_root, path, operation),
         _CommitIdentity(commit_name, commit_email, author_name, author_email),
         scope,
     )
 
     logger.info("git_committed path=%s operation=%s", rel_path, operation)
+
+
+def _write_subject(git_root: Path, path: Path, operation: WriteOperation) -> str:
+    """Format a note's operation and repository-relative path."""
+    with contextlib.suppress(ValueError):
+        path = path.relative_to(git_root)
+    return f"{operation}: {path}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -2299,6 +2315,7 @@ def _stage_and_commit_batch(
     items: Sequence[WriteBatchItem],
     tool_name: str,
     identity: _CommitIdentity,
+    primary_paths: frozenset[Path] | None = None,
 ) -> None:
     """Stage every write from one tool call and commit them together.
 
@@ -2317,8 +2334,10 @@ def _stage_and_commit_batch(
         git_root: Git repository root.
         items: The tool call's writes, in the order they were fired.
         tool_name: MCP tool that produced them, used as the commit subject
-            when the batch holds more than one write.
+            when the batch holds more than one write without a single primary.
         identity: Committer and author identity for the commit.
+        primary_paths: Optional primary-write provenance. A sole primary path
+            with one staged item names the subject; all items enter the commit.
     """
     if len(items) == 1:
         # A single-file call is the overwhelmingly common one, and #1264 is
@@ -2340,6 +2359,7 @@ def _stage_and_commit_batch(
 
     root = str(git_root)
     staged = 0
+    primary: list[tuple[Path, WriteOperation]] = []
     scope: list[str] = []
     whole_repo = False
     for path, operation, old_path, _principal in items:
@@ -2355,6 +2375,8 @@ def _stage_and_commit_batch(
         if item_scope is None:
             continue
         staged += 1
+        if primary_paths is not None and path in primary_paths:
+            primary.append((path, operation))
         # An empty item scope is the unscoped legacy rename, which stages
         # repository-wide; the batch's check can be no narrower than that.
         whole_repo = whole_repo or not item_scope
@@ -2370,7 +2392,11 @@ def _stage_and_commit_batch(
         return
 
     noun = "file" if staged == 1 else "files"
-    _commit_staged(root, f"{tool_name}: {staged} {noun}", identity, commit_scope)
+    subject = f"{tool_name}: {staged} {noun}"
+    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
+        path, operation = primary[0]
+        subject = _write_subject(git_root, path, operation)
+    _commit_staged(root, subject, identity, commit_scope)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
 
 

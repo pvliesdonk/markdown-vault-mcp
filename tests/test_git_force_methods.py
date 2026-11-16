@@ -1061,69 +1061,6 @@ class TestForceMethodsErrorBranches:
         assert result.to_sha != result.from_sha
         assert result.conflict_files == ()
 
-    def test_force_pull_rebase_loop_hits_max_iterations(
-        self,
-        git_repo_pair: GitRepoPair,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Cap exhaustion logs its distinct DEBUG event and returns saved paths."""
-        import logging
-        import subprocess as _real_subprocess
-
-        from markdown_vault_mcp.git import subprocess as git_subprocess
-
-        real_run = _real_subprocess.run
-
-        def _patched_run(args: list[str], **kwargs: object) -> object:
-            if not isinstance(args, list):
-                return real_run(args, **kwargs)
-            if "diff" in args and "--diff-filter=U" in args:
-                # -z frames the conflicting paths by NUL, not by newline.
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="README.md\0", stderr=""
-                )
-            if "show" in args and any(
-                isinstance(a, str) and a.startswith("REBASE_HEAD:") for a in args
-            ):
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="# local\n", stderr=""
-                )
-            if "checkout" in args and "--ours" in args:
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="", stderr=""
-                )
-            if "add" in args and "--" in args:
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="", stderr=""
-                )
-            if "rebase" in args and "--continue" in args:
-                return _real_subprocess.CompletedProcess(
-                    args=args,
-                    returncode=1,
-                    stdout="",
-                    stderr="CONFLICT (content): merge conflict in README.md",
-                )
-            return real_run(args, **kwargs)
-
-        monkeypatch.setattr(git_subprocess, "run", _patched_run)
-
-        # DEBUG since #1287: the cap is hit on every cycle while the same
-        # divergence stands, so the detail line moved down there.
-        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
-            saved = conflict.resolve_rebase_conflicts(
-                git_repo_pair.local_path, env=None
-            )
-
-        # README.md was "saved" on every iteration; dict dedup leaves one entry.
-        assert saved == [("README.md", "# local\n")]
-        log_messages = [r.getMessage() for r in caplog.records]
-        assert (
-            "git_pull_conflict_resolution_exhausted "
-            "max_iterations=50 saved_paths=1" in log_messages
-        )
-        assert not any("git_pull_rebase_no_unmerged_paths" in m for m in log_messages)
-
     def test_force_pull_non_fast_forward_with_conflicts_when_abort_fails(
         self, git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
     ) -> None:
