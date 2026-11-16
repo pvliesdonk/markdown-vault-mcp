@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -1347,8 +1348,9 @@ class DocumentManager:
                     hint = _ATTACHMENT_UPDATE_LINKS_HINT
 
             self._notifier.fire_rename(new_abs, callback_content, old_abs)
-            for src_abs, src_content in backlink_callbacks:
-                self._notifier.fire(src_abs, src_content, "edit")
+            with auxiliary_commit_writes():
+                for src_abs, src_content in backlink_callbacks:
+                    self._notifier.fire(src_abs, src_content, "edit")
 
         return RenameResult(
             old_path=old_path,
