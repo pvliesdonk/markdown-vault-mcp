@@ -1,5 +1,5 @@
 ---
-last_edited: 2026-11-15
+last_edited: 2026-11-16
 description: "Choose a git mode for the vault, configure commits, pushes and pulls, and read history back."
 kind: how-to
 ---
@@ -414,12 +414,10 @@ it for a shared vault. The server does not add this attribute for you.
 
 ### Where merge drivers apply
 
-In managed mode, a diverged pull first runs native `git rebase`. With Git's
-merge backend, its normal merge attributes apply at that step. A conflict
-that Git resolves there never reaches the server's sibling resolver. The
-server does not select a rebase backend, so check any
-[`rebase.backend`](https://git-scm.com/docs/git-rebase#Documentation/git-rebase.txt-rebasebackend)
-override rather than assuming every installation behaves identically.
+In managed mode, a diverged pull first runs native `git rebase`, and Git
+applies the repository's merge attributes during that rebase as it does in
+any other merge. A conflict that Git resolves there never reaches the
+server's sibling resolver.
 
 If Git still reports paths with unresolved conflicts, the server's resolver
 does not call merge drivers again: it preserves the local versions as siblings
