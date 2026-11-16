@@ -202,8 +202,8 @@ Stop the server before applying. Apply refuses while a server holds the
 on-disk index (`MARKDOWN_VAULT_MCP_INDEX_PATH`), but a server with an
 in-memory index, another editor, or a sync tool writing the same file is not
 detected. Apply is not a transaction and gives no guarantee across a power
-loss. The server reindexes the repaired log by its changed content when it
-next starts.
+loss. Apply does not update the search index. The next `admin reindex`, or
+the reindex the server runs when it starts, finds the changed log.
 
 ## Using OKF with PARA or Zettelkasten
 

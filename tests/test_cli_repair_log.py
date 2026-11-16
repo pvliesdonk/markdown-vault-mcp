@@ -183,3 +183,17 @@ def test_preview_prints_a_command_that_runs_as_shown(vault: Path) -> None:
         f"markdown-vault-mcp admin repair-log 'my notes/log.md' --source-dir "
         f"{vault} --apply {compute_etag(STACKED)}"
     )
+
+
+@pytest.mark.usefixtures("vault")
+def test_apply_beside_a_stopped_server_index_keeps_it_consistent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
+    assert runner.invoke(app, ["admin", "index"]).exit_code == 0
+    result = _repair("--apply", compute_etag(STACKED))
+    assert result.exit_code == 0, result.output
+    reindexed = runner.invoke(app, ["admin", "reindex"])
+    assert reindexed.exit_code == 0, reindexed.output
+    # Apply leaves the index to the next reindex, which sees the changed log.
+    assert "0 added, 1 modified, 0 deleted" in reindexed.stdout
