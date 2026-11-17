@@ -48,6 +48,6 @@ Version 2025.9.1 provides CPython 3.14 wheels. [source: regex-release]
 Both versions compile a replacement template to a list of literal strings and
 numeric capture references. The helper is private and moved modules between
 versions; the replacement adapter locates it through the public compiler's
-module and refuses unsupported shapes. [source: regex-template-2025]
+module; tests exercise both supported versions. [source: regex-template-2025]
 [source: regex-template-2026]
 [pins: tests/test_bulk_replace.py::test_replacement_references_only_small_capture_of_large_match, tests/test_bulk_replace.py::test_invalid_regex_and_text_are_request_errors]

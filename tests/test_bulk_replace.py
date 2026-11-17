@@ -470,6 +470,26 @@ def test_output_cap_counts_unchanged_segments(
         BulkReplacer(manager).replace(ReplaceRequest("a", "b", folders=("",)))
 
 
+def test_output_cap_counts_utf8_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers import bulk_replace
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("a", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    monkeypatch.setattr(bulk_replace, "MAX_OUTPUT_BYTES", 3)
+    with pytest.raises(InvalidRequestError, match="output too large"):
+        BulkReplacer(manager).replace(ReplaceRequest("a", "éé", paths=("a.md",)))
+
+
 def test_additional_limits_and_invalid_replacement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -696,45 +716,6 @@ def test_concurrent_write_conflict_does_not_claim_or_maintain_external_edit(
         )
     assert maintained == []
     assert note.read_text() == "external"
-
-
-def test_unsupported_replacement_compiler_is_actionable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from types import SimpleNamespace
-
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.managers import bulk_replace
-    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
-
-    (tmp_path / "a.md").write_text("old", encoding="utf-8")
-    manager = DocumentManager(
-        FTSIndex(db_path=":memory:"),
-        tmp_path,
-        write_lock=threading.RLock(),
-        chunk_strategy=HeadingChunker(),
-        read_only=False,
-    )
-    request = ReplaceRequest("old", "new", paths=("a.md",), regex=True)
-    monkeypatch.setattr(
-        bulk_replace.importlib,
-        "import_module",
-        lambda _: SimpleNamespace(_compile_replacement_helper=lambda *_: ()),
-    )
-    with pytest.raises(InvalidRequestError, match="unsupported replacement"):
-        BulkReplacer(manager).replace(request)
-    monkeypatch.setattr(
-        bulk_replace.importlib, "import_module", lambda _: SimpleNamespace()
-    )
-    with pytest.raises(InvalidRequestError, match="cannot compile replacements"):
-        BulkReplacer(manager).replace(request)
-
-    def missing_module(_: str) -> None:
-        raise ImportError("missing")
-
-    monkeypatch.setattr(bulk_replace.importlib, "import_module", missing_module)
-    with pytest.raises(InvalidRequestError, match="cannot compile replacements"):
-        BulkReplacer(manager).replace(request)
 
 
 def test_literal_crlf_matches_raw_note(tmp_path: Path) -> None:

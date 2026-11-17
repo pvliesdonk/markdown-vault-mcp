@@ -21,6 +21,7 @@ from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
 )
 from markdown_vault_mcp.hashing import compute_etag
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -188,7 +189,7 @@ class BulkReplacer:
             request.paths, request.folders, MAX_NOTES
         )
         if reject_reserved and any(
-            PurePosixPath(path).name in {"index.md", "log.md"}
+            PurePosixPath(path).name in OKF_RESERVED_FILENAMES
             for path in (*request.paths, *(path for path, _ in candidates))
         ):
             raise InvalidRequestError(
@@ -216,25 +217,8 @@ class BulkReplacer:
         pattern: regex_engine.Pattern, replacement: str
     ) -> list[str | int]:
         """Use regex's compiler so the bound follows its exact escape grammar."""
-        try:
-            module = importlib.import_module(regex_engine.compile.__module__)
-        except ImportError as exc:
-            raise InvalidRequestError(
-                "The regex engine cannot compile replacements; ask the operator to update it."
-            ) from exc
-        compiler = getattr(module, "_compile_replacement_helper", None)
-        if not callable(compiler):
-            raise InvalidRequestError(
-                "The regex engine cannot compile replacements; ask the operator to update it."
-            )
-        parts = compiler(pattern, replacement)
-        if not isinstance(parts, list) or not all(
-            isinstance(part, (str, int)) for part in parts
-        ):
-            raise InvalidRequestError(
-                "The regex engine returned an unsupported replacement; ask the operator to update it."
-            )
-        return parts
+        module = importlib.import_module(regex_engine.compile.__module__)
+        return module._compile_replacement_helper(pattern, replacement)  # type: ignore[no-any-return]
 
     def _request_template(
         self, request: ReplaceRequest, pattern: regex_engine.Pattern
@@ -245,8 +229,6 @@ class BulkReplacer:
                 if request.regex
                 else [request.replacement]
             )
-        except InvalidRequestError:
-            raise
         except (regex_engine.error, IndexError, ValueError, OverflowError) as exc:
             raise InvalidRequestError(
                 f"Invalid replacement: {exc}; correct the replacement."
@@ -269,16 +251,10 @@ class BulkReplacer:
         return diff, total_diff
 
     @staticmethod
-    def _timeout(deadline: float) -> float:
-        timeout = min(REGEX_NOTE_SECONDS, deadline - time.monotonic())
-        if timeout <= 0:
-            raise InvalidRequestError("Regex timed out; simplify the pattern.")
-        return timeout
-
-    @staticmethod
     def _bound_expansion(
         match: regex_engine.Match, text: str, template: list[str | int], remaining: int
-    ) -> None:
+    ) -> int:
+        budget = remaining
         sizes: dict[int, int] = {}
         for part in template:
             if isinstance(part, str):
@@ -292,6 +268,7 @@ class BulkReplacer:
                 raise InvalidRequestError(
                     "Replacement output too large; narrow the request."
                 )
+        return budget - remaining
 
     def _prepare(
         self,
@@ -305,54 +282,38 @@ class BulkReplacer:
         deadline = time.monotonic() + REGEX_TOTAL_SECONDS
         notes: list[NoteReplacement] = []
         changes: list[tuple[str, str, str]] = []
-        total_matches = total_output = total_diff = 0
+        total_matches = total_output = total_diff = added = 0
         for path, text, etag in snapshots:
-            last = 0
-            generated = 0
 
             def replacement(
                 match: regex_engine.Match,
                 text: str = text,
-                total_output: int = total_output,
             ) -> str:
-                nonlocal last, generated, total_matches
+                nonlocal added, total_matches
                 total_matches += 1
                 if total_matches > MAX_MATCHES:
                     raise InvalidRequestError(
                         "Too many matches; narrow paths or folders."
                     )
-                generated += len(text[last : match.start()].encode())
-                self._bound_expansion(
-                    match, text, template, MAX_OUTPUT_BYTES - total_output - generated
+                added += self._bound_expansion(
+                    match, text, template, MAX_OUTPUT_BYTES - added
                 )
-                value = (
+                return (
                     match.expand(request.replacement)
                     if request.regex
                     else request.replacement
                 )
-                generated += len(value.encode())
-                last = match.end()
-                if total_output + generated > MAX_OUTPUT_BYTES:
-                    raise InvalidRequestError(
-                        "Replacement output too large; narrow the request."
-                    )
-                return value
 
-            timeout = self._timeout(deadline)
+            timeout = min(REGEX_NOTE_SECONDS, deadline - time.monotonic())
+            if timeout <= 0:
+                raise InvalidRequestError("Regex timed out; simplify the pattern.")
             try:
                 new, count = pattern.subn(replacement, text, timeout=timeout)
-            except InvalidRequestError:
-                raise
             except TimeoutError as exc:
                 raise InvalidRequestError(
                     "Regex timed out; simplify the pattern."
                 ) from exc
-            except (regex_engine.error, IndexError, ValueError, OverflowError) as exc:
-                raise InvalidRequestError(
-                    f"Invalid replacement: {exc}; correct the replacement."
-                ) from exc
-            generated += len(text[last:].encode())
-            total_output += generated
+            total_output += len(new.encode())
             if total_output > MAX_OUTPUT_BYTES:
                 raise InvalidRequestError(
                     "Replacement output too large; narrow the request."

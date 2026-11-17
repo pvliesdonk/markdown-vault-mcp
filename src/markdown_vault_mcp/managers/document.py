@@ -53,6 +53,7 @@ from markdown_vault_mcp.managers._write_notifier import (
     WriteNotifier,
 )
 from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
@@ -416,7 +417,7 @@ class DocumentManager:
             return False
         parts = Path(path).parts
         return explicit or (
-            Path(path).name not in {"index.md", "log.md"}
+            Path(path).name not in OKF_RESERVED_FILENAMES
             and not any(part.startswith(".") for part in parts[:-1])
         )
 
