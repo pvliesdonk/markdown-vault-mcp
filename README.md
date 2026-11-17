@@ -85,7 +85,6 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
-
 <!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration

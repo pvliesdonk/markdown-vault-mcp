@@ -309,8 +309,14 @@ under `/data`, including the new volume, before dropping privileges to
 `PUID`/`PGID`. With a Compose `user:` override, provision the new volume as
 writable by that user yourself; the entrypoint cannot fix its ownership.
 
-Compose loads `compose.override.yml` automatically. Start or recreate the
-service, including after later changes:
+With default file selection, Compose loads `compose.override.yml`
+automatically. If you select files with `COMPOSE_FILE` or `-f`, include the
+override in that selection on every command. Before starting, this recipe
+chooses a cold rebuild on an empty `search-data` volume: local vectors are
+generated again, and a metered embedding provider can charge for them again.
+The cold reset below repeats that work and cost.
+
+Start or recreate the service, including after later changes:
 
 ```bash
 docker compose up -d
@@ -320,15 +326,17 @@ The server rebuilds search data from the vault; model downloads and embedding
 generation can take time. The old search files remain unused in `state-data`;
 keep them until you have verified the new index.
 
-Use the new `/data/search`
-paths in path-specific backup and export procedures, including
-[embedding backups](../use/embedding-state.md). Once the split is verified,
-resetting auth and session data on `state-data` leaves the active search data
-on `search-data` untouched.
+Use the configured full paths above for backups. With the default SQLite
+embedding store, the file is `/data/search/embeddings/embeddings.sqlite3`.
+Once the split is verified, resetting auth and session data on `state-data`
+leaves the active search data on `search-data` untouched.
 
-A normal reindex is the usual way to rebuild search; the following cold reset is for testing a fresh
-search volume. It deletes everything on `/data/search`, so use it only with
-the overlay above and no other data on that volume:
+A normal reindex is the usual way to rebuild search; the following cold reset
+is for testing a fresh search volume. Before resetting, use
+`docker compose config` to confirm the `/data/search` mount and all four paths
+above. The reset
+deletes everything on `/data/search`, so use it only with the overlay above
+and no other data on that volume:
 
 ```bash
 docker compose stop
