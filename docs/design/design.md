@@ -2066,6 +2066,9 @@ the spec itself says, dated and sourced, in
   convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
   non-conformant notes as-is, reproducible bytes, never mutating the vault;
   gated out when ``OKF_MODE=off``). Residual gaps stay with ``okf_validate``.
+- **Reserved-file classification**: `okf.is_okf_reserved_file` owns the
+  lexical, exact-case basename check for already scoped vault-relative POSIX
+  paths. Detection, admission, authorship and maintenance remain separate.
 - **Field vocabulary as data**: the OKF key names, known spec versions,
   and tier/lifecycle constants live as module constants in `okf.py`
   because the spec is pre-1.0 with one breaking rename behind it — a
