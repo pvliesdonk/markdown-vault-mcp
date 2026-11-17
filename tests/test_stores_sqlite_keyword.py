@@ -75,7 +75,7 @@ class TestOpenOutcomes:
     def test_an_index_in_a_new_folder_creates_the_folder(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lock: str
     ) -> None:
-        # Where no lock can be taken (no fcntl: Windows), nothing else
+        # Where no lock can be taken, nothing else
         # creates the folder before SQLite opens the file (#1730).
         if lock == "no_flock":
             monkeypatch.setattr(_writer_lock, "fcntl", None)

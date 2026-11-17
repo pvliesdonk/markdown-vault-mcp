@@ -28,7 +28,7 @@ sources:
 This covers the Windows API used by `stores/_writer_lock.py`; POSIX locks and network filesystem guarantees are outside its scope.
 
 - `locking` begins at the current file position and locks `nbytes`, possibly beyond EOF; an unlock must name the previously locked range. [source: python] [source: microsoft] [pins: tests/test_stores_windows_writer_lock.py::test_windows_refcounts_and_unlocks_same_range]
-- `LK_NBLCK` fails immediately if the bytes cannot be locked. Microsoft identifies `EACCES` as a locking violation, while `EBADF` indicates a bad descriptor. [source: python] [source: microsoft] [pins: tests/test_stores_windows_writer_lock.py::test_windows_contention_refuses_callers, tests/test_stores_windows_writer_lock.py::test_windows_other_errors_skip]
-- Locking prevents other processes accessing the locked bytes; Microsoft's example opens a file read-only and locks its bytes. [source: microsoft] [pins: tests/test_stores_windows_writer_lock.py::test_windows_read_only_file_can_lock]
+- `LK_NBLCK` fails immediately if the bytes cannot be locked. Microsoft identifies `EACCES` as a locking violation, while `EBADF` indicates a bad descriptor. [source: python] [source: microsoft] [pins: tests/test_stores_windows_writer_lock.py::test_windows_lock_error_mapping]
+- Locking prevents other processes accessing the locked bytes; Microsoft's example opens a file read-only and locks its bytes. [source: microsoft]
 
-The project reserves a byte beyond the PID field, leaving that field readable for diagnostics; see [the writer-lock design](../design.md). Native Windows behavior still needs an integration run; the pins use a fake API on POSIX.
+The project reserves a byte beyond the PID field, leaving that field readable for diagnostics; see [the writer-lock design](../design.md). Native Windows behavior still needs an integration run; the fake API on POSIX cannot verify that read-only descriptors can be locked.

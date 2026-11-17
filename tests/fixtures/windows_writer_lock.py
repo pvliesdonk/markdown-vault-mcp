@@ -6,8 +6,9 @@ import os
 class FakeMsvcrt:
     """Record byte-range operations and inject lock errors."""
 
-    LK_NBLCK = 1
-    LK_UNLCK = 2
+    LK_UNLCK = 0
+    LK_LOCK = 1
+    LK_NBLCK = 2
 
     def __init__(self) -> None:
         self.calls: list[tuple[int, int, int]] = []

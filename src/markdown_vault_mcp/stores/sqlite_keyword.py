@@ -130,7 +130,7 @@ class SqliteKeywordBackend:
         """Create the folder of an owned index file, as the vector stores do.
 
         SQLite creates the file but not its folder, and the writer lock,
-        whose file would create it, is not taken where ``flock`` is missing
+        whose file would create it, is not always available
         (#1730).
 
         Raises:
