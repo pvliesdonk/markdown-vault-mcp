@@ -316,13 +316,12 @@ class TestASourceTheRewriteCannotChange:
             chunk_strategy=HeadingChunker(),
             read_only=False,
         )
-        with caplog.at_level(logging.WARNING):
-            content = manager._rewrite_one_source(
+        with caplog.at_level(logging.WARNING), pytest.raises(ValueError):
+            manager._rewrite_one_source(
                 tmp_path / SRC,
                 [("markdown", "absent.md", None, "absent.md", "moved.md")],
                 SRC,
             )
-        assert content is None
         assert "link_rewrite_matched_nothing" in caplog.text
         assert (tmp_path / SRC).read_text(encoding="utf-8") == "no links here\n"
 

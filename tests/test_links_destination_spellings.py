@@ -340,6 +340,9 @@ class TestRenameKeepsTheSpelling:
         )
 
     def test_nested_escaped_vault_path_becomes_source_relative(self) -> None:
+        from markdown_vault_mcp.utils.links import parse_markdown_destination
+
+        assert parse_markdown_destination(r"a\(b\).md").path == "a(b).md"
         # Decoding identifies a vault path; a nested source uses a
         # relative path to avoid a source-local shadow.
         assert (
@@ -350,6 +353,10 @@ class TestRenameKeepsTheSpelling:
         )
 
     def test_numeric_reference_hash_is_not_a_fragment_on_rename_either(self) -> None:
+        from markdown_vault_mcp.utils.links import parse_markdown_destination
+
+        parsed = parse_markdown_destination("x&#46;md")
+        assert (parsed.path, parsed.fragment) == ("x.md", None)
         # ``x&#46;md`` is root-relative ``x.md``; the ``#`` inside the
         # reference must not split it; the rewritten vault path gains a
         # relative path so it cannot hit a source-local shadow.

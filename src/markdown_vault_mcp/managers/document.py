@@ -58,6 +58,7 @@ from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
     parse_note,
+    strip_frontmatter_block,
 )
 from markdown_vault_mcp.source_probe import require_vault_root
 from markdown_vault_mcp.types import (
@@ -87,10 +88,10 @@ from markdown_vault_mcp.utils.fs import (
     walk_files_strict,
 )
 from markdown_vault_mcp.utils.links import (
-    apply_link_replacements as _apply_link_replacements,
+    compute_new_raw_target as _compute_new_raw_target,
 )
 from markdown_vault_mcp.utils.links import (
-    compute_new_raw_target as _compute_new_raw_target,
+    rewrite_link_destinations as _rewrite_link_destinations,
 )
 from markdown_vault_mcp.utils.text import (
     build_position_map as _build_position_map,
@@ -1561,40 +1562,37 @@ class DocumentManager:
                 location — used for correct relative-path computation.
 
         Returns:
-            The rewritten file content, or ``None`` when every replacement
-            matched nothing and the file is unchanged. The caller must not
-            count, write back or announce such a source: it still names the
-            old target, and saying otherwise is what made #1521 silent.
+            The rewritten file content, or ``None`` when the file is already
+            as the rewrite would leave it. The caller must not count, write
+            back or announce such a source.
+
+        Raises:
+            ValueError: A selected destination was not found in the file, so
+                the source is left unwritten and still names the old target;
+                saying otherwise is what made #1521 silent.
         """
         # One read, hashed as is: a second read could see an external edit
         # the ledger would then vouch for (#1492). Newlines are normalised
         # as Path.read_text would, which the rewrite has always relied on.
         raw = source_abs.read_bytes()
         original = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
-        replacements: dict[str, dict[str, str]] = defaultdict(dict)
-        for link_type, raw_target, fragment, target_old, target_new in rewrites:
-            new_raw = _compute_new_raw_target(
-                link_type,
-                raw_target,
-                fragment,
-                target_new,
-                source_path=source_path,
-                old_path=target_old,
-            )
-            replacements[link_type].setdefault(raw_target, new_raw)
-        content = original
-        for link_type, mapping in replacements.items():
-            content = _apply_link_replacements(content, link_type, mapping)
-        if content == original:
-            # The index held a row the rewrite could not find. That is a
-            # disagreement between the two, not a no-op, so it is logged
-            # rather than passed over: #1521 was exactly this, invisible
-            # because the source was still counted as updated.
+        content, unmatched = self._apply_rewrites(original, rewrites, source_path)
+        if unmatched:
+            # All or nothing per source, decided before anything is written:
+            # the index held a row the rewrite could not find. That is a
+            # disagreement between the two, logged because #1521 was exactly
+            # this, invisible; a partly rewritten note would still name the
+            # old target through the spellings it missed.
             logger.warning(
                 "link_rewrite_matched_nothing source=%s links=%d",
                 source_path,
                 len(rewrites),
             )
+            raise ValueError(
+                f"link rewrite of {source_path!r} found no destination for "
+                f"{sorted(unmatched)!r}"
+            )
+        if content == original:
             return None
         # The bytes a text-mode write would produce, encoded here so the
         # ledger records the hash of exactly what landed.
@@ -1604,6 +1602,46 @@ class DocumentManager:
             source_path, compute_etag(raw), compute_etag(encoded)
         )
         return content
+
+    def _apply_rewrites(
+        self,
+        original: str,
+        rewrites: list[tuple[str, str, str | None, str, str]],
+        source_path: str,
+    ) -> tuple[str, set[str]]:
+        """Apply *rewrites* to a note's body, keeping its frontmatter verbatim.
+
+        Args:
+            original: Whole note text with line endings normalised.
+            rewrites: ``(link_type, raw_target, fragment, target_old,
+                target_new)`` per link, as in :meth:`_rewrite_one_source`.
+            source_path: Vault-relative path of the source at its current
+                location.
+
+        Returns:
+            ``(content, unmatched)``: the rewritten text and the written
+            destinations no scan of the body found.
+        """
+        body = strip_frontmatter_block(original)
+        head = original[: len(original) - len(body)]
+        replacements: dict[str, dict[str, str]] = defaultdict(dict)
+        for link_type, raw_target, fragment, target_old, target_new in rewrites:
+            replacements[link_type].setdefault(
+                raw_target,
+                _compute_new_raw_target(
+                    link_type,
+                    raw_target,
+                    fragment,
+                    target_new,
+                    source_path=source_path,
+                    old_path=target_old,
+                ),
+            )
+        unmatched: set[str] = set()
+        for link_type, mapping in replacements.items():
+            body, matched = _rewrite_link_destinations(body, link_type, mapping)
+            unmatched.update(set(mapping) - matched)
+        return head + body, unmatched
 
     def _rewrite_link_sources(
         self,

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, NamedTuple, TypeVar
 from urllib.parse import quote, unquote
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
 # Fenced code block: a ``` or ~~~ run opening a line (after indentation or
 # quote markers), with an optional info string, closed by the same run
@@ -1019,8 +1019,218 @@ def iter_inline_links(region: str) -> Iterator[InlineLink]:
         )
 
 
-def _replace_inline_destinations(content: str, replacements: Mapping[str, str]) -> str:
-    r"""Rewrite matching inline destinations in *content*.
+#: A reference definition's line start: optional whitespace, then the ``[``
+#: that opens the label. What follows is read by :func:`find_bracket_span`
+#: and :data:`_RE_REF_DEF_TAIL` rather than by one pattern, so an escaped
+#: ``]`` inside the label does not close it (#1519). ``\s*`` rather than
+#: ``[ \t]*`` because the class it replaces used ``\s*``: a line indented
+#: with an exotic Unicode space is still a definition, as it was before.
+_RE_REF_DEF_OPEN = re.compile(r"^\s*\[", re.MULTILINE)
+#: What follows a definition's ``]:`` — the target, to the end of its line.
+#: The destination may sit on the next line (§4.7), so the gap admits one
+#: line ending; ``(.+)`` then requires a non-empty destination.
+#:
+#: **One** line ending, not any run of whitespace. A blank line ends the
+#: attempt (§4.7: the destination may be "preceded by ... up to one line
+#: ending"), and a gap of ``\s*`` crossed it — so ``[:]:`` followed by a
+#: blank line and an unrelated ``[ar]: x.md`` defined the label ``:`` with
+#: that whole line as its target. Nothing referenced such a definition
+#: until the shortcut form arrived (#1531), which is why a wrong entry in
+#: the table produced no wrong row and went unseen.
+_RE_REF_DEF_TAIL = re.compile(r"[ \t]*\n?[ \t]*(.+)$", re.MULTILINE)
+#: A CommonMark blank line holds only spaces or tabs, so a label may not
+#: cross one even when the "empty" line is not literally empty.
+_RE_BLANK_LINE = re.compile(r"\n[ \t]*\n")
+# Markdown footnotes ([^label] / [^label]: body) differ from reference-style
+# links by exactly this character, and both reference scans read them.
+FOOTNOTE_LABEL_PREFIX = "^"
+
+
+def _definition_destination_end(clean: str, pos: int) -> int | None:
+    """Index just past a definition's destination, or ``None`` if there is none.
+
+    §4.7's destination, not §6.3's: a definition's runs to the first
+    whitespace (or to ``>``, in the pointy form), where an inline one runs
+    to its closing ``)``. That is why :func:`_parse_destination` cannot be
+    reused here despite parsing the same two forms.
+
+    This exists because the definition scan's tail is deliberately greedy
+    to the end of the line, which over-matches: ``[TODO]: revisit [a][r]
+    later`` is yielded as a definition of ``TODO``. Harmless while nothing
+    consumed the span — but the scanner's ``_blank_reference_definitions`` now cuts
+    that span out of the region, so the whole line, links and all, left
+    the index. Blanking stops at the destination instead, so prose a
+    reader still parses survives the cut.
+
+    Args:
+        clean: Body text with code removed and line endings normalised.
+        pos: Index of the tail's first character. ``_RE_REF_DEF_TAIL``'s
+            ``(.+)`` guarantees one exists, so this never reads past the
+            end — but it may be a *space*, since the pattern backtracks
+            to leave one behind on a tail of pure whitespace, and that is
+            the "no destination here" case.
+
+    Returns:
+        The index just past the destination, or ``None`` when nothing
+        parses as one — in which case the caller keeps the greedy end,
+        since there is no better answer than the one the scan already had.
+    """
+    if clean[pos] == "<":
+        index = pos + 1
+        while index < len(clean) and clean[index] not in ">\n":
+            index += 2 if clean[index] == "\\" else 1
+        return index + 1 if index < len(clean) and clean[index] == ">" else None
+    index = pos
+    while index < len(clean) and clean[index] not in " \t\n":
+        index += 2 if clean[index] == "\\" else 1
+    return min(index, len(clean)) if index > pos else None
+
+
+#: A definition's optional title, and nothing else, to the line's end. What
+#: follows the destination is blanked with it when it is a title, and left
+#: alone when it is prose.
+_RE_TITLE_ONLY = re.compile(
+    r"""[ \t]*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*"""
+)
+
+
+def _blank_end(clean: str, tail: re.Match[str], dest_end: int) -> int:
+    """How far the scanner's ``_blank_reference_definitions`` may cut this definition.
+
+    To the end of the destination, plus a trailing title when the rest of
+    the line is exactly one. Anything else on the line is prose a reader
+    still parses, so it stays — that is the whole point of not simply
+    using ``tail.end()``.
+    """
+    rest = clean[dest_end : tail.end()]
+    return tail.end() if _RE_TITLE_ONLY.fullmatch(rest) else dest_end
+
+
+def iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int, int]]:
+    """Yield ``(label, target, start, end, target_start)`` per ``[label]: target``.
+
+    The label is read by :func:`find_bracket_span` so an escaped ``]``
+    does not close it (#1519); the rest keeps the shape of the pattern this
+    replaced (``^\\s*\\[([^\\]]+)\\]:\\s*(.+)$``, multi-line), including the
+    destination's freedom to sit on the next line and the greedy run to
+    that line's end — **except where §4.7 says the old pattern was wrong**.
+    Neither the destination nor the label may cross a blank line, and the
+    old pattern let both; a label must hold a non-whitespace character,
+    and ``[^\\]]+`` admitted ``[ ]``. The greedy tail is kept, because the
+    table has always been built from it, but *end* no longer follows it —
+    see :func:`_blank_end`.
+
+    Args:
+        clean: Body text with code removed and line endings normalised.
+
+    Yields:
+        ``(label, target, start, end, target_start)`` — both as written
+        and neither stripped, with *start* and *end* bounding the whole
+        definition so that the scanner's ``_blank_reference_definitions``
+        can cut it out, and *target_start* the index of *target*'s first
+        character so that a rewrite can splice it in place.
+    """
+    pos = 0
+    while (opener := _RE_REF_DEF_OPEN.search(clean, pos)) is not None:
+        bracket = opener.end() - 1
+        span = find_bracket_span(clean, bracket)
+        if span is None:
+            # ``return``, not ``continue``: the scan starts on that ``[``,
+            # so a span is missing only when no unescaped ``]`` follows it
+            # anywhere — and a later definition would need one too.
+            return
+        _, close_index, label = span
+        tail = (
+            _RE_REF_DEF_TAIL.match(clean, close_index + 2)
+            # A label may run across a line ending but never across a
+            # *blank* one (§6.3), and the span scan does not know that: in
+            # ``[ar]\n[\n\n[ar]: x.md`` the stray ``[`` opened a label that
+            # swallowed the blank line and the real definition with it, so
+            # ``ar`` was never defined at all. Invisible until the shortcut
+            # form (#1531) started resolving against this table.
+            #
+            # A blank line is one holding only spaces or tabs, not just
+            # ``\n\n``: testing for the literal pair let the same defect
+            # through on the whitespace-dirty spelling, which is the more
+            # common one in a hand-edited note.
+            if label
+            and _RE_BLANK_LINE.search(label) is None
+            and clean[close_index + 1 : close_index + 2] == ":"
+            else None
+        )
+        dest_end = (
+            None if tail is None else _definition_destination_end(clean, tail.start(1))
+        )
+        if tail is None or dest_end is None:
+            # Not a definition after all — either nothing followed the
+            # ``:``, or what did is no destination: ``[r]:`` alone and
+            # ``[r]: <unclosed`` both define nothing, and a reader reads
+            # such a line as ordinary prose, so a ``[r]`` in it is a
+            # shortcut like any other. Rejecting it *here* rather than
+            # when blanking is what keeps the table and the cut in
+            # lockstep: leave it in the table and the label resolves to
+            # junk; drop it from the cut alone and the two disagree.
+            #
+            # Resume past this ``[``, where the engine's next start
+            # position would have been; the label's own ``]`` is not a
+            # safe resume point, since a line start inside the span can
+            # open a definition of its own.
+            pos = bracket + 1
+            continue
+        yield (
+            label,
+            tail.group(1),
+            opener.start(),
+            _blank_end(clean, tail, dest_end),
+            tail.start(1),
+        )
+        pos = tail.end()
+
+
+def iter_reference_targets(clean: str) -> Iterator[tuple[str, str, int]]:
+    """Yield ``(key, destination, offset)`` for each definition that names a link.
+
+    The table the scanner resolves usages against and the rewrite that
+    repoints a definition read the same definitions through this one
+    generator, so they cannot disagree about which lines are definitions
+    or where a destination sits.
+
+    Args:
+        clean: Body text with code removed or masked and line endings
+            normalised.
+
+    Yields:
+        The lower-cased label, the destination as written with its title
+        stripped, and the index in *clean* where that destination starts.
+    """
+    for label, target, _start, _end, target_start in iter_definition_matches(clean):
+        key = label.strip().lower()
+        if not key:
+            # §4.7 requires a non-whitespace character in the label, and
+            # the old pattern's ``[^\]]+`` admitted ``[ ]``, keying it as
+            # ``""``. Another latent table entry nothing could reference
+            # until the shortcut rung arrived, at which point both ``[]``
+            # and ``[ ]`` resolved against it — the second being every
+            # unchecked task-list box in the vault.
+            continue
+        if key.startswith(FOOTNOTE_LABEL_PREFIX):
+            # Footnote definition: the body is prose, so storing it as a
+            # target resolved whatever the footnote said as a vault path.
+            continue
+        # The destination as written, title stripped (escape-aware): the
+        # pointy, escaped and entity spellings are decoded at resolution,
+        # like an inline destination (#1353).
+        destination = trailing_title_pattern.sub("", target.strip(" \t")).strip(" \t")
+        if destination and destination != "<>":
+            yield (
+                key,
+                destination,
+                target_start + len(target) - len(target.lstrip(" \t")),
+            )
+
+
+def _inline_destination_spans(masked: str) -> Iterator[tuple[int, str]]:
+    r"""Yield ``(offset, destination)`` for each inline link in *masked*.
 
     The links are read by :func:`iter_inline_links`, the same scan the
     index is built with, because a rewrite has to see exactly the links the
@@ -1041,11 +1251,10 @@ def _replace_inline_destinations(content: str, replacements: Mapping[str, str]) 
     and escaped spellings need no special case here.
 
     Args:
-        content: Full file content.
-        replacements: Written destinations and their replacements.
+        masked: File content with code masked by :func:`_mask_code`.
 
-    Returns:
-        *content* with every matching destination replaced once.
+    Yields:
+        Where each destination starts and the destination as written.
 
     The scan reports where each destination starts, and the splice uses
     that offset rather than searching the region for the destination. A search
@@ -1056,22 +1265,8 @@ def _replace_inline_destinations(content: str, replacements: Mapping[str, str]) 
     a fixed offset and so never had the ambiguity.
 
     """
-    out: list[str] = []
-    read = 0
-    for link in iter_inline_links(_mask_code(content)):
-        new_raw = replacements.get(link.raw_target)
-        if new_raw is None:
-            continue
-        # Everything from the destination's end to ``link.end`` is the
-        # author's: an optional title, whatever spacing they chose, and the
-        # closing ``)``. It is carried across untouched.
-        start = link.target_start
-        out.append(content[read:start])
-        out.append(new_raw)
-        out.append(content[start + len(link.raw_target) : link.end])
-        read = link.end
-    out.append(content[read:])
-    return "".join(out)
+    for link in iter_inline_links(masked):
+        yield link.target_start, link.raw_target
 
 
 def _mask_code(content: str) -> str:
@@ -1081,6 +1276,59 @@ def _mask_code(content: str) -> str:
         return re.sub(r"[^\r\n]", " ", match.group())
 
     return _RE_INLINE_CODE.sub(mask, _RE_FENCED_CODE.sub(mask, content))
+
+
+def _wikilink_destination_spans(
+    masked: str, keys: Iterable[str]
+) -> Iterator[tuple[int, str]]:
+    """Yield ``(offset, target)`` for each wikilink in *masked* naming a key."""
+    alternatives = "|".join(
+        re.escape(key) for key in sorted(keys, key=len, reverse=True)
+    )
+    for match in re.finditer(r"\[\[(" + alternatives + r")(\|[^\]]*)?\]\]", masked):
+        yield match.start(1), match.group(1)
+
+
+def rewrite_link_destinations(
+    content: str, link_type: str, replacements: Mapping[str, str]
+) -> tuple[str, set[str]]:
+    """Replace original link destinations without cascading replacements.
+
+    Every destination is found by the scan the index is built with, in the
+    file's own offsets, and spliced once; a replacement never feeds another.
+
+    Args:
+        content: Full file content to modify, frontmatter excluded.
+        link_type: One of ``"markdown"``, ``"reference"``, ``"wikilink"``.
+        replacements: Original raw targets mapped to their replacements.
+
+    Returns:
+        ``(content, matched)``: the updated content and the keys of
+        *replacements* that named at least one destination, so a caller can
+        tell a rewrite that found every link from one that missed some.
+    """
+    masked = _mask_code(content)
+    spans: Iterator[tuple[int, str]] = iter(())
+    if replacements and link_type == "markdown":
+        spans = _inline_destination_spans(masked)
+    elif replacements and link_type == "reference":
+        spans = (
+            (offset, dest) for _key, dest, offset in iter_reference_targets(masked)
+        )
+    elif replacements and link_type == "wikilink":
+        spans = _wikilink_destination_spans(masked, replacements)
+    out: list[str] = []
+    matched: set[str] = set()
+    read = 0
+    for start, key in spans:
+        new_raw = replacements.get(key)
+        if new_raw is None:
+            continue
+        out.extend((content[read:start], new_raw))
+        read = start + len(key)
+        matched.add(key)
+    out.append(content[read:])
+    return "".join(out), matched
 
 
 def apply_link_replacements(
@@ -1096,29 +1344,7 @@ def apply_link_replacements(
     Returns:
         Updated content with matching destinations replaced.
     """
-    if not replacements:
-        return content
-    if link_type == "markdown":
-        return _replace_inline_destinations(content, replacements)
-    alternatives = "|".join(
-        re.escape(key) for key in sorted(replacements, key=len, reverse=True)
-    )
-    if link_type == "reference":
-        pattern = r"^(\[.*?\]:\s+)(" + alternatives + r")([ \t].*|$)"
-        group = 2
-    elif link_type == "wikilink":
-        pattern = r"\[\[(" + alternatives + r")(\|[^\]]*)?\]\]"
-        group = 1
-    else:
-        return content
-    out: list[str] = []
-    read = 0
-    for match in re.finditer(pattern, _mask_code(content), flags=re.MULTILINE):
-        start, end = match.span(group)
-        out.extend((content[read:start], replacements[match.group(group)]))
-        read = end
-    out.append(content[read:])
-    return "".join(out)
+    return rewrite_link_destinations(content, link_type, replacements)[0]
 
 
 def apply_link_replacement(

@@ -40,6 +40,7 @@ class TestComputeNewRawTargetEncoded:
         A nested source's vault-path spelling now becomes source-relative so
         the rewritten path cannot select a source-local shadow.
         """
+        assert decode_link_target("probe/b%5B1%5D.md") == "probe/b[1].md"
         assert (
             compute_new_raw_target(
                 "markdown",

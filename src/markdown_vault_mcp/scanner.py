@@ -44,7 +44,7 @@ from markdown_vault_mcp.utils.links import (
     parse_markdown_destination,
 )
 from markdown_vault_mcp.utils.links import (
-    find_bracket_span as _find_bracket_span,
+    FOOTNOTE_LABEL_PREFIX as _FOOTNOTE_LABEL_PREFIX,
 )
 from markdown_vault_mcp.utils.links import (
     inline_link_follows as _inline_link_follows,
@@ -53,10 +53,13 @@ from markdown_vault_mcp.utils.links import (
     iter_bracket_links as _iter_bracket_links,
 )
 from markdown_vault_mcp.utils.links import (
+    iter_definition_matches as _iter_definition_matches,
+)
+from markdown_vault_mcp.utils.links import (
     iter_inline_links as _iter_inline_links,
 )
 from markdown_vault_mcp.utils.links import (
-    trailing_title_pattern as _RE_TRAILING_TITLE,
+    iter_reference_targets as _iter_reference_targets,
 )
 from markdown_vault_mcp.utils.text import decode_utf8
 
@@ -1026,31 +1029,6 @@ _EXTERNAL_URL_PREFIXES = ("//",)
 # as a scheme too.
 _RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 
-#: A reference definition's line start: optional whitespace, then the ``[``
-#: that opens the label. What follows is read by :func:`_find_bracket_span`
-#: and :data:`_RE_REF_DEF_TAIL` rather than by one pattern, so an escaped
-#: ``]`` inside the label does not close it (#1519). ``\s*`` rather than
-#: ``[ \t]*`` because the class it replaces used ``\s*``: a line indented
-#: with an exotic Unicode space is still a definition, as it was before.
-_RE_REF_DEF_OPEN = re.compile(r"^\s*\[", re.MULTILINE)
-#: What follows a definition's ``]:`` — the target, to the end of its line.
-#: The destination may sit on the next line (§4.7), so the gap admits one
-#: line ending; ``(.+)`` then requires a non-empty destination.
-#:
-#: **One** line ending, not any run of whitespace. A blank line ends the
-#: attempt (§4.7: the destination may be "preceded by ... up to one line
-#: ending"), and a gap of ``\s*`` crossed it — so ``[:]:`` followed by a
-#: blank line and an unrelated ``[ar]: x.md`` defined the label ``:`` with
-#: that whole line as its target. Nothing referenced such a definition
-#: until the shortcut form arrived (#1531), which is why a wrong entry in
-#: the table produced no wrong row and went unseen.
-_RE_REF_DEF_TAIL = re.compile(r"[ \t]*\n?[ \t]*(.+)$", re.MULTILINE)
-#: A CommonMark blank line holds only spaces or tabs, so a label may not
-#: cross one even when the "empty" line is not literally empty.
-_RE_BLANK_LINE = re.compile(r"\n[ \t]*\n")
-# Markdown footnotes ([^label] / [^label]: body) differ from reference-style
-# links by exactly this character, and both reference scans read them.
-_FOOTNOTE_LABEL_PREFIX = "^"
 #: Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian
 #: table-cell escape). The target excludes a line ending: a name carrying
 #: one names no file, and the row it stored was broken by construction
@@ -1621,147 +1599,9 @@ def _iter_reference_usages(
         yield region[open_index + 1 : close_index], raw_target
 
 
-def _definition_destination_end(clean: str, pos: int) -> int | None:
-    """Index just past a definition's destination, or ``None`` if there is none.
-
-    §4.7's destination, not §6.3's: a definition's runs to the first
-    whitespace (or to ``>``, in the pointy form), where an inline one runs
-    to its closing ``)``. That is why :func:`_parse_destination` cannot be
-    reused here despite parsing the same two forms.
-
-    This exists because the definition scan's tail is deliberately greedy
-    to the end of the line, which over-matches: ``[TODO]: revisit [a][r]
-    later`` is yielded as a definition of ``TODO``. Harmless while nothing
-    consumed the span — but :func:`_blank_reference_definitions` now cuts
-    that span out of the region, so the whole line, links and all, left
-    the index. Blanking stops at the destination instead, so prose a
-    reader still parses survives the cut.
-
-    Args:
-        clean: Body text with code removed and line endings normalised.
-        pos: Index of the tail's first character. ``_RE_REF_DEF_TAIL``'s
-            ``(.+)`` guarantees one exists, so this never reads past the
-            end — but it may be a *space*, since the pattern backtracks
-            to leave one behind on a tail of pure whitespace, and that is
-            the "no destination here" case.
-
-    Returns:
-        The index just past the destination, or ``None`` when nothing
-        parses as one — in which case the caller keeps the greedy end,
-        since there is no better answer than the one the scan already had.
-    """
-    if clean[pos] == "<":
-        index = pos + 1
-        while index < len(clean) and clean[index] not in ">\n":
-            index += 2 if clean[index] == "\\" else 1
-        return index + 1 if index < len(clean) and clean[index] == ">" else None
-    index = pos
-    while index < len(clean) and clean[index] not in " \t\n":
-        index += 2 if clean[index] == "\\" else 1
-    return min(index, len(clean)) if index > pos else None
-
-
-#: A definition's optional title, and nothing else, to the line's end. What
-#: follows the destination is blanked with it when it is a title, and left
-#: alone when it is prose.
-_RE_TITLE_ONLY = re.compile(
-    r"""[ \t]*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*"""
-)
-
-
-def _blank_end(clean: str, tail: re.Match[str], dest_end: int) -> int:
-    """How far :func:`_blank_reference_definitions` may cut this definition.
-
-    To the end of the destination, plus a trailing title when the rest of
-    the line is exactly one. Anything else on the line is prose a reader
-    still parses, so it stays — that is the whole point of not simply
-    using ``tail.end()``.
-    """
-    rest = clean[dest_end : tail.end()]
-    return tail.end() if _RE_TITLE_ONLY.fullmatch(rest) else dest_end
-
-
-def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
-    """Yield ``(label, target, start, end)`` for each ``[label]: target`` line.
-
-    The label is read by :func:`_find_bracket_span` so an escaped ``]``
-    does not close it (#1519); the rest keeps the shape of the pattern this
-    replaced (``^\\s*\\[([^\\]]+)\\]:\\s*(.+)$``, multi-line), including the
-    destination's freedom to sit on the next line and the greedy run to
-    that line's end — **except where §4.7 says the old pattern was wrong**.
-    Neither the destination nor the label may cross a blank line, and the
-    old pattern let both; a label must hold a non-whitespace character,
-    and ``[^\\]]+`` admitted ``[ ]``. The greedy tail is kept, because the
-    table has always been built from it, but *end* no longer follows it —
-    see :func:`_blank_end`.
-
-    Args:
-        clean: Body text with code removed and line endings normalised.
-
-    Yields:
-        ``(label, target, start, end)`` — both as written and neither
-        stripped, with *start* and *end* bounding the whole definition so
-        that :func:`_blank_reference_definitions` can cut it out.
-    """
-    pos = 0
-    while (opener := _RE_REF_DEF_OPEN.search(clean, pos)) is not None:
-        bracket = opener.end() - 1
-        span = _find_bracket_span(clean, bracket)
-        if span is None:
-            # ``return``, not ``continue``: the scan starts on that ``[``,
-            # so a span is missing only when no unescaped ``]`` follows it
-            # anywhere — and a later definition would need one too.
-            return
-        _, close_index, label = span
-        tail = (
-            _RE_REF_DEF_TAIL.match(clean, close_index + 2)
-            # A label may run across a line ending but never across a
-            # *blank* one (§6.3), and the span scan does not know that: in
-            # ``[ar]\n[\n\n[ar]: x.md`` the stray ``[`` opened a label that
-            # swallowed the blank line and the real definition with it, so
-            # ``ar`` was never defined at all. Invisible until the shortcut
-            # form (#1531) started resolving against this table.
-            #
-            # A blank line is one holding only spaces or tabs, not just
-            # ``\n\n``: testing for the literal pair let the same defect
-            # through on the whitespace-dirty spelling, which is the more
-            # common one in a hand-edited note.
-            if label
-            and _RE_BLANK_LINE.search(label) is None
-            and clean[close_index + 1 : close_index + 2] == ":"
-            else None
-        )
-        dest_end = (
-            None if tail is None else _definition_destination_end(clean, tail.start(1))
-        )
-        if tail is None or dest_end is None:
-            # Not a definition after all — either nothing followed the
-            # ``:``, or what did is no destination: ``[r]:`` alone and
-            # ``[r]: <unclosed`` both define nothing, and a reader reads
-            # such a line as ordinary prose, so a ``[r]`` in it is a
-            # shortcut like any other. Rejecting it *here* rather than
-            # when blanking is what keeps the table and the cut in
-            # lockstep: leave it in the table and the label resolves to
-            # junk; drop it from the cut alone and the two disagree.
-            #
-            # Resume past this ``[``, where the engine's next start
-            # position would have been; the label's own ``]`` is not a
-            # safe resume point, since a line start inside the span can
-            # open a definition of its own.
-            pos = bracket + 1
-            continue
-        yield (
-            label,
-            tail.group(1),
-            opener.start(),
-            _blank_end(clean, tail, dest_end),
-        )
-        pos = tail.end()
-
-
 def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
     """Yield ``(label, target)`` for each ``[label]: target`` line."""
-    for label, target, _start, _end in _iter_definition_matches(clean):
+    for label, target, *_ in _iter_definition_matches(clean):
         yield label, target
 
 
@@ -1813,7 +1653,7 @@ def _blank_reference_definitions(region: str) -> str:
     """
     return _blank_spans(
         region,
-        [(start, end) for _l, _t, start, end in _iter_definition_matches(region)],
+        [(start, end) for _l, _t, start, end, _o in _iter_definition_matches(region)],
     )
 
 
@@ -1854,29 +1694,7 @@ def _collect_reference_definitions(clean: str) -> dict[str, str]:
     Returns:
         Lower-cased label to raw target; a later definition wins.
     """
-    ref_defs: dict[str, str] = {}
-    for label, target in _iter_reference_definitions(clean):
-        ref_key = label.strip().lower()
-        if not ref_key:
-            # §4.7 requires a non-whitespace character in the label, and
-            # the old pattern's ``[^\]]+`` admitted ``[ ]``, keying it as
-            # ``""``. Another latent table entry nothing could reference
-            # until the shortcut rung arrived, at which point both ``[]``
-            # and ``[ ]`` resolved against it — the second being every
-            # unchecked task-list box in the vault.
-            continue
-        if ref_key.startswith(_FOOTNOTE_LABEL_PREFIX):
-            # Footnote definition: the body is prose, so storing it as a
-            # target resolved whatever the footnote said as a vault path.
-            continue
-        # The destination as written, title stripped (escape-aware): the
-        # pointy, escaped and entity spellings are decoded at resolution,
-        # like an inline destination (#1353).
-        ref_target = _RE_TRAILING_TITLE.sub("", target.strip(" \t")).strip(" \t")
-        if not ref_target or ref_target == "<>":
-            continue
-        ref_defs[ref_key] = ref_target
-    return ref_defs
+    return {key: dest for key, dest, _ in _iter_reference_targets(clean)}
 
 
 def _extract_reference_links(
