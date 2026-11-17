@@ -22,9 +22,9 @@ def damage_sqlite_page(path: Path, name: str) -> None:
         page = conn.execute(
             "SELECT rootpage FROM sqlite_master WHERE name = ?", (name,)
         ).fetchone()[0]
+        size = conn.execute("PRAGMA page_size").fetchone()[0]
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     data = bytearray(path.read_bytes())
-    size = int.from_bytes(data[16:18], "big")
     data[(page - 1) * size : page * size] = b"\xff" * size
     data[24:28] = (int.from_bytes(data[24:28], "big") + 1).to_bytes(4, "big")
     path.write_bytes(data)
