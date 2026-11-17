@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from markdown_vault_mcp.fts_index import FTSIndex, _json_default
+from markdown_vault_mcp.query_types import NoteQuery
 from markdown_vault_mcp.types import Chunk, FTSResult, ParsedNote
 
 # ---------------------------------------------------------------------------
@@ -1599,7 +1600,152 @@ class TestNotesFtsSummaryMigration:
         idx.close()
 
 
+def _legacy_upsert(idx: FTSIndex, note: ParsedNote) -> None:
+    """Write as the pre-bridge writer did, without bridge rows."""
+    conn = idx._conn()
+    with conn:
+        conn.execute("DELETE FROM notes_fts WHERE path = ?", (note.path,))
+        conn.execute("DELETE FROM documents WHERE path = ?", (note.path,))
+        doc_id = idx._insert_document(conn.cursor(), note, "")
+        for chunk in note.chunks:
+            conn.execute(
+                "INSERT INTO sections(document_id, heading, heading_level, content, start_line) VALUES (?, ?, ?, ?, ?)",
+                (
+                    doc_id,
+                    chunk.heading,
+                    chunk.heading_level,
+                    chunk.content,
+                    chunk.start_line,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO notes_fts(path, title, folder, heading, content, summary) VALUES (?, ?, '', ?, ?, '')",
+                (note.path, note.title, chunk.heading or "", chunk.content),
+            )
+
+
+def _unbridged(conn: sqlite3.Connection) -> int:
+    return conn.execute(
+        "SELECT count(*) FROM notes_fts_docsize WHERE id NOT IN (SELECT fts_rowid FROM notes_fts_rowid_map)"
+    ).fetchone()[0]
+
+
 class TestFtsRowidMapMigration:
+    def test_legacy_replacement_repaired_before_delete(self, tmp_path: Path) -> None:
+        db = tmp_path / "downgrade.db"
+        idx = FTSIndex(db_path=db)
+        idx.upsert_note(make_note("a.md"))
+        idx.upsert_note(make_note("neighbor.md"))
+        _legacy_upsert(
+            idx,
+            make_note(
+                "a.md",
+                chunks=[
+                    Chunk(
+                        heading="First", heading_level=1, content="alpha", start_line=0
+                    ),
+                    Chunk(
+                        heading="Second",
+                        heading_level=1,
+                        content="needle",
+                        start_line=5,
+                    ),
+                ],
+            ),
+        )
+        idx.close()
+        idx = FTSIndex(db_path=db)
+        page = idx.query_documents(NoteQuery(query="needle", scope="body"))
+        assert page.items[0]["sections"][0]["content"] == "needle"
+        assert _unbridged(idx._conn()) == 0
+        idx.delete_by_path("a.md")
+        assert (
+            idx._conn().execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0]
+            == 1
+        )
+        idx.close()
+
+    def test_mixed_generations_preserve_exact_excerpt(self, tmp_path: Path) -> None:
+        db = tmp_path / "mixed.db"
+        idx = FTSIndex(db_path=db)
+        _legacy_upsert(
+            idx,
+            make_note(
+                "a.md",
+                chunks=[
+                    Chunk(
+                        heading="Old", heading_level=1, content="alpha", start_line=0
+                    ),
+                ],
+            ),
+        )
+        idx.upsert_note(
+            make_note(
+                "a.md",
+                chunks=[
+                    Chunk(
+                        heading="First", heading_level=1, content="beta", start_line=0
+                    ),
+                    Chunk(
+                        heading="Second", heading_level=1, content="beta", start_line=5
+                    ),
+                ],
+            )
+        )
+        idx.close()
+        idx = FTSIndex(db_path=db)
+        page = idx.query_documents(NoteQuery(query="beta", scope="body"))
+        assert [s["heading"] for s in page.items[0]["sections"]] == ["First", "Second"]
+        assert idx.query_documents(NoteQuery(query="alpha", scope="body")).total == 0
+        conn = idx._conn()
+        assert (
+            conn.execute("SELECT count(*) FROM notes_fts").fetchone()[0]
+            == conn.execute("SELECT count(*) FROM sections").fetchone()[0]
+            == 2
+        )
+        assert _unbridged(conn) == 0
+        idx.delete_by_path("a.md")
+        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 0
+        idx.close()
+
+    def test_orphan_purged_and_logged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        db = tmp_path / "orphan.db"
+        idx = FTSIndex(db)
+        _legacy_upsert(idx, make_note("a.md"))
+        idx.delete_by_path("a.md")
+        idx.close()
+        with caplog.at_level("INFO", logger="markdown_vault_mcp.fts_index"):
+            idx = FTSIndex(db)
+        assert _unbridged(idx._conn()) == 0
+        assert (
+            idx._conn().execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0]
+            == 0
+        )
+        assert any(
+            r.getMessage() == "fts_index_rowid_map_repaired bridged=0 purged=1"
+            for r in caplog.records
+        )
+        idx.close()
+
+    def test_mismatched_generation_is_purged(self, tmp_path: Path) -> None:
+        db = tmp_path / "mismatch.db"
+        idx = FTSIndex(db)
+        _legacy_upsert(idx, make_note("a.md"))
+        conn = idx._conn()
+        conn.execute("INSERT INTO notes_fts(path, content) VALUES ('a.md', 'extra')")
+        conn.commit()
+        idx.close()
+        idx = FTSIndex(db)
+        conn = idx._conn()
+        assert _unbridged(conn) == 0
+        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 0
+        assert (
+            conn.execute("SELECT count(*) FROM notes_fts_rowid_map").fetchone()[0] == 0
+        )
+        idx.close()
+
     def test_backfills_bridge_table_for_pre_1535_database(self, tmp_path: Path) -> None:
         """Opening a pre-#1535 database (no notes_fts_rowid_map, and still
         on the legacy 5-column notes_fts) backfills the bridge table from
@@ -1662,22 +1808,167 @@ class TestFtsRowidMapMigration:
         )
         idx.close()
 
-    def test_reopening_current_schema_does_not_rebackfill(self, tmp_path: Path) -> None:
-        """A second open is a no-op: the meta sentinel short-circuits the
-        backfill join instead of rerunning it on every boot."""
+    def test_docsize_tracks_fts_rowids(self) -> None:
+        """The default FTS5 docsize inventory tracks inserts and deletes."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "a.md",
+                chunks=[
+                    Chunk(heading=None, heading_level=0, content="", start_line=0),
+                    Chunk(heading="A", heading_level=1, content="alpha", start_line=1),
+                ],
+            )
+        )
+        conn = idx._conn()
+        assert (
+            [r[0] for r in conn.execute("SELECT id FROM notes_fts_docsize ORDER BY id")]
+            == [
+                r[0] for r in conn.execute("SELECT rowid FROM notes_fts ORDER BY rowid")
+            ]
+            == [1, 2]
+        )
+        idx.delete_by_path("a.md")
+        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 0
+        idx.close()
+
+    def test_healthy_repair_does_not_read_fts_columns(self) -> None:
+        """A healthy index avoids loading FTS content during repair."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(make_note("a.md"))
+        conn = idx._conn()
+        reads: list[str] = []
+
+        def record_read(
+            action: int,
+            table: str | None,
+            column: str | None,
+            _db: str | None,
+            _source: str | None,
+        ) -> int:
+            if (
+                action == sqlite3.SQLITE_READ
+                and table == "notes_fts"
+                and column not in ("ROWID", "")
+            ):
+                reads.append(column or "")
+            return sqlite3.SQLITE_OK
+
+        conn.set_authorizer(record_read)
+        idx._repair_fts_rowid_map(conn)
+        conn.set_authorizer(None)
+        assert reads == []
+        idx.close()
+
+    def test_reopening_current_schema_is_unchanged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A healthy reopen preserves data and emits no repair log."""
         db = tmp_path / "current.db"
         idx = FTSIndex(db_path=db)
         idx.upsert_note(make_note("a.md"))
+        conn = idx._conn()
+        tables = ("notes_fts", "notes_fts_rowid_map", "meta")
+        before = {
+            table: [tuple(r) for r in conn.execute(f"SELECT * FROM {table}")]
+            for table in tables
+        }
         idx.close()
 
-        idx2 = FTSIndex(db_path=db)
-        count = (
-            idx2._conn()
-            .execute("SELECT COUNT(*) FROM notes_fts_rowid_map")
-            .fetchone()[0]
+        with caplog.at_level("INFO", logger="markdown_vault_mcp.fts_index"):
+            idx = FTSIndex(db_path=db)
+        after = {
+            table: [tuple(r) for r in idx._conn().execute(f"SELECT * FROM {table}")]
+            for table in tables
+        }
+        assert before == after
+        assert not any(
+            "fts_index_rowid_map_repaired" in r.message for r in caplog.records
         )
-        assert count == 1
-        idx2.close()
+        idx.close()
+
+    def test_purge_failure_rolls_back_bridge(self) -> None:
+        """A failed purge rolls back the preceding bridge insert."""
+        idx = FTSIndex(":memory:")
+        _legacy_upsert(idx, make_note("a.md"))
+        conn = idx._conn()
+        conn.execute(
+            "INSERT INTO notes_fts(path, content) VALUES ('missing.md', 'orphan')"
+        )
+        conn.commit()
+
+        def deny_delete(
+            action: int,
+            table: str | None,
+            _column: str | None,
+            _db: str | None,
+            _source: str | None,
+        ) -> int:
+            return (
+                sqlite3.SQLITE_DENY
+                if action == sqlite3.SQLITE_DELETE and table == "notes_fts"
+                else sqlite3.SQLITE_OK
+            )
+
+        conn.set_authorizer(deny_delete)
+        with pytest.raises(sqlite3.DatabaseError):
+            idx._repair_fts_rowid_map(conn)
+        conn.set_authorizer(None)
+        assert (
+            conn.execute("SELECT count(*) FROM notes_fts_rowid_map").fetchone()[0] == 0
+        )
+        assert _unbridged(conn) == 2
+        idx._repair_fts_rowid_map(conn)
+        assert _unbridged(conn) == 0
+        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 1
+        idx.close()
+
+    def test_repair_failure_rolls_back_and_retry_succeeds(self) -> None:
+        """A failed bridge insert rolls back the purge and permits a retry."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(make_note("x.md"))
+        conn = idx._conn()
+        conn.execute("DELETE FROM notes_fts_rowid_map")
+        conn.execute(
+            "INSERT INTO notes_fts(path, content) VALUES ('missing.md', 'orphan')"
+        )
+        conn.commit()
+        before_map = [
+            tuple(r) for r in conn.execute("SELECT * FROM notes_fts_rowid_map")
+        ]
+        before_fts = [
+            tuple(r) for r in conn.execute("SELECT rowid, path FROM notes_fts")
+        ]
+
+        def deny_bridge_insert(
+            action: int,
+            arg1: str | None,
+            _arg2: str | None,
+            _db: str | None,
+            _source: str | None,
+        ) -> int:
+            return (
+                sqlite3.SQLITE_DENY
+                if action == sqlite3.SQLITE_INSERT and arg1 == "notes_fts_rowid_map"
+                else sqlite3.SQLITE_OK
+            )
+
+        conn.set_authorizer(deny_bridge_insert)
+        with pytest.raises(sqlite3.DatabaseError):
+            idx._repair_fts_rowid_map(conn)
+        conn.set_authorizer(None)
+        assert [
+            tuple(r) for r in conn.execute("SELECT * FROM notes_fts_rowid_map")
+        ] == before_map
+        assert [
+            tuple(r) for r in conn.execute("SELECT rowid, path FROM notes_fts")
+        ] == before_fts
+        idx._repair_fts_rowid_map(conn)
+        assert [
+            tuple(r) for r in conn.execute("SELECT * FROM notes_fts_rowid_map")
+        ] == [(1, 1)]
+        assert [r[0] for r in conn.execute("SELECT path FROM notes_fts")] == ["x.md"]
+        idx.close()
 
 
 def test_unknown_fts_weights_column_logs_warning(
