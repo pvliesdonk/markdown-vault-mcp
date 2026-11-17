@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -1989,23 +1990,48 @@ class TestDefaultModeValidation:
         assert frozenset(DEFAULT_SEARCH_MODES) == _SEARCH_MODES
 
 
+@pytest.mark.parametrize(
+    ("filters", "okf_filters", "expected"),
+    [
+        ({"tags": "b"}, None, ["beta.md", "alpha.md", "beta.md"]),
+        (None, {"status": "stable"}, ["alpha.md", "notes/delta.md"]),
+        ({"tags": "b"}, {"status": "stable"}, ["alpha.md"]),
+    ],
+    ids=["plain", "okf", "combined"],
+)
 def test_post_filter_batches_distinct_paths_and_preserves_order(
     search_mgr: SearchManager,
+    filters: dict[str, str] | None,
+    okf_filters: dict[str, str] | None,
+    expected: list[str],
 ) -> None:
-    conn = search_mgr._fts._conn()
-    queries: list[str] = []
-    conn.set_trace_callback(queries.append)
+    beta = search_mgr._source_dir / "beta.md"
+    beta.write_text(
+        beta.read_text().replace("title: Beta", "title: Beta\nstatus: draft")
+    )
+    for note in scan_directory(search_mgr._source_dir):
+        if note.path == "beta.md":
+            search_mgr._fts.upsert_note(note)
     rows = [
         {"path": p}
         for p in ("beta.md", "missing.md", "alpha.md", "beta.md", "notes/delta.md")
     ]
-    try:
-        result = search_mgr._post_filter_semantic_rows(rows, filters={"tags": "b"})
-    finally:
-        conn.set_trace_callback(None)
-    assert [row["path"] for row in result] == ["beta.md", "alpha.md", "beta.md"]
-    selects = [q for q in queries if "SELECT path, frontmatter_json" in q]
-    assert len(selects) == 1
+    with patch.object(
+        search_mgr._fts,
+        "get_frontmatter_batch",
+        wraps=search_mgr._fts.get_frontmatter_batch,
+    ) as batch:
+        result = search_mgr._post_filter_semantic_rows(
+            rows, filters=filters, okf_filters=okf_filters
+        )
+    assert [row["path"] for row in result] == expected
+    assert batch.call_count == 1
+    assert list(batch.call_args.args[0]) == [
+        "beta.md",
+        "missing.md",
+        "alpha.md",
+        "notes/delta.md",
+    ]
 
 
 def test_post_filter_custom_index_fallback_memoizes_paths(
@@ -2015,9 +2041,19 @@ def test_post_filter_custom_index_fallback_memoizes_paths(
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def get_note(self, path: str) -> dict[str, str] | None:
+        def get_note(self, path: str) -> dict[str, object] | None:
             self.calls.append(path)
-            return {"frontmatter_json": '{"tag": ["yes"]}'} if path == "a.md" else None
+            if path != "a.md":
+                return None
+            return {
+                "path": path,
+                "title": "A",
+                "folder": "",
+                "frontmatter_json": '{"tag": ["yes"], "status": "stable"}',
+                "content_hash": "synthetic-hash",
+                "modified_at": "2026-01-01T00:00:00",
+                "content_chars": 42,
+            }
 
     legacy = LegacyIndex()
     monkeypatch.setattr(search_mgr, "_fts", legacy)
@@ -2044,37 +2080,3 @@ def test_batch_frontmatter_respects_sqlite_variable_limit(
         assert index.get_frontmatter_batch(paths) == {}
     finally:
         conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, old_limit)
-
-
-def test_post_filter_reuses_batch_for_plain_and_okf_filters(
-    search_mgr: SearchManager,
-) -> None:
-    conn = search_mgr._fts._conn()
-    queries: list[str] = []
-    rows = [{"path": p} for p in ("alpha.md", "beta.md", "alpha.md", "missing.md")]
-    conn.set_trace_callback(queries.append)
-    try:
-        result = search_mgr._post_filter_semantic_rows(
-            rows, filters={"tags": "b"}, okf_filters={"status": "stable"}
-        )
-    finally:
-        conn.set_trace_callback(None)
-    assert result == rows[:3]
-    assert len([q for q in queries if "FROM documents_live" in q]) == 1
-
-
-def test_post_filter_okf_only_batches_and_excludes_missing(
-    search_mgr: SearchManager,
-) -> None:
-    conn = search_mgr._fts._conn()
-    queries: list[str] = []
-    rows = [{"path": p} for p in ("alpha.md", "missing.md", "alpha.md")]
-    conn.set_trace_callback(queries.append)
-    try:
-        result = search_mgr._post_filter_semantic_rows(
-            rows, filters=None, okf_filters={"status": "stable"}
-        )
-    finally:
-        conn.set_trace_callback(None)
-    assert result == [rows[0], rows[2]]
-    assert len([q for q in queries if "FROM documents_live" in q]) == 1
