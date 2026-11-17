@@ -18,6 +18,20 @@ from urllib.parse import quote, unquote
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
 
+# Fenced code block: a ``` or ~~~ run opening a line (after indentation or
+# quote markers), with an optional info string, closed by the same run
+# opening a later line. Anchoring both fences to a line start is what keeps
+# three backticks in running prose from swallowing the blank line after
+# them, which would let a stray ``[`` pair across it (#1334); a same-line
+# multi-backtick span is a code span, matched by _RE_INLINE_CODE.
+_RE_FENCED_CODE = re.compile(
+    r"^[ \t>]*(```|~~~)[^\n]*\n.*?^[ \t>]*\1", re.DOTALL | re.MULTILINE
+)
+# Inline code: a backtick run and its closing run on one line.
+# Retry only at run starts: an unsuccessful run has the same following
+# text from every interior backtick, so retrying there is quadratic (#1749).
+# Keep the literal first so the engine can skip ordinary prose quickly.
+_RE_INLINE_CODE = re.compile(r"`(?<!``)`*[^`\n]+`+")
 #: Characters left unescaped when re-encoding a destination that the author
 #: already wrote percent-encoded. Only ``/`` — it is the path separator, and
 #: encoding it would change the link's structure rather than its spelling.
@@ -1041,13 +1055,10 @@ def _replace_inline_destinations(content: str, replacements: Mapping[str, str]) 
     rewrite. Caught in review of #1526; the scan this replaced anchored at
     a fixed offset and so never had the ambiguity.
 
-    Note:
-        Operates on raw file content, so an occurrence inside a backtick
-        code span is rewritten too. Pre-existing, and low risk in practice.
     """
     out: list[str] = []
     read = 0
-    for link in iter_inline_links(content):
+    for link in iter_inline_links(_mask_code(content)):
         new_raw = replacements.get(link.raw_target)
         if new_raw is None:
             continue
@@ -1061,6 +1072,15 @@ def _replace_inline_destinations(content: str, replacements: Mapping[str, str]) 
         read = link.end
     out.append(content[read:])
     return "".join(out)
+
+
+def _mask_code(content: str) -> str:
+    """Mask code with equal-length spaces while retaining line endings."""
+
+    def mask(match: re.Match[str]) -> str:
+        return re.sub(r"[^\r\n]", " ", match.group())
+
+    return _RE_INLINE_CODE.sub(mask, _RE_FENCED_CODE.sub(mask, content))
 
 
 def apply_link_replacements(
@@ -1084,21 +1104,21 @@ def apply_link_replacements(
         re.escape(key) for key in sorted(replacements, key=len, reverse=True)
     )
     if link_type == "reference":
-        # Match reference definition lines: [id]: url optional-title
-        # Anchored to line start with MULTILINE so we don't match inline text.
-        return re.sub(
-            r"^(\[.*?\]:\s+)(" + alternatives + r")([ \t].*|$)",
-            lambda m: m.group(1) + replacements[m.group(2)] + m.group(3),
-            content,
-            flags=re.MULTILINE,
-        )
-    if link_type == "wikilink":
-        return re.sub(
-            r"\[\[(" + alternatives + r")(\|[^\]]*)?\]\]",
-            lambda m: "[[" + replacements[m.group(1)] + (m.group(2) or "") + "]]",
-            content,
-        )
-    return content
+        pattern = r"^(\[.*?\]:\s+)(" + alternatives + r")([ \t].*|$)"
+        group = 2
+    elif link_type == "wikilink":
+        pattern = r"\[\[(" + alternatives + r")(\|[^\]]*)?\]\]"
+        group = 1
+    else:
+        return content
+    out: list[str] = []
+    read = 0
+    for match in re.finditer(pattern, _mask_code(content), flags=re.MULTILINE):
+        start, end = match.span(group)
+        out.extend((content[read:start], replacements[match.group(group)]))
+        read = end
+    out.append(content[read:])
+    return "".join(out)
 
 
 def apply_link_replacement(

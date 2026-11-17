@@ -61,9 +61,7 @@ from markdown_vault_mcp.types import (
     SubtreeNote,
     TocEntry,
 )
-from markdown_vault_mcp.utils.links import (
-    parse_markdown_destination,
-)
+from markdown_vault_mcp.utils.links import parse_markdown_destination
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable
@@ -2575,9 +2573,10 @@ class FTSIndex:
         When no wikilink path match is found, the method also checks the
         ``document_aliases`` table — if a document declares an ``aliases``
         frontmatter field containing the wikilink stem, the link resolves to
-        that document (e.g. ``[[AI]]`` resolves to a document with
-        ``aliases: [AI]``); the tie-break among several follows the path rule
-        by analogy, since Obsidian's alias tie-break was not observed.
+        that document.  This mirrors Obsidian's alias resolution behaviour
+        (e.g. ``[[AI]]`` resolves to a document with ``aliases: [AI]``); the
+        tie-break among several is the path rule's, by analogy — Obsidian's
+        own alias tie-break was not observed.
 
         Wikilinks with an explicit relative prefix (``./`` or ``../``) are
         skipped; they are resolved relative to the source document at scan time

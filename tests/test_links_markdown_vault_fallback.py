@@ -244,6 +244,13 @@ def test_rewrite_vault_path_avoids_local_shadow(
         vault.close()
 
 
+def _source_move_fixture(tmp_path: Path) -> None:
+    for folder in ("A", "B", "C/B"):
+        (tmp_path / folder).mkdir(parents=True)
+    (tmp_path / "B/target.md").write_text("# target\n", encoding="utf-8")
+    (tmp_path / "C/B/target.md").write_text("# shadow\n", encoding="utf-8")
+
+
 @pytest.mark.parametrize("reference", [False, True])
 @pytest.mark.parametrize("folder_move", [False, True])
 def test_moving_source_preserves_fallback_targets(
@@ -251,10 +258,7 @@ def test_moving_source_preserves_fallback_targets(
 ) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
-    for folder in ("A", "B", "C/B"):
-        (tmp_path / folder).mkdir(parents=True)
-    (tmp_path / "B/target.md").write_text("# target\n", encoding="utf-8")
-    (tmp_path / "C/B/target.md").write_text("# shadow\n", encoding="utf-8")
+    _source_move_fixture(tmp_path)
     (tmp_path / "A/together.md").write_text("# together\n", encoding="utf-8")
     (tmp_path / "A/local.md").write_text("# local\n", encoding="utf-8")
     links = (
@@ -280,6 +284,7 @@ def test_moving_source_preserves_fallback_targets(
         else:
             vault.writer.rename("A/source.md", "C/source.md", update_links=True)
         wait_for_writer_drain(vault)
+        assert vault._write_callback.drain()
         source_text = (tmp_path / "C/source.md").read_text(encoding="utf-8")
         source_callbacks = [
             c for c in callbacks if c[0] == (tmp_path / "C/source.md").resolve()
@@ -310,10 +315,7 @@ def test_moving_source_preserves_fallback_targets(
 def test_rename_without_link_updates_keeps_source_bytes(tmp_path: Path) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
-    for folder in ("A", "B", "C/B"):
-        (tmp_path / folder).mkdir(parents=True)
-    (tmp_path / "B/target.md").write_text("# target\n", encoding="utf-8")
-    (tmp_path / "C/B/target.md").write_text("# shadow\n", encoding="utf-8")
+    _source_move_fixture(tmp_path)
     body = "[x](B/target.md)\n"
     (tmp_path / "A/source.md").write_text(body, encoding="utf-8")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
@@ -386,11 +388,8 @@ def test_failed_source_rewrite_reports_partial_rename(tmp_path: Path) -> None:
 
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
-    for folder in ("A", "B", "C/B"):
-        (tmp_path / folder).mkdir(parents=True)
+    _source_move_fixture(tmp_path)
     (tmp_path / "A/source.md").write_text("[x](B/target.md)\n", encoding="utf-8")
-    (tmp_path / "B/target.md").write_text("# Intended\n", encoding="utf-8")
-    (tmp_path / "C/B/target.md").write_text("# Shadow\n", encoding="utf-8")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         vault.index.build_index()
@@ -449,5 +448,42 @@ def test_folder_move_does_not_cascade_suffix_rewrites(tmp_path: Path) -> None:
         assert {
             r.link_text: r.target_path for r in vault.graph.get_outlinks("source.md")
         } == {"first": "A2/a.md", "second": "A2/A2/a.md"}
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("folder_move", [False, True])
+@pytest.mark.parametrize("reference", [False, True])
+def test_moved_source_preserves_code_examples(
+    tmp_path: Path, folder_move: bool, reference: bool
+) -> None:
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    (tmp_path / "A").mkdir()
+    (tmp_path / "B").mkdir()
+    (tmp_path / "B/target.md").write_text("# target\n", encoding="utf-8")
+    real = (
+        "[real][r]\n\n[r]: B/target.md\n"
+        if reference
+        else '[real](B/target.md "a `title` survives") trailing prose\n'
+    )
+    example = "[r]: B/target.md" if reference else "[example](B/target.md)"
+    code = f"`{example}`\n\n```md\n{example}\n```\n"
+    (tmp_path / "A/source.md").write_text(real + code, encoding="utf-8")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        if folder_move:
+            vault.writer.move_folder("A", "C")
+        else:
+            (tmp_path / "C").mkdir()
+            vault.writer.rename("A/source.md", "C/source.md", update_links=True)
+        wait_for_writer_drain(vault)
+        result = (tmp_path / "C/source.md").read_text(encoding="utf-8")
+        assert code in result
+        assert "../B/target.md" in result
+        if not reference:
+            assert '"a `title` survives") trailing prose' in result
+        assert vault.graph.get_outlinks("C/source.md")[0].target_path == "B/target.md"
     finally:
         vault.close()

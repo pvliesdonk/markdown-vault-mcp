@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from markdown_vault_mcp.utils.links import (
     apply_link_replacement,
     compute_new_raw_target,
@@ -209,17 +211,20 @@ class TestApplyLinkReplacement:
         assert result == "[[new]] and [[new]]"
 
 
-def test_batch_rewrites_swap_original_destinations() -> None:
-    from markdown_vault_mcp.utils.links import apply_link_replacements
-
-    for link_type, content, expected in [
+@pytest.mark.parametrize(
+    ("link_type", "content", "expected"),
+    [
         ("markdown", "[a](a.md) [b](b.md)", "[a](b.md) [b](a.md)"),
         ("reference", "[a]: a.md\n[b]: b.md\n", "[a]: b.md\n[b]: a.md\n"),
         ("wikilink", "[[a.md|A]] [[b.md]]", "[[b.md|A]] [[a.md]]"),
-    ]:
-        assert (
-            apply_link_replacements(
-                content, link_type, {"a.md": "b.md", "b.md": "a.md"}
-            )
-            == expected
-        )
+    ],
+)
+def test_batch_rewrites_swap_original_destinations(
+    link_type: str, content: str, expected: str
+) -> None:
+    from markdown_vault_mcp.utils.links import apply_link_replacements
+
+    assert (
+        apply_link_replacements(content, link_type, {"a.md": "b.md", "b.md": "a.md"})
+        == expected
+    )

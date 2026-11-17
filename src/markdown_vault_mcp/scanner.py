@@ -37,6 +37,8 @@ from markdown_vault_mcp.utils.fs import (
     iter_markdown_files,
 )
 from markdown_vault_mcp.utils.links import (
+    _RE_FENCED_CODE,
+    _RE_INLINE_CODE,
     decode_markdown_destination,
     is_anchor_destination,
     parse_markdown_destination,
@@ -1024,20 +1026,6 @@ _EXTERNAL_URL_PREFIXES = ("//",)
 # as a scheme too.
 _RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 
-# Fenced code block: a ``` or ~~~ run opening a line (after indentation or
-# quote markers), with an optional info string, closed by the same run
-# opening a later line. Anchoring both fences to a line start is what keeps
-# three backticks in running prose from swallowing the blank line after
-# them, which would let a stray ``[`` pair across it (#1334); a same-line
-# multi-backtick span is a code span, matched by _RE_INLINE_CODE.
-_RE_FENCED_CODE = re.compile(
-    r"^[ \t>]*(```|~~~)[^\n]*\n.*?^[ \t>]*\1", re.DOTALL | re.MULTILINE
-)
-# Inline code: a backtick run and its closing run on one line.
-# Retry only at run starts: an unsuccessful run has the same following
-# text from every interior backtick, so retrying there is quadratic (#1749).
-# Keep the literal first so the engine can skip ordinary prose quickly.
-_RE_INLINE_CODE = re.compile(r"`(?<!``)`*[^`\n]+`+")
 #: A reference definition's line start: optional whitespace, then the ``[``
 #: that opens the label. What follows is read by :func:`_find_bracket_span`
 #: and :data:`_RE_REF_DEF_TAIL` rather than by one pattern, so an escaped
