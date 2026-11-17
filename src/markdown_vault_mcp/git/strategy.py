@@ -2419,9 +2419,9 @@ def _write_subject(
     return f"{operation}: {path}"
 
 
-def _folder_subject_path(path: Path) -> str:
-    """Keep unusual names identifiable on a single subject line."""
-    name = str(path)
+def _folder_subject_path(path: Path, root: Path | None = None) -> str:
+    """Render a root repo-relative (absolute outside *root*), one line, quoted if odd."""
+    name = str(path.relative_to(root) if root and path.is_relative_to(root) else path)
     if (
         name != name.strip()
         or " -> " in name
@@ -2546,8 +2546,8 @@ def _stage_and_commit_batch(
     subject = f"{tool_name}: {staged} {noun}"
     if folder_move is not None:
         old_dir, new_dir = folder_move
-        old_name = _folder_subject_path(old_dir.relative_to(git_root))
-        new_name = _folder_subject_path(new_dir.relative_to(git_root))
+        old_name = _folder_subject_path(old_dir, git_root)
+        new_name = _folder_subject_path(new_dir, git_root)
         subject = f"{tool_name}: {old_name} -> {new_name}"
     elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]

@@ -6593,9 +6593,10 @@ first item. A folder move records its validated source and destination in the
 scope before dispatching writes. The dispatcher binds only those captured
 roots on the worker during the batch callback, including through forwarding
 overrides, without assigning callback writes to the finished scope.
-The Git batch writer renders the roots relative to the Git repository in the
-subject while committing all moved and derived files; unusual roots are quoted
-and escaped on one line. Other batch callbacks keep their existing contract
+The Git batch writer renders each root relative to the Git worktree in the
+subject, or as an absolute path when it is outside that worktree, while
+committing all moved and derived files. Unusual roots are quoted and escaped
+on one line. Other batch callbacks keep their existing contract
 (#2139).
 
 Three properties this depends on:
