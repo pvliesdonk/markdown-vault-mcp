@@ -1022,15 +1022,15 @@ class FTSIndex:
                   )
                 """
             ).rowcount
-            conn.execute(
+            purged = conn.execute(
                 "DELETE FROM notes_fts WHERE rowid IN ("
                 "SELECT id FROM notes_fts_docsize WHERE id NOT IN "
                 "(SELECT fts_rowid FROM notes_fts_rowid_map))"
-            )
+            ).rowcount
         logger.info(
             "fts_index_rowid_map_repaired bridged=%d purged=%d",
             bridged,
-            unbridged - bridged,
+            purged,
         )
 
     def _persist_rank_config(self, conn: sqlite3.Connection) -> None:
