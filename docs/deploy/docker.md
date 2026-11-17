@@ -328,6 +328,7 @@ keep them until you have verified the new index.
 
 Use the configured full paths above for backups. With the default SQLite
 embedding store, the file is `/data/search/embeddings/embeddings.sqlite3`.
+Stop the service before file-level copies, or use SQLite's online backup.
 Once the split is verified, resetting auth and session data on `state-data`
 leaves the active search data on `search-data` untouched.
 
@@ -345,6 +346,25 @@ docker compose up -d
 ```
 
 The reset leaves `state-data` and the vault mounted, preserving their contents.
+
+To reset local persistent state while keeping the active search data, first
+use `docker compose config` to confirm the `/data/state` mount,
+`FASTMCP_HOME=/data/state/fastmcp`, and the `/data/search` mount and four
+search paths above. Confirm the KV URL is `file:///data/state`, or that both
+`MARKDOWN_VAULT_MCP_KV_STORE_URL` and the legacy
+`MARKDOWN_VAULT_MCP_EVENT_STORE_URL` are unset, which selects that default.
+This deletes **all**
+contents of `state-data`, including local auth, session and other KV state
+and any unused old search files. Use it only when those contents can be lost;
+custom or external KV stores are not reset by this procedure:
+
+```bash
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/state -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
+```
+
+The active index and local embeddings on `search-data` remain in place.
 
 ### Git
 
