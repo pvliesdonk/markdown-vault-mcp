@@ -731,6 +731,9 @@ class Vault:
             pause_writes=self.pause_writes,
         )
         self._git_strategy.set_commit_observer(reconciler.note_own_commit)
+        checkout_observer = getattr(self._git_strategy, "set_checkout_observer", None)
+        if checkout_observer is not None:
+            checkout_observer(lambda: reconciler.mark_reconciled(None))
         return reconciler
 
     def _build_facets(self, settings: VaultSettings) -> None:

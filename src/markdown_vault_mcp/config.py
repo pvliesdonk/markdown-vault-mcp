@@ -1116,7 +1116,6 @@ class ProjectConfig:
         ``GitConfig.__post_init__`` validation.
         """
         return GitConfig(
-            backend=self.git_backend,
             token=self.git_token,
             repo_url=self.git_repo_url,
             username=self.git_username,
@@ -1333,6 +1332,10 @@ class ProjectConfig:
         ``object.__setattr__(self, "name", value)``.
         """
         # CONFIG-VALIDATE-START — validate domain fields below; kept across copier update
+        if self.git_backend not in ("cli", "libgit2"):
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_GIT_BACKEND must be cli or libgit2"
+            )
         # Freeze sequence-valued flat fields into tuples for deep
         # immutability (#639); reject a bare str/bytes, which is itself a
         # Sequence[str] and would silently split into characters.

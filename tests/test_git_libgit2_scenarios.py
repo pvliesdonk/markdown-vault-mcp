@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.git.libgit2 import Libgit2Store
+from markdown_vault_mcp.git.libgit2_sync import Libgit2SyncStore
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
 from tests.fixtures.libgit2 import _git as _run_git
@@ -30,16 +31,19 @@ def _git_commit(repo: Path, name: str, content: str, message: str) -> str:
     return _git_head(repo)
 
 
-@pytest.fixture(params=["cli", "libgit2"])
+@pytest.fixture(params=["cli", "libgit2", "libgit2-sync"])
 def store(
     request: pytest.FixtureRequest, isolated_repo: Path
 ) -> Iterator[GitWriteStrategy | Libgit2Store]:
     """Run each contract against the CLI and local native store."""
-    value = (
-        GitWriteStrategy(enable_push=False, git_lfs=False, repo_path=isolated_repo)
-        if request.param == "cli"
-        else Libgit2Store(isolated_repo)
-    )
+    if request.param == "cli":
+        value = GitWriteStrategy(
+            enable_push=False, git_lfs=False, repo_path=isolated_repo
+        )
+    elif request.param == "libgit2-sync":
+        value = Libgit2SyncStore(isolated_repo, enable_sync=True)
+    else:
+        value = Libgit2Store(isolated_repo)
     yield value
     value.close()
 

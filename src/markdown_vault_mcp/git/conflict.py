@@ -33,6 +33,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def conflict_sibling_name(original: Path, stamp: str, counter: int = 0) -> Path:
+    """Return the relative name for a conflict sibling."""
+    suffix = f"-{counter}" if counter else ""
+    return original.with_name(
+        f"{original.stem}.conflict-mcp-{stamp}{suffix}{original.suffix}"
+    )
+
+
+def with_conflict_metadata(post: frontmatter.Post, other: str, date: str) -> str:
+    """Serialize a parsed note with its conflict metadata."""
+    post.metadata["conflict_with"] = other
+    post.metadata["conflict_date"] = date
+    return frontmatter.dumps(post)
+
+
 def resolve_rebase_conflicts(
     git_root: Path,
     env: dict[str, str] | None,
@@ -410,8 +425,7 @@ def write_conflict_files(
 
     for rel_path, mcp_content in saved:
         original = Path(rel_path)
-        conflict_name = f"{original.stem}.conflict-mcp-{timestamp}{original.suffix}"
-        conflict_rel = str(original.parent / conflict_name)
+        conflict_rel = str(conflict_sibling_name(original, timestamp))
 
         # --- Write conflict file (MCP version) ---
         try:
@@ -425,12 +439,11 @@ def write_conflict_files(
             )
             post = frontmatter.Post(mcp_content)
 
-        post.metadata["conflict_with"] = rel_path
-        post.metadata["conflict_date"] = conflict_date
-
         conflict_abs = git_root / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
-        conflict_abs.write_text(frontmatter.dumps(post), encoding="utf-8")
+        conflict_abs.write_text(
+            with_conflict_metadata(post, rel_path, conflict_date), encoding="utf-8"
+        )
 
         # --- Update original file with conflict_with frontmatter ---
         original_abs = git_root / rel_path
@@ -460,9 +473,10 @@ def write_conflict_files(
                         exc_info=True,
                     )
                     orig_post = frontmatter.Post(content)
-                orig_post.metadata["conflict_with"] = conflict_rel
-                orig_post.metadata["conflict_date"] = conflict_date
-                original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
+                original_abs.write_text(
+                    with_conflict_metadata(orig_post, conflict_rel, conflict_date),
+                    encoding="utf-8",
+                )
                 updated_originals.append(rel_path)
             except (OSError, UnicodeDecodeError):
                 # OSError: removed/inaccessible after the existence check (TOCTOU), permission,

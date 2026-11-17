@@ -36,13 +36,13 @@ for SSH. A configured `core.sshCommand` is also refused for native sync.
 Local-path remotes with executable server hooks are refused for push because
 libgit2's local transport does not execute them.
 
-A divergent pull creates a two-parent merge in memory. Conflicting local notes
+A divergent pull replays local commits onto the fetched branch in memory. Conflicting local notes
 are saved as `.conflict-mcp-*` siblings, while remote content stays at the
-original path. The existing `rebased` result reason also covers a clean merge.
+original path. A clean replay reports the `rebased` result reason.
 Checkout refuses overlapping uncommitted changes and preserves unrelated work.
-If a reference update fails after checkout, HEAD is unchanged but the checkout
-can contain the fetched changes; inspect the reported working tree health before
-retrying. See the [local store API](../reference/api/git.md#local-libgit2-store)
+If checkout or reference publication fails, the store restores the affected paths
+and invalidates search for reindexing. If restoration also fails, HEAD remains
+unchanged and the working tree may need manual cleanup; search refreshes from disk. See the [local store API](../reference/api/git.md#local-libgit2-store)
 for native history and revision-query limitations.
 
 ## Filenames from outside the server
@@ -474,7 +474,7 @@ it for a shared vault. The server does not add this attribute for you.
 
 ### Where merge drivers apply
 
-The CLI backend rebases a diverged pull, while the native backend merges it
+The CLI backend rebases a diverged pull; the native backend replays local commits
 in memory. Both apply supported merge attributes before the sibling resolver.
 
 If Git still reports paths with unresolved conflicts, the server's resolver

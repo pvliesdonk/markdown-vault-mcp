@@ -6818,11 +6818,11 @@ compares the two by identity to avoid closing one object twice (#1765). Splittin
 that identity check depends on there being one object.
 
 The native sync store likewise owns one lock and one scheduler. It fetches
-before classifying a pull, creates a two-parent merge in memory for divergent
-histories, then performs a safe checkout and a reference transaction. It
-retains the existing `rebased` result reason for a clean divergent merge.
-An unsuccessful reference update can leave the checkout and index changed;
-HEAD remains unchanged and the worktree health check reports the actual state.
+before classifying a pull, replays divergent local commits in memory, then
+performs a safe checkout and a reference transaction. A clean replay reports
+`rebased`. Checkout invalidates the indexed HEAD before writing; on failure,
+the store restores affected paths. If restoration fails, HEAD remains unchanged,
+the worktree health check reports the state, and search reindexes from disk.
 The [libgit2 reference](reference/git-libgit2.md) records the underlying APIs.
 
 The promotion of `is_managed`, `resolve_force_repo`, `head_sha`, and

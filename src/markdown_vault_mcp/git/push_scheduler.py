@@ -44,11 +44,6 @@ _Result = TypeVar("_Result")
 class PushBackendError(Exception):
     """Sanitized failure from an injected backend operation."""
 
-    def __init__(self, detail: str, *, reason: str | None = None) -> None:
-        """Carry a backend's classification alongside its diagnostic detail."""
-        super().__init__(detail)
-        self.reason = reason
-
 
 class PushScheduler:
     """Idle-timer push deferral and push execution for GitWriteStrategy.
@@ -211,9 +206,7 @@ class PushScheduler:
                 self._health.push_failed(push_failure_reason(stderr), stderr.strip())
                 raise
             except PushBackendError as exc:
-                self._health.push_failed(
-                    exc.reason or push_failure_reason(str(exc)), str(exc)
-                )
+                self._health.push_failed(push_failure_reason(str(exc)), str(exc))
                 raise
             except Exception as exc:
                 # Redacted like the stderr arm: an exception raised while
@@ -270,19 +263,18 @@ class PushScheduler:
     def _startup_backend_failed(self, exc: PushBackendError) -> None:
         """Record a sanitized backend failure while the caller holds the lock."""
         logger.warning("git_startup_push_failed error=%s", one_line(str(exc)))
-        self._health.push_failed(exc.reason or push_failure_reason(str(exc)), str(exc))
+        self._health.push_failed(push_failure_reason(str(exc)), str(exc))
 
     def _call_backend(self, fn: Callable[[Path], _Result], git_root: Path) -> _Result:
         """Wrap injected errors without exposing exception context."""
         try:
             return fn(git_root)
         except Exception as exc:
-            reason = exc.reason if isinstance(exc, PushBackendError) else None
             detail = f"{type(exc).__name__}: {exc}"
             if isinstance(exc, subprocess.CalledProcessError):
                 detail = f"{type(exc).__name__}: exit status {exc.returncode} stderr={exc.stderr or ''}"
             detail = self._redact(detail)
-        raise PushBackendError(detail, reason=reason) from None
+        raise PushBackendError(detail) from None
 
     def _run_push(self, git_root: Path) -> None:
         """Run the injected operation or resolve the CLI helper at call time."""

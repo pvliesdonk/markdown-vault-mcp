@@ -181,7 +181,7 @@ def _build_git_strategy(
     # from `ProjectConfig` at import time must resolve under the
     # config-surface generator's dependency floor (see the module docstring).
     git = config.git
-    if git.backend == "libgit2":
+    if config.git_backend == "libgit2":
         from markdown_vault_mcp.git.libgit2_sync import Libgit2SyncStore
 
         return Libgit2SyncStore(

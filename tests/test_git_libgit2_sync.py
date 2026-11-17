@@ -677,7 +677,7 @@ def test_incoming_configured_filter_is_refused_without_conflict_reason(
     before = _git_head(local)
     result = store.force_pull()
     assert not result.applied and _git_head(local) == before
-    assert result.reason == "fetch_failed"
+    assert result.reason == "conflict_resolution_failed"
     assert "filter" in (result.detail or "")
     store.close()
 
@@ -686,8 +686,10 @@ def test_certificate_callback_never_accepts_invalid_host() -> None:
     from markdown_vault_mcp.git.libgit2_sync import _callbacks
 
     callback = _callbacks(pygit2, None, "git", "https://example.test/repo")
-    assert callback.certificate_check(None, False, b"example.test") is False
-    assert callback.certificate_check(None, True, b"example.test") is True
+    with pytest.raises(pygit2.Passthrough):
+        callback.certificate_check(None, False, b"example.test")
+    with pytest.raises(pygit2.Passthrough):
+        callback.certificate_check(None, True, b"example.test")
 
 
 def test_local_remote_hook_is_refused_at_startup(git_repo_pair: GitRepoPair) -> None:
@@ -760,3 +762,421 @@ def test_credentials_stop_after_rejected_attempt() -> None:
         )
     with pytest.raises(ValueError, match=r"[Cc]redential"):
         callback.credentials(url, None, allowed)
+
+
+@pytest.mark.parametrize("failure", ["reference", "partial", "restore"])
+def test_failed_checkout_keeps_vault_search_consistent(  # noqa: C901, PLR0915, RUF100 -- exercises failure stages through a real vault.
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    from markdown_vault_mcp.vault import Vault
+
+    local = git_repo_pair.local_path
+    _git_commit(local, "README.md", "originalquartz\n", "seed")
+    _git_commit(local, "staged.txt", "base\n", "stage seed")
+    _git_commit(local, "unstaged.txt", "base\n", "unstaged seed")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, "README.md", "newcobalt\n", "remote")
+    _git_commit(other, "remote.md", "remote new\n", "add remote")
+    _run_git(other, "push")
+    (local / "staged.txt").write_text("staged\n")
+    _run_git(local, "add", "staged.txt")
+    (local / "unstaged.txt").write_text("unstaged\n")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    vault = Vault(source_dir=local, git_strategy=store)
+    try:
+        vault.index.build_index()
+        assert vault.reader.search("originalquartz", mode="keyword")
+        reconciler = vault._head_reconciler
+        assert reconciler is not None
+        before = _git_head(local)
+        reconciler.mark_reconciled(before)
+        real_repo = store._repo
+
+        class FailedTransaction:
+            def __init__(self):
+                self.transaction = real_repo.transaction()
+
+            def __enter__(self):
+                self.transaction.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.transaction.__exit__(*args)
+
+            def lock_ref(self, name):
+                self.transaction.lock_ref(name)
+
+            def set_target(self, *_args, **_kwargs):
+                raise OSError("reference update failed")
+
+        class FailedRepo:
+            checkouts = 0
+
+            def checkout_tree(self, *args, **kwargs):
+                self.checkouts += 1
+                if failure == "restore" and self.checkouts == 2:
+                    raise OSError("restore failed")
+                if failure in ("partial", "restore") and self.checkouts == 1:
+                    real_repo.checkout_tree(
+                        args[0], strategy=pygit2.GIT_CHECKOUT_SAFE, paths=["README.md"]
+                    )
+                    raise OSError("partial checkout failed")
+                real_repo.checkout_tree(*args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(real_repo, name)
+
+            def __getitem__(self, key):
+                return real_repo[key]
+
+            def transaction(self):
+                return FailedTransaction()
+
+        monkeypatch.setattr(store, "_repo", FailedRepo())
+        assert not store.force_pull().applied
+        if failure == "restore":
+            assert store.sync_health() is not None
+            monkeypatch.setattr(store, "_repo", real_repo)
+            note = local / "own.md"
+            note.write_text("own write\n")
+            store(note, "own write\n", "write")
+        assert (local / "staged.txt").read_text() == "staged\n"
+        assert _run_git(local, "show", ":staged.txt") == "staged\n"
+        assert (local / "unstaged.txt").read_text() == "unstaged\n"
+        reconciler.reconcile(source="git_sync")
+        if failure != "restore":
+            assert _git_head(local) == before
+        contents = (local / "README.md").read_text()
+        assert bool(vault.reader.search("newcobalt", mode="keyword")) == (
+            "newcobalt" in contents
+        )
+        assert bool(vault.reader.search("originalquartz", mode="keyword")) == (
+            "originalquartz" in contents
+        )
+        monkeypatch.setattr(store, "_repo", real_repo)
+        retry = store.force_pull()
+        if failure == "restore":
+            assert not retry.applied and "README.md" in (retry.detail or "")
+        else:
+            assert retry.applied, retry.detail
+    finally:
+        vault.close()
+        store.close()
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+@pytest.mark.parametrize("query", ["vault", "directory", "revision"])
+def test_history_consumers_after_native_divergence(
+    git_repo_pair: GitRepoPair, tmp_path: Path, conflict: bool, query: str
+) -> None:
+    from markdown_vault_mcp.git.types import RevisionQuery
+
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "core.abbrev", "7")
+    (local / "notes").mkdir()
+    birth = _git_commit(local, "notes/note.md", "base\n", "seed")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "notes/note.md" if conflict else "local.md", "local\n", "local")
+    _git_commit(other, "notes/note.md", "remote\n", "remote")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        assert store.force_pull().applied
+        if query == "revision":
+            assert (
+                store.get_file_at_ref(
+                    RevisionQuery(local, local / "notes/note.md", birth, 0)
+                ).content
+                == "base\n"
+            )
+        else:
+            path = local / "notes" if query == "directory" else None
+            assert store.get_file_history(
+                local, path, None, 20, is_dir=query == "directory"
+            )
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("incoming", [False, True])
+def test_gitlink_is_supported_or_refused_actionably(
+    git_repo_pair: GitRepoPair, tmp_path: Path, incoming: bool
+) -> None:
+    local = git_repo_pair.local_path
+    sub = tmp_path / "subsource"
+    sub.mkdir()
+    _run_git(sub, "init", "-q", "--initial-branch=main")
+    _run_git(sub, "config", "user.name", "test")
+    _run_git(sub, "config", "user.email", "test@example.test")
+    oid = _git_commit(sub, "note.md", "submodule\n", "seed")
+    target = _git_clone(git_repo_pair, tmp_path) if incoming else local
+    _run_git(target, "update-index", "--add", "--cacheinfo", f"160000,{oid},sub")
+    _run_git(target, "commit", "-qm", "add gitlink")
+    if incoming:
+        _run_git(target, "push")
+    try:
+        store = Libgit2SyncStore(local, enable_sync=True)
+    except ConfigurationError as exc:
+        assert "GIT_BACKEND=cli" in str(exc)
+        return
+    try:
+        if incoming:
+            result = store.force_pull()
+            assert result.applied or "GIT_BACKEND=cli" in (result.detail or "")
+    finally:
+        store.close()
+
+
+def test_incoming_required_unconfigured_filter_refused(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "filter.missing.required", "true")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, ".gitattributes", "*.md filter=missing\n", "required filter")
+    _run_git(other, "push")
+    before = _git_head(local)
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert not result.applied and _git_head(local) == before
+        assert "GIT_BACKEND=cli" in (result.detail or "")
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("managed", [True, False], ids=["managed", "token"])
+def test_empty_remote_first_commit_can_be_pushed(tmp_path: Path, managed: bool) -> None:
+    remote = tmp_path / "empty.git"
+    remote.mkdir()
+    _run_git(remote, "init", "--bare", "--initial-branch=main")
+    local = tmp_path / "local"
+    if managed:
+        store = Libgit2SyncStore(
+            local, managed=True, repo_url=str(remote), enable_sync=True
+        )
+    else:
+        _run_git(tmp_path, "clone", str(remote), str(local))
+        store = Libgit2SyncStore(local, token="fixture", enable_sync=True)
+    try:
+        _run_git(local, "config", "user.name", "Test")
+        _run_git(local, "config", "user.email", "test@example.test")
+        _git_commit(local, "note.md", "first\n", "first")
+        result = store.force_push()
+        assert result.applied, result
+        assert _run_git(remote, "show", "main:note.md") == "first\n"
+        assert store._tracking() is not None
+    finally:
+        store.close()
+
+
+def test_empty_remote_starts_sync_loop(tmp_path: Path) -> None:
+    import threading
+
+    remote = tmp_path / "empty.git"
+    remote.mkdir()
+    _run_git(remote, "init", "--bare", "--initial-branch=main")
+    local = tmp_path / "local"
+    store = Libgit2SyncStore(
+        local, managed=True, repo_url=str(remote), enable_sync=True
+    )
+    ticked = threading.Event()
+    try:
+        store.start(repo_path=local, pull_interval_s=1, on_tick=ticked.set)
+        assert ticked.wait(2), "sync loop did not start for an empty remote"
+    finally:
+        store.stop()
+        store.close()
+
+
+def test_unrelated_remote_history_has_actionable_outcome(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _run_git(other, "checkout", "--orphan", "replacement")
+    _run_git(other, "rm", "-rf", ".")
+    _git_commit(other, "replacement.md", "replacement\n", "replacement")
+    _run_git(other, "push", "--force", "origin", "HEAD:main")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert result.applied or result.detail, result
+    finally:
+        store.close()
+
+
+def test_commit_only_pull_result_matches_cli(git_repo: Path) -> None:
+    store = Libgit2SyncStore(git_repo, enable_sync=False)
+    try:
+        result = store.force_pull()
+        assert result.reason == "pull_disabled"
+        assert result.from_sha == result.to_sha == ""
+    finally:
+        store.close()
+
+
+def test_no_remote_push_has_actionable_hint(git_repo: Path) -> None:
+    store = Libgit2SyncStore(git_repo, enable_sync=True)
+    try:
+        result = store.force_push()
+        assert result.reason == "no_remote"
+        assert result.hint
+    finally:
+        store.close()
+
+
+def test_filter_refusal_is_visible_in_sync_health(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "filter.demo.clean", "cat")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, ".gitattributes", "*.md filter=demo\n", "attributes")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        assert not store.force_pull().applied
+        assert store.sync_health() is not None
+    finally:
+        store.close()
+
+
+def test_dry_run_push_has_actionable_hint(git_repo_pair: GitRepoPair) -> None:
+    store = Libgit2SyncStore(git_repo_pair.local_path, enable_sync=True)
+    try:
+        result = store.force_push(dry_run=True)
+        assert result.reason == "dry_run_unsupported"
+        assert result.hint
+    finally:
+        store.close()
+
+
+def test_push_failure_hint_is_bounded(
+    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.git.push_scheduler import PushBackendError
+
+    local = git_repo_pair.local_path
+    store = Libgit2SyncStore(local, enable_sync=True)
+    _git_commit(local, "note.md", "local\n", "local")
+
+    def fail(_path: Path) -> None:
+        raise PushBackendError("x" * 300)
+
+    monkeypatch.setattr(store, "_push", fail)
+    try:
+        result = store.force_push()
+        assert result.reason == "push_failed"
+        assert result.hint and len(result.hint) <= 200
+    finally:
+        store.close()
+
+
+def test_policy_tree_scan_does_not_load_blob_contents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    import markdown_vault_mcp.git.libgit2_sync as sync
+
+    class Repo:
+        def __getitem__(self, _oid):
+            pytest.fail("policy type scan loaded a blob")
+
+        def get_attr(self, *_args):
+            return None
+
+    monkeypatch.setattr(sync, "_filter_guard", lambda *_args: None)
+    entry = SimpleNamespace(name="note.md", id="blob", type_str="blob")
+    commit = SimpleNamespace(tree=[entry], id="commit")
+    sync._check_tree(Repo(), commit)
+
+
+def test_path_limited_checkout_restores_target_added_file(git_repo: Path) -> None:
+    before = _git_head(git_repo)
+    target = _git_commit(git_repo, "added.md", "new\n", "add")
+    _run_git(git_repo, "reset", "--hard", before)
+    repo = pygit2.Repository(str(git_repo))
+    repo.checkout_tree(repo[target], strategy=pygit2.GIT_CHECKOUT_SAFE)
+    assert (git_repo / "added.md").exists()
+    repo.checkout_tree(
+        repo[before], strategy=pygit2.GIT_CHECKOUT_FORCE, paths=["added.md"]
+    )
+    assert not (git_repo / "added.md").exists()
+
+
+def test_conflict_siblings_have_dedicated_final_commit(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "README.md", "local\n", "local edit")
+    _git_commit(other, "README.md", "remote\n", "remote edit")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert result.applied
+        assert _run_git(local, "log", "-1", "--format=%s").startswith(
+            "conflict: saved "
+        )
+        sibling = next(local.glob("README.conflict-mcp-*.md"))
+        assert sibling.name in _run_git(
+            local, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"
+        )
+    finally:
+        store.close()
+
+
+def test_empty_clone_receives_remote_first_commit(tmp_path: Path) -> None:
+    remote = tmp_path / "empty.git"
+    remote.mkdir()
+    _run_git(remote, "init", "--bare", "--initial-branch=main")
+    local = tmp_path / "local"
+    store = Libgit2SyncStore(
+        local, managed=True, repo_url=str(remote), enable_sync=True
+    )
+    other = tmp_path / "writer"
+    _run_git(tmp_path, "clone", str(remote), str(other))
+    _run_git(other, "config", "user.name", "Test")
+    _run_git(other, "config", "user.email", "test@example.test")
+    _git_commit(other, "first.md", "remote first\n", "first")
+    _run_git(other, "push", "origin", "main")
+    try:
+        result = store.force_pull()
+        assert result.applied, result
+        assert (local / "first.md").read_text() == "remote first\n"
+    finally:
+        store.close()
+
+
+def test_empty_clone_loop_receives_later_first_commit(tmp_path: Path) -> None:
+    import threading
+
+    remote = tmp_path / "empty.git"
+    remote.mkdir()
+    _run_git(remote, "init", "--bare", "--initial-branch=main")
+    local = tmp_path / "local"
+    store = Libgit2SyncStore(
+        local, managed=True, repo_url=str(remote), enable_sync=True
+    )
+    pulled = threading.Event()
+    try:
+        store.start(repo_path=local, pull_interval_s=1, on_pull=pulled.set)
+        other = tmp_path / "writer"
+        _run_git(tmp_path, "clone", str(remote), str(other))
+        _run_git(other, "config", "user.name", "Test")
+        _run_git(other, "config", "user.email", "test@example.test")
+        _git_commit(other, "first.md", "remote first\n", "first")
+        _run_git(other, "push", "origin", "main")
+        assert pulled.wait(5)
+        assert (local / "first.md").read_text() == "remote first\n"
+    finally:
+        store.stop()
+        store.close()
