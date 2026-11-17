@@ -12,23 +12,13 @@ from markdown_vault_mcp.git.libgit2 import Libgit2Store
 from markdown_vault_mcp.git.libgit2_sync import Libgit2SyncStore
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
+from tests.fixtures.git import _git_commit, _git_head
 from tests.fixtures.libgit2 import _git as _run_git
 from tests.fixtures.libgit2 import isolated_repo as isolated_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
-
-
-def _git_head(repo: Path) -> str:
-    return _run_git(repo, "rev-parse", "HEAD").strip()
-
-
-def _git_commit(repo: Path, name: str, content: str, message: str) -> str:
-    (repo / name).write_text(content)
-    _run_git(repo, "add", "--", name)
-    _run_git(repo, "commit", "-qm", message)
-    return _git_head(repo)
 
 
 @pytest.fixture(params=["cli", "libgit2", "libgit2-sync"])

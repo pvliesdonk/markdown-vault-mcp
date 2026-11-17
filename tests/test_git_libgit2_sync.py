@@ -470,16 +470,6 @@ def test_credentials_are_scoped_to_the_configured_https_host() -> None:
     assert "user:" not in _safe(url, "fixture-secret")
 
 
-def test_ssh_credentials_support_username_negotiation() -> None:
-    from markdown_vault_mcp.git.libgit2_sync import _callbacks
-
-    callback = _callbacks(pygit2, None, "ignored", "ssh://git@example.test/repo")
-    credential = callback.credentials(
-        "ssh://git@example.test/repo", "git", pygit2.enums.CredentialType.USERNAME
-    )
-    assert credential.credential_tuple == ("git",)
-
-
 def test_dry_run_fetches_and_classifies_divergence(
     git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
@@ -966,9 +956,10 @@ def test_empty_remote_first_commit_can_be_pushed(tmp_path: Path, managed: bool) 
     try:
         _run_git(local, "config", "user.name", "Test")
         _run_git(local, "config", "user.email", "test@example.test")
-        _git_commit(local, "note.md", "first\n", "first")
-        result = store.force_push()
-        assert result.applied, result
+        note = local / "note.md"
+        note.write_text("first\n")
+        store(note, "first\n", "write")
+        store.flush()
         assert _run_git(remote, "show", "main:note.md") == "first\n"
         assert store._tracking() is not None
     finally:
@@ -1180,3 +1171,211 @@ def test_empty_clone_loop_receives_later_first_commit(tmp_path: Path) -> None:
     finally:
         store.stop()
         store.close()
+
+
+@pytest.mark.parametrize(
+    "override_false", [False, True], ids=["valueless", "false-override"]
+)
+def test_incoming_valueless_required_filter(
+    git_repo_pair: GitRepoPair, tmp_path: Path, override_false: bool
+) -> None:
+    local = git_repo_pair.local_path
+    with (local / ".git/config").open("a", encoding="utf-8") as config:
+        config.write('\n[filter "missing"]\n\trequired\n')
+        if override_false:
+            config.write("\trequired = false\n")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, ".gitattributes", "*.md filter=missing\n", "required filter")
+    _run_git(other, "push")
+    before = _git_head(local)
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        if override_false:
+            assert result.applied, result.detail
+        else:
+            assert not result.applied and _git_head(local) == before
+            assert "GIT_BACKEND=cli" in (result.detail or "")
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("backend", ["cli", "native"])
+def test_merge_resolution_survives_remote_pull(
+    git_repo_pair: GitRepoPair, tmp_path: Path, backend: str
+) -> None:
+    import subprocess
+
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "note.md", "base\n", "base")
+    _run_git(local, "push")
+    _run_git(other, "pull", "--ff-only")
+    _run_git(local, "checkout", "-b", "side")
+    _git_commit(local, "note.md", "side\n", "side")
+    _run_git(local, "checkout", "main")
+    _git_commit(local, "note.md", "main\n", "main")
+    merge = subprocess.run(["git", "merge", "side"], cwd=local, capture_output=True)
+    assert merge.returncode != 0
+    (local / "note.md").write_text("carefully resolved\n")
+    _run_git(local, "add", "note.md")
+    _run_git(local, "commit", "-qm", "merge resolution")
+    _git_commit(other, "remote.md", "remote\n", "remote")
+    _run_git(other, "push")
+    before = _git_head(local)
+    if backend == "cli":
+        store = GitWriteStrategy(
+            repo_path=local, enable_pull=True, enable_push=False, git_lfs=False
+        )
+    else:
+        store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        if backend == "cli":
+            assert result.applied
+            assert "main" in (local / "note.md").read_text()
+        else:
+            assert not result.applied and "GIT_BACKEND=cli" in (result.detail or "")
+            assert _git_head(local) == before
+            assert (local / "note.md").read_text() == "carefully resolved\n"
+            assert _run_git(local, "status", "--porcelain") == ""
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("managed", [False, True], ids=["existing", "managed"])
+def test_initial_lfs_pointer_is_refused(
+    git_repo_pair: GitRepoPair, tmp_path: Path, managed: bool
+) -> None:
+    local = git_repo_pair.local_path
+    _git_commit(
+        local,
+        ".gitattributes",
+        "*.bin filter=lfs diff=lfs merge=lfs -text\n",
+        "attributes",
+    )
+    pointer = (
+        "version https://git-lfs.github.com/spec/v1\noid sha256:"
+        + "a" * 64
+        + "\nsize 123\n"
+    )
+    _git_commit(local, "asset.bin", pointer, "pointer")
+    _run_git(local, "push")
+    path = tmp_path / "managed" if managed else local
+    with pytest.raises(
+        ConfigurationError, match=r"(?i)(lfs|filter).*(GIT_BACKEND=cli)"
+    ):
+        store = Libgit2SyncStore(
+            path,
+            managed=managed,
+            repo_url=str(git_repo_pair.remote_path) if managed else None,
+            enable_sync=True,
+        )
+        store.close()
+
+
+@pytest.mark.parametrize("backend", ["cli", "native"])
+def test_repeated_conflicts_have_reciprocal_sibling_links(
+    git_repo_pair: GitRepoPair, tmp_path: Path, backend: str
+) -> None:
+    import frontmatter
+
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "README.md", "first local\n", "local one")
+    _git_commit(local, "README.md", "final local\n", "local two")
+    _git_commit(other, "README.md", "remote\n", "remote")
+    _run_git(other, "push")
+    if backend == "cli":
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+        store = GitWriteStrategy(
+            repo_path=local, enable_pull=True, enable_push=False, git_lfs=False
+        )
+    else:
+        store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        assert store.force_pull().applied
+        siblings = list(local.glob("README.conflict-mcp-*.md"))
+        assert siblings
+        assert any(
+            frontmatter.loads(path.read_text()).content == "final local"
+            for path in siblings
+        )
+        original = frontmatter.loads((local / "README.md").read_text())
+        for path in siblings:
+            assert frontmatter.loads(path.read_text())["conflict_with"] == "README.md"
+            assert original["conflict_with"] == path.name
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_force_push_without_tracking_ref_is_no_remote(
+    git_repo_pair: GitRepoPair, dry_run: bool
+) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "update-ref", "-d", "refs/remotes/origin/main")
+    _git_commit(local, "note.md", "local\n", "local")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_push(dry_run=dry_run)
+        assert not result.applied and result.reason == "no_remote"
+        assert result.hint and "git push -u origin <branch>" in result.hint
+    finally:
+        store.close()
+
+
+def test_disabled_pull_skips_quiescer(git_repo: Path) -> None:
+    import contextlib
+
+    calls = []
+    store = Libgit2SyncStore(git_repo, enable_sync=False)
+
+    @contextlib.contextmanager
+    def pause():
+        calls.append("pause")
+        yield
+
+    store.set_write_quiescer(pause, lambda: True)
+    try:
+        assert store.force_pull().reason == "pull_disabled"
+        assert calls == []
+    finally:
+        store.close()
+
+
+def test_local_delete_remote_modify_is_refused(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _run_git(local, "rm", "README.md")
+    _run_git(local, "commit", "-qm", "delete")
+    _git_commit(other, "README.md", "remote edit\n", "remote")
+    _run_git(other, "push")
+    before = _git_head(local)
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert not result.applied and result.reason == "conflict_resolution_failed"
+        assert _git_head(local) == before and not (local / "README.md").exists()
+    finally:
+        store.close()
+
+
+def test_missing_libgit2_has_operator_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.git.libgit2_sync as sync
+
+    def missing():
+        raise ConfigurationError(
+            'Install "markdown-vault-mcp[libgit2]" or use GitWriteStrategy'
+        )
+
+    monkeypatch.setattr(sync, "_pygit2", missing)
+    with pytest.raises(ConfigurationError, match="GIT_BACKEND=cli"):
+        Libgit2SyncStore(tmp_path)

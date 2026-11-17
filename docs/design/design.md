@@ -6820,7 +6820,9 @@ that identity check depends on there being one object.
 The native sync store likewise owns one lock and one scheduler. It fetches
 before classifying a pull, replays divergent local commits in memory, then
 performs a safe checkout and a reference transaction. A clean replay reports
-`rebased`. Checkout invalidates the indexed HEAD before writing; on failure,
+`rebased`. It refuses local-only merge commits before replay, and a local
+delete conflicting with a remote modification; repeated conflicts retain the
+final local version in one reciprocal sibling. Checkout invalidates the indexed HEAD before writing; on failure,
 the store restores affected paths. If restoration fails, HEAD remains unchanged,
 the worktree health check reports the state, and search reindexes from disk.
 The [libgit2 reference](reference/git-libgit2.md) records the underlying APIs.

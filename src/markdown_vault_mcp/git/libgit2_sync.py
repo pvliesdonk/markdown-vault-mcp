@@ -12,18 +12,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlsplit
 
-import frontmatter
-
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git._run import _normalize_remote, redact
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.conflict import (
     conflict_sibling_name,
+    parse_conflict_note,
     with_conflict_metadata,
 )
 from markdown_vault_mcp.git.health import push_failure_reason
 from markdown_vault_mcp.git.libgit2 import (
     Libgit2Store,
+    _config_bool,
     _filter_guard,
     _probe_policy,
     _pygit2,
@@ -36,7 +36,6 @@ from markdown_vault_mcp.git.types import (
     PullResult,
     PushResult,
 )
-from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory, is_regular_file, path_exists
 
 if TYPE_CHECKING:
@@ -63,7 +62,7 @@ def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
         rejection: str | None = None
         credential_attempts = 0
 
-        def credentials(self, request_url: str, user: str | None, allowed: int) -> Any:
+        def credentials(self, request_url: str, _user: str | None, allowed: int) -> Any:
             expected, requested = urlsplit(url), urlsplit(request_url)
             if (
                 token
@@ -77,10 +76,6 @@ def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
                 if self.credential_attempts > 3:
                     raise ValueError("Credential attempts exhausted")
                 return pg.UserPass(username, token)
-            if _ssh(url) and allowed & pg.enums.CredentialType.SSH_KEY:
-                return pg.KeypairFromAgent(user or "git")
-            if _ssh(url) and allowed & pg.enums.CredentialType.USERNAME:
-                return pg.Username(user or "git")
             raise ValueError("No supported credential available")
 
         def push_update_reference(self, _refname: str, message: str | None) -> None:
@@ -155,11 +150,7 @@ def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:  # noqa: 
             raise ConfigurationError(
                 f"incoming attribute changes cannot be safely evaluated against the existing index. {_FALLBACK}"
             )
-        if not any(
-            Path(d.new_file.path).name == ".gitattributes"
-            or Path(d.old_file.path).name == ".gitattributes"
-            for d in deltas
-        ):
+        if not attributes_changed:
             paths = (
                 d.new_file.path
                 for d in deltas
@@ -178,8 +169,7 @@ def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:  # noqa: 
                 _tree_entry(repo.config, f"filter.{name}.{kind}")
                 for kind in ("clean", "process")
             )
-            or str(_tree_entry(repo.config, f"filter.{name}.required")).lower()
-            in ("true", "yes", "on", "1")
+            or _config_bool(repo.config, f"filter.{name}.required")
         ):
             raise ConfigurationError(
                 f"incoming external filter {name!r} (including Git LFS) is unsupported. {_FALLBACK}"
@@ -188,11 +178,7 @@ def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:  # noqa: 
 
 
 def _frontmatter(content: bytes, other: str, date: str) -> bytes:
-    text = content.decode("utf-8")
-    try:
-        post = parse_frontmatter(text)
-    except Exception:
-        post = frontmatter.Post(text)
+    post, _ = parse_conflict_note(content.decode("utf-8"))
     return with_conflict_metadata(post, other, date).encode("utf-8")
 
 
@@ -230,7 +216,10 @@ class Libgit2SyncStore(Libgit2Store):
         commit_name: str | None = None,
         commit_email: str | None = None,
     ) -> None:
-        pg = _pygit2()
+        try:
+            pg = _pygit2()
+        except ConfigurationError as exc:
+            raise ConfigurationError(f"{exc} {_FALLBACK}") from None
         self._token, self._username = token, username
         self._sync_path = repo_path
         self._managed, self._enable_sync = managed, enable_sync
@@ -305,6 +294,8 @@ class Libgit2SyncStore(Libgit2Store):
         origin = self._origin()
         if self._enable_sync:
             self._gate(repo)
+            if not repo.head_is_unborn:
+                _check_tree(repo, repo.head.peel(self._pg.Commit))
         if self._managed and (
             not origin or _normalize_remote(origin.url) != _normalize_remote(url or "")
         ):
@@ -420,6 +411,8 @@ class Libgit2SyncStore(Libgit2Store):
 
     def force_pull(self, *, dry_run: bool = False) -> PullResult:
         """Fetch and reconcile the remote branch without invoking Git."""
+        if not self._enable_sync:
+            return PullResult.head_unchanged_failure("", "pull_disabled")
         with self._quiesce(skip=dry_run), self._lock:
             result = self._pull(dry_run)
             if dry_run:
@@ -542,7 +535,7 @@ class Libgit2SyncStore(Libgit2Store):
                 )
             raise
 
-    def _merge(
+    def _merge(  # noqa: C901, RUF100 -- replay and conflict preservation share the in-memory index.
         self, repo: Any, theirs: Any, ahead: int
     ) -> tuple[Any, str | None, list[str]]:
         if not ahead:
@@ -551,7 +544,11 @@ class Libgit2SyncStore(Libgit2Store):
             repo.head.target, self._pg.GIT_SORT_TOPOLOGICAL | self._pg.GIT_SORT_REVERSE
         )
         walk.hide(theirs.id)
-        commits = [commit for commit in walk if len(commit.parent_ids) <= 1]
+        commits = list(walk)
+        if any(len(commit.parent_ids) > 1 for commit in commits):
+            raise ConfigurationError(
+                f"Native replay cannot preserve local merge commits. {_FALLBACK}"
+            )
         target = theirs
         siblings: list[str] = []
         saved: list[tuple[Any, str, str, str, bool]] = []
@@ -602,6 +599,7 @@ class Libgit2SyncStore(Libgit2Store):
                 )
             ]
         reason = "conflicts_resolved_with_siblings" if saved else "rebased"
+        siblings = [name for name in siblings if any(item[2] == name for item in saved)]
         return target.id, reason, siblings
 
     def _resolve_conflicts(  # noqa: C901, RUF100 -- each conflict shape needs its own preservation path.
@@ -624,7 +622,9 @@ class Libgit2SyncStore(Libgit2Store):
             del index.conflicts[path]
             if ours is None:
                 if theirs is not None:
-                    index.add(theirs)
+                    raise ConfigurationError(
+                        f"Local deletion conflicts with remote modification: {path}. {_FALLBACK}"
+                    )
                 continue
             original = Path(path)
             stamp = now.strftime("%Y%m%d-%H%M%S")
@@ -671,6 +671,7 @@ class Libgit2SyncStore(Libgit2Store):
                 index.add(self._pg.IndexEntry(path, original_id, theirs.mode))
             sibling = self._pg.IndexEntry(name.as_posix(), sibling_id, ours.mode)
             if saved is not None:
+                saved[:] = [item for item in saved if item[1] != path]
                 saved.append(
                     (
                         sibling,
@@ -746,7 +747,7 @@ class Libgit2SyncStore(Libgit2Store):
             tracking = self._tracking()
             repo = self._repo
             before = str(tracking.target) if tracking else ""
-            if not repo or repo.head_is_unborn or not self._origin():
+            if not repo or repo.head_is_unborn or not self._origin() or not tracking:
                 if not dry_run:
                     self._observe_safe()
                 return PushResult(
@@ -755,7 +756,10 @@ class Libgit2SyncStore(Libgit2Store):
                     before,
                     before,
                     "no_remote",
-                    "Configure a remote before pushing.",
+                    "No remote-tracking branch (origin/<branch>) could be "
+                    "resolved for the current branch.  Push the branch to "
+                    "origin once (`git push -u origin <branch>`) so the "
+                    "remote-tracking ref exists.",
                 )
             if dry_run:
                 return PushResult(

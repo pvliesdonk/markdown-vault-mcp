@@ -27,18 +27,25 @@ token-unmanaged and commit-only modes. Set it to `cli` to return to the default.
 The native backend does not execute Git hooks, external clean filters, Git LFS,
 or signing commands. It refuses unsupported repository settings and executable
 hooks at startup. It refuses effective external filters and encoding attributes
-before checkout. When an incoming commit changes `.gitattributes` and the index
+at startup and before checkout. Native sync refuses existing or incoming Git LFS
+filters even if the local LFS driver is absent. When an incoming commit changes `.gitattributes` and the index
 already contains an attributes file, native sync refuses with the CLI fallback:
 the native attribute API cannot isolate the incoming rules from the index.
 `GIT_LFS` does not enable LFS in this backend. SSH remotes are
 refused because native host key verification is unavailable; use the CLI backend
 for SSH. A configured `core.sshCommand` is also refused for native sync.
 Local-path remotes with executable server hooks are refused for push because
-libgit2's local transport does not execute them.
+libgit2's local transport does not execute them. When a branch has no remote-tracking
+ref, an interactive push reports `no_remote` with setup guidance; automatic
+publication can still push the first commit to an empty remote.
 
 A divergent pull replays local commits onto the fetched branch in memory. Conflicting local notes
 are saved as `.conflict-mcp-*` siblings, while remote content stays at the
-original path. A clean replay reports the `rebased` result reason.
+original path. A clean replay reports the `rebased` result reason. Local-only merge commits are
+refused before replay because their resolutions cannot safely be preserved. A local
+deletion that conflicts with a remote edit is also refused. Switch to the CLI
+backend or reconcile the repository manually before retrying.
+Repeated conflicts on one path retain the final local version in one sibling.
 Checkout refuses overlapping uncommitted changes and preserves unrelated work.
 If checkout or reference publication fails, the store restores the affected paths
 and invalidates search for reindexing. If restoration also fails, HEAD remains

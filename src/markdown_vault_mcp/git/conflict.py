@@ -41,6 +41,14 @@ def conflict_sibling_name(original: Path, stamp: str, counter: int = 0) -> Path:
     )
 
 
+def parse_conflict_note(content: str) -> tuple[frontmatter.Post, Exception | None]:
+    """Parse a note, returning the original parsing error on fallback."""
+    try:
+        return parse_frontmatter(content), None
+    except Exception as exc:
+        return frontmatter.Post(content), exc
+
+
 def with_conflict_metadata(post: frontmatter.Post, other: str, date: str) -> str:
     """Serialize a parsed note with its conflict metadata."""
     post.metadata["conflict_with"] = other
@@ -428,16 +436,13 @@ def write_conflict_files(
         conflict_rel = str(conflict_sibling_name(original, timestamp))
 
         # --- Write conflict file (MCP version) ---
-        try:
-            post = parse_frontmatter(mcp_content)
-        except Exception:
-            # If frontmatter parsing fails, treat as plain content.
+        post, parse_error = parse_conflict_note(mcp_content)
+        if parse_error is not None:
             logger.warning(
                 "git_conflict_frontmatter_parse_failed path=%s fallback=plain_content",
                 conflict_rel,
-                exc_info=True,
+                exc_info=parse_error,
             )
-            post = frontmatter.Post(mcp_content)
 
         conflict_abs = git_root / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
@@ -463,16 +468,14 @@ def write_conflict_files(
                 # and skips just this original's update instead of crashing the
                 # whole pull.
                 content = read_text_utf8(original_abs)
-                try:
-                    orig_post = parse_frontmatter(content)
-                except Exception:
+                orig_post, parse_error = parse_conflict_note(content)
+                if parse_error is not None:
                     logger.warning(
                         "git_conflict_original_frontmatter_parse_failed "
                         "path=%s fallback=plain_content",
                         rel_path,
-                        exc_info=True,
+                        exc_info=parse_error,
                     )
-                    orig_post = frontmatter.Post(content)
                 original_abs.write_text(
                     with_conflict_metadata(orig_post, conflict_rel, conflict_date),
                     encoding="utf-8",
