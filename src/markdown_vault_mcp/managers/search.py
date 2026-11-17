@@ -744,20 +744,17 @@ class SearchManager:
     @staticmethod
     def _retrieve_candidates(
         fetch: Callable[[int], list[_CandidateT]],
-        candidate_limit: int,
+        filter_rows: Callable[[list[_CandidateT]], list[_CandidateT]],
         *,
-        exhaust: bool,
+        candidate_limit: int,
+        enough: Callable[[list[_CandidateT]], bool] | None,
     ) -> tuple[list[_CandidateT], int]:
-        """Expand a ranked pool to exhaustion when missing type must be found.
-
-        The full pool preserves ranking after filtering, including later rows
-        boosted by the existing ranking stages. Other filters keep their
-        established bounded candidate behavior.
-        """
+        """Expand a ranked pool until enough filtered notes survive or it ends."""
         while True:
             rows = fetch(candidate_limit)
-            if not exhaust or len(rows) < candidate_limit:
-                return rows, candidate_limit
+            filtered = filter_rows(rows)
+            if enough is None or enough(filtered) or len(rows) < candidate_limit:
+                return filtered, candidate_limit
             candidate_limit *= 2
 
     def _post_filter_semantic_rows(
@@ -1149,10 +1146,12 @@ class SearchManager:
             lambda cap: self._fts.search(
                 query, limit=cap, filters=filters, folder=folder, snippet_words=None
             ),
-            candidate_limit,
-            exhaust="type" in okf_filters,
+            lambda rows: self._filter_rows_okf(rows, okf_filters),
+            candidate_limit=candidate_limit,
+            enough=(lambda rows: len({row.path for row in rows}) >= limit)
+            if "type" in okf_filters
+            else None,
         )
-        raw = self._filter_rows_okf(raw, okf_filters)
         downweighted = _apply_length_downweight(
             raw, alpha=self._length_downweight_alpha
         )
@@ -1266,14 +1265,15 @@ class SearchManager:
         )
         raw, candidate_limit = self._retrieve_candidates(
             lambda cap: self._search_vectors(query, cap, folder),
-            candidate_limit,
-            exhaust="type" in okf_filters,
+            lambda rows: self._post_filter_semantic_rows(
+                rows, filters=filters, okf_filters=okf_filters
+            ),
+            candidate_limit=candidate_limit,
+            enough=(lambda rows: len({row["path"] for row in rows}) >= limit)
+            if "type" in okf_filters
+            else None,
         )
-
-        filtered = self._post_filter_semantic_rows(
-            raw, filters=filters, okf_filters=okf_filters
-        )
-        rows = self._adapt_semantic_rows(filtered)
+        rows = self._adapt_semantic_rows(raw)
 
         downweighted = _apply_length_downweight(
             rows, alpha=self._length_downweight_alpha
@@ -1323,24 +1323,28 @@ class SearchManager:
             lambda cap: self._fts.search(
                 query, limit=cap, filters=filters, folder=folder, snippet_words=None
             ),
-            fts_candidate_limit,
-            exhaust="type" in okf_filters,
+            lambda rows: self._filter_rows_okf(rows, okf_filters),
+            candidate_limit=fts_candidate_limit,
+            enough=(lambda rows: len({row.path for row in rows}) >= limit)
+            if "type" in okf_filters
+            else None,
         )
-        fts_raw = self._filter_rows_okf(fts_raw, okf_filters)
         fts_results: list[FTSResult] = _apply_length_downweight(
             fts_raw, alpha=self._length_downweight_alpha
         )
 
         vec_raw, vec_candidate_limit = self._retrieve_candidates(
             lambda cap: self._search_vectors(query, cap, folder),
-            vec_candidate_limit,
-            exhaust="type" in okf_filters,
-        )
-        vec_filtered = self._post_filter_semantic_rows(
-            vec_raw, filters=filters, okf_filters=okf_filters
+            lambda rows: self._post_filter_semantic_rows(
+                rows, filters=filters, okf_filters=okf_filters
+            ),
+            candidate_limit=vec_candidate_limit,
+            enough=(lambda rows: len({row["path"] for row in rows}) >= limit)
+            if "type" in okf_filters
+            else None,
         )
         vec_rows = _apply_length_downweight(
-            self._adapt_semantic_rows(vec_filtered),
+            self._adapt_semantic_rows(vec_raw),
             alpha=self._length_downweight_alpha,
         )
 

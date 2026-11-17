@@ -57,11 +57,13 @@ async def test_missing_type_filter(
         assert [row["path"] for row in result] == ["number.md"]
 
 
+@pytest.mark.parametrize("crowded", [True, False])
 @pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
 def test_missing_type_search_reaches_beyond_candidate_pool(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     mode: Literal["keyword", "semantic", "hybrid"],
+    crowded: bool,
 ) -> None:
     """Typed hits cannot crowd the eligible notes out of either search channel."""
     from markdown_vault_mcp.fts_index import FTSIndex
@@ -88,6 +90,8 @@ def test_missing_type_search_reaches_beyond_candidate_pool(
         embedding_provider=MockEmbeddingProvider(),
     )
     paths = [f"typed{i % 300:03}.md" for i in range(4100)] + ["other.md", "missing.md"]
+    if not crowded:
+        paths.insert(0, paths.pop())
     ranking = [
         {
             "path": path,
@@ -100,13 +104,21 @@ def test_missing_type_search_reaches_beyond_candidate_pool(
         }
         for i, path in enumerate(paths)
     ]
-    monkeypatch.setattr(
-        mgr, "_search_vectors", lambda _query, limit, _folder: ranking[:limit]
-    )
+    calls: list[int] = []
+
+    def fake_vectors(
+        _query: str, limit: int, _folder: str | None
+    ) -> list[dict[str, Any]]:
+        calls.append(limit)
+        return ranking[:limit]
+
+    monkeypatch.setattr(mgr, "_search_vectors", fake_vectors)
     results = mgr.search(
         "zebra", mode=mode, limit=1, filters={"type": None, "tags": "keep"}
     )
     assert [row.path for row in results] == ["missing.md"]
+    if mode != "keyword":
+        assert len(calls) == (2 if crowded else 1)
 
 
 @pytest.mark.parametrize(
