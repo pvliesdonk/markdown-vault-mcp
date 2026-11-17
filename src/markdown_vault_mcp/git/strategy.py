@@ -445,6 +445,8 @@ class GitWriteStrategy:
             tool_name: The MCP tool that produced them.
             primary_paths: Paths written outside secondary maintenance, or
                 ``None`` to retain the ordinary batch subject.
+            group: Optional explicit subject and result sink for a persistent
+                group. The sink receives the SHA and path count under the lock.
         """
         if self._closed or not items:
             return
@@ -2477,9 +2479,9 @@ def _stage_and_commit_batch(
     scoped to, both taken from the union of what the items reported
     (#1249, #1273).
 
-    A one-item batch delegates to :func:`_stage_and_commit` instead, so the
-    commit subject stays that file's own path rather than becoming the
-    pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
+    An ordinary one-item batch delegates to :func:`_stage_and_commit`, so its
+    subject stays that file's path. A group uses its explicit subject even
+    for one item.
 
     Args:
         git_root: Git repository root.
@@ -2488,7 +2490,12 @@ def _stage_and_commit_batch(
             when the batch holds more than one write without a single primary.
         identity: Committer and author identity for the commit.
         primary_paths: Optional primary-write provenance. A sole primary path
-            with one staged item names the subject; all items enter the commit.
+            with one staged item names the ordinary subject.
+        group: Optional request whose subject overrides ordinary naming.
+
+    Returns:
+        ``True`` when this batch path committed; ``None`` when it did not or
+        when an ordinary one-item batch delegated to the single-write path.
     """
     if len(items) == 1 and group is None:
         # A single-file call is the overwhelmingly common one, and #1264 is

@@ -6575,8 +6575,8 @@ handle. The dispatcher buffers writes across calls and closes the group with
 its explicit description as the Git subject; its result reports the commit SHA
 and the number of paths committed. Ordinary scopes keep their per-call behavior.
 A drain still flushes open groups before a pull, so a group spanning a drain can
-produce multiple commits; F7 owns pull deferral. Writes remain immediately readable, and indexing proceeds independently of
-the commit. Non-opted-in callbacks retain per-write behavior and report no group
+produce multiple commits; F7 owns pull deferral. Writes remain immediately
+readable, and indexing proceeds independently of the commit. Non-opted-in callbacks retain per-write behavior and report no group
 commit. No group tools or arguments are registered in this slice.
 
 OKF content-write maintenance, index-listing refreshes, and single-note
