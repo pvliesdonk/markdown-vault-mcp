@@ -30,7 +30,7 @@ filenames retain the same spelling when Git decides which paths to stage.
 In both git modes, the commit boundary is the MCP tool call, not the file.
 A call that wrote one file commits under that file's path
 (`write: notes/one.md`), so an ordinary vault's log reads as it always
-did. A call that touched many primary files, such as `move_folder` or
+did. A call that touched many primary files, such as `replace_text`, `move_folder` or
 `okf_convert_links`, produces one commit with the
 subject `<tool>: N files`, where a per-file boundary produced one commit per
 file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)).
@@ -592,7 +592,7 @@ Behavior:
 
 ## Submodules and nested repositories in the vault
 
-A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, attachment writes and OKF tools at their existing write checks.
+A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to `write`, `append`, `edit`, `replace_text`, `delete`, `rename`, `move_folder`, attachment writes and OKF tools at their existing write checks.
 
 - `create_upload_link` refuses a `ref` inside a protected repository before creating a link, for notes and attachments. Choose a destination outside that repository. Download links can still read its files.
 - `fetch` refuses a `path` inside a protected repository before downloading anything. The save still applies the usual overwrite and etag checks.

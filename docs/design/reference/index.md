@@ -8,7 +8,7 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
-- [Regex substitution timeout](regex-timeout.md) — operation and callback timeout semantics.
+- [Replacement worker](regex-timeout.md) — Python subprocess deadlines and replacement semantics.
 - [LEANN query-time embedding recomputation](leann.md) — the external
   technique behind the deferred #1368 proposal; project revisit criteria
   remain in the embedding-store design.

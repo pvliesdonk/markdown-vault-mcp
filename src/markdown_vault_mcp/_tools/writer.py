@@ -325,7 +325,7 @@ def register(mcp: FastMCP) -> None:
                 OKF maintenance is enabled.
             folders: Recursive folder scopes; an empty string selects the vault.
                 Folder scopes skip reserved index.md and log.md.
-            regex: Interpret pattern as a regular expression with inline flags
+            regex: Interpret pattern as a Python regular expression with inline flags
                 such as (?i), (?m) and (?s); otherwise match exact text.
             dry_run: Preview complete diffs when true; apply when false.
             plan: Plan returned by the preview of this same request, for apply.

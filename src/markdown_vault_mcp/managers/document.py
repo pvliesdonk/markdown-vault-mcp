@@ -336,8 +336,8 @@ class DocumentManager:
 
     def replace_candidates(
         self, paths: Sequence[str], folders: Sequence[str], limit: int
-    ) -> list[tuple[str, int]]:
-        """Collect eligible notes and their sizes for a scoped replacement.
+    ) -> list[str]:
+        """Collect eligible notes for a scoped replacement.
 
         Args:
             paths: Explicit note paths, including reserved notes if desired.
@@ -345,70 +345,65 @@ class DocumentManager:
             limit: Maximum number of notes.
 
         Returns:
-            Sorted, deduplicated vault-relative paths and byte sizes.
+            Sorted, deduplicated vault-relative paths.
         """
-        selected: dict[str, int] = {}
+        selected: set[str] = set()
+        root = self._source_dir
+        scopes: list[tuple[Path, Path]] = []
+        for folder in folders:
+            scopes.append(self._selection_scope(folder))
 
-        def add(path: str, *, explicit: bool, scope: Path | None = None) -> None:
-            candidate = self._replace_candidate(path, explicit=explicit, scope=scope)
+        def add(path: str, *, explicit: bool) -> None:
+            candidate = self._selection_entry(path, explicit=explicit, scopes=scopes)
             if candidate is not None:
-                selected[candidate[0]] = candidate[1]
+                selected.add(candidate)
             if len(selected) > limit:
                 raise InvalidRequestError("Too many notes; narrow paths or folders.")
 
         for path in paths:
             add(path, explicit=True)
-        for folder in folders:
-            root = (
-                self._source_dir.resolve()
-                if folder == ""
-                else self._validate_dir_path(folder)
-            )
-            if not is_directory(root):
-                raise DocumentNotFoundError(
-                    f"Folder {folder!r} does not exist; choose an existing folder."
-                )
+        if scopes:
 
             def fail(exc: OSError) -> None:
-                raise exc
+                self._selection_walk_error(exc, scopes)
 
-            for file in iter_markdown_files(root, on_error=fail):
-                add(
-                    file.relative_to(self._source_dir.resolve()).as_posix(),
-                    explicit=False,
-                    scope=root,
-                )
-        return sorted(selected.items())
+            for file in iter_markdown_files(
+                root, self._exclude_patterns, on_error=fail
+            ):
+                relative_file = file.relative_to(root)
+                if any(relative_file.is_relative_to(scope) for scope, _ in scopes):
+                    add(relative_file.as_posix(), explicit=False)
+        return sorted(selected)
 
-    def _replace_candidate(
-        self, path: str, *, explicit: bool, scope: Path | None
-    ) -> tuple[str, int] | None:
-        if not self._replace_path_allowed(path, explicit=explicit):
-            return None
-        try:
-            absolute = self._validate_path(path)
-        except InvalidRequestError:
-            if explicit:
-                raise
-            return None
-        if scope is not None and not absolute.is_relative_to(scope.resolve()):
-            return None
-        relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
-        if not self._replace_path_allowed(relative, explicit=explicit):
-            return None
-        try:
-            info = absolute.stat()
-        except (FileNotFoundError, NotADirectoryError) as exc:
-            raise DocumentNotFoundError.note(path) from exc
-        if not stat.S_ISREG(info.st_mode):
-            raise DocumentNotFoundError.note(path)
-        if self._max_note_read_bytes > 0 and info.st_size > self._max_note_read_bytes:
-            raise InvalidRequestError(
-                "Note exceeds the read limit; narrow paths or folders."
+    def _selection_scope(self, folder: str) -> tuple[Path, Path]:
+        resolved = (
+            self._source_dir.resolve()
+            if not folder
+            else self._validate_dir_path(folder)
+        )
+        if not is_directory(resolved):
+            raise DocumentNotFoundError(
+                f"Folder {folder!r} does not exist; choose an existing folder."
             )
-        return relative, info.st_size
+        return (Path(os.path.normpath(folder)) if folder else Path()), resolved
 
-    def _replace_path_allowed(self, path: str, *, explicit: bool) -> bool:
+    def _selection_walk_error(
+        self, exc: OSError, scopes: list[tuple[Path, Path]]
+    ) -> None:
+        if exc.filename is None:
+            raise exc
+        failed = Path(exc.filename).relative_to(self._source_dir)
+        if any(part.startswith(".") for part in failed.parts):
+            return
+        if self.in_submodule((failed / "placeholder.md").as_posix()):
+            return
+        if any(
+            failed.is_relative_to(scope) or scope.is_relative_to(failed)
+            for scope, _ in scopes
+        ):
+            raise exc
+
+    def _selection_allowed(self, path: str, *, explicit: bool) -> bool:
         if self._is_path_excluded(path) or self.in_submodule(path):
             if explicit:
                 raise InvalidRequestError(
@@ -420,6 +415,33 @@ class DocumentManager:
             Path(path).name not in OKF_RESERVED_FILENAMES
             and not any(part.startswith(".") for part in parts[:-1])
         )
+
+    def _selection_entry(
+        self, path: str, *, explicit: bool, scopes: list[tuple[Path, Path]]
+    ) -> str | None:
+        if not self._selection_allowed(path, explicit=explicit):
+            return None
+        try:
+            absolute = self._validate_path(path)
+        except InvalidRequestError:
+            if explicit:
+                raise
+            return None
+        if not explicit and not any(
+            Path(path).is_relative_to(scope) and absolute.is_relative_to(resolved)
+            for scope, resolved in scopes
+        ):
+            return None
+        relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
+        if not self._selection_allowed(relative, explicit=explicit):
+            return None
+        try:
+            info = absolute.stat()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise DocumentNotFoundError.note(path) from exc
+        if not stat.S_ISREG(info.st_mode):
+            raise DocumentNotFoundError.note(path)
+        return relative
 
     def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
         """Read a bounded note snapshot and its raw-byte etag.

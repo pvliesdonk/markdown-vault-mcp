@@ -5,15 +5,12 @@ Regex timeout semantics are recorded in docs/design/reference/regex-timeout.md.
 
 from __future__ import annotations
 
-import difflib
-import importlib
 import json
-import time
+import subprocess
+import sys
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
-
-import regex as regex_engine  # type: ignore[import-untyped]
 
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
@@ -34,13 +31,7 @@ MAX_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_MATCHES = 10_000
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 MAX_DIFF_CHARS = 100_000
-REGEX_NOTE_SECONDS = 0.25
-REGEX_TOTAL_SECONDS = 2.0
-NOTICE = (
-    "Applying performs ordinary write side effects: in an OKF-active vault, "
-    "generated is stamped, verified is cleared, and folder log.md and index.md "
-    "are updated. Diffs show requested text edits only."
-)
+REPLACE_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -74,7 +65,6 @@ class ReplaceResult:
     notes: list[NoteReplacement]
     replacements: int
     scanned: int
-    notice: str | None
 
 
 class ReplaceInterruptedError(RuntimeError):
@@ -99,11 +89,9 @@ class BulkReplacer:
         Returns:
             Complete replacement counts and diffs for a preview.
         """
-        pattern = self._compile(request)
+        self._validate_request(request)
         if request.dry_run:
-            return self._prepare(
-                request, pattern, reject_reserved=maintain is not None
-            )[0]
+            return self._prepare(request, reject_reserved=maintain is not None)[0]
         self._doc_mgr.ensure_writable()
         written: list[str] = []
         uncertain: list[str] = []
@@ -111,7 +99,7 @@ class BulkReplacer:
             with self._doc_mgr.write_scope():
                 try:
                     result, changes = self._prepare(
-                        request, pattern, reject_reserved=maintain is not None
+                        request, reject_reserved=maintain is not None
                     )
                 except (DocumentNotFoundError, FileNotFoundError) as exc:
                     raise ConcurrentModificationError(
@@ -151,7 +139,7 @@ class BulkReplacer:
         return current_etag != etag
 
     @staticmethod
-    def _compile(request: ReplaceRequest) -> regex_engine.Pattern:
+    def _validate_request(request: ReplaceRequest) -> None:
         if not request.pattern or not (request.paths or request.folders):
             raise InvalidRequestError(
                 "Provide a nonempty pattern and paths or folders."
@@ -169,18 +157,6 @@ class BulkReplacer:
             )
         if not request.dry_run and not request.plan:
             raise InvalidRequestError("Preview first, then pass the returned plan.")
-        try:
-            pattern = regex_engine.compile(
-                request.pattern
-                if request.regex
-                else regex_engine.escape(request.pattern),
-                regex_engine.V0,
-            )
-        except (regex_engine.error, RecursionError) as exc:
-            raise InvalidRequestError(
-                f"Invalid pattern: {exc}; correct the pattern."
-            ) from exc
-        return pattern
 
     def _snapshots(
         self, request: ReplaceRequest, *, reject_reserved: bool
@@ -190,21 +166,14 @@ class BulkReplacer:
         )
         if reject_reserved and any(
             PurePosixPath(path).name in OKF_RESERVED_FILENAMES
-            for path in (*request.paths, *(path for path, _ in candidates))
+            for path in (*request.paths, *candidates)
         ):
             raise InvalidRequestError(
                 "reserved index.md and log.md cannot be selected with OKF maintenance; choose other notes."
             )
-        if (
-            any(size > MAX_NOTE_BYTES for _, size in candidates)
-            or sum(size for _, size in candidates) > MAX_TOTAL_BYTES
-        ):
-            raise InvalidRequestError(
-                "Selection exceeds the size limit; narrow paths or folders."
-            )
         snapshots = []
         remaining = MAX_TOTAL_BYTES
-        for path, _ in candidates:
+        for path in candidates:
             text, etag, size = self._doc_mgr.read_for_replace(
                 path, min(MAX_NOTE_BYTES, remaining)
             )
@@ -212,118 +181,49 @@ class BulkReplacer:
             snapshots.append((path, text, etag))
         return snapshots
 
-    @staticmethod
-    def _replacement_template(
-        pattern: regex_engine.Pattern, replacement: str
-    ) -> list[str | int]:
-        """Use regex's compiler so the bound follows its exact escape grammar."""
-        module = importlib.import_module(regex_engine.compile.__module__)
-        return module._compile_replacement_helper(pattern, replacement)  # type: ignore[no-any-return]
-
-    def _request_template(
-        self, request: ReplaceRequest, pattern: regex_engine.Pattern
-    ) -> list[str | int]:
-        try:
-            return (
-                self._replacement_template(pattern, request.replacement)
-                if request.regex
-                else [request.replacement]
-            )
-        except (regex_engine.error, IndexError, ValueError, OverflowError) as exc:
-            raise InvalidRequestError(
-                f"Invalid replacement: {exc}; correct the replacement."
-            ) from exc
-
-    @staticmethod
-    def _diff(path: str, text: str, new: str, total_diff: int) -> tuple[str, int]:
-        diff = "".join(
-            line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
-            for line in difflib.unified_diff(
-                text.splitlines(keepends=True),
-                new.splitlines(keepends=True),
-                fromfile=path,
-                tofile=path,
-            )
-        )
-        total_diff += len(diff)
-        if total_diff > MAX_DIFF_CHARS:
-            raise InvalidRequestError("Diff too large; narrow paths or folders.")
-        return diff, total_diff
-
-    @staticmethod
-    def _bound_expansion(
-        match: regex_engine.Match, text: str, template: list[str | int], remaining: int
-    ) -> int:
-        budget = remaining
-        sizes: dict[int, int] = {}
-        for part in template:
-            if isinstance(part, str):
-                remaining -= len(part.encode())
-            else:
-                if part not in sizes:
-                    start, end = match.span(part)
-                    sizes[part] = len(text[start:end].encode()) if start >= 0 else 0
-                remaining -= sizes[part]
-            if remaining < 0:
-                raise InvalidRequestError(
-                    "Replacement output too large; narrow the request."
-                )
-        return budget - remaining
-
     def _prepare(
-        self,
-        request: ReplaceRequest,
-        pattern: regex_engine.Pattern,
-        *,
-        reject_reserved: bool,
+        self, request: ReplaceRequest, *, reject_reserved: bool
     ) -> tuple[ReplaceResult, list[tuple[str, str, str]]]:
         snapshots = self._snapshots(request, reject_reserved=reject_reserved)
-        template = self._request_template(request, pattern)
-        deadline = time.monotonic() + REGEX_TOTAL_SECONDS
-        notes: list[NoteReplacement] = []
-        changes: list[tuple[str, str, str]] = []
-        total_matches = total_output = total_diff = added = 0
-        for path, text, etag in snapshots:
-
-            def replacement(
-                match: regex_engine.Match,
-                text: str = text,
-            ) -> str:
-                nonlocal added, total_matches
-                total_matches += 1
-                if total_matches > MAX_MATCHES:
-                    raise InvalidRequestError(
-                        "Too many matches; narrow paths or folders."
-                    )
-                added += self._bound_expansion(
-                    match, text, template, MAX_OUTPUT_BYTES - added
-                )
-                return (
-                    match.expand(request.replacement)
-                    if request.regex
-                    else request.replacement
-                )
-
-            timeout = min(REGEX_NOTE_SECONDS, deadline - time.monotonic())
-            if timeout <= 0:
-                raise InvalidRequestError("Regex timed out; simplify the pattern.")
-            try:
-                new, count = pattern.subn(replacement, text, timeout=timeout)
-            except TimeoutError as exc:
-                raise InvalidRequestError(
-                    "Regex timed out; simplify the pattern."
-                ) from exc
-            total_output += len(new.encode())
-            if total_output > MAX_OUTPUT_BYTES:
-                raise InvalidRequestError(
-                    "Replacement output too large; narrow the request."
-                )
-            if new == text:
-                continue
+        payload = {
+            "pattern": request.pattern,
+            "replacement": request.replacement,
+            "regex": request.regex,
+            "snapshots": snapshots,
+            "want_diff": request.dry_run,
+            "max_matches": MAX_MATCHES,
+            "max_output": MAX_OUTPUT_BYTES,
+            "max_diff": MAX_DIFF_CHARS,
+        }
+        try:
+            result = subprocess.run(  # noqa: S603, RUF100  # Fixed Python executable and worker; data uses stdin.
+                [
+                    sys.executable,
+                    "-I",
+                    str(Path(__file__).with_name("_replace_worker.py")),
+                ],
+                input=json.dumps(payload, ensure_ascii=True),
+                text=True,
+                capture_output=True,
+                timeout=REPLACE_SECONDS,
+                check=True,
+            )
+            response = json.loads(result.stdout)
+        except (subprocess.SubprocessError, ValueError) as exc:
+            raise InvalidRequestError(
+                "Pattern too slow or too large; simplify it."
+            ) from exc
+        if "error" in response:
+            raise InvalidRequestError(
+                f"Invalid pattern or replacement: {response['error']}"
+            )
+        etags = {path: etag for path, _, etag in snapshots}
+        notes = []
+        changes = []
+        for path, new, count, diff in response["proposals"]:
             self._doc_mgr.validate_for_replace(path, new)
-            diff, total_diff = self._diff(path, text, new, total_diff)
             notes.append(NoteReplacement(path, count, diff))
-            changes.append((path, new, etag))
+            changes.append((path, new, etags[path]))
         identity = [
             (path, etag, compute_etag(text.encode())) for path, text, etag in changes
         ]
@@ -339,5 +239,4 @@ class BulkReplacer:
             notes,
             sum(n.replacements for n in notes),
             len(snapshots),
-            NOTICE,
         ), changes
