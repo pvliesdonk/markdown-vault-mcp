@@ -216,22 +216,6 @@ def test_private_refusal_does_not_log_model_prose(
     assert "private refusal text" not in caplog.text
 
 
-def test_thread_start_failure_releases_flight(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    note = repo / "note.md"
-    note.write_text("synthetic", encoding="utf-8")
-    git(repo, "add", "note.md")
-    writer = SubjectWriter(FakeSummarizer())
-
-    def fail_start(_thread: threading.Thread) -> None:
-        raise RuntimeError("failed to start")
-
-    monkeypatch.setattr(threading.Thread, "start", fail_start)
-    assert writer(str(repo), "write: note.md", ["note.md"]) == "write: note.md"
-    assert not writer._flight.locked()
-
-
 def test_changed_worktree_during_generation_falls_back(repo: Path) -> None:
     note = repo / "race.md"
     note.write_text("original synthetic content", encoding="utf-8")

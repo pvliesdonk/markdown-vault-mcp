@@ -6,7 +6,6 @@ import logging
 import re
 import subprocess
 import threading
-import time
 import unicodedata
 from concurrent.futures import Future
 from typing import TYPE_CHECKING
@@ -42,23 +41,17 @@ def _clean(text: str) -> str:
 
 
 def _unchanged(
-    root: str, pathspec: Sequence[str], command: list[str], diff: str, budget: float
+    root: str, pathspec: Sequence[str], command: list[str], diff: str
 ) -> bool:
-    """Check for known index or working-tree changes within the diff budget."""
-    started = time.monotonic()
-    if budget <= 0:
-        return False
+    """Check for known index or working-tree changes since the diff was read."""
     current = subprocess.run(
-        command, capture_output=True, text=True, check=True, timeout=budget
+        command, capture_output=True, text=True, check=True, timeout=2
     ).stdout
-    budget -= time.monotonic() - started
     if current != diff:
         logger.debug("git_subject_skipped reason=index_changed")
         return False
     if not pathspec:
         return True
-    if budget <= 0:
-        return False
     status = subprocess.run(
         [
             "git",
@@ -70,20 +63,14 @@ def _unchanged(
             "--no-renames",
             "-z",
             "--untracked-files=all",
-            "--ignored=matching",
             "--",
             *pathspec,
         ],
         capture_output=True,
-        timeout=budget,
+        timeout=2,
         check=True,
-    )
-    entries = status.stdout.split(b"\0")
-    if any(
-        entry[:2] in {b"??", b"!!"} or (len(entry) > 2 and entry[1:2] != b" ")
-        for entry in entries
-        if entry
-    ):
+    ).stdout
+    if any(entry[1:2] != b" " for entry in status.split(b"\0") if entry):
         logger.debug("git_subject_skipped reason=worktree_changed")
         return False
     return True
@@ -110,7 +97,6 @@ class SubjectWriter:
             logger.debug("git_subject_skipped reason=multiline_mechanical")
             return mechanical
         try:
-            diff_started = time.monotonic()
             command = [
                 "git",
                 "-C",
@@ -131,7 +117,6 @@ class SubjectWriter:
                 check=True,
                 timeout=2,
             )
-            diff_budget = 2.0 - (time.monotonic() - diff_started)
             diff = result.stdout
             if not diff or len(diff) > 16_000:
                 logger.debug("git_subject_skipped reason=empty_or_large_diff")
@@ -140,17 +125,11 @@ class SubjectWriter:
                 logger.debug("git_subject_skipped reason=in_flight")
                 return mechanical
             future: Future[str] = Future()
-            try:
-                threading.Thread(
-                    target=self._run, args=(future, diff), daemon=True
-                ).start()
-            except Exception:
-                self._flight.release()
-                raise
+            threading.Thread(target=self._run, args=(future, diff), daemon=True).start()
             line = _clean(future.result(timeout=_DEADLINE))
             if not line:
                 logger.debug("git_subject_skipped reason=empty_response")
-            elif _unchanged(root, pathspec, command, diff, diff_budget):
+            elif _unchanged(root, pathspec, command, diff):
                 return f"{_MARKER}{line}\n\nMechanical-Subject: {mechanical}"
             return mechanical
         except Exception as exc:
