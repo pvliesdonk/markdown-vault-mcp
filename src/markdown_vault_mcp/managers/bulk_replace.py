@@ -77,20 +77,28 @@ class BulkReplacer:
         self._doc_mgr = doc_mgr
 
     def replace(
-        self, request: ReplaceRequest, *, maintain: Callable[[str], None] | None = None
+        self,
+        request: ReplaceRequest,
+        *,
+        maintain: Callable[[str], None] | None = None,
+        skip_reserved: bool | None = None,
     ) -> ReplaceResult:
         """Preview or apply a request, refusing stale previews before writing.
 
         Args:
             request: Selectors, text and preview plan.
             maintain: Optional post-write convention maintenance callback.
+            skip_reserved: Whether maintenance can update reserved notes.
 
         Returns:
             Complete replacement counts and diffs for a preview.
         """
         self._validate_request(request)
+        reject_reserved = (
+            maintain is not None if skip_reserved is None else skip_reserved
+        )
         if request.dry_run:
-            return self._prepare(request, reject_reserved=maintain is not None)[0]
+            return self._prepare(request, reject_reserved=reject_reserved)[0]
         self._doc_mgr.ensure_writable()
         written: list[str] = []
         uncertain: list[str] = []
@@ -98,7 +106,7 @@ class BulkReplacer:
             with self._doc_mgr.write_scope():
                 try:
                     result, changes = self._prepare(
-                        request, reject_reserved=maintain is not None
+                        request, reject_reserved=reject_reserved
                     )
                 except (DocumentNotFoundError, FileNotFoundError) as exc:
                     raise ConcurrentModificationError(
@@ -167,9 +175,7 @@ class BulkReplacer:
         remaining = MAX_TOTAL_BYTES
         for path in candidates:
             text, etag, size = self._doc_mgr.read_for_replace(
-                path,
-                min(MAX_NOTE_BYTES, remaining),
-                aggregate=remaining < MAX_NOTE_BYTES,
+                path, min(MAX_NOTE_BYTES, remaining)
             )
             remaining -= size
             snapshots.append((path, text, etag))

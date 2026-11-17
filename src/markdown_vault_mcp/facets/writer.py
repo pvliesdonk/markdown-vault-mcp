@@ -108,7 +108,11 @@ class WriterFacet:
         callback = (
             (lambda path: maintainer.maintain(path, "edit")) if maintainer else None
         )
-        return BulkReplacer(self._doc_mgr).replace(request, maintain=callback)
+        return BulkReplacer(self._doc_mgr).replace(
+            request,
+            maintain=callback,
+            skip_reserved=maintainer is not None and maintainer.active,
+        )
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]

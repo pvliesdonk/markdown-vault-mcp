@@ -276,6 +276,13 @@ class TestConventionMaintenanceIntegration:
         assert index is not None
         # The drain makes the just-written note appear in the refreshed listing.
         assert "[Playbook](/guides/playbook.md)" in index
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+        from markdown_vault_mcp.managers.bulk_replace import ReplaceRequest
+
+        with pytest.raises(InvalidRequestError, match="reserved"):
+            enforced_vault.writer.replace_text(
+                ReplaceRequest("Root", "x", paths=("index.md",))
+            )
 
     def test_log_and_index_upkeep_survive_write_protection(
         self, tmp_path: Path
@@ -374,15 +381,39 @@ class TestConventionMaintenanceIntegration:
         finally:
             col.close()
 
-    def test_inactive_bundle_skips_maintenance(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("mode", ["auto", "off"])
+    def test_inactive_bundle_skips_maintenance(self, tmp_path: Path, mode: str) -> None:
         # OKF_WRITE on but no declaration and mode auto → not active.
         root = tmp_path / "v3"
         (root / "guides").mkdir(parents=True)
-        col = _build_vault(root, okf_write=True, okf_mode="auto")
+        col = _build_vault(root, okf_write=True, okf_mode=mode)
         try:
             col.writer.write("guides/note.md", "# N\n")
             wait_for_writer_drain(col)
             assert col.reader.read("guides/log.md") is None
+            from markdown_vault_mcp.managers.bulk_replace import ReplaceRequest
+
+            (root / "guides" / "index.md").write_text("old", encoding="utf-8")
+            preview = col.writer.replace_text(
+                ReplaceRequest("old", "new", folders=("guides",))
+            )
+            assert [note.path for note in preview.notes] == ["guides/index.md"]
+            from dataclasses import replace
+            from unittest.mock import patch
+
+            maintainer = col.writer._convention_maintainer
+            assert maintainer is not None
+            with patch.object(
+                maintainer, "maintain", wraps=maintainer.maintain
+            ) as maintain:
+                col.writer.replace_text(
+                    replace(
+                        ReplaceRequest("old", "new", folders=("guides",)),
+                        dry_run=False,
+                        plan=preview.plan,
+                    )
+                )
+            maintain.assert_called_once_with("guides/index.md", "edit")
         finally:
             col.close()
 

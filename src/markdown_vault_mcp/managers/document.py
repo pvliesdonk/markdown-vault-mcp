@@ -471,7 +471,7 @@ class DocumentManager:
                 )
             return False
         parts = Path(path).parts
-        return explicit or not any(part.startswith(".") for part in parts[:-1])
+        return explicit or not any(part.startswith(".") for part in parts)
 
     def _selection_entry(
         self,
@@ -514,15 +514,12 @@ class DocumentManager:
             raise DocumentNotFoundError.note(path)
         return relative, (info.st_dev, info.st_ino), info.st_nlink
 
-    def read_for_replace(
-        self, path: str, max_bytes: int, *, aggregate: bool = False
-    ) -> tuple[str, str, int]:
+    def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
         """Read a bounded note snapshot and its raw-byte etag.
 
         Args:
             path: Vault-relative note path.
             max_bytes: Maximum bytes to read.
-            aggregate: The cap is the remaining aggregate budget.
 
         Returns:
             Decoded text, raw-byte etag, and bytes read.
@@ -535,13 +532,8 @@ class DocumentManager:
         with self._validate_path(path).open("rb") as stream:
             raw = stream.read(cap + 1)
         if len(raw) > cap:
-            limit = (
-                "aggregate replacement budget"
-                if aggregate
-                else "note replacement limit"
-            )
             raise InvalidRequestError(
-                f"Note {path!r} exceeds the {limit}; narrow paths or folders."
+                f"Note {path!r} exceeds the {cap}-byte replacement read cap; narrow paths or folders."
             )
         try:
             text = raw.decode("utf-8")

@@ -12,7 +12,7 @@ Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 
-Content writes preserve supplied UTF-8 line endings on Windows instead of translating LF to the native line ending. `read` and `edit` normalize input line endings to LF; writes persist the supplied UTF-8 line endings, including on Windows.
+`read` and `edit` normalize input line endings to LF; writes persist the supplied UTF-8 line endings, including on Windows.
 <!-- DOMAIN-INTRO-END -->
 
 ## `replace_text`
@@ -35,7 +35,7 @@ OKF folder maintenance also updates index.md and log.md.
 | `pattern` | `string` | required | Exact text or regular expression to match. |
 | `replacement` | `string` | `""` | Replacement text; regex mode accepts capture references. |
 | `paths` | `array of string \| null` | `null` | Explicit note paths; index.md and log.md are reserved when OKF maintenance is enabled. |
-| `folders` | `array of string \| null` | `null` | Recursive folder scopes; an empty string selects the vault. Folder scopes skip index.md and log.md when OKF maintenance is on. |
+| `folders` | `array of string \| null` | `null` | Recursive folder scopes; an empty string selects the vault. Hidden folders and folders wholly excluded by directory patterns are refused. With OKF maintenance, index.md and log.md are skipped. |
 | `regex` | `boolean` | `false` | Interpret pattern as a Python regular expression with inline flags such as (?i), (?m) and (?s); otherwise match exact text. |
 | `dry_run` | `boolean` | `true` | Preview complete diffs when true; apply when false. |
 | `plan` | `string \| null` | `null` | Plan returned by the preview of this same request, for apply. |

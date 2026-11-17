@@ -327,7 +327,8 @@ def register(mcp: FastMCP) -> None:
             paths: Explicit note paths; index.md and log.md are reserved when
                 OKF maintenance is enabled.
             folders: Recursive folder scopes; an empty string selects the vault.
-                Folder scopes skip index.md and log.md when OKF maintenance is on.
+                Hidden folders and folders wholly excluded by directory patterns
+                are refused. With OKF maintenance, index.md and log.md are skipped.
             regex: Interpret pattern as a Python regular expression with inline flags
                 such as (?i), (?m) and (?s); otherwise match exact text.
             dry_run: Preview complete diffs when true; apply when false.

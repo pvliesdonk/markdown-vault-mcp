@@ -107,6 +107,11 @@ class ConventionMaintainer:
         self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
         self._source_dir = source_dir
 
+    @property
+    def active(self) -> bool:
+        """Whether the detector currently enables OKF maintenance."""
+        return self._detector.state().active
+
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and its listing.
 

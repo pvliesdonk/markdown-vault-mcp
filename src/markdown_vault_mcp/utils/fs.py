@@ -298,15 +298,6 @@ def iter_markdown_files(
     anchored, anydepth = _dir_prune_rules(exclude_patterns or ())
     source_str = os.fspath(source_dir)
     anchor_str = os.fspath(exclude_root or source_dir)
-    if exclude_root is not None:
-        relative_root = source_dir.relative_to(exclude_root)
-        for ancestor in (relative_root, *relative_root.parents):
-            if ancestor != Path() and _should_prune_dir(
-                ancestor.as_posix(), anchored, anydepth
-            ):
-                return
-        if relative_root != Path() and prune_dir is not None and prune_dir(source_dir):
-            return
 
     def _on_walk_error(exc: OSError) -> None:
         # os.walk drops the offending directory and continues; surface it so a

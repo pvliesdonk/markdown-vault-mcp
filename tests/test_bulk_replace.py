@@ -163,7 +163,16 @@ def test_folder_selection_skips_reserved_hidden_and_excluded(
 ) -> None:
 
     (tmp_path / ".hidden").mkdir()
-    for name in ("a.md", "index.md", "log.md", ".hidden/b.md", "excluded.md"):
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / ".secret.md").write_text("old", encoding="utf-8")
+    for name in (
+        "a.md",
+        "index.md",
+        "log.md",
+        ".hidden/b.md",
+        ".secret.md",
+        "excluded.md",
+    ):
         (tmp_path / name).write_text("old", encoding="utf-8")
     manager = manager_factory(
         tmp_path,
@@ -174,6 +183,21 @@ def test_folder_selection_skips_reserved_hidden_and_excluded(
     )
     assert [note.path for note in result.notes] == ["a.md", "index.md", "log.md"]
     assert result.scanned == 3
+    explicit = BulkReplacer(manager).replace(
+        ReplaceRequest("old", "new", paths=(".secret.md",))
+    )
+    assert [note.path for note in explicit.notes] == [".secret.md"]
+    from dataclasses import replace
+
+    BulkReplacer(manager).replace(
+        replace(
+            ReplaceRequest("old", "new", paths=(".secret.md",)),
+            dry_run=False,
+            plan=explicit.plan,
+        )
+    )
+    assert (tmp_path / ".secret.md").read_text() == "new"
+    assert (tmp_path / "nested" / ".secret.md").read_text() == "old"
 
 
 @pytest.mark.parametrize("failure", ["before", "after", "after_unreadable", "conflict"])
@@ -464,7 +488,7 @@ def test_files_growing_after_stat_still_respect_total_cap(
 
     monkeypatch.setattr(manager, "replace_candidates", grow)
     monkeypatch.setattr(bulk_replace, "MAX_TOTAL_BYTES", 10)
-    with pytest.raises(InvalidRequestError, match="budget"):
+    with pytest.raises(InvalidRequestError, match="4-byte"):
         BulkReplacer(manager).replace(ReplaceRequest("a", "b", folders=("",)))
 
 
@@ -537,7 +561,7 @@ def test_candidate_limits_and_walk_failure(
         max_note_read_bytes=4,
     )
     replacer = BulkReplacer(manager)
-    with pytest.raises(InvalidRequestError, match="limit"):
+    with pytest.raises(InvalidRequestError, match="read cap"):
         replacer.replace(ReplaceRequest("a", paths=("a.md",)))
     with pytest.raises(InvalidRequestError, match="not found"):
         replacer.replace(ReplaceRequest("a", paths=("directory.md",)))
@@ -546,7 +570,7 @@ def test_candidate_limits_and_walk_failure(
             replacer.replace(ReplaceRequest("a", paths=("pipe.md",)))
     manager._max_note_read_bytes = 0
     monkeypatch.setattr(bulk_replace, "MAX_NOTE_BYTES", 4)
-    with pytest.raises(InvalidRequestError, match="limit"):
+    with pytest.raises(InvalidRequestError, match="read cap"):
         replacer.replace(ReplaceRequest("a", paths=("a.md",)))
     monkeypatch.setattr(bulk_replace, "MAX_NOTES", 0)
     with pytest.raises(InvalidRequestError, match="Too many notes"):
@@ -772,6 +796,7 @@ def test_replace_preserves_line_endings(
             ReplaceRequest(pattern, replacement, paths=("a.md",), regex=True)
             for pattern, replacement in [
                 ("(" * 1000 + "a" + ")" * 1000, "x"),
+                ("(?a)(?u)b", "x"),
                 ("a", r"\U00110000"),
                 ("z", r"\g<missing>"),
                 ("z", "\\"),
@@ -1117,7 +1142,7 @@ def test_aggregate_budget_refusal_names_note(
     for name in ("a.md", "b.md"):
         (tmp_path / name).write_text("12345", encoding="utf-8")
     monkeypatch.setattr(bulk_replace, "MAX_TOTAL_BYTES", 7)
-    with pytest.raises(InvalidRequestError, match=r"b\.md.*aggregate"):
+    with pytest.raises(InvalidRequestError, match=r"b\.md.*2-byte"):
         BulkReplacer(manager_factory(tmp_path, max_note_read_bytes=0)).replace(
             ReplaceRequest("1", "2", folders=("",))
         )

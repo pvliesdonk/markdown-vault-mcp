@@ -82,5 +82,5 @@ if __name__ == "__main__":
         )
     except ReplacementLimit as exc:
         print(json.dumps({"limit": str(exc)}))
-    except (re.error, IndexError, OverflowError, RecursionError) as exc:
+    except (re.error, IndexError, ValueError, OverflowError, RecursionError) as exc:
         print(json.dumps({"error": str(exc)}))
