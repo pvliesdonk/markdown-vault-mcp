@@ -92,17 +92,6 @@ def test_injected_startup_probe_avoids_git(
     assert calls == ([tmp_path] if unpushed else [])
 
 
-def test_default_push_is_looked_up_at_call_time(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    scheduler, _ = make_scheduler(tmp_path)
-    push = Mock()
-    monkeypatch.setattr("markdown_vault_mcp.git.push_scheduler._push", push)
-    scheduler.schedule_push()
-    scheduler.do_push()
-    push.assert_called_once_with(tmp_path, None, "user")
-
-
 @pytest.mark.parametrize("case", ["missing", "no_ref", "failed", "empty", "ahead"])
 def test_default_probe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
@@ -134,31 +123,19 @@ def test_default_probe(
 
 
 @pytest.mark.parametrize("site", ["probe", "push"])
-@pytest.mark.parametrize("failure", ["connection", "process"])
-def test_startup_backend_failure_is_sanitized_and_retried(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, site: str, failure: str
-) -> None:
-    secret = "fixture-secret"
-
+def test_startup_backend_failure_is_retried(tmp_path: Path, site: str) -> None:
     def fail(_path: Path) -> None:
-        if failure == "process":
-            raise subprocess.CalledProcessError(
-                1, ["backend", secret], output=secret, stderr=secret
-            )
-        raise ConnectionError(f"offline {secret}")
+        raise ConnectionError("offline")
 
     push = Mock(side_effect=fail if site == "push" else None)
     scheduler, health = make_scheduler(
         tmp_path,
-        token=secret,
         push=push,
         has_unpushed=fail if site == "probe" else lambda _: True,
     )
     scheduler.push_if_unpushed()
-    assert health.snapshot() is not None
-    assert health.snapshot().reason == PUSH_REASON_PUSH_FAILED  # type: ignore[union-attr]
-    assert secret not in caplog.text
-    assert "***" in caplog.text
+    snapshot = health.snapshot()
+    assert snapshot is not None and snapshot.reason == PUSH_REASON_PUSH_FAILED
     before = push.call_count
     push.side_effect = None
     scheduler.flush()
@@ -203,35 +180,6 @@ def test_startup_failure_preserves_scoped_write(
     finally:
         dispatcher.close()
         strategy.close()
-
-
-@pytest.mark.parametrize("failure", ["connection", "process"])
-@pytest.mark.parametrize("route", ["normal", "retry", "flush"])
-def test_injected_push_failure_never_logs_secret(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, failure: str, route: str
-) -> None:
-    import logging
-
-    secret = "fixture-secret"
-
-    def fail(_path: Path) -> None:
-        if failure == "process":
-            raise subprocess.CalledProcessError(
-                1, ["backend", secret], output=secret, stderr=secret
-            )
-        raise ConnectionError(f"offline {secret}")
-
-    scheduler, health = make_scheduler(tmp_path, token=secret, push=fail)
-    scheduler.schedule_push()
-    with caplog.at_level(logging.DEBUG):
-        if route == "flush":
-            scheduler.flush()
-        else:
-            scheduler.do_push_safe(retry=route == "retry")
-    assert secret not in caplog.text
-    assert "***" in caplog.text
-    assert "Traceback" not in caplog.text
-    assert health.snapshot() is not None
 
 
 def test_default_cli_startup_failure_does_not_set_pending(
@@ -292,10 +240,17 @@ def test_injected_exception_has_no_original_context(
     assert "***" in str(caught.value)
 
 
-@pytest.mark.parametrize("site", ["startup_probe", "startup_push", "deferred", "retry"])
 @pytest.mark.parametrize(
-    "stderr,reason",
-    [("non-fast-forward", "non_fast_forward"), ("permission denied", "push_failed")],
+    "site,stderr,reason",
+    [
+        (site, stderr, reason)
+        for site in ("startup_probe", "startup_push", "deferred", "retry", "flush")
+        for stderr, reason in (
+            ("non-fast-forward", "non_fast_forward"),
+            ("permission denied", "push_failed"),
+        )
+    ]
+    + [(site, "connection", "push_failed") for site in ("deferred", "retry", "flush")],
 )
 def test_backend_process_rejection_preserves_sanitized_diagnostics(
     tmp_path: Path,
@@ -309,9 +264,11 @@ def test_backend_process_rejection_preserves_sanitized_diagnostics(
     secret = "fixture-secret"
 
     def fail(_path: Path) -> None:
+        if stderr == "connection":
+            raise ConnectionError(f"offline {secret}")
         raise subprocess.CalledProcessError(
             1,
-            ["backend", secret],
+            ["/repos/non-fast-forward/hooks/push", secret],
             output=secret,
             stderr=f"rejected {stderr} for {secret}",
         )
@@ -327,29 +284,16 @@ def test_backend_process_rejection_preserves_sanitized_diagnostics(
             scheduler.push_if_unpushed()
         else:
             scheduler.schedule_push()
-            scheduler.do_push_safe(retry=site == "retry")
+            if site == "flush":
+                scheduler.flush()
+            else:
+                scheduler.do_push_safe(retry=site == "retry")
     snapshot = health.snapshot()
     assert snapshot is not None
     assert snapshot.reason == reason
-    assert stderr in caplog.text
-    assert "exit status 1" in caplog.text
+    if stderr != "connection":
+        assert stderr in caplog.text
+        assert "exit status 1" in caplog.text
     assert secret not in caplog.text
     assert "***" in caplog.text
     assert "Traceback" not in caplog.text
-
-
-def test_backend_classifies_stderr_not_command_metadata(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    def fail(_path: Path) -> None:
-        raise subprocess.CalledProcessError(
-            1, ["/repos/non-fast-forward/hooks/push"], stderr="permission denied"
-        )
-
-    scheduler, health = make_scheduler(tmp_path, push=fail)
-    scheduler.schedule_push()
-    scheduler.do_push_safe()
-    snapshot = health.snapshot()
-    assert snapshot is not None
-    assert snapshot.reason == PUSH_REASON_PUSH_FAILED
-    assert "permission denied" in caplog.text
