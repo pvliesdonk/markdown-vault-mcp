@@ -362,7 +362,6 @@ class Libgit2SyncStore(Libgit2Store):
                 raise _refusal(exc, self._token) from None
             if self._repo is not None:
                 self._bootstrap.git_root = Path(self._repo.workdir)
-                self._observe_safe()
         return self._repo
 
     def _tracking(self) -> Any | None:
