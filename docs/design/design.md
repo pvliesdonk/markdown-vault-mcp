@@ -899,6 +899,12 @@ Two methods manage the index:
   falls back to a conservative default) changes neither key and so does
   not force a rebuild, avoiding flap.
 
+  `IndexManager.chunking_meta` owns the canonical rendering of the stable
+  build inputs as a `ChunkingMeta` record. Both the build writer and Vault's
+  coordinator wiring consume it, rather than rendering field lists and
+  attachment settings independently. The keyword-index methods and stored
+  metadata format remain unchanged (#1361).
+
   **Derived-content invalidation (issue #1124)**: the same `meta` row set
   carries one key that records no operator input —
   `index_semantics_version`, written from the source constant
