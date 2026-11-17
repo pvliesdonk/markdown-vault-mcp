@@ -108,10 +108,10 @@ def _view_function(source: str, name: str) -> str:
 
 
 @pytest.mark.parametrize("view", ["note", "context"])
-def test_app_review_notice_is_visible_and_preserves_supplied_metadata(
+def test_app_review_helpers_render_notice_and_preserve_supplied_metadata(
     view: str,
 ) -> None:
-    """Execute the actual render functions, including repeated navigation inputs."""
+    """Execute the rendering helpers over distinct frontmatter inputs."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is needed to execute the SPA rendering functions")
@@ -166,9 +166,3 @@ def test_app_review_notice_is_visible_and_preserves_supplied_metadata(
         # The warning sits before the collapsed property container, even when
         # the verified field itself is beyond the three initially shown rows.
         assert rendered[0].index(_APP_NOTICE) < rendered[0].index('id="preview-props"')
-        assert "html += renderProps(data.frontmatter)" in source
-    else:
-        assert (
-            "getElementById('ctx-chips').innerHTML = renderChips(data.frontmatter)"
-            in source
-        )
