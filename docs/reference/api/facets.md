@@ -112,9 +112,11 @@ entries remain unavailable or not inspected. Paths matching index exclusions
 are labelled `index_excluded`, and dot paths have `hidden_path=true`; neither
 label prevents inspection. Non-directory filenames outside the attachment
 allowlist, `.git`, server-owned state directories and files, and
-permission-denied children are omitted. A state file does not hide neighboring
-notes. Alternate spellings of internal paths follow filesystem identity rules. A denied child makes enumeration unavailable without hiding readable
-siblings, including when the note-read budget has been exhausted. A directory
+permission-denied children are omitted. The change-tracker file is omitted by exact path and the keyword index
+by its own lock and journal files, so neighboring notes and other same-named
+siblings stay visible. Alternate spellings of internal paths follow filesystem identity rules. A denied child makes enumeration unavailable without hiding readable
+siblings, including when the note-read budget has been exhausted; a refused stat or open
+consumes none of that budget. A directory
 entry's visibility describes its own name, not the admission of its subtree. Visible symlinks and special files remain unavailable and are
 never followed or read. When a stat failure prevents determining whether an
 omitted name is a visible directory, enumeration is `unavailable`.

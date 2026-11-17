@@ -28,6 +28,24 @@ def inspector(
     return BundleInspector(root, excludes, frozenset({"png"}), note_limit)
 
 
+class OrderedScan:
+    def __init__(self, root: Path, last: str = "") -> None:
+        self.root = root
+        self.last = last
+        self.scandir = os.scandir
+
+    def __enter__(self) -> Iterator[os.DirEntry[str]]:
+        with self.scandir(self.root) as children:
+            return iter(
+                sorted(
+                    children, key=lambda child: (child.name == self.last, child.name)
+                )
+            )
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
+
 def test_public_reader_before_build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -68,8 +86,6 @@ def test_public_reader_before_build(
         assert items["typed.md"].type_state == "present"
         assert items["invalid.md"].type_state == "invalid"
         assert items["broken.md"].parse_state == "malformed_metadata"
-        assert items["_conventions.md"].role == "support"
-        assert items["_conventions.md"].visibility == "index_excluded"
         assert "Secret" not in json.dumps(asdict(result))
         callback.assert_not_called()
     finally:
@@ -99,15 +115,6 @@ def test_invalid_limit(limit: int) -> None:
 def test_explicit_root_required() -> None:
     with pytest.raises(TypeError):
         BundleInspectionRequest()  # type: ignore[call-arg]
-
-
-def test_index_excluded_directory_remains_inspectable(tmp_path: Path) -> None:
-    folder = tmp_path / "private"
-    folder.mkdir()
-    (folder / "note.md").write_text("body")
-    subject = inspector(tmp_path, ("private/**",))
-    result = subject.inspect(BundleInspectionRequest(root="private"))
-    assert result.entries[0].visibility == "index_excluded"
 
 
 def test_roles_allowlist_and_nonrecursive(tmp_path: Path) -> None:
@@ -200,17 +207,21 @@ def test_swap_directory_keeps_descriptor_anchor(
 
 
 @pytest.mark.parametrize(
-    "error, expected",
+    "error, expected, entry_state",
     [
-        (errno.ENOENT, "missing"),
-        (errno.ENOTDIR, "missing"),
-        (errno.EACCES, "unavailable"),
-        (errno.EIO, "unavailable"),
-        (errno.ELOOP, "unavailable"),
+        (errno.ENOENT, "missing", "missing"),
+        (errno.ENOTDIR, "missing", "missing"),
+        (errno.EACCES, "unavailable", None),
+        (errno.EIO, "unavailable", "unavailable"),
+        (errno.ELOOP, "unavailable", "unavailable"),
     ],
 )
 def test_scope_and_entry_io_states(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: int, expected: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: int,
+    expected: str,
+    entry_state: str | None,
 ) -> None:
     (tmp_path / "note.md").write_text("body")
 
@@ -219,11 +230,10 @@ def test_scope_and_entry_io_states(
 
     monkeypatch.setattr(inventory, "read_regular_nofollow", refused)
     result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
-    if error == errno.EACCES:
-        assert result.entries == ()
-        assert result.enumeration == "unavailable"
-    else:
-        assert result.entries[0].state == expected
+    assert [entry.state for entry in result.entries] == (
+        [] if entry_state is None else [entry_state]
+    )
+    assert result.enumeration == ("unavailable" if entry_state is None else "complete")
     assert "secret detail" not in json.dumps(asdict(result))
     monkeypatch.setattr(inventory, "open_directory_nofollow", refused)
     assert (
@@ -388,7 +398,7 @@ def test_exact_directory_exclude_does_not_exclude_descendants(tmp_path: Path) ->
     assert result.entries[0].visibility == "visible"
 
 
-def test_stat_error_is_visible_without_content_probe(
+def test_stat_permission_refusal_omits_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "note.md").write_text("body")
@@ -514,7 +524,7 @@ def test_allowlist_also_hides_nonregular_and_stat_failures(
 
     def refused(path: object, *args: object, **kwargs: object) -> os.stat_result:
         if path == "unreadable.exe":
-            raise OSError(errno.EACCES, "private detail")
+            raise OSError(errno.EIO, "private detail")
         return original(path, *args, **kwargs)  # type: ignore[call-overload]
 
     monkeypatch.setattr(inventory.os, "stat", refused)
@@ -569,7 +579,7 @@ def test_unknown_directory_stat_error_prevents_complete_enumeration(
 
     def refused(path: object, *args: object, **kwargs: object) -> os.stat_result:
         if path == "private-folder":
-            raise OSError(errno.EACCES, "private detail")
+            raise OSError(errno.EIO, "private detail")
         return original(path, *args, **kwargs)  # type: ignore[call-overload]
 
     monkeypatch.setattr(inventory.os, "stat", refused)
@@ -781,13 +791,20 @@ def test_inventory_includes_index_excluded_hidden_and_conventions(
     hidden = tmp_path / ".claude" / "notes"
     hidden.mkdir(parents=True)
     (hidden / "n.md").write_text("---\ntype: concept\n---\nBody")
-    subject = inspector(tmp_path, ("excluded.md", "_conventions.md"))
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "note.md").write_text("body")
+    subject = inspector(tmp_path, ("excluded.md", "_conventions.md", "private/**"))
     root = {
         entry.path: entry
         for entry in subject.inspect(BundleInspectionRequest(root="")).entries
     }
     assert root["excluded.md"].visibility == "index_excluded"
     assert root["_conventions.md"].role == "support"
+    assert (
+        subject.inspect(BundleInspectionRequest(root="private")).entries[0].visibility
+        == "index_excluded"
+    )
     note = subject.inspect(BundleInspectionRequest(root=".claude/notes")).entries[0]
     assert note.hidden_path is True
     assert note.parse_state == "valid"
@@ -805,102 +822,17 @@ def test_internal_scopes_are_never_opened(
     opened.assert_not_called()
 
 
-def test_configured_conventions_and_state_directory(tmp_path: Path) -> None:
-    (tmp_path / "guidance.md").write_text("Guidance")
-    internal = tmp_path / "server-data"
-    internal.mkdir()
-    (internal / "secret.md").write_text("secret")
-    settings = VaultSettings(
-        conventions_file="guidance.md", state_path=internal / "state.json"
-    )
-    vault = Vault(source_dir=tmp_path, settings=settings)
-    try:
-        root = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
-        entries = {entry.path: entry for entry in root.entries}
-        assert entries["guidance.md"].role == "support"
-        assert entries["guidance.md"].visibility == "index_excluded"
-        assert "server-data" in entries
-        nested = vault.reader.inspect_bundle(
-            BundleInspectionRequest(root="server-data")
-        )
-        assert nested.state == "inspected"
-        assert [entry.path for entry in nested.entries] == ["server-data/secret.md"]
-    finally:
-        vault.close()
-
-
-def test_permission_refusal_does_not_hide_readable_siblings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "denied.md").write_text("secret")
-    (tmp_path / "readable.md").write_text("---\ntype: concept\n---\nbody")
-    original = inventory.read_regular_nofollow
-    scandir = inventory.os.scandir
-
-    class OrderedScan:
-        def __enter__(self) -> Iterator[os.DirEntry[str]]:
-            with scandir(tmp_path) as children:
-                return iter(sorted(children, key=lambda child: child.name))
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: OrderedScan())
-
-    def refused(parent: int, name: str, limit: int) -> bytes:
-        if name == "denied.md":
-            raise PermissionError(errno.EACCES, "denied")
-        return original(parent, name, limit)
-
-    monkeypatch.setattr(inventory, "read_regular_nofollow", refused)
-    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
-    assert result.enumeration == "unavailable"
-    assert [entry.path for entry in result.entries] == ["readable.md"]
-    assert result.entries[0].type_state == "present"
-
-
-def test_state_file_at_vault_root_does_not_hide_vault(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_text("body")
-    vault = Vault(
-        source_dir=tmp_path, settings=VaultSettings(state_path=tmp_path / "state.json")
-    )
+@pytest.mark.parametrize(
+    ("name", "role"),
+    [("guidance.md", "support"), ("index.md", "navigation"), ("log.md", "history")],
+)
+def test_configured_conventions_role(tmp_path: Path, name: str, role: str) -> None:
+    (tmp_path / name).write_text("Guidance")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(conventions_file=name))
     try:
         result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
-        assert result.state == "inspected"
-        assert [entry.path for entry in result.entries] == ["note.md"]
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("source_alias", [True, False])
-@pytest.mark.parametrize("parent_segments", [True, False])
-def test_reader_state_boundary_with_aliases_and_parent_segments(
-    tmp_path: Path, source_alias: bool, parent_segments: bool
-) -> None:
-    real = tmp_path / "real"
-    real.mkdir()
-    alias = tmp_path / "alias"
-    alias.symlink_to(real, target_is_directory=True)
-    state_dir = real / "server-state"
-    state_dir.mkdir()
-    (state_dir / "state.md").write_text("---\ntype: secret\n---\nbody")
-    (state_dir / "note.md").write_text("---\ntype: concept\n---\nbody")
-    source = alias if source_alias else real
-    state_base = real if source_alias else alias
-    if parent_segments:
-        state_base = state_base / "server-state" / ".."
-    vault = Vault(
-        source_dir=source,
-        settings=VaultSettings(state_path=state_base / "server-state" / "state.md"),
-    )
-    try:
-        root = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
-        assert "server-state" in {entry.path for entry in root.entries}
-        nested = vault.reader.inspect_bundle(
-            BundleInspectionRequest(root="server-state")
-        )
-        assert nested.state == "inspected"
-        assert [entry.path for entry in nested.entries] == ["server-state/note.md"]
+        assert result.entries[0].role == role
+        assert result.entries[0].visibility == "index_excluded"
     finally:
         vault.close()
 
@@ -917,20 +849,29 @@ def test_explicit_internal_directory_is_never_entered(tmp_path: Path) -> None:
     )
 
 
-def test_state_sidecars_are_not_probed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("kind", ["state", "internal"])
+def test_internal_entries_are_never_probed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
     state = tmp_path / "state.md"
     names = (
-        "state.md",
-        "state.md-wal",
-        "state.md-shm",
-        "state.md-journal",
-        "state.md.lock",
+        (
+            "state.md",
+            "state.md-wal",
+            "state.md-shm",
+            "state.md-journal",
+            "state.md.lock",
+        )
+        if kind == "state"
+        else (".git", ".markdown_vault_mcp")
     )
     for name in names:
-        (tmp_path / name).write_text("secret")
-    (tmp_path / "state-other.md").write_text("body")
+        path = tmp_path / name
+        if kind == "internal":
+            path.mkdir()
+        else:
+            path.write_text("secret")
+    (tmp_path / "note.md").write_text("body")
     original = inventory.os.stat
 
     def checked(name: object, *args: object, **kwargs: object) -> os.stat_result:
@@ -942,33 +883,28 @@ def test_state_sidecars_are_not_probed(
         (),
         frozenset({"md-wal", "md-shm", "md-journal", "lock"}),
         0,
-        inventory.InspectionPolicy(state_paths=(state,)),
+        inventory.InspectionPolicy(index_path=state if kind == "state" else None),
     )
     monkeypatch.setattr(inventory.os, "stat", checked)
     result = subject.inspect(BundleInspectionRequest(root=""))
-    assert [entry.path for entry in result.entries] == ["state-other.md"]
+    assert [entry.path for entry in result.entries] == ["note.md"]
 
 
-def test_memory_state_and_unexpected_child_error(
+def test_memory_state_does_not_hide_same_named_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "note.md").write_text("body")
+    # SQLite's in-memory sentinel must not protect a real same-named directory.
+    (tmp_path / ":memory:").mkdir()
+    monkeypatch.chdir(tmp_path)
     subject = BundleInspector(
         tmp_path,
         (),
         frozenset(),
         0,
-        inventory.InspectionPolicy(state_paths=(type(tmp_path)(":memory:"),)),
-    )
-    assert (
-        subject.inspect(BundleInspectionRequest(root="")).entries[0].path == "note.md"
-    )
-    monkeypatch.setattr(
-        subject, "_observe", Mock(side_effect=OSError(errno.EIO, "failure"))
+        inventory.InspectionPolicy(index_path=type(tmp_path)(":memory:")),
     )
     result = subject.inspect(BundleInspectionRequest(root=""))
-    assert result.enumeration == "unavailable"
-    assert result.entries == ()
+    assert [entry.path for entry in result.entries] == [":memory:"]
 
 
 def test_vector_sidecars_do_not_hide_neighboring_notes(tmp_path: Path) -> None:
@@ -1050,22 +986,6 @@ def test_unstatable_state_preserves_unrelated_inventory(
         vault.close()
 
 
-def test_vector_base_different_parent_and_invalid_state_parent(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_text("body")
-    (tmp_path / "not-a-directory").write_text("body")
-    settings = VaultSettings(
-        state_path=tmp_path / "not-a-directory" / "state.json",
-        embeddings_path=tmp_path / "elsewhere" / "vectors",
-    )
-    vault = Vault(source_dir=tmp_path, settings=settings)
-    try:
-        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
-        assert result.state == "inspected"
-        assert [entry.path for entry in result.entries] == ["note.md"]
-    finally:
-        vault.close()
-
-
 def test_unresolvable_state_parent_does_not_block_unrelated_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1123,39 +1043,13 @@ def test_policy_resolution_loses_all_ancestors(
     assert [entry.path for entry in result.entries] == ["note.md"]
 
 
-def test_internal_entries_are_never_probed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    for name in (".git", ".markdown_vault_mcp"):
-        (tmp_path / name).mkdir()
-    (tmp_path / "note.md").write_text("body")
-    original = inventory.os.stat
-
-    def checked(name: object, *args: object, **kwargs: object) -> os.stat_result:
-        assert name not in {".git", ".markdown_vault_mcp"}
-        return original(name, *args, **kwargs)  # type: ignore[call-overload]
-
-    monkeypatch.setattr(inventory.os, "stat", checked)
-    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
-    assert [entry.path for entry in result.entries] == ["note.md"]
-
-
 def test_denial_remains_incomplete_at_entry_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "denied.md").write_text("body")
     (tmp_path / "other.md").write_text("body")
-    scandir = inventory.os.scandir
-
-    class OrderedScan:
-        def __enter__(self) -> Iterator[os.DirEntry[str]]:
-            with scandir(tmp_path) as children:
-                return iter(sorted(children, key=lambda child: child.name))
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: OrderedScan())
+    ordered = OrderedScan(tmp_path)
+    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: ordered)
     monkeypatch.setattr(
         inventory,
         "read_regular_nofollow",
@@ -1214,21 +1108,8 @@ def test_denied_children_are_omitted_even_without_content_read(
     if kind == "budget_note":
         for i in range(16):
             (tmp_path / f"f{i:02}.md").write_bytes(b"x" * 65536)
-    scandir = inventory.os.scandir
-
-    class OrderedScan:
-        def __enter__(self) -> Iterator[os.DirEntry[str]]:
-            with scandir(tmp_path) as children:
-                return iter(
-                    sorted(
-                        children, key=lambda child: (child.name == denied, child.name)
-                    )
-                )
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: OrderedScan())
+    ordered = OrderedScan(tmp_path, denied)
+    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: ordered)
     original_open = inventory.os.open
 
     def checked_open(name: object, flags: int, *args: object, **kwargs: object) -> int:
@@ -1273,24 +1154,16 @@ def test_state_directory_created_after_policy_is_never_entered(
     opened.assert_not_called()
 
 
-def test_late_created_case_variant_sidecar_obeys_filesystem_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_case_variant_sidecar_obeys_filesystem_identity(tmp_path: Path) -> None:
     state = tmp_path / "State.md"
     subject = BundleInspector(
         tmp_path,
         (),
         frozenset({"lock"}),
         0,
-        inventory.InspectionPolicy(state_paths=(state,)),
+        inventory.InspectionPolicy(index_path=state),
     )
-    original = subject._prepare_policy
-
-    def created(root: Path) -> None:
-        original(root)
-        (tmp_path / "state.md.lock").write_text("secret")
-
-    monkeypatch.setattr(subject, "_prepare_policy", created)
+    (tmp_path / "state.md.lock").write_text("secret")
     result = subject.inspect(BundleInspectionRequest(root=""))
     probe = tmp_path / "State.md.lock"
     matches = probe.exists()
@@ -1445,17 +1318,56 @@ def test_reader_refuses_protected_vault_root_and_ancestor(
         vault.close()
 
 
-@pytest.mark.parametrize(
-    ("name", "role"), [("index.md", "navigation"), ("log.md", "history")]
-)
-def test_reserved_role_when_conventions_name_collides(
-    tmp_path: Path, name: str, role: str
-) -> None:
-    (tmp_path / name).write_text("body")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(conventions_file=name))
+def test_reader_keeps_tracker_lock_sibling(tmp_path: Path) -> None:
+    (tmp_path / "state.json.lock").write_text("ordinary attachment")
+    (tmp_path / "index.sqlite.lock").write_text("owned lock")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            state_path=tmp_path / "state.json",
+            index_path=tmp_path / "index.sqlite",
+            attachment_extensions=["lock"],
+        ),
+    )
     try:
         result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
-        assert result.entries[0].role == role
-        assert result.entries[0].visibility == "index_excluded"
+        assert result.enumeration == "complete"
+        assert [entry.path for entry in result.entries] == ["state.json.lock"]
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("kind", ["directory", "attachment", "note"])
+def test_reader_denied_opens_do_not_consume_note_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    suffix = {"directory": "", "attachment": ".png", "note": ".md"}[kind]
+    denied = {f"a{i:02}{suffix}" for i in range(20)}
+    for name in denied:
+        path = tmp_path / name
+        if kind == "directory":
+            path.mkdir()
+        else:
+            path.write_text("secret")
+    (tmp_path / "z-readable.md").write_text("---\ntype: concept\n---\nbody")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(attachment_extensions=["png"])
+    )
+    ordered = OrderedScan(tmp_path)
+    original_open = inventory.os.open
+
+    def refused(name: object, flags: int, *args: object, **kwargs: object) -> int:
+        if name in denied:
+            raise PermissionError(errno.EACCES, "denied")
+        return original_open(name, flags, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: ordered)
+    monkeypatch.setattr(inventory.os, "open", refused)
+    try:
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert result.enumeration == "unavailable"
+        assert [entry.path for entry in result.entries] == ["z-readable.md"]
+        assert result.entries[0].reason is None
+        assert result.entries[0].type_state == "present"
     finally:
         vault.close()

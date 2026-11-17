@@ -57,13 +57,16 @@ class InspectionPolicy:
 
     Args:
         conventions_file: Filename used for per-folder conventions, if enabled.
-        state_paths: Configured files or directories holding server state.
+        state_paths: Change-tracker JSON files (exactly these paths, no sidecars)
+            or directories holding server state.
         embeddings_path: Configured vector sidecar base, if any.
+        index_path: SQLite keyword index; its ``.lock`` and journal files are owned.
     """
 
     conventions_file: str | None = "_conventions.md"
     state_paths: tuple[Path, ...] = ()
     embeddings_path: Path | None = None
+    index_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +226,11 @@ def _vector_matrix(candidate: Path, base: Path) -> bool:
     return False
 
 
+# ``{index}.lock`` (sqlite_keyword) and SQLite's own journal files; the JSON
+# change tracker writes none of these, so tracker siblings stay readable.
+_INDEX_SIDECARS = ("", "-wal", "-shm", "-journal", ".lock")
+
+
 def _vector_sidecars(base: Path) -> set[Path]:
     paths = {
         base.with_suffix(suffix)
@@ -263,39 +271,50 @@ class BundleInspector:
 
     def _prepare_policy(self, root: Path) -> None:
         self._absolute_source = root
+        policy = self._policy
+        configured: list[tuple[Path, tuple[str, ...]]] = [
+            (path, ("",)) for path in policy.state_paths
+        ]
+        if policy.index_path is not None:
+            configured.append((policy.index_path, _INDEX_SIDECARS))
         files: set[Path] = set()
         directories: set[Path] = set()
-        vector_bases: set[Path] = set()
         unavailable: set[Path] = set()
-        for configured in self._policy.state_paths:
-            if str(configured) == ":memory:":
-                continue
-            path, spelled = self._policy_spellings(configured, root)
-            try:
-                mode = path.stat().st_mode
-            except (FileNotFoundError, NotADirectoryError):
-                mode = 0
-            except OSError:
-                mode = 0
-                directories.update((path, spelled))
-                unavailable.update((path, spelled))
-            if stat.S_ISDIR(mode):
-                directories.update((path, spelled))
-                continue
-            for owned in (path, spelled):
-                files.add(owned)
-                for suffix in ("-wal", "-shm", "-journal", ".lock"):
-                    files.add(owned.with_name(owned.name + suffix))
-        if self._policy.embeddings_path is not None:
-            vector_bases.update(
-                self._policy_spellings(self._policy.embeddings_path, root)
-            )
-            for base in vector_bases:
-                files.update(_vector_sidecars(base))
+        for path, sidecars in configured:
+            owned, protected, unstatable = self._state_boundary(path, root, sidecars)
+            files |= owned
+            directories |= protected
+            unavailable |= unstatable
+        self._vector_bases = (
+            set(self._policy_spellings(policy.embeddings_path, root))
+            if policy.embeddings_path is not None
+            else set()
+        )
+        for base in self._vector_bases:
+            files.update(_vector_sidecars(base))
         self._unavailable_policy_paths = unavailable
-        self._vector_bases = vector_bases
         self._internal_paths = files
         self._internal_directories = directories
+
+    def _state_boundary(
+        self, configured: Path, root: Path, sidecars: tuple[str, ...]
+    ) -> tuple[set[Path], set[Path], set[Path]]:
+        """Return the owned files, protected directories and unstatable paths."""
+        if str(configured) == ":memory:":
+            return set(), set(), set()
+        path, spelled = self._policy_spellings(configured, root)
+        names = {
+            p.with_name(p.name + suffix) for p in (path, spelled) for suffix in sidecars
+        }
+        try:
+            mode = path.stat().st_mode
+        except (FileNotFoundError, NotADirectoryError):
+            mode = 0
+        except OSError:
+            return names, {path, spelled}, {path, spelled}
+        if stat.S_ISDIR(mode):
+            return set(), {path, spelled}, set()
+        return names, set(), set()
 
     def _policy_spellings(self, configured: Path, root: Path) -> tuple[Path, Path]:
         try:
@@ -394,7 +413,6 @@ class BundleInspector:
                     except OSError as exc:
                         if exc.errno not in {errno.EACCES, errno.EPERM}:
                             raise
-                        remaining -= min(self._note_limit + 1, remaining)
                         enumeration = "unavailable"
                         continue
                     remaining -= consumed

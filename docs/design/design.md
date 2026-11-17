@@ -3600,8 +3600,10 @@ candidates) confer no bundle conformance, global OKF activation or writer author
 Effective index excludes label matching entries `index_excluded` without hiding
 or refusing them. Dot components are labelled `hidden_path`; `.git` and the
 legacy `.markdown_vault_mcp` state directory and configured state directories
-inside the vault are never entered. Configured state files and their sidecars
-are omitted without hiding neighboring notes. Live filesystem identity checks
+inside the vault are never entered. The configured change-tracker file is
+omitted by exact path, and the keyword index file with its `.lock`, `-wal`,
+`-shm` and `-journal` siblings and the vector store's files are omitted;
+neighboring notes and other same-named siblings stay visible. Live filesystem identity checks
 recognize alternate case and Unicode spellings before opening selected components.
 Directory, attachment and budget-exhausted note candidates receive a no-follow
 open probe; permission refusals make enumeration incomplete and do not reveal

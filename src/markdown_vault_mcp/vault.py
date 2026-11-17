@@ -704,15 +704,9 @@ class Vault:
             submodule_guard=self._build_submodule_guard(),
             inspection_policy=InspectionPolicy(
                 settings.conventions_file,
-                tuple(
-                    path
-                    for path in (
-                        self._state_path,
-                        self._index_path,
-                    )
-                    if path is not None
-                ),
+                () if self._state_path is None else (self._state_path,),
                 self._embeddings_path,
+                self._index_path,
             ),
         )
 
