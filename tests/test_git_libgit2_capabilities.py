@@ -62,7 +62,8 @@ def test_force_push_missing_and_present_tracking(isolated_repo):
     branch = _git(repo, "branch", "--show-current").strip()
     _git(repo, "update-ref", f"refs/remotes/origin/{branch}", "HEAD")
     for dry_run in (False, True):
-        assert native.force_push(dry_run=dry_run).reason == "push_failed"
+        expected = "dry_run_unsupported" if dry_run else "push_failed"
+        assert native.force_push(dry_run=dry_run).reason == expected
 
 
 @pytest.mark.parametrize("kind", ["rename", "rename_edit"])
@@ -99,9 +100,7 @@ def test_aggregate_rename_diff_matches_cli(isolated_repo, kind):
         "today",
         "midnight",
         "noon",
-        "noon today",
         "yesterday",
-        "noon yesterday",
         "last monday",
         "2 weeks 3 days ago",
         "1.week.ago",

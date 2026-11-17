@@ -162,7 +162,7 @@ def test_index_refresh_after_external_unstage(isolated_repo):
 
 @pytest.mark.parametrize(
     "expression",
-    ["yesterday", "2 weeks 3 days ago", "1.week.ago", "last monday", "noon yesterday"],
+    ["yesterday", "2 weeks 3 days ago", "1.week.ago", "last monday"],
 )
 def test_common_git_date_expressions(isolated_repo, expression):
     store = Libgit2Store(isolated_repo)

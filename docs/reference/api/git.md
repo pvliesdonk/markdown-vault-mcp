@@ -63,8 +63,7 @@ A refused write updates the store's uncommitted-work health when inspection
 succeeds. A write matching HEAD reconciles its index entries without creating a
 commit. History and per-commit diff limits are clamped between 1 and 100; an omitted
 diff limit is unbounded. Dates support ISO 8601, `N units ago` (including compound and dotted forms),
-`yesterday`, `last <weekday>`, `today`, `midnight`, `noon`, and
-`noon <day>` for the supported day forms. For other expressions, use
+`yesterday`, `last <weekday>`, `today`, `midnight`, and `noon`. For other expressions, use
 `GitWriteStrategy`.
 
 Git and libgit2 may score edited renames differently. The native store refuses
@@ -76,7 +75,7 @@ mode changes are also refused. Use `GitWriteStrategy` for those queries.
 Committed-revision lookup examines the current path without following renames;
 an unprovable result returns no breadcrumb and an overwrite can proceed.
 Vault and directory history refuse when a merge falls within the requested
-window; a limit reached before the merge can still return results.
+window; a limit reached before the merge can still return results. Revision reads that need to traverse a merge also refuse.
 Repositories with `core.symlinks=false` are refused. With `core.filemode=false`,
 a regular replacement for a symlink and a new regular file use mode 100644;
 an existing regular file retains its mode.

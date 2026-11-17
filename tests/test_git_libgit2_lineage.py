@@ -1,4 +1,4 @@
-"""Regressions for replan 2 native Git boundaries."""
+"""Regressions for native Git lineage and capability boundaries."""
 
 import pytest
 
@@ -213,3 +213,111 @@ def test_revision_at_head_does_not_resolve_parent(isolated_repo, monkeypatch):
 
     monkeypatch.setattr(history, "_resolved", fail)
     assert store.get_file_at_ref(RevisionQuery(repo, note, head, 0)).content == "new\n"
+
+
+def test_independent_merge_birth_refuses_uncertain_revision(isolated_repo, monkeypatch):
+    repo = isolated_repo
+    branch = _git(repo, "branch", "--show-current").strip()
+    _git(repo, "checkout", "-qb", "side")
+    (repo / "note.md").write_text("side\n")
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2099-01-01T00:00:00+00:00")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2099-01-01T00:00:00+00:00")
+    commit(repo, "side birth")
+    monkeypatch.delenv("GIT_AUTHOR_DATE")
+    monkeypatch.delenv("GIT_COMMITTER_DATE")
+    _git(repo, "checkout", "-q", branch)
+    (repo / "note.md").write_text("main\n")
+    original = commit(repo, "main birth")
+    _git(repo, "merge", "-s", "ours", "--no-ff", "-qm", "merge", "side")
+    store = Libgit2Store(repo)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    query = RevisionQuery(repo, repo / "note.md", original, 0)
+    assert cli.get_file_at_ref(query).content == "main\n"
+    with pytest.raises(InvalidRequestError, match=r"merge.*GitWriteStrategy"):
+        store.get_file_at_ref(query)
+
+
+@pytest.mark.parametrize("directory", [False, True])
+def test_scoped_until_excludes_later_merge(isolated_repo, directory):
+    repo = isolated_repo
+    branch = _git(repo, "branch", "--show-current").strip()
+    _git(repo, "checkout", "-qb", "side")
+    (repo / "side.md").write_text("side\n")
+    commit(repo, "side")
+    _git(repo, "checkout", "-q", branch)
+    (repo / "main.md").write_text("main\n")
+    commit(repo, "main")
+    _git(repo, "merge", "--no-ff", "-qm", "merge", "side")
+    store = Libgit2Store(repo)
+    assert (
+        store.get_file_history(
+            repo,
+            repo if directory else None,
+            None,
+            20,
+            "2000-01-01T00:00:00+00:00",
+            is_dir=directory,
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("bound", ["since", "until"])
+def test_scoped_time_bounds_skip_tree_diffs(isolated_repo, monkeypatch, bound):
+    import markdown_vault_mcp.git.libgit2_history as history
+
+    store = Libgit2Store(isolated_repo)
+
+    def fail(*_args):
+        raise AssertionError("out-of-window tree diff")
+
+    monkeypatch.setattr(history, "_diff", fail)
+    dates = {"since": "2100-01-01T00:00:00+00:00", "until": "2000-01-01T00:00:00+00:00"}
+    assert (
+        store.get_file_history(
+            isolated_repo,
+            None,
+            dates.get("since") if bound == "since" else None,
+            20,
+            dates.get("until") if bound == "until" else None,
+        )
+        == []
+    )
+
+
+def test_ignored_path_already_in_real_index_is_committed(isolated_repo):
+    repo = isolated_repo
+    (repo / ".gitignore").write_text("ignored.md\n")
+    commit(repo, "ignore")
+    note = repo / "ignored.md"
+    note.write_text("staged\n")
+    _git(repo, "add", "-f", "ignored.md")
+    note.write_text("updated\n")
+    Libgit2Store(repo)(note, "", "write")
+    assert _git(repo, "show", "HEAD:ignored.md") == "updated\n"
+
+
+@pytest.mark.parametrize("tracked", [False, True])
+def test_local_force_push_dry_run_matches_cli_tracking(isolated_repo, tracked):
+    repo = isolated_repo
+    if tracked:
+        branch = _git(repo, "branch", "--show-current").strip()
+        _git(repo, "update-ref", f"refs/remotes/origin/{branch}", "HEAD")
+    native = Libgit2Store(repo).force_push(dry_run=True)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False).force_push(
+        dry_run=True
+    )
+    assert (native.reason, native.remote_sha_before, native.remote_sha_after) == (
+        cli.reason,
+        cli.remote_sha_before,
+        cli.remote_sha_after,
+    )
+
+
+def test_noon_day_composite_is_actionably_refused(isolated_repo):
+    with pytest.raises(
+        InvalidRequestError, match=r"Unsupported date.*GitWriteStrategy"
+    ):
+        Libgit2Store(isolated_repo).get_file_history(
+            isolated_repo, None, "noon yesterday", 20
+        )

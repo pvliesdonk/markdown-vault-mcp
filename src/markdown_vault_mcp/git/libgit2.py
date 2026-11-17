@@ -20,6 +20,7 @@ from markdown_vault_mcp.git.strategy import (
 )
 from markdown_vault_mcp.git.types import (
     PULL_REASON_PULL_DISABLED,
+    PUSH_REASON_DRY_RUN_UNSUPPORTED,
     PUSH_REASON_NO_REMOTE,
     PUSH_REASON_PUSH_FAILED,
     PullResult,
@@ -172,7 +173,11 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
         if tracked:
             index.remove(relative)
         return tracked
-    if not tracked and repo.path_is_ignored(relative):
+    if (
+        not tracked
+        and _tree_entry(repo.index, relative) is None
+        and repo.path_is_ignored(relative)
+    ):
         return False
     _filter_guard(repo, relative)
     if stat.S_ISLNK(mode):
@@ -428,19 +433,25 @@ class Libgit2Store:
 
     def force_push(self, *, dry_run: bool = False) -> PushResult:
         """Report that this local store does not push."""
-        del dry_run
         repo = self._repository(self.resolve_force_repo())
         branch = self.branch_name(self.resolve_force_repo())
         refs = (f"refs/remotes/origin/{branch}", "refs/remotes/origin/HEAD")
-        remote = repo is not None and any(
-            _tree_entry(repo.references, ref) for ref in refs
+        remote = next(
+            (
+                repo.references[ref].resolve().target
+                for ref in refs
+                if repo is not None and _tree_entry(repo.references, ref)
+            ),
+            None,
         )
         return PushResult(
             False,
             0,
-            "",
-            "",
-            PUSH_REASON_PUSH_FAILED if remote else PUSH_REASON_NO_REMOTE,
+            str(remote) if remote else "",
+            str(remote) if remote else "",
+            (PUSH_REASON_DRY_RUN_UNSUPPORTED if dry_run else PUSH_REASON_PUSH_FAILED)
+            if remote
+            else PUSH_REASON_NO_REMOTE,
             "This local store does not push; use GitWriteStrategy or the Git CLI.",
         )
 

@@ -31,10 +31,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.git.types import RevisionQuery
 
 
-def _rel(repo: Any, path: Path) -> str:
-    return _repo_relative(Path(repo.workdir).resolve(), path)
-
-
 def _entry(commit: Any, path: str) -> Any | None:
     return _tree_entry(commit.tree, path)
 
@@ -132,13 +128,6 @@ def _date(value: str | None) -> float | None:  # noqa: C901, PLR0911, RUF100 -- 
         if text in {"today", "midnight", "noon"}:
             hour = 12 if text == "noon" else 0
             return now.replace(hour=hour, minute=0, second=0, microsecond=0).timestamp()
-        if text.startswith("noon "):
-            now, text = (
-                now.replace(hour=12, minute=0, second=0, microsecond=0),
-                text[5:],
-            )
-        if text == "today":
-            return now.timestamp()
         if text == "yesterday":
             return (now - dt.timedelta(days=1)).timestamp()
         weekdays = (
@@ -227,9 +216,11 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
             for commit in repo.walk(
                 repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
             ):
-                if len(commit.parents) > 1 and (
-                    lower is None or commit.commit_time >= lower
-                ):
+                if lower is not None and commit.commit_time < lower:
+                    return
+                if upper is not None and commit.commit_time > upper:
+                    continue
+                if len(commit.parents) > 1:
                     raise _unsupported(
                         "vault or directory history across merge commits"
                     )
@@ -276,6 +267,8 @@ def _at_ref(repo: Any, path: str, target: Any) -> tuple[str | None, bool]:
     for commit, name, _, born in _walk(repo, path, target):
         if commit.id == target.id:
             return (name if _entry(commit, name) is not None else None), True
+        if len(commit.parents) > 1:
+            raise _unsupported("file lineage across merge commits")
         if born and not repo.descendant_of(target.id, commit.id):
             return None, True
     return None, False
@@ -288,7 +281,7 @@ def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
             "Reading a revision requires a git-backed vault with commits."
         )
     target = _commit(repo, query.ref)
-    path = _rel(repo, query.path)
+    path = _repo_relative(Path(repo.workdir).resolve(), query.path)
     repo.index.read(force=True)
     if path_exists(query.path) and path not in repo.index:
         raise InvalidRequestError(f"{path!r} is not tracked by Git.")
@@ -321,7 +314,7 @@ def committed_revision(repo: Any, path: Path) -> str | None:
     """Find the newest note commit when its content matches the working tree."""
     if repo is None or repo.head_is_unborn:
         return None
-    rel = _rel(repo, path)
+    rel = _repo_relative(Path(repo.workdir).resolve(), path)
     try:
         repo.index.read(force=True)
         if rel not in repo.index:
