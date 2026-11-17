@@ -1,7 +1,6 @@
 """Synthetic coverage for opt-in automatic commit subjects."""
 
 import logging
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -15,17 +14,12 @@ from markdown_vault_mcp.git import GitWriteStrategy
 from markdown_vault_mcp.git._subject import SubjectWriter, _clean
 from markdown_vault_mcp.okf import build_log_markdown
 from markdown_vault_mcp.summarizer import OpenAISummarizer
+from tests.fixtures.git import _run_git as git
 from tests.test_summarize import FakeSummarizer, _install_fake_openai
 
 
 def test_subject_generation_is_disabled_by_default() -> None:
     assert ProjectConfig().git_generate_commit_subjects is False
-
-
-def git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(root), *args], check=True, capture_output=True, text=True
-    ).stdout
 
 
 @pytest.fixture
@@ -236,3 +230,112 @@ def test_thread_start_failure_releases_flight(
     monkeypatch.setattr(threading.Thread, "start", fail_start)
     assert writer(str(repo), "write: note.md", ["note.md"]) == "write: note.md"
     assert not writer._flight.locked()
+
+
+def test_changed_worktree_during_generation_falls_back(repo: Path) -> None:
+    note = repo / "race.md"
+    note.write_text("original synthetic content", encoding="utf-8")
+
+    class Editor(FakeSummarizer):
+        def summarize(self, system: str, user: str) -> str:
+            self.calls.append((system, user))
+            note.write_text("later synthetic content", encoding="utf-8")
+            return "Describe original"
+
+    fake = Editor()
+    strategy = GitWriteStrategy(
+        enable_pull=False,
+        enable_push=False,
+        git_lfs=False,
+        subject_writer=SubjectWriter(fake),
+    )
+    try:
+        strategy(note, "", "write")
+        assert git(repo, "show", "HEAD:race.md") == "later synthetic content"
+        assert git(repo, "log", "-1", "--format=%B") == "write: race.md\n\n"
+    finally:
+        strategy.close()
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("hello\u0081world", "helloworld"),
+        ("hello\u200bworld", "helloworld"),
+        ("[AI summary] [ai SUMMARY] Update note", "Update note"),
+        ("[Ai summary]", ""),
+    ],
+)
+def test_clean_controls_and_marker_claims(text: str, expected: str) -> None:
+    assert _clean(text) == expected
+
+
+def test_missing_backend_warning_names_prerequisites(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        _resolve_subject_writer(ProjectConfig(git_generate_commit_subjects=True), None)
+    assert "MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS" in caplog.text
+    assert "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY" in caplog.text
+    assert "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL" in caplog.text
+    assert "mechanical" in caplog.text
+
+
+def test_fixed_timeout_diagnostic_does_not_name_configurable_setting(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _install_fake_openai(monkeypatch, raise_error="timeout")
+    client = OpenAISummarizer(
+        "fake", "fake", max_tokens=512, timeout=4, private_logging=True
+    )
+    with caplog.at_level(logging.WARNING), pytest.raises(RuntimeError):
+        client.summarize("system", "synthetic")
+    assert "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT" not in caplog.text
+    assert "fixed" in caplog.text
+
+
+def test_recreated_deleted_note_during_generation_falls_back(repo: Path) -> None:
+    note = repo / "deleted.md"
+    note.write_text("original synthetic content", encoding="utf-8")
+    strategy = GitWriteStrategy(enable_pull=False, enable_push=False, git_lfs=False)
+    try:
+        strategy(note, "", "write")
+        note.unlink()
+
+        class Editor(FakeSummarizer):
+            def summarize(self, system: str, user: str) -> str:
+                self.calls.append((system, user))
+                note.write_text("recreated synthetic content", encoding="utf-8")
+                return "Delete note"
+
+        strategy._subject_writer = SubjectWriter(Editor())
+        strategy(note, "", "delete")
+        assert git(repo, "show", "HEAD:deleted.md") == "recreated synthetic content"
+        assert git(repo, "log", "-1", "--format=%B") == "delete: deleted.md\n\n"
+    finally:
+        strategy.close()
+
+
+def test_staged_content_changed_during_generation_falls_back(repo: Path) -> None:
+    note = repo / "restaged.md"
+    note.write_text("original synthetic content", encoding="utf-8")
+
+    class Editor(FakeSummarizer):
+        def summarize(self, system: str, user: str) -> str:
+            self.calls.append((system, user))
+            note.write_text("restaged synthetic content", encoding="utf-8")
+            git(repo, "add", "restaged.md")
+            return "Describe original"
+
+    strategy = GitWriteStrategy(
+        enable_pull=False,
+        enable_push=False,
+        git_lfs=False,
+        subject_writer=SubjectWriter(Editor()),
+    )
+    try:
+        strategy(note, "", "write")
+        assert git(repo, "show", "HEAD:restaged.md") == "restaged synthetic content"
+        assert git(repo, "log", "-1", "--format=%B") == "write: restaged.md\n\n"
+    finally:
+        strategy.close()

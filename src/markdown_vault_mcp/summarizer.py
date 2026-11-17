@@ -215,7 +215,9 @@ class OpenAISummarizer(Summarizer):
                 "summarize_timeout model=%s timeout_s=%s setting=%s",
                 self._model,
                 self._timeout,
-                "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT",
+                "fixed_commit_subject_budget"
+                if self._private_logging
+                else "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT",
             )
             raise SummarizeTimeoutError(
                 f"Summarization exceeded the {self._timeout:g}s per-request budget. "

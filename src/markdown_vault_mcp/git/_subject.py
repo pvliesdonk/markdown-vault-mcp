@@ -6,6 +6,8 @@ import logging
 import re
 import subprocess
 import threading
+import time
+import unicodedata
 from concurrent.futures import Future
 from typing import TYPE_CHECKING
 
@@ -25,16 +27,66 @@ _SYSTEM = (
 )
 _DEADLINE = 5.0
 _MARKER = "[AI summary] "
+_MARKER_PATTERN = re.compile(r"\[\s*ai\s+summary\s*\]", re.IGNORECASE)
 
 
 def _clean(text: str) -> str:
     line = next((line for line in text.splitlines() if line.strip()), "")
-    line = "".join(c for c in line if ord(c) >= 32 and ord(c) != 127)
+    line = "".join(c for c in line if unicodedata.category(c) not in {"Cc", "Cf"})
+    line = _MARKER_PATTERN.sub("", line)
     line = re.sub(r"\s+", " ", line).strip().strip("'\"`").strip().rstrip(".").strip()
     limit = 100 - len(_MARKER)
     if len(line) > limit:
         line = line[: limit + 1].rsplit(" ", 1)[0][:limit].rstrip()
     return line
+
+
+def _unchanged(
+    root: str, pathspec: Sequence[str], command: list[str], diff: str, budget: float
+) -> bool:
+    """Check for known index or working-tree changes within the diff budget."""
+    started = time.monotonic()
+    if budget <= 0:
+        return False
+    current = subprocess.run(
+        command, capture_output=True, text=True, check=True, timeout=budget
+    ).stdout
+    budget -= time.monotonic() - started
+    if current != diff:
+        logger.debug("git_subject_skipped reason=index_changed")
+        return False
+    if not pathspec:
+        return True
+    if budget <= 0:
+        return False
+    status = subprocess.run(
+        [
+            "git",
+            "--no-optional-locks",
+            "-C",
+            root,
+            "status",
+            "--porcelain=v1",
+            "--no-renames",
+            "-z",
+            "--untracked-files=all",
+            "--ignored=matching",
+            "--",
+            *pathspec,
+        ],
+        capture_output=True,
+        timeout=budget,
+        check=True,
+    )
+    entries = status.stdout.split(b"\0")
+    if any(
+        entry[:2] in {b"??", b"!!"} or (len(entry) > 2 and entry[1:2] != b" ")
+        for entry in entries
+        if entry
+    ):
+        logger.debug("git_subject_skipped reason=worktree_changed")
+        return False
+    return True
 
 
 class SubjectWriter:
@@ -58,25 +110,28 @@ class SubjectWriter:
             logger.debug("git_subject_skipped reason=multiline_mechanical")
             return mechanical
         try:
+            diff_started = time.monotonic()
+            command = [
+                "git",
+                "-C",
+                root,
+                "diff",
+                "--cached",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "-U2",
+                "--",
+                *pathspec,
+            ]
             result = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    root,
-                    "diff",
-                    "--cached",
-                    "--no-color",
-                    "--no-ext-diff",
-                    "--no-textconv",
-                    "-U2",
-                    "--",
-                    *pathspec,
-                ],
+                command,
                 capture_output=True,
                 text=True,
                 check=True,
                 timeout=2,
             )
+            diff_budget = 2.0 - (time.monotonic() - diff_started)
             diff = result.stdout
             if not diff or len(diff) > 16_000:
                 logger.debug("git_subject_skipped reason=empty_or_large_diff")
@@ -95,8 +150,9 @@ class SubjectWriter:
             line = _clean(future.result(timeout=_DEADLINE))
             if not line:
                 logger.debug("git_subject_skipped reason=empty_response")
-                return mechanical
-            return f"{_MARKER}{line}\n\nMechanical-Subject: {mechanical}"
+            elif _unchanged(root, pathspec, command, diff, diff_budget):
+                return f"{_MARKER}{line}\n\nMechanical-Subject: {mechanical}"
+            return mechanical
         except Exception as exc:
             logger.warning("git_subject_fallback reason=%s", type(exc).__name__)
             return mechanical

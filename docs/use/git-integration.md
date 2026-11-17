@@ -56,7 +56,12 @@ summarize backend to send each auto-commit's staged diff to that endpoint. This
 may incur charges and disclose note content to the endpoint. The default is
 false. A successful subject starts with `[AI summary]` and the original subject
 is retained in a `Mechanical-Subject` trailer. `okf_seed_log` copies the marked
-subject into the seeded history.
+subject into the seeded history. The marker is a claim, not authentication:
+anyone able to write a Git commit can create the same marker.
+
+The staged diff and selected working-tree paths are checked again after generation;
+a known change falls back to the mechanical message. This check is not atomic
+with the commit.
 
 If the backend is unavailable, the diff is empty or over 16,000 characters, or
 generation fails, times out, or returns no usable line, the original mechanical

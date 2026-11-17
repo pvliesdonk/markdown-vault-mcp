@@ -382,7 +382,12 @@ def _resolve_subject_writer(
     if not config.git_generate_commit_subjects:
         return None
     if summarizer is None:
-        logger.warning("git_subject_backend_unavailable")
+        logger.warning(
+            "git_subject_backend_unavailable opt_in=%s api_key=%s base_url=%s outcome=mechanical",
+            "MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS",
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY",
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL",
+        )
         return None
     from markdown_vault_mcp.git._subject import build_subject_writer
 
