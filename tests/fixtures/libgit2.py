@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
+
+from tests.fixtures.git import _run_git as _git
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -50,9 +51,3 @@ def isolated_repo(
     (repo / "unrelated.md").write_text("staged\n")
     _git(repo, "add", "unrelated.md")
     return repo
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout

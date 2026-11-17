@@ -55,8 +55,9 @@ remote operations are outside its scope. The native Git store depends on it.
 - Repository discovery, path ignore checks, attributes, and ancestry are exposed by pygit2. [source: repository]
 - `find_similar` computes rename scores and accepts a rename threshold; without explicitly requesting detection, configuration may disable it. [source: diff]
 - Creating a blob from the working directory reads a repository-relative path and writes to the object database. [source: blob]
-- With an effective external `filter.upper.clean` set to `tr a-z A-Z`, Git staged `HELLO` while pygit2 1.21.0's worktree blob contained `hello`. Refuse effective custom filters before writing. [observed: isolated temporary repository, 2026-11-16] [pins: tests/test_git_libgit2.py::test_effective_external_clean_filter_is_refused]
+- With an effective external `filter.upper.clean` set to `tr a-z A-Z`, Git staged `HELLO` while pygit2 1.21.0's worktree blob contained `hello`. Refuse a path when its filter attribute names a configured, nonempty clean or process driver; an unconfigured attribute or empty effective override is allowed. Tracked index paths are checked at startup and touched paths before writes. [observed: isolated temporary repository, 2026-11-16] [pins: tests/test_git_libgit2.py::test_effective_external_clean_filter_is_refused]
 
+- A write whose tree equals HEAD still reconciles its touched index paths; a failed write refreshes the worktree health condition where inspection succeeds. History and per-commit diff limits are clamped to 1–100; an omitted diff limit is unbounded. [pins: tests/test_git_libgit2_replan.py::test_noop_reconciles_index_without_observer]
 - Git subtracts seconds through weeks as durations, but months and years modify local calendar fields. [source: git-date] [pins: tests/test_git_libgit2_history.py::test_relative_dates_match_git_parser]
 - A rename-and-rewrite fixture scored 36% by Git remains detectable by both Git and libgit2 at the selected 30% threshold. [observed: pygit2 1.21.0, 2026-11-16] [pins: tests/test_git_libgit2_history.py::test_rename_and_rewrite_threshold_agrees_with_cli]
 

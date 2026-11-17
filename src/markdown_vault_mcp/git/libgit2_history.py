@@ -13,10 +13,14 @@ from typing import TYPE_CHECKING, Any
 import pygit2
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.git.libgit2 import _rel as _literal_rel
+from markdown_vault_mcp.git.libgit2 import _tree_entry
 from markdown_vault_mcp.git.query import (
     _note_text,
+    _repo_relative,
     _require_inside_vault,
     _truncate_diff,
+    _vault_prefix,
 )
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 from markdown_vault_mcp.utils.fs import path_exists
@@ -28,23 +32,11 @@ if TYPE_CHECKING:
 
 
 def _rel(repo: Any, path: Path) -> str:
-    return (
-        (path.parent.resolve() / path.name)
-        .relative_to(Path(repo.workdir).resolve())
-        .as_posix()
-    )
-
-
-def _prefix(repo: Any, vault: Path) -> str:
-    rel = _rel(repo, vault.resolve())
-    return "" if rel == "." else rel.rstrip("/") + "/"
+    return _repo_relative(Path(repo.workdir).resolve(), path)
 
 
 def _entry(commit: Any, path: str) -> Any | None:
-    try:
-        return commit.tree[path]
-    except KeyError:
-        return None
+    return _tree_entry(commit.tree, path)
 
 
 def _diff(parent: Any | None, commit: Any) -> Any:
@@ -53,11 +45,15 @@ def _diff(parent: Any | None, commit: Any) -> Any:
     return parent.tree.diff_to_tree(commit.tree)
 
 
-def _old_path(parent: Any, commit: Any, path: str) -> str | None:
+def _similar(parent: Any | None, commit: Any) -> Any:
     diff = _diff(parent, commit)
     diff.find_similar(
         flags=pygit2.enums.DiffFind.FIND_RENAMES, rename_threshold=30, rename_limit=2000
     )
+    return diff
+
+
+def _old_path(diff: Any, path: str) -> str | None:
     for delta in diff.deltas:
         if (
             delta.status == pygit2.enums.DeltaStatus.RENAMED
@@ -73,7 +69,7 @@ def _same(a: Any | None, b: Any | None) -> bool:
     return bool(a.id == b.id and a.filemode == b.filemode)
 
 
-def _walk(repo: Any, path: str) -> Iterator[tuple[Any, str, bool]]:
+def _walk(repo: Any, path: str) -> Iterator[tuple[Any, str, bool, bool]]:
     """Carry each name through all parents, stopping each branch at birth."""
     if repo.head_is_unborn:
         return
@@ -82,23 +78,30 @@ def _walk(repo: Any, path: str) -> Iterator[tuple[Any, str, bool]]:
     for commit in repo.walk(
         repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
     ):
+        if not names:
+            return
         current_names = names.pop(commit.id, set())
         for name in current_names:
             current = _entry(commit, name)
             differences = []
+            born = current is not None
             for parent in commit.parents:
                 previous_name = name
                 previous = _entry(parent, name)
                 if current is not None and previous is None:
-                    previous_name = _old_path(parent, commit, name) or ""
+                    previous_name = _old_path(_similar(parent, commit), name) or ""
                     previous = _entry(parent, previous_name) if previous_name else None
+                born = born and previous is None
                 differences.append(
                     not _same(current, previous) or previous_name != name
                 )
                 if previous_name and (previous is not None or current is None):
                     names[parent.id].add(previous_name)
             changed = all(differences) if differences else current is not None
-            yield commit, name, changed
+            yield commit, name, changed, born
+
+
+_AGO = re.compile(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?")
 
 
 def _date(value: str | None) -> float | None:
@@ -130,14 +133,8 @@ def _date(value: str | None) -> float | None:
         if text.startswith("last ") and text[5:] in weekdays:
             days = (now.weekday() - weekdays.index(text[5:])) % 7 or 7
             return (now - dt.timedelta(days=days)).timestamp()
-        pairs = re.findall(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?", text)
-        if (
-            pairs
-            and re.sub(
-                r"(\d+)\s+(second|minute|hour|day|week|month|year)s?", "", text
-            ).strip()
-            == "ago"
-        ):
+        pairs = _AGO.findall(text)
+        if pairs and _AGO.sub("", text).strip() == "ago":
             local = list(time.localtime(now.timestamp()))
             months = sum(
                 int(n) * (12 if unit == "year" else 1)
@@ -168,6 +165,10 @@ def _timestamp(commit: Any) -> str:
     return dt.datetime.fromtimestamp(commit.author.time, zone).isoformat()
 
 
+def _subject(commit: Any) -> str:
+    return " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines())
+
+
 def _history_entry(commit: Any, paths: list[str]) -> HistoryEntry:
     sha = str(commit.id)
     return HistoryEntry(
@@ -175,7 +176,7 @@ def _history_entry(commit: Any, paths: list[str]) -> HistoryEntry:
         sha[:7],
         _timestamp(commit),
         f"{commit.author.name} <{commit.author.email}>",
-        " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines()),
+        _subject(commit),
         paths,
     )
 
@@ -194,16 +195,17 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
     lower, upper = _date(since), _date(until)
     if repo is None or repo.head_is_unborn:
         return []
-    prefix = _prefix(repo, vault)
+    root = Path(repo.workdir).resolve()
+    prefix = _vault_prefix(root, vault)
     rows: Iterator[tuple[Any, list[str]]]
     if path is not None and not is_dir:
         rows = (
             (commit, [])
-            for commit, _, changed in _walk(repo, _rel(repo, path))
+            for commit, _, changed, _ in _walk(repo, _literal_rel(repo, path))
             if changed
         )
     else:
-        scope = _prefix(repo, path) if path is not None else prefix
+        scope = _vault_prefix(root, path) if path is not None else prefix
 
         def scoped() -> Iterator[tuple[Any, list[str]]]:
             for commit in repo.walk(
@@ -227,7 +229,7 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
                 if (lower is None or c.commit_time >= lower)
                 and (upper is None or c.commit_time <= upper)
             ),
-            limit,
+            min(max(1, limit), 100),
         )
     )
 
@@ -248,11 +250,13 @@ def _commit(repo: Any, ref: str, *, ancestral: bool = True) -> Any:
         ) from exc
 
 
-def _at_ref(repo: Any, path: str, target: Any) -> str | None:
-    for commit, name, _ in _walk(repo, path):
-        if commit.id == target.id and _entry(commit, name) is not None:
-            return name
-    return None
+def _at_ref(repo: Any, path: str, target: Any) -> tuple[str | None, bool]:
+    for commit, name, _, born in _walk(repo, path):
+        if commit.id == target.id:
+            return (name if _entry(commit, name) is not None else None), True
+        if born and not repo.descendant_of(target.id, commit.id):
+            return None, True
+    return None, False
 
 
 def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
@@ -266,8 +270,8 @@ def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
     repo.index.read(force=True)
     if path_exists(query.path) and path not in repo.index:
         raise InvalidRequestError(f"{path!r} is not tracked by Git.")
-    prefix = _prefix(repo, query.repo_path)
-    historical = _at_ref(repo, path, target)
+    prefix = _vault_prefix(Path(repo.workdir).resolve(), query.repo_path)
+    historical, _ = _at_ref(repo, path, target)
     if historical is None:
         raise InvalidRequestError(f"The note did not exist at revision {query.ref!r}.")
     _require_inside_vault(historical, prefix, query.ref)
@@ -295,12 +299,12 @@ def committed_revision(repo: Any, path: Path) -> str | None:
     """Find the newest note commit when its content matches the working tree."""
     if repo is None or repo.head_is_unborn:
         return None
+    rel = _rel(repo, path)
     try:
-        rel = _rel(repo, path)
         repo.index.read(force=True)
         if rel not in repo.index:
             return None
-        for commit, name, changed in _walk(repo, rel):
+        for commit, name, changed, _ in _walk(repo, rel):
             if changed:
                 entry = _entry(commit, name)
                 return (
@@ -358,7 +362,7 @@ def get_file_diff(  # noqa: C901, PLR0913, RUF100 -- protocol and lineage range 
         _commit(repo, ref, ancestral=False) if ref and since_timestamp is None else None
     )
     cutoff = _date(since_timestamp)
-    rows = _walk(repo, _rel(repo, path))
+    current = _literal_rel(repo, path)
     if target is None and cutoff is not None:
         target = next(
             (
@@ -372,40 +376,36 @@ def get_file_diff(  # noqa: C901, PLR0913, RUF100 -- protocol and lineage range 
         )
         if target is None:
             return [] if per_commit else ""
-    selected = []
-    for commit, name, changed in rows:
-        if target is not None and (
-            commit.id == target.id or repo.descendant_of(target.id, commit.id)
-        ):
-            continue
-        if changed:
-            selected.append((commit, name))
     if not per_commit:
         head = repo.head.peel(pygit2.Commit)
-        current_name = _rel(repo, path)
-        historical = (
-            (
-                _at_ref(repo, current_name, target)
-                or (current_name if _entry(target, current_name) else None)
-            )
-            if target
-            else None
-        )
+        historical, reached = _at_ref(repo, current, target) if target else (None, True)
+        if not reached and _entry(target, current):
+            historical = current
         old_tree = _single_tree(repo, target, historical)
-        new_tree = _single_tree(repo, head, current_name)
+        new_tree = _single_tree(repo, head, current)
         diff = old_tree.diff_to_tree(new_tree)
         diff.find_similar(flags=pygit2.enums.DiffFind.FIND_RENAMES, rename_threshold=30)
         return _patches(
             diff,
-            {current_name, *([historical] if historical else [])},
+            {current, *([historical] if historical else [])},
             summarize_binary,
         )
+    selected = (
+        (commit, name)
+        for commit, name, changed, _ in _walk(repo, current)
+        if changed
+        and not (
+            target is not None
+            and (commit.id == target.id or repo.descendant_of(target.id, commit.id))
+        )
+    )
     output = []
-    for commit, name in selected[:limit]:
+    for commit, name in islice(
+        selected, None if limit is None else min(max(1, limit), 100)
+    ):
         parent = commit.parents[0] if commit.parents else None
-        old = _old_path(parent, commit, name) if parent else None
-        diff = _diff(parent, commit)
-        diff.find_similar(flags=pygit2.enums.DiffFind.FIND_RENAMES, rename_threshold=30)
+        diff = _similar(parent, commit)
+        old = _old_path(diff, name)
         patch = _patches(diff, {name, *([old] if old else [])}, summarize_binary)
         if old and _same(_entry(parent, old), _entry(commit, name)):
             patch = f"{old} => {name} (renamed, no content change)\n"
@@ -415,9 +415,7 @@ def get_file_diff(  # noqa: C901, PLR0913, RUF100 -- protocol and lineage range 
                 sha,
                 sha[:7],
                 _timestamp(commit),
-                " ".join(
-                    (commit.message or "").strip().split("\n\n", 1)[0].splitlines()
-                ),
+                _subject(commit),
                 patch,
             )
         )

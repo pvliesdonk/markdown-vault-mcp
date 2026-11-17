@@ -7,7 +7,7 @@ import shutil
 import stat
 import tempfile
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -72,6 +72,14 @@ def _config_bool(config: Any, key: str, default: bool = False) -> bool:
         return default
 
 
+def _rel(repo: Any, path: Path) -> str:
+    return (
+        (path.parent.resolve() / path.name)
+        .relative_to(Path(repo.workdir).resolve())
+        .as_posix()
+    )
+
+
 def _probe_config(gitdir: Path, pg: Any) -> None:
     try:
         common = gitdir / "commondir"
@@ -94,7 +102,9 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
         raise _unsupported("partial clones")
 
 
-def _probe_hooks(repo: Any) -> None:
+def _probe_policy(repo: Any) -> None:
+    if _config_bool(repo.config, "commit.gpgsign"):
+        raise _unsupported("signed commits")
     configured = _config_value(repo.config, "core.hookspath")
     gitdir = Path(repo.path)
     common = gitdir / "commondir"
@@ -103,7 +113,14 @@ def _probe_hooks(repo: Any) -> None:
     hooks = Path(configured).expanduser() if configured else gitdir / "hooks"
     if not hooks.is_absolute():
         hooks = Path(repo.workdir) / hooks
-    for name in ("pre-commit", "prepare-commit-msg", "commit-msg", "post-commit"):
+    for name in (
+        "pre-commit",
+        "prepare-commit-msg",
+        "commit-msg",
+        "post-commit",
+        "reference-transaction",
+        "post-index-change",
+    ):
         if os.access(hooks / name, os.X_OK):
             raise _unsupported(f"executable {name} hooks")
 
@@ -122,34 +139,21 @@ def _open(path: Path, pg: Any) -> Any | None:
         repo = pg.Repository(gitdir)
         if repo.is_bare or repo.workdir is None:
             raise _unsupported("bare repositories")
-        if _config_bool(repo.config, "commit.gpgsign"):
-            raise _unsupported("signed commits")
-        _probe_hooks(repo)
-        _probe_lfs(repo)
+        _probe_policy(repo)
+        for entry in repo.index:
+            _filter_guard(repo, entry.path)
         return repo
     except pg.GitError as exc:
         raise _unsupported("an unopenable repository") from exc
 
 
-def _probe_lfs(repo: Any) -> None:
-    if repo.head_is_unborn:
-        return
-
-    def visit(tree: Any, prefix: str = "") -> None:
-        for entry in tree:
-            name = prefix + entry.name
-            if entry.filemode == 0o040000:
-                visit(repo[entry.id], name + "/")
-            elif repo.get_attr(name, "filter") == "lfs":
-                raise _unsupported(f"the effective LFS filter on {name!r}")
-
-    visit(repo.head.peel().tree)
-
-
 def _filter_guard(repo: Any, path: str) -> None:
-    value = repo.get_attr(path, "filter")
-    if isinstance(value, str) and value:
-        raise _unsupported(f"the effective {value!r} clean filter on {path!r}")
+    name = repo.get_attr(path, "filter")
+    if isinstance(name, str) and any(
+        _config_value(repo.config, f"filter.{name}.{kind}")
+        for kind in ("clean", "process")
+    ):
+        raise _unsupported(f"the effective {name!r} filter on {path!r}")
 
 
 def _tree_entry(index: Any, path: str) -> Any | None:
@@ -198,18 +202,13 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
 def _stage_items(
     repo: Any, index: Any, items: Sequence[WriteBatchItem], pg: Any
 ) -> tuple[set[str], list[tuple[Path, WriteOperation, Path | None]]]:
-    root = Path(repo.workdir)
     paths: set[str] = set()
     staged = []
     for path, operation, old_path, _ in items:
         changed = False
         for item in (path, old_path):
             if item is not None:
-                rel = (
-                    (item.parent.resolve() / item.name)
-                    .relative_to(root.resolve())
-                    .as_posix()
-                )
+                rel = _rel(repo, item)
                 if _index_path(repo, index, rel, pg):
                     paths.add(rel)
                     changed = True
@@ -227,7 +226,7 @@ def _locked_index(repo: Any, pg: Any) -> Iterator[tuple[Any, Path, Path]]:
         os.close(fd)
         with tempfile.TemporaryDirectory(dir=gitdir) as directory:
             source, temporary = gitdir / "index", Path(directory) / "index"
-            if source.exists():
+            if path_exists(source):
                 shutil.copyfile(source, temporary)
             yield pg.Index(temporary), temporary, source
     finally:
@@ -265,6 +264,9 @@ class Libgit2Store:
         commit_email: str | None = None,
     ) -> None:
         self._pg = _pygit2()
+        from markdown_vault_mcp.git import libgit2_history
+
+        self._history = libgit2_history
         self._repo_path = repo_path
         self._repo = _open(repo_path, self._pg) if repo_path is not None else None
         self._name = _sanitize_git_identity(
@@ -313,7 +315,7 @@ class Libgit2Store:
             primary_paths=frozenset({path}),
         )
 
-    def on_write_batch(
+    def on_write_batch(  # noqa: C901, RUF100 -- locked publication and no-op reconciliation share one transaction.
         self,
         items: Sequence[WriteBatchItem],
         tool_name: str,
@@ -323,71 +325,75 @@ class Libgit2Store:
         """Commit a tool call's writes together with their principal's identity."""
         if self._closed or not items:
             return
-        with self._lock:
-            repo = self._repository(items[0][0])
-            if repo is None:
-                return
-            if _config_bool(repo.config, "commit.gpgsign"):
-                raise _unsupported("signed commits")
-            _probe_hooks(repo)
-            with (
-                _locked_index(repo, self._pg) as (real, temporary, destination),
-                repo.transaction() as transaction,
-            ):
-                transaction.lock_ref("HEAD")
-                head = repo.lookup_reference("HEAD")
-                refname = head.target if isinstance(head.target, str) else "HEAD"
-                if refname != "HEAD":
-                    transaction.lock_ref(refname)
-                if repo.state():
-                    raise _unsupported("in-progress Git operations")
-                root = Path(repo.workdir)
-                index = self._pg.Index()
-                parent = (
-                    None if repo.head_is_unborn else repo.head.peel(self._pg.Commit)
-                )
-                if parent is not None:
-                    index.read_tree(parent.tree)
-                paths, staged = _stage_items(repo, index, items, self._pg)
-                if not paths:
+        try:
+            with self._lock:
+                repo = self._repository(items[0][0])
+                if repo is None:
                     return
-                tree = index.write_tree(repo)
-                if parent is not None and tree == parent.tree_id:
-                    return
-                primary = list(
-                    {
-                        item[0]: item
-                        for item in reversed(staged)
-                        if primary_paths is not None and item[0] in primary_paths
-                    }.values()
-                )
-                subject = _batch_subject(
-                    root, len(staged), tool_name, primary_paths, primary
-                )
-                principal = items[0][3]
-                author = self._pg.Signature(
-                    _sanitize_git_identity(
-                        (principal.display_name if principal else None) or self._name
-                    ),
-                    _sanitize_git_identity(
-                        (principal.email if principal else None) or self._email
-                    ),
-                )
-                committer = self._pg.Signature(self._name, self._email)
-                before = str(parent.id) if parent is not None else ""
-                after = repo.create_commit(
-                    None,
-                    author,
-                    committer,
-                    subject,
-                    tree,
-                    [parent.id] if parent is not None else [],
-                )
-                _update_index(real, index, paths)
-                real.write()
-                transaction.set_target(refname, after, message=subject)
-                temporary.replace(destination)
-            self._committed(before, str(after))
+                _probe_policy(repo)
+                with (
+                    _locked_index(repo, self._pg) as (real, temporary, destination),
+                    repo.transaction() as transaction,
+                ):
+                    transaction.lock_ref("HEAD")
+                    head = repo.lookup_reference("HEAD")
+                    refname = head.target if isinstance(head.target, str) else "HEAD"
+                    if refname != "HEAD":
+                        transaction.lock_ref(refname)
+                    if repo.state():
+                        raise _unsupported("in-progress Git operations")
+                    root = Path(repo.workdir)
+                    index = self._pg.Index()
+                    parent = (
+                        None if repo.head_is_unborn else repo.head.peel(self._pg.Commit)
+                    )
+                    if parent is not None:
+                        index.read_tree(parent.tree)
+                    paths, staged = _stage_items(repo, index, items, self._pg)
+                    if not paths:
+                        return
+                    tree = index.write_tree(repo)
+                    noop = parent is not None and tree == parent.tree_id
+                    primary: dict[Path, Any] = {}
+                    for item in staged:
+                        if primary_paths and item[0] in primary_paths:
+                            primary.setdefault(item[0], item)
+                    subject = _batch_subject(
+                        root, len(staged), tool_name, primary_paths, [*primary.values()]
+                    )
+                    principal = items[0][3]
+                    author = self._pg.Signature(
+                        _sanitize_git_identity(
+                            (principal and principal.display_name) or self._name
+                        ),
+                        _sanitize_git_identity(
+                            (principal and principal.email) or self._email
+                        ),
+                    )
+                    committer = self._pg.Signature(self._name, self._email)
+                    before = str(parent.id) if parent is not None else ""
+                    after = (
+                        parent.id
+                        if parent is not None and noop
+                        else repo.create_commit(
+                            None,
+                            author,
+                            committer,
+                            subject,
+                            tree,
+                            [parent.id] if parent is not None else [],
+                        )
+                    )
+                    _update_index(real, index, paths)
+                    real.write()
+                    if not noop:
+                        transaction.set_target(refname, after, message=subject)
+                    temporary.replace(destination)
+                self._committed(before, str(after))
+        except Exception:
+            with suppress(Exception):
+                self._observe()
+            raise
 
     @property
     def is_managed(self) -> bool:
@@ -453,9 +459,8 @@ class Libgit2Store:
         pause_writes: Callable[[], AbstractContextManager[None]],
         drain_writes: Callable[[], bool],
     ) -> None:
-        """Remember the owner's write-pause callbacks for synchronization."""
-        self._pause_writes = pause_writes
-        self._drain_writes = drain_writes
+        """Accept the synchronization interface; the local store does not sync."""
+        del pause_writes, drain_writes
 
     def start(
         self,
@@ -490,9 +495,7 @@ class Libgit2Store:
         is_dir: bool = False,
     ) -> list[HistoryEntry]:
         """Return local commit history, optionally scoped to a path."""
-        from markdown_vault_mcp.git import libgit2_history
-
-        return libgit2_history.get_file_history(
+        return self._history.get_file_history(
             self._repository(repo_path),
             repo_path,
             path,
@@ -514,9 +517,7 @@ class Libgit2Store:
         summarize_binary: bool = False,
     ) -> str | list[CommitDiff]:
         """Return aggregate or individual diffs for a note."""
-        from markdown_vault_mcp.git import libgit2_history
-
-        return libgit2_history.get_file_diff(
+        return self._history.get_file_diff(
             self._repository(repo_path),
             repo_path,
             path,
@@ -529,12 +530,8 @@ class Libgit2Store:
 
     def get_file_at_ref(self, query: RevisionQuery) -> RevisionContent:
         """Return the note's content at an ancestral revision."""
-        from markdown_vault_mcp.git import libgit2_history
-
-        return libgit2_history.get_file_at_ref(self._repository(query.repo_path), query)
+        return self._history.get_file_at_ref(self._repository(query.repo_path), query)
 
     def committed_revision(self, repo_path: Path, path: Path) -> str | None:
         """Return the latest matching committed content, if any."""
-        from markdown_vault_mcp.git import libgit2_history
-
-        return libgit2_history.committed_revision(self._repository(repo_path), path)
+        return self._history.committed_revision(self._repository(repo_path), path)

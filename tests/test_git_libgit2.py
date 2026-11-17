@@ -149,6 +149,7 @@ def test_committed_lfs_attributes_refused_at_open(isolated_repo: Path) -> None:
     (isolated_repo / "data.bin").write_bytes(b"fixture")
     _git(isolated_repo, "add", ".gitattributes", "data.bin")
     _git(isolated_repo, "commit", "-qm", "attributes")
+    _git(isolated_repo, "config", "filter.lfs.clean", "cat")
     with pytest.raises(ConfigurationError, match=r"(?i)lfs"):
         Libgit2Store(isolated_repo)
 
@@ -261,6 +262,7 @@ def test_effective_filter_added_after_open_is_refused(isolated_repo: Path) -> No
     note.write_text("one")
     store(note, "one", "write")
     (isolated_repo / ".gitattributes").write_text("*.md filter=custom\n")
+    _git(isolated_repo, "config", "filter.custom.clean", "cat")
     note.write_text("two")
     with pytest.raises(ConfigurationError, match="filter"):
         store(note, "two", "edit")
