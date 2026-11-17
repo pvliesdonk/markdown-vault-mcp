@@ -95,11 +95,17 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
         raise _unsupported("SHA-256 repositories")
     if keys.get("extensions.refstorage", "").lower() == "reftable":
         raise _unsupported("reftable repositories")
-    if "extensions.partialclone" in keys or any(
-        k.startswith("remote.") and k.endswith(".promisor") and config.get_bool(k)
+
+
+def _checked(repo: Any) -> Any:
+    keys = [e.name for e in repo.config] if repo else []
+    if any(
+        k == "extensions.partialclone"
+        or (re.fullmatch(r"remote\..+\.promisor", k) and repo.config.get_bool(k))
         for k in keys
     ):
         raise _unsupported("partial clones")
+    return repo
 
 
 _DRIVERS = ("clean", "process")
@@ -139,9 +145,9 @@ def _probe_policy(repo: Any) -> None:
     if "core.sharedrepository" in repo.config and str(shared).lower() not in _OFF:
         raise _unsupported("core.sharedRepository repositories")
     configured = _tree_entry(repo.config, "core.hookspath")
-    hooks = (
-        Path(repo.workdir)
-        / Path(configured or _common(Path(repo.path)) / "hooks").expanduser()
+    hooks = Path(
+        repo.workdir,
+        Path(configured or _common(Path(repo.path)) / "hooks").expanduser(),
     )
     for name in _HOOKS:
         if os.access(hooks / name, os.X_OK):
@@ -176,7 +182,7 @@ def _fresh(gitdir: str, pg: Any, *, policy: bool = True) -> Any:
         raise _unsupported(
             "a split index" if split else f"an unopenable repository ({exc})"
         ) from exc
-    return repo
+    return _checked(repo)
 
 
 def _filter_guard(repo: Any, path: str) -> None:
@@ -529,7 +535,7 @@ class Libgit2Store:
         is_dir: bool = False,
     ) -> list[HistoryEntry]:
         """Return local commit history, optionally scoped to a path."""
-        repo = self._repository(repo_path)
+        repo = _checked(self._repository(repo_path))
         return self._history.get_file_history(
             repo, repo_path, path, since, limit, until, is_dir=is_dir
         )
@@ -546,14 +552,9 @@ class Libgit2Store:
         summarize_binary: bool = False,
     ) -> str | list[CommitDiff]:
         """Return aggregate or individual diffs for a note."""
+        repo = _checked(self._repository(repo_path))
         return self._history.get_file_diff(
-            self._repository(repo_path),
-            path,
-            ref,
-            per_commit,
-            since_timestamp,
-            limit,
-            summarize_binary=summarize_binary,
+            repo, path, ref, per_commit, since_timestamp, limit, summarize_binary
         )
 
     def get_file_at_ref(self, query: RevisionQuery) -> RevisionContent:

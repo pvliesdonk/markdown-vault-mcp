@@ -45,7 +45,10 @@ def test_reused_name_does_not_cross_birth(isolated_repo: Path) -> None:
     store(note, "second\n", "write")
     history = store.get_file_history(isolated_repo, note, None, 20)
     assert len(history) == 1
-    with pytest.raises(InvalidRequestError, match="did not exist at revision"):
+    with pytest.raises(
+        InvalidRequestError,
+        match=r"did not exist at that revision.*different note.*get_history",
+    ):
         store.get_file_at_ref(RevisionQuery(isolated_repo, note, first, 0))
 
 
@@ -107,7 +110,9 @@ def test_revision_read_refuses_oversize_and_bad_ref(isolated_repo: Path) -> None
     ref = _git(isolated_repo, "rev-parse", "HEAD").strip()
     with pytest.raises(InvalidRequestError, match="exceeding the 1-byte limit"):
         store.get_file_at_ref(RevisionQuery(isolated_repo, note, ref, 1))
-    with pytest.raises(InvalidRequestError, match="not a valid ancestral commit"):
+    with pytest.raises(
+        InvalidRequestError, match=r"is not a commit in this repository.*get_history"
+    ):
         store.get_file_at_ref(RevisionQuery(isolated_repo, note, "not-a-ref", 0))
 
 

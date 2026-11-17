@@ -89,17 +89,15 @@ def _walk(  # noqa: C901, RUF100 -- bounded lineage must handle each parent.
             differences = []
             born = current is not None
             for parent in commit.parents:
-                previous_name = name
-                previous = _entry(parent, name)
-                if follow and current is not None and previous is None:
-                    previous_name = _resolved(_diff(parent, commit), name)[1] or ""
-                    previous = _entry(parent, previous_name) if previous_name else None
-                born = born and previous is None
-                differences.append(
-                    not _same(current, previous) or previous_name != name
-                )
-                if previous_name and (previous is not None or current is None):
-                    names[parent.id].add(previous_name)
+                old = name
+                prev = _entry(parent, name)
+                if follow and current is not None and prev is None:
+                    old = _resolved(_diff(parent, commit), name)[1] or ""
+                    prev = _entry(parent, old) if old else None
+                born = born and prev is None
+                differences.append(not _same(current, prev) or old != name)
+                if old and (prev is not None or current is None):
+                    names[parent.id].add(old)
             changed = all(differences) if differences else current is not None
             if follow and changed and len(commit.parents) > 1:
                 raise _unsupported("file lineage across merge commits")
@@ -111,10 +109,12 @@ _AGO = re.compile(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?")
 
 
 def _date(value: str | None) -> float | None:  # noqa: C901, PLR0911, RUF100 -- bounded date grammar.
-    if value is None:
-        return None
     now = dt.datetime.now().astimezone()
+    if not value:
+        return None if value is None else now.timestamp()
     try:
+        if not re.match(r"\d{4}-\d\d-\d\d", value):
+            raise ValueError
         parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             parsed = parsed.replace(hour=now.hour, minute=now.minute, second=now.second)
@@ -136,11 +136,7 @@ def _date(value: str | None) -> float | None:  # noqa: C901, PLR0911, RUF100 -- 
         pairs = _AGO.findall(text)
         if pairs and _AGO.sub("", text).strip() == "ago":
             local = list(time.localtime(now.timestamp()))
-            months = sum(
-                int(n) * (12 if unit == "year" else 1)
-                for n, unit in pairs
-                if unit in {"month", "year"}
-            )
+            months = sum(int(n) * {"month": 1, "year": 12}.get(u, 0) for n, u in pairs)
             year, month = divmod(local[0] * 12 + local[1] - 1 - months, 12)
             local[0], local[1] = year, month + 1
             return time.mktime(time.struct_time(local)) - sum(
@@ -200,7 +196,7 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
     is_dir: bool = False,
 ) -> list[HistoryEntry]:
     """Return commits touching a file, directory, or vault."""
-    lower, upper = _date(since), _date(until)
+    lower, upper = _date(since or None), _date(until or None)
     if repo is None or repo.head_is_unborn:
         return []
     root = Path(repo.workdir).resolve()
@@ -239,16 +235,14 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
 def _commit(repo: Any, ref: str, *, ancestral: bool = True) -> Any:
     try:
         obj = repo.revparse_single(ref).peel(pygit2.Commit)
-        if (
-            ancestral
-            and obj.id != repo.head.target
-            and not repo.descendant_of(repo.head.target, obj.id)
-        ):
-            raise InvalidRequestError(f"Revision {ref!r} is not an ancestor of HEAD.")
+        if ancestral and repo.merge_base(repo.head.target, obj.id) != obj.id:
+            raise InvalidRequestError(
+                f"Revision {ref!r} is not an ancestor of the current HEAD (it may be on history that was rebased away), so this note's path at that revision cannot be established."
+            )
         return obj
     except (KeyError, ValueError, pygit2.GitError) as exc:
         raise InvalidRequestError(
-            f"Revision {ref!r} is not a valid ancestral commit."
+            f"{ref!r} is not a commit in this repository: unknown, not a unique commit prefix, or another kind of object. Pass a SHA from 'get_history'."
         ) from exc
 
 
@@ -277,13 +271,12 @@ def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
     prefix = _vault_prefix(Path(repo.workdir).resolve(), query.repo_path)
     historical, _ = _at_ref(repo, path, target)
     if historical is None:
-        raise InvalidRequestError(f"The note did not exist at revision {query.ref!r}.")
+        raise InvalidRequestError(
+            f"{path!r} was created after revision {query.ref!r}, so the note now at that path did not exist at that revision. Anything stored under that name then belongs to a different note; use 'get_history' to find a revision this note actually has."
+        )
     _require_inside_vault(historical, prefix, query.ref)
     entry = _entry(target, historical)
-    if entry is None or entry.filemode not in (
-        pygit2.GIT_FILEMODE_BLOB,
-        pygit2.GIT_FILEMODE_BLOB_EXECUTABLE,
-    ):
+    if entry is None or entry.filemode >> 12 != 8:
         raise InvalidRequestError("The historical path is not a regular file.")
     _, size = repo.odb.read_header(entry.id)
     if query.max_bytes and size > query.max_bytes:
@@ -319,6 +312,11 @@ def committed_revision(repo: Any, path: Path) -> str | None:
     return None
 
 
+def _spaced(text: str) -> str:
+    head, at, body = text.partition("\n@@")
+    return re.sub(r"(?m)^([-+]{3} \"?[ab]/.* .*)$", "\\1\t", head) + at + body
+
+
 def _patches(diff: Any, names: set[str], summarize_binary: bool) -> str:
     chunks = []
     for patch in diff:
@@ -328,8 +326,8 @@ def _patches(diff: Any, names: set[str], summarize_binary: bool) -> str:
                 raise _unsupported("non-ASCII diff paths")
             if summarize_binary and patch.delta.is_binary:
                 raise _unsupported("binary diff summaries")
-            chunks.append(patch.text or "")
-    return _truncate_diff("".join(chunks))
+            chunks.append(_spaced(patch.text or ""))
+    return _truncate_diff(re.sub(r"\r\n?", "\n", "".join(chunks)))
 
 
 def _probe_diff(repo: Any) -> None:
@@ -349,7 +347,6 @@ def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and linea
     per_commit: bool,
     since_timestamp: str | None = None,
     limit: int | None = None,
-    *,
     summarize_binary: bool = False,
 ) -> str | list[CommitDiff]:
     """Return the note's aggregate or per-commit patch."""

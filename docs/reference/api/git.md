@@ -53,14 +53,17 @@ vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(read_onl
               git_strategy=store, on_write=store)
 ```
 
-The constructor rejects unsupported repository formats and partial clones.
+The constructor rejects unsupported repository formats and effective partial-clone
+or `remote.*.promisor` configuration. Writes and history, diff, and revision
+queries check the effective setting again, including `config.worktree` overrides.
 It also refuses non-default `core.sharedRepository` permissions; unset,
 `umask`, and false settings remain supported.
 Split-index repositories are refused at open and when a later operation needs
 the index. On case-insensitive repositories, case-variant writes that collide
 with tracked paths are refused. On macOS, `core.precomposeUnicode=true`
 normalizes paths to NFC before native writes. Diff queries with non-ASCII paths cannot match
-the patch headers from Git, so they are refused too.
+the patch headers from Git, so they are refused too. Supported text patches
+match Git’s path headers and text-mode newline decoding.
 It also refuses commit signing and executable commit or reference hooks, such
 as `reference-transaction` and `post-index-change`, including enabled hooks
 specified in effective Git configuration. Disabled hooks and event resets remain
@@ -72,9 +75,12 @@ operations, such as a merge. Use `GitWriteStrategy` for these repositories.
 A refused write updates the store's uncommitted-work health when inspection
 succeeds. A write matching HEAD reconciles its index entries without creating a
 commit. History and per-commit diff limits are clamped between 1 and 100; an omitted
-diff limit is unbounded. Dates support ISO 8601, `N units ago` (including compound and dotted forms),
+diff limit is unbounded. Dates support ISO 8601 beginning with `YYYY-MM-DD`, `N units ago` (including compound and dotted forms),
 `yesterday`, `last <weekday>`, `today`, `midnight`, and `noon`. For other expressions, use
-`GitWriteStrategy`. History and per-commit diff queries require a numeric
+`GitWriteStrategy`. Compact and week-date ISO forms are refused because Git
+interprets them differently. Empty history date boundaries mean no filter; an empty diff timestamp follows
+Git’s timestamp resolution. History and
+per-commit diff queries require a numeric
 `core.abbrev` setting; configure one or use `GitWriteStrategy` for Git’s
 adaptive default. Writes, revision reads and aggregate diffs remain available
 without a numeric setting. Full commit IDs are unchanged. Aggregate and per-commit diffs refuse non-default
