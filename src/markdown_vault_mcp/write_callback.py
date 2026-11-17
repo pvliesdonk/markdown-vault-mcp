@@ -290,8 +290,18 @@ class WriteCallbackDispatcher:
             group = self._get_group(handle, principal)
             if group.active:
                 raise CommitGroupError("Group has active writes")
-            group.closed = True
             done = self._enqueue_scope_end(group.scope)
+            with self._worker_lock:
+                if (
+                    done is None
+                    and self._closed
+                    and self._worker
+                    and self._worker.is_alive()
+                ):
+                    raise CommitGroupError(
+                        "Group result unavailable while dispatcher is closing"
+                    )
+            group.closed = True
         result: Future[GroupCommitResult] = Future()
         result.set_running_or_notify_cancel()
 

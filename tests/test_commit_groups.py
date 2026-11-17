@@ -789,3 +789,110 @@ def test_group_commits_tracked_note_in_ignored_directory(
     finally:
         dispatcher.close()
         strategy.close()
+
+
+def test_group_close_during_timed_out_shutdown_preserves_subject(
+    git_repo: Path,
+) -> None:
+    import threading
+
+    from markdown_vault_mcp._commit_groups import CommitGroupError
+
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=git_repo,
+    )
+    started, release = threading.Event(), threading.Event()
+
+    class BlockFirst:
+        accepts_batch = True
+        accepts_group_commit = True
+        accepts_primary_paths = True
+
+        def __call__(self, path: Path, content: str, operation: str) -> None:
+            started.set()
+            assert release.wait(10)
+            strategy(path, content, operation)  # type: ignore[arg-type]
+
+        def on_write_batch(self, *args: object, **kwargs: object) -> object:
+            return strategy.on_write_batch(*args, **kwargs)  # type: ignore[arg-type]
+
+    dispatcher = WriteCallbackDispatcher(BlockFirst())
+    try:
+        group = dispatcher.open_group("Organize", None)
+        prior = git_repo / "prior.md"
+        prior.write_text("prior", encoding="utf-8")
+        with dispatcher.bind_group(group.handle, None):
+            dispatcher.fire(prior, "prior", "write")
+        assert dispatcher.drain()
+        previous = group.result
+        assert previous.status == "committed"
+        assert previous.files == 1
+        ordinary = git_repo / "ordinary.md"
+        ordinary.write_text("ordinary", encoding="utf-8")
+        dispatcher.fire(ordinary, "ordinary", "write")
+        assert started.wait(5)
+        note = git_repo / "group.md"
+        note.write_text("group", encoding="utf-8")
+        with dispatcher.bind_group(group.handle, None):
+            dispatcher.fire(note, "group", "write")
+        dispatcher.close(timeout=0)
+        with pytest.raises(CommitGroupError):
+            dispatcher.close_group(group.handle, None)
+        assert group.result == previous
+        release.set()
+        assert dispatcher._worker is not None
+        dispatcher._worker.join(timeout=10)
+        assert not dispatcher._worker.is_alive()
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "committed"
+        assert result.sha == git(git_repo, "rev-parse", "HEAD")
+        assert result.files == 2
+        assert git(git_repo, "log", "-1", "--format=%s") == "Organize"
+    finally:
+        release.set()
+        if dispatcher._worker is not None:
+            dispatcher._worker.join(timeout=10)
+        strategy.close()
+
+
+def test_git_group_surrounds_per_call_scope(git_repo: Path) -> None:
+    from markdown_vault_mcp._commit_scope import bound_commit_scope
+
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=git_repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Grouped calls", None)
+        with dispatcher.bind_group(group.handle, None):
+            for name in ("one.md", "two.md"):
+                note = git_repo / name
+                note.write_text(name, encoding="utf-8")
+                with bound_commit_scope("write_note") as scope:
+                    dispatcher.fire(note, name, "write")
+                    dispatcher.end_scope(scope)
+        # A queue barrier proves both per-call endings have been processed,
+        # without drain(), which deliberately flushes the group.
+        ordinary = git_repo / "ordinary.md"
+        ordinary.write_text("ordinary", encoding="utf-8")
+        dispatcher.fire(ordinary, "ordinary", "write")
+        dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert git(git_repo, "log", "-2", "--format=%s").splitlines() == [
+            "Grouped calls",
+            "write: ordinary.md",
+        ]
+        assert git(git_repo, "show", "HEAD:one.md") == "one.md"
+        assert git(git_repo, "show", "HEAD:two.md") == "two.md"
+    finally:
+        dispatcher.close()
+        strategy.close()
