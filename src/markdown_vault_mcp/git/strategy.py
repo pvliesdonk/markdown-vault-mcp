@@ -17,6 +17,7 @@ documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import re
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
+from markdown_vault_mcp._commit_scope import current_folder_move
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
@@ -116,9 +118,9 @@ class GitWriteStrategy:
 
     Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
     and arrive at :meth:`on_write_batch`, which stages every path the same
-    scoped way and commits them once as ``"<tool>: N files"``. A call that
-    touched a single file commits under that file's own path instead, so
-    ordinary writes read in ``git log`` exactly as they always have. A write
+    scoped way and commits them once as ``"<tool>: N files"``. A call
+    touching a single file ordinarily names that file instead; folder moves
+    name their roots even for one file. A write
     with no owning tool call takes the per-write path above.
 
     Push is deferred to a background ``threading.Timer`` that resets on
@@ -411,10 +413,8 @@ class GitWriteStrategy:
 
     #: Opt into the dispatcher's batched dispatch (#1264), so every write from
     #: one tool call lands in a single commit instead of one commit per file.
-    #: Always on: with a single-file call still committing under its own path
-    #: (see :func:`_stage_and_commit_batch`), grouping differs from per-write
-    #: commits only where one call touches many files — which is the defect
-    #: #1264 reports, not a preference to configure. See
+    #: Ordinary single-file calls keep their path subject; folder moves name
+    #: their roots (see :func:`_stage_and_commit_batch`). See
     #: :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`.
     accepts_batch: bool = True
     #: Preserve the note subject when secondary writes (OKF maintenance, a
@@ -431,10 +431,10 @@ class GitWriteStrategy:
         """Commit every write from one tool call as a single commit.
 
         Mirrors :meth:`__call__`'s guards and push scheduling; only the commit
-        boundary differs, and for a call that wrote a single file not even
-        that — see :func:`_stage_and_commit_batch`. The author identity is
-        taken from the first item's principal: one tool call has one acting
-        principal, so the items cannot legitimately disagree.
+        boundary differs; an ordinary single-file call keeps its file subject,
+        while a folder move names its roots — see :func:`_stage_and_commit_batch`.
+        The author identity is taken from the first item's principal: one tool
+        call has one acting principal, so the items cannot legitimately disagree.
 
         Args:
             items: The tool call's writes, in the order they were fired.
@@ -2419,6 +2419,19 @@ def _write_subject(
     return f"{operation}: {path}"
 
 
+def _folder_subject_path(path: Path, root: Path | None = None) -> str:
+    """Render a root repo-relative (absolute outside *root*), one line, quoted if odd."""
+    name = str(path.relative_to(root) if root and path.is_relative_to(root) else path)
+    if (
+        name != name.strip()
+        or " -> " in name
+        or not name.isprintable()
+        or any(c in '\\"' for c in name)
+    ):
+        return json.dumps(name, ensure_ascii=not name.isprintable())
+    return name
+
+
 @dataclass(frozen=True, slots=True)
 class _CommitIdentity:
     """Committer and author identity for one commit.
@@ -2456,9 +2469,10 @@ def _stage_and_commit_batch(
     scoped to, both taken from the union of what the items reported
     (#1249, #1273).
 
-    A one-item batch delegates to :func:`_stage_and_commit` instead, so the
-    commit subject stays that file's own path rather than becoming the
-    pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
+    A one-item batch without folder provenance delegates to
+    :func:`_stage_and_commit`, so the commit subject stays that file's own
+    path rather than becoming the pathless ``"write: 1 file"``; *tool_name*
+    is unused on that branch.
 
     Args:
         git_root: Git repository root.
@@ -2469,7 +2483,8 @@ def _stage_and_commit_batch(
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
     """
-    if len(items) == 1:
+    folder_move = current_folder_move()
+    if len(items) == 1 and folder_move is None:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps
         # its commit subject the path ("write: notes/one.md") rather than the
@@ -2529,7 +2544,12 @@ def _stage_and_commit_batch(
 
     noun = "file" if staged == 1 else "files"
     subject = f"{tool_name}: {staged} {noun}"
-    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
+    if folder_move is not None:
+        old_dir, new_dir = folder_move
+        old_name = _folder_subject_path(old_dir, git_root)
+        new_name = _folder_subject_path(new_dir, git_root)
+        subject = f"{tool_name}: {old_name} -> {new_name}"
+    elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)

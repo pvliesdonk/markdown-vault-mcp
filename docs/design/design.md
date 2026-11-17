@@ -6600,9 +6600,10 @@ file. One call that writes 2,595 files produces one commit, where per-file
 commits produced 2,595 and serialised every concurrent write behind them.
 
 There is no mode knob. #54 anticipated one, but the two boundaries differ only
-where a call touches many files: a call that wrote a single file still commits
+where a call touches many files: an ordinary single-file write still commits
 under that file's own path (`write: notes/one.md`), so ordinary writes read in
-`git log` exactly as they did before. What remains is the bulk case, which is
+`git log` exactly as they did before. A folder move names its roots even when
+it moves one file. What remains is the bulk case, which is
 the defect #1264 reports rather than a preference to configure.
 
 `CommitScopeMiddleware` (`_commit_scope.py`) binds a `CommitScope` —
@@ -6611,7 +6612,8 @@ a process-unique token plus the tool name — for the duration of each
 item. The worker buffers writes by token and dispatches each group once, via
 the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
-subject when the call staged exactly one path.
+subject when the call staged exactly one path. Folder moves name their source
+and destination instead.
 
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with
@@ -6630,16 +6632,22 @@ source and destination; callbacks without that path retain the destination-only
 subject. The primary item carries its old path through subject selection,
 without changing the callback tuple. A path fired more than once (a renamed
 note whose self-link is rewritten) counts as one primary path, named by its
-first item. Multi-file folder moves retain their
-batch summary; exact folder roots are not inferred from the moved files
-(#1676, single-note slice).
+first item. A folder move records its validated source and destination in the
+scope before dispatching writes. The dispatcher binds only those captured
+roots on the worker during the batch callback, including through forwarding
+overrides, without assigning callback writes to the finished scope.
+The Git batch writer renders each root relative to the Git worktree in the
+subject, or as an absolute path when it is outside that worktree, while
+committing all moved and derived files. Unusual roots are quoted and escaped
+on one line. Other batch callbacks keep their existing contract
+(#2139).
 
 Three properties this depends on:
 
-- **The scope is read in `fire`, never on the worker.** `fire` runs on the
-  request's `to_thread` worker, whose copied context carries the contextvar;
-  the dispatcher thread has no request context, so reading there would always
-  see `None` — the same constraint that governs `current_principal` (#1218).
+- **The scope is captured in `fire`.** `fire` runs on the request's
+  `to_thread` worker, whose copied context carries the contextvar. The
+  dispatcher thread has no request context; it binds only the captured folder
+  roots while invoking the batch callback and resets them afterward (#1218).
 - **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
   a shared server interleaves concurrent tool calls, and position-based
   grouping would fold two unrelated calls into one commit.
