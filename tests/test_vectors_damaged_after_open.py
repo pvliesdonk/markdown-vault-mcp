@@ -535,6 +535,56 @@ class TestAWriterJob:
         finally:
             vault.close()
 
+    @pytest.mark.parametrize("failure", ["all", "partial"])
+    def test_empty_flush_retries_failed_recovery(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+    ) -> None:
+        (_source(tmp_path) / "gamma.md").write_text("# Gamma\n\nBlueberries.\n")
+        vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+        calls = 0
+        retried: list[str] = []
+
+        def unavailable(texts: list[str]) -> list[list[float]]:
+            nonlocal calls
+            calls += 1
+            if failure == "all" or calls == 2:
+                raise RuntimeError("provider unavailable")
+            return original(texts)
+
+        def observe(texts: list[str]) -> list[list[float]]:
+            retried.extend(texts)
+            return original(texts)
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", unavailable)
+            writer = vault._coordinator.writer
+            writer.mark_embedding_dirty(["alpha.md"])
+            writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert len(_aside(tmp_path)) == 1
+            assert vault._index_mgr._embeddings._recovery_owed
+            assert len(metadata_by_path(vault._vectors)) == (
+                0 if failure == "all" else 2
+            )
+            monkeypatch.setattr(provider, "embed", observe)
+            with vault._index_mgr._embeddings.vectors_deferred():
+                writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+                assert retried == []
+                assert vault._index_mgr._embeddings._recovery_owed
+            writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert set(metadata_by_path(vault._vectors)) == {
+                "alpha.md",
+                "beta.md",
+                "gamma.md",
+            }
+            assert len(retried) == (3 if failure == "all" else 1)
+            assert not vault._index_mgr._embeddings._recovery_owed
+        finally:
+            vault.close()
+
     def test_partial_recovery_converges_on_flush_without_reembedding_saved_rows(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

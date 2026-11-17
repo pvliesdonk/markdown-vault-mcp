@@ -833,12 +833,17 @@ class EmbeddingsManager:
         search, until it is fixed or deleted (#1505). A provider failure
         or a refused vector keeps that path's rows and is logged; a
         conflicting write is recorded for re-queueing. Store open and
-        rebuild errors propagate to the writer's Future.
+        rebuild errors propagate to the writer's Future. An empty snapshot
+        retries an owed recovery unless vector work is deferred.
 
         Args:
             paths: Paths to reconcile (relative to source_dir).
         """
-        if self._reconciler is None or not paths:
+        if self._reconciler is None:
+            return
+        if not paths:
+            if self._recovery_owed and not self._vectors_deferred:
+                self.rebuild_after_fault()
             return
         vectors = self._open_store()
         self.reconcile_paths(vectors, paths, site="flush")
