@@ -6,6 +6,7 @@ import errno
 import os
 import stat
 import unicodedata
+from bisect import bisect_left
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
@@ -96,6 +97,7 @@ class BundleTreeRequest(BundleInspectionRequest):
     """Select a subtree page, resuming after a vault-relative cursor path.
 
     Attributes:
+        entry_limit: Maximum returned rows per page (1-1000), not names visited.
         cursor: Last returned path, strictly below the selected scope.
     """
 
@@ -160,6 +162,10 @@ class BundleInspection:
 
 def _missing(exc: OSError) -> bool:
     return exc.errno in {errno.ENOENT, errno.ENOTDIR}
+
+
+class _HiddenSymlinkError(OSError):
+    """A hidden link has an unknowable target kind without following it."""
 
 
 def _role(name: str, conventions_file: str | None) -> Role:
@@ -461,7 +467,12 @@ class BundleInspector:
                             parent, child.name, path, remaining
                         )
                     except OSError as exc:
-                        if exc.errno not in {errno.EACCES, errno.EPERM}:
+                        if not isinstance(
+                            exc, _HiddenSymlinkError
+                        ) and exc.errno not in {
+                            errno.EACCES,
+                            errno.EPERM,
+                        }:
                             raise
                         enumeration = "unavailable"
                         continue
@@ -501,8 +512,9 @@ class BundleInspector:
     ) -> tuple[BundleEntry | None, int]:
         if stat.S_ISLNK(mode):
             visible = self._visible_file(path) or "." not in path.rsplit("/", 1)[-1]
-            entry = BundleEntry(path, state="unavailable", reason="symlink")
-            return (entry if visible else None), 0
+            if not visible:
+                raise _HiddenSymlinkError()
+            return BundleEntry(path, state="unavailable", reason="symlink"), 0
         if stat.S_ISDIR(mode):
             name = path.rsplit("/", 1)[-1]
             descriptor = os.open(
@@ -568,6 +580,11 @@ class _TreeWalk:
         except OSError:
             self.enumeration = "unavailable"
             return
+        directory_parts = _components(directory)
+        if self.cursor[: len(directory_parts)] == directory_parts and len(
+            self.cursor
+        ) > len(directory_parts):
+            names = names[bisect_left(names, self.cursor[len(directory_parts)]) :]
         for name in names:
             if self.stopped:
                 return
@@ -581,9 +598,8 @@ class _TreeWalk:
     def visit(self, fd: int, path: str, depth: int) -> None:
         parts = _components(path)
         before = bool(self.cursor) and parts <= self.cursor
-        ancestor = bool(self.cursor) and self.cursor[: len(parts)] == parts
         if before:
-            if ancestor:
+            if parts != self.cursor or self._cursor_is_directory(fd, parts[-1]):
                 self.descend(fd, path, depth, resume=True)
             return
         if (
@@ -612,11 +628,19 @@ class _TreeWalk:
         elif entry.role == "directory" and entry.reason == "directory":
             self.descend(fd, path, depth, resume=False)
 
+    def _cursor_is_directory(self, fd: int, name: str) -> bool:
+        try:
+            return stat.S_ISDIR(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode)
+        except OSError as exc:
+            if exc.errno != errno.ENOENT:
+                self.enumeration = "unavailable"
+            return False
+
     def descend(self, fd: int, path: str, depth: int, *, resume: bool) -> None:
         try:
             child = open_child_directory(fd, path.rsplit("/", 1)[-1])
         except OSError as exc:
-            if not resume or exc.errno not in {errno.ENOENT, errno.ENOTDIR}:
+            if not resume or exc.errno != errno.ENOENT:
                 self.enumeration = "unavailable"
             return
         try:

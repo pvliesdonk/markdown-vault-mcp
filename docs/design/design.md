@@ -3648,6 +3648,13 @@ final call. Visible and suffixless symlinks are reported unavailable without
 following them. There is no navigation synthesis, declaration discovery or
 search-admission claim.
 
+Names outside the file allowlist that are symlinks remain hidden and make
+enumeration unavailable; their target kind cannot be known without following
+them. Resume skips policy checks for earlier siblings but still lists and sorts
+all names in each visited directory on each page. The page limit counts rows,
+not listing work. At the exact cursor, current non-directories are leaves;
+cursor ancestors must still be traversable without following links.
+
 #### Internal Manager Architecture
 
 | Manager | Responsibility | Dependencies |

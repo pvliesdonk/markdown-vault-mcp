@@ -106,7 +106,7 @@ def test_replaced_cursor_directory_and_denied_child(tmp_path, monkeypatch):
     (bundle / "a" / "child.md").write_text("x")
     (bundle / "z.md").write_text("z")
     inspector = BundleInspector(tmp_path, (), frozenset(), 0)
-    first = inspector.inspect(BundleTreeRequest("bundle", entry_limit=1))
+    first = inspector.inspect(BundleTreeRequest("bundle", entry_limit=2))
     shutil.rmtree(bundle / "a")
     (bundle / "a").symlink_to(tmp_path, target_is_directory=True)
     page = inspector.inspect(BundleTreeRequest("bundle", cursor=first.next_cursor))
@@ -210,3 +210,105 @@ def test_unavailable_policy_and_directory_listing(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "scandir", refused)
     page = inspector.inspect(BundleTreeRequest("bundle"))
     assert page.enumeration == "unavailable" and page.entries == ()
+
+
+def test_hidden_symlink_marks_both_enumerations_incomplete(tmp_path):
+    from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "escape.dir").symlink_to(tmp_path, target_is_directory=True)
+    (bundle / "linked.exe").symlink_to(tmp_path / "outside")
+    (bundle / "link.md").symlink_to(tmp_path / "outside")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    for request in (BundleInspectionRequest("bundle"), BundleTreeRequest("bundle")):
+        page = inspector.inspect(request)
+        assert page.enumeration == "unavailable"
+        assert [(e.path, e.reason) for e in page.entries] == [
+            ("bundle/link.md", "symlink")
+        ]
+
+
+def test_exact_cursor_symlink_is_a_leaf(tmp_path):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "a.md").symlink_to(tmp_path / "outside")
+    (bundle / "z.md").write_text("z")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    first = inspector.inspect(BundleTreeRequest("bundle", entry_limit=1))
+    page = inspector.inspect(BundleTreeRequest("bundle", cursor=first.next_cursor))
+    assert page.enumeration == "complete"
+    assert [e.path for e in page.entries] == ["bundle/z.md"]
+
+
+def test_resume_skips_policy_for_earlier_siblings(tmp_path, monkeypatch):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    for i in range(100):
+        (bundle / f"{i:03}.md").write_text("x")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    original = inspector._internal
+    seen = []
+
+    def record(path):
+        seen.append(path)
+        return original(path)
+
+    monkeypatch.setattr(inspector, "_internal", record)
+    page = inspector.inspect(BundleTreeRequest("bundle", cursor="bundle/095.md"))
+    assert [e.path for e in page.entries] == [
+        f"bundle/{i:03}.md" for i in range(96, 100)
+    ]
+    assert not any(
+        path.startswith("bundle/0") and path < "bundle/095.md" for path in seen
+    )
+
+
+def test_cursor_stat_race_and_omitted_file(tmp_path, monkeypatch):
+    import errno
+    import os
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "a.md").write_text("a")
+    (bundle / "b.exe").write_text("b")
+    (bundle / "z.md").write_text("z")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    original = os.stat
+    failure = errno.ENOENT
+
+    def stat_cursor(path, *args, **kwargs):
+        if path == "a.md" and kwargs.get("dir_fd") is not None:
+            raise OSError(failure, "simulated race")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", stat_cursor)
+    page = inspector.inspect(BundleTreeRequest("bundle", cursor="bundle/a.md"))
+    assert page.enumeration == "complete"
+    assert [entry.path for entry in page.entries] == ["bundle/z.md"]
+    failure = errno.EACCES
+    page = inspector.inspect(BundleTreeRequest("bundle", cursor="bundle/a.md"))
+    assert page.enumeration == "unavailable"
+    assert [entry.path for entry in page.entries] == ["bundle/z.md"]
+
+
+def test_cursor_ancestor_disappears_during_descent(tmp_path, monkeypatch):
+    import errno
+
+    import markdown_vault_mcp.bundle_inventory as inventory
+
+    bundle = tmp_path / "bundle"
+    (bundle / "a").mkdir(parents=True)
+    (bundle / "z.md").write_text("z")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    original = inventory.open_child_directory
+
+    def missing(parent, name):
+        if name == "a":
+            raise OSError(errno.ENOENT, "simulated deletion")
+        return original(parent, name)
+
+    monkeypatch.setattr(inventory, "open_child_directory", missing)
+    page = inspector.inspect(BundleTreeRequest("bundle", cursor="bundle/a/x.md"))
+    assert page.enumeration == "complete"
+    assert [entry.path for entry in page.entries] == ["bundle/z.md"]

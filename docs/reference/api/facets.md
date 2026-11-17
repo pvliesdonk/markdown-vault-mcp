@@ -117,8 +117,9 @@ by its own lock and journal files, so neighboring notes and other same-named
 siblings stay visible. Alternate spellings of internal paths follow filesystem identity rules. A denied child makes enumeration unavailable without hiding readable
 siblings, including when the note-read budget has been exhausted; a refused stat or open
 consumes none of that budget. A directory
-entry's visibility describes its own name, not the admission of its subtree. Visible symlinks and special files remain unavailable and are
-never followed or read. When a stat failure prevents determining whether an
+entry's visibility describes its own name, not the admission of its subtree. Visible symlinks have reason `symlink`; special files remain unavailable and are
+never followed or read. A link with a name outside the allowlist stays hidden
+and makes enumeration unavailable because its target kind is unknown. When a stat failure prevents determining whether an
 omitted name is a visible directory, enumeration is `unavailable`.
 
 The entry limit defaults to 100 (maximum 1000). Every visited entry, including
@@ -161,6 +162,11 @@ call to establish completion. The walk is live: additions after the cursor can
 appear, while additions at or before it require a new walk. Enumeration marked
 `unavailable` is incomplete. The walk stops at depth 32 and before exceeding
 its 1 MiB page read budget; visible symlinks and those without a suffix are unavailable.
+Directories beyond the depth limit have reason `depth_limit`. The limit counts
+rows, not work: every visited directory lists and sorts all of its names on each
+page, even when most names are omitted. Resume skips policy checks for names
+before the cursor. A current non-directory at the cursor is treated as a leaf;
+an inaccessible cursor ancestor makes enumeration incomplete.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet
