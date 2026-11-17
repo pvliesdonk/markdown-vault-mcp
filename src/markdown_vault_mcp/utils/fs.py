@@ -238,6 +238,8 @@ def iter_markdown_files(
     exclude_patterns: Sequence[str] | None = None,
     *,
     on_error: Callable[[OSError], None] | None = None,
+    exclude_root: Path | None = None,
+    prune_dir: Callable[[Path], bool] | None = None,
 ) -> Iterator[Path]:
     """Yield ``*.md`` files under *source_dir*, pruning excluded subtrees.
 
@@ -271,6 +273,8 @@ def iter_markdown_files(
             and yields every ``*.md`` file).
         on_error: Optional callback invoked after an unreadable-directory error
             is logged. The walk continues after the callback returns.
+        exclude_root: Root against which exclusion patterns are anchored.
+        prune_dir: Optional predicate for directories to skip before descent.
 
     Yields:
         Absolute paths to ``*.md`` files, anchored at the unresolved
@@ -279,6 +283,16 @@ def iter_markdown_files(
     """
     anchored, anydepth = _dir_prune_rules(exclude_patterns or ())
     source_str = os.fspath(source_dir)
+    anchor_str = os.fspath(exclude_root or source_dir)
+    if exclude_root is not None:
+        relative_root = source_dir.relative_to(exclude_root)
+        for ancestor in (relative_root, *relative_root.parents):
+            if ancestor != Path() and _should_prune_dir(
+                ancestor.as_posix(), anchored, anydepth
+            ):
+                return
+        if relative_root != Path() and prune_dir is not None and prune_dir(source_dir):
+            return
 
     def _on_walk_error(exc: OSError) -> None:
         # os.walk drops the offending directory and continues; surface it so a
@@ -295,11 +309,15 @@ def iter_markdown_files(
     ):
         rel_dir = os.path.relpath(dirpath, source_str)
         rel_prefix = "" if rel_dir == "." else rel_dir.replace(os.sep, "/")
-        if anchored or anydepth:
+        anchor_dir = os.path.relpath(dirpath, anchor_str)
+        anchor_prefix = "" if anchor_dir == "." else anchor_dir.replace(os.sep, "/")
+        if anchored or anydepth or prune_dir:
             kept: list[str] = []
             for name in dirnames:
-                child_rel = f"{rel_prefix}/{name}" if rel_prefix else name
-                if not _should_prune_dir(child_rel, anchored, anydepth):
+                child_rel = f"{anchor_prefix}/{name}" if anchor_prefix else name
+                if not _should_prune_dir(child_rel, anchored, anydepth) and (
+                    prune_dir is None or not prune_dir(Path(dirpath) / name)
+                ):
                     kept.append(name)
             # Mutate in place so os.walk does not descend the pruned dirs.
             dirnames[:] = kept

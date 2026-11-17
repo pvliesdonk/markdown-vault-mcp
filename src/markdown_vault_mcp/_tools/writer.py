@@ -315,8 +315,11 @@ def register(mcp: FastMCP) -> None:
         """Preview or apply one textual replacement across selected notes.
 
         Matches cover the whole note, including frontmatter, code and links.
-        The preview shows text edits; applying also performs ordinary OKF
-        provenance and folder maintenance.
+        Matching includes the UTF-8 BOM and carriage returns, if present.
+        Select notes with hard links one path at a time.
+        The preview shows text edits. With OKF enforcement, apply stamps
+        generated and removes verified, overwriting edits to those fields.
+        OKF folder maintenance also updates index.md and log.md.
 
         Args:
             pattern: Exact text or regular expression to match.

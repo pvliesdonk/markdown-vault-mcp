@@ -211,7 +211,7 @@ class BulkReplacer:
             response = json.loads(result.stdout)
         except (subprocess.SubprocessError, ValueError) as exc:
             raise InvalidRequestError(
-                "Pattern too slow or too large; simplify it."
+                "Replacement worker could not complete; narrow the selection or simplify the pattern."
             ) from exc
         if "error" in response:
             raise InvalidRequestError(

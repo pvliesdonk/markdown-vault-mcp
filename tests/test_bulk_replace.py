@@ -549,7 +549,11 @@ def test_candidate_limits_and_walk_failure(
         replacer.replace(ReplaceRequest("a", paths=("a.md",)))
 
     def failing_walk(
-        _root: Path, _exclude: object, *, on_error: Callable[[OSError], None]
+        _root: Path,
+        _exclude: object,
+        *,
+        on_error: Callable[[OSError], None],
+        **_kwargs: Any,
     ) -> Iterator[Path]:
         on_error(OSError("unreadable"))
         return iter(())
@@ -600,7 +604,7 @@ def test_folder_walk_skips_ineligible_unreadable_directories(
     else:
         result = BulkReplacer(manager).replace(request)
         assert [note.path for note in result.notes] == ["selected/a.md"]
-    if "excluded" in bad_folder:
+    if "excluded" in bad_folder or ".hidden" in bad_folder or "other/" in bad_folder:
         assert blocked not in visited
 
 
@@ -806,3 +810,187 @@ def test_reserved_alias_refused_with_maintenance(
         BulkReplacer(manager).replace(
             ReplaceRequest("old", "new", paths=("log.md",)), maintain=lambda _: None
         )
+
+
+@pytest.mark.parametrize("alias_kind", ["case", "hardlink", "symlink"])
+def test_selection_deduplicates_physical_aliases(
+    tmp_path: Path, manager_factory: Callable[..., DocumentManager], alias_kind: str
+) -> None:
+    import os
+    from dataclasses import replace
+
+    note = tmp_path / "a.md"
+    note.write_text("old", encoding="utf-8")
+    alias = tmp_path / ("A.md" if alias_kind == "case" else "alias.md")
+    if alias_kind == "case":
+        if not alias.exists():
+            pytest.skip("filesystem is case-sensitive")
+    elif alias_kind == "hardlink":
+        os.link(note, alias)
+    else:
+        alias.symlink_to(note)
+    replacer = BulkReplacer(manager_factory(tmp_path))
+    request = ReplaceRequest("old", "new", paths=("a.md", alias.name))
+    if alias_kind == "hardlink":
+        with pytest.raises(InvalidRequestError, match="hardlink aliases"):
+            replacer.replace(request)
+        assert note.read_text() == alias.read_text() == "old"
+        return
+    preview = replacer.replace(request)
+    assert preview.scanned == 1
+    assert len(preview.notes) == 1
+    replacer.replace(replace(request, dry_run=False, plan=preview.plan))
+    assert note.read_text() == "new"
+
+
+def test_windows_crlf_write_preserves_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    from dataclasses import replace
+
+    from markdown_vault_mcp.managers import _write_kernel
+
+    note = tmp_path / "a.md"
+    note.write_bytes(b"old\r\nsecond\r\n")
+    replacer = BulkReplacer(manager_factory(tmp_path))
+    request = ReplaceRequest("old", "new", paths=("a.md",))
+    preview = replacer.replace(request)
+    original = _write_kernel.tempfile.NamedTemporaryFile
+
+    def windows_newlines(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("mode") == "w":
+            kwargs["newline"] = "\r\n"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(_write_kernel.tempfile, "NamedTemporaryFile", windows_newlines)
+    replacer.replace(replace(request, dry_run=False, plan=preview.plan))
+    assert note.read_bytes() == b"new\r\nsecond\r\n"
+
+
+def test_folder_selection_does_not_walk_unrelated_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    import os
+    from pathlib import Path
+
+    for folder in ("scope", "unrelated"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "a.md").write_text("old", encoding="utf-8")
+    visited: list[Path] = []
+    original = os.scandir
+
+    def record(path: Any) -> Any:
+        visited.append(Path(path))
+        return original(path)
+
+    monkeypatch.setattr(os, "scandir", record)
+    result = BulkReplacer(manager_factory(tmp_path)).replace(
+        ReplaceRequest("old", "new", folders=("scope",))
+    )
+    assert [note.path for note in result.notes] == ["scope/a.md"]
+    assert tmp_path / "unrelated" not in visited
+
+
+def test_raw_matching_includes_bom_and_carriage_returns(
+    tmp_path: Path, manager_factory: Callable[..., DocumentManager]
+) -> None:
+    (tmp_path / "a.md").write_bytes(b"\xef\xbb\xbffoo\r\nbar\r\n")
+    replacer = BulkReplacer(manager_factory(tmp_path))
+    for pattern in (r"^foo", r"(?m)foo$", "foo\nbar"):
+        result = replacer.replace(
+            ReplaceRequest(pattern, "x", paths=("a.md",), regex=True)
+        )
+        assert result.replacements == 0
+    result = replacer.replace(ReplaceRequest("\ufefffoo\r\nbar", "x", paths=("a.md",)))
+    assert result.replacements == 1
+
+
+def test_nested_scope_respects_vault_anchored_pruning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    import os
+    from pathlib import Path
+
+    folder = tmp_path / "selected" / "excluded"
+    folder.mkdir(parents=True)
+    (folder / "a.md").write_text("old", encoding="utf-8")
+    original = os.scandir
+    visited: list[Path] = []
+
+    def record(path: Any) -> Any:
+        visited.append(Path(path))
+        return original(path)
+
+    monkeypatch.setattr(os, "scandir", record)
+    replacer = BulkReplacer(
+        manager_factory(tmp_path, exclude_patterns=["selected/excluded/**"])
+    )
+    assert (
+        replacer.replace(ReplaceRequest("old", folders=("selected/excluded",))).scanned
+        == 0
+    )
+    assert folder not in visited
+
+
+def test_folder_walk_prunes_directory_aliases_outside_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    import os
+    from pathlib import Path
+
+    vault = tmp_path / "vault"
+    scope = vault / "scope"
+    scope.mkdir(parents=True)
+    (scope / "a.md").write_text("old", encoding="utf-8")
+    for name, target in (("other", vault / "other"), ("outside", tmp_path / "outside")):
+        target.mkdir()
+        (target / "b.md").write_text("old", encoding="utf-8")
+        (scope / name).symlink_to(target, target_is_directory=True)
+    visited: list[Path] = []
+    original = os.scandir
+
+    def record(path: Any) -> Any:
+        visited.append(Path(path))
+        return original(path)
+
+    monkeypatch.setattr(os, "scandir", record)
+    result = BulkReplacer(manager_factory(vault)).replace(
+        ReplaceRequest("old", "new", folders=("scope",))
+    )
+    assert [note.path for note in result.notes] == ["scope/a.md"]
+    assert scope / "other" not in visited
+    assert scope / "outside" not in visited
+
+
+def test_hidden_selected_folder_is_pruned_before_walk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    import os
+    from pathlib import Path
+
+    folder = tmp_path / ".hidden"
+    folder.mkdir()
+    (folder / "a.md").write_text("old", encoding="utf-8")
+    original = os.scandir
+    visited: list[Path] = []
+
+    def record(path: Any) -> Any:
+        visited.append(Path(path))
+        return original(path)
+
+    monkeypatch.setattr(os, "scandir", record)
+    result = BulkReplacer(manager_factory(tmp_path)).replace(
+        ReplaceRequest("old", folders=(".hidden",))
+    )
+    assert result.scanned == 0
+    assert folder not in visited

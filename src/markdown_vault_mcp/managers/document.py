@@ -347,16 +347,15 @@ class DocumentManager:
         Returns:
             Sorted, deduplicated vault-relative paths.
         """
-        selected: set[str] = set()
+        selected: dict[tuple[int, int], str] = {}
         root = self._source_dir
-        scopes: list[tuple[Path, Path]] = []
-        for folder in folders:
-            scopes.append(self._selection_scope(folder))
+        scopes = [self._selection_scope(folder) for folder in folders]
 
         def add(path: str, *, explicit: bool) -> None:
             candidate = self._selection_entry(path, explicit=explicit, scopes=scopes)
             if candidate is not None:
-                selected.add(candidate)
+                name, identity, links = candidate
+                self._selection_add(selected, name, identity, links)
             if len(selected) > limit:
                 raise InvalidRequestError("Too many notes; narrow paths or folders.")
 
@@ -367,13 +366,33 @@ class DocumentManager:
             def fail(exc: OSError) -> None:
                 self._selection_walk_error(exc, scopes)
 
-            for file in iter_markdown_files(
-                root, self._exclude_patterns, on_error=fail
-            ):
-                relative_file = file.relative_to(root)
-                if any(relative_file.is_relative_to(scope) for scope, _ in scopes):
-                    add(relative_file.as_posix(), explicit=False)
-        return sorted(selected)
+            def prune(directory: Path) -> bool:
+                return not self._selection_directory_allowed(directory, scopes)
+
+            for scope, _ in scopes:
+                for file in iter_markdown_files(
+                    root / scope,
+                    self._exclude_patterns,
+                    on_error=fail,
+                    exclude_root=root,
+                    prune_dir=prune,
+                ):
+                    add(file.relative_to(root).as_posix(), explicit=False)
+        return sorted(selected.values())
+
+    @staticmethod
+    def _selection_add(
+        selected: dict[tuple[int, int], str],
+        name: str,
+        identity: tuple[int, int],
+        links: int,
+    ) -> None:
+        previous = selected.get(identity, name)
+        if links > 1 and previous != name:
+            raise InvalidRequestError(
+                "Selection includes hardlink aliases; select one path at a time."
+            )
+        selected[identity] = min(name, previous)
 
     def _selection_scope(self, folder: str) -> tuple[Path, Path]:
         resolved = (
@@ -386,6 +405,26 @@ class DocumentManager:
                 f"Folder {folder!r} does not exist; choose an existing folder."
             )
         return (Path(os.path.normpath(folder)) if folder else Path()), resolved
+
+    def _selection_directory_allowed(
+        self, directory: Path, scopes: list[tuple[Path, Path]]
+    ) -> bool:
+        relative = directory.relative_to(self._source_dir)
+        if not self._selection_allowed(
+            (relative / "placeholder.md").as_posix(), explicit=False
+        ):
+            return False
+        try:
+            resolved = directory.resolve()
+            target = resolved.relative_to(self._source_dir.resolve())
+        except (OSError, ValueError, RuntimeError):
+            return False
+        return self._selection_allowed(
+            (target / "placeholder.md").as_posix(), explicit=False
+        ) and any(
+            relative.is_relative_to(scope) and resolved.is_relative_to(target_scope)
+            for scope, target_scope in scopes
+        )
 
     def _selection_walk_error(
         self, exc: OSError, scopes: list[tuple[Path, Path]]
@@ -418,7 +457,7 @@ class DocumentManager:
 
     def _selection_entry(
         self, path: str, *, explicit: bool, scopes: list[tuple[Path, Path]]
-    ) -> str | None:
+    ) -> tuple[str, tuple[int, int], int] | None:
         if not self._selection_allowed(path, explicit=explicit):
             return None
         try:
@@ -441,7 +480,7 @@ class DocumentManager:
             raise DocumentNotFoundError.note(path) from exc
         if not stat.S_ISREG(info.st_mode):
             raise DocumentNotFoundError.note(path)
-        return relative
+        return relative, (info.st_dev, info.st_ino), info.st_nlink
 
     def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
         """Read a bounded note snapshot and its raw-byte etag.
@@ -1120,7 +1159,7 @@ class DocumentManager:
                     f"parseable, so the OKF enforced-write layer cannot stamp "
                     f"provenance on it — {exc}"
                 ) from exc
-        atomic_write(abs_path, content)
+        atomic_write(abs_path, content.encode("utf-8"))
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
         self._notifier.fire(abs_path, content, operation)
