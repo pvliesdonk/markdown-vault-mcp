@@ -75,6 +75,7 @@ from markdown_vault_mcp.git.types import (
     PullResult,
     PushResult,
 )
+from markdown_vault_mcp.utils.fs import path_exists
 
 logger = logging.getLogger(__name__)
 
@@ -2516,7 +2517,7 @@ def _group_final_items(
     final: list[WriteBatchItem] = []
     missing_seen: set[Path] = set()
     for path, operation, old_path, principal in items:
-        if path.exists() or path.is_symlink():
+        if path_exists(path) or path.is_symlink():
             final.append((path, operation, old_path, principal))
             continue
         paths = (old_path, path) if operation == "rename" else (path,)
