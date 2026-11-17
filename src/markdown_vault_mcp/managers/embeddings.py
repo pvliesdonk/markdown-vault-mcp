@@ -219,7 +219,16 @@ class EmbeddingsManager:
         except StoreIncompatibleError as exc:
             logger.warning("purge_vectors_skipped reason=store_refused err=%s", exc)
             return None
-        return opened if opened.count else None
+        return opened if self._has_vectors(opened) else None
+
+    def _has_vectors(self, store: EmbeddingStore) -> bool:
+        """Count a store, deferring recoverable corruption to the job boundary."""
+        try:
+            return bool(store.count)
+        except StoreCorruptError:
+            if self._slot is None or not self._slot.mark_suspect(store):
+                raise
+            return True
 
     def _open_store(self) -> EmbeddingStore:
         """Open (installing) the store for writing.
@@ -263,7 +272,8 @@ class EmbeddingsManager:
         self._require_vectors()
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
-        self._slot.condemn_suspect()
+        if self._slot.condemn_suspect():
+            self._retries.update(row["path"] for row in self._fts.list_notes())
         try:
             store = self._slot.get(rebuild=None)
         except StoreIncompatibleError:
@@ -329,8 +339,7 @@ class EmbeddingsManager:
     # Embeddings
     # ------------------------------------------------------------------
 
-    # Count corruption shares the existing build and identity lifecycle.
-    def build_embeddings(  # noqa: C901, PLR0912, RUF100
+    def build_embeddings(
         self,
         *,
         force: bool = False,
@@ -408,13 +417,8 @@ class EmbeddingsManager:
             # An owned store that will not open is rebuilt inside _open_store;
             # the convergence below then finds it up to date and embeds 0.
             store = self._open_store()
-            try:
-                if store.count > 0:
-                    return self._converge_embeddings(store)
-            except StoreCorruptError:
-                if not self._slot.mark_suspect(store):
-                    raise
-                return self.rebuild_after_fault()
+            if self._has_vectors(store):
+                return self._converge_embeddings(store)
             # Empty store: fall through to the full cold build.
 
         identity = self._slot.identity

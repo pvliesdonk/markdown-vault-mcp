@@ -294,6 +294,100 @@ class TestAWriterJob:
         finally:
             vault.close()
 
+    def test_outage_retries_unchanged_notes_after_later_update(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (_source(tmp_path) / "gamma.md").write_text(
+            "# Gamma\n\nUnchanged blueberries.\n"
+        )
+        vault = _built(tmp_path, embedding_search="streamed")
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+
+        def offline(_texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("offline")
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", offline)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            assert vault._coordinator.wait_for_drain(timeout=5)
+            assert len(_aside(tmp_path)) == 1
+            monkeypatch.setattr(provider, "embed", original)
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            vault.index.reindex()
+            vault._coordinator.writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert set(metadata_by_path(vault._vectors)) == {
+                "alpha.md",
+                "beta.md",
+                "gamma.md",
+            }
+        finally:
+            vault.close()
+
+    @pytest.mark.parametrize("owned", [True, False])
+    def test_lazy_purge_count_corruption(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owned: bool
+    ) -> None:
+        from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorStore
+
+        _built(tmp_path, embedding_search="streamed").close()
+        vault = _vault(
+            tmp_path,
+            embedding_search="streamed",
+            owns_index_files=owned,
+            exclude_patterns=["alpha.md"],
+        )
+        try:
+            vault.index.build_index()
+            assert vault._index_mgr._embeddings._loaded_store() is None
+            original = SqliteVectorStore.count
+            raised = False
+
+            def count(instance: Any) -> int:
+                nonlocal raised
+                if not raised:
+                    raised = True
+                    raise StoreCorruptError(
+                        "damaged", backend="sqlite", location="fixture"
+                    )
+                return original.__get__(instance, SqliteVectorStore)
+
+            monkeypatch.setattr(SqliteVectorStore, "count", property(count))
+            if not owned:
+                with pytest.raises(StoreCorruptError):
+                    vault.index.reindex()
+                assert not _aside(tmp_path)
+                return
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            vault.index.reindex()
+            assert len(_aside(tmp_path)) == 1
+            assert {
+                r.path for r in vault.reader.search("sailboats", mode="keyword")
+            } == {"beta.md"}
+            assert set(metadata_by_path(vault._vectors)) == {"beta.md"}
+        finally:
+            vault.close()
+
+    def test_build_index_finishes_a_suspect_recovery(self, tmp_path: Path) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            store = vault._vectors
+            assert store is not None
+            _damage(tmp_path)
+            assert vault._vector_slot.mark_suspect(store)
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            vault.index.build_index(force=True)
+            assert len(_aside(tmp_path)) == 1
+            assert {
+                r.path for r in vault.reader.search("sailboats", mode="keyword")
+            } == {"beta.md"}
+            assert set(metadata_by_path(vault._vectors)) == {"alpha.md", "beta.md"}
+        finally:
+            vault.close()
+
     def test_injected_corrupt_writes_keep_keyword_updates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
