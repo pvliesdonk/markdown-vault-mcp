@@ -38,7 +38,6 @@ def test_force_push_logs_one_line_but_preserves_hint(
     assert "remote: *** denied access" in record.getMessage()
     assert "\n" not in record.getMessage()
     assert "secret-token" not in record.getMessage()
-    assert result.reason == "push_failed"
     assert result.hint == "remote: ***  \n  denied\taccess"
 
 

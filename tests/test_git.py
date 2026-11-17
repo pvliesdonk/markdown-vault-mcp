@@ -2113,7 +2113,7 @@ class TestGitSyncOnce:
                 from types import SimpleNamespace
 
                 return SimpleNamespace(
-                    returncode=1, stdout="", stderr="nothing to commit"
+                    returncode=1, stdout="nothing\n  to commit\n", stderr=""
                 )
             return real_run(cmd, **kwargs)
 
@@ -2130,7 +2130,10 @@ class TestGitSyncOnce:
         # Commit failed: helper signals failure to its caller via None.
         assert written is None
         # The line was logged, at DEBUG since #1287 (it repeats per pull cycle).
-        assert any("git_conflict_commit_failed" in r.message for r in caplog.records)
+        line = next(
+            r for r in caplog.records if r.msg.startswith("git_conflict_commit_failed")
+        )
+        assert line.getMessage().endswith("stderr=nothing to commit")
 
     def test_write_conflict_files_commit_failure_redacts_token(
         self,
@@ -6895,7 +6898,10 @@ class TestTheExcludeProbeItself:
         from markdown_vault_mcp.git.strategy import _ignored_paths
 
         killed = subprocess.CompletedProcess(
-            args=["git", "check-ignore"], returncode=-9, stdout=b"", stderr=b""
+            args=["git", "check-ignore"],
+            returncode=-9,
+            stdout=b"",
+            stderr=b"partial\n error\n",
         )
         with (
             mock.patch(
@@ -6905,7 +6911,10 @@ class TestTheExcludeProbeItself:
         ):
             assert _ignored_paths(str(git_repo), (git_repo / "x.md",)) == set()
 
-        assert any("git_check_ignore_failed" in r.message for r in caplog.records)
+        line = next(
+            r for r in caplog.records if r.msg.startswith("git_check_ignore_failed")
+        )
+        assert line.getMessage().endswith("stderr=partial error")
 
 
 # ---------------------------------------------------------------------------
