@@ -668,7 +668,7 @@ def test_scratch_failure_is_diagnostic_and_preserves_generation(
     def fail(*_args: Any, **_kwargs: Any) -> Any:
         raise failure
 
-    monkeypatch.setattr("tempfile.TemporaryDirectory", fail)
+    monkeypatch.setattr("tempfile.TemporaryFile", fail)
     if command == "index":
         result = runner.invoke(app, ["admin", "index", "--force"])
     else:

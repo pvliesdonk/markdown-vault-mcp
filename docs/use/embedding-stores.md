@@ -61,7 +61,7 @@ How to read it:
 
   Completed embedding windows go to scratch disk beside the configured state file, including `/data/state` with the shipped Docker Compose configuration. Without a state file they use `TMPDIR`; a memory-backed directory counts against memory. Allow headroom for repeated section text, metadata, JSON escaping and base64-encoded vectors; actual space depends on the content. A scratch location that is full or cannot be written to fails preparation. Compatible and owned stores retain their previous vectors. An incompatible injected store is emptied before the build, so a later failure cannot preserve those vectors. Cleanup failures are logged.
 
-  An abrupt termination such as a forced kill can leave `embedding-stage-*` directories there. Remove them after confirming the build has stopped.
+  Scratch uses operating-system temporary files that are removed when their handles close, including on process termination. On platforms that create a name before removing its name, a forced termination during that brief creation interval can leave a file behind.
 
   Built-in publishers still materialize generation copies, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](embeddings.md#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
 

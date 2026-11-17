@@ -11,18 +11,18 @@ if TYPE_CHECKING:
 
 
 def install_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make stage cleanup remove its files and then report a synthetic error."""
+    """Make a stage close its document file and then report a synthetic error."""
     enter = EmbeddingStage.__enter__
 
     def failing_cleanup(stage: EmbeddingStage) -> EmbeddingStage:
         enter(stage)
-        cleanup = stage._temp.cleanup
+        cleanup = stage._docs.close
 
         def fail() -> None:
             cleanup()
             raise OSError("scratch cleanup failed")
 
-        monkeypatch.setattr(stage._temp, "cleanup", fail)
+        monkeypatch.setattr(stage._docs, "close", fail)
         return stage
 
     monkeypatch.setattr(EmbeddingStage, "__enter__", failing_cleanup)

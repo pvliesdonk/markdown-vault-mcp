@@ -328,7 +328,7 @@ The measured embedding stages held prepared text, packed vectors
 and normalized generations. Full-build preparation now stages completed windows
 on scratch disk beside the state file, or under `TMPDIR` without a state file;
 memory-backed scratch consumes memory. Scratch contains embedding text and
-metadata content plus base64-encoded vectors. A full or unwritable location
+metadata content plus base64-encoded vectors. Operating-system temporary files are removed on handle close or process termination, though a create-then-unlink fallback has a brief vulnerable creation interval. A full or unwritable location
 fails preparation before publication; compatible and owned stores retain previous vectors, while an incompatible injected store is emptied before preparation. Cleanup failures are logged. The built-in chunk reader reads atomic pages and holds read locks only during each page fetch. Changes between pages can be observed or missed; convergence reconciles later edits. Built-in
 publishers still materialize generation copies, third-party indexes without the
 optional chunk iterator retain an eager read, and custom non-scalar metadata

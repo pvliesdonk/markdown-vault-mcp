@@ -1160,7 +1160,7 @@ provider call, or under the temporary directory when there is no state file. It 
 the staged generation to the publisher. The optional `IteratesChunks`
 reader pages whole documents in path order, with each page read atomically. Changes between pages can be observed or missed and convergence reconciles later edits. Read locks are held only during page fetches, not donor or provider work. A keyword index without the iterator retains the eager
 `list_chunks` grouping. Scratch stores embedding text and metadata content as well as base64-encoded
-vectors. An unavailable or full scratch directory fails preparation before
+vectors. Operating-system temporary files are removed when handles close, including at process termination; a create-then-unlink fallback has a brief interval in which termination can leave a name. An unavailable or full scratch directory fails preparation before
 publication. Compatible and owned stores retain previous vectors; an incompatible injected store is emptied before this preparation. Cleanup failures are logged without changing the build outcome.
 Custom non-scalar metadata remains resident to preserve its original objects.
 The built-in publishers still materialize their own generation copies. The

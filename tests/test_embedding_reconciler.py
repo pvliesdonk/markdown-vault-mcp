@@ -1155,7 +1155,16 @@ def test_rebuild_releases_documents_before_embedding(tmp_path, monkeypatch):
 def test_rebuild_replays_generation_and_cleans_scratch(tmp_path, monkeypatch):
     import tempfile
 
+    original = tempfile.TemporaryFile
+    handles = []
+
+    def track(*args, **kwargs):
+        handle = original(*args, **kwargs)
+        handles.append(handle)
+        return handle
+
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(tempfile, "TemporaryFile", track)
     _, _provider, store, rec = _setup(tmp_path, NOTES)
     publish = store.publish_generation
     observed = []
@@ -1176,7 +1185,7 @@ def test_rebuild_replays_generation_and_cleans_scratch(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "publish_generation", replay)
     assert rec.rebuild(store, store.identity).published
     assert len(observed) == 2
-    assert not list(tmp_path.glob("embedding-stage-*"))
+    assert len(handles) == 2 and all(handle.closed for handle in handles)
 
 
 def test_iter_chunks_matches_list_across_document_pages(tmp_path, monkeypatch):
@@ -1277,22 +1286,26 @@ def test_stage_closes_retained_replay_on_publisher_failure(
 
 def test_stage_cleans_up_when_open_fails(tmp_path, monkeypatch):
     import tempfile
-    from pathlib import Path
 
     from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
 
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    original = Path.open
+    original = tempfile.TemporaryFile
+    opened = []
+    failure = OSError("scratch full")
 
-    def fail_open(path, *args, **kwargs):
-        if path.name == "documents":
-            raise OSError("scratch full")
-        return original(path, *args, **kwargs)
+    def fail_second(*args, **kwargs):
+        if opened:
+            raise failure
+        handle = original(*args, **kwargs)
+        opened.append(handle)
+        return handle
 
-    monkeypatch.setattr(Path, "open", fail_open)
-    with pytest.raises(OSError, match="scratch full"):
-        EmbeddingStage()
-    assert not list(tmp_path.glob("embedding-stage-*"))
+    monkeypatch.setattr(tempfile, "TemporaryFile", fail_second)
+    with pytest.raises(OSError) as caught:
+        EmbeddingStage(tmp_path)
+    assert caught.value is failure
+    assert len(opened) == 1 and opened[0].closed
+    assert not list(tmp_path.iterdir())
 
 
 def test_late_chunk_page_seeks_past_earlier_documents():
@@ -1331,46 +1344,32 @@ def test_late_chunk_page_seeks_past_earlier_documents():
 
 
 @pytest.mark.parametrize("primary", [True, False])
-def test_stage_attempts_all_cleanup_when_close_and_unlink_fail(
-    tmp_path, monkeypatch, primary
+def test_stage_attempts_both_closes_after_failure(
+    tmp_path, monkeypatch, caplog, primary
 ):
-    import tempfile
-
     from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
 
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    stage = EmbeddingStage()
+    stage = EmbeddingStage(tmp_path)
     attempts = []
+    for name in ("_docs", "_results"):
+        spool = getattr(stage, name)
+        close = spool.close
 
-    class FailingClose:
-        def __init__(self, name, stream):
-            self.name = name
-            self.stream = stream
+        def fail(close=close, name=name):
+            attempts.append(name)
+            close()
+            raise OSError(f"{name} close failed")
 
-        def close(self):
-            attempts.append(self.name)
-            self.stream.close()
-            raise OSError(f"{self.name} flush failed")
-
-    stage._docs = FailingClose("documents", stage._docs)
-    reader = (tmp_path / "reader").open("w")
-    stage._readers.add(FailingClose("reader", reader))
-    cleanup = stage._temp.cleanup
-
-    def fail_cleanup():
-        attempts.append("unlink")
-        cleanup()
-        raise OSError("unlink failed")
-
-    monkeypatch.setattr(stage._temp, "cleanup", fail_cleanup)
+        monkeypatch.setattr(spool, "close", fail)
     if primary:
         with pytest.raises(RuntimeError, match="donor failed"), stage:
             raise RuntimeError("donor failed")
     else:
         with stage:
             pass
-    assert set(attempts) == {"documents", "reader", "unlink"}
-    assert not list(tmp_path.glob("embedding-stage-*"))
+    assert attempts == ["_docs", "_results"]
+    assert caplog.text.count("embedding_stage_cleanup_failed") == 2
+    assert not list(tmp_path.iterdir())
 
 
 def test_rebuild_uses_real_fts_chunk_iterator(tmp_path, monkeypatch):
@@ -1395,28 +1394,6 @@ def test_rebuild_uses_real_fts_chunk_iterator(tmp_path, monkeypatch):
     assert outcome.published and outcome.attempted == 5
     assert calls == [True]
     assert set(store.tokens()) == set(notes)
-
-
-def test_stage_reports_unlink_failure_without_primary_error(
-    tmp_path, monkeypatch, caplog
-):
-    import tempfile
-
-    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
-
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    stage = EmbeddingStage()
-    cleanup = stage._temp.cleanup
-
-    def fail_cleanup():
-        cleanup()
-        raise OSError("unlink failed")
-
-    monkeypatch.setattr(stage._temp, "cleanup", fail_cleanup)
-    with stage:
-        pass
-    assert "embedding_stage_cleanup_failed" in caplog.text
-    assert not list(tmp_path.glob("embedding-stage-*"))
 
 
 def test_custom_metadata_retains_objects_during_replay(tmp_path, monkeypatch):
@@ -1629,7 +1606,7 @@ def test_custom_chunk_iterator_closed_when_stage_fails(tmp_path, monkeypatch):
     store.close()
 
 
-@pytest.mark.parametrize("point", ["allocation", "discovery", "write"])
+@pytest.mark.parametrize("point", ["allocation", "discovery", "write", "read"])
 def test_scratch_failure_logs_location_and_preserves_exception(
     tmp_path, monkeypatch, caplog, point
 ):
@@ -1649,11 +1626,12 @@ def test_scratch_failure_logs_location_and_preserves_exception(
             monkeypatch.setattr(tempfile, "gettempdir", fail)
             EmbeddingStage()
         elif point == "allocation":
-            monkeypatch.setattr(tempfile, "TemporaryDirectory", fail)
+            monkeypatch.setattr(tempfile, "TemporaryFile", fail)
             EmbeddingStage(tmp_path)
         else:
             with EmbeddingStage(tmp_path) as stage:
-                monkeypatch.setattr(json, "dump", fail)
+                if point == "write":
+                    monkeypatch.setattr(json, "dumps", fail)
                 stage.add(
                     _Document(
                         "a.md",
@@ -1673,6 +1651,10 @@ def test_scratch_failure_logs_location_and_preserves_exception(
                     ),
                     {},
                 )
+                if point == "read":
+                    stage.finish()
+                    monkeypatch.setattr(stage._docs, "read", fail)
+                    list(stage.misses())
     assert caught.value is failure
     assert "embedding_stage_io_failed" in caplog.text
     assert (
@@ -1773,3 +1755,49 @@ def test_stage_counts_and_fans_out_duplicate_misses(tmp_path):
         stage.finish()
         assert stage.miss_count == 1
         assert list(stage.misses()) == [("miss", 2)]
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_written_stage_files_do_not_survive_process_death(tmp_path, fallback):
+    import os
+    import subprocess
+    import sys
+
+    state = tmp_path / "state"
+    state.mkdir()
+    program = r"""
+import os
+import sys
+import tempfile
+from array import array
+from pathlib import Path
+from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+if sys.argv[2] == "fallback":
+    tempfile._O_TMPFILE_WORKS = False
+root = Path(sys.argv[1])
+meta = {"path": "a.md", "title": "A", "folder": "", "heading": None,
+        "content": "synthetic corpus content", "start_line": 1, "preamble": ""}
+stage = EmbeddingStage(root)
+stage.add(_Document("a.md", "token", ("synthetic corpus content",), (meta,)), {})
+stage.finish()
+stage.write_results((vector for vector in [array("f", [1.0, 2.0])]))
+assert stage.miss_count == 1
+os._exit(137)
+"""
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            program,
+            str(state),
+            "fallback" if fallback else "default",
+        ],
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert child.returncode == 137, child.stderr
+    assert list(state.iterdir()) == [], "written scratch survived abrupt process death"
