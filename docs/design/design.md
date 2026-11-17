@@ -3643,8 +3643,12 @@ separate observations. `inspect_bundle_tree` pages a recursive pre-order walk,
 sorting each directory by component name. Its path cursor resumes after the
 last returned row; additions at or before it require a fresh walk. This is a
 live observation, not a snapshot. Pages contain at most 1000 rows and read at
-most 1 MiB; depth beyond 32 is unavailable. A full page can require an empty
-final call. Visible and suffixless symlinks are reported unavailable without
+most 1 MiB. Each selection covers 32 levels below its selected directory; a
+directory at the limit is returned unavailable with `depth_limit` and is not
+entered. Re-select that directory relative to the same root and page again to
+inspect deeper levels; repeat for further boundary rows. Retain unavailable
+outcomes from every page, and treat unresolved boundary rows as incomplete.
+A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
 following them. There is no navigation synthesis, declaration discovery or
 search-admission claim.
 

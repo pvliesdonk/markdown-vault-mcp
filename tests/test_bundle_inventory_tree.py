@@ -149,6 +149,67 @@ def test_byte_limit_stops_page(tmp_path):
     assert first.next_cursor is not None
     assert all(e.reason != "byte_budget" for e in first.entries)
 
+    def collect(page):
+        entries = list(page.entries)
+        while page.next_cursor is not None:
+            page = inspector.inspect(
+                BundleTreeRequest("bundle", cursor=page.next_cursor)
+            )
+            entries.extend(page.entries)
+        return entries
+
+    resumed = collect(first)
+    expected = inspector.inspect(BundleTreeRequest("bundle", entry_limit=3))
+    small_pages = list(expected.entries)
+    while expected.next_cursor is not None:
+        expected = inspector.inspect(
+            BundleTreeRequest("bundle", entry_limit=3, cursor=expected.next_cursor)
+        )
+        small_pages.extend(expected.entries)
+    assert len(first.entries) < 20
+    assert resumed == small_pages
+    assert len({entry.path for entry in resumed}) == 20
+
+
+def test_depth_limit_recovery_with_reselected_directories(tmp_path):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    directory = bundle
+    notes = set()
+    for depth in range(1, 71):
+        directory /= "d"
+        directory.mkdir()
+        if depth in {10, 40, 69}:
+            note = directory / f"note-{depth}.md"
+            note.write_text("x")
+            notes.add(note.relative_to(tmp_path).as_posix())
+
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    pending = [""]
+    paths = []
+    boundaries = []
+    while pending:
+        selection = pending.pop()
+        cursor = None
+        while True:
+            page = inspector.inspect(
+                BundleTreeRequest(
+                    "bundle", directory=selection, entry_limit=7, cursor=cursor
+                )
+            )
+            for entry in page.entries:
+                paths.append(entry.path)
+                if entry.reason == "depth_limit":
+                    assert entry.state == "unavailable"
+                    boundaries.append(entry.path)
+                    pending.append(entry.path.removeprefix("bundle/"))
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+    assert len(boundaries) == 2
+    assert notes <= set(paths)
+    assert len(paths) == len(set(paths)) == 73
+
 
 def test_depth_limit_remains_enforced_on_resume(tmp_path):
     directory = tmp_path / "bundle"
