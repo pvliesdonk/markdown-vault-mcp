@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import tempfile
 from array import array
 from collections import Counter
@@ -21,6 +22,9 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.indexing.embedding_reconciler import _Document
 
 
+logger = logging.getLogger(__name__)
+
+
 def _pack(vector: array[float]) -> str:
     return base64.b64encode(vector.tobytes()).decode("ascii")
 
@@ -34,17 +38,21 @@ def _unpack(value: str) -> array[float]:
 class EmbeddingStage:
     """Stage source records, misses and results in a private temporary directory."""
 
-    def __init__(self) -> None:
-        self._temp = tempfile.TemporaryDirectory(prefix="embedding-stage-")
+    def __init__(self, directory: Path | None = None) -> None:
+        if directory is not None:
+            directory.mkdir(parents=True, exist_ok=True)
+        self._temp = tempfile.TemporaryDirectory(
+            prefix="embedding-stage-", dir=directory
+        )
         self._root = Path(self._temp.name)
         self._readers: set[TextIO] = set()
         try:
             self._docs = (self._root / "documents").open("w", encoding="utf-8")
-            self._misses = (self._root / "misses").open("w", encoding="utf-8")
         except BaseException as exc:
             self.__exit__(type(exc), exc, exc.__traceback__)
             raise
         self.miss_count = 0
+        self._opaque: list[tuple[Any, Any, Any]] = []
 
     def __enter__(self) -> EmbeddingStage:
         return self
@@ -55,58 +63,77 @@ class EmbeddingStage:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        failure = exc
-        streams = [
-            getattr(self, "_docs", None),
-            getattr(self, "_misses", None),
-            *self._readers,
-        ]
+        streams = [getattr(self, "_docs", None), *self._readers]
         actions = [stream.close for stream in streams if stream is not None]
         actions.append(self._temp.cleanup)
         for action in actions:
             try:
                 action()
-            except BaseException as error:
-                if failure is None:
-                    failure = error
-                else:
-                    failure.add_note(f"Scratch cleanup also failed: {error!r}")
+            except Exception as error:
+                logger.warning(
+                    "embedding_stage_cleanup_failed path=%s err=%s", self._root, error
+                )
         self._readers.clear()
-        if exc is None and failure is not None:
-            raise failure
 
     def add(
         self, doc: _Document, hits: dict[int, array[float]], wanted: list[str]
     ) -> None:
         """Write one classified document and its ordered unique misses."""
-        counts = Counter(doc.texts)
+        scalar = (type(None), bool, int, float, str)
+        safe = (
+            type(doc.path) is str
+            and type(doc.token) in (str, type(None))
+            and all(
+                type(key) is str and type(value) in scalar
+                for meta in doc.metadata
+                for key, value in meta.items()
+            )
+        )
+        if safe:
+            identity: Any = [doc.path, doc.token, doc.metadata]
+            reference = None
+        else:
+            reference = len(self._opaque)
+            self._opaque.append((doc.path, doc.token, doc.metadata))
+            identity = None
         json.dump(
             [
-                doc.path,
-                doc.token,
+                identity,
+                reference,
                 doc.texts,
-                doc.metadata,
                 {str(k): _pack(v) for k, v in hits.items()},
                 wanted,
             ],
             self._docs,
         )
         self._docs.write("\n")
-        for text in wanted:
-            self._misses.write(json.dumps([text, counts[text]]) + "\n")
         self.miss_count += len(wanted)
 
     def finish(self) -> None:
-        """Close classification files before reading them."""
+        """Close the classification file before reading it."""
         self._docs.close()
-        self._misses.close()
+
+    def _records(self) -> Generator[tuple[Any, Any, Any, Any, Any, Any]]:
+        stream = (self._root / "documents").open(encoding="utf-8")
+        self._readers.add(stream)
+        try:
+            for line in stream:
+                identity, reference, texts, hits, wanted = json.loads(line)
+                path, token, metadata = (
+                    self._opaque[reference] if reference is not None else identity
+                )
+                yield path, token, texts, metadata, hits, wanted
+        finally:
+            stream.close()
+            self._readers.discard(stream)
 
     def misses(self) -> Generator[tuple[str, int]]:
         """Yield misses in provider order with their chunk fanout."""
-        with (self._root / "misses").open(encoding="utf-8") as stream:
-            for line in stream:
-                text, count = json.loads(line)
-                yield text, count
+        with closing(self._records()) as records:
+            for _path, _token, texts, _metadata, _hits, wanted in records:
+                counts = Counter(texts)
+                for text in wanted:
+                    yield text, counts[text]
 
     def write_results(self, results: Generator[array[float] | None]) -> None:
         """Write one result or failure marker for each miss."""
@@ -120,34 +147,28 @@ class EmbeddingStage:
                 )
 
     def __iter__(self) -> Iterator[DocumentRows]:
-        docs = (self._root / "documents").open(encoding="utf-8")
-        self._readers.add(docs)
+        results = (self._root / "results").open(encoding="utf-8")
+        self._readers.add(results)
         try:
-            results = (self._root / "results").open(encoding="utf-8")
-            self._readers.add(results)
-            try:
-                yield from self._replay(docs, results)
-            finally:
-                results.close()
-                self._readers.discard(results)
+            with closing(self._records()) as records:
+                for path, token, texts, metadata, hits, wanted in records:
+                    fresh: dict[str, Any] = {}
+                    for text in wanted:
+                        value = json.loads(next(results))
+                        if value is not None:
+                            fresh[text] = _unpack(value)
+                    rows = []
+                    for index, (text, meta) in enumerate(
+                        zip(texts, metadata, strict=True)
+                    ):
+                        value = hits.get(str(index))
+                        vector = (
+                            _unpack(value) if value is not None else fresh.get(text)
+                        )
+                        if vector is not None:
+                            rows.append(VectorRow(vector, dict(meta)))
+                    if rows:
+                        yield DocumentRows(path, token, tuple(rows))
         finally:
-            docs.close()
-            self._readers.discard(docs)
-
-    @staticmethod
-    def _replay(docs: TextIO, results: TextIO) -> Iterator[DocumentRows]:
-        for line in docs:
-            path, token, texts, metadata, hits, wanted = json.loads(line)
-            fresh: dict[str, Any] = {}
-            for text in wanted:
-                value = json.loads(next(results))
-                if value is not None:
-                    fresh[text] = _unpack(value)
-            rows = []
-            for index, (text, meta) in enumerate(zip(texts, metadata, strict=True)):
-                value = hits.get(str(index))
-                vector = _unpack(value) if value is not None else fresh.get(text)
-                if vector is not None:
-                    rows.append(VectorRow(vector, meta))
-            if rows:
-                yield DocumentRows(path, token, tuple(rows))
+            results.close()
+            self._readers.discard(results)

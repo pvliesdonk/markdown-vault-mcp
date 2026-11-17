@@ -121,6 +121,8 @@ note's frontmatter.
 `IteratesChunks` optionally yields the same grouped rows in the same order as
 `list_chunks()`. Full embedding builds use it to release completed document
 windows. Custom indexes without it retain the eager `list_chunks()` fallback.
+A custom index's non-scalar metadata stays resident through publication so its
+objects retain their types and values; this applies to both reader paths.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.interfaces.IteratesChunks

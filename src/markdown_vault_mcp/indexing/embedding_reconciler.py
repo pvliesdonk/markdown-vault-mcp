@@ -49,6 +49,7 @@ if TYPE_CHECKING:
         Iterator,
         Sequence,
     )
+    from pathlib import Path
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.indexing.donor import Donor
@@ -250,6 +251,7 @@ class EmbeddingReconciler:
         source_probe: Answers whether a document the keyword index holds no
             rows for is still at its source.
         is_excluded: Whether a path matches the vault's exclusions.
+        scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
     """
 
     def __init__(
@@ -261,7 +263,9 @@ class EmbeddingReconciler:
         batch_size: int,
         source_probe: SourceProbe,
         is_excluded: Callable[[str], bool],
+        scratch_dir: Path | None = None,
     ) -> None:
+        self._scratch_dir = scratch_dir
         self._fts = fts
         self._provider = provider
         self._builder = embed_builder
@@ -669,11 +673,11 @@ class EmbeddingReconciler:
         Raises:
             StoreUnavailableError: If *donor* can no longer be read; nothing
                 is published.
-            OSError: If scratch preparation or cleanup fails.
+            OSError: If scratch preparation or writing fails; nothing is published.
         """
         populated = store.count > 0
         reused = attempted = donated = 0
-        with EmbeddingStage() as stage:
+        with EmbeddingStage(self._scratch_dir) as stage:
             for doc, hits, wanted, from_donor in self._classified(
                 store, identity.dimension, donor, reuse_own
             ):

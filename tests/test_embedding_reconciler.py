@@ -1283,8 +1283,7 @@ def test_stage_closes_retained_replay_on_publisher_failure(tmp_path, monkeypatch
         next(retained[0])
 
 
-@pytest.mark.parametrize("failed_name", ["documents", "misses"])
-def test_stage_cleans_up_when_open_fails(tmp_path, monkeypatch, failed_name):
+def test_stage_cleans_up_when_open_fails(tmp_path, monkeypatch):
     import tempfile
     from pathlib import Path
 
@@ -1294,7 +1293,7 @@ def test_stage_cleans_up_when_open_fails(tmp_path, monkeypatch, failed_name):
     original = Path.open
 
     def fail_open(path, *args, **kwargs):
-        if path.name == failed_name:
+        if path.name == "documents":
             raise OSError("scratch full")
         return original(path, *args, **kwargs)
 
@@ -1362,7 +1361,6 @@ def test_stage_attempts_all_cleanup_when_close_and_unlink_fail(
             raise OSError(f"{self.name} flush failed")
 
     stage._docs = FailingClose("documents", stage._docs)
-    stage._misses = FailingClose("misses", stage._misses)
     reader = (tmp_path / "reader").open("w")
     stage._readers.add(FailingClose("reader", reader))
     cleanup = stage._temp.cleanup
@@ -1373,12 +1371,13 @@ def test_stage_attempts_all_cleanup_when_close_and_unlink_fail(
         raise OSError("unlink failed")
 
     monkeypatch.setattr(stage._temp, "cleanup", fail_cleanup)
-    expected = RuntimeError if primary else OSError
-    match = "donor failed" if primary else "documents flush failed"
-    with pytest.raises(expected, match=match), stage:
-        if primary:
+    if primary:
+        with pytest.raises(RuntimeError, match="donor failed"), stage:
             raise RuntimeError("donor failed")
-    assert set(attempts) == {"documents", "misses", "reader", "unlink"}
+    else:
+        with stage:
+            pass
+    assert set(attempts) == {"documents", "reader", "unlink"}
     assert not list(tmp_path.glob("embedding-stage-*"))
 
 
@@ -1406,7 +1405,9 @@ def test_rebuild_uses_real_fts_chunk_iterator(tmp_path, monkeypatch):
     assert set(store.tokens()) == set(notes)
 
 
-def test_stage_reports_unlink_failure_without_primary_error(tmp_path, monkeypatch):
+def test_stage_reports_unlink_failure_without_primary_error(
+    tmp_path, monkeypatch, caplog
+):
     import tempfile
 
     from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
@@ -1420,6 +1421,90 @@ def test_stage_reports_unlink_failure_without_primary_error(tmp_path, monkeypatc
         raise OSError("unlink failed")
 
     monkeypatch.setattr(stage._temp, "cleanup", fail_cleanup)
-    with pytest.raises(OSError, match="unlink failed"), stage:
+    with stage:
         pass
+    assert "embedding_stage_cleanup_failed" in caplog.text
     assert not list(tmp_path.glob("embedding-stage-*"))
+
+
+def test_committed_rebuild_survives_scratch_cleanup_error(
+    tmp_path, monkeypatch, caplog
+):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    _, _, store, rec = _setup(tmp_path, NOTES)
+    enter = EmbeddingStage.__enter__
+
+    def failing_cleanup(stage):
+        enter(stage)
+        cleanup = stage._temp.cleanup
+
+        def fail():
+            cleanup()
+            raise OSError("synthetic cleanup failure")
+
+        monkeypatch.setattr(stage._temp, "cleanup", fail)
+        return stage
+
+    monkeypatch.setattr(EmbeddingStage, "__enter__", failing_cleanup)
+    result = rec.rebuild(store, store.identity)
+    assert result.published and store.count == 2
+    assert "embedding_stage_cleanup_failed" in caplog.text
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_custom_metadata_retains_objects_during_replay(
+    tmp_path, monkeypatch, streaming
+):
+    fts, _, store, rec = _setup(tmp_path, {"a.md": "# A\n\nApple\n"})
+    line = np.int64(3)
+    heading = ("one", "two")
+    rows = [
+        {**row, "start_line": line, "heading": heading} for row in fts.list_chunks()
+    ]
+
+    class Index:
+        def list_chunks(self, paths=None):
+            return (
+                rows if paths is None else [row for row in rows if row["path"] in paths]
+            )
+
+    class StreamingIndex(Index):
+        def iter_chunks(self):
+            return iter(self.list_chunks())
+
+    seen = []
+
+    def publish(_identity, generation):
+        seen.extend([list(generation), list(generation)])
+
+    monkeypatch.setattr(rec, "_fts", StreamingIndex() if streaming else Index())
+    monkeypatch.setattr(store, "publish_generation", publish)
+    assert rec.rebuild(store, store.identity).published
+    for generation in seen:
+        metadata = generation[0].rows[0].metadata
+        assert metadata["start_line"] is line
+        assert metadata["heading"] is heading
+
+
+def test_scratch_dir_bypasses_unavailable_default_temp(tmp_path, monkeypatch):
+    import tempfile
+
+    _, _, store, rec = _setup(tmp_path, NOTES)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "missing"))
+    rec._scratch_dir = tmp_path / "state"
+    assert rec.rebuild(store, store.identity).published
+
+
+def test_unavailable_scratch_fails_before_provider_and_keeps_store(tmp_path):
+    _, provider, store, rec = _setup(tmp_path, NOTES)
+    rec.rebuild(store, store.identity)
+    before = store.tokens()
+    provider.texts.clear()
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("fixture")
+    rec._scratch_dir = blocked / "stage"
+    with pytest.raises(OSError):
+        rec.rebuild(store, store.identity)
+    assert provider.texts == []
+    assert store.tokens() == before

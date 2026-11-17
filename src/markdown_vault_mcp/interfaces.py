@@ -104,7 +104,7 @@ class IteratesChunks(Protocol):
     """Optional ordered, document-grouped traversal of all indexed chunks."""
 
     def iter_chunks(self) -> Iterator[dict[str, Any]]:
-        """Yield the same rows, in the same order, as ``list_chunks()``."""
+        """Yield ``list_chunks()`` rows in its order, grouped by path."""
         ...
 
 

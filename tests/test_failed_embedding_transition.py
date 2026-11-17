@@ -191,3 +191,89 @@ def test_force_without_previous_vectors_keeps_the_cold_failure_contract(
         assert vault.reader.search("Apples", mode="semantic") == []
     finally:
         vault.close()
+
+
+def test_committed_identity_transition_survives_cleanup_failure(
+    tmp_path, monkeypatch, caplog
+):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    first = _vault(tmp_path, "sqlite", MockEmbeddingProvider(dim=8, model="old"))
+    try:
+        first.index.build_index()
+        assert first.index.build_embeddings() == 1
+    finally:
+        first.close()
+    second = _vault(tmp_path, "sqlite", MockEmbeddingProvider(dim=12, model="new"))
+    enter = EmbeddingStage.__enter__
+
+    def failing_cleanup(stage):
+        enter(stage)
+        cleanup = stage._temp.cleanup
+
+        def fail():
+            cleanup()
+            raise OSError("scratch cleanup failed")
+
+        monkeypatch.setattr(stage._temp, "cleanup", fail)
+        return stage
+
+    try:
+        second.index.build_index()
+        monkeypatch.setattr(EmbeddingStage, "__enter__", failing_cleanup)
+        assert second.reader.search("Apples", mode="semantic")
+        assert second.index.embeddings_status()["identity"]["dimension"] == 12
+        assert "embedding_stage_cleanup_failed" in caplog.text
+    finally:
+        second.close()
+
+
+def test_vault_scratch_uses_state_directory_with_bad_default_temp(
+    tmp_path, monkeypatch
+):
+    import tempfile
+
+    vault = _vault(tmp_path, "sqlite", MockEmbeddingProvider(dim=8))
+    try:
+        vault.index.build_index()
+        assert (
+            vault._index_mgr._embeddings._reconciler._scratch_dir
+            == vault._state_path.parent
+        )
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "unavailable"))
+        assert vault.index.build_embeddings(force=True) == 1
+        assert not list(vault._state_path.parent.glob("embedding-stage-*"))
+    finally:
+        vault.close()
+
+
+def test_vault_without_state_file_uses_default_temp(tmp_path):
+    source = tmp_path / "vault"
+    source.mkdir()
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(index_path=None),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        assert vault._state_path is None
+        assert vault._index_mgr._embeddings._reconciler._scratch_dir is None
+    finally:
+        vault.close()
+
+
+def test_vault_explicit_state_path_selects_scratch_directory(tmp_path):
+    source = tmp_path / "vault"
+    source.mkdir()
+    state_path = tmp_path / "state-volume" / "state.json"
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(index_path=None, state_path=state_path),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        assert (
+            vault._index_mgr._embeddings._reconciler._scratch_dir == state_path.parent
+        )
+    finally:
+        vault.close()
