@@ -902,20 +902,38 @@ class TestBatchCommitsForReal:
 
         assert _folder_subject_path(Path(name)) == expected
 
-    def test_single_file_folder_move_names_folders(self, tmp_path: Path) -> None:
-        """A folder containing one file still names the folder roots."""
+    @pytest.mark.parametrize(
+        ("tool", "old", "new", "expected"),
+        [
+            ("custom_move", "a", "archive ", 'custom_move: a -> "archive "'),
+            (
+                "move_folder",
+                "a\n\nsource",
+                "b\tdest",
+                'move_folder: "a\\n\\nsource" -> "b\\tdest"',
+            ),
+            (
+                "move_folder",
+                "a\u0085source",
+                "b\u2028dest",
+                'move_folder: "a\\u0085source" -> "b\\u2028dest"',
+            ),
+        ],
+    )
+    def test_single_file_folder_move_names_folders(
+        self, tmp_path: Path, tool: str, old: str, new: str, expected: str
+    ) -> None:
+        """A one-file move names both roots, including unusual characters."""
         from markdown_vault_mcp.git._run import run_git
 
         repo = _repo(tmp_path)
-        (repo / "a").mkdir()
-        (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
-        run_git(str(repo), "add", "a")
+        (repo / old).mkdir()
+        (repo / old / "x.md").write_text("x\n", encoding="utf-8")
+        run_git(str(repo), "add", "--all")
         run_git(str(repo), "commit", "-m", "folder")
-        self._run_in_scope(
-            repo, "custom_move", lambda v: v.writer.move_folder("a", "archive ")
-        )
-        assert _subjects(repo)[0] == 'custom_move: a -> "archive "'
-        assert _files_in_head(repo) == {"archive /x.md"}
+        self._run_in_scope(repo, tool, lambda v: v.writer.move_folder(old, new))
+        assert _subjects(repo)[0] == expected
+        assert (repo / new / "x.md").read_text(encoding="utf-8") == "x\n"
 
     @pytest.mark.parametrize(
         ("primary_names", "expected"),
