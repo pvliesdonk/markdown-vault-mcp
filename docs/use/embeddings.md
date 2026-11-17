@@ -356,7 +356,9 @@ From the response, the server reads each item's `embedding` and puts the
 items back in input order by their `index`. An item with no `index` counts as
 the first one: Gemini's compatibility endpoint,
 `https://generativelanguage.googleapis.com/v1beta/openai/`, leaves the field
-out of the first item of every batch.
+out of the first item of every batch. When two items claim the same
+position, the batch fails with an error instead of storing a vector against
+the wrong note.
 
 The one addition is vendor-specific and reached only through a named provider:
 [`voyage`](#voyage-ai) also sends `input_type`. Driving Voyage through this

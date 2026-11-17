@@ -5415,7 +5415,10 @@ sorting ``response.data`` on each item's ``index``, and reads a missing
 compatibility endpoint leaves ``index`` out of the first item of a batch;
 the SDK builds responses without validation and reads it as ``None``, and
 comparing ``None`` with the next item's ``1`` failed every batch of two or
-more. The evidence is in
+more. Two items that resolve to the same index (two without one, or one
+without and one with 0) raise ``RuntimeError`` rather than pair a vector with
+the wrong input; a response with no ``index`` at all keeps its order. The
+evidence is in
 [OpenAI-compatible embedding responses](reference/openai-compatible-embeddings.md).
 
 **Voyage preset**: ``VoyageProvider`` is a third preset over the same

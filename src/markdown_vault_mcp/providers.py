@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 
@@ -81,6 +81,40 @@ _VOYAGE_CONTEXT_LENGTHS: dict[str, int] = {
 # The openai SDK requires a non-None api_key string even for servers that
 # ignore auth (Ollama's own docs suggest this placeholder).
 _PLACEHOLDER_API_KEY = "ollama"
+
+
+def _in_input_order(data: list[Any], label: str) -> list[Any]:
+    """Return embeddings-response items sorted back into input order.
+
+    Each item's ``index`` names its input. A missing ``index`` (``None``)
+    means 0, as in proto3 JSON, which omits zero values: Gemini's
+    compatibility endpoint leaves it out of the first item, and the SDK
+    reads it as ``None`` (#2050). When every index is missing, the items
+    stay in response order.
+
+    Args:
+        data: The response's ``data`` items, each with ``index`` and
+            ``embedding``.
+        label: Provider label used in the error message.
+
+    Returns:
+        The items, ordered by their (resolved) index.
+
+    Raises:
+        RuntimeError: If two items resolve to the same index, so a vector
+            could not be matched to its input; for example two items without
+            an ``index``, or one without and one with ``index`` 0.
+    """
+    indexes = [item.index for item in data]
+    if all(index is None for index in indexes):
+        return list(data)
+    keys = [0 if index is None else index for index in indexes]
+    if len(set(keys)) != len(keys):
+        raise RuntimeError(
+            f"{label} embeddings response repeats an index, so its vectors "
+            f"cannot be matched to their inputs: indexes {indexes[:20]}"
+        )
+    return [data[i] for i in sorted(range(len(data)), key=keys.__getitem__)]
 
 
 class _OpenAICompatEmbeddings:
@@ -143,7 +177,8 @@ class _OpenAICompatEmbeddings:
             List of embedding vectors, one per input text.
 
         Raises:
-            RuntimeError: If the embeddings request fails.
+            RuntimeError: If the embeddings request fails, or the response
+                repeats an index so a vector cannot be matched to its input.
         """
         try:
             if input_type is None:
@@ -160,12 +195,7 @@ class _OpenAICompatEmbeddings:
             raise RuntimeError(
                 f"{self._label} embeddings request failed: {exc}"
             ) from exc
-        # Sort by index to guarantee input order is preserved. A missing index
-        # means 0, as in proto3 JSON, which omits zero values: Gemini's
-        # compatibility endpoint leaves ``index`` out of the first item, and
-        # the SDK reads it as None (#2050).
-        items = sorted(response.data, key=lambda d: d.index or 0)
-        return [item.embedding for item in items]
+        return [item.embedding for item in _in_input_order(response.data, self._label)]
 
 
 class EmbeddingProvider(ABC):

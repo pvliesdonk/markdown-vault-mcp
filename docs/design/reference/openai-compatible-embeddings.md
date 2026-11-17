@@ -126,9 +126,13 @@ more; a one-item batch, such as a search query, had nothing to compare and
 worked.
 [pins: tests/test_providers.py::TestOpenAIProvider::test_embed_sorts_by_index, tests/test_providers.py::TestOpenAIProvider::test_embed_treats_missing_first_index_as_zero]
 
-An endpoint that omits every `index` gets its vectors in response order,
-because the sort is stable and every key is 0.
+An endpoint that omits every `index` gets its vectors in response order.
 [pins: tests/test_providers.py::TestOpenAIProvider::test_embed_keeps_response_order_when_no_index]
+
+A response in which two items resolve to the same index, such as two items
+without `index`, or one without and one with `index` 0, raises instead of
+sorting, because the sort would pair a vector with the wrong input.
+[pins: tests/test_providers.py::TestOpenAIProvider::test_embed_refuses_ambiguous_indexes]
 
 ## Not covered
 
