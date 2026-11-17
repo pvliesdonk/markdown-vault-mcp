@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-17
+
+- New: [Windows CRT byte-range locks](windows-byte-locking.md), for #1923.
+  Checked Python 3.13 and Microsoft CRT documentation; tests use a fake API.
+  Next review: 2027-05-17.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
