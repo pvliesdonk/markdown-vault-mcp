@@ -1041,7 +1041,7 @@ class FTSIndex:
             conn: The primary connection (inside :meth:`_init_schema`).
         """
         weights = [self._fts_weights.get(col, 1.0) for col in self._FTS_COLUMNS]
-        if any(w != 1.0 for w in weights):
+        if any(w != 1.0 for w in weights):  # NOSONAR: exact no-op sentinel
             rank = "bm25({})".format(", ".join(f"{w:g}" for w in weights))
         else:
             rank = "bm25()"

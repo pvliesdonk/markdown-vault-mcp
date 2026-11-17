@@ -120,7 +120,7 @@ def apply_folder_boost(
     out: list[_FolderBoostableT] = []
     for row in rows:
         weight = folder_weight(row.folder, weights)
-        if weight != 1.0 and row.score > 0:
+        if weight != 1.0 and row.score > 0:  # NOSONAR: exact no-op sentinel
             # Protocols can't promise __dataclass_fields__; the helper's
             # contract is "callers pass dataclasses" (FTSResult /
             # SemanticRow / GroupableFTS all are), enforced at runtime by
@@ -169,7 +169,7 @@ def apply_okf_downweight(
     out: list[_PathScorableT] = []
     for row in rows:
         factor = factor_for(row.path)
-        if factor != 1.0 and row.score > 0:
+        if factor != 1.0 and row.score > 0:  # NOSONAR: exact no-op sentinel
             # Protocols can't promise __dataclass_fields__; the helper's
             # contract is "callers pass dataclasses" (FTSResult / SemanticRow /
             # GroupableFTS all are), enforced at runtime by replace() itself.
