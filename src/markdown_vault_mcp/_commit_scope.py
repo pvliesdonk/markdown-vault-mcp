@@ -18,8 +18,8 @@ count.
 
 The scope travels in a :class:`~contextvars.ContextVar`. ``fire`` captures it
 on the request's ``to_thread`` worker, whose copied context carries the
-variable. The dispatcher rebinds that captured scope while invoking a batch
-callback; its worker does not inherit the request context (#1218).
+variable. The dispatcher binds only the captured folder roots while invoking
+a batch callback; its worker does not inherit the request context (#1218).
 
 Grouping is keyed by scope token rather than by queue position. The queue is
 FIFO, but a shared server interleaves concurrent tool calls, and position-based
@@ -87,25 +87,38 @@ def bound_commit_scope(tool_name: str) -> Iterator[CommitScope]:
         The bound scope, so a caller can enqueue its end marker.
     """
     scope = CommitScope(token=next(_counter), tool_name=tool_name)
-    with bind_commit_scope(scope):
+    var_token = _scope_var.set(scope)
+    try:
         yield scope
+    finally:
+        _scope_var.reset(var_token)
+
+
+_folder_move_var: ContextVar[tuple[Path, Path] | None] = ContextVar(
+    "markdown_vault_mcp_folder_move", default=None
+)
 
 
 @contextmanager
-def bind_commit_scope(scope: CommitScope) -> Iterator[None]:
-    """Bind an existing scope for a callback and restore the prior context.
+def bound_folder_move(roots: tuple[Path, Path] | None) -> Iterator[None]:
+    """Bind folder roots for a batch callback and restore the prior context.
 
     Args:
-        scope: The scope captured when the write was fired.
+        roots: Validated source and destination directories, or ``None``.
 
     Yields:
-        Control while the captured scope is bound.
+        Control while the roots are bound.
     """
-    var_token = _scope_var.set(scope)
+    token = _folder_move_var.set(roots)
     try:
         yield
     finally:
-        _scope_var.reset(var_token)
+        _folder_move_var.reset(token)
+
+
+def current_folder_move() -> tuple[Path, Path] | None:
+    """Return the folder roots bound for the current batch callback."""
+    return _folder_move_var.get()
 
 
 def current_commit_scope() -> CommitScope | None:

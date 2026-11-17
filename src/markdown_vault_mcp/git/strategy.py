@@ -41,7 +41,7 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
-from markdown_vault_mcp._commit_scope import current_commit_scope
+from markdown_vault_mcp._commit_scope import current_folder_move
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
@@ -2483,8 +2483,7 @@ def _stage_and_commit_batch(
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
     """
-    scope_context = current_commit_scope()
-    folder_move = scope_context.folder_move if scope_context is not None else None
+    folder_move = current_folder_move()
     if len(items) == 1 and folder_move is None:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps

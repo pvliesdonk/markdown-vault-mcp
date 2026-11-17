@@ -24,6 +24,7 @@ from markdown_vault_mcp._commit_scope import (
     auxiliary_commit_writes,
     bound_commit_scope,
     current_commit_scope,
+    current_folder_move,
     is_auxiliary_commit_write,
 )
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
@@ -122,25 +123,26 @@ class TestGrouping:
         assert cb.batches == [("move_folder", [Path("new/a.md")])]
 
     @pytest.mark.parametrize("raise_batch", [False, True])
-    def test_worker_scope_binding_is_isolated_and_reset(
-        self, raise_batch: bool
-    ) -> None:
-        """Drain binds each captured scope and clears it even on callback failure."""
+    def test_folder_roots_are_isolated_and_reset(self, raise_batch: bool) -> None:
+        """Batch roots reset before unscoped callbacks, including after failure."""
 
         class Recorder(_BatchRecorder):
             def __init__(self) -> None:
                 super().__init__()
+                self.roots: list[tuple[Path, Path] | None] = []
                 self.scopes: list[CommitScope | None] = []
 
             def on_write_batch(
                 self, items: Sequence[WriteBatchItem], tool_name: str
             ) -> None:
+                self.roots.append(current_folder_move())
                 self.scopes.append(current_commit_scope())
                 super().on_write_batch(items, tool_name)
                 if raise_batch and tool_name == "move_folder":
                     raise RuntimeError("batch failure")
 
             def __call__(self, abs_path: Path, content: str, operation: str) -> None:
+                self.roots.append(current_folder_move())
                 self.scopes.append(current_commit_scope())
                 super().__call__(abs_path, content, operation)
 
@@ -149,14 +151,13 @@ class TestGrouping:
         with bound_commit_scope("move_folder") as folder:
             folder.folder_move = (Path("a"), Path("b"))
             dispatcher.fire(Path("b/x.md"), "x", "rename", old_path=Path("a/x.md"))
-        with bound_commit_scope("write") as plain:
+        with bound_commit_scope("write"):
             dispatcher.fire(Path("other.md"), "x", "write")
         assert dispatcher.drain(timeout=10)
         dispatcher.fire(Path("unscoped.md"), "x", "write")
         dispatcher.close()
-        assert cb.scopes == [folder, plain, None]
-        assert folder.folder_move == (Path("a"), Path("b"))
-        assert plain.folder_move is None
+        assert cb.roots == [(Path("a"), Path("b")), None, None]
+        assert cb.scopes == [None, None, None]
 
     def test_one_scope_produces_one_batch(self) -> None:
         cb = _BatchRecorder()
@@ -824,6 +825,64 @@ class TestBatchCommitsForReal:
             vault.close()
             strategy.close()
         assert _subjects(repo)[:2] == ["write: plain.md", "move_folder: a -> b"]
+
+    def test_callback_followup_write_commits_without_drain(
+        self, tmp_path: Path
+    ) -> None:
+        """A batch callback's follow-up write commits while the vault stays open."""
+        from markdown_vault_mcp.git._run import run_git
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+        from markdown_vault_mcp.vault import Vault, VaultSettings
+
+        finished = threading.Event()
+        scopes: list[CommitScope | None] = []
+
+        class FollowupStrategy(GitWriteStrategy):
+            def on_write_batch(
+                self,
+                items: Sequence[WriteBatchItem],
+                tool_name: str,
+                *,
+                primary_paths: frozenset[Path] | None = None,
+            ) -> None:
+                scopes.append(current_commit_scope())
+                super().on_write_batch(items, tool_name, primary_paths=primary_paths)
+                vault.writer.write("followup.md", "followup\n")
+
+            def __call__(self, *args: Any, **kwargs: Any) -> None:
+                super().__call__(*args, **kwargs)
+                finished.set()
+
+        repo = _repo(tmp_path)
+        (repo / "a").mkdir()
+        (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
+        run_git(str(repo), "add", "a")
+        run_git(str(repo), "commit", "-m", "folder")
+        strategy = FollowupStrategy(
+            token=None,
+            repo_url=None,
+            managed=False,
+            enable_pull=False,
+            enable_push=False,
+            repo_path=repo,
+        )
+        vault = Vault(
+            source_dir=repo, settings=VaultSettings(read_only=False), on_write=strategy
+        )
+        vault.index.build_index()
+        try:
+            with bound_commit_scope("move_folder") as scope:
+                vault.writer.move_folder("a", "b")
+                vault.end_commit_scope(scope)
+            assert finished.wait(timeout=5), (
+                "callback write remains buffered without a scope end"
+            )
+            assert scopes == [None]
+            assert _subjects(repo)[:2] == ["write: followup.md", "move_folder: a -> b"]
+            assert "followup.md" in _files_in_head(repo)
+        finally:
+            vault.close()
+            strategy.close()
 
     @pytest.mark.parametrize("multiple", [False, True])
     def test_folder_move_preserves_overridden_batch_callback(
