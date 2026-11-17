@@ -204,6 +204,11 @@ frontmatter blob; not persisted):
   Mixed lists retain both counts; `recorded` never means applicability to
   the current revision has been established. A malformed outer value counts
   as one malformed entry. No source fetching or reviewer authentication occurs.
+- `review_applicability`: supplied review entries report `snapshot: unbound`
+  and `basis: no_snapshot_binding`; timestamps and extensions do not establish
+  coverage. An absent or empty review reports `review: none` with
+  `basis: no_review_supplied`; a malformed outer value reports `review: unknown`
+  with `basis: malformed_review`. This assessment is separate from freshness.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
 `T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
@@ -218,7 +223,7 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier, freshness, review}` — omitted entirely when
+   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability}` — omitted entirely when
    detection is off, and individual members omitted when underivable.
    Whole reads also carry `recorded` with supplied `stale_after` and
    `verified` values as parsed, including null/malformed values and extensions;

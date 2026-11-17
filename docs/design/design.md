@@ -1939,6 +1939,8 @@ the spec itself says, dated and sourced, in
   promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
   evidence and its basis; `review` counts usable and malformed records with
   `basis: supplied_metadata_only`. Neither certifies truth or applicability.
+  `review_applicability` separately reports unbound supplied entries, absence,
+  or malformed outer input; it never infers snapshot coverage from timestamps.
   Full reads additionally expose supplied expiry/reviews under `recorded`,
   preserving parsed values, while compact results omit that projection.
   The exact contract and supported timestamp subset are in `okf.md` §3.

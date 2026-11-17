@@ -214,6 +214,7 @@ class TestDeclaredBundle:
                 "malformed_entries": 0,
                 "basis": "supplied_metadata_only",
             },
+            "review_applicability": {"review": "none", "basis": "no_review_supplied"},
         }
 
     async def test_read_includes_full_sources(self) -> None:

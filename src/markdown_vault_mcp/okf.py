@@ -381,6 +381,15 @@ def _review_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _review_applicability(metadata: dict[str, Any]) -> dict[str, str]:
+    """Describe whether supplied review entries have a snapshot binding."""
+    if verified_entries(metadata):
+        return {"snapshot": "unbound", "basis": "no_snapshot_binding"}
+    if "verified" in metadata and not isinstance(metadata["verified"], (dict, list)):
+        return {"review": "unknown", "basis": "malformed_review"}
+    return {"review": "none", "basis": "no_review_supplied"}
+
+
 def derive_annotation(
     metadata: dict[str, Any],
     *,
@@ -402,7 +411,8 @@ def derive_annotation(
         ``stale``, and ``trust_tier`` always; ``type`` only when present
         and non-empty; sources per *include_sources*. ``freshness`` and
         ``review`` describe the supplied evidence and its parsing basis, not
-        truth or applicability to this revision. Full reads additionally
+        truth or applicability to this revision. ``review_applicability``
+        reports the lack of a snapshot binding separately. Full reads additionally
         carry ``recorded`` with supplied expiry/reviews as parsed, including
         malformed values; omitted keys remain absent.
     """
@@ -421,6 +431,7 @@ def derive_annotation(
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)
     annotation["review"] = _review_evidence(metadata)
+    annotation["review_applicability"] = _review_applicability(metadata)
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:

@@ -112,7 +112,9 @@ section= to get the full document's frontmatter),
 `modified_at` (Unix timestamp), etag (SHA-256 hex str or null).
 On an active OKF bundle, whole-document reads also carry
 an 'okf' dict (type, status, stale, `trust_tier`, freshness, review,
-recorded, and the note's 'sources' list when present). Section reads omit
+`review_applicability`, recorded, and the note's 'sources' list when
+present). Review applicability reports whether a snapshot binding is
+available, independently of freshness and recorded claims. Section reads omit
 it because they carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
 `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp),
