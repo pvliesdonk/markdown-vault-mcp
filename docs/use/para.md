@@ -17,6 +17,7 @@ This guide assumes you're working with a PARA vault through Claude (or another M
 The four PARA prompts and five templates this guide uses are example files in the repository's [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/para) folder. No install channel ships them: not the package, the Docker image or the Claude Code plugin. Download the folder, then:
 
 - Copy `templates/` into the vault as `_templates/`. The template prompt looks for templates in that vault folder by default (`MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`, vault-relative).
+- Copy the contents of `conventions/` into the vault root. The shipped `_conventions.md` files work through the default fallback wherever `.conventions.md` is absent.
 - Keep `prompts/` outside the vault, so the prompt files stay out of search results. Point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at it. For Claude Desktop:
 
 ```json
