@@ -40,6 +40,9 @@ def test_raw_bytes_roundtrip_and_change(tmp_path: Path) -> None:
     changed = reader.resolve_file_reference(ref, include_content=True)
     assert changed.status == "changed"
     assert changed.content_base64 is None
+    assert "If this vault has Git history" in changed.detail
+    assert "otherwise they are unavailable" in changed.detail
+    assert "No historical copy is retained" in changed.detail
 
 
 def test_binary_and_unhashed_references(tmp_path: Path) -> None:
@@ -49,8 +52,12 @@ def test_binary_and_unhashed_references(tmp_path: Path) -> None:
     ref = reader.get_file_reference("proof.png", provenance="task:42")
     assert ref.sha256 is None and ref.provenance == "task:42"
     assert reader.resolve_file_reference(ref).status == "unverified"
-    with pytest.raises(InvalidRequestError, match="SHA-256"):
+    with pytest.raises(
+        InvalidRequestError, match="original bytes cannot be verified"
+    ) as exc:
         reader.resolve_file_reference(ref, include_content=True)
+    assert "include_content=false" in str(exc.value)
+    assert "get_file_reference" not in str(exc.value)
     hashed = reader.get_file_reference("proof.png", include_sha256=True)
     result = reader.resolve_file_reference(hashed, include_content=True)
     assert base64.b64decode(result.content_base64 or "") == raw
@@ -75,6 +82,8 @@ def test_missing_renamed_wrong_vault_and_relocated_root(tmp_path: Path) -> None:
     missing = reader.resolve_file_reference(ref, include_content=True)
     assert missing.status == "missing"
     assert "renamed" in missing.detail and "retained" in missing.detail
+    assert "If this vault has Git history" in missing.detail
+    assert "otherwise they are unavailable" in missing.detail
     assert missing.content_base64 is None
     with pytest.raises(InvalidRequestError, match="list_documents"):
         reader.get_file_reference("note.md")
@@ -88,13 +97,58 @@ def test_missing_renamed_wrong_vault_and_relocated_root(tmp_path: Path) -> None:
         "./note.md",
         "a/../note.md",
         "",
-        "a\\b.md",
         "nul\x00.md",
     ],
 )
 def test_nonportable_paths_rejected(tmp_path: Path, path: str) -> None:
     with pytest.raises(InvalidRequestError):
         ReferenceReader(tmp_path, "a").get_file_reference(path)
+
+
+@pytest.mark.parametrize("replacement", [None, b"longer content"])
+def test_path_only_content_request_reports_missing_or_changed(
+    tmp_path: Path, replacement: bytes | None
+) -> None:
+    file = tmp_path / "note.md"
+    file.write_bytes(b"old")
+    reader = ReferenceReader(tmp_path, "a")
+    ref = reader.get_file_reference("note.md")
+    if replacement is None:
+        file.unlink()
+    else:
+        file.write_bytes(replacement)
+    result = reader.resolve_file_reference(ref, include_content=True)
+    assert result.status == ("missing" if replacement is None else "changed")
+    assert result.content_base64 is None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="backslash is a path separator on Windows")
+async def test_literal_backslash_name_library_and_mcp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = "evidence\\ draft.md"
+    raw = b"# Evidence\n"
+    (tmp_path / path).write_bytes(raw)
+    reader = ReferenceReader(tmp_path, "a")
+    ref = reader.get_file_reference(path, include_sha256=True)
+    assert reader.resolve_file_reference(ref, include_content=True).status == "verified"
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    config = replace(ProjectConfig.from_env(), reference_namespace="a")
+    async with Client(make_server(config=config)) as client:
+        await client.call_tool("read", {"path": path})
+        saved = (
+            await client.call_tool(
+                "get_file_reference", {"path": path, "include_sha256": True}
+            )
+        ).structured_content
+        result = (
+            await client.call_tool(
+                "resolve_file_reference", {"reference": saved, "include_content": True}
+            )
+        ).structured_content
+        assert saved["path"] == path
+        assert result["status"] == "verified"
+        assert base64.b64decode(result["content_base64"]) == raw
 
 
 def test_allowlist_symlink_and_nonregular_rules(tmp_path: Path) -> None:
@@ -159,6 +213,11 @@ def test_reference_validation_and_namespace_config(tmp_path: Path) -> None:
         FileReference("a", "note.md", 0)  # type: ignore[call-arg]
     with pytest.raises(InvalidRequestError, match="namespace"):
         ReferenceReader(tmp_path, None)
+
+
+def test_library_rejects_boolean_reference_version() -> None:
+    with pytest.raises(InvalidRequestError, match="version 1"):
+        FileReference("a", "note.md", 0, version=True)
 
 
 def test_concurrent_replacement_is_refused(
@@ -238,6 +297,25 @@ async def test_mcp_rejects_missing_reference_version(
         with pytest.raises(ToolError):
             await client.call_tool(
                 "resolve_file_reference", {"reference": saved | {"version": 2}}
+            )
+
+
+@pytest.mark.parametrize("version", [True, "1", 1.0])
+async def test_mcp_rejects_coerced_reference_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: object
+) -> None:
+    (tmp_path / "note.md").write_bytes(b"evidence")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    config = replace(ProjectConfig.from_env(), reference_namespace="a")
+    async with Client(make_server(config=config)) as client:
+        saved = (
+            await client.call_tool("get_file_reference", {"path": "note.md"})
+        ).structured_content
+        result = await client.call_tool("resolve_file_reference", {"reference": saved})
+        assert result.structured_content["status"] == "unverified"
+        with pytest.raises(ToolError):
+            await client.call_tool(
+                "resolve_file_reference", {"reference": saved | {"version": version}}
             )
 
 

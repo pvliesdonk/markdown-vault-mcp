@@ -123,7 +123,8 @@ The reference has `version=1`, `namespace`, `path`, `size_bytes`, `sha256`
 (null when omitted) and `provenance` (null when omitted). Save it unchanged.
 The `version` field is required when restoring a saved reference; missing or
 unsupported versions and malformed digests are refused. Paths are relative,
-with slash separators and no empty, `.` or `..` components.
+with slash separators and no empty, `.` or `..` components. Use the path that
+the vault's `read` accepts.
 
 Resolution returns the original `reference`, `status`, `detail` and optional
 `content_base64`:
@@ -160,5 +161,7 @@ commit; `read(path, revision=...)` can retrieve historical notes using its
 existing rename-aware rules. Historical binary reads are not provided by that
 tool. Any candidate recovered through Git or another archive must be checked
 against the saved raw-file SHA-256 and byte count before it is accepted.
+Git line-ending normalization can prevent a historical candidate from matching
+the saved raw digest.
 The reference tools never silently return a different revision or current
 content in place of the saved bytes.

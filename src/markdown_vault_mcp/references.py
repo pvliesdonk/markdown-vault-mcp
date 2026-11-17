@@ -31,7 +31,7 @@ def _namespace(value: str | None) -> str:
 
 
 def _relative_path(path: str) -> None:
-    if not path or "\\" in path or any(p in {"", ".", ".."} for p in path.split("/")):
+    if not path or any(p in {"", ".", ".."} for p in path.split("/")):
         raise InvalidRequestError(
             "path must be a vault-relative file path with no empty, '.' or '..' "
             "components; use a path from list_documents."
@@ -60,13 +60,13 @@ class FileReference:
     size_bytes: int
     sha256: str | None = None
     provenance: str | None = None
-    version: int = field(kw_only=True)
+    version: int = field(kw_only=True, metadata={"strict": True})
 
     def __post_init__(self) -> None:
         """Reject malformed or unsupported saved references."""
         _namespace(self.namespace)
         _relative_path(self.path)
-        if self.version != 1 or self.size_bytes < 0:
+        if type(self.version) is not int or self.version != 1 or self.size_bytes < 0:
             raise InvalidRequestError(
                 "Use a version 1 reference with a nonnegative byte count."
             )
@@ -100,7 +100,10 @@ class ReferenceResolution:
     content_base64: str | None = None
 
 
-_RETENTION = "No historical copy is retained; Git history may help locate old bytes."
+_RETENTION = (
+    "No historical copy is retained. If this vault has Git history, get_history "
+    "and read(revision=...) may help locate old bytes; otherwise they are unavailable."
+)
 
 
 class ReferenceReader:
@@ -181,10 +184,6 @@ class ReferenceReader:
             return ReferenceResolution(
                 "wrong_vault", reference, "Use the connection for the saved namespace."
             )
-        if include_content and reference.sha256 is None:
-            raise InvalidRequestError(
-                "Returning verified bytes requires a saved SHA-256; call get_file_reference with include_sha256=true first."
-            )
         if max_content_bytes < 0:
             raise InvalidRequestError("max_content_bytes must be nonnegative.")
         try:
@@ -208,6 +207,11 @@ class ReferenceReader:
                 "Current bytes differ from the saved reference. " + _RETENTION,
             )
         if reference.sha256 is None:
+            if include_content:
+                raise InvalidRequestError(
+                    "Saved reference has no SHA-256; its original bytes cannot be verified. "
+                    "Resolve with include_content=false to check only the path."
+                )
             return ReferenceResolution(
                 "unverified",
                 reference,
@@ -228,7 +232,6 @@ class ReferenceReader:
     def _snapshot(
         self, path: str, hash_bytes: bool, body_cap: float | None
     ) -> tuple[int, str | None, bytes | None]:
-        _relative_path(path)
         absolute = validate_history_path(path, self._root, self._extensions)
         try:
             # O_NONBLOCK prevents a replaced FIFO from hanging before fstat.
