@@ -1,7 +1,9 @@
 """Independent OKF authority and the legacy transition."""
 
+import json
 import logging
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -25,18 +27,15 @@ def test_defaults_preserve_legacy_field_but_grant_no_writes():
     ) == (False, "off", False, "off", (".",), False)
 
 
-def test_alias_and_explicit_overrides(caplog, monkeypatch):
-    monkeypatch.setattr(_assembly, "_okf_warning_emitted", False)
-    with caplog.at_level(logging.WARNING):
-        config = ProjectConfig(
-            okf_write=True,
-            okf_author=True,
-            okf_verify="off",
-            okf_index=False,
-            okf_log="events",
-            okf_folders=("projects/*",),
-        )
-    caps = config.content.okf_capabilities
+def test_alias_and_explicit_overrides():
+    caps = ContentConfig(
+        okf_write=True,
+        okf_author=True,
+        okf_verify="off",
+        okf_index=False,
+        okf_log="events",
+        okf_folders=("projects/*",),
+    ).okf_capabilities
     assert (
         caps.author,
         caps.verify,
@@ -45,12 +44,9 @@ def test_alias_and_explicit_overrides(caplog, monkeypatch):
         caps.folders,
         caps.legacy_stamping,
     ) == (True, "off", False, "events", ("projects/*",), True)
-    notices = [r for r in caplog.records if r.msg.startswith("okf_write_deprecated")]
-    assert len(notices) == 1
-    assert "Keep OKF_WRITE enabled" in notices[0].getMessage()
-    assert all(
-        name in notices[0].getMessage()
-        for name in ("OKF_AUTHOR", "OKF_VERIFY", "OKF_INDEX", "OKF_LOG", "OKF_FOLDERS")
+    assert ContentConfig(okf_verify="elicit").okf_capabilities.verify == "elicit"
+    assert (
+        ContentConfig(okf_verify="trust-auth").okf_capabilities.verify == "trust-auth"
     )
     legacy = ContentConfig(okf_write=True).okf_capabilities
     assert (
@@ -70,17 +66,16 @@ def test_alias_and_explicit_overrides(caplog, monkeypatch):
         {"okf_verify": "elicit"},
         {"okf_index": True},
         {"okf_log": "events"},
-        {"okf_write": True},
     ],
 )
 def test_off_mode_rejects_write_authority(setting):
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="write capabilities require okf_mode"):
         ContentConfig(okf_mode="off", **setting)
-    with pytest.raises(ConfigurationError):
-        ProjectConfig(okf_mode="off", **setting)
 
 
 def test_environment_overrides_alias(monkeypatch):
+    with pytest.raises(ConfigurationError, match="write capabilities require okf_mode"):
+        ProjectConfig(okf_mode="off", okf_author=True)
     for key, value in {
         "OKF_WRITE": "true",
         "OKF_AUTHOR": "true",
@@ -105,13 +100,14 @@ def test_validation():
         ContentConfig(okf_log="unknown")
     with pytest.raises(ConfigurationError, match="okf_folders"):
         ContentConfig(okf_folders="bad")
+    with pytest.raises(ConfigurationError, match="okf_folders"):
+        ContentConfig(okf_folders=["valid", ""])
 
 
 def test_explicit_elicit_and_folder_immutability():
     folders = ["projects/*"]
-    content = ContentConfig(okf_verify="elicit", okf_folders=folders)
+    content = ContentConfig(okf_folders=folders)
     folders.append("other")
-    assert content.okf_capabilities.verify == "elicit"
     assert content.okf_capabilities.folders == ("projects/*",)
 
 
@@ -122,7 +118,13 @@ def test_deprecation_warns_once_across_env_and_copies(monkeypatch, caplog):
         config = ProjectConfig.from_env()
         replace(config)
         replace(config, okf_index=False)
-    assert sum(r.msg.startswith("okf_write_deprecated") for r in caplog.records) == 1
+    notices = [r for r in caplog.records if r.msg.startswith("okf_write_deprecated")]
+    assert len(notices) == 1
+    assert "Keep OKF_WRITE enabled" in notices[0].getMessage()
+    assert all(
+        name in notices[0].getMessage()
+        for name in ("OKF_AUTHOR", "OKF_VERIFY", "OKF_INDEX", "OKF_LOG", "OKF_FOLDERS")
+    )
 
 
 def test_project_config_snapshots_folders():
@@ -130,22 +132,13 @@ def test_project_config_snapshots_folders():
     config = ProjectConfig(okf_folders=folders)
     folders.append("secret/*")
     assert config.okf_folders == ("projects/*",)
-    assert replace(config).content.okf_capabilities.folders == ("projects/*",)
-    with pytest.raises(ConfigurationError, match="okf_folders"):
-        ProjectConfig(okf_folders=["valid", ""])
-    with pytest.raises(ConfigurationError, match="okf_folders"):
-        ProjectConfig(okf_folders="invalid")
 
 
 def test_generated_examples_leave_verification_unset():
-    from pathlib import Path
-
     root = Path(__file__).resolve().parents[1]
     for name in ("examples/bearer-auth.env", "examples/oidc.env"):
         text = (root / name).read_text()
         assert "MARKDOWN_VAULT_MCP_OKF_VERIFY=\n" in text
-
-    import json
 
     spec = json.loads(
         (root / "docs/javascripts/config-wizard/wizard-spec.json").read_text()

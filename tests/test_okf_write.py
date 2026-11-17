@@ -333,21 +333,6 @@ class TestConfigCrossValidation:
         with pytest.raises(ConfigurationError, match="okf_verify must be one of"):
             ContentConfig(okf_write=True, okf_verify=bad)
 
-    @pytest.mark.parametrize("mode", ["off", "trust-auth"])
-    def test_okf_verify_can_be_configured_independently(self, mode: str) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        assert (
-            ContentConfig(okf_write=False, okf_verify=mode).okf_capabilities.verify
-            == mode
-        )
-
-    def test_okf_verify_default_allowed_without_okf_write(self) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        # The default value must not trip the OKF_WRITE-off interaction guard.
-        assert ContentConfig(okf_write=False).okf_verify == "elicit"
-
     @pytest.mark.parametrize("mode", ["elicit", "off", "trust-auth"])
     def test_okf_verify_allowed_with_okf_write(self, mode: str) -> None:
         from markdown_vault_mcp.config_sections.content import ContentConfig

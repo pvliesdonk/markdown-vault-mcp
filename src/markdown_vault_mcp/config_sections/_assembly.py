@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -50,7 +49,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import WriteCallback
 
 logger = logging.getLogger(__name__)
-_okf_warning_lock = threading.Lock()
 _okf_warning_emitted = False
 
 # Full env-var name for the required source dir, used in the missing-var message.
@@ -78,15 +76,14 @@ _MAX_CHUNK_CHARS_CEILING = 1500
 def warn_okf_write_deprecated() -> None:
     """Warn once per process when the legacy write switch is enabled."""
     global _okf_warning_emitted
-    with _okf_warning_lock:
-        if _okf_warning_emitted:
-            return
-        logger.warning(
-            "okf_write_deprecated replacements=%s guidance=%s",
-            "OKF_AUTHOR,OKF_VERIFY,OKF_INDEX,OKF_LOG,OKF_FOLDERS",
-            "Keep OKF_WRITE enabled until the separate runtime gates are available.",
-        )
-        _okf_warning_emitted = True
+    if _okf_warning_emitted:
+        return
+    logger.warning(
+        "okf_write_deprecated replacements=%s guidance=%s",
+        "OKF_AUTHOR,OKF_VERIFY,OKF_INDEX,OKF_LOG,OKF_FOLDERS",
+        "Keep OKF_WRITE enabled until the separate runtime gates are available.",
+    )
+    _okf_warning_emitted = True
 
 
 def read_okf_verify(prefix: str) -> str:

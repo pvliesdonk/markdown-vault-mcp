@@ -28,8 +28,9 @@ class ContentConfig:
     ``index.md``, ``"off"`` never applies OKF semantics, ``"on"`` forces
     them without a declaration.
 
-    ``okf_verify`` governs how the ``okf_verify`` tool attests a human review
-    (only meaningful when ``okf_write`` is on, which gates the tool):
+    ``okf_verify`` configures review authority independently. The current
+    runtime gates the ``okf_verify`` tool on ``okf_write`` and uses this
+    setting to determine how the tool attests a human review:
     ``"elicit"`` (default) requires an affirmative MCP elicitation and fails
     closed otherwise, ``"trust-auth"`` attributes to a token's ``sub`` with no
     confirmation and refuses service principals (client-ID-only identities
