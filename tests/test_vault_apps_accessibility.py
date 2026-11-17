@@ -115,7 +115,7 @@ def test_search_name_survives_populated_value(page: Page) -> None:
 
 
 def test_embedded_fonts_load_under_strict_csp(page: Page) -> None:
-    """All five binary faces load without requests under the host font policy."""
+    """Binary faces load without requests under font-src self; script CSP is relaxed."""
     requests: list[str] = []
     page.on("request", lambda request: requests.append(request.url))
     page.add_init_script(

@@ -7,7 +7,9 @@ subprocess-against-the-tree approach).
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -169,23 +171,40 @@ def test_binary_include_embeds_bytes(spa_copy: Path) -> None:
     assert "AP90ZXN0" in build_spa.assemble(spa_copy)
 
 
-@pytest.mark.parametrize("path", ["../escape.woff2", "missing.woff2", "styles.css"])
-def test_binary_include_rejects_invalid_paths(spa_copy: Path, path: str) -> None:
+@pytest.mark.parametrize(
+    ("path", "error"),
+    [
+        ("../escape.woff2", "escapes spa/ dir"),
+        ("missing.woff2", "invalid or missing WOFF2"),
+        ("styles.css", "invalid or missing WOFF2"),
+    ],
+)
+def test_binary_include_rejects_invalid_paths(
+    spa_copy: Path, tmp_path: Path, path: str, error: str
+) -> None:
     """Binary includes must be existing WOFF2 files inside the SPA."""
+    (tmp_path / "escape.woff2").write_bytes(b"outside")
     _patch_shell(spa_copy, "/*@@FILE:core.js@@*/", f"/*@@B64:{path}@@*/")
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match=error):
         build_spa.assemble(spa_copy)
 
 
 def test_font_sources_match_hashes() -> None:
-    """The vendored font bytes match the recorded package hashes."""
-    import hashlib
-
+    """Each font in the provenance manifest exists and matches its hash."""
     fonts = _REAL_SPA / "fonts"
     sources = (fonts / "SOURCES.md").read_text()
-    for font in fonts.glob("*.woff2"):
-        assert font.name in sources
-        assert hashlib.sha256(font.read_bytes()).hexdigest() in sources
+    entries = re.findall(
+        r"^- `([^`]+\.woff2)` — `[^`]+` — `([0-9a-f]{64})`$",
+        sources,
+        re.MULTILINE,
+    )
+    assert len(entries) == 5
+    assert len({name for name, _ in entries}) == 5
+    assert {name for name, _ in entries} == {
+        font.name for font in fonts.glob("*.woff2")
+    }
+    for name, expected in entries:
+        assert hashlib.sha256((fonts / name).read_bytes()).hexdigest() == expected
 
 
 @pytest.mark.parametrize(

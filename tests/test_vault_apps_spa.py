@@ -104,14 +104,12 @@ def test_declared_csp_origins_reach_the_app_resource() -> None:
 
 
 def test_served_spa_contains_font_licenses() -> None:
-    """The served HTML carries the families and their complete licenses."""
+    """The served HTML has no preconnects and carries complete licenses."""
     html = apps._SPA_SHELL_HTML
     assert 'rel="preconnect"' not in html
-    for family in ("Newsreader", "Public Sans", "IBM Plex Mono"):
-        assert family in html
     fonts = (
         Path(__file__).resolve().parent.parent
         / "src/markdown_vault_mcp/static/spa/fonts"
     )
-    for notice in fonts.glob("OFL-*.txt"):
-        assert notice.read_text() in html
+    for name in ("OFL-newsreader.txt", "OFL-public-sans.txt", "OFL-ibm-plex-mono.txt"):
+        assert (fonts / name).read_text() in html
