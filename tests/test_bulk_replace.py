@@ -102,12 +102,15 @@ def test_dense_single_note_preview_completes(
     )
     assert len(body.encode()) < 256 * 1024
     (tmp_path / "a.md").write_text(body, encoding="utf-8")
-    preview = BulkReplacer(manager_factory(tmp_path)).replace(
-        ReplaceRequest("old", "new", paths=("a.md",))
-    )
+    replacer = BulkReplacer(manager_factory(tmp_path))
+    preview = replacer.replace(ReplaceRequest("old", "new", paths=("a.md",)))
     assert preview.replacements == 6500
     assert preview.notes[0].diff.count(" old\n") == 6500
     assert preview.notes[0].diff.count(" new\n") == 6500
+    replacer.replace(
+        ReplaceRequest("old", "new", paths=("a.md",), dry_run=False, plan=preview.plan)
+    )
+    assert (tmp_path / "a.md").read_text(encoding="utf-8") == body.replace("old", "new")
 
 
 def test_large_reviewed_apply_does_not_regenerate_diffs(
