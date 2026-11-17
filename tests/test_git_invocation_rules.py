@@ -48,7 +48,7 @@ def test_invalid_scope_never_spawns(
         spawn.assert_not_called()
 
 
-def test_scoped_and_legacy_argv() -> None:
+def test_scoped_and_whole_repo_argv() -> None:
     with patch("markdown_vault_mcp.git.subprocess.run") as spawn:
         run_git(Path("/repo"), "add", pathspecs=["b[1].md"])
         assert spawn.call_args.args[0] == [
@@ -59,10 +59,17 @@ def test_scoped_and_legacy_argv() -> None:
             "--",
             ":(literal)b[1].md",
         ]
-        with pytest.raises(ValueError, match="pathspecs"):
-            run_git_capturing(Path("/repo"), "log", "--", ":(literal)old.md")
         run_git(Path("/repo"), "add", "-u", whole_repo=True)
         assert spawn.call_args.args[0] == ["git", "-C", "/repo", "add", "-u"]
+
+
+@pytest.mark.parametrize("runner", [run_git, run_git_capturing])
+@pytest.mark.parametrize("args", [("log", "--", "x"), ("diff", "a", "--", "x")])
+def test_runner_rejects_embedded_paths(runner: Any, args: tuple[str, ...]) -> None:
+    with patch("markdown_vault_mcp.git.subprocess.run") as spawn:
+        with pytest.raises(ValueError, match="pathspecs"):
+            runner(Path("/repo"), *args)
+        spawn.assert_not_called()
 
 
 def test_legacy_rename_still_commits_whole_index(git_repo: Path) -> None:

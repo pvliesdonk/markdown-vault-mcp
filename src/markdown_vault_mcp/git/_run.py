@@ -262,6 +262,9 @@ def run_git(
     boilerplate (capture, text mode, check=True) in one place.
 
     Raw paths supplied via ``pathspecs`` are literal and must be nonempty.
+    A bare trailing ``--`` is permitted without ``pathspecs``; embedded paths
+    after ``--`` are rejected. ``diff`` and ``show`` pin
+    ``core.quotePath=false`` for readable paths.
     Only ``-c`` pairs are supported before the git subcommand.
     ``add``, ``commit``, and ``diff --cached`` or ``diff --staged`` require
     paths unless ``whole_repo`` is explicitly set.
@@ -350,6 +353,10 @@ def run_git_capturing(
     propagate.  Used in force-pull rebase fallback where we need to make
     recovery decisions based on whether ``git rebase --abort`` succeeded,
     whether the working tree has an in-progress rebase, etc.
+
+    A bare trailing ``--`` is permitted without ``pathspecs``; embedded paths
+    after ``--`` are rejected. ``diff`` and ``show`` pin
+    ``core.quotePath=false`` for readable paths.
 
     Args:
         git_root: Working-tree root used for ``git -C``.

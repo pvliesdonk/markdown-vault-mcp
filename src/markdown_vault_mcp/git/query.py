@@ -10,8 +10,9 @@ keeps git-root discovery out of these functions so that tests can prime the
 cache on the strategy instance and then patch ``subprocess.run`` without the
 patch also interfering with the discovery call.
 
-Ref, date, parent, ancestor, empty-tree and cat-file probes stay raw because
-they carry neither pathspecs nor path streams.
+Ref, date, parent, ancestor, empty-tree and cat-file probes, and identity-only
+``log --no-walk`` calls, stay raw because they carry neither pathspecs nor
+path streams.
 
 Each public entry point states what a ``None`` ``git_root`` means for it, and
 they deliberately differ: the history and diff queries return an empty result,
@@ -684,9 +685,10 @@ def _rename_aware_diff_args(
     rename instead of reporting delete+add.
 
     Returns:
-        Tuple ``(diff_args, pathspecs, old_path)`` where *diff_args* is the ref/path
-        portion of the ``git diff`` invocation and *old_path* is the
-        resolved historical path (``None`` when no rename was resolved).
+        Tuple ``(diff_args, pathspecs, old_path)`` where *diff_args* is the ref
+        portion of the ``git diff`` invocation, *pathspecs* holds separate raw
+        paths or ``None``, and *old_path* is the resolved historical path
+        (``None`` when no rename was resolved).
     """
     old_path = (
         resolve_path_at_ref(git_root, from_ref, cur_rel, env, to_ref=to_ref)
@@ -704,7 +706,10 @@ def _diff_is_binary(
     pathspecs: list[str] | None,
     env: dict[str, str] | None,
 ) -> bool:
-    """Probe numstat; a failure is surfaced by the subsequent checked diff."""
+    """Probe numstat using revision or blob args separate from raw pathspecs.
+
+    A failure is surfaced by the subsequent checked diff.
+    """
     result = run_git_capturing(
         git_root, "diff", "--numstat", *diff_args, pathspecs=pathspecs, env=env
     )
