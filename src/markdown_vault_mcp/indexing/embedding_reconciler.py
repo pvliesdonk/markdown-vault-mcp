@@ -543,16 +543,13 @@ class EmbeddingReconciler:
         texts = [text for _, part in pending for text in part]
         try:
             vectors = self._provider.embed(texts)
+            if len(vectors) != len(texts):
+                raise ValueError("provider returned the wrong vector count")
         except Exception as exc:
             if len(pending) == 1:
                 self._skip(state, pending[0][0], exc)
             else:
                 self._fallback(state, pending, exc)
-            return
-        if len(vectors) != len(texts):
-            self._fallback(
-                state, pending, ValueError("provider returned the wrong vector count")
-            )
             return
         offset = 0
         for item, part in pending:

@@ -1580,7 +1580,8 @@ embedding only the chunks whose input changed (the others keep their stored
 vectors); an unchanged input under a new token is re-tokened without a provider call.
 Flush and convergence passes pack inputs across notes up to the configured batch size (#1496).
 A failed shared request retries only each affected note’s remaining inputs; a
-provider exception on a request containing one note is not repeated. A provider
+provider exception or wrong vector count on a partial request containing one
+note is not repeated. A provider
 failure keeps the note's rows and holds its path for the next flush, without
 queueing one and without counting as pending work, so a note the provider keeps
 rejecting never leaves the writer undrained; a conflicting write is re-queued
@@ -4729,8 +4730,8 @@ tombstone, an exclusion or a `SourceProbe` answering *absent*, #1785; from
 #1505 a tombstone for an unparseable note keeps its rows). Incremental
 reconciliation can pack missing inputs across documents up to the configured batch
 size (#1496); after a shared failure it retries only each affected document’s
-remaining inputs, preserving successful siblings. A provider exception for a
-request containing one document is not repeated.
+remaining inputs, preserving successful siblings. A provider exception or wrong
+vector count on a partial request containing one document is not repeated.
 `IndexManager`'s exclusion purge and reindex deletion loop delete their
 keyword rows and hand the paths to the reconciler too, so every vector
 write carries the token it observed. An empty cold build is published only

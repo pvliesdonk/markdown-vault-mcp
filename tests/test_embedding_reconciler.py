@@ -181,8 +181,8 @@ def test_lone_split_request_failure_is_not_replayed(
     assert store.rows_for("a.md") == old
 
 
-def test_lone_partial_wrong_count_is_replayed_per_document(tmp_path, monkeypatch):
-    provider, store, rec, _ = _five_chunk_notes(tmp_path)
+def test_lone_partial_wrong_count_is_retried_on_next_pass(tmp_path, monkeypatch):
+    provider, store, rec, old = _five_chunk_notes(tmp_path)
     embed = provider.embed
 
     def malformed_once(texts):
@@ -193,9 +193,9 @@ def test_lone_partial_wrong_count_is_replayed_per_document(tmp_path, monkeypatch
 
     monkeypatch.setattr(provider, "embed", malformed_once)
     result = rec.reconcile(store, site="flush")
-    assert [len(call) for call in provider.calls] == [4, 4, 1]
-    assert not result.retry
-    assert all("Changed" in row.metadata["content"] for row in store.rows_for("a.md"))
+    assert [len(call) for call in provider.calls] == [4]
+    assert result.retry == {"a.md"}
+    assert store.rows_for("a.md") == old
 
 
 def test_shared_failure_retries_only_unembedded_suffix(tmp_path, monkeypatch):
