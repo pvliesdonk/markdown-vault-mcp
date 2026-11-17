@@ -413,7 +413,8 @@ bytes, and a default-on stamp would make the declaration do exactly that.
 
 **Where the implementation constraints live.** The configured-versus-
 runnable projections and the two reporting surfaces: #1432. The
-instruction snippet's clause: #1431. The read-only warning: #1434. The
+instruction snippet's clause: #1431. Read-only with `OKF_WRITE` enabled is
+accepted and logs `okf_write_inert` at INFO on startup: #1434. The
 reserved-file guard's admission of the server's own generators: #1419.
 A reserved-file change never triggering its own regeneration: #1414.
 Tool tags following switches: #1412.
@@ -770,7 +771,7 @@ so new vaults are conformant from note one.
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
-| 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
+| 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only startup diagnostic (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
 

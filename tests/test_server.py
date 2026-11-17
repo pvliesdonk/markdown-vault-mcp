@@ -516,6 +516,49 @@ def _route_paths(server: FastMCP) -> set[str]:
     return {r.path for r in server._additional_http_routes}
 
 
+@pytest.mark.usefixtures("_mcp_env")
+@pytest.mark.parametrize("verify", ["elicit", "off", "trust-auth"])
+async def test_okf_write_inert_on_read_only_server(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, verify: str
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", verify)
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._server_wiring"):
+        server = make_server(transport="stdio")
+
+    records = [
+        r for r in caplog.records if r.getMessage().startswith("okf_write_inert ")
+    ]
+    assert len(records) == 1
+    assert records[0].levelno == logging.INFO
+    assert (
+        records[0].getMessage()
+        == f"okf_write_inert reason=read_only okf_verify={verify}"
+    )
+    if verify == "trust-auth":
+        async with Client(server) as client:
+            names = {tool.name for tool in await client.list_tools()}
+        assert "okf_verify" not in names
+
+
+@pytest.mark.usefixtures("_mcp_env")
+@pytest.mark.parametrize(("read_only", "write"), [("true", "false"), ("false", "true")])
+def test_okf_write_inert_silent_otherwise(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    read_only: str,
+    write: str,
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", read_only)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", write)
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._server_wiring"):
+        make_server(transport="stdio")
+    assert not any(
+        r.getMessage().startswith("okf_write_inert ") for r in caplog.records
+    )
+
+
 class TestGitHubWebhookWiring:
     """Cover the GitHub webhook's route gate and its inert-deployment warning."""
 
