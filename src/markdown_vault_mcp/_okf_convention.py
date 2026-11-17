@@ -138,7 +138,7 @@ class ConventionMaintainer:
             return
         if Path(path).name in OKF_RESERVED_FILENAMES:
             return
-        if not self._detector.state().active:
+        if not self.active:
             return
         folder = folder_of(path)
         with okf_write_suppressed(), auxiliary_commit_writes():
@@ -238,7 +238,7 @@ class ConventionMaintainer:
             return False
         if all(Path(p).name in OKF_RESERVED_FILENAMES for p in trigger_paths):
             return False
-        return self._detector.state().active
+        return self.active
 
     def _has_index(self, folder: str) -> bool:
         """Whether *folder* already carries an ``index.md`` to keep current.

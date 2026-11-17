@@ -25,7 +25,8 @@ Matches cover the whole note, including frontmatter, code and links.
 Matching includes the UTF-8 BOM and carriage returns, if present.
 Select notes with hard links one path at a time.
 The preview shows text edits. With OKF enforcement, apply stamps
-generated and removes verified, overwriting edits to those fields.
+generated and removes verified, overwriting edits to those fields and
+potentially reformatting frontmatter.
 OKF folder maintenance also updates index.md and log.md.
 
 **Parameters**
@@ -34,7 +35,7 @@ OKF folder maintenance also updates index.md and log.md.
 |---|---|---|---|
 | `pattern` | `string` | required | Exact text or regular expression to match. |
 | `replacement` | `string` | `""` | Replacement text; regex mode accepts capture references. |
-| `paths` | `array of string \| null` | `null` | Explicit note paths; index.md and log.md are reserved when OKF maintenance is enabled. |
+| `paths` | `array of string \| null` | `null` | Explicit note paths, including hidden notes; index.md and log.md are reserved when OKF maintenance is enabled. |
 | `folders` | `array of string \| null` | `null` | Recursive folder scopes; an empty string selects the vault. Hidden folders and folders wholly excluded by directory patterns are refused. With OKF maintenance, index.md and log.md are skipped. |
 | `regex` | `boolean` | `false` | Interpret pattern as a Python regular expression with inline flags such as (?i), (?m) and (?s); otherwise match exact text. |
 | `dry_run` | `boolean` | `true` | Preview complete diffs when true; apply when false. |

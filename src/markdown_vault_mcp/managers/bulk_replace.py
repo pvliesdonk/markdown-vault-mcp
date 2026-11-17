@@ -81,7 +81,7 @@ class BulkReplacer:
         request: ReplaceRequest,
         *,
         maintain: Callable[[str], None] | None = None,
-        skip_reserved: bool | None = None,
+        skip_reserved: bool = False,
     ) -> ReplaceResult:
         """Preview or apply a request, refusing stale previews before writing.
 
@@ -94,9 +94,7 @@ class BulkReplacer:
             Complete replacement counts and diffs for a preview.
         """
         self._validate_request(request)
-        reject_reserved = (
-            maintain is not None if skip_reserved is None else skip_reserved
-        )
+        reject_reserved = skip_reserved
         if request.dry_run:
             return self._prepare(request, reject_reserved=reject_reserved)[0]
         self._doc_mgr.ensure_writable()
@@ -175,7 +173,9 @@ class BulkReplacer:
         remaining = MAX_TOTAL_BYTES
         for path in candidates:
             text, etag, size = self._doc_mgr.read_for_replace(
-                path, min(MAX_NOTE_BYTES, remaining)
+                path,
+                min(MAX_NOTE_BYTES, remaining),
+                aggregate=remaining < MAX_NOTE_BYTES,
             )
             remaining -= size
             snapshots.append((path, text, etag))

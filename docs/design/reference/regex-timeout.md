@@ -33,4 +33,4 @@ sources:
 
 `Match.expand` performs the same backslash substitutions as `sub`, including numeric and named references. [source: match-expand] Fragment expansion must preserve the escape boundaries, including a backslash followed by a newline; the fixture compares fragments against whole-template `re.sub` on Python 3.14. [observed: tests/test_bulk_replace.py::test_regex_replacement_fragments_match_stdlib] [pins: tests/test_bulk_replace.py::test_regex_replacement_fragments_match_stdlib]
 
-With `TextIOWrapper` configured with `newline=None`, writing translates `\n` to the platform line separator. Binary UTF-8 writes bypass text newline translation. [source: text-io] The simulated Windows regression pins preservation of CRLF bytes. [pins: tests/test_bulk_replace.py::test_windows_crlf_write_preserves_bytes]
+With `TextIOWrapper` configured with `newline=None`, writing translates `\n` to the platform line separator. Binary UTF-8 writes bypass text newline translation. [source: text-io] The simulated Windows regression pins preservation of CRLF bytes. [pins: tests/test_managers_document.py::test_windows_crlf_write_preserves_bytes]

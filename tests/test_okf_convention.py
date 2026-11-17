@@ -276,6 +276,10 @@ class TestConventionMaintenanceIntegration:
         assert index is not None
         # The drain makes the just-written note appear in the refreshed listing.
         assert "[Playbook](/guides/playbook.md)" in index
+
+    def test_active_maintenance_refuses_reserved_replacement(
+        self, enforced_vault: Vault
+    ) -> None:
         from markdown_vault_mcp.exceptions import InvalidRequestError
         from markdown_vault_mcp.managers.bulk_replace import ReplaceRequest
 
@@ -414,6 +418,8 @@ class TestConventionMaintenanceIntegration:
                     )
                 )
             maintain.assert_called_once_with("guides/index.md", "edit")
+            assert not (root / "guides" / "log.md").exists()
+            assert (root / "guides" / "index.md").read_text() == "new"
         finally:
             col.close()
 

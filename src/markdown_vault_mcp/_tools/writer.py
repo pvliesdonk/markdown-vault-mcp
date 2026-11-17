@@ -318,14 +318,15 @@ def register(mcp: FastMCP) -> None:
         Matching includes the UTF-8 BOM and carriage returns, if present.
         Select notes with hard links one path at a time.
         The preview shows text edits. With OKF enforcement, apply stamps
-        generated and removes verified, overwriting edits to those fields.
+        generated and removes verified, overwriting edits to those fields and
+        potentially reformatting frontmatter.
         OKF folder maintenance also updates index.md and log.md.
 
         Args:
             pattern: Exact text or regular expression to match.
             replacement: Replacement text; regex mode accepts capture references.
-            paths: Explicit note paths; index.md and log.md are reserved when
-                OKF maintenance is enabled.
+            paths: Explicit note paths, including hidden notes; index.md and
+                log.md are reserved when OKF maintenance is enabled.
             folders: Recursive folder scopes; an empty string selects the vault.
                 Hidden folders and folders wholly excluded by directory patterns
                 are refused. With OKF maintenance, index.md and log.md are skipped.

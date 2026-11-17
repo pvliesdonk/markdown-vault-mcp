@@ -514,26 +514,26 @@ class DocumentManager:
             raise DocumentNotFoundError.note(path)
         return relative, (info.st_dev, info.st_ino), info.st_nlink
 
-    def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
+    def read_for_replace(
+        self, path: str, max_bytes: int, *, aggregate: bool = False
+    ) -> tuple[str, str, int]:
         """Read a bounded note snapshot and its raw-byte etag.
 
         Args:
             path: Vault-relative note path.
             max_bytes: Maximum bytes to read.
+            aggregate: Whether *max_bytes* is the remaining aggregate budget.
 
         Returns:
             Decoded text, raw-byte etag, and bytes read.
         """
-        cap = (
-            min(max_bytes, self._max_note_read_bytes)
-            if self._max_note_read_bytes > 0
-            else max_bytes
-        )
+        cap = min(max_bytes, self._max_note_read_bytes or max_bytes)
         with self._validate_path(path).open("rb") as stream:
             raw = stream.read(cap + 1)
         if len(raw) > cap:
+            kind = "aggregate" if aggregate and cap == max_bytes else "note"
             raise InvalidRequestError(
-                f"Note {path!r} exceeds the {cap}-byte replacement read cap; narrow paths or folders."
+                f"Note {path!r} exceeds the {cap}-byte {kind} replacement read cap; narrow paths or folders."
             )
         try:
             text = raw.decode("utf-8")

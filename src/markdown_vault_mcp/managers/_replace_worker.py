@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import io
 import json
 import re
 import sys
@@ -15,10 +16,10 @@ class ReplacementLimit(ValueError):
 
 def _diff(path: str, text: str, new: str) -> str:
     return "".join(
-        line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
+        line if line[-1] in "\r\n" else line + "\n\\ No newline at end of file\n"
         for line in difflib.unified_diff(
-            text.splitlines(keepends=True),
-            new.splitlines(keepends=True),
+            list(io.StringIO(text, newline="")),
+            list(io.StringIO(new, newline="")),
             fromfile=path,
             tofile=path,
         )
