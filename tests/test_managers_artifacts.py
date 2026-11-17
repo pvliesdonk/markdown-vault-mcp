@@ -150,14 +150,10 @@ class TestSize:
 
 
 class TestRead:
-    def test_raw_bytes_and_validation(self, tmp_path: Path) -> None:
+    def test_raw_bytes(self, tmp_path: Path) -> None:
         store, _ = _store(tmp_path)
         (tmp_path / "a.png").write_bytes(b"\x00\xffraw")
         assert store.read_bytes("a.png") == b"\x00\xffraw"
-        with pytest.raises(DocumentNotFoundError):
-            store.read_bytes("gone.png")
-        with pytest.raises(ValueError):
-            store.read_bytes("../escape.png")
 
     @pytest.mark.parametrize("method", ["read", "read_bytes"])
     def test_read_rejections_and_empty_file(self, tmp_path: Path, method: str) -> None:
