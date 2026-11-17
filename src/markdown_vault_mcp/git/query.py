@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -2105,21 +2106,20 @@ def committed_revision(
     env = git_env(token, username)
     try:
         rel = _repo_relative(git_root, path)
-        found = run_git_capturing(
-            git_root, "log", "-1", "--format=%H", pathspecs=[rel], env=env
-        )
+        # Byte-safe capture: only exit status and a SHA are read, so a filter's
+        # non-UTF-8 stderr must not raise.
+        run = partial(run_git_capturing, git_root, env=env, preserve_newlines=True)
+        found = run("log", "-1", "--format=%H", pathspecs=[rel])
         sha = found.stdout.strip()
         if found.returncode != 0 or not sha:
             return None
-        tracked = run_git_capturing(git_root, "ls-files", pathspecs=[rel], env=env)
+        tracked = run("ls-files", pathspecs=[rel])
         if not tracked.stdout.strip():
             # git diff is blind to an untracked file, so without this a note
             # recreated after a committed delete would "match" the commit that
             # deleted it — a breadcrumb pointing at content that is not there.
             return None
-        clean = run_git_capturing(
-            git_root, "diff", "--quiet", sha, pathspecs=[rel], env=env
-        )
+        clean = run("diff", "--quiet", sha, pathspecs=[rel])
         return sha if clean.returncode == 0 else None
     finally:
         cleanup_git_env(env)
