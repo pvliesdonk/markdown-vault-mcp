@@ -1,8 +1,4 @@
-/*
-/*@@FILE:fonts/OFL-newsreader.txt@@*/
-/*@@FILE:fonts/OFL-public-sans.txt@@*/
-/*@@FILE:fonts/OFL-ibm-plex-mono.txt@@*/
-*/
+// Full font licenses are included in shell.html and live in spa/fonts/.
 // Binary FontFace sources work with the MCP Apps font-src policy; see
 // docs/design/reference/mcp-apps-fonts.md.
 (() => {
