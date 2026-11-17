@@ -38,6 +38,11 @@ is in [the PostgreSQL design](../design.md).
   or null at the end. [observed: anonymous GET of both sources and following next]
   [source: pgvector-tags] [source: vchord-tags]
   [pins: tests/test_postgres_image_currency.py::test_hub_follows_next_page, tests/test_postgres_image_currency.py::test_malformed_hub_response_fails]
+- Every `next` URL is an absolute `https://hub.docker.com/` URL, so the check
+  refuses to follow one that names another scheme or host.
+  [observed: full pagination of both sources on 2026-11-17]
+  [source: pgvector-tags] [source: vchord-tags]
+  [pins: tests/test_postgres_image_currency.py::test_hub_refuses_next_page_off_docker_hub]
 - The repositories include pgvector tags shaped `X.Y.Z-pgN` and vchord-suite
   tags shaped `pgN-YYYYMMDD`, alongside variant tags; this check deliberately
   accepts only those strict shapes. [observed: anonymous GET of both sources]

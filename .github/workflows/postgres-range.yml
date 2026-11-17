@@ -7,7 +7,8 @@ name: PostgreSQL range
 # (#1897): `floors` runs the tests with the postgres extra's lowest declared
 # drivers on the lowest supported Python, and `refusal` checks that a real
 # pgvector below MIN_PGVECTOR is refused with the SQL to run. The weekly
-# currency job flags newer upstream images for a manual update (#1853).
+# currency job keeps one tracking issue open, labelled `ci`, while newer
+# upstream images exist, and closes it once the pins are current (#1853).
 on:
   pull_request:
     branches: [main, "release/**", "integration/**"]
@@ -49,14 +50,20 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write  # open, refresh or close the tracking issue
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - name: Set up project environment
         uses: ./.github/actions/setup-project-env
         with:
           python-version: "3.14"
-      - name: Check image currency
-        run: uv run --no-sync --no-build python scripts/check_postgres_images.py
+      - name: Check image currency and sync the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: uv run --no-sync --no-build python scripts/check_postgres_images.py --sync-issue
 
   range:
     name: PostgreSQL range (${{ matrix.image }})

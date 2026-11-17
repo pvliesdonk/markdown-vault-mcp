@@ -492,6 +492,10 @@ ignore = ["E501"]
 # reproducible synthetic notes, not secrets (S311). Gate-only rules, so a
 # `# noqa` would be stripped (RUF100).
 "scripts/envelope/*.py" = ["S311", "S603"]
+# The PostgreSQL image currency check (#1853) reads Docker Hub with urlopen only
+# on https://hub.docker.com URLs it checks (S310) and runs `gh`, resolved by
+# shutil.which, with fixed argv and no shell (S603). Gate-only, as above.
+"scripts/check_postgres_images.py" = ["S310", "S603"]
 # PROJECT-RUFF-IGNORES-END
 
 [tool.ruff.lint.isort]

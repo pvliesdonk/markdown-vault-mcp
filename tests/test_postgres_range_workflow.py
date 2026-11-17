@@ -234,3 +234,27 @@ def test_currency_job_runs_only_on_schedule_or_dispatch() -> None:
         "scripts/check_postgres_images.py" in step.get("run", "")
         for step in job["steps"]
     )
+
+
+def test_currency_job_alone_may_write_issues() -> None:
+    workflow = _workflow()
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["currency"]["permissions"] == {
+        "contents": "read",
+        "issues": "write",
+    }
+    assert all(
+        "permissions" not in job
+        for name, job in workflow["jobs"].items()
+        if name != "currency"
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["currency"]["steps"]
+        if "check_postgres_images.py" in step.get("run", "")
+    )
+    assert "--sync-issue" in step["run"]
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+    }

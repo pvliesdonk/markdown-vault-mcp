@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-17
+
+- [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
+  observed `next` URL host for #1853, from a full pagination of both sources.
+  Other claims and review date unchanged.
+
 ## 2026-11-16
 
 - Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
