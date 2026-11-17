@@ -297,3 +297,37 @@ def test_backend_process_rejection_preserves_sanitized_diagnostics(
     assert secret not in caplog.text
     assert "***" in caplog.text
     assert "Traceback" not in caplog.text
+
+
+def test_sanitized_backend_exception_inside_exception_handler(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import traceback
+
+    secret = "fixture-secret"
+
+    def fail(_path: Path) -> None:
+        raise ConnectionError(f"backend failed {secret}")
+
+    scheduler, _ = make_scheduler(
+        tmp_path, token=secret, push=fail, has_unpushed=lambda _: True
+    )
+    scheduler.schedule_push()
+    startup, health = make_scheduler(
+        tmp_path, token=secret, push=fail, has_unpushed=lambda _: True
+    )
+    try:
+        raise ValueError(secret)
+    except ValueError:
+        with pytest.raises(PushBackendError) as caught:
+            scheduler.do_push()
+        formatted = "".join(traceback.format_exception(caught.value))
+        caplog.clear()
+        startup.push_if_unpushed()
+    assert secret not in formatted
+    assert "***" in formatted
+    assert secret not in caplog.text
+    assert "***" in caplog.text
+    assert "git_remote_unsynced" in caplog.text
+    snapshot = health.snapshot()
+    assert snapshot is not None and snapshot.reason == PUSH_REASON_PUSH_FAILED

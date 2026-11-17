@@ -267,7 +267,7 @@ class PushScheduler:
         self._health.push_failed(push_failure_reason(str(exc)), str(exc))
 
     def _call_backend(self, fn: Callable[[Path], _Result], git_root: Path) -> _Result:
-        """Wrap injected errors without retaining their original context."""
+        """Wrap injected errors without exposing exception context."""
         try:
             return fn(git_root)
         except Exception as exc:
@@ -275,7 +275,7 @@ class PushScheduler:
             if isinstance(exc, subprocess.CalledProcessError):
                 detail = f"{type(exc).__name__}: exit status {exc.returncode} stderr={exc.stderr or ''}"
             detail = self._redact(detail)
-        raise PushBackendError(detail)
+        raise PushBackendError(detail) from None
 
     def _run_push(self, git_root: Path) -> None:
         """Run the injected operation or resolve the CLI helper at call time."""
