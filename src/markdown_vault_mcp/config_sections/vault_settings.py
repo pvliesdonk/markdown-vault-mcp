@@ -318,8 +318,18 @@ class VaultSettings:
             searchable_frontmatter_fields=config.indexing.searchable_frontmatter,
             embed_context=config.embeddings.embed_context,
             embedding_batch_size=config.embeddings.embedding_batch_size,
-            folder_weights=config.search.folder_weight_map,
-            fts_weights=config.search.fts_weight_map,
+            # Weight maps are stored as frozen sorted tuples on the config
+            # (#639); the Vault API takes plain dicts.
+            folder_weights=(
+                dict(config.search.folder_weights)
+                if config.search.folder_weights is not None
+                else None
+            ),
+            fts_weights=(
+                dict(config.search.fts_weights)
+                if config.search.fts_weights is not None
+                else None
+            ),
             conventions_file=config.content.conventions_file,
             okf_mode=config.content.okf_mode,
             okf_write=config.content.okf_write,

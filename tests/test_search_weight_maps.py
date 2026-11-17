@@ -37,18 +37,40 @@ def test_literal_duplicate_env_entries() -> None:
 
 
 @pytest.mark.parametrize(
-    "name,value",
+    "name,value,message",
     [
-        ("FOLDER_WEIGHTS", "Projects:2,Projects/:3"),
-        ("FTS_WEIGHTS", "content:1,content:2"),
+        (
+            "FOLDER_WEIGHTS",
+            "Projects:2,Projects/:3",
+            r"folder_weights.*'Projects'.*'Projects/'.*'Projects'",
+        ),
+        (
+            "FTS_WEIGHTS",
+            "content:1,content:2",
+            r"MARKDOWN_VAULT_MCP_FTS_WEIGHTS.*'content'.*different weights",
+        ),
     ],
 )
 def test_environment_rejects_collisions(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, value: str
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, value: str, message: str
 ) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_" + name, value)
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match=message):
+        ProjectConfig.from_env()
+
+
+def test_environment_rejects_all_zero_fts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_FTS_WEIGHTS",
+        "path:0,title:0,folder:0,heading:0,content:0,summary:0",
+    )
+    with pytest.raises(
+        ConfigurationError, match="fts_weights: at least one column must be > 0"
+    ):
         ProjectConfig.from_env()
 
 
