@@ -960,11 +960,7 @@ class Vault:
         """
         if self._git_strategy is None or self._git_pull_interval_s <= 0:
             return
-        startup_sync = getattr(self._git_strategy, "sync_before_index", None)
-        if startup_sync is not None:
-            startup_sync()
-        else:
-            self._git_strategy.sync_once(self._source_dir)
+        self._git_strategy.sync_once(self._source_dir)
 
     def start(self) -> None:
         """Start background tasks for this Vault (e.g. git pull loop).

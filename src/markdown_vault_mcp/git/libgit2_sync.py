@@ -26,6 +26,7 @@ from markdown_vault_mcp.git.libgit2 import (
     _checked,
     _common,
     _config_bool,
+    _open,
     _probe_config_hooks,
     _probe_policy,
     _pygit2,
@@ -67,6 +68,15 @@ def _safe(text: str, token: str | None) -> str:
     return redact(text, token)
 
 
+def _refusal(exc: ConfigurationError, token: str | None = None) -> ConfigurationError:
+    text = _safe(str(exc), token)
+    return ConfigurationError(text if _FALLBACK in text else f"{text} {_FALLBACK}")
+
+
+def _push_declined(before: str, reason: str, detail: str) -> PushResult:
+    return PushResult(False, 0, before, before, reason, detail)
+
+
 def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
     class Callbacks(pg.RemoteCallbacks):  # type: ignore[misc]
         rejection: str | None = None
@@ -97,38 +107,35 @@ def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
 def _extra_policy(repo: Any) -> None:
     events = ("pre-push", "post-merge", "post-checkout", "pre-rebase", "post-rewrite")
     _probe_config_hooks(repo, events)
-    hooks_path = _tree_entry(repo.config, "core.hookspath")
-    gitdir = _common(Path(repo.path))
-    hooks = Path(hooks_path).expanduser() if hooks_path else gitdir / "hooks"
-    if not hooks.is_absolute():
-        hooks = Path(repo.workdir) / hooks
+    configured = _tree_entry(repo.config, "core.hookspath")
+    hooks = Path(configured or _common(Path(repo.path)) / "hooks").expanduser()
     for name in events:
-        if os.access(hooks / name, os.X_OK):
+        if os.access(Path(repo.workdir, hooks, name), os.X_OK):
             raise ConfigurationError(f"libgit2 cannot run {name} hooks. {_FALLBACK}")
     if _tree_entry(repo.config, "core.sshcommand"):
         raise ConfigurationError(f"libgit2 cannot honor core.sshCommand. {_FALLBACK}")
 
 
-def _local_remote_policy(pg: Any, url: str, root: Path) -> None:
+def _local_path(url: str, root: Path) -> Path | None:
     parsed = urlsplit(url)
     if parsed.scheme not in ("", "file") or _ssh(url):
-        return
-    path = Path(unquote(parsed.path) if parsed.scheme else url)
-    if not path.is_absolute():
-        path = root / path
-    if not path_exists(path):
+        return None
+    return root / (unquote(parsed.path) if parsed.scheme else url)
+
+
+def _local_remote_policy(pg: Any, url: str, root: Path) -> None:
+    path = _local_path(url, root)
+    if path is None or not path_exists(path):
         return
     repo = pg.Repository(str(path))
     configured = _tree_entry(repo.config, "core.hookspath")
-    hooks = Path(configured).expanduser() if configured else Path(repo.path) / "hooks"
-    if not hooks.is_absolute():
-        hooks = Path(repo.path) / hooks
+    hooks = Path(repo.path, Path(configured or "hooks").expanduser())
     if any(
         os.access(hooks / name, os.X_OK)
         for name in ("pre-receive", "update", "post-receive", "post-update")
     ):
-        raise PushBackendError(
-            f"libgit2 local transport bypasses remote hooks. {_FALLBACK}",
+        raise ConfigurationError(
+            f"libgit2 local transport bypasses remote hooks. {_FALLBACK}"
         )
 
 
@@ -172,8 +179,20 @@ def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:
             )
 
 
+def _parse_logged(content: bytes, conflict_with: str) -> Any:
+    post, error = parse_conflict_note(content.decode("utf-8"))
+    if error is not None:
+        logger.warning(
+            "git_conflict_frontmatter_parse_failed conflict_with=%s "
+            "fallback=plain_content",
+            conflict_with,
+            exc_info=error,
+        )
+    return post
+
+
 def _frontmatter(content: bytes, other: str, date: str) -> bytes:
-    post, _ = parse_conflict_note(content.decode("utf-8"))
+    post = _parse_logged(content, other)
     return with_conflict_metadata(post, other, date).encode("utf-8")
 
 
@@ -230,17 +249,14 @@ class Libgit2SyncStore(Libgit2Store):
             super().__init__(repo_path, commit_name, commit_email)
             self._validate_repository(repo_url)
         except ConfigurationError as exc:
-            detail = _safe(str(exc), token)
-            if _FALLBACK not in detail:
-                detail = f"{detail} {_FALLBACK}"
-            raise ConfigurationError(detail) from None
-        bootstrap = RepoBootstrap(
+            raise _refusal(exc, token) from None
+        self._bootstrap = RepoBootstrap(
             lock=self._lock, token=token, username=username, repo_url=repo_url
         )
-        bootstrap.git_root = Path(self._repo.workdir) if self._repo else None
+        self._bootstrap.git_root = Path(self._repo.workdir) if self._repo else None
         self._scheduler = PushScheduler(
             lock=self._lock,
-            bootstrap=bootstrap,
+            bootstrap=self._bootstrap,
             health=self._health,
             enable_push=enable_sync,
             push_delay_s=push_delay_s,
@@ -262,17 +278,11 @@ class Libgit2SyncStore(Libgit2Store):
                 str(path),
                 callbacks=_callbacks(pg, self._token, self._username, url),
             )
-            parsed = urlsplit(url)
-            if cloned.head_is_unborn and parsed.scheme in ("", "file"):
-                remote_path = Path(unquote(parsed.path) if parsed.scheme else url)
-                if not remote_path.is_absolute():
-                    remote_path = path.parent / remote_path
-                remote_repo = pg.Repository(str(remote_path))
-                remote_head = remote_repo.lookup_reference("HEAD").target
-                if isinstance(remote_head, str) and remote_head.startswith(
-                    "refs/heads/"
-                ):
-                    cloned.set_head(remote_head)
+            local = _local_path(url, path.parent)
+            if cloned.head_is_unborn and local is not None:
+                head = pg.Repository(str(local)).lookup_reference("HEAD").target
+                if isinstance(head, str) and head.startswith("refs/heads/"):
+                    cloned.set_head(head)
         except Exception as exc:
             raise ConfigurationError(
                 f"Native clone failed: {_safe(str(exc), self._token)}. {_FALLBACK}"
@@ -304,10 +314,7 @@ class Libgit2SyncStore(Libgit2Store):
             _probe_policy(repo)
             _extra_policy(repo)
         except ConfigurationError as exc:
-            detail = str(exc)
-            raise ConfigurationError(
-                detail if _FALLBACK in detail else f"{detail} {_FALLBACK}"
-            ) from None
+            raise _refusal(exc) from None
         if repo.is_shallow or _config_bool(repo.config, "core.sparsecheckout"):
             raise ConfigurationError(
                 f"Shallow or sparse repositories are unsupported. {_FALLBACK}"
@@ -316,12 +323,9 @@ class Libgit2SyncStore(Libgit2Store):
         if remote:
             for url in (remote.url, remote.push_url or remote.url):
                 self._check_transport(url, self._token)
-            try:
-                _local_remote_policy(
-                    self._pg, remote.push_url or remote.url, Path(repo.workdir)
-                )
-            except PushBackendError as exc:
-                raise ConfigurationError(str(exc)) from None
+            _local_remote_policy(
+                self._pg, remote.push_url or remote.url, Path(repo.workdir)
+            )
 
     @staticmethod
     def _check_transport(url: str, token: str | None) -> None:
@@ -347,19 +351,27 @@ class Libgit2SyncStore(Libgit2Store):
         except KeyError:
             return None
 
+    def _discover(self) -> Any | None:
+        """Adopt a checkout created after startup, applying the startup checks."""
+        if self._repo is None:
+            try:
+                self._repo = _open(self._sync_path, self._pg)
+                self._validate_repository(None)
+            except ConfigurationError as exc:
+                self._repo = None
+                raise _refusal(exc, self._token) from None
+            if self._repo is not None:
+                self._bootstrap.git_root = Path(self._repo.workdir)
+                self._observe_safe()
+        return self._repo
+
     def _tracking(self) -> Any | None:
         if self._repo is None:
             return None
-        if self._repo.head_is_unborn:
-            branch = self._repo.lookup_reference("HEAD").target.removeprefix(
-                "refs/heads/"
-            )
-        else:
-            branch = (
-                "HEAD" if self._repo.head_is_detached else self._repo.head.shorthand
-            )
-        ref = self._repo.references.get(f"refs/remotes/origin/{branch}")
-        ref = ref or self._repo.references.get("refs/remotes/origin/HEAD")
+        head = self._repo.lookup_reference("HEAD").target
+        branch = head.removeprefix("refs/heads/") if isinstance(head, str) else "HEAD"
+        refs = (f"refs/remotes/origin/{branch}", "refs/remotes/origin/HEAD")
+        ref = next(filter(None, map(self._repo.references.get, refs)), None)
         return ref.resolve() if ref else None
 
     def _callback(self, remote: Any, *, push: bool = False) -> Any:
@@ -442,12 +454,13 @@ class Libgit2SyncStore(Libgit2Store):
             logger.warning("git_worktree_check_failed error=%s", type(exc).__name__)
 
     def _pull(self, dry_run: bool, *, startup: bool = False) -> PullResult:  # noqa: PLR0911, RUF100 -- distinct outcomes preserve result contracts.
-        repo = self._repo
-        before = str(repo.head.target) if repo and not repo.head_is_unborn else ""
-        remote = self._origin()
-        if remote is None or repo is None:
-            return PullResult.head_unchanged_failure(before, PULL_REASON_NO_REMOTE)
+        before = ""
         try:
+            repo = self._discover()
+            before = str(repo.head.target) if repo and not repo.head_is_unborn else ""
+            remote = self._origin()
+            if remote is None or repo is None:
+                return PullResult.head_unchanged_failure(before, PULL_REASON_NO_REMOTE)
             self._gate(repo)
             try:
                 remote.fetch(callbacks=self._callback(remote))
@@ -458,6 +471,8 @@ class Libgit2SyncStore(Libgit2Store):
             tracking = self._tracking()
             if tracking is None:
                 return PullResult.head_unchanged_failure(before, PULL_REASON_NO_REMOTE)
+            # Incoming rules load into this handle's index, never the shared one.
+            checkout, repo = repo, self._pg.Repository(repo.path)
             theirs = repo[tracking.target]
             ahead, behind = (
                 repo.ahead_behind(repo.head.target, theirs.id)
@@ -475,25 +490,21 @@ class Libgit2SyncStore(Libgit2Store):
                 and is_regular_file(Path(repo.workdir) / d.new_file.path)
                 for d in deltas
             )
-            index = repo.index
-            index.read_tree(theirs.tree)
-            try:
-                _check_tree(repo, theirs, baseline)
-                if dry_run:
-                    return PullResult(
-                        False,
-                        ahead == 0,
-                        behind,
-                        before,
-                        str(theirs.id),
-                        PULL_REASON_DIVERGED if ahead else None,
-                    )
-                target, result_reason, siblings = self._merge(
-                    repo, theirs, ahead, overlapping_attrs
+            repo.index.read_tree(theirs.tree)
+            _check_tree(repo, theirs, baseline)
+            if dry_run:
+                return PullResult(
+                    False,
+                    ahead == 0,
+                    behind,
+                    before,
+                    str(theirs.id),
+                    PULL_REASON_DIVERGED if ahead else None,
                 )
-            finally:
-                index.read(force=True)
-            self._apply(repo, before, target)
+            target, result_reason, siblings = self._merge(
+                repo, theirs, ahead, overlapping_attrs
+            )
+            self._apply(checkout, before, target)
             return PullResult(
                 True,
                 ahead == 0,
@@ -506,9 +517,7 @@ class Libgit2SyncStore(Libgit2Store):
         except Exception as exc:
             detail = _safe(str(exc), self._token)
             if startup and isinstance(exc, ConfigurationError):
-                raise ConfigurationError(
-                    detail if _FALLBACK in detail else f"{detail} {_FALLBACK}"
-                ) from None
+                raise ConfigurationError(detail) from None
             if "ambiguous path" in detail or (
                 "conflict" in detail and "checkout" in detail
             ):
@@ -746,8 +755,6 @@ class Libgit2SyncStore(Libgit2Store):
             return
         try:
             self._gate(repo)
-        except PushBackendError:
-            raise
         except Exception as exc:
             raise PushBackendError(_safe(str(exc), self._token)) from None
         callback = self._callback(remote, push=True)
@@ -775,16 +782,18 @@ class Libgit2SyncStore(Libgit2Store):
     def force_push(self, *, dry_run: bool = False) -> PushResult:
         """Push the current branch and report the tracked remote outcome."""
         with self._lock:
+            try:
+                repo = self._discover()
+            except ConfigurationError as exc:
+                if not dry_run:
+                    self._health.push_failed(PUSH_REASON_PUSH_FAILED, str(exc))
+                return _push_declined("", PUSH_REASON_PUSH_FAILED, str(exc))
             tracking = self._tracking()
-            repo = self._repo
             before = str(tracking.target) if tracking else ""
             if not repo or repo.head_is_unborn or not self._origin() or not tracking:
                 if not dry_run:
                     self._observe_safe()
-                return PushResult(
-                    False,
-                    0,
-                    before,
+                return _push_declined(
                     before,
                     PUSH_REASON_NO_REMOTE,
                     "No remote-tracking branch (origin/<branch>) could be "
@@ -793,10 +802,7 @@ class Libgit2SyncStore(Libgit2Store):
                     "remote-tracking ref exists.",
                 )
             if dry_run:
-                return PushResult(
-                    False,
-                    0,
-                    before,
+                return _push_declined(
                     before,
                     PUSH_REASON_DRY_RUN_UNSUPPORTED,
                     "Push dry run is not supported.",
@@ -807,29 +813,22 @@ class Libgit2SyncStore(Libgit2Store):
             except PushBackendError as exc:
                 reason = push_failure_reason(str(exc))
                 self._health.push_failed(reason, str(exc))
-                return PushResult(False, 0, before, before, reason, str(exc)[:200])
+                return _push_declined(before, reason, str(exc)[:200])
             except Exception as exc:
                 detail = _safe(str(exc), self._token)
                 self._health.push_failed(PUSH_REASON_PUSH_FAILED, detail)
-                return PushResult(
-                    False, 0, before, before, PUSH_REASON_PUSH_FAILED, detail
-                )
+                return _push_declined(before, PUSH_REASON_PUSH_FAILED, detail)
             finally:
                 self._observe_safe()
             self._health.push_succeeded()
             return PushResult(True, ahead, before, str(repo.head.target))
 
-    def sync_before_index(self) -> None:
-        """Refuse unsupported incoming attributes during initial sync."""
-        if not self._closed:
-            self._force_pull(dry_run=False, startup=True)
-
-    def sync_once(self, repo_path: Path) -> bool:
-        """Run one pull and report whether HEAD advanced."""
+    def sync_once(self, repo_path: Path, *, timer_driven: bool = False) -> bool:
+        """Run one pull; outside the loop, refuse unsupported shapes."""
         del repo_path
         if self._closed:
             return False
-        result = self.force_pull()
+        result = self._force_pull(dry_run=False, startup=not timer_driven)
         return result.applied and result.from_sha != result.to_sha
 
     def start(
@@ -847,7 +846,7 @@ class Libgit2SyncStore(Libgit2Store):
         def loop() -> None:
             while not self._stop_event.is_set():
                 try:
-                    advanced = self.sync_once(repo_path)
+                    advanced = self.sync_once(repo_path, timer_driven=True)
                     if advanced and on_pull:
                         with self._pause() if self._pause else contextlib.nullcontext():
                             on_pull()

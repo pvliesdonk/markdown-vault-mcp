@@ -180,7 +180,6 @@ def _build_git_strategy(
     # reaches `python-frontmatter` transitively, and every module reachable
     # from `ProjectConfig` at import time must resolve under the
     # config-surface generator's dependency floor (see the module docstring).
-    git = config.git
     if config.git_backend == "libgit2":
         from markdown_vault_mcp.git.libgit2_sync import Libgit2SyncStore
 
@@ -190,13 +189,14 @@ def _build_git_strategy(
             repo_url=repo_url,
             managed=managed,
             enable_sync=enable_sync,
-            username=git.username,
-            push_delay_s=git.push_delay_s,
-            commit_name=git.commit_name,
-            commit_email=git.commit_email,
+            username=config.git.username,
+            push_delay_s=config.git.push_delay_s,
+            commit_name=config.git.commit_name,
+            commit_email=config.git.commit_email,
         )
     from markdown_vault_mcp.git import GitWriteStrategy
 
+    git = config.git
     return GitWriteStrategy(
         token=token,
         repo_url=repo_url,

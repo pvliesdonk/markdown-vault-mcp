@@ -2122,3 +2122,153 @@ def test_rebase_hook_added_after_startup_blocks_pull(
         assert _run_git(local, "show-ref") == before
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("backend", ["cli", "native"])
+def test_explicit_sync_discovers_checkout_created_after_startup(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+) -> None:
+    """Explicit sync discovers a checkout created in an existing source directory."""
+    source = tmp_path / "source"
+    source.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    if backend == "native":
+        import markdown_vault_mcp.git.libgit2 as native
+
+        with monkeypatch.context() as patch:
+            patch.setattr(native, "_open", lambda _path, _pg: None)
+            store = Libgit2SyncStore(source, token="fixture", enable_sync=True)
+    else:
+        import markdown_vault_mcp.git.bootstrap as bootstrap
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+        with monkeypatch.context() as patch:
+            patch.setattr(bootstrap, "_find_git_root", lambda _path: None)
+            store = GitWriteStrategy(
+                repo_path=source,
+                token="fixture",
+                enable_pull=True,
+                enable_push=True,
+                git_lfs=False,
+            )
+    try:
+        _run_git(tmp_path, "clone", str(git_repo_pair.remote_path), str(source))
+        _run_git(source, "config", "user.name", "Fixture")
+        _run_git(source, "config", "user.email", "fixture@example.invalid")
+        other = _git_clone(git_repo_pair, tmp_path)
+        _git_commit(other, "remote.md", "remote body\n", "remote")
+        _run_git(other, "push")
+        result = store.force_pull()
+        assert result.applied and result.reason is None
+        assert (source / "remote.md").read_text() == "remote body\n"
+        pushed = store.force_push()
+        assert pushed.applied and pushed.reason is None
+        if backend == "native":
+            before = _git_head(source)
+            note = source / "local.md"
+            note.write_text("local body\n")
+            store(note, "local body\n", "write")
+            assert _git_head(source) != before
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("interleave", [False, True])
+def test_dry_run_attribute_guard_survives_breadcrumb_reader(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    interleave: bool,
+) -> None:
+    """A breadcrumb lookup must not change incoming attribute evaluation."""
+    import markdown_vault_mcp.git.libgit2_sync as sync
+
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, ".gitattributes", "*.md filter=lfs\n", "LFS policy")
+    _run_git(other, "push")
+    before = _git_head(local)
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        original_check = sync._check_tree
+        if interleave:
+
+            def with_reader(repo, commit, baseline=None):
+                assert store.committed_revision(local, local / "README.md") is not None
+                return original_check(repo, commit, baseline)
+
+            monkeypatch.setattr(sync, "_check_tree", with_reader)
+        result = store.force_pull(dry_run=True)
+        assert result.reason == "conflict_resolution_failed"
+        assert "filter" in (result.detail or "")
+        assert _git_head(local) == before
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_push_late_unsupported_checkout_preserves_dry_run_health(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dry_run: bool,
+) -> None:
+    import markdown_vault_mcp.git.libgit2 as native
+
+    source = tmp_path / "late-source"
+    source.mkdir()
+    with monkeypatch.context() as patch:
+        patch.setattr(native, "_open", lambda _path, _pg: None)
+        store = Libgit2SyncStore(source, token="fixture", enable_sync=True)
+    try:
+        _run_git(tmp_path, "clone", str(git_repo_pair.remote_path), str(source))
+        _run_git(source, "config", "commit.gpgsign", "true")
+        before = store.sync_health()
+        result = store.force_push(dry_run=dry_run)
+        assert not result.applied and result.reason == "push_failed"
+        assert "GIT_BACKEND=cli" in (result.hint or "")
+        if dry_run:
+            assert store.sync_health() == before
+        else:
+            assert store.sync_health() is not None
+            assert store.sync_health().reason == "push_failed"
+    finally:
+        store.close()
+
+
+def test_malformed_frontmatter_conflict_is_logged_and_kept(
+    git_repo_pair: GitRepoPair, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "commit.gpgsign", "false")
+    _run_git(local, "config", "core.hooksPath", str(tmp_path / "empty-hooks"))
+    other = _git_clone(git_repo_pair, tmp_path)
+    malformed = "---\nbad: [unclosed\n---\n"
+    _git_commit(local, "README.md", malformed + "local body\n", "local")
+    _git_commit(other, "README.md", malformed + "remote body\n", "remote")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(repo_path=local, enable_sync=True)
+    try:
+        with caplog.at_level(logging.WARNING):
+            result = store.force_pull()
+    finally:
+        store.close()
+    assert result.reason == "conflicts_resolved_with_siblings"
+    sibling = local / result.conflict_files[0]
+    assert "local body" in sibling.read_text() and "unclosed" in sibling.read_text()
+    assert "remote body" in (local / "README.md").read_text()
+    assert "unclosed" in (local / "README.md").read_text()
+    events = [
+        r
+        for r in caplog.records
+        if str(r.msg).startswith("git_conflict_frontmatter_parse_failed")
+    ]
+    assert sorted(r.args[0] for r in events) == sorted(
+        [result.conflict_files[0], "README.md"]
+    )
+    assert all(r.exc_info for r in events)
