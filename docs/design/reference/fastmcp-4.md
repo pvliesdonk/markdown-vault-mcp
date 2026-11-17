@@ -45,6 +45,10 @@ sources:
     title: FastMCP OAuth provider routes at commit 7129236c
     resource: https://github.com/jlowin/fastmcp/blob/7129236c770e14d52e6bd14af1100f7c9450769c/fastmcp_slim/fastmcp/server/auth/auth.py
     accessed: 2026-09-13
+  - id: mounting-auth
+    title: FastMCP maintainer guidance on mounting authenticated servers
+    resource: https://github.com/PrefectHQ/fastmcp/issues/4390#issuecomment-6775722278
+    accessed: 2026-11-16
   - id: pvl-tasks
     title: fastmcp-pvl-core task-backend assembly at commit f2b264439
     resource: https://github.com/pvliesdonk/fastmcp-pvl-core/blob/f2b2644395b55368ca339b07e75d3b68d2c66883/src/fastmcp_pvl_core/_tasks.py
@@ -168,6 +172,11 @@ does not attempt to catalogue the rest of FastMCP's API.
   its separate `get_well_known_routes()` helper. Consequently the full route
   set still publishes authorization-server metadata at the host-root path in
   FastMCP 4.0.3. [source: http] [source: auth]
+- For a server mounted under a prefix, the maintainer directs callers to
+  mount `get_well_known_routes()` on the outer Starlette app and the MCP app
+  at that prefix. This makes path-scoped discovery available without the bare
+  host-root authorization-server route. [source: mounting-auth]
+  [pins: tests/test_auth_subpath.py::test_mounted_proxies_isolate_discovery_on_a_shared_host]
 
 ## Where this project departs from the subject
 

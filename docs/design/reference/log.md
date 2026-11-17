@@ -1,5 +1,12 @@
 # Reference research log
 
+## 2026-11-16
+
+- [FastMCP 4 protocol and server behaviour](fastmcp-4.md): added the
+  maintainer-confirmed outer mount pattern for path-scoped OAuth discovery
+  (#152), pinned with two synthetic services over HTTP on FastMCP 4.2.0.
+  Other claims and review deadline remain unchanged.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
