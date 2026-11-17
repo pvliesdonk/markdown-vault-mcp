@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 import markdown_vault_mcp.cli as cli
-from markdown_vault_mcp.exceptions import StoreBusyError, StoreUnavailableError
+from markdown_vault_mcp.exceptions import StoreUnavailableError
 
 runner = CliRunner()
 
@@ -66,28 +66,6 @@ def test_open_failure_during_index_operation(
     assert result.exit_code == 1
     assert "ERROR: store unavailable" in result.stderr
     assert isinstance(result.exception, SystemExit)
-    built.close.assert_called_once()
-
-
-def test_busy_during_import_keeps_retry_guidance(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from markdown_vault_mcp.managers import embedding_import
-
-    built = MagicMock()
-    monkeypatch.setattr(cli, "_build_vault", lambda *_a, **_kw: built)
-
-    def fail(*_args: Any, **_kwargs: Any) -> Any:
-        raise StoreBusyError("busy", backend="sqlite", location="test")
-
-    monkeypatch.setattr(embedding_import, "import_embeddings", fail)
-    result = runner.invoke(
-        cli.app, ["admin", "embeddings", "import", "--from", "numpy"]
-    )
-    assert result.exit_code == 1
-    assert (
-        "Stop the server first, then run admin embeddings import again" in result.stderr
-    )
     built.close.assert_called_once()
 
 

@@ -651,7 +651,6 @@ def embeddings_import(
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotPublishedError,
         EmbeddingsRebuildFailedError,
-        StoreBusyError,
         StoreOpenError,
     )
     from markdown_vault_mcp.managers.embedding_import import (
@@ -680,11 +679,8 @@ def embeddings_import(
     except (EmbeddingsNotPublishedError, EmbeddingsRebuildFailedError) as exc:
         typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
         raise typer.Exit(1) from exc
-    except StoreBusyError as exc:
-        typer.echo(_busy_message(exc, "admin embeddings import"), err=True)
-        raise typer.Exit(1) from exc
     except StoreOpenError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
+        typer.echo(f"ERROR: the configured store cannot be opened: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
