@@ -118,7 +118,7 @@ class GitWriteStrategy:
 
     Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
     and arrive at :meth:`on_write_batch`, which stages every path the same
-    scoped way and commits them once as ``"<tool>: N files"``. A call that
+    scoped way and commits them once as ``"<tool>: N files"``. A call
     touching a single file ordinarily names that file instead; folder moves
     name their roots even for one file. A write
     with no owning tool call takes the per-write path above.
@@ -433,8 +433,8 @@ class GitWriteStrategy:
         Mirrors :meth:`__call__`'s guards and push scheduling; only the commit
         boundary differs; an ordinary single-file call keeps its file subject,
         while a folder move names its roots — see :func:`_stage_and_commit_batch`.
-        The author identity is taken from the first item's principal: one tool call has one acting
-        principal, so the items cannot legitimately disagree.
+        The author identity is taken from the first item's principal: one tool
+        call has one acting principal, so the items cannot legitimately disagree.
 
         Args:
             items: The tool call's writes, in the order they were fired.
@@ -2425,9 +2425,10 @@ def _folder_subject_path(path: Path) -> str:
     if (
         name != name.strip()
         or " -> " in name
-        or any(ord(c) < 32 or ord(c) == 127 or c in '\\"' for c in name)
+        or not name.isprintable()
+        or any(c in '\\"' for c in name)
     ):
-        return json.dumps(name, ensure_ascii=False)
+        return json.dumps(name, ensure_ascii=not name.isprintable())
     return name
 
 

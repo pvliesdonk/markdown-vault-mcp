@@ -109,7 +109,7 @@ class TestScopeBinding:
 
 class TestGrouping:
     def test_folder_metadata_keeps_legacy_batch_callback(self) -> None:
-        """Callbacks without the new opt-in keep their existing signature."""
+        """A batch callback keeps its existing signature with folder metadata."""
         cb = _BatchRecorder()
         dispatcher = WriteCallbackDispatcher(cb)
         with bound_commit_scope("move_folder") as scope:
@@ -888,6 +888,17 @@ class TestBatchCommitsForReal:
         [
             ("a\n\nsource", "b\tdest", 'move_folder: "a\\n\\nsource" -> "b\\tdest"'),
             ("a", "archive ", 'move_folder: a -> "archive "'),
+            (
+                "a\u0085source",
+                "b\u0085dest",
+                'move_folder: "a\\u0085source" -> "b\\u0085dest"',
+            ),
+            (
+                "a\u2028source",
+                "b\u2029dest",
+                'move_folder: "a\\u2028source" -> "b\\u2029dest"',
+            ),
+            ("café", "été", "move_folder: café -> été"),
         ],
     )
     def test_folder_move_escapes_unusual_subject_paths(
