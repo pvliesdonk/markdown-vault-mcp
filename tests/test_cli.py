@@ -1560,6 +1560,24 @@ def test_search_by_meaning_reads_a_postgres_store_without_an_index_path(
     assert found == (["a.md"] if seeded else [])  # what the store holds, no more
 
 
+def test_index_reports_a_failed_model_change_rebuild() -> None:
+    """#1946: a model change whose rebuild published nothing exits 1, no traceback."""
+    from markdown_vault_mcp.exceptions import EmbeddingsRebuildFailedError
+
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.vault_root_empty = False
+    mock_stats.documents_indexed = 5
+    mock_stats.chunks_indexed = 20
+    mock_vault.index.build_index.return_value = mock_stats
+    mock_vault.index.build_embeddings.side_effect = EmbeddingsRebuildFailedError()
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
+        result = runner.invoke(app, ["admin", "index", "--force"])
+    assert result.exit_code == 1
+    assert "Retry when the provider recovers" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_index_reports_an_unpublished_rebuild() -> None:
     """#1505: a forced rebuild that kept the old embeddings exits non-zero, saying so."""
     from markdown_vault_mcp.exceptions import EmbeddingsNotPublishedError

@@ -407,18 +407,24 @@ def test_no_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("env")
+@pytest.mark.parametrize("rebuild_failed", [False, True])
 def test_a_failed_batch_over_a_populated_store_exits_1(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, rebuild_failed: bool
 ) -> None:
     _built_with(monkeypatch, "numpy")
     _store(monkeypatch, "sqlite")
     assert (
         runner.invoke(app, ["admin", "index"]).exit_code == 0
     )  # sqlite holds rows too
-    from markdown_vault_mcp.exceptions import EmbeddingsNotPublishedError
+    from markdown_vault_mcp.exceptions import (
+        EmbeddingsNotPublishedError,
+        EmbeddingsRebuildFailedError,
+    )
     from markdown_vault_mcp.managers import embedding_import
 
     def kept(*_a: Any, **_k: Any) -> Any:
+        if rebuild_failed:
+            raise EmbeddingsRebuildFailedError()
         raise EmbeddingsNotPublishedError(failed_batches=1)
 
     monkeypatch.setattr(embedding_import, "import_embeddings", kept)
