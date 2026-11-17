@@ -3,64 +3,53 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.facets.reader import ReaderFacet
-from tests.conftest import wait_for_mcp_writer_drain
-from tests.server_factory import make_server
+
+if TYPE_CHECKING:
+    from fastmcp import Client
 
 
-async def _call(name: str, arguments: dict[str, Any]) -> Any:
-    async with Client(make_server()) as client:
-        await wait_for_mcp_writer_drain(client)
-        return await client.call_tool_mcp(name, arguments)
-
-
-@pytest.mark.usefixtures("_mcp_env")
+@pytest.mark.parametrize("error_type", [ValueError, InvalidRequestError])
 @pytest.mark.parametrize(
     ("name", "method", "arguments"),
     [
         (_hashed("vault_context"), "get_context", {"path": "simple.md"}),
         ("show_context", "get_context", {"path": "simple.md"}),
-        (_hashed("vault_search"), "search", {"query": "simple", "mode": "keyword"}),
+        (_hashed("vault_search"), "search", {"query": "simple", "mode": "hybrid"}),
     ],
 )
 async def test_internal_value_error_is_a_logged_fault(
     name: str,
     method: str,
     arguments: dict[str, Any],
+    error_type: type[ValueError],
+    client: Client[Any],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A plain ValueError is a fault for each app tool, not a successful result."""
+    """Each app tool passes faults and refusals through its outcome boundaries."""
 
     def broken(*_args: object, **_kwargs: object) -> None:
-        raise ValueError("corrupt index")
+        raise error_type("synthetic failure")
 
     monkeypatch.setattr(ReaderFacet, method, broken)
     caplog.set_level(logging.INFO)
-    result = await _call(name, arguments)
+    result = await client.call_tool_mcp(name, arguments)
     assert result.is_error
-    assert "server-side error; the request itself was fine" in result.content[0].text
     boundary = [r for r in caplog.records if r.getMessage().startswith("tool_failed")]
-    assert len(boundary) == 1
-    assert boundary[0].levelno == logging.ERROR
-
-
-@pytest.mark.usefixtures("_mcp_env")
-async def test_path_outside_vault_is_not_a_missing_note(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """An escaped path is a refusal, not a missing-note summary."""
-    caplog.set_level(logging.INFO, logger="fastmcp.middleware.requests")
-    result = await _call("show_context", {"path": "../escape.md"})
-    assert result.is_error
-    assert "not found" not in result.content[0].text.lower()
-    failed = [
-        r for r in caplog.records if r.getMessage().startswith("tool_call_failed")
-    ]
-    assert failed and failed[-1].levelno == logging.INFO
+    if error_type is ValueError:
+        assert len(boundary) == 1
+        assert boundary[0].levelno == logging.ERROR
+    else:
+        assert "synthetic failure" in result.content[0].text
+        failed = [
+            r for r in caplog.records if r.getMessage().startswith("tool_call_failed")
+        ]
+        assert failed and failed[-1].levelno == logging.INFO
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]

@@ -26,7 +26,7 @@ This reference covers the SDK result handling used by the Vault Explorer's
 
 ## Claims
 
-- In ext-apps 1.7.4, `callServerTool` returns the validated `tools/call` result from `request`; a result carrying `isError: true` resolves normally, while a JSON-RPC error can reject the request. [source: ext-apps-1-7-4] [pins: tests/test_vault_apps_accessibility.py::test_context_tool_error_shows_message_and_retry_succeeds]
+- In ext-apps 1.7.4, `callServerTool` returns the validated `tools/call` result from `request`; a result carrying `isError: true` resolves normally, while a JSON-RPC error can reject the request. [source: ext-apps-1-7-4] [pins: tests/test_vault_apps_accessibility.py::test_context_tool_error_result_shows_message]
 
 ## Where this project departs from the subject
 

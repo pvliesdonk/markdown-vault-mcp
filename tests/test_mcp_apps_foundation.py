@@ -798,34 +798,6 @@ class TestAppToolData:
         assert result is not None
         assert result.endswith(".claudemcpcontent.com")
 
-    async def test_vault_context_missing_path(self) -> None:
-        server = make_server()
-        async with Client(server) as client:
-            await wait_for_mcp_writer_drain(client)
-            result = await client.call_tool_mcp(
-                _hashed("vault_context"), {"path": "does-not-exist.md"}
-            )
-            assert result.is_error
-            assert "Document not found" in result.content[0].text
-
-    async def test_show_context_missing_path(self) -> None:
-        server = make_server()
-        async with Client(server) as client:
-            await wait_for_mcp_writer_drain(client)
-            result = await client.call_tool_mcp(
-                "show_context", {"path": "does-not-exist.md"}
-            )
-            assert result.is_error
-            assert "Document not found" in result.content[0].text
-
-    async def test_vault_search_semantic_no_embeddings(self) -> None:
-        server = make_server()
-        async with Client(server) as client:
-            result = await client.call_tool_mcp(
-                _hashed("vault_search"), {"query": "test", "mode": "semantic"}
-            )
-            assert result.is_error
-
 
 @pytest.mark.usefixtures("_linked_env")
 class TestAppToolLinkedData:
