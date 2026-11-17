@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 import shutil
 import stat
+import sys
 import tempfile
 import threading
+import unicodedata
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -68,11 +70,11 @@ def _config_bool(config: Any, key: str, default: bool = False) -> bool:
 
 
 def _rel(repo: Any, path: Path) -> str:
-    return (
-        (path.parent.resolve() / path.name)
-        .relative_to(Path(repo.workdir).resolve())
-        .as_posix()
-    )
+    root = Path(repo.workdir).resolve()
+    rel = (path.parent.resolve() / path.name).relative_to(root).as_posix()
+    if sys.platform == "darwin" and _config_bool(repo.config, "core.precomposeunicode"):
+        rel = unicodedata.normalize("NFC", rel)
+    return rel
 
 
 def _common(gitdir: Path) -> Path:
@@ -101,7 +103,8 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
         raise _unsupported("partial clones")
 
 
-_UMASK = {"", "false", "umask", "0", "no", "off"}
+_DRIVERS = ("clean", "process")
+_OFF = {"", "false", "umask", "0", "no", "off"}
 
 
 def _probe_policy(repo: Any) -> None:
@@ -110,7 +113,7 @@ def _probe_policy(repo: Any) -> None:
     if not _config_bool(repo.config, "core.symlinks", True):
         raise _unsupported("core.symlinks=false repositories")
     shared = _tree_entry(repo.config, "core.sharedrepository")
-    if "core.sharedrepository" in repo.config and str(shared).lower() not in _UMASK:
+    if "core.sharedrepository" in repo.config and str(shared).lower() not in _OFF:
         raise _unsupported("core.sharedRepository repositories")
     configured = _tree_entry(repo.config, "core.hookspath")
     hooks = (
@@ -164,9 +167,9 @@ def _filter_guard(repo: Any, path: str) -> None:
     if isinstance(encoding, str) and encoding:
         raise _unsupported(f"working-tree-encoding on {path!r}")
     name = repo.get_attr(path, "filter")
-    if isinstance(name, str) and any(
-        _tree_entry(repo.config, f"filter.{name}.{kind}")
-        for kind in ("clean", "process")
+    if isinstance(name, str) and (
+        _config_bool(repo.config, f"filter.{name}.required")
+        or any(_tree_entry(repo.config, f"filter.{name}.{k}") for k in _DRIVERS)
     ):
         raise _unsupported(f"the effective {name!r} filter on {path!r}")
 
@@ -186,7 +189,7 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
     except FileNotFoundError:
         if existing:
             index.remove(relative)
-        return bool(existing)
+        return bool(existing) or relative in repo.index
     if (
         not existing
         and _config_bool(repo.config, "core.ignorecase")
@@ -304,7 +307,7 @@ class Libgit2Store:
             self._repo = _open(path, self._pg)
         return self._repo
 
-    def _committed(self, before: str, after: str) -> None:
+    def _committed(self, before: str = "", after: str = "") -> None:
         if self._health.worktree_dirty():
             self._observe()
         if self._observer is not None and before and before != after:
@@ -361,7 +364,7 @@ class Libgit2Store:
                         index.read_tree(parent.tree)
                     paths, staged = _stage_items(repo, index, items, self._pg)
                     if not paths:
-                        return
+                        return self._committed()
                     tree = index.write_tree(repo)
                     noop = parent is not None and tree == parent.tree_id
                     primary: dict[Path, Any] = {}
@@ -389,7 +392,7 @@ class Libgit2Store:
                             None,
                             author,
                             committer,
-                            subject,
+                            subject + "\n",
                             tree,
                             [parent.id] if parent is not None else [],
                         )

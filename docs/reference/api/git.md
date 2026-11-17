@@ -58,12 +58,13 @@ It also refuses non-default `core.sharedRepository` permissions; unset,
 `umask`, and false settings remain supported.
 Split-index repositories are refused at open and when a later operation needs
 the index. On case-insensitive repositories, case-variant writes that collide
-with tracked paths are refused. Diff queries with non-ASCII paths cannot match
+with tracked paths are refused. On macOS, `core.precomposeUnicode=true`
+normalizes paths to NFC before native writes. Diff queries with non-ASCII paths cannot match
 the patch headers from Git, so they are refused too.
 It also refuses commit signing and executable commit or reference hooks, such
 as `reference-transaction` and `post-index-change`. For tracked paths, a
-configured external clean or process filter, including Git LFS, or a
-working-tree encoding is refused. Writes check these policies again and refuse in-progress Git
+nonempty external clean or process filter command, including Git LFS, a
+required filter, or a working-tree encoding is refused. Writes check these policies again and refuse in-progress Git
 operations, such as a merge. Use `GitWriteStrategy` for these repositories.
 A refused write updates the store's uncommitted-work health when inspection
 succeeds. A write matching HEAD reconciles its index entries without creating a
@@ -77,9 +78,10 @@ without a numeric setting. Full commit IDs are unchanged.
 
 Git and libgit2 may score edited renames differently. The native store refuses
 queries that require such scoring. An unambiguous exact-content rename remains
-supported, including alongside an unrelated deletion. A newly added note in a
+supported, including alongside an unrelated deletion. Ambiguous identical-content
+rename pairs in vault or directory history are refused. A newly added note in a
 commit that deletes another file may also require uncertain matching and be
-refused.
+refused, including in vault or directory history.
 
 Binary diff summaries and rename diffs with
 mode changes are also refused. Use `GitWriteStrategy` for those queries.

@@ -6,7 +6,7 @@ import datetime as dt
 import re
 import time
 from collections import defaultdict
-from itertools import islice
+from itertools import islice, takewhile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -186,6 +186,19 @@ def _history_entry(repo: Any, commit: Any, paths: list[str]) -> HistoryEntry:
     )
 
 
+def _changed(commit: Any, scope: str, prefix: str) -> list[str]:
+    diff = _diff(commit.parents[0] if commit.parents else None, commit)
+    inside = [d for d in diff.deltas if d.new_file.path.startswith(scope)]
+    moved = {
+        _resolved(diff, d.new_file.path)[1] for d in inside if d.status_char() == "A"
+    }
+    return [
+        d.new_file.path[len(prefix) :]
+        for d in inside
+        if d.status_char() != "D" or d.old_file.path not in moved
+    ]
+
+
 def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protocol.
     repo: Any,
     vault: Path,
@@ -206,7 +219,10 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
     if path is not None and not is_dir:
         rows = (
             (commit, [])
-            for commit, _, changed, _ in _walk(repo, _literal_rel(repo, path))
+            for commit, _, changed, _ in takewhile(
+                lambda walked: lower is None or walked[0].commit_time >= lower,
+                _walk(repo, _literal_rel(repo, path)),
+            )
             if changed
         )
     else:
@@ -219,30 +235,15 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
                 if upper is not None and commit.commit_time > upper:
                     continue
                 if len(commit.parents) > 1:
-                    raise _unsupported(
-                        "vault or directory history across merge commits"
-                    )
-                diff = _diff(commit.parents[0] if commit.parents else None, commit)
-                paths = [
-                    d.new_file.path[len(prefix) :]
-                    for d in diff.deltas
-                    if d.new_file.path.startswith(scope)
-                ]
-                if paths:
+                    raise _unsupported("vault or directory history across merges")
+                if paths := _changed(commit, scope, prefix):
                     yield commit, paths
 
         rows = scoped()
-    return list(
-        islice(
-            (
-                _history_entry(repo, c, paths)
-                for c, paths in rows
-                if (lower is None or c.commit_time >= lower)
-                and (upper is None or c.commit_time <= upper)
-            ),
-            min(max(1, limit), 100),
-        )
-    )
+    rows = ((c, p) for c, p in rows if upper is None or c.commit_time <= upper)
+    return [
+        _history_entry(repo, c, p) for c, p in islice(rows, min(max(1, limit), 100))
+    ]
 
 
 def _commit(repo: Any, ref: str, *, ancestral: bool = True) -> Any:
