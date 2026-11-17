@@ -243,6 +243,7 @@ def test_ref_failure_reports_dirty_worktree(
     monkeypatch.setattr(store, "_apply", fail_after_checkout)
     result = store.force_pull()
     assert not result.applied and result.to_sha == before == _git_head(local)
+    assert result.reason == "conflict_resolution_failed"
     assert (local / "README.md").read_text() == "remote\n"
     assert store.sync_health().reason == "uncommitted_changes"
     store.close()
@@ -271,10 +272,10 @@ def test_remote_hook_rejection_is_not_reported_as_success(
     git_repo_pair: GitRepoPair,
 ) -> None:
     local = git_repo_pair.local_path
+    store = Libgit2SyncStore(local, enable_sync=True, push_delay_s=0)
     hook = git_repo_pair.remote_path / "hooks/pre-receive"
     hook.write_text("#!/bin/sh\nexit 1\n")
     hook.chmod(0o755)
-    store = Libgit2SyncStore(local, enable_sync=True, push_delay_s=0)
     note = local / "note.md"
     note.write_text("local\n")
     store(note, "local\n", "write")
@@ -387,9 +388,6 @@ def test_native_sync_has_no_git_runner_imports() -> None:
 
     source = Path(__file__).parents[1] / "src/markdown_vault_mcp/git/libgit2_sync.py"
     tree = ast.parse(source.read_text())
-    modules = [
-        node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
-    ]
     names = [
         alias.name
         for node in ast.walk(tree)
@@ -397,7 +395,14 @@ def test_native_sync_has_no_git_runner_imports() -> None:
         for alias in node.names
     ]
     assert "subprocess" not in names
-    assert "markdown_vault_mcp.git._run" not in modules
+    imported = [
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "markdown_vault_mcp.git._run"
+        for alias in node.names
+    ]
+    assert set(imported) <= {"_normalize_remote", "redact"}
 
 
 def test_remote_rename_and_local_edit_keep_both_versions(
@@ -548,3 +553,210 @@ def test_background_loop_calls_pull_and_tick(
     store.close()
     store.close()
     assert calls == ["pause", "resume", "pause", "pull", "resume"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("data.csv", b"value\nbase\n", b"value\nlocal\n", b"value\nremote\n"),
+        ("image.png", b"\x89PNG\x00base", b"\x89PNG\x00local", b"\x89PNG\x00remote"),
+    ],
+)
+def test_attachment_conflicts_preserve_bytes_and_push(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    case: tuple[str, bytes, bytes, bytes],
+) -> None:
+    name, base, ours, theirs = case
+    local = git_repo_pair.local_path
+    (local / name).write_bytes(base)
+    _run_git(local, "add", name)
+    _run_git(local, "commit", "-qm", "seed attachment")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    (local / name).write_bytes(ours)
+    _run_git(local, "commit", "-qam", "local attachment")
+    (other / name).write_bytes(theirs)
+    _run_git(other, "commit", "-qam", "remote attachment")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    result = store.force_pull()
+    assert result.applied, result.detail
+    sibling = next(local.glob(f"{Path(name).stem}.conflict-mcp-*{Path(name).suffix}"))
+    assert (local / name).read_bytes() == theirs
+    assert sibling.read_bytes() == ours
+    assert store.force_push().applied
+    remote = pygit2.Repository(str(git_repo_pair.remote_path))
+    tree = remote[remote.references["refs/heads/main"].target].tree
+    assert remote[tree[name].id].data == theirs
+    assert remote[tree[sibling.name].id].data == ours
+    store.close()
+
+
+def test_conflict_outside_served_vault_is_reconciled(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    (local / "vault").mkdir()
+    _git_commit(local, "vault/note.md", "note\n", "vault")
+    _git_commit(local, "outside.md", "base\n", "seed")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "outside.md", "local\n", "local")
+    _git_commit(other, "outside.md", "remote\n", "remote")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local / "vault", enable_sync=True)
+    result = store.force_pull()
+    assert result.applied, result.detail
+    assert result.conflict_files == ()
+    sibling = next(local.glob("outside.conflict-mcp-*.md"))
+    assert "local" in sibling.read_text()
+    assert "remote" in (local / "outside.md").read_text()
+    assert store.sync_health() is None
+    store.close()
+
+
+@pytest.mark.parametrize("incoming", [False, True])
+def test_unconfigured_filter_is_inert(
+    git_repo_pair: GitRepoPair, tmp_path: Path, incoming: bool
+) -> None:
+    local = git_repo_pair.local_path
+    if incoming:
+        other = _git_clone(git_repo_pair, tmp_path)
+        _git_commit(other, ".gitattributes", "*.md filter=missing\n", "attributes")
+        _run_git(other, "push")
+    else:
+        _git_commit(local, ".gitattributes", "*.md filter=missing\n", "attributes")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    if incoming:
+        result = store.force_pull()
+        assert result.applied, result.detail
+        assert (local / ".gitattributes").read_text() == "*.md filter=missing\n"
+    store.close()
+
+
+def test_noop_pull_skips_incoming_tree_scan(
+    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.git.libgit2_sync as sync
+
+    store = Libgit2SyncStore(git_repo_pair.local_path, enable_sync=True)
+    monkeypatch.setattr(
+        sync, "_check_tree", lambda *_args: pytest.fail("unchanged tree scanned")
+    )
+    assert store.force_pull().applied
+    store.close()
+
+
+def test_commit_only_ignores_sync_hooks(git_repo: Path) -> None:
+    hook = git_repo / ".git/hooks/pre-push"
+    hook.write_text("#!/bin/sh\nexit 0\n")
+    hook.chmod(0o755)
+    store = Libgit2SyncStore(git_repo, enable_sync=False)
+    store.close()
+
+
+def test_ssh_transport_refused_with_action(tmp_path: Path) -> None:
+    with pytest.raises(
+        ConfigurationError, match=r"host key verification.*GIT_BACKEND=cli"
+    ):
+        Libgit2SyncStore(
+            tmp_path / "clone", repo_url="ssh://git@example.test/repo", managed=True
+        )
+
+
+def test_incoming_configured_filter_is_refused_without_conflict_reason(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "filter.demo.clean", "cat")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, ".gitattributes", "*.md filter=demo\n", "attributes")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    before = _git_head(local)
+    result = store.force_pull()
+    assert not result.applied and _git_head(local) == before
+    assert result.reason == "fetch_failed"
+    assert "filter" in (result.detail or "")
+    store.close()
+
+
+def test_certificate_callback_never_accepts_invalid_host() -> None:
+    from markdown_vault_mcp.git.libgit2_sync import _callbacks
+
+    callback = _callbacks(pygit2, None, "git", "https://example.test/repo")
+    assert callback.certificate_check(None, False, b"example.test") is False
+    assert callback.certificate_check(None, True, b"example.test") is True
+
+
+def test_local_remote_hook_is_refused_at_startup(git_repo_pair: GitRepoPair) -> None:
+    hook = git_repo_pair.remote_path / "hooks/pre-receive"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+    with pytest.raises(ConfigurationError, match="GIT_BACKEND=cli"):
+        Libgit2SyncStore(git_repo_pair.local_path, enable_sync=True)
+
+
+def test_push_url_is_validated_at_startup(git_repo_pair: GitRepoPair) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "remote", "set-url", "--push", "origin", "http://example.test/repo")
+    with pytest.raises(ConfigurationError, match="GIT_BACKEND=cli"):
+        Libgit2SyncStore(local, token="fixture", enable_sync=True)
+
+
+def test_push_callback_uses_effective_push_host(
+    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local = git_repo_pair.local_path
+    store = Libgit2SyncStore(local, token="fixture", enable_sync=True)
+    _git_commit(local, "new.md", "local\n", "local")
+    original = store._origin()
+
+    class Remote:
+        url = "https://fetch.example.test/repo"
+        push_url = "https://push.example.test/repo"
+
+        def push(self, _specs, *, callbacks):
+            credential = callbacks.credentials(
+                self.push_url, None, pygit2.enums.CredentialType.USERPASS_PLAINTEXT
+            )
+            assert credential.credential_tuple == ("x-access-token", "fixture")
+
+    monkeypatch.setattr(store, "_origin", lambda: Remote())
+    store._push(local)
+    monkeypatch.setattr(store, "_origin", lambda: original)
+    store.close()
+
+
+def test_incoming_attribute_override_is_checked_against_target_commit(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    _git_commit(local, ".gitattributes", "*.md -filter\n", "attributes")
+    _run_git(local, "push")
+    _run_git(local, "config", "filter.demo.clean", "cat")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, ".gitattributes", "*.md filter=demo\n", "new attributes")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    result = store.force_pull()
+    assert not result.applied
+    assert "attribute changes" in (result.detail or "")
+    assert "GIT_BACKEND=cli" in (result.detail or "")
+    store.close()
+
+
+def test_credentials_stop_after_rejected_attempt() -> None:
+    from markdown_vault_mcp.git.libgit2_sync import _callbacks
+
+    url = "https://example.test/repo"
+    callback = _callbacks(pygit2, "fixture", "user", url)
+    allowed = pygit2.enums.CredentialType.USERPASS_PLAINTEXT
+    for _ in range(3):
+        assert callback.credentials(url, None, allowed).credential_tuple == (
+            "user",
+            "fixture",
+        )
+    with pytest.raises(ValueError, match=r"[Cc]redential"):
+        callback.credentials(url, None, allowed)

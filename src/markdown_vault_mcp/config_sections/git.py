@@ -34,7 +34,9 @@ class GitConfig:
                 negative.
         """
         if self.backend not in ("cli", "libgit2"):
-            raise ConfigurationError("git backend must be cli or libgit2")
+            raise ConfigurationError(
+                "git backend MARKDOWN_VAULT_MCP_GIT_BACKEND must be cli or libgit2"
+            )
         if self.push_delay_s < 0:
             raise ConfigurationError(
                 f"push_delay_s must be >= 0, got {self.push_delay_s}"

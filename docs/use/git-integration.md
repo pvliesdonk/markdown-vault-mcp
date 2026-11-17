@@ -26,10 +26,13 @@ token-unmanaged and commit-only modes. Set it to `cli` to return to the default.
 
 The native backend does not execute Git hooks, external clean filters, Git LFS,
 or signing commands. It refuses unsupported repository settings and executable
-hooks at startup. It also refuses incoming filter and encoding attributes before
-checkout. `GIT_LFS` does not enable LFS in this backend. SSH uses an agent; a
-configured `core.sshCommand` or a build without SSH support is refused. SSH
-config features not exposed by libgit2 can instead surface as fetch failures.
+hooks at startup. It refuses effective external filters and encoding attributes
+before checkout. When an incoming commit changes `.gitattributes` and the index
+already contains an attributes file, native sync refuses with the CLI fallback:
+the native attribute API cannot isolate the incoming rules from the index.
+`GIT_LFS` does not enable LFS in this backend. SSH remotes are
+refused because native host key verification is unavailable; use the CLI backend
+for SSH. A configured `core.sshCommand` is also refused for native sync.
 Local-path remotes with executable server hooks are refused for push because
 libgit2's local transport does not execute them.
 
@@ -393,7 +396,7 @@ anything new on origin?") without risking an in-conversation conflict.
 The preview classifies the clone against the remote before predicting. A
 history that has moved on both locally and on the remote reports
 `fast_forward=false` with `reason="diverged"`, which is the signal that the
-real pull would rebase and may end in sibling resolution or fail outright.
+real pull would reconcile and may end in sibling resolution or fail outright.
 A clone with nothing to pull (up to date, or carrying only unpushed local
 commits) reports `would_apply=false`. The push leg has no safe local
 "would this be accepted" probe, so a dry-run push always returns
@@ -412,9 +415,8 @@ commits) reports `would_apply=false`. The push leg has no safe local
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
       path; their vault-relative paths are listed in
       `pull.conflict_files`.
-    - `pull.commits_pulled` is `0` on this path because the rebase
-      replays your local commits *on top of* the remote tip — the
-      counting model only reports linear-history catch-ups.
+    - `pull.commits_pulled` is `0` on this path; the counting model only
+      reports linear-history catch-ups.
 
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and
@@ -472,10 +474,8 @@ it for a shared vault. The server does not add this attribute for you.
 
 ### Where merge drivers apply
 
-In managed mode, a diverged pull first runs native `git rebase`, and Git
-applies the repository's merge attributes during that rebase as it does in
-any other merge. A conflict that Git resolves there never reaches the
-server's sibling resolver.
+The CLI backend rebases a diverged pull, while the native backend merges it
+in memory. Both apply supported merge attributes before the sibling resolver.
 
 If Git still reports paths with unresolved conflicts, the server's resolver
 does not call merge drivers again: it preserves the local versions as siblings

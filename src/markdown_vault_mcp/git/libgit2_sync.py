@@ -15,6 +15,7 @@ from urllib.parse import unquote, urlsplit
 import frontmatter
 
 from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.git._run import _normalize_remote, redact
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.libgit2 import (
     Libgit2Store,
@@ -24,8 +25,14 @@ from markdown_vault_mcp.git.libgit2 import (
     _tree_entry,
 )
 from markdown_vault_mcp.git.push_scheduler import PushBackendError, PushScheduler
-from markdown_vault_mcp.git.types import PullResult, PushResult
+from markdown_vault_mcp.git.types import (
+    PULL_REASON_CONFLICT_RESOLUTION_FAILED,
+    PULL_REASON_FETCH_FAILED,
+    PullResult,
+    PushResult,
+)
 from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file, path_exists
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -43,16 +50,13 @@ def _ssh(url: str) -> bool:
 
 def _safe(text: str, token: str | None) -> str:
     text = re.sub(r"(://)[^/@\s]+@", r"\1***@", text)
-    return text.replace(token, "***") if token else text
-
-
-def _normalize(url: str) -> str:
-    return url.strip().rstrip("/").removesuffix(".git")
+    return redact(text, token)
 
 
 def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
     class Callbacks(pg.RemoteCallbacks):  # type: ignore[misc]
         rejection: str | None = None
+        credential_attempts = 0
 
         def credentials(self, request_url: str, user: str | None, allowed: int) -> Any:
             expected, requested = urlsplit(url), urlsplit(request_url)
@@ -64,12 +68,20 @@ def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
                 and expected.port == requested.port
                 and allowed & pg.enums.CredentialType.USERPASS_PLAINTEXT
             ):
+                self.credential_attempts += 1
+                if self.credential_attempts > 3:
+                    raise ValueError("Credential attempts exhausted")
                 return pg.UserPass(username, token)
             if _ssh(url) and allowed & pg.enums.CredentialType.SSH_KEY:
                 return pg.KeypairFromAgent(user or "git")
             if _ssh(url) and allowed & pg.enums.CredentialType.USERNAME:
                 return pg.Username(user or "git")
             raise ValueError("No supported credential available")
+
+        def certificate_check(
+            self, _certificate: None, valid: bool, _host: bytes
+        ) -> bool:
+            return valid
 
         def push_update_reference(self, _refname: str, message: str | None) -> None:
             self.rejection = message
@@ -81,7 +93,7 @@ def _extra_policy(repo: Any) -> None:
     hooks_path = _tree_entry(repo.config, "core.hookspath")
     gitdir = Path(repo.path)
     common = gitdir / "commondir"
-    if common.is_file():
+    if is_regular_file(common):
         gitdir = (gitdir / common.read_text().strip()).resolve()
     hooks = Path(hooks_path).expanduser() if hooks_path else gitdir / "hooks"
     if not hooks.is_absolute():
@@ -100,6 +112,8 @@ def _local_remote_policy(pg: Any, url: str, root: Path) -> None:
     path = Path(unquote(parsed.path) if parsed.scheme else url)
     if not path.is_absolute():
         path = root / path
+    if not path_exists(path):
+        return
     repo = pg.Repository(str(path))
     configured = _tree_entry(repo.config, "core.hookspath")
     hooks = Path(configured).expanduser() if configured else Path(repo.path) / "hooks"
@@ -115,28 +129,60 @@ def _local_remote_policy(pg: Any, url: str, root: Path) -> None:
         )
 
 
-def _check_tree(repo: Any, tree: Any, prefix: str = "") -> None:
-    """Refuse incoming attributes which need external transformations."""
-    for entry in tree:
-        obj = repo[entry.id]
-        path = f"{prefix}{entry.name}"
-        if obj.type_str == "tree":
-            _check_tree(repo, obj, f"{path}/")
-        elif entry.name == ".gitattributes":
-            data = obj.data.decode("utf-8", errors="replace")
-            for line in data.splitlines():
-                if not line.lstrip().startswith("#") and re.search(
-                    r"(?:^|\s)(?:filter=|working-tree-encoding=)", line
-                ):
-                    raise ConfigurationError(
-                        f"incoming external filter or encoding is unsupported. {_FALLBACK}"
-                    )
-        else:
-            _filter_guard(repo, path)
-            if repo.get_attr(path, "filter") == "lfs":
-                raise ConfigurationError(
-                    f"Git LFS is unsupported for {path!r}. {_FALLBACK}"
-                )
+def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:
+    """Check effective incoming attributes before checkout."""
+    pg = _pygit2()
+    flags = pg.enums.AttrCheck.INDEX_ONLY | pg.enums.AttrCheck.INCLUDE_COMMIT
+
+    def walk(tree: Any, prefix: str = "") -> Iterator[str]:
+        for entry in tree:
+            path = f"{prefix}{entry.name}"
+            obj = repo[entry.id]
+            if obj.type_str == "tree":
+                yield from walk(obj, f"{path}/")
+            else:
+                yield path
+
+    paths = None
+    if baseline is not None:
+        deltas = list(repo.diff(baseline.tree, commit.tree).deltas)
+        attributes_changed = any(
+            Path(d.new_file.path).name == ".gitattributes"
+            or Path(d.old_file.path).name == ".gitattributes"
+            for d in deltas
+        )
+        if attributes_changed and any(
+            Path(entry.path).name == ".gitattributes" for entry in repo.index
+        ):
+            raise ConfigurationError(
+                f"incoming attribute changes cannot be safely evaluated against the existing index. {_FALLBACK}"
+            )
+        if not any(
+            Path(d.new_file.path).name == ".gitattributes"
+            or Path(d.old_file.path).name == ".gitattributes"
+            for d in deltas
+        ):
+            paths = (
+                d.new_file.path for d in deltas if d.new_file.id != pg.Oid(hex="0" * 40)
+            )
+    for path in paths if paths is not None else walk(commit.tree):
+        encoding = repo.get_attr(path, "working-tree-encoding", flags, commit.id)
+        name = repo.get_attr(path, "filter", flags, commit.id)
+        if isinstance(encoding, str) and encoding:
+            raise ConfigurationError(
+                f"incoming working-tree-encoding is unsupported. {_FALLBACK}"
+            )
+        if isinstance(name, str) and (
+            name == "lfs"
+            or any(
+                _tree_entry(repo.config, f"filter.{name}.{kind}")
+                for kind in ("clean", "process")
+            )
+        ):
+            raise ConfigurationError(
+                f"incoming external filter {name!r} (including Git LFS) is unsupported. {_FALLBACK}"
+            )
+        _filter_guard(repo, path)
 
 
 def _frontmatter(content: bytes, other: str, date: str) -> bytes:
@@ -148,6 +194,24 @@ def _frontmatter(content: bytes, other: str, date: str) -> bytes:
     post.metadata["conflict_with"] = other
     post.metadata["conflict_date"] = date
     return frontmatter.dumps(post).encode("utf-8")
+
+
+def _conflict_contents(
+    original: Path, ours: bytes, theirs: bytes | None, references: tuple[str, str, str]
+) -> tuple[bytes, bytes | None]:
+    if original.suffix.lower() != ".md":
+        return ours, theirs
+    try:
+        ours.decode("utf-8")
+        if theirs is not None:
+            theirs.decode("utf-8")
+    except UnicodeDecodeError:
+        return ours, theirs
+    original_path, sibling_path, date = references
+    return (
+        _frontmatter(ours, original_path, date),
+        _frontmatter(theirs, sibling_path, date) if theirs is not None else None,
+    )
 
 
 class Libgit2SyncStore(Libgit2Store):
@@ -181,7 +245,10 @@ class Libgit2SyncStore(Libgit2Store):
             super().__init__(repo_path, commit_name, commit_email)
             self._validate_repository(repo_url)
         except ConfigurationError as exc:
-            raise ConfigurationError(f"{_safe(str(exc), token)} {_FALLBACK}") from None
+            detail = _safe(str(exc), token)
+            if _FALLBACK not in detail:
+                detail = f"{detail} {_FALLBACK}"
+            raise ConfigurationError(detail) from None
         bootstrap = RepoBootstrap(
             lock=self._lock, token=token, username=username, repo_url=repo_url
         )
@@ -201,7 +268,7 @@ class Libgit2SyncStore(Libgit2Store):
             raise ConfigurationError(f"Managed mode requires a remote URL. {_FALLBACK}")
         self._check_transport(pg, url, self._token)
         path = self._sync_path
-        if path.exists() and (not path.is_dir() or any(path.iterdir())):
+        if path_exists(path) and (not is_directory(path) or any(path.iterdir())):
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -223,14 +290,21 @@ class Libgit2SyncStore(Libgit2Store):
                     f"Managed source is not a repository. {_FALLBACK}"
                 )
             return
-        _extra_policy(repo)
-        if not repo.head_is_unborn:
-            _check_tree(repo, repo.head.peel(self._pg.Commit).tree)
         origin = self._origin()
-        if origin:
-            self._check_transport(self._pg, origin.url, self._token)
+        if self._enable_sync:
+            _extra_policy(repo)
+            if not repo.head_is_unborn:
+                _check_tree(repo, repo.head.peel(self._pg.Commit))
+            if origin:
+                self._check_transport(self._pg, origin.url, self._token)
+                push_url = origin.push_url or origin.url
+                self._check_transport(self._pg, push_url, self._token)
+                try:
+                    _local_remote_policy(self._pg, push_url, Path(repo.workdir))
+                except PushBackendError as exc:
+                    raise ConfigurationError(str(exc)) from None
         if self._managed and (
-            not origin or _normalize(origin.url) != _normalize(url or "")
+            not origin or _normalize_remote(origin.url) != _normalize_remote(url or "")
         ):
             raise ConfigurationError(
                 f"Managed origin does not match configured remote. {_FALLBACK}"
@@ -238,18 +312,15 @@ class Libgit2SyncStore(Libgit2Store):
 
     @staticmethod
     def _check_transport(pg: Any, url: str, token: str | None) -> None:
-        if token and _ssh(url):
+        if _ssh(url):
             raise ConfigurationError(
-                f"Token authentication requires HTTPS, not SSH. {_FALLBACK}"
+                f"Native SSH host key verification is unavailable. {_FALLBACK}"
             )
         if token and urlsplit(url).scheme.lower() == "http":
             raise ConfigurationError(
                 f"Token authentication requires HTTPS. {_FALLBACK}"
             )
-        if _ssh(url) and not (pg.features & pg.enums.Feature.SSH):
-            raise ConfigurationError(
-                f"This libgit2 build lacks SSH support. {_FALLBACK}"
-            )
+        del pg
 
     @property
     def is_managed(self) -> bool:
@@ -272,8 +343,9 @@ class Libgit2SyncStore(Libgit2Store):
                 return ref.resolve()
         return None
 
-    def _callback(self, remote: Any) -> Any:
-        return _callbacks(self._pg, self._token, self._username, remote.url)
+    def _callback(self, remote: Any, *, push: bool = False) -> Any:
+        url = (remote.push_url or remote.url) if push else remote.url
+        return _callbacks(self._pg, self._token, self._username, url)
 
     def on_write_batch(
         self,
@@ -328,9 +400,9 @@ class Libgit2SyncStore(Libgit2Store):
             result = self._pull(dry_run)
             if dry_run:
                 return result
-            if result.reason in (None, "rebased", "conflicts_resolved_with_siblings"):
+            if result.applied:
                 self._health.pull_succeeded()
-            elif result.reason not in ("pull_disabled", "no_remote", "diverged"):
+            elif result.reason:
                 self._health.pull_failed(result.reason, result.detail)
             self._observe_safe()
             return result
@@ -349,6 +421,7 @@ class Libgit2SyncStore(Libgit2Store):
         remote = self._origin()
         if remote is None or not before or repo is None:
             return PullResult.head_unchanged_failure(before, "no_remote")
+        reason = PULL_REASON_FETCH_FAILED
         try:
             _probe_policy(repo)
             _extra_policy(repo)
@@ -358,10 +431,10 @@ class Libgit2SyncStore(Libgit2Store):
             if tracking is None:
                 return PullResult.head_unchanged_failure(before, "no_remote")
             theirs = repo[tracking.target]
-            _check_tree(repo, theirs.tree)
             ahead, behind = repo.ahead_behind(repo.head.target, theirs.id)
             if behind == 0:
                 return PullResult(True, True, 0, before, before)
+            _check_tree(repo, theirs, repo.head.peel(self._pg.Commit))
             if dry_run:
                 return PullResult(
                     False,
@@ -371,7 +444,8 @@ class Libgit2SyncStore(Libgit2Store):
                     str(theirs.id),
                     "diverged" if ahead else None,
                 )
-            target, reason, siblings = self._merge(repo, theirs, ahead)
+            reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
+            target, result_reason, siblings = self._merge(repo, theirs, ahead)
             self._apply(repo, before, target)
             return PullResult(
                 True,
@@ -379,16 +453,14 @@ class Libgit2SyncStore(Libgit2Store):
                 behind if not ahead else 0,
                 before,
                 str(target),
-                reason,
+                result_reason,
                 tuple(siblings),
             )
         except Exception as exc:
             detail = _safe(str(exc), self._token)
             return PullResult.head_unchanged_failure(
                 before,
-                "fetch_failed"
-                if "tracking" not in locals()
-                else "conflict_resolution_failed",
+                reason,
                 detail,
             )
 
@@ -451,9 +523,8 @@ class Libgit2SyncStore(Libgit2Store):
                 f"{original.stem}.conflict-mcp-{stamp}{original.suffix}"
             )
             counter = 1
-            while (
-                _tree_entry(index, name.as_posix()) is not None
-                or (Path(repo.workdir) / name).exists()
+            while _tree_entry(index, name.as_posix()) is not None or path_exists(
+                Path(repo.workdir) / name
             ):
                 name = original.with_name(
                     f"{original.stem}.conflict-mcp-{stamp}-{counter}{original.suffix}"
@@ -461,22 +532,34 @@ class Libgit2SyncStore(Libgit2Store):
                 counter += 1
             date = now.isoformat(timespec="seconds")
             vault = self._sync_path.resolve()
-            original_relative = (
-                (Path(repo.workdir) / original).resolve().relative_to(vault).as_posix()
-            )
-            sibling_relative = (
-                (Path(repo.workdir) / name).resolve().relative_to(vault).as_posix()
-            )
-            sibling_id = repo.create_blob(
-                _frontmatter(repo[ours.id].data, original_relative, date)
-            )
-            if theirs is not None:
-                original_id = repo.create_blob(
-                    _frontmatter(repo[theirs.id].data, sibling_relative, date)
+            try:
+                original_relative = (
+                    (Path(repo.workdir) / original)
+                    .resolve()
+                    .relative_to(vault)
+                    .as_posix()
                 )
+                sibling_relative = (
+                    (Path(repo.workdir) / name).resolve().relative_to(vault).as_posix()
+                )
+            except ValueError:
+                original_relative, sibling_relative = path, name.as_posix()
+                in_vault = False
+            else:
+                in_vault = True
+            ours_data, theirs_data = _conflict_contents(
+                original,
+                repo[ours.id].data,
+                repo[theirs.id].data if theirs is not None else None,
+                (original_relative, sibling_relative, date),
+            )
+            sibling_id = repo.create_blob(ours_data)
+            if theirs is not None:
+                original_id = repo.create_blob(theirs_data)
                 index.add(self._pg.IndexEntry(path, original_id, theirs.mode))
             index.add(self._pg.IndexEntry(name.as_posix(), sibling_id, ours.mode))
-            siblings.append(sibling_relative)
+            if in_vault:
+                siblings.append(sibling_relative)
         return siblings
 
     def _has_unpushed(self, _path: Path) -> bool:
@@ -514,7 +597,7 @@ class Libgit2SyncStore(Libgit2Store):
             raise PushBackendError(
                 _safe(str(exc), self._token), reason="push_failed"
             ) from None
-        callback = self._callback(remote)
+        callback = self._callback(remote, push=True)
         branch = repo.head.shorthand
         try:
             remote.push(

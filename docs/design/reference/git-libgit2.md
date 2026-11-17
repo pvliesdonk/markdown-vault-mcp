@@ -98,6 +98,18 @@ sources:
     title: libgit2 merge API
     resource: https://github.com/libgit2/libgit2/blob/v1.9.7/include/git2/merge.h
     accessed: 2026-11-17
+  - id: http-auth
+    title: libgit2 HTTP transport authentication
+    resource: https://github.com/libgit2/libgit2/blob/v1.9.7/src/libgit2/transports/http.c
+    accessed: 2026-11-17
+  - id: attr-source
+    title: libgit2 attribute source precedence
+    resource: https://github.com/libgit2/libgit2/blob/v1.9.7/src/libgit2/attr.c
+    accessed: 2026-11-17
+  - id: callbacks
+    title: pygit2 remote callbacks
+    resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/callbacks.py
+    accessed: 2026-11-17
   - id: remote
     title: pygit2 remote API
     resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/remotes.py
@@ -141,6 +153,9 @@ through pygit2. The native Git stores depend on it.
 
 - Safe checkout compares a target with the baseline, worktree and index; it updates the worktree and index without moving HEAD. The `DONT_OVERWRITE_IGNORED` option protects ignored files. [source: checkout] [pins: tests/test_git_libgit2_sync.py::test_staged_work_is_preserved, tests/test_git_libgit2_sync.py::test_incoming_file_does_not_overwrite_ignored_local_file]
 - A tree merge can detect renames and resolve file conflicts with union favor. [source: merge] [pins: tests/test_git_libgit2_sync.py::test_two_clone_sync]
+- Attribute lookup with `INDEX_ONLY | INCLUDE_COMMIT` consults index rules before commit rules. Thus an incoming `filter=demo` can be masked by an existing `-filter` in the index. Native sync refuses incoming attribute changes when the index contains an attributes file; it allows unconfigured drivers on startup and new incoming attributes where this ambiguity is absent. [source: attr-source] [observed: isolated two-clone fixture, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_incoming_attribute_override_is_checked_against_target_commit]
+- The HTTP transport retries authentication challenges and may invoke credential acquisition again after a 401. Native callbacks limit repeated token requests per operation. [source: http-auth] [pins: tests/test_git_libgit2_sync.py::test_credentials_stop_after_rejected_attempt]
+- pygit2 1.21 passes through SSH host keys in its default certificate callback, and does not expose the host key to the Python callback. Native sync refuses SSH; its certificate callback rejects invalid certificates. [source: callbacks] [pins: tests/test_git_libgit2_sync.py::test_certificate_callback_never_accepts_invalid_host]
 - The push callback reports per-reference rejection even when the push operation returns normally. [source: remote] [unverified] The network server callback has not been exercised against a real server hook in these fixtures.
 - A local-path push through pygit2 1.21.0 bypassed a bare repository's executable pre-receive hook. [observed: isolated bare local repository, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_remote_hook_rejection_is_not_reported_as_success]
 - A reference-update failure after a successful checkout leaves the checked-out files and index changed while HEAD remains unchanged. [observed: injected failure after safe checkout, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_ref_failure_reports_dirty_worktree]
