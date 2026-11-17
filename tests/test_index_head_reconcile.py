@@ -6,14 +6,17 @@ clone standing in for another machine that pushes renames and deletions.
 
 from __future__ import annotations
 
+import subprocess
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import pytest
 
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.git import GitWriteStrategy
+from markdown_vault_mcp.git import strategy as git_strategy_module
+from markdown_vault_mcp.git.strategy import _commit_staged
 from markdown_vault_mcp.vault import Vault
 from tests.fixtures.git import GitRepoPair, _run_git
 
@@ -136,6 +139,51 @@ def test_the_strategy_reports_its_own_commits(git_repo_pair: GitRepoPair) -> Non
     after = _run_git(local, "rev-parse", "HEAD").strip()
     assert seen == [(before, after)]
     strategy.close()
+
+
+def _commit_then_raise(*args: Any, **kwargs: Any) -> None:
+    _commit_staged(*args, **kwargs)
+    raise subprocess.CalledProcessError(128, "git commit")
+
+
+def test_a_commit_that_raises_after_moving_head_is_not_reported(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    local = git_repo_pair.local_path
+    strategy = GitWriteStrategy(
+        token=None, push_delay_s=0, git_lfs=False, enable_push=False, repo_path=local
+    )
+    seen: list[tuple[str, str]] = []
+    strategy.set_commit_observer(lambda parent, new: seen.append((parent, new)))
+    before = _run_git(local, "rev-parse", "HEAD").strip()
+    note = local / "n.md"
+    note.write_text("# N\n")
+    strategy._ensure_write_init()
+    strategy._worktree_wanted = True
+    try:
+        with (
+            patch.object(
+                git_strategy_module, "_commit_staged", side_effect=_commit_then_raise
+            ),
+            patch.object(strategy, "_observe_worktree") as observe_worktree,
+        ):
+            strategy(note, "# N\n", "write")
+        assert _run_git(local, "rev-parse", "HEAD").strip() != before
+        assert seen == []
+        observe_worktree.assert_not_called()
+    finally:
+        strategy.close()
+
+
+def test_an_unreported_commit_costs_a_reindex_not_a_hidden_change(vault: Vault) -> None:
+    with patch.object(
+        git_strategy_module, "_commit_staged", side_effect=_commit_then_raise
+    ):
+        vault.writer.write("fresh.md", "# Fresh\n")
+        assert vault._write_callback.drain()
+
+    assert vault.reconcile_index_with_head(source="test") == "reindexed"
+    assert "fresh.md" in _paths(vault)
 
 
 def test_the_pull_loop_ticks_even_when_head_does_not_move(

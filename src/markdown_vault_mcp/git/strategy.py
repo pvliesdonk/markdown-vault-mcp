@@ -1642,17 +1642,23 @@ class GitWriteStrategy:
         side skips the report: the observer then treats the new HEAD as
         unexplained, which costs a reindex rather than hiding a change.
         A completed commit also rechecks outstanding startup dirt.
+        A block that raises is not reported, even if HEAD moved: the move
+        cannot be attributed to it, so the reconciler reindexes instead.
         """
         observer = self._commit_observer
         parent = self._try_head_sha(git_root) if observer is not None else None
-        yield
-        if self._worktree_wanted:
-            self._observe_worktree(git_root)
-        if observer is None or parent is None:
-            return
-        new_head = self._try_head_sha(git_root)
-        if new_head is not None and new_head != parent:
-            observer(parent, new_head)
+        completed = False
+        try:
+            yield
+            completed = True
+        finally:
+            if completed:
+                if self._worktree_wanted:
+                    self._observe_worktree(git_root)
+                if observer is not None and parent is not None:
+                    new_head = self._try_head_sha(git_root)
+                    if new_head is not None and new_head != parent:
+                        observer(parent, new_head)
 
     def _try_head_sha(self, git_root: Path) -> str | None:
         """Return HEAD, or ``None`` when git cannot read it (e.g. no commit)."""
