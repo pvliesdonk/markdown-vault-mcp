@@ -129,8 +129,8 @@ class ReferenceReader:
         self._namespace = _namespace(namespace)
         self._extensions = effective_attachment_extensions(attachment_extensions)
         self._retention = "No historical copy is retained. " + (
-            "Configured Git history can be inspected with get_history and "
-            "read(revision=...), but it does not guarantee the saved bytes are retained."
+            "Configured Git history can be inspected with get_history, but "
+            "it does not guarantee the saved bytes are retained."
             if history_available
             else "Git history is unavailable through this vault or reference context."
         )
