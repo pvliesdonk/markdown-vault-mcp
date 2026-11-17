@@ -25,6 +25,7 @@ from markdown_vault_mcp.git.libgit2 import (
     Libgit2Store,
     _config_bool,
     _filter_guard,
+    _probe_config_hooks,
     _probe_policy,
     _pygit2,
     _tree_entry,
@@ -85,6 +86,7 @@ def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
 
 
 def _extra_policy(repo: Any) -> None:
+    _probe_config_hooks(repo, ("pre-push", "post-merge", "post-checkout"))
     hooks_path = _tree_entry(repo.config, "core.hookspath")
     gitdir = Path(repo.path)
     common = gitdir / "commondir"
@@ -411,10 +413,13 @@ class Libgit2SyncStore(Libgit2Store):
 
     def force_pull(self, *, dry_run: bool = False) -> PullResult:
         """Fetch and reconcile the remote branch without invoking Git."""
+        return self._force_pull(dry_run=dry_run, startup=False)
+
+    def _force_pull(self, *, dry_run: bool, startup: bool) -> PullResult:
         if not self._enable_sync:
             return PullResult.head_unchanged_failure("", "pull_disabled")
         with self._quiesce(skip=dry_run), self._lock:
-            result = self._pull(dry_run)
+            result = self._pull(dry_run, startup=startup)
             if dry_run:
                 return result
             if result.applied:
@@ -430,7 +435,7 @@ class Libgit2SyncStore(Libgit2Store):
         except Exception as exc:
             logger.warning("git_worktree_check_failed error=%s", type(exc).__name__)
 
-    def _pull(self, dry_run: bool) -> PullResult:  # noqa: PLR0911, RUF100 -- each sync outcome has a distinct result.
+    def _pull(self, dry_run: bool, *, startup: bool = False) -> PullResult:  # noqa: PLR0911, RUF100 -- each sync outcome has a distinct result.
         repo = self._repo
         before = str(repo.head.target) if repo and not repo.head_is_unborn else ""
         if not self._enable_sync:
@@ -439,9 +444,11 @@ class Libgit2SyncStore(Libgit2Store):
         if remote is None or repo is None:
             return PullResult.head_unchanged_failure(before, "no_remote")
         reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
+        capability_check = True
         try:
             self._gate(repo)
             reason = PULL_REASON_FETCH_FAILED
+            capability_check = False
             remote.fetch(callbacks=self._callback(remote))
             reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
             tracking = self._tracking()
@@ -456,9 +463,11 @@ class Libgit2SyncStore(Libgit2Store):
             if behind == 0:
                 return PullResult(True, True, 0, before, before)
             reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
+            capability_check = True
             _check_tree(
                 repo, theirs, repo.head.peel(self._pg.Commit) if before else None
             )
+            capability_check = False
             if dry_run:
                 return PullResult(
                     False,
@@ -480,6 +489,13 @@ class Libgit2SyncStore(Libgit2Store):
                 result_reason,
                 tuple(siblings),
             )
+        except ConfigurationError as exc:
+            detail = _safe(str(exc), self._token)
+            if startup and capability_check:
+                raise ConfigurationError(
+                    detail if _FALLBACK in detail else f"{detail} {_FALLBACK}"
+                ) from None
+            return PullResult.head_unchanged_failure(before, reason, detail)
         except Exception as exc:
             detail = _safe(str(exc), self._token)
             return PullResult.head_unchanged_failure(
@@ -789,6 +805,11 @@ class Libgit2SyncStore(Libgit2Store):
                 self._observe_safe()
             self._health.push_succeeded()
             return PushResult(True, ahead, before, str(repo.head.target))
+
+    def sync_before_index(self) -> None:
+        """Refuse unsupported incoming attributes during initial sync."""
+        if not self._closed:
+            self._force_pull(dry_run=False, startup=True)
 
     def sync_once(self, repo_path: Path) -> bool:
         """Run one pull and report whether HEAD advanced."""

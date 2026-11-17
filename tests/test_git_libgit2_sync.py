@@ -1379,3 +1379,109 @@ def test_missing_libgit2_has_operator_fallback(
     monkeypatch.setattr(sync, "_pygit2", missing)
     with pytest.raises(ConfigurationError, match="GIT_BACKEND=cli"):
         Libgit2SyncStore(tmp_path)
+
+
+@pytest.mark.parametrize("state", ["changed", "unchanged", "offline"])
+def test_initial_sync_attribute_capability_and_network_failure(
+    git_repo_pair: GitRepoPair, tmp_path: Path, state: str
+) -> None:
+    from markdown_vault_mcp.vault import Vault
+
+    local = git_repo_pair.local_path
+    _git_commit(local, ".gitattributes", "*.md -filter\n", "inert attributes")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    if state == "changed":
+        _git_commit(other, ".gitattributes", "*.md filter=demo\n", "attributes")
+        _run_git(other, "push")
+    elif state == "offline":
+        _run_git(local, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
+    before = _git_head(local)
+    store = Libgit2SyncStore(local, enable_sync=True)
+    vault = Vault(source_dir=local, git_strategy=store)
+    vault._git_pull_interval_s = 1
+    try:
+        if state == "changed":
+            with pytest.raises(ConfigurationError, match="GIT_BACKEND=cli"):
+                vault.sync_from_remote_before_index()
+        else:
+            vault.sync_from_remote_before_index()
+        assert _git_head(local) == before
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("state", ["enabled", "disabled", "reset"])
+def test_configured_pre_push_hook_policy(
+    git_repo_pair: GitRepoPair, tmp_path: Path, state: str
+) -> None:
+    import shlex
+
+    local = git_repo_pair.local_path
+    marker = tmp_path / "configured-hook-marker"
+    _run_git(local, "config", "hook.fixture.event", "pre-push")
+    _run_git(
+        local, "config", "hook.fixture.command", f"touch {shlex.quote(str(marker))}"
+    )
+    _git_commit(local, "hook-proof.md", "proof\n", "proof")
+    _run_git(local, "push")
+    if not marker.exists():
+        pytest.skip("installed Git does not execute configured pre-push hooks")
+    marker.unlink()
+    if state == "disabled":
+        _run_git(local, "config", "hook.pre-push.enabled", "false")
+    elif state == "reset":
+        _run_git(local, "config", "--add", "hook.fixture.event", "")
+    _git_commit(local, "hook-proof.md", "second\n", "second")
+    if state != "enabled":
+        _run_git(local, "push")
+        assert not marker.exists()
+        store = Libgit2SyncStore(local, enable_sync=True)
+        store.close()
+    else:
+        with pytest.raises(ConfigurationError, match=r"pre-push.*GIT_BACKEND=cli"):
+            Libgit2SyncStore(local, enable_sync=True)
+
+
+def test_initial_sync_refuses_incoming_required_filter(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    from markdown_vault_mcp.vault import Vault
+
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "filter.missing.required", "true")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, ".gitattributes", "*.md filter=missing\n", "required filter")
+    _run_git(other, "push")
+    before = _git_head(local)
+    store = Libgit2SyncStore(local, enable_sync=True)
+    vault = Vault(source_dir=local, git_strategy=store)
+    vault._git_pull_interval_s = 1
+    try:
+        with pytest.raises(ConfigurationError, match="GIT_BACKEND=cli"):
+            vault.sync_from_remote_before_index()
+        assert _git_head(local) == before
+    finally:
+        vault.close()
+
+
+def test_configured_pre_push_added_after_startup_is_refused(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    import shlex
+
+    local = git_repo_pair.local_path
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        marker = tmp_path / "late-hook-marker"
+        _git_commit(local, "late-hook.md", "local\n", "local")
+        _run_git(local, "config", "hook.fixture.event", "pre-push")
+        _run_git(
+            local, "config", "hook.fixture.command", f"touch {shlex.quote(str(marker))}"
+        )
+        result = store.force_push()
+        assert not result.applied
+        assert "pre-push" in (result.hint or "")
+        assert not marker.exists()
+    finally:
+        store.close()

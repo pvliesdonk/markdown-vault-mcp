@@ -30,7 +30,9 @@ hooks at startup. It refuses effective external filters and encoding attributes
 at startup and before checkout. Native sync refuses existing or incoming Git LFS
 filters even if the local LFS driver is absent. When an incoming commit changes `.gitattributes` and the index
 already contains an attributes file, native sync refuses with the CLI fallback:
-the native attribute API cannot isolate the incoming rules from the index.
+the native attribute API cannot isolate the incoming rules from the index. If
+the initial startup pull detects this change, startup refuses; a later pull
+reports the refusal through sync health.
 `GIT_LFS` does not enable LFS in this backend. SSH remotes are
 refused because native host key verification is unavailable; use the CLI backend
 for SSH. A configured `core.sshCommand` is also refused for native sync.
