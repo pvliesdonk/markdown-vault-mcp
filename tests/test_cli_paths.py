@@ -30,6 +30,8 @@ def test_path_command_preserves_native_object(remote: bool, mode: str) -> None:
                 "query",
                 "path",
                 "alpha.md",
+                # Freshness is asserted below; startup may still be reconciling.
+                "--wait-for-pending-writes",
                 *connection,
                 *([] if mode == "text" else ["--" + mode]),
             ],

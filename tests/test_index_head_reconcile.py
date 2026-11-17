@@ -6,14 +6,16 @@ clone standing in for another machine that pushes renames and deletions.
 
 from __future__ import annotations
 
+import subprocess
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import pytest
 
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.git import GitWriteStrategy
+from markdown_vault_mcp.git.strategy import _commit_staged
 from markdown_vault_mcp.vault import Vault
 from tests.fixtures.git import GitRepoPair, _run_git
 
@@ -120,7 +122,10 @@ def test_the_servers_own_commit_does_not_force_a_rescan(vault: Vault) -> None:
     assert "fresh.md" in _paths(vault)
 
 
-def test_the_strategy_reports_its_own_commits(git_repo_pair: GitRepoPair) -> None:
+@pytest.mark.parametrize("commit_fails", [False, True], ids=["success", "failure"])
+def test_the_strategy_reports_its_own_commits(
+    git_repo_pair: GitRepoPair, commit_fails: bool
+) -> None:
     local = git_repo_pair.local_path
     strategy = GitWriteStrategy(
         token=None, push_delay_s=0, git_lfs=False, enable_push=False, repo_path=local
@@ -131,11 +136,33 @@ def test_the_strategy_reports_its_own_commits(git_repo_pair: GitRepoPair) -> Non
 
     note = local / "n.md"
     note.write_text("# N\n")
-    strategy(note, "# N\n", "write")
+    strategy._worktree_wanted = True
 
-    after = _run_git(local, "rev-parse", "HEAD").strip()
-    assert seen == [(before, after)]
-    strategy.close()
+    def commit_or_fail(*args: Any, **kwargs: Any) -> None:
+        if commit_fails:
+            _run_git(local, "commit", "--allow-empty", "--only", "-m", "external")
+            raise subprocess.CalledProcessError(128, "git commit")
+        _commit_staged(*args, **kwargs)
+
+    try:
+        with (
+            patch(
+                "markdown_vault_mcp.git.strategy._commit_staged",
+                side_effect=commit_or_fail,
+            ),
+            patch.object(strategy, "_observe_worktree") as observe_worktree,
+        ):
+            strategy(note, "# N\n", "write")
+        after = _run_git(local, "rev-parse", "HEAD").strip()
+        assert after != before
+        if commit_fails:
+            assert seen == []
+            observe_worktree.assert_not_called()
+        else:
+            assert seen == [(before, after)]
+            observe_worktree.assert_called_once_with(local)
+    finally:
+        strategy.close()
 
 
 def test_the_pull_loop_ticks_even_when_head_does_not_move(

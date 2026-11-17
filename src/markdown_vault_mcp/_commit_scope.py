@@ -10,17 +10,16 @@ This module supplies the missing boundary. A :class:`CommitScopeMiddleware`
 binds a scope for the duration of each tool call; the dispatcher snapshots that
 scope when a write is fired and groups the call's writes into **one** commit.
 A call that touched many files is named after the tool that caused them; a call
-that touched exactly one keeps that file's own path as the subject. Secondary
+that touched exactly one keeps that file's own path as the subject. A folder
+move instead names its source and destination. Secondary
 writes (OKF maintenance, a rename's backlink rewrites) are marked separately so
 they can share that note's commit without replacing its path subject with a
 count.
 
-The scope travels in a :class:`~contextvars.ContextVar` and is read in
-``fire``, never on the dispatcher's worker thread — the same constraint that
-governs :func:`~markdown_vault_mcp._identity.current_principal` (#1218). ``fire``
-runs on the request's ``to_thread`` worker, whose copied context carries the
-variable; the worker thread has no request context at all, so reading there
-would silently fall back to "no scope" and reinstate per-file commits.
+The scope travels in a :class:`~contextvars.ContextVar`. ``fire`` captures it
+on the request's ``to_thread`` worker, whose copied context carries the
+variable. The dispatcher binds only the captured folder roots while invoking
+a batch callback; its worker does not inherit the request context (#1218).
 
 Grouping is keyed by scope token rather than by queue position. The queue is
 FIFO, but a shared server interleaves concurrent tool calls, and position-based
@@ -41,6 +40,7 @@ from fastmcp.server.middleware import Middleware
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
     import mcp.types as mt
     from fastmcp.server.middleware import CallNext, MiddlewareContext
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 _counter = itertools.count()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CommitScope:
     """One tool invocation's commit boundary.
 
@@ -61,11 +61,14 @@ class CommitScope:
             never merged into one commit.
         tool_name: The MCP tool that opened the scope. Becomes the commit
             subject when the call wrote more than one file; a single-file
-            call commits under that file's own path instead.
+            call commits under that file's own path instead. Folder moves
+            name their source and destination.
+        folder_move: Validated absolute roots, set before folder callbacks fire.
     """
 
     token: int
     tool_name: str
+    folder_move: tuple[Path, Path] | None = None
 
 
 _scope_var: ContextVar[CommitScope | None] = ContextVar(
@@ -89,6 +92,33 @@ def bound_commit_scope(tool_name: str) -> Iterator[CommitScope]:
         yield scope
     finally:
         _scope_var.reset(var_token)
+
+
+_folder_move_var: ContextVar[tuple[Path, Path] | None] = ContextVar(
+    "markdown_vault_mcp_folder_move", default=None
+)
+
+
+@contextmanager
+def bound_folder_move(roots: tuple[Path, Path] | None) -> Iterator[None]:
+    """Bind folder roots for a batch callback and restore the prior context.
+
+    Args:
+        roots: Validated source and destination directories, or ``None``.
+
+    Yields:
+        Control while the roots are bound.
+    """
+    token = _folder_move_var.set(roots)
+    try:
+        yield
+    finally:
+        _folder_move_var.reset(token)
+
+
+def current_folder_move() -> tuple[Path, Path] | None:
+    """Return the folder roots bound for the current batch callback."""
+    return _folder_move_var.get()
 
 
 def current_commit_scope() -> CommitScope | None:
