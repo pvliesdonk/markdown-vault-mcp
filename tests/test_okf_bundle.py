@@ -137,3 +137,15 @@ def test_safe_abs_rejects_escape(tmp_path: Path):
 
     with pytest.raises(ValueError, match=r"escapes"):
         _safe_abs(tmp_path, "../outside.md")
+
+
+def test_bundle_reads_attachment_without_encoding(
+    vault: Vault, config: ProjectConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_path: str) -> None:
+        raise AssertionError("encoded read used")
+
+    monkeypatch.setattr(vault.reader, "read_attachment", fail)
+    result = build_okf_bundle(vault, config, folder="")
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("pic.png") == b"\x89PNGDATA"

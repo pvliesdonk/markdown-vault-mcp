@@ -34,7 +34,8 @@ vault.index.reindex()
 ## ReaderFacet
 
 Search, exact queries, read, listing, table-of-contents, similarity, context,
-history/diff, revision reads, and attachment reads. Exact query methods check
+history/diff, revision reads, and attachment reads. Use `read_attachment_bytes`
+for raw bytes; `read_attachment` returns base64 content and metadata. Exact query methods check
 library index readiness and raise `IndexUnavailableError` if unavailable; an
 unavailable index is never an exact zero. They accept the [query types](types.md#exact-query-types)
 and return the same projections as the [keyword backend](storage.md#exact-keyword-queries).

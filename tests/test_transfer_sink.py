@@ -470,3 +470,15 @@ async def test_extension_refusal_logs_the_setting(
         "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
         for r in caplog.records
     )
+
+
+async def test_attachment_download_avoids_encoded_read(
+    sink: VaultTransferSink, vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_path: str) -> None:
+        raise AssertionError("encoded read used")
+
+    monkeypatch.setattr(vault.reader, "read_attachment", fail)
+    result = await sink.read("pic.png")
+    assert result.body == _PNG
+    assert result.media_type == "image/png"

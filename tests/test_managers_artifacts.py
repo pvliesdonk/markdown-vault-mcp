@@ -150,6 +150,68 @@ class TestSize:
 
 
 class TestRead:
+    def test_raw_bytes_and_validation(self, tmp_path: Path) -> None:
+        store, _ = _store(tmp_path)
+        (tmp_path / "a.png").write_bytes(b"\x00\xffraw")
+        assert store.read_bytes("a.png") == b"\x00\xffraw"
+        with pytest.raises(DocumentNotFoundError):
+            store.read_bytes("gone.png")
+        with pytest.raises(ValueError):
+            store.read_bytes("../escape.png")
+
+    @pytest.mark.parametrize("method", ["read", "read_bytes"])
+    def test_read_rejections_and_empty_file(self, tmp_path: Path, method: str) -> None:
+        store, _ = _store(tmp_path)
+        read = getattr(store, method)
+        (tmp_path / "empty.png").write_bytes(b"")
+        (tmp_path / "dir.png").mkdir()
+        result = read("empty.png")
+        assert result == b"" if method == "read_bytes" else result.content_base64 == ""
+        for path in ("dir.png", "gone.png"):
+            with pytest.raises(DocumentNotFoundError):
+                read(path)
+        for path in ("note.md", "bad.exe", "../escape.png"):
+            with pytest.raises(ValueError):
+                read(path)
+
+    @pytest.mark.parametrize("method", ["read", "read_bytes"])
+    @pytest.mark.parametrize("error", [FileNotFoundError, PermissionError])
+    def test_read_failure_classification(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        method: str,
+        error: type[OSError],
+    ) -> None:
+        store, _ = _store(tmp_path)
+        (tmp_path / "a.png").write_bytes(b"data")
+
+        def fail(_path: Path) -> bytes:
+            raise error("read failed")
+
+        monkeypatch.setattr(Path, "read_bytes", fail)
+        expected = DocumentNotFoundError if error is FileNotFoundError else ValueError
+        with pytest.raises(expected) as exc:
+            getattr(store, method)("a.png")
+        if error is PermissionError:
+            assert not isinstance(exc.value, DocumentNotFoundError)
+            assert "cannot be read" in str(exc.value)
+
+    @pytest.mark.parametrize("method", ["read", "read_bytes"])
+    def test_stat_refusal_is_not_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
+    ) -> None:
+        store, _ = _store(tmp_path)
+
+        class Refused:
+            def stat(self) -> object:
+                raise PermissionError("stat failed")
+
+        monkeypatch.setattr(store, "validate_path", lambda _path: Refused())
+        with pytest.raises(ValueError, match="cannot be read") as exc:
+            getattr(store, method)("a.png")
+        assert not isinstance(exc.value, DocumentNotFoundError)
+
     def test_returns_content_and_metadata(self, tmp_path: Path) -> None:
         import base64
 
