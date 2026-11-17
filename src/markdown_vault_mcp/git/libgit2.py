@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import sys
@@ -90,12 +91,10 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
         keys = {entry.name.lower(): entry.value for entry in config}
     except (OSError, pg.GitError) as exc:
         raise _unsupported("an unreadable repository configuration") from exc
-    for key, value, shape in (
-        ("extensions.objectformat", "sha256", "SHA-256 repositories"),
-        ("extensions.refstorage", "reftable", "reftable repositories"),
-    ):
-        if keys.get(key, "").lower() == value:
-            raise _unsupported(shape)
+    if keys.get("extensions.objectformat", "").lower() == "sha256":
+        raise _unsupported("SHA-256 repositories")
+    if keys.get("extensions.refstorage", "").lower() == "reftable":
+        raise _unsupported("reftable repositories")
     if "extensions.partialclone" in keys or any(
         k.startswith("remote.") and k.endswith(".promisor") and config.get_bool(k)
         for k in keys
@@ -104,7 +103,29 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
 
 
 _DRIVERS = ("clean", "process")
+_HOOKS = (  # noqa: SIM905
+    "pre-commit prepare-commit-msg commit-msg post-commit "
+    "reference-transaction post-index-change"
+).split()
 _OFF = {"", "false", "umask", "0", "no", "off"}
+_CLEANUPS = {None, "default", "whitespace", "verbatim", "scissors"}
+
+
+def _probe_config_hooks(repo: Any) -> None:
+    config = repo.config
+    for entry in config:
+        name = entry.name.removesuffix(".event")
+        events = list(config.get_multivar(entry.name)) if name != entry.name else []
+        while "" in events:  # an empty event resets the earlier list
+            del events[: events.index("") + 1]
+        for event in set(events).intersection(_HOOKS):
+            if (
+                name.startswith("hook.")
+                and _tree_entry(config, f"{name}.command")
+                and _config_bool(config, f"{name}.enabled", True)
+                and _config_bool(config, f"hook.{event}.enabled", True)
+            ):
+                raise _unsupported(f"configured {event} hooks")
 
 
 def _probe_policy(repo: Any) -> None:
@@ -112,6 +133,8 @@ def _probe_policy(repo: Any) -> None:
         raise _unsupported("signed commits")
     if not _config_bool(repo.config, "core.symlinks", True):
         raise _unsupported("core.symlinks=false repositories")
+    if _tree_entry(repo.config, "commit.cleanup") not in _CLEANUPS:
+        raise _unsupported("commit.cleanup=strip")
     shared = _tree_entry(repo.config, "core.sharedrepository")
     if "core.sharedrepository" in repo.config and str(shared).lower() not in _OFF:
         raise _unsupported("core.sharedRepository repositories")
@@ -120,16 +143,10 @@ def _probe_policy(repo: Any) -> None:
         Path(repo.workdir)
         / Path(configured or _common(Path(repo.path)) / "hooks").expanduser()
     )
-    for name in (
-        "pre-commit",
-        "prepare-commit-msg",
-        "commit-msg",
-        "post-commit",
-        "reference-transaction",
-        "post-index-change",
-    ):
+    for name in _HOOKS:
         if os.access(hooks / name, os.X_OK):
             raise _unsupported(f"executable {name} hooks")
+    _probe_config_hooks(repo)
 
 
 def _open(path: Path, pg: Any) -> Any | None:
@@ -190,18 +207,15 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
         if existing:
             index.remove(relative)
         return bool(existing) or relative in repo.index
-    if (
-        not existing
-        and _config_bool(repo.config, "core.ignorecase")
-        and any(e.path.lower() == relative.lower() for e in index)
-    ):
-        raise _unsupported("case-variant paths")
-    if (
-        not existing
-        and repo.path_is_ignored(relative)
-        and relative not in pg.Index(Path(repo.path) / "index")
-    ):
-        return False
+    if not existing:
+        if _config_bool(repo.config, "core.ignorecase") and any(
+            e.path.lower() == relative.lower() for e in index
+        ):
+            raise _unsupported("case-variant paths")
+        if repo.path_is_ignored(relative) and relative not in pg.Index(
+            Path(repo.path) / "index"
+        ):
+            return False
     _filter_guard(repo, relative)
     modes = (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
     if stat.S_ISLNK(mode):
@@ -236,9 +250,8 @@ def _stage_items(
 def _locked_index(repo: Any, pg: Any) -> Iterator[tuple[Any, Path, Path]]:
     gitdir = Path(repo.path)
     lock = gitdir / "index.lock"
-    fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+    lock.touch(mode=0o666, exist_ok=False)
     try:
-        os.close(fd)
         with tempfile.TemporaryDirectory(dir=gitdir) as directory:
             source, temporary = gitdir / "index", Path(directory) / "index"
             if path_exists(source):
@@ -246,6 +259,11 @@ def _locked_index(repo: Any, pg: Any) -> Iterator[tuple[Any, Path, Path]]:
             yield pg.Index(temporary), temporary, source
     finally:
         lock.unlink()
+
+
+def _clean(message: str) -> str:
+    lines = "\n".join(line.rstrip(" \t\r") for line in message.split("\n"))
+    return re.sub(r"\n{3,}", "\n\n", lines).strip("\n")
 
 
 def _update_index(real: Any, index: Any, paths: set[str]) -> None:
@@ -316,14 +334,13 @@ class Libgit2Store:
     def __call__(
         self,
         path: Path,
-        content: str,
+        content: str,  # noqa: ARG002
         operation: WriteOperation,
         *,
         old_path: Path | None = None,
         principal: Principal | None = None,
     ) -> None:
         """Commit the paths touched by one write, preserving unrelated staging."""
-        del content
         self.on_write_batch([(path, operation, old_path, principal)], operation)
 
     def on_write_batch(  # noqa: C901, RUF100 -- locked publication and no-op reconciliation share one transaction.
@@ -336,14 +353,14 @@ class Libgit2Store:
         """Commit a tool call's writes together with their principal's identity."""
         if self._closed or not items:
             return
-        if len(items) == 1:
-            primary_paths = frozenset({items[0][0]})
+        primary_paths = frozenset({items[0][0]}) if len(items) == 1 else primary_paths
         try:
             with self._lock:
                 repo = self._repository(items[0][0])
                 if repo is None:
                     return
                 repo = self._repo = _fresh(repo.path, self._pg)
+                repo.set_ident(self._name, self._email)
                 with (
                     _locked_index(repo, self._pg) as (real, temporary, destination),
                     repo.transaction() as transaction,
@@ -384,25 +401,25 @@ class Libgit2Store:
                         ),
                     )
                     committer = self._pg.Signature(self._name, self._email)
-                    before = str(parent.id) if parent is not None else ""
+                    if _tree_entry(repo.config, "commit.cleanup") != "verbatim":
+                        subject = _clean(subject)
+                    parents = [] if parent is None else [parent.id]
                     after = (
                         parent.id
                         if parent is not None and noop
                         else repo.create_commit(
-                            None,
-                            author,
-                            committer,
-                            subject + "\n",
-                            tree,
-                            [parent.id] if parent is not None else [],
+                            None, author, committer, subject + "\n", tree, parents
                         )
                     )
                     _update_index(real, index, paths)
                     real.write()
                     if not noop:
-                        transaction.set_target(refname, after, message=subject)
+                        kind = "commit" if parents else "commit (initial)"
+                        transaction.set_target(
+                            refname, after, message=kind + ": " + subject.split("\n")[0]
+                        )
                     temporary.replace(destination)
-                self._committed(before, str(after))
+                self._committed(str(parent.id) if parent else "", str(after))
         except Exception:
             with suppress(Exception):
                 self._observe()
@@ -421,33 +438,31 @@ class Libgit2Store:
             )
         return self._repo_path
 
-    def head_sha(self, git_root: Path) -> str:
-        """Return the current commit ID."""
+    def _born(self, git_root: Path) -> Any:
         repo = self._repository(git_root)
         if repo is None or repo.head_is_unborn:
             raise OSError("No Git HEAD")
-        return str(repo.head.target)
+        return repo
+
+    def head_sha(self, git_root: Path) -> str:
+        """Return the current commit ID."""
+        return str(self._born(git_root).head.target)
 
     def branch_name(self, git_root: Path) -> str:
         """Return the branch name, or HEAD for a detached checkout."""
-        repo = self._repository(git_root)
-        if repo is None or repo.head_is_unborn:
-            raise OSError("No Git HEAD")
+        repo = self._born(git_root)
         return "HEAD" if repo.head_is_detached else repo.head.shorthand
 
-    def force_pull(self, *, dry_run: bool = False) -> PullResult:
+    def force_pull(self, *, dry_run: bool = False) -> PullResult:  # noqa: ARG002
         """Report that this local store does not pull."""
-        del dry_run
         self.resolve_force_repo()
         return PullResult.head_unchanged_failure("", PULL_REASON_PULL_DISABLED)
 
     def force_push(self, *, dry_run: bool = False) -> PushResult:
         """Report that this local store does not push."""
-        repo = self._repository(self.resolve_force_repo())
+        repo = self._born(self.resolve_force_repo())
         branch = self.branch_name(self.resolve_force_repo())
         refs = (f"refs/remotes/origin/{branch}", "refs/remotes/origin/HEAD")
-        if repo is None:
-            raise OSError("No Git HEAD")
         ref = next(filter(None, map(repo.references.get, refs)), None)
         remote = str(ref.resolve().target) if ref else ""
         if remote and not dry_run and remote == str(repo.head.target):
@@ -463,9 +478,8 @@ class Libgit2Store:
             "This local store does not push; use GitWriteStrategy or the Git CLI.",
         )
 
-    def sync_once(self, repo_path: Path) -> bool:
+    def sync_once(self, repo_path: Path) -> bool:  # noqa: ARG002
         """Perform no synchronization and report no change."""
-        del repo_path
         return False
 
     def sync_health(self) -> SyncHealth | None:
@@ -482,18 +496,16 @@ class Libgit2Store:
         drain_writes: Callable[[], bool],
     ) -> None:
         """Accept the synchronization interface; the local store does not sync."""
-        del pause_writes, drain_writes
 
     def start(
         self,
         *,
         repo_path: Path,
-        pull_interval_s: int,
-        on_pull: Callable[[], object] | None = None,
-        on_tick: Callable[[], object] | None = None,
+        pull_interval_s: int,  # noqa: ARG002
+        on_pull: Callable[[], object] | None = None,  # noqa: ARG002
+        on_tick: Callable[[], object] | None = None,  # noqa: ARG002
     ) -> None:
         """Start the local store, which needs no background loop."""
-        del pull_interval_s, on_pull, on_tick
         self._repository(repo_path)
 
     def stop(self) -> None:
@@ -517,14 +529,9 @@ class Libgit2Store:
         is_dir: bool = False,
     ) -> list[HistoryEntry]:
         """Return local commit history, optionally scoped to a path."""
+        repo = self._repository(repo_path)
         return self._history.get_file_history(
-            self._repository(repo_path),
-            repo_path,
-            path,
-            since,
-            limit,
-            until,
-            is_dir=is_dir,
+            repo, repo_path, path, since, limit, until, is_dir=is_dir
         )
 
     def get_file_diff(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protocol.
@@ -541,7 +548,6 @@ class Libgit2Store:
         """Return aggregate or individual diffs for a note."""
         return self._history.get_file_diff(
             self._repository(repo_path),
-            repo_path,
             path,
             ref,
             per_commit,

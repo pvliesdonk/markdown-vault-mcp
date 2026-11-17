@@ -729,3 +729,260 @@ def test_scoped_edited_rename_matches_cli_or_refuses(isolated_repo, scope):
         assert "GitWriteStrategy" in str(exc)
     else:
         assert actual == expected
+
+
+@pytest.mark.parametrize("phase", ["open", "after_open"])
+def test_configured_commit_hook_refused(isolated_repo, phase):
+    """Git-configured hooks run in Git and must not be silently skipped."""
+    import shlex
+
+    repo = isolated_repo
+    store = Libgit2Store(repo) if phase == "after_open" else None
+    marker = repo.parent / "hook-ran"
+    _git(repo, "config", "hook.fixture.event", "pre-commit")
+    _git(repo, "config", "hook.fixture.command", f"touch {shlex.quote(str(marker))}")
+    proof = repo / "proof.md"
+    proof.write_text("proof\n")
+    _git(repo, "add", "proof.md")
+    _git(repo, "commit", "-qm", "proof", "--", "proof.md")
+    if not marker.exists():
+        pytest.skip("installed Git does not execute configured hooks")
+    marker.unlink()
+    note = repo / "native.md"
+    note.write_text("native\n")
+    before = _git(repo, "rev-parse", "HEAD")
+    index = _git(repo, "ls-files", "--stage")
+    with pytest.raises(ConfigurationError, match=r"hook.*GitWriteStrategy"):
+        if store is None:
+            Libgit2Store(repo)
+        else:
+            store(note, "", "write")
+    assert _git(repo, "rev-parse", "HEAD") == before
+    assert _git(repo, "ls-files", "--stage") == index
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "setting,value",
+    [
+        ("diff.context", "8"),
+        ("diff.interHunkContext", "20"),
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.context", "03"),
+        ("diff.context", "+3"),
+        ("diff.interHunkContext", "00"),
+        (None, None),
+    ],
+)
+@pytest.mark.parametrize("per_commit", [False, True])
+def test_diff_settings_match_cli_or_refuse(isolated_repo, setting, value, per_commit):
+    """Patch output honors effective Git settings or refuses actionably."""
+    repo = isolated_repo
+    note = repo / "a.md"
+    lines = [f"line {i}\n" for i in range(40)]
+    note.write_text("".join(lines))
+    _git(repo, "add", "a.md")
+    _git(repo, "commit", "-qm", "first", "--", "a.md")
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    lines[5], lines[30] = "CHANGED 5\n", "CHANGED 30\n"
+    lines.insert(18, "inserted\n")
+    note.write_text("".join(lines))
+    _git(repo, "commit", "-qm", "edit", "--", "a.md")
+    native = Libgit2Store(repo)
+    if setting is not None:
+        _git(repo, "config", setting, value)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    expected = cli.get_file_diff(repo, note, before, per_commit)
+    try:
+        actual = native.get_file_diff(repo, note, before, per_commit)
+    except InvalidRequestError as exc:
+        assert (setting, value) not in {
+            (None, None),
+            ("diff.context", "03"),
+            ("diff.context", "+3"),
+            ("diff.interHunkContext", "00"),
+        }
+        assert "GitWriteStrategy" in str(exc)
+    else:
+        assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "name", ["trailing.md ", "a\n\n\nb.md", "end\n", "lead \n.md", "newline\n.md"]
+)
+def test_write_subject_cleanup_matches_cli(isolated_repo, name):
+    """Git's commit cleanup is preserved for literal filename subjects."""
+    repo = isolated_repo
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    note = repo / name
+    note.write_text("synthetic\n")
+    GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)(
+        note, "", "write"
+    )
+    expected = _git(repo, "show", "-s", "--format=%B", "HEAD")
+    _git(repo, "reset", "--hard", "-q", before)
+    note.write_text("synthetic\n")
+    Libgit2Store(repo)(note, "", "write")
+    assert _git(repo, "show", "-s", "--format=%B", "HEAD") == expected
+
+
+@pytest.mark.parametrize("name", ["reflog.md", "vertical\vtab.md"])
+def test_reflog_identity_and_message_match_cli(isolated_repo, name):
+    """Direct native and CLI writes use the same reflog committer and subject."""
+    repo = isolated_repo
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    _git(repo, "config", "--unset", "user.name")
+    _git(repo, "config", "--unset", "user.email")
+    note = repo / name
+    note.write_text("synthetic\n")
+    GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)(
+        note, "", "write"
+    )
+    expected = _git(repo, "reflog", "-1", "--format=%gn|%ge|%gs")
+    _git(repo, "reset", "--hard", "-q", before)
+    note.write_text("synthetic\n")
+    Libgit2Store(repo)(note, "", "write")
+    assert _git(repo, "reflog", "-1", "--format=%gn|%ge|%gs") == expected
+
+
+def test_disabled_configured_hook_does_not_block_write(isolated_repo):
+    """A disabled effective config hook is not an executable hook."""
+    import shlex
+
+    repo = isolated_repo
+    marker = repo.parent / "disabled-hook-ran"
+    _git(repo, "config", "hook.fixture.event", "pre-commit")
+    _git(repo, "config", "hook.fixture.command", f"touch {shlex.quote(str(marker))}")
+    _git(repo, "config", "hook.fixture.enabled", "false")
+    proof = repo / "proof.md"
+    proof.write_text("proof\n")
+    _git(repo, "add", "proof.md")
+    _git(repo, "commit", "-qm", "proof", "--", "proof.md")
+    assert not marker.exists()
+    note = repo / "native.md"
+    note.write_text("native\n")
+    Libgit2Store(repo)(note, "", "write")
+    assert _git(repo, "show", "HEAD:native.md") == "native\n"
+
+
+def test_write_subject_verbatim_cleanup_matches_cli_or_refuses(isolated_repo):
+    """An effective verbatim cleanup setting preserves trailing filename space."""
+    repo = isolated_repo
+    _git(repo, "config", "commit.cleanup", "verbatim")
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    note = repo / "trailing.md "
+    note.write_text("synthetic\n")
+    GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)(
+        note, "", "write"
+    )
+    expected = _git(repo, "show", "-s", "--format=%B", "HEAD")
+    assert "trailing.md \n" in expected
+    _git(repo, "reset", "--hard", "-q", before)
+    note.write_text("synthetic\n")
+    Libgit2Store(repo)(note, "", "write")
+    assert _git(repo, "show", "-s", "--format=%B", "HEAD") == expected
+
+
+@pytest.mark.parametrize("scope", ["vault", "directory"])
+@pytest.mark.parametrize("entering_rename", [False, True])
+def test_scoped_history_ignores_outside_deletion_for_addition(
+    isolated_repo, scope, entering_rename
+):
+    """Outside deletions cannot change scoped output when none are inside."""
+    repo = isolated_repo
+    vault = repo / "vault"
+    directory = vault / "sub"
+    directory.mkdir(parents=True)
+    outside = repo / "outside.txt"
+    outside.write_text("old outside content\n")
+    _git(repo, "add", "outside.txt")
+    _git(repo, "commit", "-qm", "outside", "--", "outside.txt")
+    note = directory / "new.md"
+    note.write_text("old outside content\n" if entering_rename else "different note\n")
+    outside.unlink()
+    _git(repo, "add", "-A", "--", "outside.txt", "vault/sub/new.md")
+    _git(repo, "commit", "-qm", "inside", "--", "outside.txt", "vault/sub/new.md")
+    native = Libgit2Store(repo)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    path = directory if scope == "directory" else None
+    expected = cli.get_file_history(vault, path, None, 1, is_dir=path is not None)
+    assert expected[0].paths_changed == ["sub/new.md"]
+    assert (
+        native.get_file_history(vault, path, None, 1, is_dir=path is not None)
+        == expected
+    )
+
+
+@pytest.mark.parametrize("disabled_by", ["event", "reset"])
+def test_disabled_effective_config_hook_allows_write(isolated_repo, disabled_by):
+    """Git's event disable and later empty event reset both disable a hook."""
+    import shlex
+
+    repo = isolated_repo
+    marker = repo.parent / "hook-marker"
+    _git(repo, "config", "hook.fixture.event", "pre-commit")
+    _git(repo, "config", "hook.fixture.command", f"touch {shlex.quote(str(marker))}")
+    proof = repo / "proof.md"
+    proof.write_text("first\n")
+    _git(repo, "add", "proof.md")
+    _git(repo, "commit", "-qm", "enabled", "--", "proof.md")
+    if not marker.exists():
+        pytest.skip("installed Git does not execute configured hooks")
+    marker.unlink()
+    if disabled_by == "event":
+        _git(repo, "config", "hook.pre-commit.enabled", "false")
+    else:
+        _git(repo, "config", "--add", "hook.fixture.event", "")
+    proof.write_text("second\n")
+    _git(repo, "commit", "-qm", "disabled", "--", "proof.md")
+    assert not marker.exists()
+    note = repo / "native.md"
+    note.write_text("synthetic\n")
+    Libgit2Store(repo)(note, "", "write")
+    assert _git(repo, "show", "HEAD:native.md") == "synthetic\n"
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "global_event,local_event,enabled",
+    [("pre-commit", "", False), ("", "pre-commit", True)],
+)
+def test_layered_hook_event_reset_matches_git(
+    isolated_repo, monkeypatch, global_event, local_event, enabled
+):
+    """Global and local event entries apply in Git's effective order."""
+    import shlex
+
+    repo = isolated_repo
+    marker = repo.parent / "layered-hook-marker"
+    command = f"touch {shlex.quote(str(marker))}"
+    _git(repo, "config", "hook.fixture.event", "pre-commit")
+    _git(repo, "config", "hook.fixture.command", command)
+    proof = repo / "proof.md"
+    proof.write_text("first\n")
+    _git(repo, "add", "proof.md")
+    _git(repo, "commit", "-qm", "proof", "--", "proof.md")
+    if not marker.exists():
+        pytest.skip("installed Git does not execute configured hooks")
+    marker.unlink()
+    _git(repo, "config", "--unset-all", "hook.fixture.event")
+    _git(repo, "config", "--unset-all", "hook.fixture.command")
+    global_config = repo.parent / ".gitconfig"
+    global_config.write_text(
+        f'[hook "fixture"]\n event = {global_event}\n command = {command}\n'
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    _git(repo, "config", "--add", "hook.fixture.event", local_event)
+    proof.write_text("second\n")
+    _git(repo, "commit", "-qm", "layered", "--", "proof.md")
+    assert marker.exists() is enabled
+    marker.unlink(missing_ok=True)
+    note = repo / "native.md"
+    note.write_text("synthetic\n")
+    if enabled:
+        with pytest.raises(ConfigurationError, match=r"hook.*GitWriteStrategy"):
+            Libgit2Store(repo)
+    else:
+        Libgit2Store(repo)(note, "", "write")
+        assert _git(repo, "show", "HEAD:native.md") == "synthetic\n"
+    assert not marker.exists()

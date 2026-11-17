@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pygit2
 
 from markdown_vault_mcp.exceptions import ConfigurationError, InvalidRequestError
-from markdown_vault_mcp.git.libgit2 import _fresh, _index_path, _tree_entry
+from markdown_vault_mcp.git.libgit2 import _clean, _fresh, _index_path, _tree_entry
 from markdown_vault_mcp.git.libgit2 import _rel as _literal_rel
 from markdown_vault_mcp.git.query import (
     _note_text,
@@ -50,14 +50,14 @@ def _unsupported(shape: str) -> InvalidRequestError:
 def _resolved(diff: Any, path: str) -> tuple[Any, str | None]:
     added = [d for d in diff.deltas if d.status == pygit2.enums.DeltaStatus.ADDED]
     deleted = [d for d in diff.deltas if d.status == pygit2.enums.DeltaStatus.DELETED]
-    mine = [d for d in added if d.new_file.path == path]
-    if mine and deleted:
-        oid = mine[0].new_file.id
-        exact = [d for d in deleted if d.old_file.id == oid]
-        twins = [d for d in added if d.new_file.id == oid]
+    new = next((d.new_file for d in added if d.new_file.path == path), None)
+    if new and deleted:
+        exact = [d for d in deleted if d.old_file.id == new.id]
+        twins = [d for d in added if d.new_file.id == new.id]
         if len(exact) != 1 or len(twins) != 1:
             raise _unsupported("inexact rename resolution")
-        return diff, exact[0].old_file.path
+        old = exact[0].old_file
+        return diff, old.path if old.mode >> 12 == new.mode >> 12 else None
     return diff, None
 
 
@@ -129,15 +129,7 @@ def _date(value: str | None) -> float | None:  # noqa: C901, PLR0911, RUF100 -- 
             return (day - dt.timedelta(days=day > now)).timestamp()
         if text == "yesterday":
             return (now - dt.timedelta(days=1)).timestamp()
-        weekdays = (
-            "monday",
-            "tuesday",
-            "wednesday",
-            "thursday",
-            "friday",
-            "saturday",
-            "sunday",
-        )
+        weekdays = "monday tuesday wednesday thursday friday saturday sunday".split()  # noqa: SIM905
         if text.startswith("last ") and text[5:] in weekdays:
             days = (now.weekday() - weekdays.index(text[5:])) % 7 or 7
             return (now - dt.timedelta(days=days)).timestamp()
@@ -181,7 +173,7 @@ def _history_entry(repo: Any, commit: Any, paths: list[str]) -> HistoryEntry:
         _short_id(repo, commit),
         _timestamp(commit).replace("+00:00", "Z"),
         f"{author.name} <{author.email}>",
-        " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines()),
+        " ".join(_clean(commit.message or "").split("\n\n", 1)[0].split("\n")),
         paths,
     )
 
@@ -189,13 +181,11 @@ def _history_entry(repo: Any, commit: Any, paths: list[str]) -> HistoryEntry:
 def _changed(commit: Any, scope: str, prefix: str) -> list[str]:
     diff = _diff(commit.parents[0] if commit.parents else None, commit)
     inside = [d for d in diff.deltas if d.new_file.path.startswith(scope)]
-    moved = {
-        _resolved(diff, d.new_file.path)[1] for d in inside if d.status_char() == "A"
-    }
+    deleted = any(d.status_char() == "D" for d in inside)
+    added = [d.new_file.path for d in inside if d.status_char() == "A"]
+    moved = {_resolved(diff, path)[1] for path in added if deleted}
     return [
-        d.new_file.path[len(prefix) :]
-        for d in inside
-        if d.status_char() != "D" or d.old_file.path not in moved
+        d.new_file.path[len(prefix) :] for d in inside if d.old_file.path not in moved
     ]
 
 
@@ -300,11 +290,10 @@ def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
         raise InvalidRequestError(
             f"The historical note is {size} bytes, exceeding the {query.max_bytes}-byte limit; use section= to read a section."
         )
-    blob = repo[entry.id]
     relative = path[len(prefix) :]
     old_relative = historical[len(prefix) :]
     content = _note_text(
-        blob.data, relative, f"{old_relative!r} at revision {query.ref!r}"
+        repo[entry.id].data, relative, f"{old_relative!r} at revision {query.ref!r}"
     )
     return RevisionContent(relative, old_relative, query.ref, content)
 
@@ -343,9 +332,18 @@ def _patches(diff: Any, names: set[str], summarize_binary: bool) -> str:
     return _truncate_diff("".join(chunks))
 
 
+def _probe_diff(repo: Any) -> None:
+    cfg = repo.config
+    if (
+        ("diff.mnemonicprefix" in cfg and cfg.get_bool("diff.mnemonicprefix"))
+        or ("diff.context" in cfg and cfg.get_int("diff.context") != 3)
+        or ("diff.interhunkcontext" in cfg and cfg.get_int("diff.interhunkcontext"))
+    ):
+        raise _unsupported("diff.context, diff.interHunkContext or diff.mnemonicPrefix")
+
+
 def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and lineage capabilities.
     repo: Any,
-    vault: Path,
     path: Path,
     ref: str | None,
     per_commit: bool,
@@ -355,9 +353,9 @@ def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and linea
     summarize_binary: bool = False,
 ) -> str | list[CommitDiff]:
     """Return the note's aggregate or per-commit patch."""
-    del vault
     if repo is None or repo.head_is_unborn:
         return [] if per_commit else ""
+    _probe_diff(repo)
     if ref is None and since_timestamp is None:
         raise ValueError("Either 'ref' or 'since_timestamp' must be provided")
     target = (
@@ -386,10 +384,7 @@ def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and linea
             if target.tree[old].filemode != head.tree[current].filemode:
                 raise _unsupported("rename mode changes")
             blob_patch = pygit2.Patch.create_from(
-                repo[target.tree[old].id],
-                repo[head.tree[current].id],
-                old,
-                current,
+                repo[target.tree[old].id], repo[head.tree[current].id], old, current
             )
             return _patches([blob_patch], {old, current}, summarize_binary)
         return _patches(old_tree.diff_to_tree(head.tree), {current}, summarize_binary)

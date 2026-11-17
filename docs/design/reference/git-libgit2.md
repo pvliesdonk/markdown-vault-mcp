@@ -70,6 +70,22 @@ sources:
     title: Git update-index and split index mode
     resource: https://github.com/git/git/blob/v2.56.1/Documentation/git-update-index.adoc
     accessed: 2026-11-17
+  - id: git-hook-config
+    title: Git configured hooks
+    resource: https://github.com/git/git/blob/v2.56.1/Documentation/config/hook.adoc
+    accessed: 2026-11-17
+  - id: git-commit
+    title: Git commit message cleanup
+    resource: https://github.com/git/git/blob/v2.56.1/Documentation/git-commit.adoc
+    accessed: 2026-11-17
+  - id: git-pretty-source
+    title: Git commit subject formatting
+    resource: https://github.com/git/git/blob/v2.56.1/pretty.c
+    accessed: 2026-11-17
+  - id: git-diff-config
+    title: Git diff configuration
+    resource: https://github.com/git/git/blob/v2.56.1/Documentation/config/diff.adoc
+    accessed: 2026-11-17
 ---
 
 # Local Git operations through pygit2
@@ -97,7 +113,10 @@ remote operations are outside its scope. The native Git store depends on it.
 - For a non-ASCII patch path, Git's CLI with the project's configuration rendered readable UTF-8 while pygit2 returned octal-quoted bytes; tab and newline paths matched in both aggregate and per-commit diffs. [source: git-shared] [observed: Git 2.56.1 and pygit2 1.21.0, synthetic repository] [pins: tests/test_git_libgit2_capabilities.py::test_literal_diff_paths_match_cli]
 - A write whose tree equals HEAD still reconciles its touched index paths; a failed write refreshes the worktree health condition where inspection succeeds. History and per-commit diff limits are clamped to 1–100; an omitted diff limit is unbounded. [pins: tests/test_git_libgit2_boundaries.py::test_noop_reconciles_index_without_observer]
 - Git subtracts seconds through weeks as durations, but months and years modify local calendar fields. [source: git-date] [pins: tests/test_git_libgit2_capabilities.py::test_supported_dates_match_git]
-- Git and libgit2 may assign different similarity scores to the same deleted and added blobs: an isolated seed scored 25% in Git and 30% in libgit2. Queries refuse uncertain pairs instead of choosing either score, including a newly added note with a potentially unrelated deletion in file, vault, or directory history. Unique exact-OID pairs remain supported; ambiguous matches, binary summaries, and mode-changing rename diffs refuse actionably. Committed-revision lookup checks the current path without following renames and returns no breadcrumb when it cannot prove a result. Scoped vault and directory history refuses merges inside the requested window. Single-file history and per-commit diffs refuse merge commits that differ from every parent; revision reads refuse traversal across a merge. A local force push reports success when its tracking ref already matches HEAD. `core.symlinks=false` repositories are refused; with `core.filemode=false`, new regular files and symlink-to-file transitions use mode 100644 and existing regular files retain their mode. [observed: isolated repository, 2026-11-16] [pins: tests/test_git_libgit2_capabilities.py::test_inexact_pairing_refused_across_native_queries]
+- Enabled configured commit, index, and reference hooks are refused at open and before writes; disabled events and effective empty event resets remain supported. Git processes multi-valued events in configuration order. [source: git-hook-config] [pins: tests/test_git_libgit2_capabilities.py::test_disabled_configured_hook_does_not_block_write]
+- Git cleans commit messages according to `commit.cleanup`; native writes support default, whitespace, scissors, and verbatim, and refuse strip. History and per-commit subjects follow Git's first-paragraph formatting. Reflog entries use the committer identity and Git's `commit:` or `commit (initial):` prefix with the first LF-delimited message line. [source: git-commit] [source: git-pretty-source] [pins: tests/test_git_libgit2_capabilities.py::test_write_subject_cleanup_matches_cli]
+- Aggregate and per-commit diff queries refuse effective nondefault context, inter-hunk context, or mnemonic prefixes. Numeric spellings equivalent to the defaults remain supported. [source: git-diff-config] [pins: tests/test_git_libgit2_capabilities.py::test_diff_settings_match_cli_or_refuse]
+- Git and libgit2 may assign different similarity scores to the same deleted and added blobs: an isolated seed scored 25% in Git and 30% in libgit2. Queries refuse uncertain pairs instead of choosing either score, including a newly added note with a potentially unrelated deletion in file history or an in-scope deletion in vault or directory history. Outside deletions alone do not trigger scoped refusal. Unique exact-OID pairs remain supported; ambiguous matches, binary summaries, and mode-changing rename diffs refuse actionably. Committed-revision lookup checks the current path without following renames and returns no breadcrumb when it cannot prove a result. Scoped vault and directory history refuses merges inside the requested window. Single-file history and per-commit diffs refuse merge commits that differ from every parent; revision reads refuse traversal across a merge. A local force push reports success when its tracking ref already matches HEAD. `core.symlinks=false` repositories are refused; with `core.filemode=false`, new regular files and symlink-to-file transitions use mode 100644 and existing regular files retain their mode. [observed: isolated repository, 2026-11-16] [pins: tests/test_git_libgit2_capabilities.py::test_inexact_pairing_refused_across_native_queries]
 
 - Git's automatic abbreviation selects a starting length from an approximate object count, then extends it if ambiguous; libgit2 starts at the configured length or seven and extends for ambiguity. Full object IDs remain unchanged. Native history and per-commit diff queries refuse unset or `auto` `core.abbrev`; set a numeric length or use the CLI. [source: git-abbrev] [source: short-id] [pins: tests/test_git_libgit2_history.py::test_auto_abbreviation_queries_refuse_actionably]
 - libgit2 loads repository mailmap sources and resolves a signature to its canonical identity. [source: mailmap] [pins: tests/test_git_libgit2_history.py::test_history_author_honors_mailmap]

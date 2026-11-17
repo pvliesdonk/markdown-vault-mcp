@@ -86,7 +86,10 @@ def test_ignored_and_tracked_ignored_files(isolated_repo: Path) -> None:
     assert _git(isolated_repo, "show", "HEAD:unrelated.md") == "new\n"
 
 
-def test_lifecycle_and_no_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("per_commit", [False, True])
+def test_lifecycle_and_no_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, per_commit: bool
+) -> None:
     """A non-repository directory has no commits and closes repeatedly."""
     import os
     from pathlib import Path
@@ -119,6 +122,9 @@ def test_lifecycle_and_no_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     note.write_text("x")
     store(note, "x", "write")
     assert store.get_file_history(tmp_path, note, None, 10) == []
+    assert store.get_file_diff(tmp_path, note, "HEAD", per_commit) == (
+        [] if per_commit else ""
+    )
     store.stop()
     store.flush()
     store.close()

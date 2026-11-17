@@ -268,3 +268,99 @@ def test_shared_repository_umask_modes_allowed(isolated_repo, value):
     note.write_text("new\n")
     Libgit2Store(isolated_repo)(note, "", "write")
     assert _git(isolated_repo, "show", "HEAD:new.md") == "new\n"
+
+
+@pytest.fixture
+def deleted_link_and_new_regular(isolated_repo):
+    """Create equal blob bytes with incompatible Git object modes."""
+    repo = isolated_repo
+    old, new = repo / "old.md", repo / "new.md"
+    old.symlink_to("same-target")
+    _git(repo, "add", "old.md")
+    _git(repo, "commit", "-qm", "old symlink", "--", "old.md")
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    old.unlink()
+    new.write_text("same-target")
+    _git(repo, "add", "-A", "--", "old.md", "new.md")
+    _git(repo, "commit", "-qm", "new regular note", "--", "old.md", "new.md")
+    return repo, new, before
+
+
+def test_deleted_symlink_not_regular_history_ancestor(deleted_link_and_new_regular):
+    repo, note, _ = deleted_link_and_new_regular
+    native = Libgit2Store(repo)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    expected = cli.get_file_history(repo, note, None, 10)
+    assert [entry.message for entry in expected] == ["new regular note"]
+    assert native.get_file_history(repo, note, None, 10) == expected
+
+
+def test_deleted_symlink_not_regular_revision_ancestor(deleted_link_and_new_regular):
+    repo, note, before = deleted_link_and_new_regular
+    native = Libgit2Store(repo)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    query = RevisionQuery(repo, note, before, 0)
+    with pytest.raises(InvalidRequestError):
+        cli.get_file_at_ref(query)
+    with pytest.raises(InvalidRequestError):
+        native.get_file_at_ref(query)
+
+
+@pytest.mark.parametrize("per_commit", [False, True])
+def test_deleted_symlink_not_regular_diff_ancestor(
+    deleted_link_and_new_regular, per_commit
+):
+    repo, note, before = deleted_link_and_new_regular
+    native = Libgit2Store(repo)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    expected = cli.get_file_diff(repo, note, before, per_commit)
+    try:
+        actual = native.get_file_diff(repo, note, before, per_commit)
+    except InvalidRequestError as exc:
+        assert "GitWriteStrategy" in str(exc)
+    else:
+        assert actual == expected
+
+
+@pytest.mark.parametrize("query", ["history", "per_commit_diff"])
+@pytest.mark.parametrize(
+    "message_text",
+    [
+        "subject line\n \nprivate body\n",
+        "subject  \ncontinued  \n\nprivate body\n",
+        "\n\nsubject line\n\nprivate body\n\n",
+        "subject line\n\t\nprivate body\n",
+        "  subject\n  continuation\n\nprivate body\n",
+    ],
+)
+def test_whitespace_only_subject_separator_matches_cli(
+    isolated_repo, query, message_text
+):
+    """Whitespace on a blank separator does not turn the body into a subject."""
+    repo = isolated_repo
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    note = repo / "subject.md"
+    note.write_text("synthetic note\n")
+    _git(repo, "add", "subject.md")
+    message = repo / ".git" / "fixture-message"
+    message.write_text(message_text)
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "--cleanup=verbatim",
+        "-F",
+        str(message),
+        "--",
+        "subject.md",
+    )
+    native = Libgit2Store(repo)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    if query == "history":
+        expected = cli.get_file_history(repo, note, None, 10)
+        actual = native.get_file_history(repo, note, None, 10)
+    else:
+        expected = cli.get_file_diff(repo, note, before, True)
+        actual = native.get_file_diff(repo, note, before, True)
+    assert "private body" not in expected[0].message
+    assert actual == expected

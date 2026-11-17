@@ -62,7 +62,10 @@ with tracked paths are refused. On macOS, `core.precomposeUnicode=true`
 normalizes paths to NFC before native writes. Diff queries with non-ASCII paths cannot match
 the patch headers from Git, so they are refused too.
 It also refuses commit signing and executable commit or reference hooks, such
-as `reference-transaction` and `post-index-change`. For tracked paths, a
+as `reference-transaction` and `post-index-change`, including enabled hooks
+specified in effective Git configuration. Disabled hooks and event resets remain
+supported. It refuses `commit.cleanup=strip`; default, `whitespace`, `scissors`,
+and `verbatim` remain supported. For tracked paths, a
 nonempty external clean or process filter command, including Git LFS, a
 required filter, or a working-tree encoding is refused. Writes check these policies again and refuse in-progress Git
 operations, such as a merge. Use `GitWriteStrategy` for these repositories.
@@ -74,14 +77,17 @@ diff limit is unbounded. Dates support ISO 8601, `N units ago` (including compou
 `GitWriteStrategy`. History and per-commit diff queries require a numeric
 `core.abbrev` setting; configure one or use `GitWriteStrategy` for Git’s
 adaptive default. Writes, revision reads and aggregate diffs remain available
-without a numeric setting. Full commit IDs are unchanged.
+without a numeric setting. Full commit IDs are unchanged. Aggregate and per-commit diffs refuse non-default
+`diff.context`, `diff.interHunkContext`, and enabled `diff.mnemonicPrefix`;
+numerically equivalent defaults remain supported.
 
 Git and libgit2 may score edited renames differently. The native store refuses
 queries that require such scoring. An unambiguous exact-content rename remains
 supported, including alongside an unrelated deletion. Ambiguous identical-content
 rename pairs in vault or directory history are refused. A newly added note in a
 commit that deletes another file may also require uncertain matching and be
-refused, including in vault or directory history.
+refused. In vault or directory history, this uncertainty requires an in-scope
+deletion; a deletion outside the scope alone does not cause refusal.
 
 Binary diff summaries and rename diffs with
 mode changes are also refused. Use `GitWriteStrategy` for those queries.
