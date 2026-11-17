@@ -1642,10 +1642,12 @@ class GitWriteStrategy:
         side skips the report: the observer then treats the new HEAD as
         unexplained, which costs a reindex rather than hiding a change.
         A completed commit also rechecks outstanding startup dirt.
+        A block that raises is not reported, even if HEAD moved: the move
+        cannot be attributed to it, so the next reconciliation reindexes.
         """
         observer = self._commit_observer
         parent = self._try_head_sha(git_root) if observer is not None else None
-        yield
+        yield  # NOSONAR(S9152) Failed blocks must skip observation.
         if self._worktree_wanted:
             self._observe_worktree(git_root)
         if observer is None or parent is None:
