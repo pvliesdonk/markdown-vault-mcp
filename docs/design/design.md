@@ -7443,6 +7443,7 @@ Later decisions (2026-10-22, #1505):
 Library callers may pass one `Libgit2Store` as `git_strategy` and `on_write`
 for local versioning. It creates a tree from HEAD and touched worktree paths,
 then updates only those paths in the real index. CLI remains the default.
-Unsupported formats, partial clones, signing and commit hooks are refused;
-effective external clean filters are refused before a commit. The supporting
-[libgit2 reference](reference/git-libgit2.md) records the native behavior.
+Unsupported formats, partial clones, signing, commit hooks, in-progress Git
+operations and effective external clean filters are refused. Publication holds
+the index and reference locks; if the reference update fails after the index
+is published, the operation remains staged. The supporting [libgit2 reference](reference/git-libgit2.md) records the native behavior.
