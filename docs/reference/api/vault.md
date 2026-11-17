@@ -144,7 +144,9 @@ lineage or retention.
 raw bytes as base64 for both notes and attachments. The MCP tools apply the
 configured note or attachment body-read cap; library callers can set
 `max_content_bytes` (default 262144, `0` for unlimited). Hash-only operations
-stream files without a body-read cap. A concurrent change refuses the call;
+stream files without a body-read cap. When requesting content, a changed
+file reports `changed` even if its current body exceeds the cap; an unchanged
+file over the cap returns a limit error. A concurrent change refuses the call;
 retry it rather than saving a partial result.
 
 No historical copy is retained. Without another retained copy, old bytes may

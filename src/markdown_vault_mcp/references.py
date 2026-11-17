@@ -214,6 +214,10 @@ class ReferenceReader:
                 "Path exists, but no SHA-256 was saved to verify content identity. "
                 + _RETENTION,
             )
+        if include_content and raw is None:
+            raise InvalidRequestError(
+                "File exceeds the content read limit; resolve with include_content=false to verify without its body."
+            )
         return ReferenceResolution(
             "verified",
             reference,
@@ -233,10 +237,6 @@ class ReferenceReader:
                 if not stat.S_ISREG(before.st_mode):
                     raise InvalidRequestError(
                         "path must name a regular file; use list_documents to locate one."
-                    )
-                if body_cap and before.st_size > body_cap:
-                    raise InvalidRequestError(
-                        "File exceeds the content read limit; resolve with include_content=false to verify without its body."
                     )
                 size, digest, raw = self._consume(stream, hash_bytes, body_cap)
                 self._check_stable(path, absolute, before, os.fstat(stream.fileno()))
@@ -267,13 +267,14 @@ class ReferenceReader:
         size = 0
         for block in iter(lambda: stream.read(65536), b""):
             size += len(block)
-            if body_cap and size > body_cap:
-                raise InvalidRequestError(
-                    "File exceeds the content read limit; resolve with include_content=false."
-                )
             digest.update(block)
             if body is not None:
-                body.extend(block)
+                # Keep hashing after the cap; identity decides the outcome
+                # before an unchanged file's body-read limit is reported.
+                if body_cap and size > body_cap:
+                    body = None
+                else:
+                    body.extend(block)
         return size, digest.hexdigest(), bytes(body) if body is not None else None
 
     def _check_stable(

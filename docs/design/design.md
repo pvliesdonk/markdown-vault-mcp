@@ -178,7 +178,9 @@ refuses the call. No Git revision is attached through a separate query.
 reports `verified`, `unverified` (no saved digest), `changed`, `missing` or
 `wrong_vault`. Optional body retrieval requires a saved digest and returns
 base64 of the same verified raw bytes; it obeys the normal note/attachment
-body-read caps. Hash-only calls stream without those response-size caps.
+body-read caps. Identity is checked before a body-cap refusal: an oversized
+changed file still reports `changed`, while an unchanged oversized body is
+refused. Hash-only calls stream without those response-size caps.
 Path traversal and attachment allowlisting reuse existing access rules.
 
 References do not retain bytes. A rename and deletion are indistinguishable

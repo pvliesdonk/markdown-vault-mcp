@@ -256,8 +256,9 @@ def test_nonregular_io_and_stream_growth_are_safe(tmp_path: Path) -> None:
         pytest.raises(DocumentUnreadableError),
     ):
         reader.get_file_reference("note.md", include_sha256=True)
-    with pytest.raises(InvalidRequestError, match="limit"):
-        reader._consume(io.BytesIO(b"abcd"), True, 1)
+    size, digest, body = reader._consume(io.BytesIO(b"abcd"), True, 1)
+    assert size == 4 and digest == hashlib.sha256(b"abcd").hexdigest()
+    assert body is None
     with pytest.raises(InvalidRequestError, match="nonnegative"):
         reader.resolve_file_reference(
             FileReference("a", "note.md", 0), max_content_bytes=-1
@@ -308,3 +309,50 @@ def test_short_stream_cannot_publish_a_complete_digest(tmp_path: Path) -> None:
         pytest.raises(InvalidRequestError, match="changed during"),
     ):
         reader.get_file_reference("note.md", include_sha256=True)
+
+
+@pytest.mark.parametrize("replacement", [b"new", b"new content"])
+def test_changed_reference_wins_over_body_cap(
+    tmp_path: Path, replacement: bytes
+) -> None:
+    """A changed oversized body is an identity outcome, never a read-cap error."""
+    file = tmp_path / "note.md"
+    file.write_bytes(b"old")
+    reader = ReferenceReader(tmp_path, "a")
+    saved = reader.get_file_reference("note.md", include_sha256=True)
+    file.write_bytes(replacement)
+    result = reader.resolve_file_reference(
+        saved, include_content=True, max_content_bytes=1
+    )
+    assert result.status == "changed"
+    assert result.content_base64 is None
+
+
+async def test_mcp_changed_oversized_file_reports_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    config = replace(
+        ProjectConfig.from_env(),
+        reference_namespace="a",
+        max_note_read_bytes=1,
+        max_attachment_size_mb=0.000001,
+    )
+    async with Client(make_server(config=config)) as client:
+        for path in ["note.md", "proof.png"]:
+            file = tmp_path / path
+            file.write_bytes(b"old")
+            saved = (
+                await client.call_tool(
+                    "get_file_reference", {"path": path, "include_sha256": True}
+                )
+            ).structured_content
+            file.write_bytes(b"new content")
+            result = (
+                await client.call_tool(
+                    "resolve_file_reference",
+                    {"reference": saved, "include_content": True},
+                )
+            ).structured_content
+            assert result["status"] == "changed"
+            assert result["content_base64"] is None
