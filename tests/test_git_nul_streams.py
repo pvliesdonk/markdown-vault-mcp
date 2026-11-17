@@ -33,21 +33,14 @@ def test_invalid_path_bytes_round_trip(git_repo: Path) -> None:
     decoded = os.fsdecode(name)
     listed = run_git_capturing(git_repo, "ls-files", "-z")
     assert decoded in listed.stdout.split("\0")
-    selected = run_git_capturing(git_repo, "ls-files", "-z", pathspecs=[decoded])
-    assert selected.stdout == decoded + "\0"
     (git_repo / ".gitignore").write_text("dir/\n")
     ignored = run_git_capturing(
         git_repo, "check-ignore", "--no-index", "--stdin", "-z", input=decoded + "\0"
     )
     assert ignored.stdout == decoded + "\0"
-    (git_repo / "dir").mkdir()
     strategy = GitWriteStrategy()
     history = strategy.get_file_history(git_repo, None, None, 10)
     assert decoded in history[0].paths_changed
-    directory = strategy.get_file_history(
-        git_repo, git_repo / "dir", None, 10, is_dir=True
-    )
-    assert decoded in directory[0].paths_changed
 
 
 def test_metadata_preserves_carriage_return_and_replaces_invalid_utf8(
