@@ -19,7 +19,7 @@ import json
 import logging
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
     EmbeddingsNotConfiguredError,
@@ -367,8 +367,7 @@ class EmbeddingsManager:
 
         Args:
             force: If ``True``, rebuild from scratch even if a vector index
-                already exists on disk (e.g. after changing the embedding
-                model).
+                already exists on disk (e.g. after a model change).
             donor: A read-only store whose vectors the full build copies for
                 chunks with a matching embedding input (#1505). Ignored when
                 a populated store converges instead.
@@ -399,7 +398,7 @@ class EmbeddingsManager:
                 stay (#1505).
             EmbeddingsRebuildFailedError: If a forced incompatible rebuild
                 publishes no generation.
-            RuntimeError: If a damaged store's replacement is incomplete.
+            RuntimeError: If damaged-store recovery is incomplete; notes stay retried.
         """
         self._require_vectors()
         if self._embedding_provider is None or self._slot is None:
@@ -439,26 +438,12 @@ class EmbeddingsManager:
             if upgrade is not None:
                 upgrade.close()
         if _recovery and outcome.failed_batches:
-            self._incomplete_recovery()
+            self._retries.update(row["path"] for row in self._fts.list_notes())
+            raise RuntimeError(
+                "Vector recovery is incomplete; retry build_embeddings "
+                "when the embedding provider is available."
+            )
         return outcome.embedded
-
-    def _incomplete_recovery(self) -> NoReturn:
-        """Fail an incomplete writer recovery, keeping every note for a later flush.
-
-        The cold build reports a failed-batch count, not which documents it
-        lacks, and keeps a document that lost only some chunks, so every note
-        waits in the retry set (#1976). A complete one costs the next flush
-        no provider call; none of them counts as pending work or queues a
-        flush.
-
-        Raises:
-            RuntimeError: Always; ``build_embeddings`` finishes the rebuild.
-        """
-        self._retries.update(row["path"] for row in self._fts.list_notes())
-        raise RuntimeError(
-            "Vector recovery is incomplete; retry build_embeddings "
-            "when the embedding provider is available."
-        )
 
     def _full_build(
         self,
