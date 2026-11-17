@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-16
+
+- Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
+  Observed anonymous responses for both repositories, pagination and strict tag
+  shapes; checked variants against the chosen patterns. Next review: 2027-05-16.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.

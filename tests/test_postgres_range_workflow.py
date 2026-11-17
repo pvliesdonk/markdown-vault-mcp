@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import yaml
+from scripts.check_postgres_images import _PGVECTOR, _VCHORD
 
 from markdown_vault_mcp.stores._postgres import MIN_PGVECTOR
 from tests.fixtures.postgres import OLD_PGVECTOR_ENV
@@ -18,8 +19,6 @@ WORKFLOW = ROOT / ".github" / "workflows" / "postgres-range.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 GUIDE = ROOT / "docs" / "use" / "postgresql.md"
 PYPROJECT = ROOT / "pyproject.toml"
-_PGVECTOR = re.compile(r"^pgvector/pgvector:(\d+)\.(\d+)\.(\d+)-pg(\d+)$")
-_VCHORD = re.compile(r"^tensorchord/vchord-suite:pg(\d+)-\d{8}$")
 
 
 def _workflow() -> dict[Any, Any]:
@@ -34,7 +33,7 @@ def _images() -> list[str]:
 def _major(image: str) -> int:
     match = _PGVECTOR.match(image) or _VCHORD.match(image)
     assert match is not None, image
-    return int(match.groups()[-1])
+    return int(match.group(4) if match.re is _PGVECTOR else match.group(1))
 
 
 def test_every_image_is_pinned_to_an_exact_tag() -> None:
@@ -223,3 +222,17 @@ def test_checkout_is_pinned_as_ci_pins_it() -> None:
     ours = set(pin.findall(WORKFLOW.read_text(encoding="utf-8")))
     assert ours
     assert ours <= set(pin.findall(CI_WORKFLOW.read_text(encoding="utf-8")))
+
+
+def test_currency_job_runs_only_on_schedule_or_dispatch() -> None:
+    job = _workflow()["jobs"]["currency"]
+    assert (
+        job["if"]
+        == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+    )
+    assert any(
+        "scripts/check_postgres_images.py" in step.get("run", "")
+        for step in job["steps"]
+    )
+    for event in ("pull_request", "push"):
+        assert "scripts/check_postgres_images.py" in _workflow()[True][event]["paths"]
