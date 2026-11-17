@@ -39,8 +39,7 @@ from markdown_vault_mcp.utils.fs import (
 from markdown_vault_mcp.utils.links import (
     decode_markdown_destination,
     is_anchor_destination,
-    is_pointy_destination,
-    split_markdown_fragment,
+    parse_markdown_destination,
 )
 from markdown_vault_mcp.utils.links import (
     find_bracket_span as _find_bracket_span,
@@ -1285,14 +1284,11 @@ def _resolve_link_path(
     # extractor, so only a markdown destination is split here.
     fragment: str | None = None
     if decode_markdown:
-        if is_pointy_destination(target):
-            target = target[1:-1]
-        target, fragment = split_markdown_fragment(target)
         # A refused percent-escape leaves that layer as written, so it never
         # invents a resolvable name; the traversal clamp below still runs on
         # whatever comes out, so a decoded ``%2E%2E`` cannot climb above the
         # root. See :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`.
-        target = decode_markdown_destination(target)
+        target, fragment = parse_markdown_destination(target)
 
     if not target:
         # Link with only a fragment — points to the source document itself.

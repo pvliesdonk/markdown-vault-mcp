@@ -209,7 +209,7 @@ class TestApplyLinkReplacement:
         assert result == "[[new]] and [[new]]"
 
 
-def test_nested_vault_path_rewrite_is_root_anchored() -> None:
+def test_nested_vault_path_rewrite_is_source_relative() -> None:
     """Encoded pointy links retain their fragment and cannot hit a local shadow."""
     assert (
         compute_new_raw_target(
@@ -220,5 +220,5 @@ def test_nested_vault_path_rewrite_is_root_anchored() -> None:
             source_path="Sub/source.md",
             old_path="A/My Note.md",
         )
-        == "</B/New%20Note.md#heading>"
+        == "<../B/New%20Note.md#heading>"
     )

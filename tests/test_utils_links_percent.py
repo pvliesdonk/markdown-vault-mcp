@@ -37,7 +37,7 @@ class TestComputeNewRawTargetEncoded:
         """The shape test compares raw_target to old_path, so an encoded
         target never matched and fell into the relative-to-source branch.
 
-        A nested source's vault-path spelling now gains an explicit root so
+        A nested source's vault-path spelling now becomes source-relative so
         the rewritten path cannot select a source-local shadow.
         """
         assert (
@@ -49,7 +49,7 @@ class TestComputeNewRawTargetEncoded:
                 source_path="sub/hub.md",
                 old_path="probe/b[1].md",
             )
-            == "/probe/b2.md"
+            == "../probe/b2.md"
         )
 
     def test_leading_slash_encoded_target_keeps_its_shape(self) -> None:

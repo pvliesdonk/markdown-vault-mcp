@@ -62,9 +62,7 @@ from markdown_vault_mcp.types import (
     TocEntry,
 )
 from markdown_vault_mcp.utils.links import (
-    decode_markdown_destination,
-    is_pointy_destination,
-    split_markdown_fragment,
+    parse_markdown_destination,
 )
 
 if TYPE_CHECKING:
@@ -506,8 +504,9 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
 #: Version 13 (#1383) adds vault-wide fallback for missing source-relative
-#: markdown and reference links, shared grouped path matching, and safe
-#: root-anchored rewrites. Version 12 shipped in v6.1.2.
+#: markdown and reference links, shared grouped path matching, and
+#: shadow-safe rewrites, including links in moved sources. Version 12 shipped
+#: in v6.1.2.
 INDEX_SEMANTICS_VERSION = 13
 
 
@@ -678,9 +677,7 @@ def _markdown_link_target(
     raw: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
 ) -> str:
     """Resolve a markdown destination, keeping explicit and existing local paths."""
-    spelling = raw[1:-1] if is_pointy_destination(raw) else raw
-    spelling, _ = split_markdown_fragment(spelling)
-    decoded = decode_markdown_destination(spelling)
+    decoded, _ = parse_markdown_destination(raw)
     baseline, _ = _resolve_link_path(decoded, source)
     if baseline in path_set or decoded.startswith(("/", "./", "../")):
         return baseline

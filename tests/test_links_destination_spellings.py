@@ -341,23 +341,23 @@ class TestRenameKeepsTheSpelling:
 
     def test_escaped_destination_is_recognised_as_the_old_path(self) -> None:
         # Decoding identifies a vault path; a nested source needs an
-        # explicit root to avoid a source-local shadow.
+        # relative path to avoid a source-local shadow.
         assert (
             compute_new_raw_target(
                 "markdown", "a\\(b\\).md", None, "c.md", "sub/src.md", "a(b).md"
             )
-            == "/c.md"
+            == "../c.md"
         )
 
     def test_numeric_reference_hash_is_not_a_fragment_on_rename_either(self) -> None:
         # ``x&#46;md`` is root-relative ``x.md``; the ``#`` inside the
         # reference must not split it; the rewritten vault path gains a
-        # leading slash so it cannot hit a source-local shadow.
+        # relative path so it cannot hit a source-local shadow.
         assert (
             compute_new_raw_target(
                 "markdown", "x&#46;md", None, "y.md", "sub/src.md", "x.md"
             )
-            == "/y.md"
+            == "../y.md"
         )
 
     def test_a_new_name_with_a_hash_is_escaped_so_it_stays_a_file(self) -> None:

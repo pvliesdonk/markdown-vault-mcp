@@ -54,6 +54,7 @@ from markdown_vault_mcp.managers._write_notifier import (
 )
 from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
 from markdown_vault_mcp.scanner import (
+    _resolve_link_path,
     extract_section,
     list_section_headings,
     parse_note,
@@ -1370,7 +1371,9 @@ class DocumentManager:
                 this value. Pass ``None`` (default) to skip the check.
             update_links: When ``True``, find all documents that link to
                 *old_path* and rewrite their link targets to point to
-                *new_path*. Only applies to ``.md`` documents.
+                *new_path*. Also preserve resolved outgoing vault-fallback
+                links when the source note moves. Only applies to ``.md``
+                documents.
             tolerate_link_rewrites: When ``True``, a note's *if_match* that
                 no longer matches is still accepted if every change since
                 it is a link rewrite this manager recorded, such as one a
@@ -1426,6 +1429,7 @@ class DocumentManager:
                 )
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
+                outgoing = self._fallback_outgoing(old_path) if update_links else []
 
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
@@ -1437,12 +1441,27 @@ class DocumentManager:
                     title_field=self._title_field,
                 )
 
-                callback_content = _read_text_utf8(new_abs)
-
                 backlink_callbacks, backlink_paths, unrewritten = (
                     self._update_backlinks(old_path, new_path, backlinks)
                 )
-                updated_links = len(backlink_callbacks)
+                by_source: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(
+                    list
+                )
+                target_map: dict[str, str] = {}
+                for target, row in outgoing:
+                    if target != old_path:
+                        by_source[new_path].append((target, row))
+                        target_map[target] = target
+                source_callbacks, source_paths, source_failures = (
+                    self._rewrite_link_sources(
+                        by_source, target_map, op_name="_update_backlinks"
+                    )
+                )
+                backlink_callbacks.extend(source_callbacks)
+                backlink_paths.extend(source_paths)
+                unrewritten.extend(source_failures)
+                callback_content = _read_text_utf8(new_abs)
+                updated_links = len(set(backlink_paths))
                 hint = self._submodule_links_hint(unrewritten)
 
                 if self._mark_paths_dirty is not None:
@@ -1458,6 +1477,8 @@ class DocumentManager:
             self._notifier.fire_rename(new_abs, callback_content, old_abs)
             with auxiliary_commit_writes():
                 for src_abs, src_content in backlink_callbacks:
+                    if src_abs == new_abs:
+                        continue
                     self._notifier.fire(src_abs, src_content, "edit")
 
         return RenameResult(
@@ -1467,6 +1488,23 @@ class DocumentManager:
             hint=hint,
             link_rewrites_since_etag=crossed,
         )
+
+    def _fallback_outgoing(self, source: str) -> list[tuple[str, dict[str, Any]]]:
+        """Capture live markdown links resolved beyond their source directory."""
+        result: list[tuple[str, dict[str, Any]]] = []
+        for row in self._fts.get_outlinks(source):
+            if row["link_type"] not in ("markdown", "reference"):
+                continue
+            if not row["raw_target"] or not row["target_exists"]:
+                continue
+            baseline, _ = _resolve_link_path(
+                row["raw_target"], source, decode_markdown=True
+            )
+            target = row["target_path"]
+            if baseline != target:
+                row["source_path"] = source
+                result.append((target, row))
+        return result
 
     def _check_rename_etag(
         self, abs_path: Path, path: str, if_match: str | None, *, tolerate: bool
@@ -1930,6 +1968,14 @@ class DocumentManager:
             for target_old in md_map:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
+            for source_old in md_map:
+                for target, row in self._fallback_outgoing(source_old):
+                    if target not in md_map:
+                        annotated.append((target, row))
+
+            target_map = dict(md_map)
+            for target_old, _ in annotated:
+                target_map.setdefault(target_old, target_old)
 
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
@@ -1951,7 +1997,7 @@ class DocumentManager:
                 by_source[src_new].append((target_old, row))
 
             pending_callbacks, dirty_paths, failed_links = self._rewrite_link_sources(
-                by_source, md_map, op_name="move_folder"
+                by_source, target_map, op_name="move_folder"
             )
 
             # 6. Index: purge old note paths, reparse new note paths, plus the

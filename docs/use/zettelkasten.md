@@ -236,7 +236,7 @@ All three link formats work:
 - `[Reference-style][1]\n\n[1]: path.md`: separates link text from destination
 
 Markdown and reference destinations first resolve relative to the source note. If that path is missing, the index searches for the destination across the vault. An explicit `/`, `./`, or `../` prefix keeps its stated location.
-When a rename or move updates a vault-path link in a nested note, it adds a leading `/` so the link keeps pointing to the intended note.
+When a rename or move updates a vault-path link in a nested note, it writes a source-relative path so the link keeps pointing to the intended note. With link updates enabled, moving a source note also preserves its resolved fallback destinations.
 
 **Rename safely with link updates:**
 

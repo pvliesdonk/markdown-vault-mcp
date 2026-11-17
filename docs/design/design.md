@@ -3421,8 +3421,8 @@ is stored without it.
 repoint links through `compute_new_raw_target`, which recognises three shapes
 for markdown and reference links: leading-slash root-relative (`/folder/x.md`),
 root-relative matching `old_path` (`folder/x.md`), and relative to the source
-file's directory (`../x.md`). A bare vault path in a nested source gains a
-leading slash to avoid a local shadow; otherwise the shape is preserved. The first was
+file's directory (`../x.md`). A bare vault path in a nested source becomes
+source-relative to avoid a local shadow; otherwise the shape is preserved. The first was
 missing until issue #1105: `old_path` carries no leading slash, so a
 leading-slash link never compared equal to it and fell into the
 relative-to-source branch, silently converting OKF's recommended spelling (and
@@ -3435,13 +3435,16 @@ correctness one, and what let it go unnoticed.
 relative to the source. If that indexed path is absent, the resolver searches
 for an exact vault path and then suffix matches, using the wikilink tie-break
 below. Explicit decoded `/`, `./`, and `../` prefixes keep their stated
-location. Unlike wikilinks, these links do not infer `.md` or match aliases.
+location. Obsidian's precedence when both paths exist is [unverified]; this
+project chooses local-first for generic Markdown compatibility. Unlike
+wikilinks, these links do not infer `.md` or match aliases.
 Every pass recomputes the source-relative path from the original destination,
 so adding or removing a target updates the graph consistently.
-On rename or move, a vault-path spelling from a nested source gains a leading
-slash so a source-local note cannot shadow the intended target. Other fallback
-spellings may be rewritten as source-relative paths; neither promises the
-shortest spelling.
+On rename with link updates or folder move, fallback links in moved sources and
+vault-path links to moved targets become source-relative where needed so a
+source-local note cannot shadow the intended target. The rewrite does not
+promise the shortest spelling. A rename without link updates leaves bytes as
+written.
 
 **Wikilink resolution (Obsidian semantics)**: Wikilinks follow Obsidian's
 vault-wide resolution rules rather than relative path resolution:
