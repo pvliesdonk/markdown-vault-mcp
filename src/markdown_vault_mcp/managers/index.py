@@ -25,7 +25,6 @@ from markdown_vault_mcp.fts_index import should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.interfaces import ListsNoteStates
 from markdown_vault_mcp.managers.embeddings import (
-    _EMBED_CONDEMNED,
     _EMBED_KEPT,
     _EMBEDDING_BATCH_SIZE,
     EmbeddingsManager,
@@ -840,9 +839,6 @@ class IndexManager:
         if vectors is not None and changes.deleted:
             self._embeddings.reconcile_paths(vectors, changes.deleted, site="purge")
 
-        if vectors is not None:
-            vectors = self._embeddings._loaded_store()
-
         # Purge stale excluded docs (issue #255); the shared helper defers
         # the vector-sidecar load until stale rows are confirmed, keeping
         # the per-note loop below on its lazy-load (converge-and-skip)
@@ -1054,9 +1050,7 @@ class IndexManager:
 
             if vectors is not None:
                 outcome = self._embed_note_inline(vectors, note)
-                if outcome == _EMBED_CONDEMNED:
-                    vectors = None
-                elif outcome == _EMBED_KEPT:
+                if outcome == _EMBED_KEPT:
                     embed_kept += 1
 
             if checkpoint is not None and (

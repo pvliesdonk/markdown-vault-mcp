@@ -658,6 +658,38 @@ class _FailingWrites:
 
 
 class TestStoreWriteFailures:
+    @pytest.mark.parametrize(
+        "bulk", [False, True], ids=["small-retoken", "bulk-retoken"]
+    )
+    @pytest.mark.parametrize("recover", [False, True], ids=["keep", "recover"])
+    def test_corruption_during_retoken(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bulk: bool, recover: bool
+    ) -> None:
+        from markdown_vault_mcp.exceptions import StoreCorruptError
+
+        monkeypatch.setattr(reconciler_module, "_BULK_RETOKEN", 2 if bulk else 100)
+        _fts, provider, store, rec = _setup(tmp_path, THREE)
+        rec.reconcile(store, site="test")
+        store.publish_generation(
+            store.identity,
+            [DocumentRows(p, None, store.rows_for(p)) for p in sorted(store.tokens())],
+        )
+        provider.texts.clear()
+
+        def corrupt(*_args: Any, **_kwargs: Any) -> None:
+            raise StoreCorruptError("damaged", backend="test", location="fixture")
+
+        operation = "publish_generation" if bulk else "replace_document"
+        monkeypatch.setattr(store, operation, corrupt)
+        if recover:
+            with pytest.raises(StoreCorruptError):
+                rec.reconcile(store, site="test", recover_corruption=True)
+        else:
+            result = rec.reconcile(store, site="test")
+            assert (result.retry, result.retokened) == (set(THREE), 0)
+        assert set(store.tokens().values()) == {None}
+        assert provider.texts == []
+
     @pytest.mark.parametrize("operation", ["replace_document", "remove_document"])
     def test_corruption_during_a_write_propagates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str

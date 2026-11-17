@@ -154,6 +154,41 @@ class TestASearch:
 
 
 class TestAWriterJob:
+    def test_forced_rebuild_retries_incomplete_recovery(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+        inputs: list[str] = []
+
+        def unavailable(_texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("provider unavailable")
+
+        def counting(texts: list[str]) -> list[list[float]]:
+            inputs.extend(texts)
+            return original(texts)
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", unavailable)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            with pytest.raises(StoreUnavailableError):
+                vault._vector_slot.get(rebuild=None)
+            with pytest.raises(StoreUnavailableError):
+                vault.index.build_embeddings(force=True)
+            with pytest.raises(StoreUnavailableError):
+                vault._vector_slot.get(rebuild=None)
+            monkeypatch.setattr(provider, "embed", counting)
+
+            assert vault.index.build_embeddings(force=True) == 2
+            assert len(inputs) == 2
+            assert sorted(metadata_by_path(vault._vectors)) == ["alpha.md", "beta.md"]
+        finally:
+            vault.close()
+
     def test_partial_recovery_is_not_served(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
