@@ -234,6 +234,13 @@ def test_report_old_positional_constructor() -> None:
         ({"verified": []}, {"review": "none", "basis": "no_review_supplied"}),
         ({"verified": None}, {"review": "unknown", "basis": "malformed_review"}),
         ({"verified": "bad"}, {"review": "unknown", "basis": "malformed_review"}),
+        ({"verified": True}, {"review": "unknown", "basis": "malformed_review"}),
+        ({"verified": {}}, {"snapshot": "unbound", "basis": "no_snapshot_binding"}),
+        ({"verified": [None]}, {"snapshot": "unbound", "basis": "no_snapshot_binding"}),
+        (
+            {"verified": [None, {"by": "human:alice", "at": AT}]},
+            {"snapshot": "unbound", "basis": "no_snapshot_binding"},
+        ),
         ({"verified": [{}]}, {"snapshot": "unbound", "basis": "no_snapshot_binding"}),
         (
             {"verified": {"by": "human:alice", "at": AT}},

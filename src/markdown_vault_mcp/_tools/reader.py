@@ -105,7 +105,7 @@ def register(mcp: FastMCP) -> None:
               declared), `status` (defaults to `"stable"`), `stale`
               (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
               `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
-              and `sources_count` (when the note cites sources).
+              `review_applicability`, and `sources_count` (when the note cites sources).
             - sections (list[dict]): Up to `chunks_per_file` best-matching
               sections, each with:
 
@@ -823,7 +823,8 @@ def register(mcp: FastMCP) -> None:
               them when writing to or proposing links involving this note;
               some folders are self-contained by design.
             - okf (dict, optional): OKF read annotation for this note
-              (type, status, stale, trust_tier, freshness, review, sources_count).
+              (type, status, stale, trust_tier, freshness, review,
+              review_applicability, sources_count).
               Present only when the vault is an active OKF bundle.
 
             Index freshness is reported out-of-band in the response's

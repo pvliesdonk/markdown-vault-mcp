@@ -381,11 +381,13 @@ def _review_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _review_applicability(metadata: dict[str, Any]) -> dict[str, str]:
+def _review_applicability(
+    metadata: dict[str, Any], review: dict[str, Any]
+) -> dict[str, str]:
     """Describe whether supplied review entries have a snapshot binding."""
     if verified_entries(metadata):
         return {"snapshot": "unbound", "basis": "no_snapshot_binding"}
-    if "verified" in metadata and not isinstance(metadata["verified"], (dict, list)):
+    if review["state"] == "malformed":
         return {"review": "unknown", "basis": "malformed_review"}
     return {"review": "none", "basis": "no_review_supplied"}
 
@@ -431,7 +433,9 @@ def derive_annotation(
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)
     annotation["review"] = _review_evidence(metadata)
-    annotation["review_applicability"] = _review_applicability(metadata)
+    annotation["review_applicability"] = _review_applicability(
+        metadata, annotation["review"]
+    )
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:

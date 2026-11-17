@@ -262,6 +262,7 @@ class TestDeriveAnnotation:
                 "malformed_entries": 0,
                 "basis": "supplied_metadata_only",
             },
+            "review_applicability": {"review": "none", "basis": "no_review_supplied"},
         }
 
     def test_full_metadata(self) -> None:
@@ -285,6 +286,10 @@ class TestDeriveAnnotation:
                 "recorded_entries": 1,
                 "malformed_entries": 0,
                 "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {
+                "snapshot": "unbound",
+                "basis": "no_snapshot_binding",
             },
         }
 

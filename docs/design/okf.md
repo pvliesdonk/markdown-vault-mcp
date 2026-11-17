@@ -206,7 +206,8 @@ frontmatter blob; not persisted):
   as one malformed entry. No source fetching or reviewer authentication occurs.
 - `review_applicability`: supplied review entries report `snapshot: unbound`
   and `basis: no_snapshot_binding`; timestamps and extensions do not establish
-  coverage. An absent or empty review reports `review: none` with
+  coverage. This includes malformed entries: unbound describes binding absence,
+  while `review` reports entry validity. An absent or empty review reports `review: none` with
   `basis: no_review_supplied`; a malformed outer value reports `review: unknown`
   with `basis: malformed_review`. This assessment is separate from freshness.
 
