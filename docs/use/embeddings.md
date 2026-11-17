@@ -545,7 +545,7 @@ embedded as before.
 
 Each embedding request has a wall-clock budget, `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` (default `30.0` seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.
 
-A flush, convergence, or reindex pass groups chunks from several notes in each request, up to the configured batch size. A larger shared request can reach the timeout on a slow backend. If it fails, the server retries each affected note separately for its remaining inputs; the failed shared request can consume a full timeout before those retries begin. A provider exception for a request containing one note is not repeated.
+A flush or convergence pass groups chunks from several notes in each request, up to the configured batch size. Reindex processes notes individually. If a shared request fails, the server retries each affected note separately for its remaining inputs; the failed shared request can consume a full timeout before those retries begin. A provider exception for a request containing one note is not repeated.
 
 The budget and the batch size interact, and the default pairing is tight on modest hardware. On a CPU-only Ollama running a large model such as `bge-m3`, a single chunk can take 4 to 11 seconds, so the default batch of 4 chunks may need 20 to 44 seconds against a 30-second budget. The result is intermittent timeouts under ordinary writing load rather than an outright failure, which makes it easy to misread (issue [#954](https://github.com/pvliesdonk/markdown-vault-mcp/issues/954)).
 

@@ -1577,10 +1577,9 @@ retries reuse completed embeddings. Changed content, chunk boundaries/positions,
 titles, headings, or configured frontmatter preambles replace the note's rows,
 embedding only the chunks whose input changed (the others keep their stored
 vectors); an unchanged input under a new token is re-tokened without a provider call.
-Reconcile passes pack inputs across notes up to the configured batch size (#1496).
+Flush and convergence passes pack inputs across notes up to the configured batch size (#1496).
 A failed shared request retries only each affected note’s remaining inputs; a
-provider exception on a request containing one note is not repeated. Only a
-rejected note is held for retry. A provider
+provider exception on a request containing one note is not repeated. A provider
 failure keeps the note's rows and holds its path for the next flush, without
 queueing one and without counting as pending work, so a note the provider keeps
 rejecting never leaves the writer undrained; a conflicting write is re-queued
@@ -4727,7 +4726,7 @@ republished, no provider call), embeds (signature differs), or removes (a
 body-less document, or one the keyword index holds no rows for on a
 tombstone, an exclusion or a `SourceProbe` answering *absent*, #1785; from
 #1505 a tombstone for an unparseable note keeps its rows). Incremental
-reconciliation packs missing inputs across documents up to the configured batch
+reconciliation can pack missing inputs across documents up to the configured batch
 size (#1496); after a shared failure it retries only each affected document’s
 remaining inputs, preserving successful siblings. A provider exception for a
 request containing one document is not repeated.

@@ -259,11 +259,14 @@ class EmbeddingReconciler:
         fts: The keyword index, the source of every row.
         provider: Embeds the documents that need it.
         embed_builder: Builds each chunk's embedding text.
-        batch_size: Most texts per provider call.
+        batch_size: Most texts per provider call; must be positive.
         source_probe: Answers whether a document the keyword index holds no
             rows for is still at its source.
         is_excluded: Whether a path matches the vault's exclusions.
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
+
+    Raises:
+        ValueError: If batch_size is less than one.
     """
 
     def __init__(
@@ -277,6 +280,8 @@ class EmbeddingReconciler:
         is_excluded: Callable[[str], bool],
         scratch_dir: Path | None = None,
     ) -> None:
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
         self._scratch_dir = scratch_dir
         self._fts = fts
         self._provider = provider

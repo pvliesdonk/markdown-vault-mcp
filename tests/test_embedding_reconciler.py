@@ -110,6 +110,20 @@ def _setup(
 NOTES = {"a.md": "# A\n\nApples.\n", "b.md": "# B\n\nBoats.\n"}
 
 
+@pytest.mark.parametrize("batch_size", [0, -1])
+def test_reconciler_rejects_nonpositive_batch_size(tmp_path, batch_size):
+    fts, provider, _, _ = _setup(tmp_path, NOTES)
+    with pytest.raises(ValueError, match="batch_size"):
+        EmbeddingReconciler(
+            fts=fts,
+            provider=provider,
+            embed_builder=EmbedTextBuilder(),
+            batch_size=batch_size,
+            source_probe=_Probe(),
+            is_excluded=lambda _: False,
+        )
+
+
 def test_changed_documents_share_one_request(tmp_path):
     fts, provider, store, rec = _setup(tmp_path, NOTES)
     rec.reconcile(store, site="test")
@@ -146,22 +160,28 @@ def _five_chunk_notes(tmp_path, sibling=False):
     return provider, store, rec, old
 
 
-def test_lone_split_request_failure_is_not_replayed(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("failure_call", "expected"), [(1, [4]), (2, [4, 1])])
+def test_lone_split_request_failure_is_not_replayed(
+    tmp_path, monkeypatch, failure_call, expected
+):
     provider, store, rec, old = _five_chunk_notes(tmp_path)
+    embed = provider.embed
 
     def fail(texts):
-        provider.calls.append(list(texts))
-        raise RuntimeError("down")
+        if len(provider.calls) + 1 == failure_call:
+            provider.calls.append(list(texts))
+            raise RuntimeError("down")
+        return embed(texts)
 
     monkeypatch.setattr(provider, "embed", fail)
     result = rec.reconcile(store, site="flush")
-    assert [len(call) for call in provider.calls] == [4]
+    assert [len(call) for call in provider.calls] == expected
     assert result.retry == {"a.md"}
     assert result.kept == 5
     assert store.rows_for("a.md") == old
 
 
-def test_lone_partial_wrong_count_falls_back_to_store_policy(tmp_path, monkeypatch):
+def test_lone_partial_wrong_count_is_replayed_per_document(tmp_path, monkeypatch):
     provider, store, rec, _ = _five_chunk_notes(tmp_path)
     embed = provider.embed
 
@@ -176,37 +196,6 @@ def test_lone_partial_wrong_count_falls_back_to_store_policy(tmp_path, monkeypat
     assert [len(call) for call in provider.calls] == [4, 4, 1]
     assert not result.retry
     assert all("Changed" in row.metadata["content"] for row in store.rows_for("a.md"))
-
-
-def test_lone_tail_failure_is_not_replayed(tmp_path, monkeypatch):
-    provider, store, rec, old = _five_chunk_notes(tmp_path)
-    embed = provider.embed
-
-    def fail_tail(texts):
-        if len(texts) == 1:
-            provider.calls.append(list(texts))
-            raise RuntimeError("down")
-        return embed(texts)
-
-    monkeypatch.setattr(provider, "embed", fail_tail)
-    result = rec.reconcile(store, site="flush")
-    assert [len(call) for call in provider.calls] == [4, 1]
-    assert result.retry == {"a.md"}
-    assert store.rows_for("a.md") == old
-
-
-def test_shared_outage_retries_each_document_once(tmp_path, monkeypatch):
-    _, provider, store, rec = _setup(tmp_path, NOTES)
-
-    def fail(texts):
-        provider.calls.append(list(texts))
-        raise RuntimeError("down")
-
-    monkeypatch.setattr(provider, "embed", fail)
-    result = rec.reconcile(store, site="flush")
-    assert [len(call) for call in provider.calls] == [2, 1, 1]
-    assert result.retry == {"a.md", "b.md"}
-    assert not store.tokens()
 
 
 def test_shared_failure_retries_only_unembedded_suffix(tmp_path, monkeypatch):
@@ -232,41 +221,31 @@ def test_shared_failure_retries_only_unembedded_suffix(tmp_path, monkeypatch):
     assert all("Changed" in row.metadata["content"] for row in store.rows_for("a.md"))
 
 
-def test_multi_chunk_documents_fill_shared_requests(tmp_path):
-    notes = {
-        f"{i}.md": f"# Note {i}\n\nIntro {i}.\n\n## One\n\nApple {i}.\n\n## Two\n\nBoat {i}.\n"
-        for i in range(4)
-    }
+@pytest.mark.parametrize("shape", ["single", "multi", "oversized"])
+def test_requests_pack_across_documents(tmp_path, shape):
+    if shape == "single":
+        notes = {f"{i}.md": f"# Note {i}\n\nBody {i}.\n" for i in range(5)}
+        expected, counts = [4, 1], [1] * 5
+    elif shape == "multi":
+        notes = {
+            f"{i}.md": f"# Note {i}\n\nIntro {i}.\n\n## One\n\nApple {i}.\n\n## Two\n\nBoat {i}.\n"
+            for i in range(4)
+        }
+        expected, counts = [4, 4, 4], [3] * 4
+    else:
+        notes = {
+            "a.md": "# A\n\n"
+            + "\n".join(f"## Section {i}\n\nContent {i}.\n" for i in range(5)),
+            "b.md": "# B\n\nOther.\n",
+        }
+        expected, counts = [4, 2], [5, 1]
     _, provider, store, rec = _setup(
         tmp_path, notes, chunker=HeadingChunker(short_doc_lines=0)
     )
     result = rec.reconcile(store, site="flush")
-    assert result.embedded == 12
-    assert all(len(store.rows_for(path)) == 3 for path in notes)
-    assert [len(call) for call in provider.calls] == [4, 4, 4]
-
-
-def test_batch_limit_spans_documents(tmp_path):
-    notes = {f"{i}.md": f"# Note {i}\n\nBody {i}.\n" for i in range(5)}
-    _, provider, store, rec = _setup(tmp_path, notes)
-    rec.reconcile(store, site="flush")
-    assert [len(call) for call in provider.calls] == [4, 1]
-    assert set(store.tokens()) == set(notes)
-
-
-def test_oversized_document_tail_shares_next_request(tmp_path):
-    notes = {
-        "a.md": "# A\n\n"
-        + "\n".join(f"## Section {i}\n\nContent {i}.\n" for i in range(5)),
-        "b.md": "# B\n\nOther.\n",
-    }
-    _, provider, store, rec = _setup(
-        tmp_path, notes, chunker=HeadingChunker(short_doc_lines=0)
-    )
-    rec.reconcile(store, site="flush")
-    assert [len(call) for call in provider.calls] == [4, 2]
-    assert "Other" in provider.calls[-1][1]
-    assert len(store.rows_for("a.md")) == 5
+    assert [len(call) for call in provider.calls] == expected
+    assert [len(store.rows_for(path)) for path in sorted(notes)] == counts
+    assert result.embedded == sum(counts)
 
 
 def test_failure_across_document_boundary_keeps_whole_failed_document(
@@ -305,10 +284,7 @@ def test_failure_across_document_boundary_keeps_whole_failed_document(
         for p in ("a.md", "c.md")
         for row in store.rows_for(p)
     )
-    assert any(
-        len(call) == 4 and any("Changed Apple b" in text for text in call)
-        for call in provider.calls
-    )
+    assert [len(call) for call in provider.calls] == [4, 4, 2, 3]
 
 
 def test_cross_boundary_batch_preserves_conditional_conflict(tmp_path, monkeypatch):
@@ -346,7 +322,7 @@ def test_cross_boundary_batch_preserves_conditional_conflict(tmp_path, monkeypat
     assert all("New" in row.metadata["content"] for row in store.rows_for("a.md"))
 
 
-@pytest.mark.parametrize("failure", ["rejected", "count"])
+@pytest.mark.parametrize("failure", ["rejected", "count", "outage"])
 def test_shared_request_falls_back_per_document(tmp_path, monkeypatch, failure):
     fts, provider, store, rec = _setup(tmp_path, NOTES)
     rec.reconcile(store, site="test")
@@ -358,7 +334,9 @@ def test_shared_request_falls_back_per_document(tmp_path, monkeypatch, failure):
     embed = provider.embed
 
     def flaky(texts):
-        if failure == "rejected" and any("New a.md" in t for t in texts):
+        if failure == "outage" or (
+            failure == "rejected" and any("New a.md" in t for t in texts)
+        ):
             provider.calls.append(list(texts))
             raise RuntimeError("rejected")
         if failure == "count" and len(texts) > 1:
@@ -369,6 +347,10 @@ def test_shared_request_falls_back_per_document(tmp_path, monkeypatch, failure):
     monkeypatch.setattr(provider, "embed", flaky)
     result = rec.reconcile(store, site="flush")
     assert [len(call) for call in provider.calls] == [2, 1, 1]
+    if failure == "outage":
+        assert result.retry == {"a.md", "b.md"}
+        assert store.rows_for("a.md") == old
+        return
     assert "New b.md" in store.rows_for("b.md")[0].metadata["content"]
     if failure == "rejected":
         assert result.retry == {"a.md"}
@@ -378,7 +360,7 @@ def test_shared_request_falls_back_per_document(tmp_path, monkeypatch, failure):
         assert "New a.md" in store.rows_for("a.md")[0].metadata["content"]
 
 
-def test_reuse_only_document_publishes_while_other_is_pending(tmp_path):
+def test_reuse_only_document_is_published_in_a_pass_with_a_miss(tmp_path):
     notes = {
         "a.md": "# A\n\nApple.\n",
         "b.md": "# S\n\nIntro.\n\n## One\n\nApples.\n\n## Two\n\nBoats.\n\n## End\n\nFin.\n",
