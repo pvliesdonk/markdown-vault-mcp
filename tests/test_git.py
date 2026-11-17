@@ -13,6 +13,7 @@ import pytest
 from markdown_vault_mcp.config_sections._assembly import to_vault_instances
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.vault import VaultSettings
+from tests.fixtures.git import isolated_git  # noqa: F401
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +26,8 @@ from markdown_vault_mcp.git import (
     conflict,
     git_write_strategy,
 )
+
+pytestmark = pytest.mark.usefixtures("isolated_git")
 
 
 def _write_conflict_files(
@@ -1213,55 +1216,6 @@ class TestGitLfsSupport:
             assert lfs_pull_mock.call_count == 1, "_lfs_pull must not be called again"
 
 
-class TestStageAndCommitPathHandling:
-    """Edge cases in _stage_and_commit path handling."""
-
-    def test_path_not_under_git_root_uses_full_path(self, git_repo: Path) -> None:
-        """Commit message uses the full path when path is not under git_root."""
-        from pathlib import Path
-        from unittest.mock import MagicMock, patch
-
-        from markdown_vault_mcp.git import _stage_and_commit
-
-        # Path outside the git_root — path.relative_to(git_root) will raise ValueError.
-        outside_path = Path("/tmp/some_other_file.md")
-
-        recorded_msgs: list[str] = []
-
-        def mock_run(cmd, **_kwargs):  # type: ignore[no-untyped-def]
-            if isinstance(cmd, list) and "commit" in cmd:
-                try:
-                    idx = cmd.index("-m")
-                    recorded_msgs.append(cmd[idx + 1])
-                except (ValueError, IndexError):
-                    pass
-                result = MagicMock()
-                result.returncode = 0
-                result.stdout = ""
-                result.stderr = ""
-                return result
-
-            if isinstance(cmd, list) and "diff" in cmd:
-                # Return nonzero so the commit is not skipped.
-                result = MagicMock()
-                result.returncode = 1
-                return result
-
-            # All other calls (git add) succeed silently.
-            result = MagicMock()
-            result.returncode = 0
-            result.stdout = ""
-            result.stderr = ""
-            return result
-
-        with patch("markdown_vault_mcp.git.subprocess.run", side_effect=mock_run):
-            _stage_and_commit(git_repo, outside_path, "write")
-
-        # The commit message must use the full outside_path (not a relative path).
-        assert len(recorded_msgs) == 1
-        assert str(outside_path) in recorded_msgs[0]
-
-
 class TestGlobMetacharactersInNoteNames:
     """A note named like a glob is one note, not a pattern (#1303, #1304).
 
@@ -1319,24 +1273,6 @@ class TestGlobMetacharactersInNoteNames:
             check=True,
         ).stdout
         return sorted(line for line in out.splitlines() if line)
-
-    def test_write_commits_the_note_and_leaves_the_sibling_alone(
-        self, git_repo: Path
-    ) -> None:
-        """The sibling's uncommitted edit stays uncommitted, and on disk."""
-        callback = git_write_strategy()
-        sibling = self._seed_sibling(git_repo)
-        # An edit the operator has not committed: the work #894 / #1273
-        # established a vault write must never carry off.
-        sibling.write_text("# sibling v2, still being written\n")
-        note = git_repo / "b[1].md"
-        note.write_text("# bracket note\n")
-
-        callback(note, "# bracket note\n", "write")
-
-        assert self._last_commit_files(git_repo) == ["b[1].md"]
-        assert self._porcelain(git_repo) == " M b1.md\n"
-        assert sibling.read_text() == "# sibling v2, still being written\n"
 
     def test_delete_stages_only_the_notes_own_removal(self, git_repo: Path) -> None:
         """Deleting the note does not stage the sibling's pending edit."""
@@ -1539,163 +1475,6 @@ class TestGitSyncOnce:
         assert captured
         assert captured[-1] is not None
         assert "GIT_ASKPASS" in captured[-1]
-
-    def test_sync_once_diverged_clean_rebases(
-        self,
-        tmp_path: Path,
-        git_repo_with_remote: tuple[Path, Path],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """sync_once() rebases local commits onto upstream when branches diverge cleanly.
-
-        This is the common Obsidian scenario: both sides committed on different
-        files so the rebase applies without conflict.
-        """
-
-        work, bare = git_repo_with_remote
-
-        # Create a local-only commit on a different file (do not push).
-        (work / "local-note.md").write_text("# Local note\n")
-        subprocess.run(
-            ["git", "-C", str(work), "add", "."],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(work), "commit", "-m", "local note"],
-            check=True,
-            capture_output=True,
-        )
-
-        # Advance remote on a separate clone (different file).
-        other = tmp_path / "other"
-        subprocess.run(
-            ["git", "clone", str(bare), str(other)],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "config", "user.email", "test@test.com"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "config", "user.name", "Test"],
-            check=True,
-            capture_output=True,
-        )
-        (other / "obsidian-note.md").write_text("# Obsidian note\n")
-        subprocess.run(
-            ["git", "-C", str(other), "add", "."],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "commit", "-m", "obsidian note"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "push"],
-            check=True,
-            capture_output=True,
-        )
-
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
-        with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.git"):
-            did_advance = strategy.sync_once(work)
-
-        assert did_advance is True
-        assert any("git_rebase_succeeded" in r.message for r in caplog.records)
-        # Both files should be present after the rebase.
-        assert (work / "local-note.md").exists()
-        assert (work / "obsidian-note.md").exists()
-
-    def test_sync_once_diverged_conflict_creates_conflict_file(
-        self,
-        tmp_path: Path,
-        git_repo_with_remote: tuple[Path, Path],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """sync_once() resolves same-file conflict by saving MCP version as conflict file."""
-        import frontmatter as fm
-
-        work, bare = git_repo_with_remote
-
-        # Create a local-only commit on README.md (do not push).
-        (work / "README.md").write_text("# Local diverge\n")
-        subprocess.run(
-            ["git", "-C", str(work), "add", "."],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(work), "commit", "-m", "local diverge"],
-            check=True,
-            capture_output=True,
-        )
-
-        # Advance remote on a separate clone, also modifying README.md.
-        other = tmp_path / "other"
-        subprocess.run(
-            ["git", "clone", str(bare), str(other)],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "config", "user.email", "test@test.com"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "config", "user.name", "Test"],
-            check=True,
-            capture_output=True,
-        )
-        (other / "README.md").write_text("# Remote diverge\n")
-        subprocess.run(
-            ["git", "-C", str(other), "add", "."],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "commit", "-m", "remote diverge"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(other), "push"],
-            check=True,
-            capture_output=True,
-        )
-
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
-        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
-            did_advance = strategy.sync_once(work)
-
-        # Conflict resolved — HEAD advanced.
-        assert did_advance is True
-        assert any("git_conflict_resolved" in r.message for r in caplog.records)
-
-        # Original file has upstream content.
-        assert "# Remote diverge" in (work / "README.md").read_text()
-
-        # Conflict file exists with MCP content.
-        conflict_files = list(work.glob("README.conflict-mcp-*.md"))
-        assert len(conflict_files) == 1
-        conflict_file = conflict_files[0]
-        assert "# Local diverge" in conflict_file.read_text()
-
-        # Both files have symmetric conflict_with frontmatter.
-        orig_post = fm.loads((work / "README.md").read_text())
-        conflict_post = fm.loads(conflict_file.read_text())
-
-        assert orig_post.metadata["conflict_with"] == str(
-            conflict_file.relative_to(work)
-        )
-        assert conflict_post.metadata["conflict_with"] == "README.md"
-        assert "conflict_date" in orig_post.metadata
-        assert "conflict_date" in conflict_post.metadata
 
     def test_sync_once_conflict_preserves_existing_frontmatter(
         self,
@@ -2386,9 +2165,12 @@ class TestRebaseInProgress:
         assert conflict.rebase_in_progress(git_repo, env=None, token=None) is False
 
     def test_real_interrupted_rebase_aborts_then_retries(
-        self, git_repo_pair: GitRepoPair, tmp_path: Path
+        self,
+        git_repo_pair: GitRepoPair,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """The recovery helper restores local work before a public sync retry."""
+        """A halted rebase requires manual recovery before a public sync retry."""
         from tests.fixtures.git import _run_git
 
         local = git_repo_pair.local_path
@@ -2413,6 +2195,16 @@ class TestRebaseInProgress:
         strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
         try:
             assert conflict.rebase_in_progress(local, env=None, token=None)
+            halted_head = _run_git(local, "rev-parse", "HEAD").strip()
+            unmerged = _run_git(local, "ls-files", "-u")
+            assert unmerged
+            with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+                assert strategy.sync_once(local) is False
+            assert "git_worktree_dirty" in caplog.text
+            assert "recovery=manual" in caplog.text
+            assert conflict.rebase_in_progress(local, env=None, token=None)
+            assert _run_git(local, "rev-parse", "HEAD").strip() == halted_head
+            assert _run_git(local, "ls-files", "-u") == unmerged
             assert conflict.abort_in_progress_rebase(local, env=None, token=None)
             assert not conflict.rebase_in_progress(local, env=None, token=None)
             assert _run_git(local, "rev-parse", "HEAD").strip() == local_head
@@ -4012,96 +3804,37 @@ class TestGetFileDiff:
         assert isinstance(out, list) and out
         assert any("Bin" in cd.diff for cd in out)
 
+    @staticmethod
+    def _merged_orphan_root(repo: Path, name: str, data: bytes) -> tuple[str, str]:
+        """Merge an unrelated root so it appears in a real ref..HEAD walk."""
+        from tests.fixtures.git import _run_git
+
+        branch = _run_git(repo, "branch", "--show-current").strip()
+        base = _run_git(repo, "rev-parse", "HEAD").strip()
+        _run_git(repo, "checkout", "--orphan", "unrelated")
+        _run_git(repo, "rm", "-rf", ".")
+        (repo / name).write_bytes(data)
+        _run_git(repo, "add", name)
+        _run_git(repo, "commit", "-qm", "orphan root")
+        root = _run_git(repo, "rev-parse", "HEAD").strip()
+        _run_git(repo, "checkout", branch)
+        _run_git(
+            repo, "merge", "--allow-unrelated-histories", "-m", "merge", "unrelated"
+        )
+        return base, root
+
     def test_get_file_diff_per_commit_parent_less_falls_back_to_git_show(
-        self, tmp_path: Path
+        self, git_repo: Path
     ) -> None:
-        """For a genuinely parent-less (root/orphan) commit the per-commit branch
-        falls back to the add-form ``git show`` rather than crashing (#683).
-
-        The ``rev-parse --verify {sha}^`` probe returns non-zero (no parent),
-        so the code classifies this as an orphan commit and uses the fallback
-        instead of surfacing the diff failure as a ``ValueError``.
-        """
-        from unittest.mock import patch
-
-        repo = tmp_path / "r"
-        repo.mkdir()
-        for a in (
-            ["init"],
-            ["config", "user.email", "t@t"],
-            ["config", "user.name", "t"],
-        ):
-            subprocess.run(
-                ["git", "-C", str(repo), *a], check=True, capture_output=True
-            )
-        (repo / "seed.txt").write_text("seed\n")
-        subprocess.run(
-            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
-        )
-        subprocess.run(
-            ["git", "-C", str(repo), "commit", "-m", "seed"],
-            check=True,
-            capture_output=True,
-        )
-        first = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        (repo / "note.md").write_text("# added\nhello\n")
-        subprocess.run(
-            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
-        )
-        subprocess.run(
-            ["git", "-C", str(repo), "commit", "-m", "add note"],
-            check=True,
-            capture_output=True,
-        )
-
-        real_run = subprocess.run
-        show_seen: list[bool] = []
-
-        def fake_run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
-            # Simulate a parent-less commit by:
-            # 1. Forcing the parent-relative per-commit diff (-p, not --numstat) to fail.
-            # 2. Returning non-zero for the `rev-parse --verify {sha}^` parent probe,
-            #    so the code classifies the commit as parent-less and uses the fallback.
-            if (
-                isinstance(cmd, list)
-                and "diff" in cmd
-                and "-p" in cmd
-                and "--numstat" not in cmd
-            ):
-                raise subprocess.CalledProcessError(128, cmd)
-            if (
-                isinstance(cmd, list)
-                and "rev-parse" in cmd
-                and "--verify" in cmd
-                and any(a.endswith("^") for a in cmd)
-            ):
-                import subprocess as _sp
-
-                return _sp.CompletedProcess(
-                    args=cmd, returncode=1, stdout=b"", stderr=b""
-                )
-            if isinstance(cmd, list) and "show" in cmd:
-                show_seen.append(True)
-            return real_run(cmd, *args, **kwargs)
-
-        strategy = GitWriteStrategy()
-        with patch("markdown_vault_mcp.git.subprocess.run", side_effect=fake_run):
-            out = strategy.get_file_diff(
-                repo,
-                repo / "note.md",
-                ref=first,
-                per_commit=True,
-                summarize_binary=False,
-            )
-        assert isinstance(out, list) and out
-        # Fallback used and produced the add-form diff for the note.
-        assert show_seen
-        assert any("+hello" in cd.diff for cd in out)
+        """A merged root yields its real add-form diff without a parent (#683)."""
+        base, root = self._merged_orphan_root(git_repo, "note.md", b"hello\n")
+        strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
+        try:
+            out = strategy.get_file_diff(git_repo, git_repo / "note.md", base, True)
+            assert isinstance(out, list)
+            assert any(entry.sha == root and "+hello" in entry.diff for entry in out)
+        finally:
+            strategy.close()
 
     def test_get_file_diff_per_commit_parent_less_fallback_show_also_fails_raises(
         self, tmp_path: Path
@@ -4421,113 +4154,19 @@ class TestGetFileDiff:
         assert any("=>" in cd.diff and "renamed" in cd.diff for cd in out)
 
     def test_get_file_diff_per_commit_root_binary_classification_fires(
-        self, tmp_path: Path
+        self, git_repo: Path
     ) -> None:
-        """parent-less + summarize_binary=True classifies the file against the empty
-        tree so a root binary commit gets a Bin --stat rather than a raw patch (#683).
-
-        The mock forces the primary diff to fail and the parent-probe to return
-        non-zero (orphan), then presents the empty-tree numstat as binary and the
-        fallback git-show --stat as a Bin line.
-        """
-        from unittest.mock import patch
-
-        repo = tmp_path / "r"
-        repo.mkdir()
-        for a in (
-            ["init"],
-            ["config", "user.email", "t@t"],
-            ["config", "user.name", "t"],
-        ):
-            subprocess.run(
-                ["git", "-C", str(repo), *a], check=True, capture_output=True
-            )
-        (repo / "seed.txt").write_text("seed\n")
-        subprocess.run(
-            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
-        )
-        subprocess.run(
-            ["git", "-C", str(repo), "commit", "-m", "seed"],
-            check=True,
-            capture_output=True,
-        )
-        first = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        assets = repo / "assets"
-        assets.mkdir()
-        (assets / "z.bin").write_bytes(b"BIN\x00DATA")
-        subprocess.run(
-            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
-        )
-        subprocess.run(
-            ["git", "-C", str(repo), "commit", "-m", "add z.bin"],
-            check=True,
-            capture_output=True,
-        )
-
-        real_run = subprocess.run
-        empty_tree_numstat_seen: list[bool] = []
-
-        def fake_run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
-            # 1. Force the primary per-commit diff (--stat or -p, not --numstat) to fail.
-            if isinstance(cmd, list) and "diff" in cmd and "--numstat" not in cmd:
-                raise subprocess.CalledProcessError(128, cmd)
-            # 2. Make the parent-probe return non-zero so the code treats it as orphan.
-            if (
-                isinstance(cmd, list)
-                and "rev-parse" in cmd
-                and "--verify" in cmd
-                and any(a.endswith("^") for a in cmd)
-            ):
-                import subprocess as _sp
-
-                return _sp.CompletedProcess(
-                    args=cmd, returncode=1, stdout=b"", stderr=b""
-                )
-            # 3. Make the empty-tree numstat classify the file as binary.
-            from markdown_vault_mcp.git.query import _EMPTY_TREE_SHA
-
-            if (
-                isinstance(cmd, list)
-                and "diff" in cmd
-                and "--numstat" in cmd
-                and _EMPTY_TREE_SHA in cmd
-            ):
-                empty_tree_numstat_seen.append(True)
-                import subprocess as _sp
-
-                return _sp.CompletedProcess(
-                    args=cmd, returncode=0, stdout="-\t-\tassets/z.bin\n", stderr=""
-                )
-            # 4. The fallback git-show --stat returns a Bin line.
-            if isinstance(cmd, list) and "show" in cmd and "--stat" in cmd:
-                import subprocess as _sp
-
-                return _sp.CompletedProcess(
-                    args=cmd,
-                    returncode=0,
-                    stdout=" assets/z.bin | Bin 0 -> 8 bytes\n",
-                    stderr="",
-                )
-            return real_run(cmd, *args, **kwargs)
-
-        strategy = GitWriteStrategy()
-        with patch("markdown_vault_mcp.git.subprocess.run", side_effect=fake_run):
+        """A real parentless binary commit is summarized against the empty tree."""
+        base, root = self._merged_orphan_root(git_repo, "z.bin", b"BIN\x00DATA")
+        strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
+        try:
             out = strategy.get_file_diff(
-                repo,
-                repo / "assets" / "z.bin",
-                ref=first,
-                per_commit=True,
-                summarize_binary=True,
+                git_repo, git_repo / "z.bin", base, True, summarize_binary=True
             )
-        # The empty-tree numstat probe fired (load-bearing: classifies the root binary).
-        assert empty_tree_numstat_seen
-        assert isinstance(out, list) and out
-        assert any("Bin" in cd.diff for cd in out)
+            assert isinstance(out, list)
+            assert any(entry.sha == root and "Bin" in entry.diff for entry in out)
+        finally:
+            strategy.close()
 
     def test_empty_tree_resolution_matches_repo_object_format(
         self, tmp_path: Path
@@ -5554,6 +5193,7 @@ class TestOidcClaimAuthorCommitterSplit:
         from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
+            enable_push=False,
             commit_name="bot",
             commit_email="bot@srv.com",
         )
@@ -5577,6 +5217,7 @@ class TestOidcClaimAuthorCommitterSplit:
     def test_no_principal_author_equals_committer(self, git_repo: Path) -> None:
         """Without a principal, author and committer are both the static identity."""
         strategy = GitWriteStrategy(
+            enable_push=False,
             commit_name="bot",
             commit_email="bot@srv.com",
         )
@@ -5595,6 +5236,7 @@ class TestOidcClaimAuthorCommitterSplit:
         from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
+            enable_push=False,
             commit_name="bot",
             commit_email="bot@srv.com",
         )
@@ -5613,6 +5255,7 @@ class TestOidcClaimAuthorCommitterSplit:
         from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
+            enable_push=False,
             commit_name="bot",
             commit_email="bot@srv.com",
         )

@@ -14,6 +14,7 @@ invocation gets its own ``tmp_path`` so tests do not pollute each other.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -21,6 +22,17 @@ import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.fixture
+def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep operator Git configuration and identity out of synthetic repos."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
+    for role in ("AUTHOR", "COMMITTER"):
+        for field in ("NAME", "EMAIL", "DATE"):
+            monkeypatch.delenv(f"GIT_{role}_{field}", raising=False)
 
 
 class GitRepoPair(NamedTuple):

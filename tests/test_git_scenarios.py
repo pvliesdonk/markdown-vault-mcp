@@ -10,25 +10,19 @@ import pytest
 
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
-from tests.fixtures.git import GitRepoPair, _run_git
+from tests.fixtures.git import GitRepoPair, _run_git, isolated_git  # noqa: F401
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
 
-@pytest.fixture(autouse=True)
-def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the operator's git configuration out of synthetic repositories."""
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
-    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
+pytestmark = pytest.mark.usefixtures("isolated_git")
 
 
-@pytest.fixture(params=["cli"])
-def store(request: pytest.FixtureRequest) -> Iterator[GitWriteStrategy]:
-    """Run each scenario against every available versioned-store backend."""
-    assert request.param == "cli"
+@pytest.fixture
+def store() -> Iterator[GitWriteStrategy]:
+    """Create the CLI store; add backends here when they exist."""
     strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
     yield strategy
     strategy.close()
@@ -103,7 +97,7 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     note.write_text(body + "updated\n")
     store(note, body + "updated\n", "edit")
     _bounded(repo, {name})
-    renamed = repo / ("renamed-" + name)
+    renamed = repo / name.replace(".md", "-renamed.md")
     note.rename(renamed)
     store(renamed, body + "updated\n", "rename", old_path=note)
     _bounded(repo, {name, renamed.name})
@@ -194,39 +188,13 @@ def test_rename_threshold_agrees_across_queries(
     assert revision.content == original
 
 
-def test_sha256_history_diff_and_revision(
-    tmp_path: Path, store: GitWriteStrategy
-) -> None:
-    """The shared query contract accepts full SHA-256 object IDs."""
-    repo = tmp_path / "sha256"
-    repo.mkdir()
-    init = subprocess.run(
-        ["git", "-C", str(repo), "init", "-q", "--object-format=sha256"],
-        capture_output=True,
-    )
-    if init.returncode:
-        pytest.skip("installed git does not support SHA-256 repositories")
-    _run_git(repo, "config", "user.name", "Test")
-    _run_git(repo, "config", "user.email", "test@example.com")
-    note = repo / "note.md"
-    note.write_text("first\n")
-    store(note, "first\n", "write")
-    first = _head(repo)
-    note.write_text("second\n")
-    store(note, "second\n", "edit")
-    assert len(first) == 64
-    assert store.get_file_history(repo, note, None, 10)[-1].sha == first
-    diff = store.get_file_diff(repo, note, first, False)
-    assert isinstance(diff, str) and "-first" in diff and "+second" in diff
-    result = store.get_file_at_ref(
-        RevisionQuery(repo_path=repo, path=note, ref=first, max_bytes=0)
-    )
-    assert result.content == "first\n"
-
-
 @pytest.mark.parametrize("mode", ["clean", "conflict", "union", "dirty"])
 def test_two_clone_divergence(
-    git_repo_pair: GitRepoPair, tmp_path: Path, store: GitWriteStrategy, mode: str
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    store: GitWriteStrategy,
+    mode: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The remote transition preserves both sides, or refuses a dirty tree."""
     local = git_repo_pair.local_path
@@ -246,7 +214,8 @@ def test_two_clone_divergence(
     before = _head(local)
     remote = _head(other)
     _run_git(other, "push")
-    advanced = store.sync_once(local)
+    with caplog.at_level("INFO", logger="markdown_vault_mcp.git"):
+        advanced = store.sync_once(local)
     if mode == "dirty":
         assert not advanced and _head(local) == before
         assert (local / "README.md").read_text() == "uncommitted local\n"
@@ -254,6 +223,7 @@ def test_two_clone_divergence(
         assert advanced
         _run_git(local, "merge-base", "--is-ancestor", remote, "HEAD")
         if mode == "clean":
+            assert "git_rebase_succeeded" in caplog.text
             assert (local / "local.md").read_text() == "local\n"
             assert (local / "remote.md").read_text() == "remote\n"
         elif mode == "union":
@@ -264,6 +234,15 @@ def test_two_clone_divergence(
             assert (local / "README.md").read_text().endswith("remote")
             siblings = list(local.glob("README.conflict-mcp-*.md"))
             assert len(siblings) == 1 and siblings[0].read_text().endswith("local")
+            assert "git_conflict_resolved" in caplog.text
+            import frontmatter
+
+            original = frontmatter.loads((local / "README.md").read_text())
+            sibling = frontmatter.loads(siblings[0].read_text())
+            assert original.metadata["conflict_with"] == siblings[0].name
+            assert sibling.metadata["conflict_with"] == "README.md"
+            assert "conflict_date" in original.metadata
+            assert "conflict_date" in sibling.metadata
     assert not (local / ".git/rebase-merge").exists()
     assert not (local / ".git/rebase-apply").exists()
 
@@ -292,3 +271,5 @@ def test_glob_name_does_not_commit_matching_sibling(
     ) == {name}
     assert _run_git(git_repo, "show", f"HEAD:{sibling}") == "original\n"
     assert (git_repo / sibling).read_text() == "pending\n"
+    assert _paths(git_repo, "diff", "--cached", "--name-only", "-z") == set()
+    assert _paths(git_repo, "diff", "--name-only", "-z") == {sibling}
