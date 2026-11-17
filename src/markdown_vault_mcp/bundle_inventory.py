@@ -138,12 +138,12 @@ def _missing(exc: OSError) -> bool:
 
 
 def _role(name: str, conventions_file: str | None) -> Role:
-    if name == conventions_file:
-        return "support"
     if name == "index.md":
         return "navigation"
     if name == "log.md":
         return "history"
+    if name == conventions_file:
+        return "support"
     return "concept_candidate" if is_note(name) else "supporting"
 
 
@@ -210,10 +210,6 @@ def _normalized_name(name: str) -> str:
 
 
 def _vector_matrix(candidate: Path, base: Path) -> bool:
-    if candidate.parent != base.parent and not _same_file(
-        candidate.parent, base.parent
-    ):
-        return False
     name = _normalized_name(candidate.name)
     for prefix in (".m", ".v2.m"):
         stem = _normalized_name(base.with_suffix(prefix).name)
@@ -342,9 +338,6 @@ class BundleInspector:
             return True
         return any(_vector_matrix(candidate, base) for base in self._vector_bases)
 
-    def _index_excluded(self, path: str) -> bool:
-        return is_path_excluded(path, self._excludes)
-
     def inspect(self, request: BundleInspectionRequest) -> BundleInspection:
         """Observe one directory independently of index admission.
 
@@ -356,8 +349,6 @@ class BundleInspector:
         """
         parts = _components(request.root) + _components(request.directory)
         scope = "/".join(parts)
-        if any(part in {".git", ".markdown_vault_mcp"} for part in parts):
-            return BundleInspection(request, "unavailable")
         try:
             root = self._source.resolve(strict=True)
             self._prepare_policy(root)
@@ -365,17 +356,14 @@ class BundleInspector:
             return BundleInspection(request, "unavailable")
         try:
             if any(
-                self._internal("/".join(parts[:i])) for i in range(1, len(parts) + 1)
+                self._internal("/".join(parts[:i])) for i in range(0, len(parts) + 1)
             ):
                 return BundleInspection(request, "unavailable")
             with open_directory_nofollow(root, parts, source_resolved=True) as parent:
                 return self._enumerate(parent, request, scope)
-        except (OSError, RuntimeError) as exc:
+        except OSError as exc:
             return BundleInspection(
-                request,
-                "missing"
-                if isinstance(exc, OSError) and _missing(exc)
-                else "unavailable",
+                request, "missing" if _missing(exc) else "unavailable"
             )
 
     def _enumerate(
@@ -415,7 +403,7 @@ class BundleInspector:
                             replace(
                                 entry,
                                 visibility="index_excluded"
-                                if self._index_excluded(path)
+                                if is_path_excluded(path, self._excludes)
                                 else "visible",
                                 hidden_path=any(
                                     part.startswith(".") for part in path.split("/")

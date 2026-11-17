@@ -1418,3 +1418,44 @@ def test_reader_omits_chmod_denied_directory_and_attachment(tmp_path: Path) -> N
     finally:
         directory.chmod(0o700)
         attachment.chmod(0o600)
+
+
+@pytest.mark.parametrize("state_is_ancestor", [False, True])
+@pytest.mark.parametrize("scope", ["", "sub"])
+def test_reader_refuses_protected_vault_root_and_ancestor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state_is_ancestor: bool, scope: str
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "sub").mkdir()
+    (source / "note.md").write_text("body")
+    state = tmp_path if state_is_ancestor else source
+    vault = Vault(source_dir=source, settings=VaultSettings(state_path=state))
+    opener = Mock(side_effect=AssertionError("protected root entered"))
+    monkeypatch.setattr(inventory, "open_directory_nofollow", opener)
+    try:
+        result = vault.reader.inspect_bundle(
+            BundleInspectionRequest(root=scope, entry_limit=1)
+        )
+        assert result.state == "unavailable"
+        assert result.enumeration == "not_inspected"
+        assert result.entries == ()
+        opener.assert_not_called()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "role"), [("index.md", "navigation"), ("log.md", "history")]
+)
+def test_reserved_role_when_conventions_name_collides(
+    tmp_path: Path, name: str, role: str
+) -> None:
+    (tmp_path / name).write_text("body")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(conventions_file=name))
+    try:
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert result.entries[0].role == role
+        assert result.entries[0].visibility == "index_excluded"
+    finally:
+        vault.close()

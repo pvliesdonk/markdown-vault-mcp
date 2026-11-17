@@ -95,8 +95,8 @@ directory within an accessible source is `missing`.
 Each entry contains its vault-relative `path`, filename-based `role`, `state`,
 `reason`, `parse_state`, `type_state`, `visibility` and `hidden_path`. Exact
 `index.md` and `log.md` names mean `navigation` and `history`; the configured
-conventions filename has role `support`, and other `.md` files are
-`concept_candidate`.
+conventions filename has role `support` unless it is `index.md` or `log.md`;
+other `.md` files are `concept_candidate`.
 Directories and allowed regular attachments have `directory` and `supporting`
 roles. Roles describe observations and grant no conformance or write authority.
 

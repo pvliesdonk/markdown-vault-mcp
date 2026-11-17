@@ -3605,7 +3605,8 @@ are omitted without hiding neighboring notes. Live filesystem identity checks
 recognize alternate case and Unicode spellings before opening selected components.
 Directory, attachment and budget-exhausted note candidates receive a no-follow
 open probe; permission refusals make enumeration incomplete and do not reveal
-denied child names. The configured conventions filename has the support role. Non-directory
+denied child names. The configured conventions filename has the support role unless it is
+`index.md` or `log.md`, which retain their reserved roles. Non-directory
 filenames retain `ArtifactStore.extensions()` allowlist policy, including
 nonregular candidates. No metadata values, bodies or symlink
 targets are returned. The configured
