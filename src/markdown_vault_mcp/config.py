@@ -133,6 +133,17 @@ class ProjectConfig:
             "tags": ("vault", "readme"),
         },
     )
+    reference_namespace: str | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Stable unique namespace for portable file references. Keep it "
+                "unchanged across vault moves and deployments; use a different "
+                "value for each independent vault. Unset disables reference calls."
+            ),
+            "tags": ("vault",),
+        },
+    )
     read_only: bool = field(
         default=False,
         metadata={
@@ -1324,6 +1335,12 @@ class ProjectConfig:
         ``object.__setattr__(self, "name", value)``.
         """
         # CONFIG-VALIDATE-START — validate domain fields below; kept across copier update
+        if self.reference_namespace is not None and (
+            not self.reference_namespace.strip() or len(self.reference_namespace) > 256
+        ):
+            raise ConfigurationError(
+                "reference_namespace must be nonempty and at most 256 characters"
+            )
         # Freeze sequence-valued flat fields into tuples for deep
         # immutability (#639); reject a bare str/bytes, which is itself a
         # Sequence[str] and would silently split into characters.
@@ -1379,6 +1396,7 @@ class ProjectConfig:
             # OPENAI_EMBEDDING_MODEL fallbacks) are declared in
             # config-presentation.domain.yml instead.
             source_dir=resolve_source_dir(env(_ENV_PREFIX, "SOURCE_DIR")),
+            reference_namespace=env(_ENV_PREFIX, "REFERENCE_NAMESPACE") or None,
             read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=False),
             write_protect_existing=to_bool(
                 env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=True

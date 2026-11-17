@@ -100,6 +100,7 @@ src/markdown_vault_mcp/
   embed_text.py        -- EmbedTextBuilder: single shared builder for (context-enriched) embedding input text
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection
+  references.py        -- FileReference/ReferenceResolution and ReferenceReader: portable namespace/path references, stable raw-byte SHA-256 and verified reads without Git or retention (#2124)
   hashing.py           -- compute_etag / compute_file_hash: shared SHA-256 helpers
   types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
   exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)

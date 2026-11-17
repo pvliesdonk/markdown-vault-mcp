@@ -11,6 +11,65 @@ kind: reference
 <!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
 <!-- DOMAIN-INTRO-END -->
 
+## `get_file_reference`
+
+**Get File Reference.** Read-only. Idempotent.
+
+Create a portable file reference without returning its body.
+
+Save the result for `resolve_file_reference` to check later.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Vault-relative note or allowed attachment path. |
+| `include_sha256` | `boolean` | `false` | Include SHA-256 of the complete raw file, including frontmatter. |
+| `provenance` | `string \| null` | `null` | Optional caller label, at most 1024 characters; omitted by default. |
+
+**Returns**
+
+Version 1 reference with namespace, path, `size_bytes`, optional sha256
+and provenance. A reference retains no historical copy.
+
+<!-- DOMAIN-EXAMPLE-get_file_reference-START -->
+
+```json
+{"path": "notes/report.md", "include_sha256": true}
+```
+
+Save the returned object unchanged. See the [reference contract](../api/vault.md#portable-file-references)
+for namespace configuration and retention limits.
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-get_file_reference-END -->
+
+## `resolve_file_reference`
+
+**Resolve File Reference.** Read-only. Idempotent.
+
+Check a saved reference against current raw bytes, optionally reading verified bytes.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `reference` | `object` | required | Complete saved reference from `get_file_reference`. |
+| `include_content` | `boolean` | `false` | Include verified raw bytes as `content_base64`; requires a saved digest. |
+
+**Returns**
+
+verified, unverified (no digest), changed, missing (including renamed),
+or `wrong_vault`, with the original reference and recovery guidance.
+Only a verified result can contain bytes. No history is retained.
+
+<!-- DOMAIN-EXAMPLE-resolve_file_reference-START -->
+
+Pass the saved object as `reference`; set `include_content` to `true` to
+retrieve the exact verified bytes as base64. A changed or missing path
+returns no body. A renamed file reports `missing`.
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-resolve_file_reference-END -->
+
 ## `search`
 
 **Search Vault.** Read-only. Idempotent.
