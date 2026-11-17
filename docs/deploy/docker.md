@@ -278,7 +278,8 @@ other KV state when switching an existing deployment. The vault remains on
 its own mount. External KV or PostgreSQL embedding stores retain their own
 storage and are not reset by this recipe.
 
-Save this as `compose.search.yml` beside `compose.yml`:
+Save this as `compose.override.yml` beside `compose.yml`. If that file already
+exists, merge these entries into it and keep its existing settings:
 
 ```yaml
 services:
@@ -308,26 +309,31 @@ under `/data`, including the new volume, before dropping privileges to
 `PUID`/`PGID`. With a Compose `user:` override, provision the new volume as
 writable by that user yourself; the entrypoint cannot fix its ownership.
 
-Start or recreate with both files explicitly, including after later changes.
-Explicit `-f` options do not load `compose.override.yml` automatically: add
-any existing overlay files before `compose.search.yml` in every command below
-to retain your deployment's settings.
+Compose loads `compose.override.yml` automatically. Start or recreate the
+service, including after later changes:
 
 ```bash
-docker compose -f compose.yml -f compose.search.yml up -d
+docker compose up -d
 ```
 
 The server rebuilds search data from the vault; model downloads and embedding
 generation can take time. The old search files remain unused in `state-data`;
-keep them until you have verified the new index. A normal reindex is the
-usual way to rebuild search; the following cold reset is for testing a fresh
+keep them until you have verified the new index.
+
+Use the new `/data/search`
+paths in path-specific backup and export procedures, including
+[embedding backups](../use/embedding-state.md). Once the split is verified,
+resetting auth and session data on `state-data` leaves the active search data
+on `search-data` untouched.
+
+A normal reindex is the usual way to rebuild search; the following cold reset is for testing a fresh
 search volume. It deletes everything on `/data/search`, so use it only with
 the overlay above and no other data on that volume:
 
 ```bash
-docker compose -f compose.yml -f compose.search.yml stop
-docker compose -f compose.yml -f compose.search.yml run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/search -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
-docker compose -f compose.yml -f compose.search.yml up -d
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/search -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
 ```
 
 The reset leaves `state-data` and the vault mounted, preserving their contents.
