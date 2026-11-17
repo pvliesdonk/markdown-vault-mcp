@@ -324,8 +324,12 @@ medians at 3,252 notes were 450.12 → 449.96 MiB for NumPy, 343.97 →
 window includes post-build GC, diagnostic allocator trim and close.
 Five-millisecond sampling and scalar instrumentation add overhead; these
 finite runs establish neither an asymptotic bound nor a production budget.
-The unchanged embedding stages still hold prepared text, packed vectors
-and normalized generations. NumPy's required resident matrix alone was
+The measured embedding stages held prepared text, packed vectors
+and normalized generations. Full-build preparation now stages completed windows
+on scratch disk under `TMPDIR`; memory-backed scratch consumes memory. Built-in
+publishers still materialize generation copies, and third-party keyword indexes
+without the optional chunk iterator retain an eager read. Path bookkeeping and
+the largest document remain unbounded by the window. NumPy's required resident matrix alone was
 93,241,344 bytes (22,764 rows × 1,024 dimensions × 4 bytes). Reported vector
 widths do not count unique allocations or measure extra copies.
 

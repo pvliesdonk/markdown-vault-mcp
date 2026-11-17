@@ -115,3 +115,13 @@ note's frontmatter.
 <!-- vale off -->
 ::: markdown_vault_mcp.interfaces.ListsNoteStates
 <!-- vale on -->
+
+## Chunk traversal
+
+`IteratesChunks` optionally yields the same grouped rows in the same order as
+`list_chunks()`. Full embedding builds use it to release completed document
+windows. Custom indexes without it retain the eager `list_chunks()` fallback.
+
+<!-- vale off -->
+::: markdown_vault_mcp.interfaces.IteratesChunks
+<!-- vale on -->

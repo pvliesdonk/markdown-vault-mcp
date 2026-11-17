@@ -48,7 +48,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Sequence
+    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.fts_index import ChunkingMeta
@@ -80,6 +80,7 @@ __all__ = [
     "DescribesStore",
     "EmbeddingStore",
     "GraphStore",
+    "IteratesChunks",
     "KeywordGraphIndex",
     "KeywordIndex",
     "ReadsMetadataInBatches",
@@ -96,6 +97,15 @@ __all__ = [
 ]
 
 StoreT_co = TypeVar("StoreT_co", covariant=True)
+
+
+@runtime_checkable
+class IteratesChunks(Protocol):
+    """Optional ordered, document-grouped traversal of all indexed chunks."""
+
+    def iter_chunks(self) -> Iterator[dict[str, Any]]:
+        """Yield the same rows, in the same order, as ``list_chunks()``."""
+        ...
 
 
 @runtime_checkable

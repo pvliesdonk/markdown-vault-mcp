@@ -62,7 +62,7 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Collection, Iterable, Iterator
 
     from markdown_vault_mcp.query_types import (
         NoteAggregate,
@@ -78,6 +78,8 @@ logger = logging.getLogger(__name__)
 #: Paths bound per ``list_chunks`` statement, well under SQLite's variable
 #: limit (32766 since 3.32; 999 before), so a large dirty set never fails.
 _PATHS_PER_QUERY = 900
+
+_CHUNK_PAGE_DOCS = 256
 
 
 # Thresholds for running FTS5 'optimize' after a bulk purge.  Deleting rows
@@ -2260,6 +2262,36 @@ class FTSIndex:
             prev_path = row["path"]
             rows.append(row)
         return rows
+
+    def iter_chunks(self) -> Iterator[dict[str, Any]]:
+        """Yield chunks in ``list_chunks`` order, reading whole-document pages."""
+        after: str | None = None
+        while True:
+            rows = self._chunk_page(after)
+            if not rows:
+                return
+            previous = None
+            for raw in rows:
+                row = dict(raw)
+                row["is_first_chunk"] = row["path"] != previous
+                previous = row["path"]
+                yield row
+            after = previous
+
+    @_retry_on_locked
+    def _chunk_page(self, after: str | None) -> list[sqlite3.Row]:
+        paths = (
+            self._conn()
+            .execute(
+                "SELECT d.path FROM documents AS d "
+                "WHERE (? IS NULL OR d.path > ?) "
+                "AND EXISTS (SELECT 1 FROM sections AS s WHERE s.document_id = d.id) "
+                "ORDER BY d.path LIMIT ?",
+                (after, after, _CHUNK_PAGE_DOCS),
+            )
+            .fetchall()
+        )
+        return self._chunk_rows([row[0] for row in paths]) if paths else []
 
     def _chunk_rows(self, paths: list[str] | None) -> list[sqlite3.Row]:
         """Fetch the chunk rows of *paths* (or of every document), in path order."""
