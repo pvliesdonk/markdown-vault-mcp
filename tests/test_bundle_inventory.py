@@ -1088,3 +1088,108 @@ def test_unresolvable_state_parent_does_not_block_unrelated_note(
     assert "note.md" in {entry.path for entry in root.entries}
     nested = subject.inspect(BundleInspectionRequest(root="private"))
     assert "private/state.md" not in {entry.path for entry in nested.entries}
+
+
+@pytest.mark.parametrize("inside", [True, False])
+def test_policy_resolution_loses_all_ancestors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inside: bool
+) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "note.md").write_text("body")
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    state = (alias if inside else tmp_path) / "state.md"
+    state.write_text("server state")
+    subject = BundleInspector(
+        alias, (), frozenset(), 0, inventory.InspectionPolicy(state_paths=(state,))
+    )
+    original = type(state).resolve
+    source_resolutions = 0
+
+    def lost_access(path: Path, strict: bool = False) -> Path:
+        nonlocal source_resolutions
+        if path == alias and strict:
+            source_resolutions += 1
+            if source_resolutions == 1:
+                return original(path, strict=True)
+        raise PermissionError(errno.EACCES, "ancestor unavailable")
+
+    monkeypatch.setattr(type(state), "resolve", lost_access)
+    result = subject.inspect(BundleInspectionRequest(root=""))
+    assert result.state == "inspected"
+    assert [entry.path for entry in result.entries] == ["note.md"]
+
+
+def test_internal_entries_are_never_probed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in (".git", ".markdown_vault_mcp"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "note.md").write_text("body")
+    original = inventory.os.stat
+
+    def checked(name: object, *args: object, **kwargs: object) -> os.stat_result:
+        assert name not in {".git", ".markdown_vault_mcp"}
+        return original(name, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(inventory.os, "stat", checked)
+    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
+    assert [entry.path for entry in result.entries] == ["note.md"]
+
+
+def test_denial_remains_incomplete_at_entry_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "denied.md").write_text("body")
+    (tmp_path / "other.md").write_text("body")
+    scandir = inventory.os.scandir
+
+    class OrderedScan:
+        def __enter__(self) -> Iterator[os.DirEntry[str]]:
+            with scandir(tmp_path) as children:
+                return iter(sorted(children, key=lambda child: child.name))
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: OrderedScan())
+    monkeypatch.setattr(
+        inventory,
+        "read_regular_nofollow",
+        Mock(side_effect=PermissionError(errno.EACCES, "denied")),
+    )
+    result = inspector(tmp_path).inspect(
+        BundleInspectionRequest(root="", entry_limit=1)
+    )
+    assert result.enumeration == "unavailable"
+    assert result.entries == ()
+
+
+def test_stat_io_error_reports_known_note_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "note.md").write_text("body")
+    original = inventory.os.stat
+
+    def failed(name: object, *args: object, **kwargs: object) -> os.stat_result:
+        if name == "note.md":
+            raise OSError(errno.EIO, "private detail")
+        return original(name, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(inventory.os, "stat", failed)
+    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
+    assert result.enumeration == "complete"
+    assert result.entries[0].state == "unavailable"
+    assert result.entries[0].reason == "io_error"
+    assert "private detail" not in json.dumps(asdict(result))
+
+
+def test_store_ignores_nonnumeric_matrix_names(tmp_path: Path) -> None:
+    from markdown_vault_mcp.stores._legacy import numbered_files
+
+    (tmp_path / "vectors.m3.npy").write_bytes(b"matrix")
+    (tmp_path / "vectors.mbad.npy").write_bytes(b"unrelated")
+    assert numbered_files(tmp_path / "vectors", ".m") == {
+        3: tmp_path / "vectors.m3.npy"
+    }
