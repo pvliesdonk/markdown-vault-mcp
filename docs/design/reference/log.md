@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-16
+
+- [SQLite FTS5](sqlite-fts5.md): checked the documented default docsize
+  rowid inventory in SQLite FTS5 §§4.5 and 9.3 for #1538; pinned insert
+  and delete behavior in a fixture. Other claims and review date unchanged.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.

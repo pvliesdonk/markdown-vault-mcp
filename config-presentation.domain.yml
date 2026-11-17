@@ -131,6 +131,8 @@ files:
     # field set — one curation, two install channels (#1040/#1041).
     # How the host substitutes ${...} in these defaults:
     # docs/design/reference/mcpb-variable-substitution.md
+    # Empty defaults prevent omitted optional fields becoming literal
+    # ${user_config.*} values in MCPB hosts (#1729).
     fields: &vault_screen_fields
       "{PREFIX}_SOURCE_DIR":
         id: source_dir
@@ -152,6 +154,7 @@ files:
       "{PREFIX}_EMBEDDING_PROVIDER":
         id: embedding_provider
         title: "Embedding provider"
+        default: ""
         description: "Semantic-search backend: fastembed, ollama, openai, or voyage. Leave empty to disable embeddings."
       OLLAMA_HOST:
         id: ollama_host
@@ -165,16 +168,20 @@ files:
       OPENAI_API_KEY:
         id: openai_api_key
         title: "OpenAI API key"
+        default: ""
         sensitive: true
       OPENAI_BASE_URL:
         id: openai_base_url
         title: "OpenAI base URL"
+        default: ""
       OPENAI_EMBEDDING_MODEL:
         id: openai_embedding_model
         title: "OpenAI embedding model"
+        default: ""
       VOYAGE_API_KEY:
         id: voyage_api_key
         title: "Voyage API key"
+        default: ""
         sensitive: true
       "{PREFIX}_VOYAGE_MODEL":
         id: voyage_model
@@ -182,16 +189,27 @@ files:
       "{PREFIX}_GIT_REPO_URL":
         id: git_repo_url
         title: "Git sync repository URL"
+        default: ""
       "{PREFIX}_GIT_TOKEN":
         id: git_token
         title: "Git access token"
+        default: ""
         sensitive: true
+
+      "{PREFIX}_SERVER_NAME":
+        id: server_name
+        title: "Server name"
+        default: ""
+      "{PREFIX}_INSTANCE_DESCRIPTION":
+        id: instance_description
+        title: "Instance description"
+        default: ""
 
   # Claude Code plugin install screen (#1040): the same curated fields
   # drive plugin.json's userConfig object and .mcp.json's env wiring —
   # `fields_from` keeps the pair drift-proof across the two files. The
-  # template's mcpb baseline (server name, log level) is added explicitly
-  # here since this channel's entries are domain-declared wholesale.
+  # template's mcpb log level is added explicitly here since this
+  # channel's entries are domain-declared wholesale.
   .claude-plugin/plugin/.claude-plugin/plugin.json:
     kind: claude-plugin-user-config
     fields:
@@ -208,12 +226,6 @@ files:
         type: directory
         required: true
         default: null
-      "{PREFIX}_SERVER_NAME":
-        id: server_name
-        title: "Server name"
-      "{PREFIX}_INSTANCE_DESCRIPTION":
-        id: instance_description
-        title: "Instance description"
       "{PREFIX}_LOG_LEVEL":
         id: log_level
         title: "Log level"
