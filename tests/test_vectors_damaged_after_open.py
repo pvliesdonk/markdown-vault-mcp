@@ -259,6 +259,39 @@ class TestAWriterJob:
         finally:
             vault.close()
 
+    @pytest.mark.parametrize("failure", ["outage", "wrong_dimension"])
+    def test_failed_recovery_can_be_rebuilt_explicitly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+    ) -> None:
+        root = _source(tmp_path)
+        (root / "gamma.md").write_text("# Gamma\n\nUnchanged blueberries.\n")
+        vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+
+        def failing(texts: list[str]) -> list[list[float]]:
+            if failure == "wrong_dimension":
+                return [[0.1] * (provider.dimension + 1) for _ in texts]
+            raise RuntimeError("provider unavailable")
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", failing)
+            (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            assert vault.index.reindex().modified == 1
+            assert len(_aside(tmp_path)) == 1
+            assert not metadata_by_path(vault._vectors)
+            monkeypatch.setattr(provider, "embed", original)
+            vault.index.build_embeddings()
+            assert set(metadata_by_path(vault._vectors)) == {
+                "alpha.md",
+                "beta.md",
+                "gamma.md",
+            }
+        finally:
+            vault.close()
+
     def test_deferred_vectors_do_not_rebuild_suspect(self, tmp_path: Path) -> None:
         vault = _built(tmp_path, embedding_search="streamed")
         try:
