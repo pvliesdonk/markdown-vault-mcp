@@ -447,11 +447,13 @@ def compute_new_raw_target(
 
     Returns:
         The replacement raw_target string to write into the source file,
-        written in the same shape *and the same spelling* the original used:
-        a destination the author percent-encoded is re-encoded, one written
+        preserving the original spelling where possible: a destination the
+        author percent-encoded is re-encoded, one written
         literally stays literal (#1105, #1332) — except where writing the
         new name literally would not parse, when a space or an ASCII control
         character is percent-encoded so the rewrite stays a link (#1494).
+        A vault-path spelling from a nested source gains a leading slash so
+        a source-local path cannot shadow the rewritten target.
     """
     if link_type == "wikilink":
         # Determine whether the original wikilink included the .md extension.
@@ -467,9 +469,8 @@ def compute_new_raw_target(
         #                        OKF recommends and its tooling emits)
         #   "folder/target.md"   root-relative, matching old_path
         #   "../target.md"       relative to the source file's directory
-        # Each is rewritten in its own shape: the link still resolves either
-        # way, but silently converting one spelling to another undoes a
-        # vault's OKF link conformance on any rename or folder move (#1105).
+        # Leading-slash and source-relative shapes stay intact. A bare vault
+        # path from a nested source gains a slash to avoid a local shadow.
         # A ``<…>`` destination keeps its brackets in raw_target (they are
         # what the file holds); take them off for the shape test and put
         # them back on the answer, so a rename keeps the form that let the
@@ -497,6 +498,10 @@ def compute_new_raw_target(
             new_rel = osp.relpath(new_path, source_dir)
             # os.path.relpath uses OS separators on Windows; normalise to /.
             new_path_part = new_rel.replace("\\", "/")
+        elif source_path and old_path and "/" in source_path:
+            # A vault-path spelling from a nested source needs an explicit
+            # root to avoid a source-local shadow after the rewrite.
+            new_path_part = "/" + new_path
         else:
             new_path_part = new_path
         if was_encoded:

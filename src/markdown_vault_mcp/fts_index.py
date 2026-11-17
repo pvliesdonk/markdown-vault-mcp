@@ -506,7 +506,8 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
 #: Version 13 (#1383) adds vault-wide fallback for missing source-relative
-#: markdown and reference links. Version 12 shipped in v6.1.2.
+#: markdown and reference links, shared grouped path matching, and safe
+#: root-anchored rewrites. Version 12 shipped in v6.1.2.
 INDEX_SEMANTICS_VERSION = 13
 
 
@@ -659,21 +660,32 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     return min(own_folder or candidates, key=lambda p: (len(p), p))
 
 
+def _match_vault_path(
+    target: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
+) -> str | None:
+    """Find an exact or suffix path using the shared vault tie-break."""
+    if target in path_set:
+        return target
+    candidates = [
+        path
+        for path in by_name.get(target.rpartition("/")[2], [])
+        if path.endswith("/" + target)
+    ]
+    return _pick_wikilink_candidate(candidates, source) if candidates else None
+
+
 def _markdown_link_target(
-    raw: str, source: str, paths: list[str], path_set: set[str]
+    raw: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
 ) -> str:
     """Resolve a markdown destination, keeping explicit and existing local paths."""
-    baseline, _ = _resolve_link_path(raw, source, decode_markdown=True)
     spelling = raw[1:-1] if is_pointy_destination(raw) else raw
     spelling, _ = split_markdown_fragment(spelling)
     decoded = decode_markdown_destination(spelling)
+    baseline, _ = _resolve_link_path(decoded, source)
     if baseline in path_set or decoded.startswith(("/", "./", "../")):
         return baseline
-    target, _ = _resolve_link_path(raw, "", decode_markdown=True)
-    if target in path_set:
-        return target
-    candidates = [path for path in paths if path.endswith("/" + target)]
-    return _pick_wikilink_candidate(candidates, source) if candidates else baseline
+    target, _ = _resolve_link_path(decoded, "")
+    return _match_vault_path(target, source, path_set, by_name) or baseline
 
 
 class FTSIndex:
@@ -2598,6 +2610,9 @@ class FTSIndex:
             for r in conn.execute("SELECT path FROM documents_live").fetchall()
         ]
         doc_paths_set = set(doc_paths)
+        by_name: dict[str, list[str]] = {}
+        for path in doc_paths:
+            by_name.setdefault(path.rpartition("/")[2], []).append(path)
 
         # Build alias → document path mapping for fallback resolution.
         # Case-insensitive: Obsidian alias matching is case-insensitive.
@@ -2643,14 +2658,11 @@ class FTSIndex:
 
             # An exact vault path wins outright (rule 1); the suffix matches
             # and the alias fallback go through the tie-break (rules 2, 3).
-            if search_target in doc_paths_set:
-                new_path = search_target
-            else:
-                candidates = [p for p in doc_paths if p.endswith("/" + search_target)]
-                if not candidates:
-                    # Fallback: check if the stem matches a document alias.
-                    # Use the raw stem (without .md) for alias matching.
-                    candidates = alias_map.get(stem.lower(), [])
+            new_path = _match_vault_path(
+                search_target, row["source_path"], doc_paths_set, by_name
+            )
+            if new_path is None:
+                candidates = alias_map.get(stem.lower(), [])
                 if not candidates:
                     continue  # Genuinely broken — no document matches.
                 new_path = _pick_wikilink_candidate(candidates, row["source_path"])
@@ -2666,7 +2678,7 @@ class FTSIndex:
         ).fetchall()
         for row in markdown_rows:
             new_path = _markdown_link_target(
-                row["raw_target"], row["source_path"], doc_paths, doc_paths_set
+                row["raw_target"], row["source_path"], doc_paths_set, by_name
             )
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))

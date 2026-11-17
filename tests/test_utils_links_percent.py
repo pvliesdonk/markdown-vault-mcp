@@ -37,9 +37,8 @@ class TestComputeNewRawTargetEncoded:
         """The shape test compares raw_target to old_path, so an encoded
         target never matched and fell into the relative-to-source branch.
 
-        From a root-level source that branch coincidentally produces the
-        right string; from a subfolder it converts a root-relative link into
-        a relative one, which is the fidelity defect #1105 was about.
+        A nested source's vault-path spelling now gains an explicit root so
+        the rewritten path cannot select a source-local shadow.
         """
         assert (
             compute_new_raw_target(
@@ -50,7 +49,7 @@ class TestComputeNewRawTargetEncoded:
                 source_path="sub/hub.md",
                 old_path="probe/b[1].md",
             )
-            == "probe/b2.md"
+            == "/probe/b2.md"
         )
 
     def test_leading_slash_encoded_target_keeps_its_shape(self) -> None:

@@ -3417,11 +3417,12 @@ vault root clamps to root.
 `fragment=heading`. The fragment is preserved on `LinkInfo` but the target path
 is stored without it.
 
-**Link rewrites preserve the spelling they found.** `rename` and `move_folder`
+**Link rewrites preserve the spelling they found where safe.** `rename` and `move_folder`
 repoint links through `compute_new_raw_target`, which recognises three shapes
 for markdown and reference links: leading-slash root-relative (`/folder/x.md`),
 root-relative matching `old_path` (`folder/x.md`), and relative to the source
-file's directory (`../x.md`). Each is rewritten in its own shape. The first was
+file's directory (`../x.md`). A bare vault path in a nested source gains a
+leading slash to avoid a local shadow; otherwise the shape is preserved. The first was
 missing until issue #1105: `old_path` carries no leading slash, so a
 leading-slash link never compared equal to it and fell into the
 relative-to-source branch, silently converting OKF's recommended spelling (and
@@ -3437,8 +3438,10 @@ below. Explicit decoded `/`, `./`, and `../` prefixes keep their stated
 location. Unlike wikilinks, these links do not infer `.md` or match aliases.
 Every pass recomputes the source-relative path from the original destination,
 so adding or removing a target updates the graph consistently.
-Rename and move use the existing rewrite logic to turn a fallback spelling into
-a valid source-relative destination, without guaranteeing the shortest spelling.
+On rename or move, a vault-path spelling from a nested source gains a leading
+slash so a source-local note cannot shadow the intended target. Other fallback
+spellings may be rewritten as source-relative paths; neither promises the
+shortest spelling.
 
 **Wikilink resolution (Obsidian semantics)**: Wikilinks follow Obsidian's
 vault-wide resolution rules rather than relative path resolution:

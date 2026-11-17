@@ -207,3 +207,18 @@ class TestApplyLinkReplacement:
         content = "[[old]] and [[old]]"
         result = apply_link_replacement(content, "wikilink", "old", "new")
         assert result == "[[new]] and [[new]]"
+
+
+def test_nested_vault_path_rewrite_is_root_anchored() -> None:
+    """Encoded pointy links retain their fragment and cannot hit a local shadow."""
+    assert (
+        compute_new_raw_target(
+            link_type="reference",
+            raw_target="<A/My%20Note.md#heading>",
+            fragment="heading",
+            new_path="B/New Note.md",
+            source_path="Sub/source.md",
+            old_path="A/My Note.md",
+        )
+        == "</B/New%20Note.md#heading>"
+    )
