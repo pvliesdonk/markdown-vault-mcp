@@ -6576,7 +6576,8 @@ its description as the Git subject. The result reports `committed`, `failed`,
 or `no_changes`: a commit was made, a flush failed, or no commit was needed.
 Failure remains sticky across flushes. It reports a SHA when available and the
 number of paths in the commit (a rename counts both paths), or zero when the
-count is unknown. Ignored writes are skipped. A failed flush consumes
+count is unknown. Untracked ignored writes are skipped; tracked updates are
+committed even when they match an ignore rule. A failed flush consumes
 its buffer without rollback or retry; staged work remains for the operator.
 Ordinary scopes keep their per-call behavior. A drain flushes open groups before
 a pull, so a group spanning a drain can produce multiple commits; F7 owns pull

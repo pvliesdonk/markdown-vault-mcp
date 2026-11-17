@@ -422,7 +422,7 @@ class GitWriteStrategy:
     #: rename's backlink rewrites) share its batch.
     accepts_primary_paths: bool = True
 
-    accepts_group_commit = True
+    accepts_group_commit: bool = True
 
     def on_write_batch(
         self,
@@ -514,11 +514,16 @@ class GitWriteStrategy:
         scope: list[str] = []
         staged = failed = whole_repo = False
         for path, operation, old_path, _principal in items:
-            if operation in {"write", "edit", "append"} and str(path) in ignored:
+            ignored_write = (
+                operation in {"write", "edit", "append"} and str(path) in ignored
+            )
+            if ignored_write and not _is_tracked(root, path):
                 logger.debug("git_group_ignored path=%s", path)
                 continue
             try:
-                item_scope = _stage_one(root, path, operation, old_path)
+                item_scope = _stage_one(
+                    root, path, "delete" if ignored_write else operation, old_path
+                )
             except subprocess.CalledProcessError:
                 failed = True
                 logger.error(

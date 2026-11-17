@@ -743,3 +743,49 @@ def test_ordinary_batch_callback_receives_no_group_keyword(tmp_path: Path) -> No
     dispatcher.close()
     assert len(callback.batches) == 1
     assert callback.batches[0][1] == "ordinary"
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_group_commits_tracked_note_in_ignored_directory(
+    git_repo: Path, mixed: bool
+) -> None:
+    directory = git_repo / "ignored"
+    directory.mkdir()
+    tracked = directory / "tracked.md"
+    tracked.write_text("old", encoding="utf-8")
+    git(git_repo, "add", "ignored/tracked.md")
+    git(git_repo, "commit", "-m", "track note")
+    (git_repo / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+    git(git_repo, "add", ".gitignore")
+    git(git_repo, "commit", "-m", "ignore directory")
+    tracked.write_text("updated", encoding="utf-8")
+    ignored = directory / "untracked.md"
+    ignored.write_text("ignored", encoding="utf-8")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=git_repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Update notes", None)
+        with dispatcher.bind_group(group.handle, None):
+            dispatcher.fire(tracked, "updated", "edit")
+            dispatcher.fire(ignored, "ignored", "write")
+            if mixed:
+                other = git_repo / "other.md"
+                other.write_text("other", encoding="utf-8")
+                dispatcher.fire(other, "other", "write")
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "committed"
+        assert result.files == (2 if mixed else 1)
+        assert git(git_repo, "show", "HEAD:ignored/tracked.md") == "updated"
+        assert "ignored/untracked.md" not in git(
+            git_repo, "ls-tree", "-r", "--name-only", "HEAD"
+        )
+    finally:
+        dispatcher.close()
+        strategy.close()
