@@ -19,6 +19,10 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -205,11 +209,44 @@ def redact(text: str, token: str | None) -> str:
     return text
 
 
-def run_git(git_root: Path, *args: str, env: dict[str, str] | None = None) -> str:
+def _argv(
+    git_root: Path,
+    args: Sequence[str],
+    pathspecs: Sequence[str] | None,
+    whole_repo: bool,
+) -> list[str]:
+    if pathspecs is not None and (not pathspecs or "--" in args):
+        raise ValueError("pathspecs must be nonempty and args must not contain --")
+    i = 0
+    while i + 1 < len(args) and args[i] == "-c":
+        i += 2
+    command = args[i:]
+    if command and pathspecs is None and not whole_repo:
+        verb = command[0]
+        if verb in ("add", "commit") or (verb == "diff" and "--cached" in command[1:]):
+            raise ValueError(f"git {verb} requires pathspecs or whole_repo=True")
+    suffix = (
+        ["--", *(literal_pathspec(path) for path in pathspecs)]
+        if pathspecs is not None
+        else []
+    )
+    return ["git", "-C", str(git_root), *args, *suffix]
+
+
+def run_git(
+    git_root: Path,
+    *args: str,
+    env: dict[str, str] | None = None,
+    pathspecs: Sequence[str] | None = None,
+    whole_repo: bool = False,
+) -> str:
     """Run ``git -C <git_root> <args>`` and return stdout.
 
     Thin wrapper used by the ``force_*`` helpers — keeps subprocess
     boilerplate (capture, text mode, check=True) in one place.
+
+    Raw paths supplied via ``pathspecs`` are literal and must be nonempty.
+    Index writes require paths unless ``whole_repo`` is explicitly set.
 
     Raises:
         subprocess.CalledProcessError: If git exits non-zero.  Callers
@@ -217,7 +254,7 @@ def run_git(git_root: Path, *args: str, env: dict[str, str] | None = None) -> st
             (e.g. ``merge --ff-only``).
     """
     result = subprocess.run(
-        ["git", "-C", str(git_root), *args],
+        _argv(git_root, args, pathspecs, whole_repo),
         capture_output=True,
         text=True,
         check=True,
@@ -284,6 +321,8 @@ def run_git_capturing(
     *args: str,
     env: dict[str, str] | None = None,
     preserve_newlines: bool = False,
+    pathspecs: Sequence[str] | None = None,
+    whole_repo: bool = False,
     input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a git command and return the completed process without raising.
@@ -300,6 +339,8 @@ def run_git_capturing(
         env: Optional environment, typically from :func:`git_env` for
             token-bearing operations.  ``None`` inherits the parent process
             environment.
+        pathspecs: Nonempty raw paths to pass as literal pathspecs.
+        whole_repo: Allow an index command without pathspecs.
         preserve_newlines: Capture stdout without translating CR or CRLF.
             Use for NUL-framed path streams; ordinary text stays normalized.
             Both modes use Python's default text encoding and strict errors.
@@ -311,7 +352,7 @@ def run_git_capturing(
         and ``stderr`` populated.  Stderr will need to be passed through
         :func:`redact` before logging or surfacing to callers.
     """
-    cmd = ["git", "-C", str(git_root), *args]
+    cmd = _argv(git_root, args, pathspecs, whole_repo)
     if preserve_newlines:
         # Match subprocess's default text codec, including Python UTF-8 mode,
         # without its universal-newline translation of path identities (#1290).

@@ -44,7 +44,6 @@ from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
     git_env,
-    literal_pathspec,
     redact,
     resolve_tracking_ref,
     run_git,
@@ -2111,12 +2110,7 @@ def _is_tracked(root: str, path: Path) -> bool:
     Returns:
         ``True`` when the path is in the index.
     """
-    result = subprocess.run(
-        ["git", "-C", root, "ls-files", "--", literal_pathspec(str(path))],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = run_git_capturing(Path(root), "ls-files", pathspecs=[str(path)])
     return bool(result.stdout.strip())
 
 
@@ -2211,9 +2205,7 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | N
             function fixes.
 
     Returns:
-        The pathspec that was staged, in
-        :func:`~markdown_vault_mcp.git._run.literal_pathspec` form because that
-        is what its consumers pass back to git, or ``None`` when both sides
+        The raw paths that were staged, or ``None`` when both sides
         were ignored and untrackable — there is then nothing for this operation
         to commit, and the caller must not fall through to a diff check at all.
         An **empty** list is git's own spelling of "the whole repository" and
@@ -2222,18 +2214,8 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | N
     """
     if old_path is None:
         logger.debug("git_stage_rename_unscoped path=%s", path)
-        subprocess.run(
-            ["git", "-C", root, "add", "-u"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", root, "add", "--", literal_pathspec(str(path))],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        run_git(Path(root), "add", "-u", whole_repo=True)
+        run_git(Path(root), "add", pathspecs=[str(path)])
         return []
 
     ignored = _ignored_paths(root, (old_path, path))
@@ -2243,23 +2225,18 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | N
         logger.debug("git_stage_rename_old_untracked old_path=%s", old_path)
     elif str(old_path) in ignored:
         logger.debug("git_stage_rename_old_tracked_but_ignored old_path=%s", old_path)
-        deletions.append(literal_pathspec(str(old_path)))
+        deletions.append(str(old_path))
     else:
-        pathspec.append(literal_pathspec(str(old_path)))
+        pathspec.append(str(old_path))
 
     if str(path) in ignored:
         logger.debug("git_stage_rename_new_ignored path=%s", path)
     else:
-        pathspec.append(literal_pathspec(str(path)))
+        pathspec.append(str(path))
 
     for args, spec in (("-u", deletions), ("-A", pathspec)):
         if spec:
-            subprocess.run(
-                ["git", "-C", root, "add", args, "--", *spec],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            run_git(Path(root), "add", args, pathspecs=spec)
     staged = deletions + pathspec
     if not staged:
         return None
@@ -2284,8 +2261,7 @@ def _stage_one(
         old_path: For a rename, the absolute path the file moved from.
 
     Returns:
-        The pathspec that was staged (literal form, as
-        :func:`_stage_rename` returns), for the caller to scope its
+        The raw paths that were staged, for the caller to scope its
         "did anything actually change" check to (#1249), or ``None`` when a
         rename had nothing stageable — the caller must then bail out rather
         than committing whatever else happened to be staged. An **empty**
@@ -2294,25 +2270,15 @@ def _stage_one(
     """
     if operation == "delete":
         # File already removed from disk; stage the deletion.
-        subprocess.run(
-            ["git", "-C", root, "add", "-u", "--", literal_pathspec(str(path))],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        run_git(Path(root), "add", "-u", pathspecs=[str(path)])
     elif operation == "rename":
         staged = _stage_rename(root, path, old_path)
         if staged is None:
             logger.debug("git_stage_rename_noop path=%s", path)
         return staged
     else:
-        subprocess.run(
-            ["git", "-C", root, "add", "--", literal_pathspec(str(path))],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    return [literal_pathspec(str(path))]
+        run_git(Path(root), "add", pathspecs=[str(path)])
+    return [str(path)]
 
 
 def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
@@ -2327,7 +2293,7 @@ def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
 
     Args:
         root: Git repository root, as a string for ``git -C``.
-        pathspec: The pathspecs the operation staged, literal-form as the
+        pathspec: The raw paths the operation staged, as the
             staging helpers return them. **Empty means the whole
             repository**, matching git's own reading of an empty pathspec;
             only the unscoped legacy rename branch produces it.
@@ -2336,9 +2302,13 @@ def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
         ``True`` when the index matches ``HEAD`` across *pathspec*, so there
         is nothing for this operation to commit.
     """
-    result = subprocess.run(
-        ["git", "-C", root, "diff", "--cached", "--quiet", "--", *pathspec],
-        capture_output=True,
+    result = run_git_capturing(
+        Path(root),
+        "diff",
+        "--cached",
+        "--quiet",
+        pathspecs=pathspec or None,
+        whole_repo=not pathspec,
     )
     return result.returncode == 0
 
@@ -2573,7 +2543,7 @@ def _commit_staged(
         root: Git repository root, as a string for ``git -C``.
         commit_msg: The commit subject.
         identity: Committer and author identity for the commit.
-        pathspec: The pathspecs this operation staged, literal-form as the
+        pathspec: The raw paths this operation staged, as the
             staging helpers return them. **Empty commits the whole
             index**, matching git's own reading of an empty pathspec; only
             the unscoped legacy rename branch produces it, and it has no
@@ -2614,24 +2584,19 @@ def _commit_staged(
 
     # ``--only`` with no paths is rejected outside ``--amend``, so the
     # unscoped branch keeps the historic whole-index invocation.
-    scope_args = ["--only", "--", *pathspec] if pathspec else []
+    scope_args = ["--only"] if pathspec else []
 
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            root,
-            "-c",
-            f"user.name={commit_name}",
-            "-c",
-            f"user.email={commit_email}",
-            "commit",
-            "-m",
-            commit_msg,
-            *author_args,
-            *scope_args,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+    run_git(
+        Path(root),
+        "-c",
+        f"user.name={commit_name}",
+        "-c",
+        f"user.email={commit_email}",
+        "commit",
+        "-m",
+        commit_msg,
+        *author_args,
+        *scope_args,
+        pathspecs=pathspec or None,
+        whole_repo=not pathspec,
     )

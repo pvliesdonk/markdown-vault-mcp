@@ -3912,7 +3912,7 @@ sibling's uncommitted edit into the note's own commit, which is the
 per-operation staging guarantee below failing through the note's name rather
 than through a missing pathspec. Every command in `git/` that takes a pathspec
 therefore builds it with `literal_pathspec` (`git/_run.py`), which prefixes
-git's `:(literal)` magic. `check-ignore` is the one exception and not an
+git's `:(literal)` magic. The shared runner constructs literal pathspecs for staging and conflict recovery and refuses unscoped index writes unless the caller explicitly selects the whole repository. `check-ignore` is the one exception and not an
 oversight: it takes pathnames, matches them literally already, and rejects
 pathspec magic outright.
 
