@@ -601,7 +601,10 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 In an active OKF vault, `index.md` and `log.md` bypass the
 `required_frontmatter` gate. Concept notes and all notes outside an active
 OKF vault remain subject to it. Full builds, incremental scans and dirty-path
-refreshes use the same admission rule (#1438).
+refreshes use the same admission rule (#1438). A root index change also
+reconciles the other reserved files. Warm reopen compares the effective state
+recorded with a complete build. Keyword backends without the optional OKF
+admission provenance capability rebuild conservatively on reopen.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
 carry. Both generators and the `OKF_WRITE` maintainer write through it:

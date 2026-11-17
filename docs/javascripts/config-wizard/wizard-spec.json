@@ -629,7 +629,7 @@
       "label": "Required Fields",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-      "help": "Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index.",
+      "help": "Comma-separated required frontmatter fields; documents missing any are excluded from the index, except index.md and log.md in an active OKF vault.",
       "advancedGroup": "Indexing"
     },
     {

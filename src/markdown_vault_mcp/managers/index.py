@@ -29,6 +29,7 @@ from markdown_vault_mcp.managers.embeddings import (
     _EMBEDDING_BATCH_SIZE,
     EmbeddingsManager,
 )
+from markdown_vault_mcp.okf import is_okf_reserved_file
 from markdown_vault_mcp.scanner import (
     CategorizedSkip,
     parse_note,
@@ -38,6 +39,7 @@ from markdown_vault_mcp.scanner import (
 from markdown_vault_mcp.source_probe import holds_entries
 from markdown_vault_mcp.tracker import is_under, unread_prefixes
 from markdown_vault_mcp.types import (
+    ChangeSet,
     IndexStats,
     ParsedNote,
     ReindexResult,
@@ -159,6 +161,7 @@ class IndexManager:
             ``_EMBEDDING_BATCH_SIZE``.
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
         exempt_required_frontmatter: Path predicate for bypassing the field gate.
+        okf_admission_active: Current effective OKF state, if applicable.
     """
 
     def __init__(
@@ -181,12 +184,14 @@ class IndexManager:
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         vector_slot: VectorStoreSlot | None = None,
         exempt_required_frontmatter: Callable[[str], bool] | None = None,
+        okf_admission_active: Callable[[], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
         self._source_dir = source_dir
         self._chunk_strategy = chunk_strategy
         self._exclude_patterns = exclude_patterns
+        self._okf_admission_active = okf_admission_active
         self._required_frontmatter = required_frontmatter
         self._exempt_required_frontmatter = exempt_required_frontmatter or (
             lambda _: False
@@ -647,6 +652,12 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
             was indexed.
         """
+        admission_at_start = (
+            self._okf_admission_active() if self._okf_admission_active else None
+        )
+        set_admission_meta = getattr(self._fts, "set_okf_admission_meta", None)
+        if callable(set_admission_meta) and self._okf_admission_active is not None:
+            set_admission_meta(None)
         self._tracker.clear_carries()
         if force:
             logger.info("build_index_force_rebuild")
@@ -775,6 +786,14 @@ class IndexManager:
                 self._attachment_extensions
             ),
         )
+        if (
+            callable(set_admission_meta)
+            and self._okf_admission_active is not None
+            and not walk_errors
+            and not errored
+            and admission_at_start == self._okf_admission_active()
+        ):
+            set_admission_meta(admission_at_start)
         return IndexStats(
             documents_indexed=len(notes) - errored,
             chunks_indexed=total_chunks,
@@ -786,7 +805,44 @@ class IndexManager:
     # Incremental reindex
     # ------------------------------------------------------------------
 
-    def reindex(self) -> ReindexResult:
+    def _reserved_reindex_paths(
+        self, changes: ChangeSet, *, root_dirty: bool
+    ) -> tuple[list[str], set[str], bool | None]:
+        """Invalidate and collect reserved paths when admission may change."""
+        changed = changes.added + changes.modified
+        active = self._okf_admission_active() if self._okf_admission_active else None
+        get_meta = getattr(self._fts, "get_okf_admission_meta", None)
+        needs_reconcile = active is not None and (
+            root_dirty
+            or "index.md" in (*changed, *changes.deleted)
+            or (callable(get_meta) and get_meta() != active)
+        )
+        if not needs_reconcile:
+            return changed, set(), None
+        set_meta = getattr(self._fts, "set_okf_admission_meta", None)
+        if callable(set_meta):
+            set_meta(None)
+        walk_errors: list[OSError] = []
+        candidates = self._discover_indexable_candidates(
+            on_walk_error=walk_errors.append
+        )
+        if walk_errors or not changes.walk_complete:
+            raise OSError("Cannot reconcile OKF admission with an incomplete walk")
+        reserved = {path for _, path in candidates if is_okf_reserved_file(path)}
+        return changed + sorted(reserved - set(changed)), reserved, active
+
+    def _finish_reserved_reindex(self, active: bool | None) -> None:
+        """Record a complete reconciliation only if its input stayed stable."""
+        set_meta = getattr(self._fts, "set_okf_admission_meta", None)
+        if (
+            active is not None
+            and callable(set_meta)
+            and self._okf_admission_active is not None
+            and active == self._okf_admission_active()
+        ):
+            set_meta(active)
+
+    def reindex(self, *, root_dirty: bool = False) -> ReindexResult:
         """Incrementally update the index based on file changes.
 
         Uses :class:`~markdown_vault_mcp.tracker.ChangeTracker` to detect
@@ -800,6 +856,9 @@ class IndexManager:
         no internal lock is required.  Concurrent
         document mutations route through the writer's
         FIFO queue and serialise against this job.
+
+        Args:
+            root_dirty: Re-evaluate reserved files after a root index event.
 
         Returns:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts
@@ -826,8 +885,11 @@ class IndexManager:
             )
 
         # Pre-parse notes outside the lock to minimise lock hold time.
+        changed_paths, reserved_paths, active = self._reserved_reindex_paths(
+            changes, root_dirty=root_dirty
+        )
         parsed, newly_skipped, newly_skip_reasons = self._parse_changed_notes(
-            changes.added + changes.modified
+            changed_paths, strict_paths=reserved_paths
         )
 
         # Phase 2: apply mutations (writer is sole mutator; no lock needed).
@@ -881,7 +943,11 @@ class IndexManager:
                 )
 
         indexed_added, indexed_modified = self._upsert_parsed_notes(
-            parsed, vectors, added_paths=set(changes.added), checkpoint=_checkpoint
+            parsed,
+            vectors,
+            added_paths=set(changes.added),
+            checkpoint=_checkpoint,
+            strict_paths=reserved_paths,
         )
 
         # Persist the vector index only when this pass actually mutated it.
@@ -912,6 +978,8 @@ class IndexManager:
             self._embeddings.reconcile_paths(vectors, dropped, site="purge")
             vectors.checkpoint()
 
+        self._finish_reserved_reindex(active)
+
         return ReindexResult(
             added=indexed_added,
             modified=indexed_modified,
@@ -922,7 +990,7 @@ class IndexManager:
         )
 
     def _parse_changed_notes(
-        self, paths: list[str]
+        self, paths: list[str], *, strict_paths: set[str] | None = None
     ) -> tuple[list[tuple[str, ParsedNote]], dict[str, str], dict[str, dict[str, str]]]:
         """Parse changed files for :meth:`reindex`, recording surfaced skips.
 
@@ -939,6 +1007,7 @@ class IndexManager:
 
         Args:
             paths: Vault-relative paths of added + modified files.
+            strict_paths: Paths whose transient failure must retry the job.
 
         Returns:
             Tuple ``(parsed, newly_skipped, newly_skip_reasons)``:
@@ -963,6 +1032,8 @@ class IndexManager:
                 exempt_required_frontmatter=self._exempt_required_frontmatter(path),
             )
             if outcome is None:
+                if strict_paths and path in strict_paths:
+                    raise OSError(f"Could not reconcile reserved file: {path}")
                 # Possibly transient (already logged) — retry next scan.
                 continue
             if isinstance(outcome, CategorizedSkip):
@@ -984,6 +1055,8 @@ class IndexManager:
                     recorded = self._record_skip_hash(
                         newly_skipped, path, abs_path, event="reindex", surfaced=False
                     )
+                if not recorded and strict_paths and path in strict_paths:
+                    raise OSError(f"Could not reconcile reserved file: {path}")
                 if recorded:
                     newly_skip_reasons[path] = {
                         "category": sf.category,
@@ -1007,6 +1080,7 @@ class IndexManager:
         *,
         added_paths: set[str],
         checkpoint: Callable[[], None] | None = None,
+        strict_paths: set[str] | None = None,
     ) -> tuple[int, int]:
         """Upsert parsed notes into FTS (and inline-embed when loaded).
 
@@ -1024,6 +1098,7 @@ class IndexManager:
             parsed: ``(path, note)`` pairs from :meth:`_parse_changed_notes`.
             vectors: The (possibly lazily-loaded) vector index, or ``None``.
             added_paths: Paths counted as added rather than modified.
+            strict_paths: Paths whose upsert failure must retry the job.
             checkpoint: Called at most every ``_CHECKPOINT_INTERVAL_S``
                 seconds after a successful upsert, to snapshot tracker state
                 so an interrupted pass resumes rather than restarting
@@ -1041,6 +1116,8 @@ class IndexManager:
                 self._fts.upsert_note(note)
             except Exception:
                 logger.warning("reindex_index_failed path=%s", path, exc_info=True)
+                if strict_paths and path in strict_paths:
+                    raise
                 continue
             if path in added_paths:
                 indexed_added += 1
@@ -1203,6 +1280,8 @@ class IndexManager:
         """
         if not paths:
             return
+        if "index.md" in paths and self._okf_admission_active is not None:
+            self.reindex(root_dirty=True)
         try:
             first_error: Exception | None = None
             for path in paths:

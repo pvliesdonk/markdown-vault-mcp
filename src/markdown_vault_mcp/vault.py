@@ -599,6 +599,7 @@ class Vault:
             chunk_strategy=self._chunk_strategy,
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
+            okf_admission_active=lambda: self._okf.state().active,
             exempt_required_frontmatter=lambda path: (
                 is_okf_reserved_file(path) and self._okf.state().active
             ),
@@ -625,6 +626,7 @@ class Vault:
             title_field=self._title_field,
             searchable_fields=",".join(self._searchable_frontmatter_fields),
             indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            okf_admission_active=lambda: self._okf.state().active,
             attachment_extensions=canonical_attachment_extensions(
                 effective_attachment_extensions(self._attachment_extensions)
             ),

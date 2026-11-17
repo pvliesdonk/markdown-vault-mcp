@@ -40,7 +40,7 @@ from markdown_vault_mcp.indexing.readiness import ReadinessState
 
 if TYPE_CHECKING:
     import threading
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import KeywordIndex
@@ -66,8 +66,10 @@ class IndexWriteCoordinator:
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
         attachment_extensions: str = "",
+        okf_admission_active: Callable[[], bool] | None = None,
     ) -> None:
         self._fts = fts
+        self._okf_admission_active = okf_admission_active
         self._index_path = index_path
         # file_write_lock remains a constructor compatibility parameter; build
         # scheduling no longer borrows the file-mutation lock.
@@ -316,6 +318,13 @@ class IndexWriteCoordinator:
             the first mismatching key at INFO, so the rebuild an operator
             sees in the log names its own cause.
         """
+        if self._okf_admission_active is not None:
+            get_admission_meta = getattr(self._fts, "get_okf_admission_meta", None)
+            if (
+                not callable(get_admission_meta)
+                or get_admission_meta() != self._okf_admission_active()
+            ):
+                return False
         stored = self._fts.get_chunking_meta()
         checks: tuple[tuple[str, object, object], ...] = (
             ("embed_model_name", stored.model, self._embed_model_name),
