@@ -6654,7 +6654,7 @@ the strategy closed (subsequent writes are ignored), stops the pull thread,
 then calls `flush()`. The pull loop retries a failed deferred push via
 `PushScheduler.do_push_safe()` after each tick (#957). A backend can compose
 `PushScheduler` with push and startup probe callables;
-the default CLI path is unchanged and resolves `_push` at call time (#1308).
+the default CLI path is unchanged (#1308).
 Injected failures are sanitized before logging and health reporting. An injected
 startup failure permits local versioning and leaves a pending push for retry.
 
@@ -6805,7 +6805,7 @@ rather than on the concrete class:
   import beyond `typing`.
   Batching is an optional `BatchAwareWriteCallback` opt-in; per-write dispatch
   remains available.
-- `VersionedStore` — the required facets, which is what `Vault` holds.
+- `VersionedStore` — all of them, which is what `Vault` holds.
 
 Config assembly returns `VersionedStore` through `_build_git_strategy`, the
 single construction point; backend selection is deferred to #1309.

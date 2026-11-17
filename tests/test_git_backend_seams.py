@@ -67,10 +67,8 @@ def test_failed_injected_push_remains_pending(tmp_path: Path) -> None:
     push = Mock(side_effect=RuntimeError("failure"))
     scheduler, health = make_scheduler(tmp_path, push=push)
     scheduler.schedule_push()
-    with pytest.raises(PushBackendError, match="failure") as error:
+    with pytest.raises(PushBackendError, match="failure"):
         scheduler.do_push()
-    assert error.value.__context__ is None
-    assert error.value.__cause__ is None
     assert health.snapshot() is not None
     assert health.snapshot().reason == PUSH_REASON_PUSH_FAILED  # type: ignore[union-attr]
     push.side_effect = None

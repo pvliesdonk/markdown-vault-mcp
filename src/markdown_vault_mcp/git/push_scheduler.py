@@ -8,8 +8,7 @@ plus the push execution paths (:meth:`PushScheduler.do_push_safe`,
 :class:`~markdown_vault_mcp.git.strategy.GitWriteStrategy` — the same object,
 so the documented lock-ordering contracts of the pull/write paths still hold.
 
-Backend push and startup-probe callables can be injected; the defaults use
-the git CLI. The module-level :func:`_push` helper (GIT_ASKPASS-authenticated
+The module-level :func:`_push` helper (GIT_ASKPASS-authenticated
 ``git push origin``) also lives here; tests patch it as
 ``markdown_vault_mcp.git.push_scheduler._push``.
 """
