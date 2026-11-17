@@ -658,6 +658,26 @@ class _FailingWrites:
 
 
 class TestStoreWriteFailures:
+    @pytest.mark.parametrize("operation", ["replace_document", "remove_document"])
+    def test_corruption_during_a_write_propagates(
+        self, tmp_path, monkeypatch, operation
+    ):
+        from markdown_vault_mcp.exceptions import StoreCorruptError
+
+        fts, _provider, store, rec = _setup(
+            tmp_path, NOTES, probe=_Probe({"a.md": "absent"})
+        )
+        if operation == "remove_document":
+            rec.reconcile(store, site="test")
+            fts.delete_by_path("a.md")
+
+        def corrupt(*_args: Any, **_kwargs: Any) -> None:
+            raise StoreCorruptError("damaged", backend="test", location="fixture")
+
+        monkeypatch.setattr(store, operation, corrupt)
+        with pytest.raises(StoreCorruptError):
+            rec.reconcile(store, site="test")
+
     def test_a_failed_write_is_retried_and_the_pass_continues(self, tmp_path, caplog):
         _fts, _provider, store, rec = _setup(tmp_path, NOTES)
         with caplog.at_level(logging.WARNING):

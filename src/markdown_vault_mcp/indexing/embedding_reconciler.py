@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.embed_text import is_embeddable
-from markdown_vault_mcp.exceptions import ReadOnlyError
+from markdown_vault_mcp.exceptions import ReadOnlyError, StoreCorruptError
 from markdown_vault_mcp.interfaces import ReadsMetadataInBatches, ReadsRowsInBatches
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
@@ -394,7 +394,7 @@ class EmbeddingReconciler:
             outcome = state.store.remove_document(
                 path, expected_token=state.stored.get(path)
             )
-        except ReadOnlyError:
+        except (ReadOnlyError, StoreCorruptError):
             raise
         except Exception as exc:
             # Broad by design: each backend raises its own I/O error.
@@ -482,7 +482,7 @@ class EmbeddingReconciler:
                 exc,
             )
             return
-        except ReadOnlyError:
+        except (ReadOnlyError, StoreCorruptError):
             raise
         except Exception as exc:
             # Broad by design: each backend raises its own I/O error.
@@ -539,7 +539,7 @@ class EmbeddingReconciler:
                         DocumentRows(doc.path, doc.token, rows),
                         expected_token=state.stored.get(doc.path),
                     )
-                except ReadOnlyError:
+                except (ReadOnlyError, StoreCorruptError):
                     raise
                 except Exception as exc:
                     # Broad by design: each backend raises its own I/O error.
@@ -560,7 +560,7 @@ class EmbeddingReconciler:
                     for path, rows in _float32_rows(state.store, list(tokens))
                 ],
             )
-        except ReadOnlyError:
+        except (ReadOnlyError, StoreCorruptError):
             raise
         except Exception as exc:
             # Broad by design: each backend raises its own I/O error. The

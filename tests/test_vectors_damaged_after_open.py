@@ -18,6 +18,7 @@ import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.exceptions import StoreCorruptError
+from markdown_vault_mcp.indexing.index_writer import FlushDirtyEmbeddings
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
 from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity
@@ -150,6 +151,125 @@ class TestASearch:
         finally:
             reader.close()
         assert _aside(tmp_path) == []
+
+
+class TestAWriterJob:
+    def test_reindex_recovers_and_indexes_both_edits(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            _damage(tmp_path)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+
+            result = vault.index.reindex()
+            assert vault._coordinator.wait_for_drain(timeout=5)
+
+            assert result.modified == 2
+            assert len(_aside(tmp_path)) == 1
+            assert {
+                r.path for r in vault.reader.search("kumquats", mode="keyword")
+            } == {"alpha.md"}
+            assert {
+                r.path for r in vault.reader.search("sailboats", mode="keyword")
+            } == {"beta.md"}
+            assert {
+                r.path for r in vault.reader.search("kumquats", mode="semantic")
+            } >= {"alpha.md"}
+            assert "writer_job_failed" not in caplog.text
+        finally:
+            vault.close()
+
+    def test_flush_recovers(self, tmp_path: Path) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            _damage(tmp_path)
+            writer = vault._coordinator.writer
+            writer.mark_embedding_dirty(["alpha.md"])
+            writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert vault._coordinator.wait_for_drain(timeout=5)
+            assert len(_aside(tmp_path)) == 1
+            assert sorted(metadata_by_path(vault._vectors)) == ["alpha.md", "beta.md"]
+        finally:
+            vault.close()
+
+    def test_convergence_recovers(self, tmp_path: Path) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            _damage(tmp_path, "UPDATE documents SET token = CAST(x'ff' AS TEXT)")
+            assert vault.index.build_embeddings() == 2
+            assert len(_aside(tmp_path)) == 1
+        finally:
+            vault.close()
+
+    def test_convergence_recovers_corrupt_count(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            store = vault._vectors
+            assert store is not None
+            cls = type(store)
+            original = cls.count
+
+            def count(instance: Any) -> int:
+                if instance is store:
+                    raise StoreCorruptError(
+                        "damaged", backend="sqlite", location="test"
+                    )
+                return original.__get__(instance, cls)
+
+            monkeypatch.setattr(cls, "count", property(count))
+            assert vault.index.build_embeddings() == 2
+            assert len(_aside(tmp_path)) == 1
+        finally:
+            vault.close()
+
+    def test_unowned_store_raises(self, tmp_path: Path) -> None:
+        _built(tmp_path).close()
+        vault = _vault(tmp_path, owns_index_files=False, embedding_search="streamed")
+        try:
+            vault.index.build_index()
+            vault.reader.search("apples", mode="semantic")
+            _damage(tmp_path)
+            writer = vault._coordinator.writer
+            writer.mark_embedding_dirty(["alpha.md"])
+            with pytest.raises(StoreCorruptError):
+                writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert _aside(tmp_path) == []
+        finally:
+            vault.close()
+
+    def test_injected_store_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = MockEmbeddingProvider()
+        from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+
+        store = NumpySidecarBackend().open(None, EmbeddingIdentity.of(provider, "v1"))
+        vault = Vault(
+            source_dir=_source(tmp_path),
+            settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
+            embedding_provider=provider,
+            vector_store=store,
+        )
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+
+            def corrupt() -> dict[str, str]:
+                raise StoreCorruptError("damaged", backend="test", location="injected")
+
+            monkeypatch.setattr(store, "tokens", corrupt)
+            writer = vault._coordinator.writer
+            writer.mark_embedding_dirty(["alpha.md"])
+            with pytest.raises(StoreCorruptError):
+                writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert _aside(tmp_path) == []
+        finally:
+            vault.close()
+            store.close()
 
 
 PROVIDER = MockEmbeddingProvider(dim=3)

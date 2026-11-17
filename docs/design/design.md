@@ -5030,7 +5030,7 @@ another one, and is the explicit switch of choice C.
   reopened as `_recover_corrupt` does: a damaged SQLite store still opens.
   One that another thread already replaced is left alone, and a slot that
   cannot rename files (injected, not owned, in memory, or PostgreSQL, which
-  has no `quarantine`) condemns nothing. Two paths reach it:
+  has no `quarantine`) condemns nothing. Three paths reach it:
   - A search read (`SearchManager._vector_rows`) that raises
     `StoreCorruptError` sends the store to `rebuilt_after_read`. The search
     thread only marks the store suspect and runs the usual rebuild after a
@@ -5047,10 +5047,13 @@ another one, and is the explicit switch of choice C.
     rebuild starts from a fresh one. The numpy store has no `verify`,
     because its open reads everything.
 
+  - A writer reconciliation that encounters typed corruption condemns the
+    store and queues a rebuild after the keyword work finishes. A convergence
+    build rebuilds inline. An incremental build does not proactively verify
+    pages it does not read (#1976).
+
   A process that does not own the files condemns nothing and raises
-  `StoreCorruptError`. A write that meets the damage is not recovered on
-  the writer thread, and an incremental `build_embeddings` runs no
-  `verify`; the next streamed search or full build recovers it (#1976).
+  `StoreCorruptError`.
 - As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not
