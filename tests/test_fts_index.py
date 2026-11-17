@@ -1601,7 +1601,12 @@ class TestNotesFtsSummaryMigration:
 
 
 def _legacy_upsert(idx: FTSIndex, note: ParsedNote) -> None:
-    """Simulate pre-bridge writes; chunk SQL omits only bridge insertion."""
+    """Simulate the historical pre-bridge writer.
+
+    The chunk INSERTs preserve ``FTSIndex._insert_sections`` from
+    ``4ec29a55^:src/markdown_vault_mcp/fts_index.py``: that writer inserts
+    sections and FTS rows but deliberately has no bridge insertion.
+    """
     from markdown_vault_mcp.fts_index import _derive_folder, _fields_text
 
     conn = idx._conn()
