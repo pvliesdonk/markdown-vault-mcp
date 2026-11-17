@@ -36,6 +36,7 @@ from markdown_vault_mcp._identity import (
     configure_identity_claims,
     configure_service_subjects,
 )
+from markdown_vault_mcp.config_sections.content import DEFAULT_CONVENTIONS_FILE
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.utils.fs import is_directory
@@ -575,7 +576,7 @@ def resolve_searchable_fields(
 def resolve_conventions_file(raw: str | None) -> str | None:
     """Resolve the ``CONVENTIONS_FILE`` env value.
 
-    Unset/empty defaults to ``_conventions.md``; the sentinel ``none``
+    Unset/empty defaults to ``.conventions.md``; the sentinel ``none``
     disables folder conventions entirely.
 
     Args:
@@ -586,7 +587,7 @@ def resolve_conventions_file(raw: str | None) -> str | None:
     """
     cleaned = (raw or "").strip()
     if not cleaned:
-        return "_conventions.md"
+        return DEFAULT_CONVENTIONS_FILE
     if cleaned.lower() == "none":
         return None
     return cleaned

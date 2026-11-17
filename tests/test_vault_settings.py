@@ -122,6 +122,17 @@ class TestSettingsDerivations:
         settings = VaultSettings(conventions_file=None, exclude_patterns=(".git/**",))
         assert settings.effective_exclude_patterns() == (".git/**",)
 
+    def test_convention_exclusions_follow_default_and_custom_names(self) -> None:
+        assert VaultSettings().effective_exclude_patterns() == [
+            ".conventions.md",
+            "**/.conventions.md",
+            "_conventions.md",
+            "**/_conventions.md",
+        ]
+        assert VaultSettings(
+            conventions_file="AGENTS.md"
+        ).effective_exclude_patterns() == ["AGENTS.md", "**/AGENTS.md"]
+
     def test_effective_exclude_patterns_rejects_metacharacters(self) -> None:
         settings = VaultSettings(conventions_file="a*.md")
         with pytest.raises(ValueError, match="fnmatch metacharacters"):

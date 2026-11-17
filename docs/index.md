@@ -27,7 +27,7 @@ Each line links to the page that covers it.
 
 - **Hybrid search**: SQLite FTS5 keyword search, plus search by meaning once an embedding provider is configured; Reciprocal Rank Fusion merges the two. [Embeddings](use/embeddings.md).
 - **Frontmatter as data**: YAML frontmatter fields become search filters, and required fields can be enforced. [Configuration](reference/configuration.md).
-- **Writes**: create, edit, append to, delete, rename and move notes and attachments, with the index kept current. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes. [Write tools](reference/tools/writer.md).
+- **Writes**: create, edit, append to, delete, rename and move notes and attachments, with the index kept current. Replacing a file takes the etag from reading it, and per-folder `.conventions.md` rules (falling back to `_conventions.md`) reach the client as it writes. [Write tools](reference/tools/writer.md).
 - **Links**: backlinks, outlinks, broken links, orphans and the path between two notes. [Graph tools](reference/tools/graph.md).
 - **Git**: an optional commit per write, a delayed push, pull or webhook sync, and history and diffs. [Git integration](use/git-integration.md).
 - **Open Knowledge Format**: recognizes OKF bundles, adds each note's type, status, staleness and trust tier to results, and audits and migrates a vault. [Open Knowledge Format](use/okf.md).

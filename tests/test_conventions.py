@@ -240,6 +240,8 @@ class TestVaultDerivedExclusion:
         try:
             assert col.exclude_patterns == [
                 ".trash/**",
+                ".conventions.md",
+                "**/.conventions.md",
                 "_conventions.md",
                 "**/_conventions.md",
             ]
@@ -270,3 +272,30 @@ class TestVaultDerivedExclusion:
             assert col.conventions.enabled is False
         finally:
             col.close()
+
+
+def test_default_conventions_resolve_each_folder_with_legacy_fallback(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "_conventions.md").write_text("Root", encoding="utf-8")
+    nested = tmp_path / "Notes"
+    nested.mkdir()
+    (nested / ".conventions.md").write_text("Primary", encoding="utf-8")
+    (nested / "_conventions.md").write_text("Legacy", encoding="utf-8")
+    resolver = ConventionsResolver(tmp_path, ".conventions.md")
+    assert [(e.path, e.content) for e in resolver.for_path("Notes/note.md")] == [
+        ("_conventions.md", "Root"),
+        ("Notes/.conventions.md", "Primary"),
+    ]
+    assert resolver.list_folders() == ["", "Notes"]
+
+
+def test_invalid_primary_does_not_use_legacy(tmp_path: Path) -> None:
+    (tmp_path / ".conventions.md").write_bytes(b"\xff")
+    (tmp_path / "_conventions.md").write_text("Old rules", encoding="utf-8")
+    assert ConventionsResolver(tmp_path, ".conventions.md").for_path("") == []
+
+
+def test_custom_name_does_not_use_legacy(tmp_path: Path) -> None:
+    (tmp_path / "_conventions.md").write_text("Old rules", encoding="utf-8")
+    assert ConventionsResolver(tmp_path, "AGENTS.md").for_path("") == []

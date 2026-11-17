@@ -10,6 +10,25 @@ from dataclasses import dataclass
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 
+DEFAULT_CONVENTIONS_FILE = ".conventions.md"
+LEGACY_CONVENTIONS_FILE = "_conventions.md"
+
+
+def conventions_filenames(name: str | None) -> tuple[str, ...]:
+    """Return the ordered filenames used for the configured conventions name.
+
+    Args:
+        name: Configured filename, or None when conventions are disabled.
+
+    Returns:
+        The primary filename and, for the default, its legacy fallback.
+    """
+    if name is None:
+        return ()
+    if name == DEFAULT_CONVENTIONS_FILE:
+        return (name, LEGACY_CONVENTIONS_FILE)
+    return (name,)
+
 
 @dataclass(frozen=True)
 class ContentConfig:
@@ -41,7 +60,7 @@ class ContentConfig:
     max_note_read_bytes: int = 262144  # 256 KB; 0 = unlimited
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
-    conventions_file: str | None = "_conventions.md"
+    conventions_file: str | None = DEFAULT_CONVENTIONS_FILE
     okf_mode: str = "auto"
     okf_write: bool = False
     okf_verify: str = "elicit"

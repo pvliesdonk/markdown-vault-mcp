@@ -18,6 +18,11 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.config_sections.content import (
+    DEFAULT_CONVENTIONS_FILE,
+    conventions_filenames,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
@@ -180,7 +185,7 @@ class VaultSettings:
             configuration (``None`` or all-``1.0`` keeps the default).
         conventions_file: Well-known per-folder conventions filename resolved
             by :attr:`~markdown_vault_mcp.vault.Vault.conventions`
-            (default ``"_conventions.md"``); ``None``
+            (default ``".conventions.md"``); ``None``
             disables folder conventions. When set, the filename is
             automatically appended to *exclude_patterns* (in both fnmatch
             forms) so convention files stay out of the index while remaining
@@ -231,7 +236,7 @@ class VaultSettings:
     embedding_batch_size: int = 4
     folder_weights: dict[str, float] | None = None
     fts_weights: dict[str, float] | None = None
-    conventions_file: str | None = "_conventions.md"
+    conventions_file: str | None = DEFAULT_CONVENTIONS_FILE
     okf_mode: str = "auto"
     okf_write: bool = False
     owns_index_files: bool = True
@@ -385,8 +390,11 @@ class VaultSettings:
             )
         return [
             *(self.exclude_patterns or []),
-            self.conventions_file,
-            f"**/{self.conventions_file}",
+            *(
+                pattern
+                for name in conventions_filenames(self.conventions_file)
+                for pattern in (name, f"**/{name}")
+            ),
         ]
 
     def effective_embeddings_path(self) -> Path | None:

@@ -405,12 +405,13 @@ class ProjectConfig:
         },
     )
     conventions_file: str | None = field(
-        default="_conventions.md",
+        default=".conventions.md",
         metadata={
             "help": (
                 "Filename of the per-folder conventions files surfaced to "
                 "clients at write time (bare .md filename without glob "
-                "characters). Set to none to disable folder conventions."
+                "characters). The default falls back to _conventions.md when absent. "
+                "Set to none to disable folder conventions."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},

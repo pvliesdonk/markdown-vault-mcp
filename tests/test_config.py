@@ -372,7 +372,7 @@ class TestVaultAssembly:
         # exclusion is derived inside Vault.__init__, not here.
         assert settings.exclude_patterns == (".obsidian/**",)
         assert config.source_dir == Path("/tmp/vault")
-        assert settings.conventions_file == "_conventions.md"
+        assert settings.conventions_file == ".conventions.md"
 
     def test_conventions_file_disabled_passes_none(self, tmp_path: Path) -> None:
         config = ProjectConfig(
@@ -2011,7 +2011,7 @@ class TestContentConfigFromEnv:
     def test_conventions_file_default(self, monkeypatch):
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", raising=False)
         cfg = ProjectConfig.from_env().content
-        assert cfg.conventions_file == "_conventions.md"
+        assert cfg.conventions_file == ".conventions.md"
 
     def test_conventions_file_custom(self, monkeypatch):
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "AGENTS.md")
@@ -2029,7 +2029,7 @@ class TestContentConfigFromEnv:
         # falls back to the default rather than disabling.
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "")
         cfg = ProjectConfig.from_env().content
-        assert cfg.conventions_file == "_conventions.md"
+        assert cfg.conventions_file == ".conventions.md"
 
     @pytest.mark.parametrize(
         "bad",

@@ -600,7 +600,7 @@ structurally identically.
 
 **Carve-out — folder conventions:** the server may *transport* user-authored,
 free-form convention text stored in well-known in-vault files (default
-`_conventions.md`) to clients — see the "Folder Conventions" section. It never
+`.conventions.md`) to clients — see the "Folder Conventions" section. It never
 parses, ranks by, or special-cases the *content* of that text and imposes no
 taxonomy (PARA, `kind`, or otherwise); the non-goal above — no server-side
 interpretation of vault organisation — is unchanged.
@@ -1842,8 +1842,8 @@ it *transports* user-authored convention text without interpreting it.
 
 **Storage.** Conventions live in-vault as per-folder files with a well-known
 name (`ContentConfig.conventions_file`, env
-`MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`, default `_conventions.md`; the sentinel
-`none` disables the feature). Semantics are CLAUDE.md-style accumulation: a
+`MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`, default `.conventions.md`; the sentinel
+`none` disables the feature). With the default name, a missing `.conventions.md` falls back to `_conventions.md` in that folder. A present but unreadable primary does not fall back; custom names use only the configured name. Semantics are CLAUDE.md-style accumulation: a
 root-level file applies vault-wide and nested files *add to* (never replace)
 their ancestors. Content is free-form markdown; a YAML frontmatter block, if
 present, is stripped before transport (fallback to raw text on parse errors).
@@ -1857,7 +1857,7 @@ logs `conventions_truncated` at WARNING.
 
 **Resolution.** `conventions.py::ConventionsResolver` is pure disk I/O with
 zero index coupling: `for_path(path)` walks the ancestor chain root-first
-(one `is_file()` probe per level, no caching), and `list_folders()` walks the
+(trying the primary and its fallback per level, no caching), and `list_folders()` walks the
 tree skipping dot-directories. A note path resolves to its parent folder; the
 same `is_relative_to` traversal guard as `validate_path` applies. Disk-read
 resolution means conventions work before the index is built (relevant in
@@ -1865,7 +1865,7 @@ managed-git mode, where the clone happens inside the server lifespan).
 
 **Index exclusion.** Convention files are excluded from the index but stay
 readable via `read` (which reads from disk). `Vault.__init__` itself derives
-both fnmatch forms (`_conventions.md` and `**/_conventions.md` — the `**/`
+both fnmatch forms for each active name (for example `.conventions.md` and `**/.conventions.md` — the `**/`
 form alone does not match a root-level file) and merges them into its
 effective `exclude_patterns`, so direct library construction behaves
 identically to the served path; the filename is validated against fnmatch
