@@ -12,9 +12,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from markdown_vault_mcp.exceptions import StoreCorruptError
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
-from markdown_vault_mcp.types import DocumentRows, EmbeddingIdentity, VectorRow
+from markdown_vault_mcp.types import (
+    ANY_TOKEN,
+    DocumentRows,
+    EmbeddingIdentity,
+    VectorRow,
+)
 from tests.fixtures.vector_store_contract import IDENT, doc
+from tests.fixtures.vectors import damage_sqlite_page
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -149,6 +156,22 @@ class TestFailedCommits:
             with pytest.raises(sqlite3.OperationalError) as caught:
                 store._commit("test", fail)  # type: ignore[arg-type]
             assert caught.value is error
+        finally:
+            store.close()
+
+    @pytest.mark.parametrize("operation", ["remove", "generation"])
+    def test_physical_damage_is_classified_on_write(
+        self, tmp_path: Path, operation: str
+    ) -> None:
+        base = _seeded(tmp_path)
+        store = SqliteVectorBackend().open(base, IDENT)
+        try:
+            damage_sqlite_page(base.with_suffix(".sqlite3"), "documents")
+            with pytest.raises(StoreCorruptError):
+                if operation == "remove":
+                    store.remove_document("old.md", expected_token=ANY_TOKEN)
+                else:
+                    store.publish_generation(IDENT, [doc("old.md", [[1, 0, 0]])])
         finally:
             store.close()
 

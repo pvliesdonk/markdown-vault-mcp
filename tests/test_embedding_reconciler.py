@@ -691,8 +691,13 @@ class TestStoreWriteFailures:
         assert provider.texts == []
 
     @pytest.mark.parametrize("operation", ["replace_document", "remove_document"])
+    @pytest.mark.parametrize("recover", [False, True])
     def test_corruption_during_a_write_propagates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        operation: str,
+        recover: bool,
     ) -> None:
         from markdown_vault_mcp.exceptions import StoreCorruptError
 
@@ -703,12 +708,23 @@ class TestStoreWriteFailures:
             rec.reconcile(store, site="test")
             fts.delete_by_path("a.md")
 
-        def corrupt(*_args: Any, **_kwargs: Any) -> None:
-            raise StoreCorruptError("damaged", backend="test", location="fixture")
+        original = getattr(store, operation)
+
+        def corrupt(document: Any, **kwargs: Any) -> Any:
+            path = document if isinstance(document, str) else document.path
+            if path == "a.md":
+                raise StoreCorruptError("damaged", backend="test", location="fixture")
+            return original(document, **kwargs)
 
         monkeypatch.setattr(store, operation, corrupt)
-        with pytest.raises(StoreCorruptError):
-            rec.reconcile(store, site="test", recover_corruption=True)
+        if recover:
+            with pytest.raises(StoreCorruptError):
+                rec.reconcile(store, site="test", recover_corruption=True)
+        else:
+            result = rec.reconcile(store, site="test", recover_corruption=False)
+            assert "a.md" in result.retry
+            if operation == "replace_document":
+                assert store.tokens().get("b.md") is not None
 
     def test_a_failed_write_is_retried_and_the_pass_continues(self, tmp_path, caplog):
         _fts, _provider, store, rec = _setup(tmp_path, NOTES)
