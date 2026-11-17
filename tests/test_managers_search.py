@@ -1987,3 +1987,57 @@ class TestDefaultModeValidation:
         from markdown_vault_mcp.types import DEFAULT_SEARCH_MODES
 
         assert frozenset(DEFAULT_SEARCH_MODES) == _SEARCH_MODES
+
+
+def test_post_filter_batches_distinct_paths_and_preserves_order(
+    search_mgr: SearchManager,
+) -> None:
+    conn = search_mgr._fts._conn()
+    queries: list[str] = []
+    conn.set_trace_callback(queries.append)
+    rows = [
+        {"path": p}
+        for p in ("beta.md", "missing.md", "alpha.md", "beta.md", "notes/delta.md")
+    ]
+    try:
+        result = search_mgr._post_filter_semantic_rows(rows, filters={"tags": "b"})
+    finally:
+        conn.set_trace_callback(None)
+    assert [row["path"] for row in result] == ["beta.md", "alpha.md", "beta.md"]
+    selects = [q for q in queries if "SELECT path, frontmatter_json" in q]
+    assert len(selects) == 1
+
+
+def test_post_filter_custom_index_fallback_memoizes_paths(
+    search_mgr: SearchManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class LegacyIndex:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_note(self, path: str) -> dict[str, str] | None:
+            self.calls.append(path)
+            return {"frontmatter_json": '{"tag": ["yes"]}'} if path == "a.md" else None
+
+    legacy = LegacyIndex()
+    monkeypatch.setattr(search_mgr, "_fts", legacy)
+    rows = [{"path": p} for p in ("a.md", "a.md", "missing.md", "missing.md")]
+    assert (
+        search_mgr._post_filter_semantic_rows(rows, filters={"tag": "yes"}) == rows[:2]
+    )
+    assert legacy.calls == ["a.md", "missing.md"]
+
+
+def test_batch_frontmatter_respects_sqlite_variable_limit(
+    search_mgr: SearchManager,
+) -> None:
+    import sqlite3
+
+    index = search_mgr._fts
+    conn = index._conn()
+    old_limit = conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 10)
+    try:
+        paths = (f"missing-{n}.md" for n in range(1010))
+        assert index.get_frontmatter_batch(paths) == {}
+    finally:
+        conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, old_limit)

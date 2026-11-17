@@ -539,23 +539,18 @@ class SearchManager:
             frontmatter=self._parse_frontmatter_json(row.get("frontmatter_json"), path),
         )
 
-    def _row_matches_filters(self, path: str, filters: dict[str, str]) -> bool:
-        """Return ``True`` if the document at *path* satisfies all *filters*.
+    def _row_matches_filters(self, fm_raw: str | None, filters: dict[str, str]) -> bool:
+        """Return whether stored frontmatter satisfies all *filters*.
 
-        Looks up frontmatter from the FTS index and checks each key/value
-        pair.  List-valued frontmatter fields are matched by membership.
+        Checks each key/value pair. List-valued fields match by membership.
 
         Args:
-            path: Relative document path.
+            fm_raw: Stored frontmatter JSON, if present.
             filters: Dict of ``{frontmatter_key: value}`` pairs.
 
         Returns:
-            ``True`` if the document exists and all filter conditions are met.
+            ``True`` if all filter conditions are met.
         """
-        note_row = self._fts.get_note(path)
-        if note_row is None:
-            return False
-        fm_raw = note_row.get("frontmatter_json")
         fm: dict[str, Any] = {}
         if fm_raw:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
@@ -740,11 +735,9 @@ class SearchManager:
         dimensions are checked after the fact: *filters* against
         frontmatter via :meth:`_row_matches_filters` (any frontmatter key —
         not limited to ``indexed_frontmatter_fields``), *okf_filters*
-        against the OKF annotations.  Both need a per-path lookup, which is
-        why they cannot ride along in the similarity scan the way the
-        folder scope does (it is the store's ``folder`` argument), and why callers
-        widen the candidate pool for them (see
-        :meth:`_widen_for_post_filter`).
+        against the OKF annotations. Frontmatter is fetched in batches for
+        distinct paths; OKF checks are memoized per path. Callers widen the
+        candidate pool for these post-filters (see :meth:`_widen_for_post_filter`).
 
         The folder scope is deliberately absent: it is applied inside
         the store's ``search`` / ``similar_to_document`` before the
@@ -761,11 +754,30 @@ class SearchManager:
             The rows that satisfy every condition, original order preserved.
         """
         okf_filters = okf_filters or {}
+        frontmatter: dict[str, str | None] = {}
+        if filters and raw:
+            paths = dict.fromkeys(r["path"] for r in raw)
+            batch = getattr(self._fts, "get_frontmatter_batch", None)
+            if callable(batch):
+                frontmatter = batch(paths)
+            else:
+                for path in paths:
+                    note = self._fts.get_note(path)
+                    if note is not None:
+                        frontmatter[path] = note.get("frontmatter_json")
+        filter_verdicts: dict[str, bool] = {}
         okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
-            if filters and not self._row_matches_filters(r["path"], filters):
-                continue
+            if filters:
+                path = r["path"]
+                if path not in filter_verdicts:
+                    filter_verdicts[path] = (
+                        path in frontmatter
+                        and self._row_matches_filters(frontmatter[path], filters)
+                    )
+                if not filter_verdicts[path]:
+                    continue
             if okf_filters:
                 verdict = okf_verdicts.get(r["path"])
                 if verdict is None:
