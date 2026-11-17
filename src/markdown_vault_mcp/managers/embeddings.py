@@ -645,8 +645,6 @@ class EmbeddingsManager:
             raise RuntimeError(
                 "_require_vectors() must be called before _converge_embeddings()"
             )
-        if self._slot is not None and self._slot.has_suspect():
-            return self.rebuild_after_fault()
         result = self.reconcile_paths(vectors, None, site="converge")
         if self._slot is not None and self._slot.has_suspect():
             return self.rebuild_after_fault()
@@ -851,7 +849,9 @@ class EmbeddingsManager:
         Returns:
             What the pass did; conflicts and retries are also recorded here.
         """
-        if self._reconciler is None:
+        if self._reconciler is None or (
+            self._slot is not None and self._slot.has_suspect()
+        ):
             return ReconcileResult()
         recover = self._slot is not None and self._slot.can_recover(vectors)
         try:

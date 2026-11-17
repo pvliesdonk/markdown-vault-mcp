@@ -692,7 +692,7 @@ class TestStoreWriteFailures:
 
     @pytest.mark.parametrize("operation", ["replace_document", "remove_document"])
     @pytest.mark.parametrize("recover", [False, True])
-    def test_corruption_during_a_write_propagates(
+    def test_corruption_during_a_write_respects_recovery_policy(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -721,7 +721,7 @@ class TestStoreWriteFailures:
             with pytest.raises(StoreCorruptError):
                 rec.reconcile(store, site="test", recover_corruption=True)
         else:
-            result = rec.reconcile(store, site="test", recover_corruption=False)
+            result = rec.reconcile(store, site="test")
             assert "a.md" in result.retry
             if operation == "replace_document":
                 assert store.tokens().get("b.md") is not None

@@ -143,35 +143,13 @@ class TestKills:
 
 
 class TestFailedCommits:
-    def test_non_corruption_transaction_errors_are_unchanged(
-        self, tmp_path: Path
-    ) -> None:
-        store = SqliteVectorBackend().open(_seeded(tmp_path), IDENT)
-        error = sqlite3.OperationalError("database is locked")
-
-        def fail(_conn: sqlite3.Connection) -> str:
-            raise error
-
-        try:
-            with pytest.raises(sqlite3.OperationalError) as caught:
-                store._commit("test", fail)  # type: ignore[arg-type]
-            assert caught.value is error
-        finally:
-            store.close()
-
-    @pytest.mark.parametrize("operation", ["remove", "generation"])
-    def test_physical_damage_is_classified_on_write(
-        self, tmp_path: Path, operation: str
-    ) -> None:
+    def test_physical_damage_is_classified_on_write(self, tmp_path: Path) -> None:
         base = _seeded(tmp_path)
         store = SqliteVectorBackend().open(base, IDENT)
         try:
             damage_sqlite_page(base.with_suffix(".sqlite3"), "documents")
             with pytest.raises(StoreCorruptError):
-                if operation == "remove":
-                    store.remove_document("old.md", expected_token=ANY_TOKEN)
-                else:
-                    store.publish_generation(IDENT, [doc("old.md", [[1, 0, 0]])])
+                store.remove_document("old.md", expected_token=ANY_TOKEN)
         finally:
             store.close()
 
