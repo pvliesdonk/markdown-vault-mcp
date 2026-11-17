@@ -6,9 +6,10 @@ identity provider or upstream discovery request is needed for this check.
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, ExitStack, asynccontextmanager
-from unittest.mock import AsyncMock, patch
+from contextlib import AsyncExitStack, asynccontextmanager
+from unittest.mock import AsyncMock
 
+import pytest
 from fastmcp import FastMCP
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
@@ -19,11 +20,12 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 
 
-def test_mounted_proxies_isolate_discovery_on_a_shared_host() -> None:
+def test_mounted_proxies_serve_isolated_discovery_then_initialize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Discover each service and initialize it with a synthetic verified token."""
     routes = []
     apps = []
-    patches = ExitStack()
     for prefix in ("vault", "other"):
         auth = OAuthProxy(
             upstream_authorization_endpoint="https://idp.example/authorize",
@@ -37,16 +39,12 @@ def test_mounted_proxies_isolate_discovery_on_a_shared_host() -> None:
             jwt_signing_key="x" * 32,
             client_storage=MemoryStore(),
         )
-        patches.enter_context(
-            patch.object(
-                auth,
-                "verify_token",
-                AsyncMock(
-                    return_value=AccessToken(
-                        token="valid", client_id="client", scopes=[]
-                    )
-                ),
-            )
+        monkeypatch.setattr(
+            auth,
+            "verify_token",
+            AsyncMock(
+                return_value=AccessToken(token="valid", client_id="client", scopes=[])
+            ),
         )
         mcp_app = FastMCP(prefix, auth=auth).http_app(path="/mcp")
         apps.append(mcp_app)
@@ -105,11 +103,10 @@ def test_mounted_proxies_isolate_discovery_on_a_shared_host() -> None:
                     },
                 )
                 assert initialized.status_code == 200
-                assert '"result"' in initialized.text
+                assert f'"serverInfo":{{"name":"{prefix}"' in initialized.text
 
     async def run() -> None:
         async with app.router.lifespan_context(app):
             await probe()
 
-    with patches:
-        asyncio.run(run())
+    asyncio.run(run())

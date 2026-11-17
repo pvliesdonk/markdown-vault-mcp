@@ -179,7 +179,7 @@ does not attempt to catalogue the rest of FastMCP's API.
   On FastMCP 4.2.0, the outer app must start both child app lifespans for
   authenticated MCP initialization. The pin uses a synthetic verified token;
   it does not exercise an OIDC login. [observed: tests/test_auth_subpath.py]
-  [pins: tests/test_auth_subpath.py::test_mounted_proxies_isolate_discovery_on_a_shared_host]
+  [pins: tests/test_auth_subpath.py::test_mounted_proxies_serve_isolated_discovery_then_initialize]
 
 ## Where this project departs from the subject
 
