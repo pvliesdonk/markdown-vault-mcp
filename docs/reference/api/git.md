@@ -43,7 +43,10 @@ Library callers can install `"markdown-vault-mcp[libgit2]"` and pass one
 only paths touched by each write and provides history, diffs and revision
 reads; it does not pull or push. The server defaults to the CLI strategy;
 selecting `MARKDOWN_VAULT_MCP_GIT_BACKEND=libgit2` uses the separate
-`Libgit2SyncStore` for synchronization.
+`Libgit2SyncStore` for synchronization. A direct `Libgit2SyncStore` caller
+whose existing source directory becomes a Git checkout after construction can
+use `force_pull()` or `force_push()` to discover it. The store validates the
+checkout before transport.
 
 ```python { .fragment }
 from pathlib import Path
