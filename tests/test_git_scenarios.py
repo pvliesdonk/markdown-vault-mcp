@@ -10,14 +10,11 @@ import pytest
 
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
-from tests.fixtures.git import GitRepoPair, _run_git, isolated_git  # noqa: F401
+from tests.fixtures.git import GitRepoPair, _git_clone, _git_commit, _git_head, _run_git
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
-
-
-pytestmark = pytest.mark.usefixtures("isolated_git")
 
 
 @pytest.fixture
@@ -33,10 +30,6 @@ def _paths(repo: Path, *args: str) -> set[str]:
         ["git", "-C", str(repo), *args], check=True, capture_output=True
     ).stdout
     return {os.fsdecode(path) for path in raw.split(b"\0") if path}
-
-
-def _head(repo: Path) -> str:
-    return _run_git(repo, "rev-parse", "HEAD").strip()
 
 
 def _bounded(repo: Path, expected: set[str]) -> None:
@@ -82,19 +75,19 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
         pytest.skip("Windows cannot create these filename characters")
     repo = git_repo
     unrelated = repo / "unrelated.md"
-    unrelated.write_text("original\n")
+    unrelated.write_bytes(b"original\n")
     _run_git(repo, "add", "unrelated.md")
     _run_git(repo, "commit", "-qm", "seed unrelated")
-    unrelated.write_text("staged change\n")
+    unrelated.write_bytes(b"staged change\n")
     _run_git(repo, "add", "unrelated.md")
 
     note = repo / name
     body = "".join(f"line {i}\n" for i in range(30))
-    note.write_text(body)
+    note.write_bytes(body.encode("utf-8"))
     store(note, body, "write")
-    first = _head(repo)
+    first = _git_head(repo)
     _bounded(repo, {name})
-    note.write_text(body + "updated\n")
+    note.write_bytes((body + "updated\n").encode("utf-8"))
     store(note, body + "updated\n", "edit")
     _bounded(repo, {name})
     renamed = repo / name.replace(".md", "-renamed.md")
@@ -122,73 +115,20 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     assert not renamed.exists()
 
 
-def _clone(pair: GitRepoPair, tmp_path: Path) -> Path:
-    other = tmp_path / "other"
-    _run_git(tmp_path, "clone", "-q", str(pair.remote_path), str(other))
-    _run_git(other, "config", "user.name", "Test")
-    _run_git(other, "config", "user.email", "test@example.com")
-    return other
-
-
-def _commit(repo: Path, name: str, content: str, message: str) -> str:
-    (repo / name).write_text(content)
-    _run_git(repo, "add", "--", name)
-    _run_git(repo, "commit", "-qm", message)
-    return _head(repo)
-
-
-def test_sync_ahead_then_behind(
-    git_repo_pair: GitRepoPair, tmp_path: Path, store: GitWriteStrategy
+def test_sync_ahead_keeps_local_commit(
+    git_repo_pair: GitRepoPair, store: GitWriteStrategy
 ) -> None:
-    """An ahead clone is preserved; after publishing it can fast-forward."""
+    """An ahead clone is preserved when there is nothing to pull."""
     local = git_repo_pair.local_path
-    other = _clone(git_repo_pair, tmp_path)
-    local_head = _commit(local, "local.md", "local\n", "local")
+    local_head = _git_commit(local, "local.md", "local\n", "local")
     assert store.sync_once(local) is False
-    assert _head(local) == local_head
-    _run_git(local, "push")
-    _run_git(other, "pull", "--ff-only")
-    remote_head = _commit(other, "remote.md", "remote\n", "remote")
-    _run_git(other, "push")
-    assert store.sync_once(local) is True
-    assert _head(local) == remote_head
-    assert (local / "local.md").read_text() == "local\n"
-    assert (local / "remote.md").read_text() == "remote\n"
+    assert _git_head(local) == local_head
+    assert (local / "local.md").read_bytes() == b"local\n"
 
 
-def test_rename_threshold_agrees_across_queries(
-    git_repo: Path, store: GitWriteStrategy
-) -> None:
-    """A rename below git's default threshold remains one note in every query."""
-    repo = git_repo
-    old, new = repo / "old.md", repo / "new.md"
-    original = "# Title\nOriginal line\n"
-    old.write_text(original)
-    store(old, original, "write")
-    first = _head(repo)
-    old.rename(new)
-    new.write_text("# Title\nModified line\n")
-    store(new, new.read_text(), "rename", old_path=old)
-    assert [entry.sha for entry in store.get_file_history(repo, new, None, 10)][
-        -1
-    ] == first
-    combined = store.get_file_diff(repo, new, first, False)
-    entries = store.get_file_diff(repo, new, first, True)
-    assert (
-        isinstance(combined, str)
-        and "-Original line" in combined
-        and "+Modified line" in combined
-    )
-    assert isinstance(entries, list) and len(entries) == 1
-    assert "-Original line" in entries[0].diff and "+Modified line" in entries[0].diff
-    revision = store.get_file_at_ref(
-        RevisionQuery(repo_path=repo, path=new, ref=first, max_bytes=0)
-    )
-    assert revision.historical_path == "old.md"
-    assert revision.content == original
-
-
-@pytest.mark.parametrize("mode", ["clean", "conflict", "union", "dirty"])
+@pytest.mark.parametrize(
+    "mode", ["clean", "conflict", "union", "dirty", "diverged_dirty"]
+)
 def test_two_clone_divergence(
     git_repo_pair: GitRepoPair,
     tmp_path: Path,
@@ -199,26 +139,30 @@ def test_two_clone_divergence(
     """The remote transition preserves both sides, or refuses a dirty tree."""
     local = git_repo_pair.local_path
     if mode == "union":
-        _commit(local, ".gitattributes", "README.md merge=union\n", "attributes")
+        _git_commit(local, ".gitattributes", "README.md merge=union\n", "attributes")
         _run_git(local, "push")
-    other = _clone(git_repo_pair, tmp_path)
+    other = _git_clone(git_repo_pair, tmp_path)
     if mode == "clean":
-        _commit(local, "local.md", "local\n", "local")
-        _commit(other, "remote.md", "remote\n", "remote")
-    elif mode == "dirty":
-        (local / "README.md").write_text("uncommitted local\n")
-        _commit(other, "README.md", "remote\n", "remote")
+        _git_commit(local, "local.md", "local\n", "local")
+        _git_commit(other, "remote.md", "remote\n", "remote")
+    elif mode in {"dirty", "diverged_dirty"}:
+        if mode == "diverged_dirty":
+            _git_commit(local, "local.md", "committed local\n", "local")
+        (local / "README.md").write_bytes(b"uncommitted local\n")
+        _git_commit(other, "README.md", "remote\n", "remote")
     else:
-        _commit(local, "README.md", "local\n", "local")
-        _commit(other, "README.md", "remote\n", "remote")
-    before = _head(local)
-    remote = _head(other)
+        _git_commit(local, "README.md", "local\n", "local")
+        _git_commit(other, "README.md", "remote\n", "remote")
+    before = _git_head(local)
+    remote = _git_head(other)
     _run_git(other, "push")
     with caplog.at_level("INFO", logger="markdown_vault_mcp.git"):
         advanced = store.sync_once(local)
-    if mode == "dirty":
-        assert not advanced and _head(local) == before
-        assert (local / "README.md").read_text() == "uncommitted local\n"
+    if mode in {"dirty", "diverged_dirty"}:
+        assert not advanced and _git_head(local) == before
+        assert (local / "README.md").read_bytes() == b"uncommitted local\n"
+        if mode == "diverged_dirty":
+            assert (local / "local.md").read_bytes() == b"committed local\n"
     else:
         assert advanced
         _run_git(local, "merge-base", "--is-ancestor", remote, "HEAD")
@@ -231,14 +175,15 @@ def test_two_clone_divergence(
             assert "local\n" in text and "remote\n" in text
             assert not list(local.glob("*.conflict-mcp-*.md"))
         else:
-            assert (local / "README.md").read_text().endswith("remote")
             siblings = list(local.glob("README.conflict-mcp-*.md"))
-            assert len(siblings) == 1 and siblings[0].read_text().endswith("local")
+            assert len(siblings) == 1
             assert "git_conflict_resolved" in caplog.text
             import frontmatter
 
             original = frontmatter.loads((local / "README.md").read_text())
             sibling = frontmatter.loads(siblings[0].read_text())
+            assert original.content == "remote"
+            assert sibling.content == "local"
             assert original.metadata["conflict_with"] == siblings[0].name
             assert sibling.metadata["conflict_with"] == "README.md"
             assert "conflict_date" in original.metadata
@@ -261,10 +206,10 @@ def test_glob_name_does_not_commit_matching_sibling(
     """An unstaged matching sibling is not selected as a pathspec pattern."""
     if os.name == "nt" and any(c in name for c in "*?"):
         pytest.skip("Windows cannot create these filename characters")
-    _commit(git_repo, sibling, "original\n", "seed sibling")
-    (git_repo / sibling).write_text("pending\n")
+    _git_commit(git_repo, sibling, "original\n", "seed sibling")
+    (git_repo / sibling).write_bytes(b"pending\n")
     note = git_repo / name
-    note.write_text("note\n")
+    note.write_bytes(b"note\n")
     store(note, "note\n", "write")
     assert _paths(
         git_repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "HEAD"

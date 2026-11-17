@@ -27,12 +27,15 @@ if TYPE_CHECKING:
 @pytest.fixture
 def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep operator Git configuration and identity out of synthetic repos."""
+    # Remove all Git overrides, including repository selectors and config
+    # injection; preserve the caller's ceiling so fixture discovery cannot
+    # escape into the enclosing worktree.
+    for key in list(os.environ):
+        if key.startswith("GIT_") and key != "GIT_CEILING_DIRECTORIES":
+            monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
-    for role in ("AUTHOR", "COMMITTER"):
-        for field in ("NAME", "EMAIL", "DATE"):
-            monkeypatch.delenv(f"GIT_{role}_{field}", raising=False)
 
 
 class GitRepoPair(NamedTuple):
@@ -74,8 +77,27 @@ def _run_git(cwd: Path, *args: str) -> str:
     return result.stdout
 
 
+def _git_head(repo: Path) -> str:
+    return _run_git(repo, "rev-parse", "HEAD").strip()
+
+
+def _git_clone(pair: GitRepoPair, tmp_path: Path) -> Path:
+    other = tmp_path / "other"
+    _run_git(tmp_path, "clone", "-q", str(pair.remote_path), str(other))
+    _run_git(other, "config", "user.name", "Test")
+    _run_git(other, "config", "user.email", "test@example.com")
+    return other
+
+
+def _git_commit(repo: Path, name: str, content: str, message: str) -> str:
+    (repo / name).write_bytes(content.encode("utf-8"))
+    _run_git(repo, "add", "--", name)
+    _run_git(repo, "commit", "-qm", message)
+    return _git_head(repo)
+
+
 @pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
+def git_repo(tmp_path: Path, isolated_git: None) -> Path:  # noqa: ARG001
     """Create a minimal git repository for testing."""
     import subprocess
 
@@ -112,7 +134,7 @@ def git_repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def git_repo_pair(tmp_path: Path) -> GitRepoPair:
+def git_repo_pair(tmp_path: Path, isolated_git: None) -> GitRepoPair:  # noqa: ARG001
     """Set up a bare 'remote' + local clone with one initial commit on main.
 
     The local clone has ``origin`` pointing at the bare remote and an

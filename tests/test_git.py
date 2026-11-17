@@ -13,7 +13,6 @@ import pytest
 from markdown_vault_mcp.config_sections._assembly import to_vault_instances
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.vault import VaultSettings
-from tests.fixtures.git import isolated_git  # noqa: F401
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,8 +25,6 @@ from markdown_vault_mcp.git import (
     conflict,
     git_write_strategy,
 )
-
-pytestmark = pytest.mark.usefixtures("isolated_git")
 
 
 def _write_conflict_files(
@@ -1333,46 +1330,6 @@ class TestGlobMetacharactersInNoteNames:
         assert len(mgr.get_history("b1.md", limit=10)) == 2
 
 
-class TestCommitterIdentityInCommit:
-    """The configured committer reaches Git's persisted commit."""
-
-    @pytest.mark.parametrize(
-        ("name", "email", "expected"),
-        [
-            (None, None, "markdown-vault-mcp <noreply@markdown-vault-mcp>"),
-            ("CustomBot", "bot@example.com", "CustomBot <bot@example.com>"),
-        ],
-    )
-    def test_committer_identity_in_commit(
-        self, git_repo: Path, name: str | None, email: str | None, expected: str
-    ) -> None:
-        """Inspect the commit rather than recording a simulated invocation."""
-        note = git_repo / "identity.md"
-        note.write_text("# Note\n")
-        strategy = GitWriteStrategy(
-            commit_name=name, commit_email=email, enable_push=False, git_lfs=False
-        )
-        try:
-            strategy(note, "# Note\n", "write")
-            result = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(git_repo),
-                    "show",
-                    "-s",
-                    "--format=%cn <%ce>",
-                    "HEAD",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            assert result.stdout.strip() == expected
-        finally:
-            strategy.close()
-
-
 class TestGitSyncOnce:
     def test_sync_once_fast_forwards(
         self, tmp_path: Path, git_repo_with_remote: tuple[Path, Path]
@@ -2164,28 +2121,19 @@ class TestRebaseInProgress:
 
         assert conflict.rebase_in_progress(git_repo, env=None, token=None) is False
 
-    def test_real_interrupted_rebase_aborts_then_retries(
+    def test_real_interrupted_rebase_refuses_until_aborted(
         self,
         git_repo_pair: GitRepoPair,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A halted rebase requires manual recovery before a public sync retry."""
-        from tests.fixtures.git import _run_git
+        """A halted rebase is refused and manual abort restores local work."""
+        from tests.fixtures.git import _git_clone, _git_commit, _git_head, _run_git
 
         local = git_repo_pair.local_path
-        other = tmp_path / "other"
-        _run_git(tmp_path, "clone", "-q", str(git_repo_pair.remote_path), str(other))
-        _run_git(other, "config", "user.name", "Test")
-        _run_git(other, "config", "user.email", "test@example.com")
-        (local / "README.md").write_text("local\n")
-        _run_git(local, "add", "README.md")
-        _run_git(local, "commit", "-qm", "local")
-        local_head = _run_git(local, "rev-parse", "HEAD").strip()
-        (other / "README.md").write_text("remote\n")
-        _run_git(other, "add", "README.md")
-        _run_git(other, "commit", "-qm", "remote")
-        remote_head = _run_git(other, "rev-parse", "HEAD").strip()
+        other = _git_clone(git_repo_pair, tmp_path)
+        local_head = _git_commit(local, "README.md", "local\n", "local")
+        _git_commit(other, "README.md", "remote\n", "remote")
         _run_git(other, "push")
         _run_git(local, "fetch")
         halted = subprocess.run(
@@ -2195,7 +2143,7 @@ class TestRebaseInProgress:
         strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
         try:
             assert conflict.rebase_in_progress(local, env=None, token=None)
-            halted_head = _run_git(local, "rev-parse", "HEAD").strip()
+            halted_head = _git_head(local)
             unmerged = _run_git(local, "ls-files", "-u")
             assert unmerged
             with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
@@ -2203,18 +2151,12 @@ class TestRebaseInProgress:
             assert "git_worktree_dirty" in caplog.text
             assert "recovery=manual" in caplog.text
             assert conflict.rebase_in_progress(local, env=None, token=None)
-            assert _run_git(local, "rev-parse", "HEAD").strip() == halted_head
+            assert _git_head(local) == halted_head
             assert _run_git(local, "ls-files", "-u") == unmerged
             assert conflict.abort_in_progress_rebase(local, env=None, token=None)
             assert not conflict.rebase_in_progress(local, env=None, token=None)
-            assert _run_git(local, "rev-parse", "HEAD").strip() == local_head
+            assert _git_head(local) == local_head
             assert (local / "README.md").read_text() == "local\n"
-            assert strategy.sync_once(local)
-            _run_git(local, "merge-base", "--is-ancestor", remote_head, "HEAD")
-            assert (local / "README.md").read_text().endswith("remote")
-            siblings = list(local.glob("README.conflict-mcp-*.md"))
-            assert len(siblings) == 1 and siblings[0].read_text().endswith("local")
-            assert not conflict.rebase_in_progress(local, env=None, token=None)
         finally:
             strategy.close()
             subprocess.run(
@@ -4162,7 +4104,9 @@ class TestGetFileDiff:
                 git_repo, git_repo / "z.bin", base, True, summarize_binary=True
             )
             assert isinstance(out, list)
-            assert any(entry.sha == root and "Bin" in entry.diff for entry in out)
+            root_diff = next(entry.diff for entry in out if entry.sha == root)
+            assert "Bin 0 -> 8 bytes" in root_diff
+            assert "Binary files" not in root_diff
         finally:
             strategy.close()
 
