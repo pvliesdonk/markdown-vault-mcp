@@ -598,6 +598,8 @@ class PostgresVectorStore:
             ReadOnlyError: If it was opened read-only.
             ValueError: If a path appears twice or a row cannot be stored;
                 nothing changed.
+            OSError: If the validated rows cannot be staged in the system
+                temporary directory (full or unwritable); nothing changed.
             StoreIncompatibleError: If another identity has been published;
                 nothing changed.
             StoreUnsupportedSchemaError: If a fresh store's schema holds a
@@ -611,7 +613,7 @@ class PostgresVectorStore:
             generations: list[int] = []
 
             def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
-                if not self._state.reset_pending:
+                if not self._state.reset_pending:  # a reset here already emptied them
                     empty_rows(conn, schema=self._schema)
                 generations.append(
                     load_generation(

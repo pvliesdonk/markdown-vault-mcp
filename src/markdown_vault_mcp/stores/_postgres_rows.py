@@ -70,46 +70,39 @@ def chunk_values(document: DocumentRows, dimension: int) -> list[ChunkValues]:
     return rows
 
 
-def generation_values(
-    documents: Iterable[DocumentRows], dimension: int
-) -> tuple[list[tuple[str, RevisionToken | None]], list[ChunkValues]]:
-    """Validate a whole generation; return its document and chunk rows. Nothing is written.
-
-    Args:
-        documents: The generation's documents.
-        dimension: The generation identity's dimension.
-
-    Returns:
-        ``(path, token)`` per document, and every document's chunk rows.
-
-    Raises:
-        ValueError: If the dimension is unknown, a path appears twice, or
-            any row cannot be stored (see :func:`chunk_values`).
-    """
-    require_dimension(dimension)
-    seen: set[str] = set()
-    docs: list[tuple[str, RevisionToken | None]] = []
-    chunks: list[ChunkValues] = []
-    for document in documents:
-        if document.path in seen:
-            raise ValueError(f"publish_generation got {document.path[:80]!r} twice.")
-        seen.add(document.path)
-        docs.append((document.path, document.token))
-        chunks.extend(chunk_values(document, dimension))
-    return docs, chunks
-
-
 class GenerationReplay:
-    """Validated document keys and a private replay of normalized chunk rows."""
+    """Validated document keys and a private replay of normalized chunk rows.
+
+    Attributes:
+        stream: The scratch file holding each row as a JSON line followed
+            by its little-endian float32 vector.
+        dimension: The generation's embedding dimension.
+        documents: ``(path, token)`` per document, in input order.
+        count: How many chunk rows the scratch file holds.
+    """
 
     def __init__(self, stream: BinaryIO, dimension: int) -> None:
+        """Start an empty replay over *stream* at *dimension*.
+
+        Args:
+            stream: An open, empty binary scratch file.
+            dimension: The generation's embedding dimension.
+        """
         self.stream = stream
         self.dimension = dimension
         self.documents: list[tuple[str, RevisionToken | None]] = []
         self.count = 0
 
     def chunks(self) -> Iterator[ChunkValues]:
-        """Replay the validated rows in their original order."""
+        """Replay the validated rows in their original order.
+
+        Each call starts again from the beginning of the scratch file, so a
+        replay can be repeated; only the most recent iterator may be used.
+
+        Yields:
+            One ``(path, ordinal, folder, vector, metadata)`` per row, as
+            :func:`chunk_values` returns them.
+        """
         self.stream.seek(0)
         while line := self.stream.readline():
             path, ordinal, folder, metadata = json.loads(line)
@@ -127,7 +120,24 @@ class GenerationReplay:
 def generation_replay(
     documents: Iterable[DocumentRows], dimension: int
 ) -> Iterator[GenerationReplay]:
-    """Validate a one-shot generation before yielding its disposable replay."""
+    """Validate a one-shot generation before yielding its disposable replay.
+
+    Every document is read, validated and written to a private temporary
+    file before this yields, so nothing reaches the database until the whole
+    generation has passed; the file is closed when the block exits.
+
+    Args:
+        documents: The generation's documents, iterated once.
+        dimension: The generation identity's dimension.
+
+    Yields:
+        The replay of the validated generation.
+
+    Raises:
+        ValueError: If the dimension is unknown, a path appears twice, or
+            any row cannot be stored (see :func:`chunk_values`).
+        OSError: If the temporary file cannot be created or written.
+    """
     require_dimension(dimension)
     with tempfile.TemporaryFile(mode="w+b") as stream:
         replay = GenerationReplay(stream, dimension)
