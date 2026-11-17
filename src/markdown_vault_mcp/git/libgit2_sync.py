@@ -23,6 +23,7 @@ from markdown_vault_mcp.git.conflict import (
 from markdown_vault_mcp.git.health import push_failure_reason
 from markdown_vault_mcp.git.libgit2 import (
     Libgit2Store,
+    _checked,
     _common,
     _config_bool,
     _probe_config_hooks,
@@ -297,6 +298,10 @@ class Libgit2SyncStore(Libgit2Store):
             )
 
     def _gate(self, repo: Any) -> None:
+        try:
+            _checked(repo)
+        except ConfigurationError as exc:
+            raise ConfigurationError(f"{exc} {_FALLBACK}") from None
         _probe_policy(repo)
         if repo.is_shallow or _config_bool(repo.config, "core.sparsecheckout"):
             raise ConfigurationError(
@@ -655,7 +660,9 @@ class Libgit2SyncStore(Libgit2Store):
                 relative, sibling_relative = path, name.as_posix()
             local_data = repo[local.id].data
             original_data = repo[original.id].data if original else None
-            if local.mode != self._pg.GIT_FILEMODE_LINK:
+            if local.mode != self._pg.GIT_FILEMODE_LINK and (
+                original is None or original.mode != self._pg.GIT_FILEMODE_LINK
+            ):
                 local_data, original_data = _conflict_contents(
                     Path(path),
                     local_data,

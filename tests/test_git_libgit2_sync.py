@@ -1874,3 +1874,68 @@ def test_path_limited_restore_treats_metacharacters_literally(git_repo: Path) ->
     )
     assert (git_repo / "note[1].md").read_text() == "original\n"
     assert (git_repo / "note1.md").read_text() == "unrelated\n"
+
+
+@pytest.mark.parametrize("operation", ["pull", "push"])
+@pytest.mark.parametrize("promisor", ["true", "false"])
+def test_mutable_promisor_is_checked_before_sync_transport(
+    git_repo_pair: GitRepoPair, tmp_path: Path, operation: str, promisor: str
+) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "core.hooksPath", str(tmp_path / "empty-hooks"))
+    other = _git_clone(git_repo_pair, tmp_path)
+    store = Libgit2SyncStore(repo_path=local, enable_sync=True)
+    try:
+        if operation == "pull":
+            _git_commit(other, "remote.md", "remote\n", "remote")
+            _run_git(other, "push")
+        else:
+            _git_commit(local, "local.md", "local\n", "local")
+        _run_git(local, "config", "remote.origin.promisor", promisor)
+        local_refs = _run_git(local, "show-ref")
+        remote_refs = _run_git(git_repo_pair.remote_path, "show-ref")
+        if operation == "pull":
+            result = store.force_pull()
+            applied, detail = result.applied, result.detail
+        else:
+            pushed = store.force_push()
+            applied, detail = pushed.applied, pushed.hint
+        if promisor == "true":
+            assert not applied
+            assert detail is not None
+            assert "partial" in detail.lower()
+            assert "GIT_BACKEND=cli" in detail
+            assert _run_git(local, "show-ref") == local_refs
+            assert _run_git(git_repo_pair.remote_path, "show-ref") == remote_refs
+        else:
+            assert applied
+    finally:
+        store.close()
+
+
+def test_conflict_preserves_remote_symlink_and_local_regular_bytes(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "core.hooksPath", str(tmp_path / "empty-hooks"))
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "README.md", "local body\n", "local edit")
+    (other / "README.md").unlink()
+    (other / "README.md").symlink_to("target.md")
+    _run_git(other, "add", "README.md")
+    _run_git(other, "commit", "-m", "remote symlink")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(repo_path=local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert result.applied
+        assert _run_git(local, "ls-tree", "HEAD", "README.md").startswith(
+            "120000 blob "
+        )
+        assert _run_git(local, "show", "HEAD:README.md") == "target.md"
+        assert (local / "README.md").is_symlink()
+        assert (local / "README.md").readlink() == Path("target.md")
+        sibling = next(local.glob("README.conflict-mcp-*.md"))
+        assert sibling.read_bytes() == b"local body\n"
+    finally:
+        store.close()
