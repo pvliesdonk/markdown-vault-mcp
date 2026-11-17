@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import ntpath
 import os
 from typing import TYPE_CHECKING
 
@@ -55,29 +56,40 @@ def test_windows_lock_error_mapping(
     )
 
 
-@pytest.mark.parametrize("case_alias", [False, True])
+@pytest.mark.parametrize("same_file", [False, True])
 def test_windows_refcounts_and_unlocks_same_range(
     windows: FakeMsvcrt,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    case_alias: bool,
+    same_file: bool,
 ) -> None:
+    base = tmp_path / "EMB"
+    other = tmp_path / "emb"
+    # Model Windows canonical names independently of the host filesystem.
+    monkeypatch.setattr(_writer_lock.os.path, "normcase", ntpath.normcase)
     monkeypatch.setattr(
-        _writer_lock.os.path, "normcase", lambda path: str(path).lower()
+        _writer_lock.os.path,
+        "realpath",
+        lambda path: str(base.with_suffix(".lock") if same_file else path),
     )
-    base = tmp_path / "EMB" if case_alias else tmp_path / "emb"
     lock = base.with_suffix(".lock")
     first = _writer_lock.hold_writer_lock(base, backend="test")
-    second = _writer_lock.hold_writer_lock(tmp_path / "emb", backend="test")
+    second = _writer_lock.hold_writer_lock(other, backend="test")
+    count = 1 if same_file else 2
     try:
         pid = lock.read_bytes()
         assert len(pid) == 32
         assert pid.strip() == str(os.getpid()).encode()
-        assert windows.calls == [(windows.LK_NBLCK, 32, 1)]
+        assert windows.calls == [(windows.LK_NBLCK, 32, 1)] * count
         first.release()
-        assert windows.calls == [(windows.LK_NBLCK, 32, 1)]
+        assert windows.calls == [(windows.LK_NBLCK, 32, 1)] * count + (
+            [] if same_file else [(windows.LK_UNLCK, 32, 1)]
+        )
     finally:
         first.release()
         second.release()
-    assert windows.calls == [(windows.LK_NBLCK, 32, 1), (windows.LK_UNLCK, 32, 1)]
+    assert (
+        windows.calls
+        == [(windows.LK_NBLCK, 32, 1)] * count + [(windows.LK_UNLCK, 32, 1)] * count
+    )
     assert lock.read_bytes() == b" " * 32

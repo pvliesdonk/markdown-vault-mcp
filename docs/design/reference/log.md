@@ -2,6 +2,10 @@
 
 ## 2026-11-17
 
+- [Windows CRT byte-range locks](windows-byte-locking.md): checked CPython
+  3.14 path resolution and Microsoft case-sensitive directory documentation
+  for lock identity; the fake tests model canonical names. Existing lock
+  claims and review deadline remain unchanged.
 - New: [Windows CRT byte-range locks](windows-byte-locking.md), for #1923.
   Checked Python 3.13 and Microsoft CRT documentation; tests use a fake API.
   Next review: 2027-05-17.
