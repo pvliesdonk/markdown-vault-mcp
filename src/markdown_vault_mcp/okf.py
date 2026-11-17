@@ -360,12 +360,8 @@ def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str
     }
 
 
-def _review_evidence(
-    metadata: dict[str, Any], entries: list[Any] | None = None
-) -> dict[str, Any]:
+def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, Any]:
     """Count usable recorded claims separately from malformed input."""
-    if entries is None:
-        entries = verified_entries(metadata)
     recorded = sum(_review_recorded(entry) for entry in entries)
     malformed = len(entries) - recorded
     if "verified" not in metadata:
@@ -721,7 +717,7 @@ def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> 
         acc.missing_freshness.add(rel)
     elif _parse_stale_after(metadata["stale_after"]) is None:
         acc.malformed_freshness.add(rel)
-    if _review_evidence(metadata)["malformed_entries"]:
+    if _review_evidence(metadata, verified_entries(metadata))["malformed_entries"]:
         acc.malformed_review.add(rel)
 
 
