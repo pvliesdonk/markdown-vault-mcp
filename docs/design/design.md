@@ -3437,6 +3437,8 @@ below. Explicit decoded `/`, `./`, and `../` prefixes keep their stated
 location. Unlike wikilinks, these links do not infer `.md` or match aliases.
 Every pass recomputes the source-relative path from the original destination,
 so adding or removing a target updates the graph consistently.
+Rename and move use the existing rewrite logic to turn a fallback spelling into
+a valid source-relative destination, without guaranteeing the shortest spelling.
 
 **Wikilink resolution (Obsidian semantics)**: Wikilinks follow Obsidian's
 vault-wide resolution rules rather than relative path resolution:

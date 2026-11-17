@@ -8,6 +8,7 @@ import pytest
 
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.scanner import extract_links
+from markdown_vault_mcp.types import LinkInfo
 from tests.conftest import wait_for_writer_drain
 from tests.test_links import make_note
 
@@ -121,6 +122,30 @@ def test_alias_is_not_a_markdown_destination() -> None:
         idx.close()
 
 
+@pytest.mark.parametrize("link_type", ["markdown", "reference"])
+def test_default_empty_raw_target_preserves_public_link(link_type: str) -> None:
+    idx = FTSIndex(":memory:")
+    try:
+        idx.build_from_notes(
+            [
+                make_note(
+                    path="source.md",
+                    links=[
+                        LinkInfo(
+                            target_path="target.md", link_text="x", link_type=link_type
+                        )
+                    ],
+                ),
+                make_note(path="target.md"),
+            ]
+        )
+        idx.resolve_vault_wikilinks()
+        assert idx.get_outlinks("source.md")[0]["target_path"] == "target.md"
+        assert len(idx.get_backlinks("target.md")) == 1
+    finally:
+        idx.close()
+
+
 def test_rename_and_folder_move_keep_fallback_links(tmp_path: Path) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
@@ -146,6 +171,7 @@ def test_rename_and_folder_move_keep_fallback_links(tmp_path: Path) -> None:
 
 def test_version_12_index_rebuilds_markdown_target(tmp_path: Path) -> None:
     import sqlite3
+    from contextlib import closing
 
     from tests.test_index_coordinator import make_coordinator
 
@@ -158,7 +184,8 @@ def test_version_12_index_rebuilds_markdown_target(tmp_path: Path) -> None:
         coord.build_index()
     finally:
         coord.close(timeout=5)
-    with sqlite3.connect(db) as conn:
+        coord._fts.close()
+    with closing(sqlite3.connect(db)) as conn, conn:
         conn.execute("UPDATE links SET target_path = 'Note.md'")
         conn.execute(
             "UPDATE meta SET value = '12' WHERE key = 'index_semantics_version'"
@@ -171,3 +198,4 @@ def test_version_12_index_rebuilds_markdown_target(tmp_path: Path) -> None:
         assert coord._fts.get_chunking_meta().semantics_version == 13
     finally:
         coord.close(timeout=5)
+        coord._fts.close()

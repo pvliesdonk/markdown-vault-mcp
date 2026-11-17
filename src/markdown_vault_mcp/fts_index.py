@@ -2661,7 +2661,7 @@ class FTSIndex:
             """
             SELECT l.id, l.raw_target, l.target_path, d.path AS source_path
             FROM links l JOIN documents d ON d.id = l.source_id
-            WHERE l.link_type IN ('markdown', 'reference') AND l.raw_target IS NOT NULL
+            WHERE l.link_type IN ('markdown', 'reference') AND l.raw_target != ''
             """
         ).fetchall()
         for row in markdown_rows:
