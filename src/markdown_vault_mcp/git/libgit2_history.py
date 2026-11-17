@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pygit2
 
 from markdown_vault_mcp.exceptions import ConfigurationError, InvalidRequestError
-from markdown_vault_mcp.git.libgit2 import _index_path, _tree_entry
+from markdown_vault_mcp.git.libgit2 import _fresh, _index_path, _tree_entry
 from markdown_vault_mcp.git.libgit2 import _rel as _literal_rel
 from markdown_vault_mcp.git.query import (
     _note_text,
@@ -151,15 +151,10 @@ def _date(value: str | None) -> float | None:  # noqa: C901, PLR0911, RUF100 -- 
             )
             year, month = divmod(local[0] * 12 + local[1] - 1 - months, 12)
             local[0], local[1] = year, month + 1
-            seconds = {
-                "second": 1,
-                "minute": 60,
-                "hour": 3600,
-                "day": 86400,
-                "week": 604800,
-            }
             return time.mktime(time.struct_time(local)) - sum(
-                int(n) * seconds[unit] for n, unit in pairs if unit in seconds
+                dt.timedelta(**{f"{unit}s": int(n)}).total_seconds()
+                for n, unit in pairs
+                if unit not in {"month", "year"}
             )
     except (OverflowError, OSError, ValueError):
         pass
@@ -285,7 +280,7 @@ def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
         )
     target = _commit(repo, query.ref)
     path = _repo_relative(Path(repo.workdir).resolve(), query.path)
-    repo.index.read(force=True)
+    repo = _fresh(repo.path, pygit2, policy=False)
     if path_exists(query.path) and path not in repo.index:
         raise InvalidRequestError(f"{path!r} is not tracked by Git.")
     prefix = _vault_prefix(Path(repo.workdir).resolve(), query.repo_path)
@@ -337,12 +332,12 @@ def committed_revision(repo: Any, path: Path) -> str | None:
 def _patches(diff: Any, names: set[str], summarize_binary: bool) -> str:
     chunks = []
     for patch in diff:
-        delta = patch.delta
-        if delta.old_file.path not in names and delta.new_file.path not in names:
-            continue
-        if summarize_binary and delta.is_binary:
-            raise _unsupported("binary diff summaries")
-        else:
+        paths = {patch.delta.old_file.path, patch.delta.new_file.path}
+        if paths & names:
+            if not all(map(str.isascii, paths)):
+                raise _unsupported("non-ASCII diff paths")
+            if summarize_binary and patch.delta.is_binary:
+                raise _unsupported("binary diff summaries")
             chunks.append(patch.text or "")
     return _truncate_diff("".join(chunks))
 

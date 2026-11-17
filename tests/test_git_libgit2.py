@@ -86,11 +86,33 @@ def test_ignored_and_tracked_ignored_files(isolated_repo: Path) -> None:
     assert _git(isolated_repo, "show", "HEAD:unrelated.md") == "new\n"
 
 
-def test_lifecycle_and_no_git(tmp_path: Path) -> None:
+def test_lifecycle_and_no_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A non-repository directory has no commits and closes repeatedly."""
+    import os
+    from pathlib import Path
+
+    import pygit2
+
     from markdown_vault_mcp.git.interfaces import VersionedStore
     from markdown_vault_mcp.git.libgit2 import Libgit2Store
 
+    discover = pygit2.discover_repository
+    outer = discover(str(tmp_path))
+    outer_gitdir = Path(outer) if outer else None
+    outer_head = (outer_gitdir / "HEAD").read_bytes() if outer_gitdir else None
+    outer_index = (outer_gitdir / "index").read_bytes() if outer_gitdir else None
+    for key in list(os.environ):
+        if key.startswith("GIT_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setattr(
+        pygit2,
+        "discover_repository",
+        lambda path: discover(path, False, str(tmp_path.parent)),
+    )
     store = Libgit2Store(tmp_path)
     assert isinstance(store, VersionedStore)
     note = tmp_path / "n.md"
@@ -101,6 +123,9 @@ def test_lifecycle_and_no_git(tmp_path: Path) -> None:
     store.flush()
     store.close()
     store.close()
+    if outer_gitdir:
+        assert (outer_gitdir / "HEAD").read_bytes() == outer_head
+        assert (outer_gitdir / "index").read_bytes() == outer_index
 
 
 def test_local_force_pull_matches_cli(isolated_repo: Path) -> None:

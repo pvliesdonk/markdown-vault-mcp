@@ -130,25 +130,33 @@ def _probe_policy(repo: Any) -> None:
 
 
 def _open(path: Path, pg: Any) -> Any | None:
-    existing = path
-    while not path_exists(existing) and existing != existing.parent:
-        existing = existing.parent
+    existing = next((p for p in (path, *path.parents) if path_exists(p)), path)
     if is_regular_file(existing):
         existing = existing.parent
     gitdir = pg.discover_repository(str(existing))
     if gitdir is None:
         return None
     _probe_config(Path(gitdir), pg)
+    repo = _fresh(gitdir, pg)
+    for entry in repo.index:
+        _filter_guard(repo, entry.path)
+    return repo
+
+
+def _fresh(gitdir: str, pg: Any, *, policy: bool = True) -> Any:
     try:
         repo = pg.Repository(gitdir)
         if repo.is_bare or repo.workdir is None:
             raise _unsupported("bare repositories")
-        _probe_policy(repo)
-        for entry in repo.index:
-            _filter_guard(repo, entry.path)
-        return repo
+        if policy:
+            _probe_policy(repo)
+        repo.index.read(force=True)
     except pg.GitError as exc:
-        raise _unsupported(f"an unopenable repository ({exc})") from exc
+        split = "unsupported mandatory extension: 'link'" in str(exc)
+        raise _unsupported(
+            "a split index" if split else f"an unopenable repository ({exc})"
+        ) from exc
+    return repo
 
 
 def _filter_guard(repo: Any, path: str) -> None:
@@ -173,39 +181,36 @@ def _tree_entry(index: Any, path: str) -> Any | None:
 def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
     absolute = Path(repo.workdir) / relative
     existing = _tree_entry(index, relative)
-    tracked = existing is not None
     try:
         mode = absolute.lstat().st_mode
     except FileNotFoundError:
-        if tracked:
+        if existing:
             index.remove(relative)
-        return tracked
+        return bool(existing)
     if (
-        not tracked
+        not existing
+        and _config_bool(repo.config, "core.ignorecase")
+        and any(e.path.lower() == relative.lower() for e in index)
+    ):
+        raise _unsupported("case-variant paths")
+    if (
+        not existing
         and repo.path_is_ignored(relative)
         and relative not in pg.Index(Path(repo.path) / "index")
     ):
         return False
     _filter_guard(repo, relative)
+    modes = (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
     if stat.S_ISLNK(mode):
         oid = repo.create_blob(os.fsencode(absolute.readlink()))
         filemode = pg.GIT_FILEMODE_LINK
     elif stat.S_ISREG(mode):
         oid = repo.create_blob_fromworkdir(relative)
-        filemode = (
-            pg.GIT_FILEMODE_BLOB_EXECUTABLE
-            if mode & stat.S_IXUSR
-            else pg.GIT_FILEMODE_BLOB
-        )
+        filemode = modes[bool(mode & stat.S_IXUSR)]
     else:
         return False
     if stat.S_ISREG(mode) and not _config_bool(repo.config, "core.filemode", True):
-        filemode = (
-            existing.mode
-            if existing is not None
-            and existing.mode in (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
-            else pg.GIT_FILEMODE_BLOB
-        )
+        filemode = existing.mode if existing and existing.mode in modes else modes[0]
     index.add(pg.IndexEntry(relative, oid, filemode))
     return True
 
@@ -216,14 +221,10 @@ def _stage_items(
     paths: set[str] = set()
     staged = []
     for path, operation, old_path, _ in items:
-        changed = False
-        for item in (path, old_path):
-            if item is not None:
-                rel = _rel(repo, item)
-                if _index_path(repo, index, rel, pg):
-                    paths.add(rel)
-                    changed = True
-        if changed:
+        rels = [_rel(repo, item) for item in (path, old_path) if item is not None]
+        done = [rel for rel in rels if _index_path(repo, index, rel, pg)]
+        paths.update(done)
+        if done:
             staged.append((path, operation, old_path))
     return paths, staged
 
@@ -247,11 +248,10 @@ def _locked_index(repo: Any, pg: Any) -> Iterator[tuple[Any, Path, Path]]:
 def _update_index(real: Any, index: Any, paths: set[str]) -> None:
     for rel in paths:
         entry = _tree_entry(index, rel)
-        if entry is None:
-            if _tree_entry(real, rel) is not None:
-                real.remove(rel)
-        else:
+        if entry is not None:
             real.add(entry)
+        elif rel in real:
+            real.remove(rel)
 
 
 class Libgit2Store:
@@ -340,7 +340,7 @@ class Libgit2Store:
                 repo = self._repository(items[0][0])
                 if repo is None:
                     return
-                _probe_policy(repo)
+                repo = self._repo = _fresh(repo.path, self._pg)
                 with (
                     _locked_index(repo, self._pg) as (real, temporary, destination),
                     repo.transaction() as transaction,

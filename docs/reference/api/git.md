@@ -56,6 +56,10 @@ vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(read_onl
 The constructor rejects unsupported repository formats and partial clones.
 It also refuses non-default `core.sharedRepository` permissions; unset,
 `umask`, and false settings remain supported.
+Split-index repositories are refused at open and when a later operation needs
+the index. On case-insensitive repositories, case-variant writes that collide
+with tracked paths are refused. Diff queries with non-ASCII paths cannot match
+the patch headers from Git, so they are refused too.
 It also refuses commit signing and executable commit or reference hooks, such
 as `reference-transaction` and `post-index-change`. For tracked paths, a
 configured external clean or process filter, including Git LFS, or a

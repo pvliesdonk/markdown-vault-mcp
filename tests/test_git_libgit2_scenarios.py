@@ -172,13 +172,17 @@ def _assert_history(
         combined = store.get_file_diff(repo, renamed, first, False)
         assert isinstance(combined, str) and "+updated" in combined
         assert "sibling-only" not in combined and "other-only" not in combined
-    per_commit = store.get_file_diff(repo, renamed, first, True)
-    assert isinstance(per_commit, list) and len(per_commit) == 2
-    assert any("+updated" in entry.diff for entry in per_commit)
-    assert all(
-        "sibling-only" not in entry.diff and "other-only" not in entry.diff
-        for entry in per_commit
-    )
+    if isinstance(store, Libgit2Store) and not renamed.name.isascii():
+        with pytest.raises(InvalidRequestError, match=r"non-ASCII.*GitWriteStrategy"):
+            store.get_file_diff(repo, renamed, first, True)
+    else:
+        per_commit = store.get_file_diff(repo, renamed, first, True)
+        assert isinstance(per_commit, list) and len(per_commit) == 2
+        assert any("+updated" in entry.diff for entry in per_commit)
+        assert all(
+            "sibling-only" not in entry.diff and "other-only" not in entry.diff
+            for entry in per_commit
+        )
     revision = store.get_file_at_ref(
         RevisionQuery(repo_path=repo, path=renamed, ref=first, max_bytes=0)
     )

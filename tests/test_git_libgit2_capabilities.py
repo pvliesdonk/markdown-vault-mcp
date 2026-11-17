@@ -6,6 +6,7 @@ from markdown_vault_mcp.exceptions import ConfigurationError, InvalidRequestErro
 from markdown_vault_mcp.git.libgit2 import Libgit2Store
 from markdown_vault_mcp.git.libgit2_history import _date
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
+from markdown_vault_mcp.git.types import RevisionQuery
 from tests.fixtures.libgit2 import _git
 from tests.fixtures.libgit2 import isolated_repo as isolated_repo
 
@@ -289,3 +290,121 @@ def test_utc_author_timestamp_matches_cli(isolated_repo, monkeypatch):
     expected = cli.get_file_history(repo, note, None, 1)
     assert _git(repo, "log", "-1", "--format=%aI").strip() == "2024-01-02T03:04:05Z"
     assert Libgit2Store(repo).get_file_history(repo, note, None, 1) == expected
+
+
+@pytest.mark.parametrize("name", ["café.md", "tab\tname.md", "line\nname.md"])
+@pytest.mark.parametrize("per_commit", [False, True])
+def test_literal_diff_paths_match_cli(isolated_repo, name, per_commit):
+    repo = isolated_repo
+    note = repo / name
+    note.write_text("first\n")
+    _git(repo, "add", "--", name)
+    _git(repo, "commit", "-qm", "first")
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    note.write_text("second\n")
+    _git(repo, "add", "--", name)
+    _git(repo, "commit", "-qm", "second")
+    native = Libgit2Store(repo)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    if not name.isascii():
+        with pytest.raises(
+            InvalidRequestError, match=r"(?i)non.ascii.*GitWriteStrategy"
+        ):
+            native.get_file_diff(repo, note, before, per_commit)
+        return
+    assert native.get_file_diff(repo, note, before, per_commit) == cli.get_file_diff(
+        repo, note, before, per_commit
+    )
+
+
+@pytest.mark.parametrize("phase", ["open", "write", "revision"])
+def test_split_index_refusal_preserves_state(isolated_repo, phase):
+    repo = isolated_repo
+    store = Libgit2Store(repo)
+    _git(repo, "update-index", "--split-index")
+    before_head = _git(repo, "rev-parse", "HEAD")
+    index = repo / ".git/index"
+    before_index = index.read_bytes()
+    note = repo / "new.md"
+    note.write_text("new\n")
+    try:
+        with pytest.raises(
+            ConfigurationError, match=r"(?i)split.index.*GitWriteStrategy"
+        ):
+            if phase == "open":
+                Libgit2Store(repo)
+            elif phase == "write":
+                store(note, "", "write")
+            else:
+                store.get_file_at_ref(
+                    RevisionQuery(repo, repo / "unrelated.md", before_head.strip(), 0)
+                )
+    finally:
+        assert _git(repo, "rev-parse", "HEAD") == before_head
+        assert index.read_bytes() == before_index
+        assert note.read_text() == "new\n"
+
+
+def test_split_index_breadcrumb_remains_best_effort(isolated_repo):
+    store = Libgit2Store(isolated_repo)
+    _git(isolated_repo, "update-index", "--split-index")
+    assert (
+        store.committed_revision(isolated_repo, isolated_repo / "unrelated.md") is None
+    )
+
+
+@pytest.mark.parametrize("operation", ["write", "rename"])
+@pytest.mark.parametrize("backend", ["cli", "native"])
+def test_case_variant_write_has_no_duplicate_tree_entries(
+    isolated_repo, operation, backend
+):
+    repo = isolated_repo
+    original, variant = repo / "Note.md", repo / "note.md"
+    original.write_text("old\n")
+    _git(repo, "add", "Note.md")
+    _git(repo, "commit", "-qm", "case seed")
+    if not variant.exists():
+        pytest.skip("requires a case-insensitive filesystem")
+    store = (
+        GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+        if backend == "cli"
+        else Libgit2Store(repo)
+    )
+    if operation == "rename":
+        original.rename(variant)
+    else:
+        variant.write_text("new\n")
+    before_head = _git(repo, "rev-parse", "HEAD")
+    before_index = (repo / ".git/index").read_bytes()
+    before_content = variant.read_bytes()
+    if backend == "native":
+        with pytest.raises(ConfigurationError, match=r"case-variant.*GitWriteStrategy"):
+            store(
+                variant,
+                "",
+                operation,
+                old_path=original if operation == "rename" else None,
+            )
+        assert _git(repo, "rev-parse", "HEAD") == before_head
+        assert (repo / ".git/index").read_bytes() == before_index
+        assert variant.read_bytes() == before_content
+    else:
+        store(
+            variant, "", operation, old_path=original if operation == "rename" else None
+        )
+    names = _git(repo, "ls-tree", "-r", "--name-only", "HEAD").splitlines()
+    assert len({name.casefold() for name in names}) == len(names), names
+
+
+def test_autocrlf_changed_after_open_matches_cli_blob(isolated_repo):
+    repo = isolated_repo
+    store = Libgit2Store(repo)
+    warmup = repo / "warmup.md"
+    warmup.write_text("warmup\n")
+    store(warmup, "", "write")
+    _git(repo, "config", "core.autocrlf", "true")
+    note = repo / "crlf.md"
+    note.write_bytes(b"one\r\ntwo\r\n")
+    expected = _git(repo, "hash-object", "--path=crlf.md", str(note)).strip()
+    store(note, "", "write")
+    assert _git(repo, "rev-parse", "HEAD:crlf.md").strip() == expected

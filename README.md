@@ -36,7 +36,9 @@ The [tools reference](docs/reference/tools/index.md) lists every tool. The same 
 What the server can reach, what it changes and who gets in is set out in the [security model](docs/security-model.md); the block below says who it serves and where it stops.
 
 <!-- DOMAIN-README-FIT-START -->
-It suits one person or a small team who keep notes as Markdown files and want Claude to search them, follow their links and write back into them, on their own machine or as a shared server. It reaches the vault folder and any git remote or model you configure. A `fetch` call can also reach the URLs it names.
+It suits one person or a small team who keep notes as Markdown files and want Claude to search them and follow their links. Claude can also write back into them, on their own machine or as a shared server.
+
+It reaches the vault folder, plus any git remote or embedding or summarizing model you configure. A `fetch` call can also reach the URLs it names.
 
 What it assumes:
 
