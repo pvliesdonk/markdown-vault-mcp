@@ -500,9 +500,9 @@ class BundleInspector:
         self, parent: int, path: str, mode: int, remaining: int
     ) -> tuple[BundleEntry | None, int]:
         if stat.S_ISLNK(mode):
-            if self._visible_file(path) or "." not in path.rsplit("/", 1)[-1]:
-                return BundleEntry(path, state="unavailable", reason="symlink"), 0
-            return None, 0
+            visible = self._visible_file(path) or "." not in path.rsplit("/", 1)[-1]
+            entry = BundleEntry(path, state="unavailable", reason="symlink")
+            return (entry if visible else None), 0
         if stat.S_ISDIR(mode):
             name = path.rsplit("/", 1)[-1]
             descriptor = os.open(
