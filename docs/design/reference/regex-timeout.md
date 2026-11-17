@@ -36,7 +36,7 @@ sources:
 The `regex` matching and substitution timeout applies to the entire operation,
 including time spent in the replacement callback. The documented example raises
 `TimeoutError` when callbacks take too long. [source: regex-readme] On macOS with regex 2026.11.15 and Python 3.14, a sleeping callback did not trigger that timeout in a four-match probe; a CPU-bound callback did. Treat the sleep example as vendor documentation rather than a wall-clock guarantee.
-[pins: tests/test_bulk_replace.py::test_regex_timeout_covers_callback, tests/test_bulk_replace.py::test_regex_timeout_is_bounded]
+[pins: tests/test_bulk_replace.py::test_regex_timeout_is_bounded]
 
 Version 2025.9.1 provides CPython 3.14 wheels. [source: regex-release]
 
@@ -50,4 +50,4 @@ numeric capture references. The helper is private and moved modules between
 versions; the replacement adapter locates it through the public compiler's
 module; tests exercise both supported versions. [source: regex-template-2025]
 [source: regex-template-2026]
-[pins: tests/test_bulk_replace.py::test_replacement_references_only_small_capture_of_large_match, tests/test_bulk_replace.py::test_invalid_regex_and_text_are_request_errors]
+[pins: tests/test_bulk_replace.py::test_small_regex_replacement_not_overestimated, tests/test_bulk_replace.py::test_invalid_regex_and_text_are_request_errors]
