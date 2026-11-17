@@ -8,14 +8,15 @@ import logging
 import tempfile
 from array import array
 from collections import Counter
-from contextlib import closing
+from contextlib import closing, contextmanager
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Callable, Generator, Iterator
     from types import TracebackType
     from typing import TextIO
 
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 
 def _pack(vector: array[float]) -> str:
@@ -36,23 +38,48 @@ def _unpack(value: str) -> array[float]:
 
 
 class EmbeddingStage:
-    """Stage source records, misses and results in a private temporary directory."""
+    """Stage documents with add, finish, write_results, then replay via iter.
+
+    After finish, misses may be traversed to prepare ordered provider results.
+    """
 
     def __init__(self, directory: Path | None = None) -> None:
+        try:
+            self._location = directory or Path(tempfile.gettempdir())
+        except OSError as error:
+            logger.error(
+                "embedding_stage_io_failed path=%s err=%s",
+                "system temporary directories",
+                error,
+            )
+            raise
         if directory is not None:
-            directory.mkdir(parents=True, exist_ok=True)
-        self._temp = tempfile.TemporaryDirectory(
-            prefix="embedding-stage-", dir=directory
+            self._io(lambda: directory.mkdir(parents=True, exist_ok=True))
+        self._temp = self._io(
+            lambda: tempfile.TemporaryDirectory(
+                prefix="embedding-stage-", dir=directory
+            )
         )
         self._root = Path(self._temp.name)
         self._readers: set[TextIO] = set()
         try:
-            self._docs = (self._root / "documents").open("w", encoding="utf-8")
+            self._docs = self._io(
+                lambda: (self._root / "documents").open("w", encoding="utf-8")
+            )
         except BaseException as exc:
             self.__exit__(type(exc), exc, exc.__traceback__)
             raise
         self.miss_count = 0
         self._opaque: list[tuple[Any, Any, Any]] = []
+
+    def _io(self, action: Callable[[], _T]) -> _T:
+        try:
+            return action()
+        except OSError as error:
+            logger.error(
+                "embedding_stage_io_failed path=%s err=%s", self._location, error
+            )
+            raise
 
     def __enter__(self) -> EmbeddingStage:
         return self
@@ -96,35 +123,33 @@ class EmbeddingStage:
             reference = len(self._opaque)
             self._opaque.append((doc.path, doc.token, doc.metadata))
             identity = None
-        json.dump(
-            [
-                identity,
-                reference,
-                doc.texts,
-                {str(k): _pack(v) for k, v in hits.items()},
-                wanted,
-            ],
-            self._docs,
-        )
-        self._docs.write("\n")
+        record = [
+            identity,
+            reference,
+            doc.texts,
+            {str(k): _pack(v) for k, v in hits.items()},
+            wanted,
+        ]
+        self._io(lambda: json.dump(record, self._docs))
+        self._io(lambda: self._docs.write("\n"))
         self.miss_count += len(wanted)
 
     def finish(self) -> None:
         """Close the classification file before reading it."""
-        self._docs.close()
+        self._io(self._docs.close)
 
     def _records(self) -> Generator[tuple[Any, Any, Any, Any, Any, Any]]:
-        stream = (self._root / "documents").open(encoding="utf-8")
+        stream = self._io(lambda: (self._root / "documents").open(encoding="utf-8"))
         self._readers.add(stream)
         try:
-            for line in stream:
+            while line := self._io(stream.readline):
                 identity, reference, texts, hits, wanted = json.loads(line)
                 path, token, metadata = (
                     self._opaque[reference] if reference is not None else identity
                 )
                 yield path, token, texts, metadata, hits, wanted
         finally:
-            stream.close()
+            self._io(stream.close)
             self._readers.discard(stream)
 
     def misses(self) -> Generator[tuple[str, int]]:
@@ -135,26 +160,34 @@ class EmbeddingStage:
                 for text in wanted:
                     yield text, counts[text]
 
+    @contextmanager
+    def _results_writer(self) -> Generator[TextIO]:
+        stream = self._io(lambda: (self._root / "results").open("w", encoding="utf-8"))
+        try:
+            yield stream
+        finally:
+            self._io(stream.close)
+
     def write_results(self, results: Generator[array[float] | None]) -> None:
         """Write one result or failure marker for each miss."""
         with (
             closing(results),
-            (self._root / "results").open("w", encoding="utf-8") as stream,
+            self._results_writer() as stream,
         ):
             for vector in results:
-                stream.write(
-                    json.dumps(None if vector is None else _pack(vector)) + "\n"
-                )
+                line = json.dumps(None if vector is None else _pack(vector)) + "\n"
+                self._io(partial(stream.write, line))
+            self._io(stream.flush)
 
     def __iter__(self) -> Iterator[DocumentRows]:
-        results = (self._root / "results").open(encoding="utf-8")
+        results = self._io(lambda: (self._root / "results").open(encoding="utf-8"))
         self._readers.add(results)
         try:
             with closing(self._records()) as records:
                 for path, token, texts, metadata, hits, wanted in records:
                     fresh: dict[str, Any] = {}
                     for text in wanted:
-                        value = json.loads(next(results))
+                        value = json.loads(self._io(lambda: next(results)))
                         if value is not None:
                             fresh[text] = _unpack(value)
                     rows = []
@@ -170,5 +203,5 @@ class EmbeddingStage:
                     if rows:
                         yield DocumentRows(path, token, tuple(rows))
         finally:
-            results.close()
+            self._io(results.close)
             self._readers.discard(results)

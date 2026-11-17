@@ -82,6 +82,16 @@ _PATHS_PER_QUERY = 900
 _CHUNK_PAGE_DOCS = 256
 
 
+def _mark_chunk_rows(rows: Iterable[sqlite3.Row]) -> Iterator[dict[str, Any]]:
+    """Convert ordered whole-document rows, marking each document's first chunk."""
+    previous: str | None = None
+    for raw in rows:
+        row = dict(raw)
+        row["is_first_chunk"] = row["path"] != previous
+        previous = row["path"]
+        yield row
+
+
 # Thresholds for running FTS5 'optimize' after a bulk purge.  Deleting rows
 # from an FTS5 table only marks their tokens as deleted inside the inverted
 # index — the dead entries stay in the on-disk segment b-trees until segments
@@ -2254,46 +2264,48 @@ class FTSIndex:
                 for start in range(0, len(ordered), _PATHS_PER_QUERY)
                 for raw in self._chunk_rows(ordered[start : start + _PATHS_PER_QUERY])
             ]
-        rows: list[dict[str, Any]] = []
-        prev_path: str | None = None
-        for raw in fetched:
-            row = dict(raw)
-            row["is_first_chunk"] = row["path"] != prev_path
-            prev_path = row["path"]
-            rows.append(row)
-        return rows
+        return list(_mark_chunk_rows(fetched))
 
     def iter_chunks(self) -> Iterator[dict[str, Any]]:
-        """Yield chunks in ``list_chunks`` order, reading whole-document pages."""
-        after: str | None = None
-        while True:
-            rows = self._chunk_page(after)
-            if not rows:
-                return
-            previous = None
-            for raw in rows:
-                row = dict(raw)
-                row["is_first_chunk"] = row["path"] != previous
-                previous = row["path"]
-                yield row
-            after = previous
+        """Yield whole-document pages from one consistent read snapshot.
+
+        The dedicated read transaction closes on exhaustion or iterator close.
+        A concurrent writer can extend the WAL until that snapshot closes.
+        """
+        self._conn()  # Respect the index lifecycle before opening the snapshot.
+        conn = self._registry.connect()
+        try:
+            self._registry.apply_pragmas(conn)
+            conn.execute("BEGIN")
+            after: str | None = None
+            while rows := self._chunk_page(after, conn):
+                yield from _mark_chunk_rows(rows)
+                after = rows[-1]["path"]
+        finally:
+            conn.close()
 
     @_retry_on_locked
-    def _chunk_page(self, after: str | None) -> list[sqlite3.Row]:
+    def _chunk_page(
+        self, after: str | None, conn: sqlite3.Connection | None = None
+    ) -> list[sqlite3.Row]:
+        """Fetch one page's paths and chunks atomically from *conn*."""
         continuation = "d.path > ? AND " if after is not None else ""
         params = (after, _CHUNK_PAGE_DOCS) if after is not None else (_CHUNK_PAGE_DOCS,)
-        paths = (
-            self._conn()
+        return (
+            (conn or self._conn())
             .execute(
-                "SELECT d.path FROM documents AS d WHERE "
+                "WITH page AS (SELECT d.id, d.path, d.title, d.folder, "
+                "d.frontmatter_json, d.content_hash FROM documents AS d WHERE "
                 f"{continuation}"
                 "EXISTS (SELECT 1 FROM sections AS s WHERE s.document_id = d.id) "
-                "ORDER BY d.path LIMIT ?",
+                "ORDER BY d.path LIMIT ?) "
+                "SELECT d.path, d.title, d.folder, s.heading, s.content, s.start_line, "
+                "d.frontmatter_json, d.content_hash FROM page AS d "
+                "JOIN sections AS s ON s.document_id = d.id ORDER BY d.path, s.id",
                 params,
             )
             .fetchall()
         )
-        return self._chunk_rows([row[0] for row in paths]) if paths else []
 
     def _chunk_rows(self, paths: list[str] | None) -> list[sqlite3.Row]:
         """Fetch the chunk rows of *paths* (or of every document), in path order."""

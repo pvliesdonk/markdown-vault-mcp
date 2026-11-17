@@ -1220,7 +1220,7 @@ def test_rebuild_batches_across_windows_and_deduplicates_within_documents(
         calls.append(list(texts))
         return embed(texts)
 
-    monkeypatch.setattr(rec, "_build_documents", lambda: iter(docs))
+    monkeypatch.setattr(rec, "_build_documents", lambda: (doc for doc in docs))
     monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
     monkeypatch.setattr(rec, "_batch_size", 3)
     monkeypatch.setattr(provider, "embed", capture)
@@ -1430,23 +1430,10 @@ def test_stage_reports_unlink_failure_without_primary_error(
 def test_committed_rebuild_survives_scratch_cleanup_error(
     tmp_path, monkeypatch, caplog
 ):
-    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from tests.fixtures.embedding_stage import install_cleanup_failure
 
     _, _, store, rec = _setup(tmp_path, NOTES)
-    enter = EmbeddingStage.__enter__
-
-    def failing_cleanup(stage):
-        enter(stage)
-        cleanup = stage._temp.cleanup
-
-        def fail():
-            cleanup()
-            raise OSError("synthetic cleanup failure")
-
-        monkeypatch.setattr(stage._temp, "cleanup", fail)
-        return stage
-
-    monkeypatch.setattr(EmbeddingStage, "__enter__", failing_cleanup)
+    install_cleanup_failure(monkeypatch)
     result = rec.rebuild(store, store.identity)
     assert result.published and store.count == 2
     assert "embedding_stage_cleanup_failed" in caplog.text
@@ -1514,23 +1501,11 @@ def test_unavailable_scratch_fails_before_provider_and_keeps_store(tmp_path):
 def test_primary_build_failure_survives_scratch_cleanup_error(
     tmp_path, monkeypatch, caplog, failure
 ):
-    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from tests.fixtures.embedding_stage import install_cleanup_failure
 
     fts, _, store, rec = _setup(tmp_path, NOTES)
     rec.rebuild(store, store.identity)
     before = store.tokens()
-    enter = EmbeddingStage.__enter__
-
-    def failing_cleanup(stage):
-        enter(stage)
-        cleanup = stage._temp.cleanup
-
-        def fail():
-            cleanup()
-            raise OSError("scratch cleanup failed")
-
-        monkeypatch.setattr(stage._temp, "cleanup", fail)
-        return stage
 
     def fail(*_args, **_kwargs):
         raise RuntimeError(f"{failure} failed")
@@ -1540,7 +1515,7 @@ def test_primary_build_failure_survives_scratch_cleanup_error(
         refused_rows = 0
         vectors_for = staticmethod(fail)
 
-    monkeypatch.setattr(EmbeddingStage, "__enter__", failing_cleanup)
+    install_cleanup_failure(monkeypatch)
     if failure == "source":
         monkeypatch.setattr(fts, "iter_chunks", fail)
     elif failure == "publisher":
@@ -1550,3 +1525,207 @@ def test_primary_build_failure_survives_scratch_cleanup_error(
         rec.rebuild(store, store.identity, donor=donor)
     assert store.tokens() == before
     assert "embedding_stage_cleanup_failed" in caplog.text
+
+
+def test_two_vault_reindex_during_rebuild_keeps_snapshot(tmp_path, monkeypatch):
+    from markdown_vault_mcp.config_sections import VaultSettings
+    from markdown_vault_mcp.vault import Vault
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    for i in range(5):
+        (source / f"{i}.md").write_text(f"# Note {i}\n\nBody {i}.\n")
+    settings = VaultSettings(index_path=tmp_path / "index.db", read_only=False)
+    provider = MockEmbeddingProvider(dim=8)
+    identity = EmbeddingIdentity.of(provider, "v1")
+    first_store = NumpySidecarBackend().open(None, identity)
+    second_store = NumpySidecarBackend().open(None, identity)
+    first = Vault(
+        source_dir=source,
+        settings=settings,
+        embedding_provider=provider,
+        vector_store=first_store,
+    )
+    second = Vault(
+        source_dir=source,
+        settings=settings,
+        embedding_provider=provider,
+        vector_store=second_store,
+    )
+    import markdown_vault_mcp.fts_index as fts_module
+
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 2)
+    try:
+        first.index.build_index()
+        second.index.build_index()
+        page = first._fts._chunk_page
+        changed = False
+
+        def mutate(after, *args):
+            nonlocal changed
+            if after is not None and not changed:
+                changed = True
+                (source / "2.md").unlink()
+                (source / "3.md").unlink()
+                (source / "4.md").write_text("# Changed\n\nNew body.\n")
+                (source / "5.md").write_text("# New\n\nNew entry.\n")
+                second.index.reindex()
+            return page(after, *args)
+
+        monkeypatch.setattr(first._fts, "_chunk_page", mutate)
+        first.index.build_embeddings(force=True)
+        assert changed
+        assert set(first_store.tokens()) == {f"{i}.md" for i in range(5)}
+        assert first_store.rows_for("4.md")[0].metadata["content"].find("Body 4") >= 0
+    finally:
+        first.close()
+        second.close()
+        first_store.close()
+        second_store.close()
+
+
+def test_chunk_iterator_releases_snapshot_on_close_or_error(tmp_path, monkeypatch):
+    import markdown_vault_mcp.fts_index as fts_module
+
+    fts = _index(tmp_path, {f"{i}.md": f"# {i}\n\nBody.\n" for i in range(3)})
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
+    connections = []
+    connect = fts._registry.connect
+
+    def track():
+        conn = connect()
+        connections.append(conn)
+        return conn
+
+    monkeypatch.setattr(fts._registry, "connect", track)
+    reader = fts.iter_chunks()
+    next(reader)
+    assert connections[0].in_transaction
+    reader.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        connections[0].execute("SELECT 1")
+    page = fts._chunk_page
+
+    def fail(after, *args):
+        if after is not None:
+            raise RuntimeError("read failed")
+        return page(after, *args)
+
+    monkeypatch.setattr(fts, "_chunk_page", fail)
+    with pytest.raises(RuntimeError, match="read failed"):
+        list(fts.iter_chunks())
+    with pytest.raises(sqlite3.ProgrammingError):
+        connections[1].execute("SELECT 1")
+
+
+def test_chunk_page_selects_paths_and_rows_in_one_statement(tmp_path):
+    fts = _index(tmp_path, {"a.md": "# A\n\nApple.\n"})
+    queries = []
+    conn = fts._conn()
+    conn.set_trace_callback(queries.append)
+    try:
+        assert fts._chunk_page(None)
+    finally:
+        conn.set_trace_callback(None)
+    assert (
+        len(
+            [
+                query
+                for query in queries
+                if query.lstrip().upper().startswith(("SELECT", "WITH"))
+            ]
+        )
+        == 1
+    )
+
+
+def test_scratch_failure_logs_location_and_preserves_exception(
+    tmp_path, monkeypatch, caplog
+):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    failure = OSError("synthetic disk full")
+
+    def fail(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr("tempfile.TemporaryDirectory", fail)
+    with pytest.raises(OSError) as raised:
+        EmbeddingStage(tmp_path)
+    assert raised.value is failure
+    assert "embedding_stage_io_failed" in caplog.text
+    assert str(tmp_path) in caplog.text
+    assert "synthetic disk full" in caplog.text
+
+
+@pytest.mark.parametrize("failure", ["donor", "stage"])
+def test_rebuild_releases_source_snapshot_on_preparation_failure(
+    tmp_path, monkeypatch, failure
+):
+    import markdown_vault_mcp.fts_index as fts_module
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    fts, _, store, rec = _setup(
+        tmp_path, {f"{i}.md": f"# {i}\n\nBody {i}.\n" for i in range(3)}
+    )
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
+    connections = []
+    connect = fts._registry.connect
+
+    def track():
+        conn = connect()
+        connections.append(conn)
+        return conn
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("synthetic preparation failure")
+
+    class BrokenDonor:
+        source = "fixture"
+        refused_rows = 0
+        vectors_for = staticmethod(fail)
+
+    monkeypatch.setattr(fts._registry, "connect", track)
+    if failure == "stage":
+        monkeypatch.setattr(EmbeddingStage, "add", fail)
+    with pytest.raises(RuntimeError, match="synthetic preparation failure") as captured:
+        rec.rebuild(
+            store, store.identity, donor=BrokenDonor() if failure == "donor" else None
+        )
+    assert captured.value
+    assert connections
+    with pytest.raises(sqlite3.ProgrammingError):
+        connections[0].execute("SELECT 1")
+
+
+def test_stage_distinguishes_write_failure_from_provider_error(
+    tmp_path, monkeypatch, caplog
+):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+
+    scratch_error = OSError("scratch write full")
+
+    def fail_write(*_args, **_kwargs):
+        raise scratch_error
+
+    with EmbeddingStage(tmp_path) as stage:
+        with monkeypatch.context() as patch:
+            patch.setattr("json.dump", fail_write)
+            with pytest.raises(OSError) as caught:
+                stage.add(_Document("a", "x", ("text",), ({},)), {}, ["text"])
+        assert caught.value is scratch_error
+        assert "embedding_stage_io_failed" in caplog.text
+        assert str(tmp_path) in caplog.text
+        stage.finish()
+        caplog.clear()
+        provider_error = OSError("provider unavailable")
+
+        def results():
+            raise provider_error
+            yield  # pragma: no cover
+
+        with pytest.raises(OSError) as caught:
+            stage.write_results(results())
+        assert caught.value is provider_error
+        assert "embedding_stage_io_failed" not in caplog.text

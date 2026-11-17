@@ -323,23 +323,29 @@ class EmbeddingReconciler:
             return None
         return text, {**{k: row.get(k) for k in _METADATA_KEYS}, "preamble": preamble}
 
-    def _build_documents(self) -> Iterator[_Document]:
+    def _build_documents(self) -> Generator[_Document]:
         """Stream grouped built-in rows; retain required-index fallback grouping."""
         if not isinstance(self._fts, IteratesChunks):
             yield from self.documents().values()
             return
-        for path, rows in groupby(self._fts.iter_chunks(), key=lambda row: row["path"]):
-            texts: list[str] = []
-            metadata: list[dict[str, Any]] = []
-            token = ""
-            for row in rows:
-                token = row["content_hash"]
-                item = self._embedding_input(row)
-                if item is not None:
-                    text, meta = item
-                    texts.append(text)
-                    metadata.append(meta)
-            yield _Document(path, token, tuple(texts), tuple(metadata))
+        source = self._fts.iter_chunks()
+        try:
+            for path, rows in groupby(source, key=lambda row: row["path"]):
+                texts: list[str] = []
+                metadata: list[dict[str, Any]] = []
+                token = ""
+                for row in rows:
+                    token = row["content_hash"]
+                    item = self._embedding_input(row)
+                    if item is not None:
+                        text, meta = item
+                        texts.append(text)
+                        metadata.append(meta)
+                yield _Document(path, token, tuple(texts), tuple(metadata))
+        finally:
+            close = getattr(source, "close", None)
+            if close is not None:
+                close()
 
     def _classified(
         self,
@@ -347,18 +353,19 @@ class EmbeddingReconciler:
         dimension: int,
         donor: Donor | None,
         reuse_own: bool,
-    ) -> Iterator[tuple[_Document, dict[int, array[float]], list[str], int]]:
+    ) -> Generator[tuple[_Document, dict[int, array[float]], list[str], int]]:
         """Classify one bounded document window at a time."""
-        docs = (doc for doc in self._build_documents() if doc.texts)
-        own = store if reuse_own and store is not None and store.count > 0 else None
-        while window := list(islice(docs, _ROWS_BATCH)):
-            paths = [doc.path for doc in window]
-            stored = _float32_rows(own, paths) if own else ((p, []) for p in paths)
-            for doc, (_path, rows) in zip(window, stored, strict=True):
-                mine = stored_inputs(self._builder, rows)
-                given = donor.vectors_for(doc.path) if donor is not None else {}
-                hits, wanted, donated = _split_document(doc, mine, given, dimension)
-                yield doc, hits, [item[2] for item in wanted], donated
+        with closing(self._build_documents()) as source:
+            docs = (doc for doc in source if doc.texts)
+            own = store if reuse_own and store is not None and store.count > 0 else None
+            while window := list(islice(docs, _ROWS_BATCH)):
+                paths = [doc.path for doc in window]
+                stored = _float32_rows(own, paths) if own else ((p, []) for p in paths)
+                for doc, (_path, rows) in zip(window, stored, strict=True):
+                    mine = stored_inputs(self._builder, rows)
+                    given = donor.vectors_for(doc.path) if donor is not None else {}
+                    hits, wanted, donated = _split_document(doc, mine, given, dimension)
+                    yield doc, hits, [item[2] for item in wanted], donated
 
     def reconcile(
         self,
@@ -678,13 +685,14 @@ class EmbeddingReconciler:
         populated = store.count > 0
         reused = attempted = donated = 0
         with EmbeddingStage(self._scratch_dir) as stage:
-            for doc, hits, wanted, from_donor in self._classified(
-                store, identity.dimension, donor, reuse_own
-            ):
-                stage.add(doc, hits, wanted)
-                attempted += len(doc.texts)
-                reused += len(hits)
-                donated += from_donor
+            with closing(
+                self._classified(store, identity.dimension, donor, reuse_own)
+            ) as classified:
+                for doc, hits, wanted, from_donor in classified:
+                    stage.add(doc, hits, wanted)
+                    attempted += len(doc.texts)
+                    reused += len(hits)
+                    donated += from_donor
             stage.finish()
             embedded, failed = self._embed_stage(stage, identity.dimension)
             published = False
@@ -732,12 +740,13 @@ class EmbeddingReconciler:
             StoreUnavailableError: If *donor* can no longer be read.
         """
         chunks = reusable = to_embed = 0
-        for doc, hits, wanted, _ in self._classified(
-            store, identity.dimension, donor, reuse_own
-        ):
-            chunks += len(doc.texts)
-            reusable += len(hits)
-            to_embed += len(wanted)
+        with closing(
+            self._classified(store, identity.dimension, donor, reuse_own)
+        ) as classified:
+            for doc, hits, wanted, _ in classified:
+                chunks += len(doc.texts)
+                reusable += len(hits)
+                to_embed += len(wanted)
         return RebuildPreview(chunks, reusable, to_embed)
 
     def _embed_stage(self, stage: EmbeddingStage, dimension: int) -> tuple[int, int]:

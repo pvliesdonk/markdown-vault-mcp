@@ -329,7 +329,7 @@ and normalized generations. Full-build preparation now stages completed windows
 on scratch disk beside the state file, or under `TMPDIR` without a state file;
 memory-backed scratch consumes memory. Scratch contains embedding text and
 metadata content plus base64-encoded vectors. A full or unwritable location
-fails preparation before publication; cleanup failures are logged. Built-in
+fails preparation before publication; compatible and owned stores retain previous vectors, while an incompatible injected store is emptied before preparation. Cleanup failures are logged. The built-in chunk reader holds a SQLite snapshot during classification and donor reads; concurrent writes can grow the WAL until it closes before provider calls. Built-in
 publishers still materialize generation copies, third-party indexes without the
 optional chunk iterator retain an eager read, and custom non-scalar metadata
 remains resident. Path bookkeeping and the largest document remain unbounded by

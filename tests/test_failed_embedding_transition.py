@@ -196,7 +196,7 @@ def test_force_without_previous_vectors_keeps_the_cold_failure_contract(
 def test_committed_identity_transition_survives_cleanup_failure(
     tmp_path, monkeypatch, caplog
 ):
-    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from tests.fixtures.embedding_stage import install_cleanup_failure
 
     first = _vault(tmp_path, "sqlite", MockEmbeddingProvider(dim=8, model="old"))
     try:
@@ -205,22 +205,9 @@ def test_committed_identity_transition_survives_cleanup_failure(
     finally:
         first.close()
     second = _vault(tmp_path, "sqlite", MockEmbeddingProvider(dim=12, model="new"))
-    enter = EmbeddingStage.__enter__
-
-    def failing_cleanup(stage):
-        enter(stage)
-        cleanup = stage._temp.cleanup
-
-        def fail():
-            cleanup()
-            raise OSError("scratch cleanup failed")
-
-        monkeypatch.setattr(stage._temp, "cleanup", fail)
-        return stage
-
     try:
         second.index.build_index()
-        monkeypatch.setattr(EmbeddingStage, "__enter__", failing_cleanup)
+        install_cleanup_failure(monkeypatch)
         assert second.reader.search("Apples", mode="semantic")
         assert second.index.embeddings_status()["identity"]["dimension"] == 12
         assert "embedding_stage_cleanup_failed" in caplog.text
