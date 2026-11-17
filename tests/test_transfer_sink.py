@@ -198,10 +198,16 @@ async def test_read_note_serves_raw_content(sink: VaultTransferSink) -> None:
     assert result.filename == "note.md"
 
 
-async def test_read_attachment_serves_bytes(sink: VaultTransferSink) -> None:
+async def test_read_attachment_serves_bytes(
+    sink: VaultTransferSink, vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_path: str) -> None:
+        raise AssertionError("encoded read used")
+
+    monkeypatch.setattr(vault.reader, "read_attachment", fail)
     result = await sink.read("pic.png")
     assert result.body == _PNG
-    assert "png" in result.media_type
+    assert result.media_type == "image/png"
     assert result.filename == "pic.png"
 
 
@@ -470,15 +476,3 @@ async def test_extension_refusal_logs_the_setting(
         "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
         for r in caplog.records
     )
-
-
-async def test_attachment_download_avoids_encoded_read(
-    sink: VaultTransferSink, vault: Vault, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def fail(_path: str) -> None:
-        raise AssertionError("encoded read used")
-
-    monkeypatch.setattr(vault.reader, "read_attachment", fail)
-    result = await sink.read("pic.png")
-    assert result.body == _PNG
-    assert result.media_type == "image/png"

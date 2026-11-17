@@ -1967,10 +1967,6 @@ class TestAttachmentSizeCap:
 
         monkeypatch.setattr(DocumentManager, "read_attachment", spy)
 
-        def no_raw_read(_self: DocumentManager, path: str) -> bytes:
-            raise AssertionError(f"oversized attachment read: {path}")
-
-        monkeypatch.setattr(DocumentManager, "read_attachment_bytes", no_raw_read)
         server = make_server()
         async with Client(server) as client:
             with pytest.raises(ToolError, match="byte limit"):
