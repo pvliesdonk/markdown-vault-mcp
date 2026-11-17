@@ -1089,6 +1089,21 @@ class PrimaryAwareBatchWriteCallback(Protocol):
         ...
 
 
+class FolderMoveAwareBatchWriteCallback(Protocol):
+    """A batch callback accepting folder move provenance."""
+
+    def on_write_batch(
+        self,
+        items: Sequence[WriteBatchItem],
+        tool_name: str,
+        *,
+        primary_paths: frozenset[Path] | None = None,
+        folder_move: tuple[Path, Path] | None = None,
+    ) -> None:
+        """Handle a batch with primary paths and optional folder move roots."""
+        ...
+
+
 class PrincipalAwareWriteCallback(Protocol):
     """A :data:`WriteCallback` that also accepts the acting principal.
 

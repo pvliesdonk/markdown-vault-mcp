@@ -17,6 +17,7 @@ documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import re
@@ -427,6 +428,7 @@ class GitWriteStrategy:
         tool_name: str,
         *,
         primary_paths: frozenset[Path] | None = None,
+        folder_move: tuple[Path, Path] | None = None,
     ) -> None:
         """Commit every write from one tool call as a single commit.
 
@@ -441,17 +443,8 @@ class GitWriteStrategy:
             tool_name: The MCP tool that produced them.
             primary_paths: Paths written outside secondary maintenance, or
                 ``None`` to retain the ordinary batch subject.
+            folder_move: Validated source and destination directories, if moving.
         """
-        self._on_folder_move_batch(items, tool_name, primary_paths, None)
-
-    def _on_folder_move_batch(
-        self,
-        items: Sequence[WriteBatchItem],
-        tool_name: str,
-        primary_paths: frozenset[Path] | None,
-        folder_move: tuple[Path, Path] | None,
-    ) -> None:
-        """Commit a batch with an optional folder move subject."""
         if self._closed or not items:
             return
 
@@ -2024,6 +2017,10 @@ class GitWriteStrategy:
         )
 
 
+# An override must opt in itself; inherited methods retain this capability.
+GitWriteStrategy.on_write_batch.accepts_folder_move = True  # type: ignore[attr-defined]
+
+
 def git_write_strategy(
     token: str | None = None,
     push_delay_s: float = 0,
@@ -2430,6 +2427,14 @@ def _write_subject(
     return f"{operation}: {path}"
 
 
+def _folder_subject_path(path: Path) -> str:
+    """Keep unusual names identifiable on a single subject line."""
+    name = str(path)
+    if " -> " in name or any(ord(c) < 32 or ord(c) == 127 or c in '\\"' for c in name):
+        return json.dumps(name, ensure_ascii=False)
+    return name
+
+
 @dataclass(frozen=True, slots=True)
 class _CommitIdentity:
     """Committer and author identity for one commit.
@@ -2468,8 +2473,8 @@ def _stage_and_commit_batch(  # noqa: PLR0913, RUF100 - provenance accompanies t
     scoped to, both taken from the union of what the items reported
     (#1249, #1273).
 
-    A one-item batch without folder provenance delegates to :func:`_stage_and_commit`, so the
-    commit subject stays that file's own path rather than becoming the
+    A one-item batch without folder provenance delegates to
+    :func:`_stage_and_commit`, so the commit subject stays that file's own path rather than becoming the
     pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
 
     Args:
@@ -2544,7 +2549,9 @@ def _stage_and_commit_batch(  # noqa: PLR0913, RUF100 - provenance accompanies t
     subject = f"{tool_name}: {staged} {noun}"
     if folder_move is not None:
         old_dir, new_dir = folder_move
-        subject = f"move_folder: {old_dir.relative_to(git_root)} -> {new_dir.relative_to(git_root)}"
+        old_name = _folder_subject_path(old_dir.relative_to(git_root))
+        new_name = _folder_subject_path(new_dir.relative_to(git_root))
+        subject = f"{tool_name}: {old_name} -> {new_name}"
     elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)

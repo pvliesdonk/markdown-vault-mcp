@@ -44,7 +44,8 @@ A single-note rename names both paths:
 backlinks or OKF refreshes index listings. Those derived writes stay in the
 same commit. A folder move names its source and destination:
 `move_folder: drafts -> archive/2026`; moved files, backlink rewrites, and
-OKF updates share that commit.
+OKF updates share that commit. Folder names with control characters are quoted
+and escaped to keep the subject on one line.
 
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls

@@ -10,7 +10,8 @@ This module supplies the missing boundary. A :class:`CommitScopeMiddleware`
 binds a scope for the duration of each tool call; the dispatcher snapshots that
 scope when a write is fired and groups the call's writes into **one** commit.
 A call that touched many files is named after the tool that caused them; a call
-that touched exactly one keeps that file's own path as the subject. Secondary
+that touched exactly one keeps that file's own path as the subject. A folder
+move instead names its source and destination. Secondary
 writes (OKF maintenance, a rename's backlink rewrites) are marked separately so
 they can share that note's commit without replacing its path subject with a
 count.
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 _counter = itertools.count()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CommitScope:
     """One tool invocation's commit boundary.
 
@@ -62,7 +63,8 @@ class CommitScope:
             never merged into one commit.
         tool_name: The MCP tool that opened the scope. Becomes the commit
             subject when the call wrote more than one file; a single-file
-            call commits under that file's own path instead.
+            call commits under that file's own path instead. Folder moves
+            name their source and destination.
         folder_move: Validated absolute roots, set before folder callbacks fire.
     """
 

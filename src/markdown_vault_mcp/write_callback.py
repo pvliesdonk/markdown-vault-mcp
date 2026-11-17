@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp._identity import Principal
     from markdown_vault_mcp.types import (
         BatchAwareWriteCallback,
+        FolderMoveAwareBatchWriteCallback,
         PrimaryAwareBatchWriteCallback,
         PrincipalAwareWriteCallback,
         WriteBatchItem,
@@ -263,10 +264,16 @@ class WriteCallbackDispatcher:
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),
             # so reaching here means ``on_write_batch`` exists.
-            folder_batch = getattr(on_write, "_on_folder_move_batch", None)
-            if folder_batch is not None and scope.folder_move is not None:
-                folder_batch(
-                    items, scope.tool_name, frozenset(primary_paths), scope.folder_move
+            batch_method = getattr(on_write, "on_write_batch", None)
+            if scope.folder_move is not None and getattr(
+                batch_method, "accepts_folder_move", False
+            ):
+                folder_batch = cast("FolderMoveAwareBatchWriteCallback", on_write)
+                folder_batch.on_write_batch(
+                    items,
+                    scope.tool_name,
+                    primary_paths=frozenset(primary_paths),
+                    folder_move=scope.folder_move,
                 )
             elif self._accepts_primary_paths:
                 primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
