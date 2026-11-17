@@ -46,27 +46,20 @@ def lagging(
     latest_vc = _vchord_versions(
         [f"tensorchord/vchord-suite:{tag}" for tag in vchord_tags]
     )
-    for repository, pinned, latest in (
-        ("pgvector/pgvector", pinned_pg.keys(), latest_pg.keys()),
-        ("tensorchord/vchord-suite", pinned_vc.keys(), latest_vc.keys()),
-    ):
-        missing = sorted(pinned - latest)
-        if missing:
-            raise ValueError(
-                f"No comparable {repository} tags for PostgreSQL majors: {missing}"
-            )
     messages = []
-    for major, (version, image) in sorted(latest_pg.items()):
-        tag = image.split(":", 1)[1]
-        if major in pinned_pg and version > pinned_pg[major][0]:
-            messages.append(f"{pinned_pg[major][1]} is behind {tag}")
-        elif pinned_pg and major > max(pinned_pg):
+    for major, (version, image) in sorted(pinned_pg.items()):
+        newest, tag = latest_pg[major]
+        if newest > version:
+            messages.append(f"{image} is behind {tag.split(':', 1)[1]}")
+    for major, (_, tag) in sorted(latest_pg.items()):
+        if pinned_pg and major > max(pinned_pg):
             messages.append(
-                f"PostgreSQL {major} has pgvector images ({tag}); adding it is a support decision"
+                f"PostgreSQL {major} has pgvector images ({tag.split(':', 1)[1]}); adding it is a support decision"
             )
-    for major, (date, image) in sorted(latest_vc.items()):
-        if major in pinned_vc and date > pinned_vc[major][0]:
-            messages.append(f"{pinned_vc[major][1]} is behind {image.split(':', 1)[1]}")
+    for major, (date, image) in sorted(pinned_vc.items()):
+        newest_date, tag = latest_vc[major]
+        if newest_date > date:
+            messages.append(f"{image} is behind {tag.split(':', 1)[1]}")
     return messages
 
 
@@ -77,22 +70,10 @@ def hub_tags(repository: str) -> list[str]:
     for _ in range(20):
         with urlopen(url, timeout=20) as response:
             body = json.load(response)
-        if (
-            not isinstance(body, dict)
-            or not isinstance(body.get("results"), list)
-            or "next" not in body
-        ):
-            raise ValueError("Malformed Docker Hub response")
-        next_url = body["next"]
-        if next_url is not None and not isinstance(next_url, str):
-            raise ValueError("Malformed Docker Hub next page")
-        for result in body["results"]:
-            if not isinstance(result, dict) or not isinstance(result.get("name"), str):
-                raise ValueError("Malformed Docker Hub tag")
-            tags.append(result["name"])
-        if next_url is None:
+        tags += [result["name"] for result in body["results"]]
+        if body["next"] is None:
             return tags
-        url = next_url
+        url = body["next"]
     raise ValueError("Docker Hub page limit exceeded")
 
 
