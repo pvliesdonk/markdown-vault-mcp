@@ -39,7 +39,7 @@ def _relative_path(path: str) -> None:
 
 
 def _open_nonblocking(path: str, flags: int) -> int:
-    return os.open(path, flags | os.O_NONBLOCK)
+    return os.open(path, flags | getattr(os, "O_NONBLOCK", 0))
 
 
 @dataclass(frozen=True)
@@ -161,7 +161,7 @@ class ReferenceReader:
         reference: FileReference,
         *,
         include_content: bool = False,
-        max_content_bytes: int = 262144,
+        max_content_bytes: float = 262144,
     ) -> ReferenceResolution:
         """Verify current bytes, optionally returning the exact verified bytes.
 
@@ -226,7 +226,7 @@ class ReferenceReader:
         )
 
     def _snapshot(
-        self, path: str, hash_bytes: bool, body_cap: int | None
+        self, path: str, hash_bytes: bool, body_cap: float | None
     ) -> tuple[int, str | None, bytes | None]:
         _relative_path(path)
         absolute = validate_history_path(path, self._root, self._extensions)
@@ -258,7 +258,7 @@ class ReferenceReader:
 
     @staticmethod
     def _consume(
-        stream: BinaryIO, hash_bytes: bool, body_cap: int | None
+        stream: BinaryIO, hash_bytes: bool, body_cap: float | None
     ) -> tuple[int, str | None, bytes | None]:
         if not hash_bytes:
             return 0, None, None
@@ -283,11 +283,17 @@ class ReferenceReader:
         def identity(st: os.stat_result) -> tuple[int, ...]:
             return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
 
-        current = validate_history_path(path, self._root, self._extensions)
+        try:
+            current = validate_history_path(path, self._root, self._extensions)
+            current_stat = absolute.stat()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise InvalidRequestError(
+                "File changed during reference read; retry the call."
+            ) from exc
         if (
             current != absolute
             or identity(before) != identity(after)
-            or identity(after) != identity(absolute.stat())
+            or identity(after) != identity(current_stat)
         ):
             raise InvalidRequestError(
                 "File changed during reference read; retry the call."

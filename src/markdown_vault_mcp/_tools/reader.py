@@ -116,7 +116,7 @@ def register(mcp: FastMCP) -> None:
         cap = (
             config.max_note_read_bytes
             if is_note(reference.path)
-            else int(config.max_attachment_size_mb * 1024 * 1024)
+            else config.max_attachment_size_mb * 1024 * 1024
         )
         return await asyncio.to_thread(
             reader.resolve_file_reference,

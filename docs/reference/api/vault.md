@@ -114,7 +114,8 @@ uses a custom policy. The reader supports notes and allowed binary attachments
 under the [existing path rules](../../security-model.md). It hashes complete
 raw bytes, including frontmatter and original line endings, without decoding
 or parsing the file. The explicitly named `sha256` is a lowercase SHA-256
-hex digest; `size_bytes` counts the same bytes. `include_sha256=False` saves
+hex digest, equal to the `etag` returned by `read` for the same raw file bytes;
+`size_bytes` counts the same bytes. `include_sha256=False` saves
 only a locator and byte count. Optional `provenance` is a caller-supplied label
 of at most 1024 characters; the reader infers no provenance or Git revision.
 
@@ -139,6 +140,8 @@ deletion cannot be distinguished. A path reused for other bytes reports
 `changed` when a saved digest proves the difference. Path-only references
 cannot establish content identity. A digest proves matching bytes, not file
 lineage or retention.
+A saved path that becomes a directory, or a file type no longer admitted by
+the attachment allowlist, raises `InvalidRequestError` instead of a status.
 
 `include_content=True` requires a saved digest and returns the exact verified
 raw bytes as base64 for both notes and attachments. The MCP tools apply the

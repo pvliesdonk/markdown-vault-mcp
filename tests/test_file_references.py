@@ -356,3 +356,72 @@ async def test_mcp_changed_oversized_file_reports_changed(
             ).structured_content
             assert result["status"] == "changed"
             assert result["content_base64"] is None
+
+
+@pytest.mark.parametrize("operation", ["get", "resolve"])
+def test_removal_after_open_requires_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    file = tmp_path / "note.md"
+    file.write_bytes(b"content")
+    reader = ReferenceReader(tmp_path, "a")
+    ref = reader.get_file_reference("note.md", include_sha256=True)
+    check = reader._check_stable
+
+    def remove_after_fstat(*args: object) -> None:
+        file.unlink()
+        check(*args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(reader, "_check_stable", remove_after_fstat)
+    with pytest.raises(InvalidRequestError, match=r"changed during.*retry"):
+        if operation == "get":
+            reader.get_file_reference("note.md", include_sha256=True)
+        else:
+            reader.resolve_file_reference(ref, include_content=True)
+
+
+def test_reference_without_nonblocking_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "note.md").write_bytes(b"content")
+    monkeypatch.delattr(os, "O_NONBLOCK", raising=False)
+    reader = ReferenceReader(tmp_path, "a")
+    ref = reader.get_file_reference("note.md", include_sha256=True)
+    assert reader.resolve_file_reference(ref, include_content=True).status == "verified"
+
+
+@pytest.mark.parametrize(
+    "cap,size", [(0.5, 0), (0.5, 1), (1.0, 1), (1.0, 2), (1.5, 1), (1.5, 2), (0.0, 2)]
+)
+async def test_attachment_reference_cap_matches_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cap: float, size: int
+) -> None:
+    (tmp_path / "proof.png").write_bytes(b"x" * size)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    config = replace(
+        ProjectConfig.from_env(),
+        reference_namespace="a",
+        max_attachment_size_mb=cap / (1024 * 1024),
+    )
+    async with Client(make_server(config=config)) as client:
+        ref = (
+            await client.call_tool(
+                "get_file_reference", {"path": "proof.png", "include_sha256": True}
+            )
+        ).structured_content
+        for tool, args in [
+            ("read", {"path": "proof.png"}),
+            ("resolve_file_reference", {"reference": ref, "include_content": True}),
+        ]:
+            if cap and size > cap:
+                with pytest.raises(ToolError, match="limit"):
+                    await client.call_tool(tool, args)
+            else:
+                await client.call_tool(tool, args)
+        if cap == 0.5 and size == 1:
+            (tmp_path / "proof.png").write_bytes(b"changed")
+            result = await client.call_tool(
+                "resolve_file_reference", {"reference": ref, "include_content": True}
+            )
+            assert result.structured_content["status"] == "changed"
+            assert result.structured_content["content_base64"] is None
