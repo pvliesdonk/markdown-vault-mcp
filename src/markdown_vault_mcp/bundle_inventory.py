@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-ScopeState = Literal["inspected", "missing", "excluded", "unavailable"]
+ScopeState = Literal["inspected", "missing", "unavailable"]
 EntryState = Literal["inspected", "missing", "not_inspected", "unavailable"]
 Role = Literal[
     "navigation",
@@ -55,11 +55,13 @@ class InspectionPolicy:
 
     Args:
         conventions_file: Filename used for per-folder conventions, if enabled.
-        state_paths: Configured files or sidecar bases holding server state.
+        state_paths: Configured files or directories holding server state.
+        embeddings_path: Configured vector sidecar base, if any.
     """
 
     conventions_file: str | None = "_conventions.md"
     state_paths: tuple[Path, ...] = ()
+    embeddings_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -194,6 +196,19 @@ def _parsed(path: str, role: Role, raw: bytes) -> BundleEntry:
     )
 
 
+def _vector_sidecars(base: Path) -> set[Path]:
+    paths = {
+        base.with_suffix(suffix)
+        for suffix in (".lock", ".npy", ".json", ".v2.json", ".sqlite3")
+    }
+    sqlite = base.with_suffix(".sqlite3")
+    paths.update(
+        sqlite.with_name(sqlite.name + suffix)
+        for suffix in ("-wal", "-shm", "-journal")
+    )
+    return paths
+
+
 class BundleInspector:
     """Inspect only disk state using the document manager's effective policy.
 
@@ -215,27 +230,60 @@ class BundleInspector:
     ) -> None:
         self._source = source
         self._policy = policy
-        root = source.absolute()
-        self._absolute_source = root
-        internal = []
-        for state_path in policy.state_paths:
-            if str(state_path) == ":memory:":
-                continue
-            path = state_path.absolute()
-            if path.is_relative_to(root) and path != root:
-                internal.append(path if path.parent == root else path.parent)
-        self._internal_paths = tuple(internal)
         self._excludes = excludes
         self._extensions = extensions
         self._note_limit = min(65536, note_limit) if note_limit > 0 else 65536
+
+    def _prepare_policy(self, root: Path) -> None:
+        self._absolute_source = root
+        files: set[Path] = set()
+        directories: set[Path] = set()
+        configured_paths = self._policy.state_paths
+        if self._policy.embeddings_path is not None:
+            configured_paths += (self._policy.embeddings_path,)
+        vector_bases: set[Path] = set()
+        for configured in configured_paths:
+            if str(configured) == ":memory:":
+                continue
+            path = configured.resolve()
+            spelled = configured.parent.resolve() / configured.name
+            try:
+                mode = path.stat().st_mode
+            except FileNotFoundError:
+                mode = 0
+            if stat.S_ISDIR(mode):
+                directories.update((path, spelled))
+                continue
+            for owned in (path, spelled):
+                files.add(owned)
+                for suffix in ("-wal", "-shm", "-journal", ".lock"):
+                    files.add(owned.with_name(owned.name + suffix))
+            if configured == self._policy.embeddings_path:
+                for base in (path, spelled):
+                    vector_bases.add(base)
+                    files.update(_vector_sidecars(base))
+        self._vector_bases = vector_bases
+        self._internal_paths = files
+        self._internal_directories = directories
 
     def _internal(self, path: str) -> bool:
         if any(part in {".git", ".markdown_vault_mcp"} for part in path.split("/")):
             return True
         candidate = self._absolute_source.joinpath(*path.split("/"))
-        return any(
+        for base in self._vector_bases:
+            if candidate.parent != base.parent:
+                continue
+            stem = base.with_suffix("").name + ".v2.m"
+            name = candidate.name
+            if (
+                name.startswith(stem)
+                and name.endswith(".npy")
+                and name[len(stem) : -4].isdigit()
+            ):
+                return True
+        return candidate in self._internal_paths or any(
             candidate == internal or candidate.is_relative_to(internal)
-            for internal in self._internal_paths
+            for internal in self._internal_directories
         )
 
     def _index_excluded(self, path: str) -> bool:
@@ -252,14 +300,24 @@ class BundleInspector:
         """
         parts = _components(request.root) + _components(request.directory)
         scope = "/".join(parts)
-        if self._internal(scope):
+        if any(part in {".git", ".markdown_vault_mcp"} for part in parts):
             return BundleInspection(request, "unavailable")
         try:
-            with open_directory_nofollow(self._source, parts) as parent:
+            root = self._source.resolve(strict=True)
+            self._prepare_policy(root)
+        except (OSError, RuntimeError):
+            return BundleInspection(request, "unavailable")
+        try:
+            if self._internal(scope):
+                return BundleInspection(request, "unavailable")
+            with open_directory_nofollow(root, parts, source_resolved=True) as parent:
                 return self._enumerate(parent, request, scope)
-        except OSError as exc:
+        except (OSError, RuntimeError) as exc:
             return BundleInspection(
-                request, "missing" if _missing(exc) else "unavailable"
+                request,
+                "missing"
+                if isinstance(exc, OSError) and _missing(exc)
+                else "unavailable",
             )
 
     def _enumerate(

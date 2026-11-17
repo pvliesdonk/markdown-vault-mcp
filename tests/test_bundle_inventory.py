@@ -817,12 +817,12 @@ def test_configured_conventions_and_state_directory(tmp_path: Path) -> None:
         entries = {entry.path: entry for entry in root.entries}
         assert entries["guidance.md"].role == "support"
         assert entries["guidance.md"].visibility == "index_excluded"
-        assert "server-data" not in entries
-        denied = vault.reader.inspect_bundle(
+        assert "server-data" in entries
+        nested = vault.reader.inspect_bundle(
             BundleInspectionRequest(root="server-data")
         )
-        assert denied.state == "unavailable"
-        assert denied.entries == ()
+        assert nested.state == "inspected"
+        assert [entry.path for entry in nested.entries] == ["server-data/secret.md"]
     finally:
         vault.close()
 
@@ -868,3 +868,125 @@ def test_state_file_at_vault_root_does_not_hide_vault(tmp_path: Path) -> None:
         assert [entry.path for entry in result.entries] == ["note.md"]
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("source_alias", [True, False])
+@pytest.mark.parametrize("parent_segments", [True, False])
+def test_reader_state_boundary_with_aliases_and_parent_segments(
+    tmp_path: Path, source_alias: bool, parent_segments: bool
+) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    state_dir = real / "server-state"
+    state_dir.mkdir()
+    (state_dir / "state.md").write_text("---\ntype: secret\n---\nbody")
+    (state_dir / "note.md").write_text("---\ntype: concept\n---\nbody")
+    source = alias if source_alias else real
+    state_base = real if source_alias else alias
+    if parent_segments:
+        state_base = state_base / "server-state" / ".."
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(state_path=state_base / "server-state" / "state.md"),
+    )
+    try:
+        root = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert "server-state" in {entry.path for entry in root.entries}
+        nested = vault.reader.inspect_bundle(
+            BundleInspectionRequest(root="server-state")
+        )
+        assert nested.state == "inspected"
+        assert [entry.path for entry in nested.entries] == ["server-state/note.md"]
+    finally:
+        vault.close()
+
+
+def test_explicit_internal_directory_is_never_entered(tmp_path: Path) -> None:
+    internal = tmp_path / "internal"
+    internal.mkdir()
+    (internal / "hidden.md").write_text("body")
+    policy = inventory.InspectionPolicy(state_paths=(internal,))
+    subject = BundleInspector(tmp_path, (), frozenset(), 0, policy)
+    assert subject.inspect(BundleInspectionRequest(root="")).entries == ()
+    assert (
+        subject.inspect(BundleInspectionRequest(root="internal")).state == "unavailable"
+    )
+
+
+def test_state_sidecars_are_not_probed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state.md"
+    names = (
+        "state.md",
+        "state.md-wal",
+        "state.md-shm",
+        "state.md-journal",
+        "state.md.lock",
+    )
+    for name in names:
+        (tmp_path / name).write_text("secret")
+    (tmp_path / "state-other.md").write_text("body")
+    original = inventory.os.stat
+
+    def checked(name: object, *args: object, **kwargs: object) -> os.stat_result:
+        assert name not in names
+        return original(name, *args, **kwargs)  # type: ignore[call-overload]
+
+    subject = BundleInspector(
+        tmp_path,
+        (),
+        frozenset({"md-wal", "md-shm", "md-journal", "lock"}),
+        0,
+        inventory.InspectionPolicy(state_paths=(state,)),
+    )
+    monkeypatch.setattr(inventory.os, "stat", checked)
+    result = subject.inspect(BundleInspectionRequest(root=""))
+    assert [entry.path for entry in result.entries] == ["state-other.md"]
+
+
+def test_memory_state_and_unexpected_child_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "note.md").write_text("body")
+    subject = BundleInspector(
+        tmp_path,
+        (),
+        frozenset(),
+        0,
+        inventory.InspectionPolicy(state_paths=(type(tmp_path)(":memory:"),)),
+    )
+    assert (
+        subject.inspect(BundleInspectionRequest(root="")).entries[0].path == "note.md"
+    )
+    monkeypatch.setattr(
+        subject, "_observe", Mock(side_effect=OSError(errno.EIO, "failure"))
+    )
+    result = subject.inspect(BundleInspectionRequest(root=""))
+    assert result.enumeration == "unavailable"
+    assert result.entries == ()
+
+
+def test_vector_sidecars_do_not_hide_neighboring_notes(tmp_path: Path) -> None:
+    base = tmp_path / "vectors"
+    for name in (
+        "vectors.v2.json",
+        "vectors.v2.m1.npy",
+        "vectors.npy",
+        "vectors.lock",
+        "vectors.sqlite3",
+        "vectors.sqlite3-wal",
+        "vectors-notes.md",
+    ):
+        (tmp_path / name).write_text("body")
+    subject = BundleInspector(
+        tmp_path,
+        (),
+        frozenset({"json", "npy", "lock", "sqlite3", "sqlite3-wal"}),
+        0,
+        inventory.InspectionPolicy(embeddings_path=base),
+    )
+    result = subject.inspect(BundleInspectionRequest(root=""))
+    assert [entry.path for entry in result.entries] == ["vectors-notes.md"]

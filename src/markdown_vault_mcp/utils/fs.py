@@ -360,12 +360,15 @@ def _descend_directory(descriptor: int, components: Sequence[str]) -> int:
 
 
 @contextmanager
-def open_directory_nofollow(source: Path, components: Sequence[str]) -> Iterator[int]:
+def open_directory_nofollow(
+    source: Path, components: Sequence[str], *, source_resolved: bool = False
+) -> Iterator[int]:
     """Hold a directory descriptor beneath a once-resolved source root.
 
     Args:
         source: Configured root; its own aliases may resolve once.
         components: Validated plain relative components, never dot or parent.
+        source_resolved: Source is an already resolved absolute root.
 
     Yields:
         Owned descriptor; callers must not close it.
@@ -376,7 +379,7 @@ def open_directory_nofollow(source: Path, components: Sequence[str]) -> Iterator
     if not _NOFOLLOW_SUPPORTED:
         raise OSError(errno.ENOTSUP, "No-follow access unavailable")
     try:
-        resolved = source.resolve(strict=True)
+        resolved = source if source_resolved else source.resolve(strict=True)
         # Opening the absolute pathname once only protects its last component.
         # Anchor from the filesystem root so swapped ancestors cannot redirect us.
         descriptor = _descend_directory(

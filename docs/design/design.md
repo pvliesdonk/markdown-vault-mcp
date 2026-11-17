@@ -3600,7 +3600,8 @@ candidates) confer no bundle conformance, global OKF activation or writer author
 Effective index excludes label matching entries `index_excluded` without hiding
 or refusing them. Dot components are labelled `hidden_path`; `.git` and the
 legacy `.markdown_vault_mcp` state directory and configured state directories
-inside the vault are never entered. Filesystem
+inside the vault are never entered. Configured state files and their sidecars
+are omitted without hiding neighboring notes. Filesystem
 permission refusals make enumeration incomplete and do not reveal denied child
 names. The configured conventions filename has the support role. Non-directory
 filenames retain `ArtifactStore.extensions()` allowlist policy, including

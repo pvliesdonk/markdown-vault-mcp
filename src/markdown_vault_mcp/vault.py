@@ -709,10 +709,10 @@ class Vault:
                     for path in (
                         self._state_path,
                         self._index_path,
-                        self._embeddings_path,
                     )
                     if path is not None
                 ),
+                self._embeddings_path,
             ),
         )
 
