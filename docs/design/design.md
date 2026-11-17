@@ -6587,9 +6587,10 @@ source and destination; callbacks without that path retain the destination-only
 subject. The primary item carries its old path through subject selection,
 without changing the callback tuple. A path fired more than once (a renamed
 note whose self-link is rewritten) counts as one primary path, named by its
-first item. Multi-file folder moves retain their
-batch summary; exact folder roots are not inferred from the moved files
-(#1676, single-note slice).
+first item. A folder move records its validated source and destination in the
+scope before dispatching writes. The Git batch writer uses those roots in the
+subject while committing all moved and derived files; other batch callbacks
+keep their existing contract (#2139).
 
 Three properties this depends on:
 

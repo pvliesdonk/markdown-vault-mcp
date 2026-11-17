@@ -263,7 +263,12 @@ class WriteCallbackDispatcher:
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),
             # so reaching here means ``on_write_batch`` exists.
-            if self._accepts_primary_paths:
+            folder_batch = getattr(on_write, "_on_folder_move_batch", None)
+            if folder_batch is not None and scope.folder_move is not None:
+                folder_batch(
+                    items, scope.tool_name, frozenset(primary_paths), scope.folder_move
+                )
+            elif self._accepts_primary_paths:
                 primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
                 primary_batch.on_write_batch(
                     items, scope.tool_name, primary_paths=frozenset(primary_paths)

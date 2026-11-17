@@ -41,6 +41,7 @@ from fastmcp.server.middleware import Middleware
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
     import mcp.types as mt
     from fastmcp.server.middleware import CallNext, MiddlewareContext
@@ -62,10 +63,12 @@ class CommitScope:
         tool_name: The MCP tool that opened the scope. Becomes the commit
             subject when the call wrote more than one file; a single-file
             call commits under that file's own path instead.
+        folder_move: Validated absolute roots, set before folder callbacks fire.
     """
 
     token: int
     tool_name: str
+    folder_move: tuple[Path, Path] | None = None
 
 
 _scope_var: ContextVar[CommitScope | None] = ContextVar(

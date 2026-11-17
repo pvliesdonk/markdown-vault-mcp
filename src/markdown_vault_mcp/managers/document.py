@@ -1964,6 +1964,13 @@ class DocumentManager:
                 move_dirty.extend(dirty_paths)  # rewritten sources
                 self._mark_paths_dirty(move_dirty)
 
+            from markdown_vault_mcp._commit_scope import current_commit_scope
+
+            scope = current_commit_scope()
+            if scope is not None and scope.tool_name == "move_folder":
+                # All queued callbacks share this scope; set it before firing any.
+                object.__setattr__(scope, "folder_move", (old_abs, new_abs))
+
             # 7. Callbacks: rename for every moved file, edit for every
             #    rewritten source (minus intra-subtree dupes).
             self._dispatch_move_callbacks(md_map, non_note_moves, pending_callbacks)

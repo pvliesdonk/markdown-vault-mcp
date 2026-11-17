@@ -442,6 +442,16 @@ class GitWriteStrategy:
             primary_paths: Paths written outside secondary maintenance, or
                 ``None`` to retain the ordinary batch subject.
         """
+        self._on_folder_move_batch(items, tool_name, primary_paths, None)
+
+    def _on_folder_move_batch(
+        self,
+        items: Sequence[WriteBatchItem],
+        tool_name: str,
+        primary_paths: frozenset[Path] | None,
+        folder_move: tuple[Path, Path] | None,
+    ) -> None:
+        """Commit a batch with an optional folder move subject."""
         if self._closed or not items:
             return
 
@@ -477,6 +487,7 @@ class GitWriteStrategy:
                         else None,
                     ),
                     primary_paths,
+                    folder_move,
                 )
             if self._enable_push:
                 self._push_scheduler.schedule_push()
@@ -2440,12 +2451,13 @@ class _CommitIdentity:
     author_email: str | None = None
 
 
-def _stage_and_commit_batch(
+def _stage_and_commit_batch(  # noqa: PLR0913, RUF100 - provenance accompanies the existing batch inputs.
     git_root: Path,
     items: Sequence[WriteBatchItem],
     tool_name: str,
     identity: _CommitIdentity,
     primary_paths: frozenset[Path] | None = None,
+    folder_move: tuple[Path, Path] | None = None,
 ) -> None:
     """Stage every write from one tool call and commit them together.
 
@@ -2456,7 +2468,7 @@ def _stage_and_commit_batch(
     scoped to, both taken from the union of what the items reported
     (#1249, #1273).
 
-    A one-item batch delegates to :func:`_stage_and_commit` instead, so the
+    A one-item batch without folder provenance delegates to :func:`_stage_and_commit`, so the
     commit subject stays that file's own path rather than becoming the
     pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
 
@@ -2468,8 +2480,9 @@ def _stage_and_commit_batch(
         identity: Committer and author identity for the commit.
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
+        folder_move: Validated source and destination directories, if moving.
     """
-    if len(items) == 1:
+    if len(items) == 1 and folder_move is None:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps
         # its commit subject the path ("write: notes/one.md") rather than the
@@ -2529,7 +2542,10 @@ def _stage_and_commit_batch(
 
     noun = "file" if staged == 1 else "files"
     subject = f"{tool_name}: {staged} {noun}"
-    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
+    if folder_move is not None:
+        old_dir, new_dir = folder_move
+        subject = f"move_folder: {old_dir.relative_to(git_root)} -> {new_dir.relative_to(git_root)}"
+    elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)

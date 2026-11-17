@@ -703,8 +703,11 @@ class TestBatchCommitsForReal:
         assert _subjects(repo)[0] == "delete: other.md"
         assert "index.md" in _files_in_head(repo)
 
-    def test_multi_file_folder_move_keeps_batch_summary(self, tmp_path: Path) -> None:
-        """A folder move of several notes still commits under the file count."""
+    @pytest.mark.parametrize("okf", [False, True])
+    def test_multi_file_folder_move_names_paths(
+        self, tmp_path: Path, okf: bool
+    ) -> None:
+        """Moved notes, backlinks and OKF maintenance share the folder subject."""
         from markdown_vault_mcp.git._run import run_git
 
         repo = _repo(tmp_path)
@@ -714,11 +717,50 @@ class TestBatchCommitsForReal:
         run_git(str(repo), "add", "a")
         run_git(str(repo), "commit", "-m", "folder")
 
+        from markdown_vault_mcp.vault import Vault, VaultSettings
+
+        (repo / "source.md").write_text("[X](a/x.md)\n", encoding="utf-8")
+        run_git(str(repo), "add", "source.md")
+        run_git(str(repo), "commit", "-m", "backlink")
+        strategy = self._strategy(repo)
+        vault = Vault(
+            source_dir=repo,
+            settings=VaultSettings(
+                read_only=False, okf_mode="on" if okf else "off", okf_write=okf
+            ),
+            on_write=strategy,
+        )
+        vault.index.build_index()
+        before = len(_subjects(repo))
+        try:
+            with bound_commit_scope("move_folder") as scope:
+                vault.writer.move_folder("a", "b")
+                vault.end_commit_scope(scope)
+        finally:
+            vault.close()
+            strategy.close()
+
+        assert _subjects(repo)[0] == "move_folder: a -> b"
+        assert len(_subjects(repo)) == before + 1
+        assert "b/x.md" in (repo / "source.md").read_text(encoding="utf-8")
+        assert {"b/x.md", "b/y.md", "source.md"} <= _files_in_head(repo)
+        if okf:
+            assert "index.md" in _files_in_head(repo)
+
+    def test_single_file_folder_move_names_folders(self, tmp_path: Path) -> None:
+        """A folder containing one file still names the folder roots."""
+        from markdown_vault_mcp.git._run import run_git
+
+        repo = _repo(tmp_path)
+        (repo / "a").mkdir()
+        (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
+        run_git(str(repo), "add", "a")
+        run_git(str(repo), "commit", "-m", "folder")
         self._run_in_scope(
             repo, "move_folder", lambda v: v.writer.move_folder("a", "b")
         )
-
-        assert _subjects(repo)[0] == "move_folder: 2 files"
+        assert _subjects(repo)[0] == "move_folder: a -> b"
+        assert _files_in_head(repo) == {"b/x.md"}
 
     @pytest.mark.parametrize(
         ("primary_names", "expected"),
@@ -1156,7 +1198,7 @@ class TestScopeSurvivesARealToolCall:
 
         subjects = _subjects(repo)
         assert len(subjects) == before + 1, subjects
-        assert subjects[0] == "move_folder: 3 files"
+        assert subjects[0] == "move_folder: src -> dst"
         assert _files_in_head(repo) == {f"dst/{n}.md" for n in ("a", "b", "c")}
 
     async def test_a_single_file_tool_call_still_names_its_path(
