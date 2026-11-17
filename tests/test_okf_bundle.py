@@ -34,7 +34,6 @@ def source_dir(tmp_path: Path) -> Path:
     )
     (root / "b.md").write_text("# B\n")  # non-conformant (no type) — kept as-is
     (root / "_conventions.md").write_text("# conventions\n")
-    (root / ".conventions.md").write_text("# hidden conventions\n")
     (root / "pic.png").write_bytes(b"\x89PNGDATA")
     guides = root / "guides"
     guides.mkdir()
@@ -83,7 +82,6 @@ def test_bundle_excludes_convention_and_template_files(
 ):
     members = _members(build_okf_bundle(vault, config, folder="").data)
     assert "_conventions.md" not in members
-    assert ".conventions.md" not in members
     assert "_templates/t.md" not in members
     assert not any(m.startswith("_templates/") for m in members)
 

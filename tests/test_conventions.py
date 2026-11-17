@@ -232,19 +232,19 @@ class TestVaultDerivedExclusion:
         """Direct Vault construction excludes convention files by itself."""
         from markdown_vault_mcp.vault import Vault
 
-        (tmp_path / "_conventions.md").write_text("Rules.", encoding="utf-8")
+        (tmp_path / ".conventions.md").write_text("Rules.", encoding="utf-8")
+        (tmp_path / "_conventions.md").write_text("Legacy.", encoding="utf-8")
         (tmp_path / "note.md").write_text("# Note\nBody.", encoding="utf-8")
         col = Vault(
             source_dir=tmp_path, settings=VaultSettings(exclude_patterns=[".trash/**"])
         )
         try:
-            assert col.exclude_patterns == [
-                ".trash/**",
-                ".conventions.md",
-                "**/.conventions.md",
-                "_conventions.md",
-                "**/_conventions.md",
-            ]
+            assert (
+                col.exclude_patterns
+                == VaultSettings(
+                    exclude_patterns=[".trash/**"]
+                ).effective_exclude_patterns()
+            )
             col.index.build_index()
             paths = [n.path for n in col.reader.list_documents()]
             assert paths == ["note.md"]
@@ -282,28 +282,27 @@ def test_default_conventions_resolve_each_folder_with_legacy_fallback(
     nested.mkdir()
     (nested / ".conventions.md").write_text("Primary", encoding="utf-8")
     (nested / "_conventions.md").write_text("Legacy", encoding="utf-8")
+    deep = nested / "Empty" / "Deep"
+    deep.mkdir(parents=True)
+    (deep / "_conventions.md").write_text("Deep", encoding="utf-8")
     resolver = ConventionsResolver(tmp_path, ".conventions.md")
-    assert [(e.path, e.content) for e in resolver.for_path("Notes/note.md")] == [
+    assert [
+        (e.path, e.content) for e in resolver.for_path("Notes/Empty/Deep/note.md")
+    ] == [
         ("_conventions.md", "Root"),
         ("Notes/.conventions.md", "Primary"),
+        ("Notes/Empty/Deep/_conventions.md", "Deep"),
     ]
-    assert resolver.list_folders() == ["", "Notes"]
+    assert resolver.list_folders() == ["", "Notes", "Notes/Empty/Deep"]
 
 
-def test_invalid_primary_does_not_use_legacy(tmp_path: Path) -> None:
-    (tmp_path / ".conventions.md").write_bytes(b"\xff")
-    (tmp_path / "_conventions.md").write_text("Old rules", encoding="utf-8")
-    assert ConventionsResolver(tmp_path, ".conventions.md").for_path("") == []
-
-
-def test_custom_name_does_not_use_legacy(tmp_path: Path) -> None:
-    (tmp_path / "_conventions.md").write_text("Old rules", encoding="utf-8")
-    assert ConventionsResolver(tmp_path, "AGENTS.md").for_path("") == []
-
-
-def test_empty_primary_shadows_legacy(tmp_path: Path) -> None:
-    (tmp_path / ".conventions.md").write_text("", encoding="utf-8")
+def test_fallback_only_when_default_primary_is_absent(tmp_path: Path) -> None:
     (tmp_path / "_conventions.md").write_text("Legacy", encoding="utf-8")
+    assert ConventionsResolver(tmp_path, "AGENTS.md").for_path("") == []
+    primary = tmp_path / ".conventions.md"
+    primary.write_bytes(b"\xff")
+    assert ConventionsResolver(tmp_path, ".conventions.md").for_path("") == []
+    primary.write_text("", encoding="utf-8")
     entries = ConventionsResolver(tmp_path, ".conventions.md").for_path("")
     assert [(entry.path, entry.content) for entry in entries] == [
         (".conventions.md", "")
