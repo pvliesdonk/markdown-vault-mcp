@@ -253,13 +253,14 @@ indexed rowid lookup instead of an ordinary-column scan of the
 content-carrying FTS5 table (see the [Database Schema](#database-schema)
 DDL, and decision 26 below for why a bridge table rather than a direct
 `sections.fts_rowid` column). After the summary migration, each writable
-open compares the FTS5 docsize rowid inventory with the bridge. Each note
-must have either no bridge rows or one per section in chunk order, so exact
-query excerpts pair correctly. For a note with no bridge rows, repair bridges
-unbridged rows only if their count equals its section count; it purges all
-remaining unbridged rows. An unprovable note can lose keyword hits until its
-next edit. A stale bridge pointing to a reused rowid is not detected, and a
-read-only open leaves repair to the next writer.
+open compares the FTS5 docsize rowid inventory with the bridge. For ordinary
+writer histories, mapped rows and sections correspond in chunk order, so
+exact query excerpts pair correctly. Repair bridges unbridged rows of a note
+with sections and no existing bridge rows. It purges other unbridged rows:
+orphans, stale rows beside a mapped generation, and rows left by a note
+replaced with an empty note or tombstone. It does not validate arbitrary
+corruption or detect a stale bridge pointing to a reused rowid. A read-only
+open leaves repair to the next writer.
 
 Domain-specific filtering (by cluster, topic, tag) happens via the
 `document_tags` table, not FTS5 columns.

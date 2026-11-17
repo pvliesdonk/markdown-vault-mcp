@@ -1601,13 +1601,17 @@ class TestNotesFtsSummaryMigration:
 
 
 def _legacy_upsert(idx: FTSIndex, note: ParsedNote) -> None:
-    """Write as the pre-bridge writer did, without bridge rows."""
+    """Simulate pre-bridge writes; chunk SQL omits only bridge insertion."""
+    from markdown_vault_mcp.fts_index import _derive_folder, _fields_text
+
     conn = idx._conn()
     with conn:
         conn.execute("DELETE FROM notes_fts WHERE path = ?", (note.path,))
         conn.execute("DELETE FROM documents WHERE path = ?", (note.path,))
-        doc_id = idx._insert_document(conn.cursor(), note, "")
-        for chunk in note.chunks:
+        folder = _derive_folder(note.path)
+        doc_id = idx._insert_document(conn.cursor(), note, folder)
+        summary = _fields_text(note.frontmatter, idx._searchable_fields)
+        for i, chunk in enumerate(note.chunks):
             conn.execute(
                 "INSERT INTO sections(document_id, heading, heading_level, content, start_line) VALUES (?, ?, ?, ?, ?)",
                 (
@@ -1619,9 +1623,20 @@ def _legacy_upsert(idx: FTSIndex, note: ParsedNote) -> None:
                 ),
             )
             conn.execute(
-                "INSERT INTO notes_fts(path, title, folder, heading, content, summary) VALUES (?, ?, '', ?, ?, '')",
-                (note.path, note.title, chunk.heading or "", chunk.content),
+                "INSERT INTO notes_fts(path, title, folder, heading, content, summary) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    note.path,
+                    note.title,
+                    folder,
+                    chunk.heading or "",
+                    chunk.content,
+                    summary if i == 0 else "",
+                ),
             )
+        cur = conn.cursor()
+        idx._insert_tags(cur, doc_id, note)
+        idx._insert_aliases(cur, doc_id, note)
+        idx._insert_links(cur, doc_id, note)
 
 
 def _unbridged(conn: sqlite3.Connection) -> int:
@@ -1729,7 +1744,8 @@ class TestFtsRowidMapMigration:
         )
         idx.close()
 
-    def test_mismatched_generation_is_purged(self, tmp_path: Path) -> None:
+    def test_mismatched_generation_retains_keyword_hits(self, tmp_path: Path) -> None:
+        """An extra unbridged row must not cause live keyword rows to vanish."""
         db = tmp_path / "mismatch.db"
         idx = FTSIndex(db)
         _legacy_upsert(idx, make_note("a.md"))
@@ -1740,9 +1756,121 @@ class TestFtsRowidMapMigration:
         idx = FTSIndex(db)
         conn = idx._conn()
         assert _unbridged(conn) == 0
+        assert idx.query_documents(NoteQuery(query="content", scope="body")).total == 1
+        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 2
+        idx.delete_by_path("a.md")
         assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 0
+        idx.close()
+
+    def test_legacy_metadata_survives_repair(self, tmp_path: Path) -> None:
+        """The old writer's folder, configured summary and tags survive reopen."""
+        db = tmp_path / "metadata.db"
+        options = {
+            "indexed_frontmatter_fields": ["tags"],
+            "searchable_frontmatter_fields": ["summary"],
+        }
+        idx = FTSIndex(db, **options)
+        _legacy_upsert(
+            idx,
+            make_note(
+                "folder/a.md",
+                frontmatter={"tags": ["blue"], "summary": "metakey"},
+                chunks=[
+                    Chunk(
+                        heading="First", heading_level=1, content="alpha", start_line=0
+                    ),
+                    Chunk(
+                        heading="Second",
+                        heading_level=1,
+                        content="needle",
+                        start_line=5,
+                    ),
+                ],
+            ),
+        )
+        idx.close()
+        idx = FTSIndex(db, **options)
+        conn = idx._conn()
+        assert [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT folder, summary FROM notes_fts ORDER BY rowid"
+            )
+        ] == [("folder", "metakey"), ("folder", "")]
+        assert [
+            tuple(r)
+            for r in conn.execute("SELECT tag_key, tag_value FROM document_tags")
+        ] == [("tags", "blue")]
         assert (
-            conn.execute("SELECT count(*) FROM notes_fts_rowid_map").fetchone()[0] == 0
+            idx.query_documents(
+                NoteQuery(
+                    query="metakey",
+                    scope="metadata",
+                    filters={"tags": "blue"},
+                    folder="folder",
+                )
+            ).total
+            == 1
+        )
+        assert (
+            idx.query_documents(NoteQuery(query="needle", scope="body")).items[0][
+                "sections"
+            ][0]["heading"]
+            == "Second"
+        )
+        assert _unbridged(conn) == 0
+        idx.close()
+
+    def test_repair_uses_rowid_lookup_for_fts(self) -> None:
+        """Repair filters the compact inventory before fetching FTS content."""
+        idx = FTSIndex(":memory:")
+        _legacy_upsert(idx, make_note("a.md"))
+        conn = idx._conn()
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        idx._repair_fts_rowid_map(conn)
+        conn.set_trace_callback(None)
+        insert = next(s for s in statements if "INSERT INTO notes_fts_rowid_map" in s)
+        plan = [r[3] for r in conn.execute("EXPLAIN QUERY PLAN " + insert)]
+        assert plan.index("SCAN z") < next(
+            i for i, row in enumerate(plan) if "SCAN f VIRTUAL TABLE INDEX" in row
+        )
+        assert any("SCAN f VIRTUAL TABLE INDEX 0:=" in row for row in plan)
+        idx.close()
+
+    def test_empty_replacement_purges_stale_rows(self, tmp_path: Path) -> None:
+        """An empty new generation must not acquire old keyword rows."""
+        db = tmp_path / "empty.db"
+        idx = FTSIndex(db)
+        _legacy_upsert(idx, make_note("a.md"))
+        idx.upsert_note(make_note("a.md", chunks=[]))
+        idx.close()
+        idx = FTSIndex(db)
+        conn = idx._conn()
+        assert _unbridged(conn) == 0
+        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM documents").fetchone()[0] == 1
+        idx.close()
+
+    def test_tombstone_purges_stale_rows(self, tmp_path: Path) -> None:
+        """Repair keeps the tombstone and removes the prior unbridged generation."""
+        from markdown_vault_mcp.types import SkippedFile
+
+        db = tmp_path / "tombstone.db"
+        idx = FTSIndex(db)
+        _legacy_upsert(idx, make_note("a.md"))
+        idx.upsert_tombstone(
+            SkippedFile(path="a.md", category="too_large", detail="large"),
+            content_hash="h",
+            modified_at=1.0,
+        )
+        idx.close()
+        idx = FTSIndex(db)
+        assert idx.get_tombstone("a.md") is not None
+        assert _unbridged(idx._conn()) == 0
+        assert (
+            idx._conn().execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0]
+            == 0
         )
         idx.close()
 

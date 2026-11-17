@@ -991,8 +991,9 @@ class FTSIndex:
     def _repair_fts_rowid_map(self, conn: sqlite3.Connection) -> None:
         """Repair unbridged FTS rows after summary migration on writable open.
 
-        Bridge only complete generations whose chunk count matches sections;
-        discard the remaining unprovable rows. Healthy opens read compact tables.
+        Bridge legacy rows for unmapped nonempty notes; purge stale rows.
+        Healthy opens read compact tables. CROSS JOIN keeps the docsize scan
+        outermost so repair fetches FTS content only for unbridged rowids.
 
         Args:
             conn: The primary connection inside schema initialization.
@@ -1007,21 +1008,17 @@ class FTSIndex:
             bridged = conn.execute(
                 """
                 INSERT INTO notes_fts_rowid_map (document_id, fts_rowid)
-                WITH un AS MATERIALIZED (
-                    SELECT z.id AS r, f.path AS path
-                    FROM notes_fts_docsize z JOIN notes_fts f ON f.rowid = z.id
-                    WHERE z.id NOT IN (SELECT fts_rowid FROM notes_fts_rowid_map)
-                ), counts AS MATERIALIZED (
-                    SELECT path, COUNT(*) AS n FROM un GROUP BY path
-                )
-                SELECT d.id, un.r FROM un
-                JOIN counts c ON c.path = un.path
-                JOIN documents d ON d.path = un.path
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM notes_fts_rowid_map m WHERE m.document_id = d.id
-                ) AND c.n = (
-                    SELECT COUNT(*) FROM sections s WHERE s.document_id = d.id
-                )
+                SELECT d.id, z.id
+                FROM notes_fts_docsize z
+                CROSS JOIN notes_fts f ON f.rowid = z.id
+                JOIN documents d ON d.path = f.path
+                WHERE z.id NOT IN (SELECT fts_rowid FROM notes_fts_rowid_map)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM notes_fts_rowid_map m WHERE m.document_id = d.id
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM sections s WHERE s.document_id = d.id
+                  )
                 """
             ).rowcount
             conn.execute(
