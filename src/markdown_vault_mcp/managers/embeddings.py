@@ -247,7 +247,7 @@ class EmbeddingsManager:
         rebuild = self.rebuild_after_fault if self._slot.owns_files else None
         return self._slot.writable(rebuild=rebuild)
 
-    def rebuild_after_fault(self) -> int:
+    def rebuild_after_fault(self, *, _strict: bool = False) -> int:
         """Rebuild the store after it would not open: of another identity, or corrupt.
 
         The store is opened again to tell the two apart. One of another
@@ -259,6 +259,9 @@ class EmbeddingsManager:
         found damaged after it opened is condemned first, here on the
         writer thread, and then takes the same cold build (#1881).
 
+        Args:
+            _strict: Report provider failures after writer-detected corruption.
+
         Returns:
             Number of chunks embedded.
 
@@ -268,11 +271,12 @@ class EmbeddingsManager:
                 publishes no generation.
             StoreOpenError: If the store still will not open, or a damaged
                 one cannot be moved aside.
+            RuntimeError: If writer recovery has failed provider batches.
         """
         self._require_vectors()
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
-        self._slot.condemn_suspect()
+        recovering = self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
         except StoreIncompatibleError:
@@ -281,7 +285,7 @@ class EmbeddingsManager:
         # only this check finds it; the cold build would call back here.
         if store.count and not self._slot.answers(store):
             return self._rebuild_changed_identity()
-        return self.build_embeddings()
+        return self.build_embeddings(_recovery=_strict and recovering)
 
     def _rebuild_changed_identity(
         self, *, donor: Donor | None = None, reuse_own: bool = False
@@ -344,6 +348,7 @@ class EmbeddingsManager:
         force: bool = False,
         donor: Donor | None = None,
         reuse_own: bool = False,
+        _recovery: bool = False,
     ) -> int:
         """Build or converge the vector index against the FTS index.
 
@@ -369,6 +374,7 @@ class EmbeddingsManager:
                 a populated store converges instead.
             reuse_own: Let the full build copy the store's own matching
                 vectors; off by default, so ``force`` re-embeds every chunk.
+            _recovery: Report provider batch failures after condemning damage.
 
         Returns:
             Number of chunks successfully embedded and saved; chunks copied
@@ -393,6 +399,7 @@ class EmbeddingsManager:
                 stay (#1505).
             EmbeddingsRebuildFailedError: If a forced incompatible rebuild
                 publishes no generation.
+            RuntimeError: If a damaged store's replacement is incomplete.
         """
         self._require_vectors()
         if self._embedding_provider is None or self._slot is None:
@@ -431,6 +438,11 @@ class EmbeddingsManager:
         finally:
             if upgrade is not None:
                 upgrade.close()
+        if _recovery and outcome.failed_batches:
+            raise RuntimeError(
+                "Vector recovery is incomplete; retry build_embeddings "
+                "when the embedding provider is available."
+            )
         return outcome.embedded
 
     def _full_build(
@@ -647,7 +659,7 @@ class EmbeddingsManager:
             )
         result = self.reconcile_paths(vectors, None, site="converge")
         if self._slot is not None and self._slot.has_suspect():
-            return self.rebuild_after_fault()
+            return self.rebuild_after_fault(_strict=True)
         if result.embedded or result.reused or result.removed or result.retokened:
             vectors.checkpoint()
         if result.kept:
@@ -824,7 +836,7 @@ class EmbeddingsManager:
         vectors = self._open_store()
         self.reconcile_paths(vectors, paths, site="flush")
         if self._slot is not None and self._slot.has_suspect():
-            self.rebuild_after_fault()
+            self.rebuild_after_fault(_strict=True)
             return
         # Checkpoint even when every row was current: a prior checkpoint may
         # have failed after the rows were published, and this retry persists them.
@@ -873,7 +885,7 @@ class EmbeddingsManager:
         """Recover a suspect store after keyword work, unless deferred."""
         if self._vectors_deferred or self._slot is None or not self._slot.has_suspect():
             return
-        self.rebuild_after_fault()
+        self.rebuild_after_fault(_strict=True)
 
     def take_embedding_retries(self) -> set[str]:
         """Return and forget the paths the provider failed for, at any site.

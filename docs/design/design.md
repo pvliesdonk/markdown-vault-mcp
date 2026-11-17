@@ -5051,7 +5051,9 @@ another one, and is the explicit switch of choice C.
     and rebuilds it in the same job after keyword work finishes. This includes
     the stale or excluded vector purge during `build_index`. SQLite classifies
     corruption in write transactions as well as reads. Recovery runs inline;
-    a failed rebuild follows the existing cold-build failure behavior (#1976).
+    after condemnation a provider batch failure fails the job and directs
+    the operator to retry `build_embeddings` (#1976). An ordinary cold build
+    retains its existing failure behavior.
 
   A slot that cannot condemn preserves per-document handling of write errors;
   corruption found in a read still raises `StoreCorruptError`. A job that

@@ -165,7 +165,8 @@ class TestAWriterJob:
             ("build_index", False),
         ],
     )
-    def test_writer_job_recovers_damaged_store(
+    # One matrix verifies all writer boundaries and physical corruption.
+    def test_writer_job_recovers_damaged_store(  # noqa: C901, PLR0915, RUF100
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -244,36 +245,6 @@ class TestAWriterJob:
                 p.name for p in root.glob("*.md")
             }
             assert "writer_job_failed" not in caplog.text
-        finally:
-            vault.close()
-
-    def test_failed_recovery_can_be_rebuilt_explicitly(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        root = _source(tmp_path)
-        (root / "gamma.md").write_text("# Gamma\n\nUnchanged blueberries.\n")
-        vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
-        provider = vault._embedding_provider
-        assert provider is not None
-        original = provider.embed
-
-        def failing(_texts: list[str]) -> list[list[float]]:
-            raise RuntimeError("provider unavailable")
-
-        try:
-            _damage(tmp_path)
-            monkeypatch.setattr(provider, "embed", failing)
-            (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
-            assert vault.index.reindex().modified == 1
-            assert len(_aside(tmp_path)) == 1
-            assert not metadata_by_path(vault._vectors)
-            monkeypatch.setattr(provider, "embed", original)
-            vault.index.build_embeddings()
-            assert set(metadata_by_path(vault._vectors)) == {
-                "alpha.md",
-                "beta.md",
-                "gamma.md",
-            }
         finally:
             vault.close()
 
@@ -441,6 +412,70 @@ class TestAWriterJob:
             vault.close()
             if store is not None:
                 store.close()
+
+    @pytest.mark.parametrize("partial", [False, True])
+    @pytest.mark.parametrize("trigger", ["writer", "read"])
+    def test_failed_recovery_can_be_rebuilt_explicitly(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        partial: bool,
+        trigger: str,
+    ) -> None:
+        root = _source(tmp_path)
+        (root / "gamma.md").write_text("# Gamma\n\nUnchanged blueberries.\n")
+        vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+        calls = 0
+
+        def failing(texts: list[str]) -> list[list[float]]:
+            nonlocal calls
+            if trigger == "read" and texts == ["apples"]:
+                return original(texts)
+            calls += 1
+            if partial and calls != 2:
+                return original(texts)
+            raise RuntimeError("provider unavailable")
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", failing)
+            if trigger == "writer":
+                (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+                with pytest.raises(RuntimeError, match="build_embeddings"):
+                    vault.index.reindex()
+            else:
+                vault.reader.search("apples", mode="semantic")
+            assert len(_aside(tmp_path)) == 1
+            assert len(metadata_by_path(vault._vectors)) == (2 if partial else 0)
+            monkeypatch.setattr(provider, "embed", original)
+            vault.index.build_embeddings()
+            assert set(metadata_by_path(vault._vectors)) == {
+                "alpha.md",
+                "beta.md",
+                "gamma.md",
+            }
+        finally:
+            vault.close()
+
+    @pytest.mark.parametrize("complete", [False, True])
+    def test_recovery_preserves_empty_build_behavior(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, complete: bool
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            root = _source(tmp_path)
+            (root / "keep.txt").write_text("Keep the vault nonempty.")
+            (root / "alpha.md").unlink()
+            (root / "beta.md").unlink()
+            vault.index.reindex()
+            assert vault._vector_slot.mark_suspect(vault._vectors)
+            monkeypatch.setattr(vault._fts, "is_build_walk_complete", lambda: complete)
+            assert vault._index_mgr._embeddings.rebuild_after_fault(_strict=True) == 0
+        finally:
+            vault.close()
 
 
 PROVIDER = MockEmbeddingProvider(dim=3)
