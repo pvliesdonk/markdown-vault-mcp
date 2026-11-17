@@ -273,8 +273,8 @@ class PushScheduler:
             return fn(git_root)
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
-            if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
-                detail = f"{detail} stderr={exc.stderr}"
+            if isinstance(exc, subprocess.CalledProcessError):
+                detail = f"{type(exc).__name__}: exit status {exc.returncode} stderr={exc.stderr or ''}"
             detail = self._redact(detail)
         raise PushBackendError(detail)
 

@@ -30,9 +30,10 @@ def make_scheduler(
     *,
     push: Callable[[Path], None] | None = None,
     has_unpushed: Callable[[Path], bool] | None = None,
+    token: str | None = None,
 ) -> tuple[PushScheduler, SyncHealthTracker]:
     lock = threading.Lock()
-    bootstrap = RepoBootstrap(lock=lock, token=None, username="user", repo_url=None)
+    bootstrap = RepoBootstrap(lock=lock, token=token, username="user", repo_url=None)
     bootstrap.git_root = root
     health = SyncHealthTracker()
     scheduler = PushScheduler(
@@ -140,10 +141,6 @@ def test_startup_backend_failure_is_sanitized_and_retried(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, site: str, failure: str
 ) -> None:
     secret = "fixture-secret"
-    lock = threading.Lock()
-    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
-    bootstrap.git_root = tmp_path
-    health = SyncHealthTracker()
 
     def fail(_path: Path) -> None:
         if failure == "process":
@@ -153,12 +150,9 @@ def test_startup_backend_failure_is_sanitized_and_retried(
         raise ConnectionError(f"offline {secret}")
 
     push = Mock(side_effect=fail if site == "push" else None)
-    scheduler = PushScheduler(
-        lock=lock,
-        bootstrap=bootstrap,
-        health=health,
-        enable_push=True,
-        push_delay_s=0,
+    scheduler, health = make_scheduler(
+        tmp_path,
+        token=secret,
         push=push,
         has_unpushed=fail if site == "probe" else lambda _: True,
     )
@@ -221,10 +215,6 @@ def test_injected_push_failure_never_logs_secret(
     import logging
 
     secret = "fixture-secret"
-    lock = threading.Lock()
-    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
-    bootstrap.git_root = tmp_path
-    health = SyncHealthTracker()
 
     def fail(_path: Path) -> None:
         if failure == "process":
@@ -233,14 +223,7 @@ def test_injected_push_failure_never_logs_secret(
             )
         raise ConnectionError(f"offline {secret}")
 
-    scheduler = PushScheduler(
-        lock=lock,
-        bootstrap=bootstrap,
-        health=health,
-        enable_push=True,
-        push_delay_s=0,
-        push=fail,
-    )
+    scheduler, health = make_scheduler(tmp_path, token=secret, push=fail)
     scheduler.schedule_push()
     with caplog.at_level(logging.DEBUG):
         if route == "flush":
@@ -293,10 +276,6 @@ def test_injected_exception_has_no_original_context(
     tmp_path: Path, failure: str
 ) -> None:
     secret = "fixture-secret"
-    lock = threading.Lock()
-    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
-    bootstrap.git_root = tmp_path
-    health = SyncHealthTracker()
 
     def fail(_path: Path) -> None:
         if failure == "process":
@@ -305,14 +284,7 @@ def test_injected_exception_has_no_original_context(
             )
         raise ConnectionError(secret)
 
-    scheduler = PushScheduler(
-        lock=lock,
-        bootstrap=bootstrap,
-        health=health,
-        enable_push=True,
-        push_delay_s=0,
-        push=fail,
-    )
+    scheduler, _ = make_scheduler(tmp_path, token=secret, push=fail)
     scheduler.schedule_push()
     with pytest.raises(PushBackendError) as caught:
         scheduler.do_push()
@@ -337,10 +309,6 @@ def test_backend_process_rejection_preserves_sanitized_diagnostics(
     import logging
 
     secret = "fixture-secret"
-    lock = threading.Lock()
-    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
-    bootstrap.git_root = tmp_path
-    health = SyncHealthTracker()
 
     def fail(_path: Path) -> None:
         raise subprocess.CalledProcessError(
@@ -350,12 +318,9 @@ def test_backend_process_rejection_preserves_sanitized_diagnostics(
             stderr=f"rejected {stderr} for {secret}",
         )
 
-    scheduler = PushScheduler(
-        lock=lock,
-        bootstrap=bootstrap,
-        health=health,
-        enable_push=True,
-        push_delay_s=0,
+    scheduler, health = make_scheduler(
+        tmp_path,
+        token=secret,
         push=fail,
         has_unpushed=fail if site == "startup_probe" else lambda _: True,
     )
@@ -373,3 +338,20 @@ def test_backend_process_rejection_preserves_sanitized_diagnostics(
     assert secret not in caplog.text
     assert "***" in caplog.text
     assert "Traceback" not in caplog.text
+
+
+def test_backend_classifies_stderr_not_command_metadata(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    def fail(_path: Path) -> None:
+        raise subprocess.CalledProcessError(
+            1, ["/repos/non-fast-forward/hooks/push"], stderr="permission denied"
+        )
+
+    scheduler, health = make_scheduler(tmp_path, push=fail)
+    scheduler.schedule_push()
+    scheduler.do_push_safe()
+    snapshot = health.snapshot()
+    assert snapshot is not None
+    assert snapshot.reason == PUSH_REASON_PUSH_FAILED
+    assert "permission denied" in caplog.text
