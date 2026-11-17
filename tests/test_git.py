@@ -1398,118 +1398,43 @@ class TestGlobMetacharactersInNoteNames:
 
 
 class TestCommitterIdentityInCommit:
-    """Tests that commit_name and commit_email appear in git commit commands."""
+    """The configured committer reaches Git's persisted commit."""
 
-    def test_default_committer_in_commit_flags(self, git_repo: Path) -> None:
-        """_stage_and_commit uses default committer identity in -c flags."""
-
-        from unittest.mock import patch
-
-        recorded_cmds: list[list[str]] = []
-        original_run = subprocess.run
-
-        def recording_run(cmd: list[str], **kwargs):  # type: ignore[no-untyped-def]
-            recorded_cmds.append(list(cmd))
-            return original_run(cmd, **kwargs)
-
-        test_file = git_repo / "note.md"
-        test_file.write_text("# Note\n")
-
-        with patch("markdown_vault_mcp.git.subprocess.run", side_effect=recording_run):
-            from markdown_vault_mcp.git import _stage_and_commit
-
-            _stage_and_commit(git_repo, test_file, "write")
-
-        # Find the commit command (should have "commit" in it).
-        commit_cmd = None
-        for cmd in recorded_cmds:
-            if "commit" in cmd:
-                commit_cmd = cmd
-                break
-
-        assert commit_cmd is not None, "No commit command found"
-        # Verify the default -c flags are present.
-        assert "-c" in commit_cmd
-        assert "user.name=markdown-vault-mcp" in commit_cmd
-        assert "user.email=noreply@markdown-vault-mcp" in commit_cmd
-
-    def test_custom_committer_in_commit_flags(self, git_repo: Path) -> None:
-        """_stage_and_commit uses custom committer identity in -c flags."""
-
-        from unittest.mock import patch
-
-        recorded_cmds: list[list[str]] = []
-        original_run = subprocess.run
-
-        def recording_run(cmd: list[str], **kwargs):  # type: ignore[no-untyped-def]
-            recorded_cmds.append(list(cmd))
-            return original_run(cmd, **kwargs)
-
-        test_file = git_repo / "note.md"
-        test_file.write_text("# Note\n")
-
-        with patch("markdown_vault_mcp.git.subprocess.run", side_effect=recording_run):
-            from markdown_vault_mcp.git import _stage_and_commit
-
-            _stage_and_commit(
-                git_repo,
-                test_file,
-                "write",
-                commit_name="CustomBot",
-                commit_email="bot@example.com",
-            )
-
-        # Find the commit command.
-        commit_cmd = None
-        for cmd in recorded_cmds:
-            if "commit" in cmd:
-                commit_cmd = cmd
-                break
-
-        assert commit_cmd is not None
-        # Verify the custom -c flags are present.
-        assert "-c" in commit_cmd
-        assert "user.name=CustomBot" in commit_cmd
-        assert "user.email=bot@example.com" in commit_cmd
-
-    def test_strategy_passes_commit_identity_to_stage_and_commit(
-        self, git_repo: Path
+    @pytest.mark.parametrize(
+        ("name", "email", "expected"),
+        [
+            (None, None, "markdown-vault-mcp <noreply@markdown-vault-mcp>"),
+            ("CustomBot", "bot@example.com", "CustomBot <bot@example.com>"),
+        ],
+    )
+    def test_committer_identity_in_commit(
+        self, git_repo: Path, name: str | None, email: str | None, expected: str
     ) -> None:
-        """GitWriteStrategy passes commit_name and commit_email to _stage_and_commit."""
-        from unittest.mock import patch
-
-        recorded_calls: list[tuple] = []
-
-        def recording_stage_and_commit(
-            git_root,
-            path,
-            operation,
-            commit_name="default",
-            commit_email="default",
-            **_kwargs,
-        ):
-            recorded_calls.append(
-                (git_root, path, operation, commit_name, commit_email)
-            )
-
-        test_file = git_repo / "note.md"
-        test_file.write_text("# Note\n")
-
+        """Inspect the commit rather than recording a simulated invocation."""
+        note = git_repo / "identity.md"
+        note.write_text("# Note\n")
         strategy = GitWriteStrategy(
-            commit_name="BotName", commit_email="bot@test.local"
+            commit_name=name, commit_email=email, enable_push=False, git_lfs=False
         )
-
-        with patch(
-            "markdown_vault_mcp.git.strategy._stage_and_commit",
-            side_effect=recording_stage_and_commit,
-        ):
-            strategy(test_file, "# Note\n", "write")
-
-        # Verify the custom identity was passed.
-        assert len(recorded_calls) > 0
-        call = recorded_calls[0]
-        assert call[3] == "BotName"  # commit_name
-        assert call[4] == "bot@test.local"  # commit_email
+        try:
+            strategy(note, "# Note\n", "write")
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(git_repo),
+                    "show",
+                    "-s",
+                    "--format=%cn <%ce>",
+                    "HEAD",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert result.stdout.strip() == expected
+        finally:
+            strategy.close()
 
 
 class TestGitSyncOnce:
@@ -2459,6 +2384,50 @@ class TestRebaseInProgress:
         (git_repo / ".git" / "REBASE_HEAD").write_text(head_sha + "\n")
 
         assert conflict.rebase_in_progress(git_repo, env=None, token=None) is False
+
+    def test_real_interrupted_rebase_aborts_then_retries(
+        self, git_repo_pair: GitRepoPair, tmp_path: Path
+    ) -> None:
+        """The recovery helper restores local work before a public sync retry."""
+        from tests.fixtures.git import _run_git
+
+        local = git_repo_pair.local_path
+        other = tmp_path / "other"
+        _run_git(tmp_path, "clone", "-q", str(git_repo_pair.remote_path), str(other))
+        _run_git(other, "config", "user.name", "Test")
+        _run_git(other, "config", "user.email", "test@example.com")
+        (local / "README.md").write_text("local\n")
+        _run_git(local, "add", "README.md")
+        _run_git(local, "commit", "-qm", "local")
+        local_head = _run_git(local, "rev-parse", "HEAD").strip()
+        (other / "README.md").write_text("remote\n")
+        _run_git(other, "add", "README.md")
+        _run_git(other, "commit", "-qm", "remote")
+        remote_head = _run_git(other, "rev-parse", "HEAD").strip()
+        _run_git(other, "push")
+        _run_git(local, "fetch")
+        halted = subprocess.run(
+            ["git", "-C", str(local), "rebase", "origin/main"], capture_output=True
+        )
+        assert halted.returncode != 0
+        strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
+        try:
+            assert conflict.rebase_in_progress(local, env=None, token=None)
+            assert conflict.abort_in_progress_rebase(local, env=None, token=None)
+            assert not conflict.rebase_in_progress(local, env=None, token=None)
+            assert _run_git(local, "rev-parse", "HEAD").strip() == local_head
+            assert (local / "README.md").read_text() == "local\n"
+            assert strategy.sync_once(local)
+            _run_git(local, "merge-base", "--is-ancestor", remote_head, "HEAD")
+            assert (local / "README.md").read_text().endswith("remote")
+            siblings = list(local.glob("README.conflict-mcp-*.md"))
+            assert len(siblings) == 1 and siblings[0].read_text().endswith("local")
+            assert not conflict.rebase_in_progress(local, env=None, token=None)
+        finally:
+            strategy.close()
+            subprocess.run(
+                ["git", "-C", str(local), "rebase", "--abort"], capture_output=True
+            )
 
 
 class TestGitPullLoop:
