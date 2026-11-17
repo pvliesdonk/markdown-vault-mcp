@@ -242,8 +242,8 @@ def test_move_endpoint_relevance(
 
 
 def test_temp_replacement_delivers_move_endpoints(tmp_path: Path) -> None:
-    """A real replacement delivers its source and destination to the handler."""
-    vault = tmp_path / "vault"
+    """A real replacement from a hidden temp file reaches on_change (#2063)."""
+    vault = tmp_path.resolve() / "vault"
     notes = vault / "notes"
     notes.mkdir(parents=True)
     target = notes / "today.md"
@@ -251,6 +251,7 @@ def test_temp_replacement_delivers_move_endpoints(tmp_path: Path) -> None:
     target.write_bytes(b"old note")
     source.write_bytes(b"replacement note")
     delivered = threading.Event()
+    changed = threading.Event()
     original = _VaultEventHandler.on_any_event
 
     def record_move(handler: _VaultEventHandler, event: FileSystemEvent) -> None:
@@ -262,12 +263,13 @@ def test_temp_replacement_delivers_move_endpoints(tmp_path: Path) -> None:
             delivered.set()
         original(handler, event)
 
-    watcher = VaultFileWatcher(vault, lambda: None, debounce_s=0.1)
+    watcher = VaultFileWatcher(vault, changed.set, debounce_s=0.1)
     with patch.object(_VaultEventHandler, "on_any_event", record_move):
         try:
             watcher.start()
             source.replace(target)
             assert delivered.wait(timeout=2.0)
+            assert changed.wait(timeout=2.0), "hidden-temp replacement must reindex"
         finally:
             watcher.stop()
 
