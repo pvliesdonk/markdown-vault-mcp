@@ -138,7 +138,8 @@ Resolution returns the original `reference`, `status`, `detail` and optional
 A rename does not update a reference. Without a per-file ID, rename and
 deletion cannot be distinguished. A path reused for other bytes reports
 `changed` when a saved digest proves the difference. Path-only references
-cannot establish content identity. A digest proves matching bytes, not file
+cannot establish content identity: a size change reports `changed`, but a
+same-size edit remains `unverified`. A digest proves matching bytes, not file
 lineage or retention.
 A saved path that becomes a directory, or a file type no longer admitted by
 the attachment allowlist, raises `InvalidRequestError` instead of a status.
