@@ -475,8 +475,7 @@ Each entry names the function and the design section that decides it.
   `[[Note|Alias]]`). Kept deliberately. design.md § Link Extraction (Alias
   resolution).
 - Markdown and reference links prefer an existing source-relative path before
-  the vault-wide lookup, preserving ordinary Markdown behavior. Obsidian uses
-  vault-wide precedence even when a local path exists. Explicit `/`, `./`, and
+  the vault-wide lookup, preserving ordinary Markdown behavior. Explicit `/`, `./`, and
   `../` destinations retain their stated location; no alias or extension is
   inferred. [pins: tests/test_links_markdown_vault_fallback.py::test_reported_destinations, tests/test_links_markdown_vault_fallback.py::test_local_path_wins_and_refresh_converges, tests/test_links_markdown_vault_fallback.py::test_explicit_prefix_does_not_fallback]
 - `_insert_aliases`: honours the scalar `alias` key that Obsidian deprecated

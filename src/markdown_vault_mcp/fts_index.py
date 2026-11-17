@@ -2565,7 +2565,8 @@ class FTSIndex:
         ``document_aliases`` table — if a document declares an ``aliases``
         frontmatter field containing the wikilink stem, the link resolves to
         that document (e.g. ``[[AI]]`` resolves to a document with
-        ``aliases: [AI]``); the tie-break among several is the path rule's.
+        ``aliases: [AI]``); the tie-break among several follows the path rule
+        by analogy, since Obsidian's alias tie-break was not observed.
 
         Wikilinks with an explicit relative prefix (``./`` or ``../``) are
         skipped; they are resolved relative to the source document at scan time
