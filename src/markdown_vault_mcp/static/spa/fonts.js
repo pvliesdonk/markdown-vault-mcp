@@ -7,8 +7,8 @@
 // docs/design/reference/mcp-apps-fonts.md.
 (() => {
   const faces = [
-    ["Newsreader", "200 800", "/*@@B64:fonts/newsreader-latin-opsz-normal.woff2@@*/"],
-    ["Public Sans", "100 900", "/*@@B64:fonts/public-sans-latin-wght-normal.woff2@@*/"],
+    ["Newsreader", "400 600", "/*@@B64:fonts/newsreader-latin-opsz-normal.woff2@@*/"],
+    ["Public Sans", "400 700", "/*@@B64:fonts/public-sans-latin-wght-normal.woff2@@*/"],
     ["IBM Plex Mono", "400", "/*@@B64:fonts/IBMPlexMono-Regular-Latin1.woff2@@*/"],
     ["IBM Plex Mono", "500", "/*@@B64:fonts/IBMPlexMono-Medium-Latin1.woff2@@*/"],
     ["IBM Plex Mono", "600", "/*@@B64:fonts/IBMPlexMono-SemiBold-Latin1.woff2@@*/"],

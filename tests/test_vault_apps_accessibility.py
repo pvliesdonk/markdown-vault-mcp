@@ -125,6 +125,15 @@ def test_embedded_fonts_load_under_strict_csp(page: Page) -> None:
     assert frame.evaluate(
         "() => [...document.fonts].length === 5 && [...document.fonts].every(f => f.status === 'loaded')"
     )
+    assert frame.evaluate(
+        "() => [...document.fonts].map(f => [f.family, f.weight])"
+    ) == [
+        ["Newsreader", "400 600"],
+        ["Public Sans", "400 700"],
+        ["IBM Plex Mono", "400"],
+        ["IBM Plex Mono", "500"],
+        ["IBM Plex Mono", "600"],
+    ]
     assert frame.evaluate("""() => [
         document.fonts.check('600 17px Newsreader'),
         document.fonts.check('500 13px "Public Sans"'),

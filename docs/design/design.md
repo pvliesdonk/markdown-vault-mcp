@@ -6390,7 +6390,9 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 
 **Web fonts** are embedded as binary `FontFace` sources by `scripts/build_spa.py`.
 Newsreader, Public Sans and IBM Plex Mono use Latin files with system fallback
-for other glyphs. Full OFL notices accompany the assets and are included in
+for other glyphs. Variable faces retain their original files but advertise
+Newsreader weights 400–600 and Public Sans 400–700, matching the earlier
+stylesheet. Full OFL notices accompany the assets and are included in
 the served HTML. IBM's own unmodified files preserve its reserved name. The
 [CSP reference](reference/mcp-apps-fonts.md) records the browser behavior.
 
