@@ -164,3 +164,51 @@ Screen readers now announce the search box in the [vault explorer](https://pvlie
 ### Contributors
 
 Every fix in this release except the type marker came from [@salmonumbrella](https://github.com/salmonumbrella), who sent the pull requests for issues the maintainer had filed.
+
+## v6.1.3
+
+This release makes a Git-backed vault say when its working tree holds changes the server did not commit, such as a write a crash interrupted. The commit subject of a rename names the note and where it went. A new `admin repair-log` command removes the frontmatter blocks that 4.1.0 stacked in `log.md` files. The Git guide now covers recurring conflicts on append-only notes. Nothing needs to change on upgrade; see [Upgrading](#upgrading).
+
+### Upgrading
+
+No step is required.
+
+- **If your Git-backed vault already holds uncommitted changes when the server starts:** startup now logs `git_worktree_dirty` and keeps reporting `uncommitted_changes` until the tree is clean. Commit or resolve the changes to clear it ([#1678](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678)).
+- **If something reads commit subjects, such as a script over `git log` or `get_history`:** a rename now commits as `rename: <old> -> <new>` instead of `rename: N files` ([#1676](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676)).
+
+**Clients:** nothing beyond reconnecting; the tool surface is unchanged. The `remote` diagnostic on write-tool results can now carry `reason=uncommitted_changes`.
+
+**State:** kept. The index is not rebuilt. Legacy `log.md` files stay as they are until you run `admin repair-log` on them.
+
+**Security posture:** none. The repair command runs from a shell on the vault's host, never from an MCP client.
+
+### Uncommitted changes at startup
+
+A write lands on disk before the server commits it. If the process dies in between, the file stays modified, and on the next start the server "neither commits it nor says it is there" ([#1678](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678)).
+
+Startup now inspects the repository's working tree and staging area in both Git modes. When it finds changes it logs `git_worktree_dirty`, and `sync_health()` reports `reason=uncommitted_changes`, which also reaches the `remote` diagnostic on write-tool results. Only a clean tree clears the warning. A successful push or pull alone does not. The server cannot tell a crash from an operator's own edits, so it never commits or discards these changes itself. Changes inside submodules and repositories nested in the vault are left out, since the server never writes there ([#2099](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2099)). The [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/#uncommitted-files-at-startup) describes what to do.
+
+### Rename commits name the note
+
+A rename with `update_links=True` committed as `rename: N files`, counting the backlinks it rewrote. The owner reported a rename that committed as "'21 files' of which 1 is the rename and the rest is corrected backlinks and index and log" ([#1676](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676)).
+
+A single-note rename now commits as `rename: notes/old.md -> notes/new.md`. The rewritten backlinks and refreshed OKF listings stay in the same commit. With OKF maintenance on, a single-note `delete` also names its note now, as `write`, `edit` and `append` already did ([#2115](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2115)). A `move_folder` of several files still commits as `move_folder: N files`; [#2139](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2139) tracks that case. See [What a commit covers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/#what-a-commit-covers).
+
+### Repairing stacked log frontmatter
+
+Vaults that ran 4.1.0 or 4.2.0-rc.0 with `OKF_WRITE` and a `required_frontmatter` setting have `log.md` files carrying one frontmatter block per write, eighteen of them in one live folder. A later fix stopped the growth, but the extra blocks stay in the body, where every reader shows them and the index stores them as content ([#1403](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403)).
+
+`markdown-vault-mcp admin repair-log PATH` previews the exact bytes it would remove from one log. Running the printed `--apply <etag>` command removes them after saving the complete original as `log.md.frontmatter-repair.bak`. Apply refuses if the log changed since the preview, and refuses while a server holds the on-disk index, so stop the server first. Identical blocks can be written on purpose, so review the preview before you apply. Library callers get the same two steps on `Vault.writer` ([#2130](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2130)). The [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/#repairing-legacy-log-frontmatter) walks through it.
+
+### Documentation
+
+- **Append-only notes in a shared vault.** An operator in [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) wrote: "we have since set `merge=union` on our append-only notes, which removes this conflict class for us entirely and may be a reasonable documented recommendation for shared vaults." The Git guide now explains when the `union` merge driver fits, what it can silently get wrong, and where in a sync Git applies it ([#1294](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1294), [#2114](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2114), [guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/#recurring-conflicts-on-append-heavy-notes)).
+- **Configuration reference.** The notes on how the settings interact now sit under their own heading, in the same groups and order as the generated tables below them ([#1598](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1598), [#2125](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2125), [reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/configuration/#how-the-settings-interact)).
+
+### Indexing memory
+
+A cold build now writes each note to the keyword index as it is parsed and releases its body, instead of holding every parsed note until the scan ends. At 3,252 notes the PR measured the keyword stage's median resident memory at about 17 to 18 MiB lower, with the whole build's peak about the same ([#2106](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2106)). This is the first of several steps on [#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938), which stays open. Custom keyword backends can opt in through the new `ListsNoteStates` protocol ([storage API](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/#build-state-listing)).
+
+### Contributors
+
+Every fix and guide change in this release came from pull requests by [@salmonumbrella](https://github.com/salmonumbrella), for issues the maintainer had filed. The append-only guidance answers a suggestion from [@FoundationOperations](https://github.com/FoundationOperations).

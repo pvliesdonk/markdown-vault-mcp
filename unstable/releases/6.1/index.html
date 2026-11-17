@@ -2897,6 +2897,100 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v613" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v6.1.3
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v6.1.3">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrading_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uncommitted-changes-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Uncommitted changes at startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rename-commits-name-the-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rename commits name the note
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repairing-stacked-log-frontmatter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repairing stacked log frontmatter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#indexing-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Indexing memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contributors_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2918,7 +3012,7 @@
 
 
 <h1 id="61">6.1<a class="headerlink" href="#61" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: d5d70571f8a91f81b0c1e451b5fd74a6b914f68b -->
+<!-- notes-range-end: d89a93f4d47ff3ee5ee7c266f3c2d47dec4d14af -->
 
 <!-- RELEASE-SUMMARY v6.1.0 START -->
 <p>This release brings the vault to the terminal. The <code>markdown-vault-mcp</code>
@@ -3273,6 +3367,115 @@ heading as "Context" while the first note loads, where it used to be empty
 <p>Every fix in this release except the type marker came from
 <a href="https://github.com/salmonumbrella">@salmonumbrella</a>, who sent the pull
 requests for issues the maintainer had filed.</p>
+<h2 id="v613">v6.1.3<a class="headerlink" href="#v613" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v6.1.3 START -->
+<p>This release makes a Git-backed vault say when its working tree holds changes
+the server did not commit, such as a write a crash interrupted. The commit
+subject of a rename names the note and where it went. A new <code>admin repair-log</code>
+command removes the frontmatter blocks that 4.1.0 stacked in <code>log.md</code> files.
+The Git guide now covers recurring conflicts on append-only notes. Nothing
+needs to change on upgrade; see <a href="#upgrading">Upgrading</a>.</p>
+<!-- RELEASE-SUMMARY v6.1.3 END -->
+
+<h3 id="upgrading_3">Upgrading<a class="headerlink" href="#upgrading_3" title="Permanent link">&para;</a></h3>
+<p>No step is required.</p>
+<ul>
+<li><strong>If your Git-backed vault already holds uncommitted changes when the server
+  starts:</strong> startup now logs <code>git_worktree_dirty</code> and keeps reporting
+  <code>uncommitted_changes</code> until the tree is clean. Commit or resolve the changes
+  to clear it (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678">#1678</a>).</li>
+<li><strong>If something reads commit subjects, such as a script over <code>git log</code> or
+  <code>get_history</code>:</strong> a rename now commits as <code>rename: &lt;old&gt; -&gt; &lt;new&gt;</code> instead of
+  <code>rename: N files</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676">#1676</a>).</li>
+</ul>
+<p><strong>Clients:</strong> nothing beyond reconnecting; the tool surface is unchanged. The
+<code>remote</code> diagnostic on write-tool results can now carry
+<code>reason=uncommitted_changes</code>.</p>
+<p><strong>State:</strong> kept. The index is not rebuilt. Legacy <code>log.md</code> files stay as they
+are until you run <code>admin repair-log</code> on them.</p>
+<p><strong>Security posture:</strong> none. The repair command runs from a shell on the
+vault's host, never from an MCP client.</p>
+<h3 id="uncommitted-changes-at-startup">Uncommitted changes at startup<a class="headerlink" href="#uncommitted-changes-at-startup" title="Permanent link">&para;</a></h3>
+<p>A write lands on disk before the server commits it. If the process dies in
+between, the file stays modified, and on the next start the server "neither
+commits it nor says it is there"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678">#1678</a>).</p>
+<p>Startup now inspects the repository's working tree and staging area in both
+Git modes. When it finds changes it logs <code>git_worktree_dirty</code>, and
+<code>sync_health()</code> reports <code>reason=uncommitted_changes</code>, which also reaches the
+<code>remote</code> diagnostic on write-tool results. Only a clean tree clears the
+warning. A successful push or pull alone does not. The server cannot tell a
+crash from an operator's own edits, so it never commits or discards these
+changes itself. Changes inside submodules and repositories nested in the vault
+are left out, since the server never writes there
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2099">#2099</a>). The
+<a href="../../use/git-integration/#uncommitted-files-at-startup">Git integration guide</a>
+describes what to do.</p>
+<h3 id="rename-commits-name-the-note">Rename commits name the note<a class="headerlink" href="#rename-commits-name-the-note" title="Permanent link">&para;</a></h3>
+<p>A rename with <code>update_links=True</code> committed as <code>rename: N files</code>, counting the
+backlinks it rewrote. The owner reported a rename that committed as "'21 files' of which 1 is the
+rename and the rest is corrected backlinks and index and log"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676">#1676</a>).</p>
+<p>A single-note rename now commits as <code>rename: notes/old.md -&gt; notes/new.md</code>.
+The rewritten backlinks and refreshed OKF listings stay in the same commit.
+With OKF maintenance on, a single-note <code>delete</code> also names its note now, as
+<code>write</code>, <code>edit</code> and <code>append</code> already did
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2115">#2115</a>).
+A <code>move_folder</code> of several files still commits as <code>move_folder: N files</code>;
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2139">#2139</a> tracks
+that case. See
+<a href="../../use/git-integration/#what-a-commit-covers">What a commit covers</a>.</p>
+<h3 id="repairing-stacked-log-frontmatter">Repairing stacked log frontmatter<a class="headerlink" href="#repairing-stacked-log-frontmatter" title="Permanent link">&para;</a></h3>
+<p>Vaults that ran 4.1.0 or 4.2.0-rc.0 with <code>OKF_WRITE</code> and a
+<code>required_frontmatter</code> setting have <code>log.md</code> files carrying one frontmatter
+block per write, eighteen of them in one live folder. A later fix stopped
+the growth, but the extra blocks stay in the body, where every reader shows
+them and the index stores them as content
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403">#1403</a>).</p>
+<p><code>markdown-vault-mcp admin repair-log PATH</code> previews the exact bytes it would
+remove from one log. Running the printed <code>--apply &lt;etag&gt;</code> command removes them
+after saving the complete original as <code>log.md.frontmatter-repair.bak</code>. Apply
+refuses if the log changed since the preview, and refuses while a server holds
+the on-disk index, so stop the server first. Identical blocks can be written on
+purpose, so review the preview before you apply. Library callers get the same
+two steps on <code>Vault.writer</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2130">#2130</a>). The
+<a href="../../use/okf/#repairing-legacy-log-frontmatter">OKF guide</a> walks through it.</p>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Append-only notes in a shared vault.</strong> An operator in
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287">#1287</a>
+  wrote: "we have since set <code>merge=union</code> on our append-only notes, which
+  removes this conflict class for us entirely and may be a reasonable
+  documented recommendation for shared vaults." The Git guide now explains
+  when the <code>union</code> merge driver fits, what it can silently get wrong, and
+  where in a sync Git applies it
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1294">#1294</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2114">#2114</a>,
+  <a href="../../use/git-integration/#recurring-conflicts-on-append-heavy-notes">guide</a>).</li>
+<li><strong>Configuration reference.</strong> The notes on how the settings interact now sit
+  under their own heading, in the same groups and order as the generated
+  tables below them
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1598">#1598</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2125">#2125</a>,
+  <a href="../../reference/configuration/#how-the-settings-interact">reference</a>).</li>
+</ul>
+<h3 id="indexing-memory">Indexing memory<a class="headerlink" href="#indexing-memory" title="Permanent link">&para;</a></h3>
+<p>A cold build now writes each note to the keyword index as it is parsed and
+releases its body, instead of holding every parsed note until the scan ends.
+At 3,252 notes the PR measured the keyword stage's median resident memory at
+about 17 to 18 MiB lower, with the whole build's peak about the same
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2106">#2106</a>). This is
+the first of several steps on
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938">#1938</a>, which
+stays open. Custom keyword backends can opt in through the new
+<code>ListsNoteStates</code> protocol (<a href="../../reference/api/storage/#build-state-listing">storage API</a>).</p>
+<h3 id="contributors_1">Contributors<a class="headerlink" href="#contributors_1" title="Permanent link">&para;</a></h3>
+<p>Every fix and guide change in this release came from pull requests by
+<a href="https://github.com/salmonumbrella">@salmonumbrella</a>, for issues the
+maintainer had filed. The append-only guidance answers a suggestion from
+<a href="https://github.com/FoundationOperations">@FoundationOperations</a>.</p>
 <!-- PATCH-RELEASES-END -->
 
 
