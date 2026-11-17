@@ -129,6 +129,7 @@ _CONTEXT_FOLDER_PEERS_LIMIT = 20
 
 #: Row type for the OKF ranking downweight — any channel row with path + score.
 _RankT = TypeVar("_RankT", bound=_PathScorableRow)
+_CandidateT = TypeVar("_CandidateT")
 
 
 def _rrf_accumulate(
@@ -631,10 +632,7 @@ class SearchManager:
             else:
                 plain[key] = value
         if "stale" in okf_filters:
-            stale = okf_filters["stale"]
-            if stale is None:
-                raise InvalidRequestError("stale filter must be true or false")
-            parse_stale_filter(stale)
+            parse_stale_filter(cast("str", okf_filters["stale"]))
         return (plain or None), okf_filters
 
     def _path_matches_okf(self, path: str, okf_filters: dict[str, str | None]) -> bool:
@@ -742,6 +740,25 @@ class SearchManager:
         if not filters and not okf_filters:
             return candidate_limit
         return max(candidate_limit * 4, 200)
+
+    @staticmethod
+    def _retrieve_candidates(
+        fetch: Callable[[int], list[_CandidateT]],
+        candidate_limit: int,
+        *,
+        exhaust: bool,
+    ) -> tuple[list[_CandidateT], int]:
+        """Expand a ranked pool to exhaustion when missing type must be found.
+
+        The full pool preserves ranking after filtering, including later rows
+        boosted by the existing ranking stages. Other filters keep their
+        established bounded candidate behavior.
+        """
+        while True:
+            rows = fetch(candidate_limit)
+            if not exhaust or len(rows) < candidate_limit:
+                return rows, candidate_limit
+            candidate_limit *= 2
 
     def _post_filter_semantic_rows(
         self,
@@ -902,7 +919,7 @@ class SearchManager:
         *,
         limit: int = 10,
         mode: Literal["keyword", "semantic", "hybrid"] | None = None,
-        filters: dict[str, str | None] | None = None,
+        filters: Mapping[str, str | None] | None = None,
         folder: str | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
@@ -917,7 +934,9 @@ class SearchManager:
                 both.
             filters: Dict of ``{frontmatter_key: value}`` pairs (AND
                 semantics).  Only works for fields in
-                ``indexed_frontmatter_fields``.
+                ``indexed_frontmatter_fields`` for keyword search. On an
+                active OKF bundle, ``{"type": None}`` selects indexed,
+                non-reserved notes without a non-empty string type.
             folder: If provided, restrict results to documents in this
                 folder (and its sub-folders).  ``""`` restricts to
                 root-level documents; the value is folded through
@@ -934,6 +953,8 @@ class SearchManager:
             by descending file score (max of section scores).
 
         Raises:
+            InvalidRequestError: If a null filter is unsupported or an active
+                OKF ``stale`` value is not a true/false spelling.
             EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
                 ``"hybrid"`` but no embedding provider is configured (a
                 ``ValueError`` subclass).
@@ -1124,12 +1145,12 @@ class SearchManager:
             max(limit * (chunks_per_file + 4), 50), okf_filters=okf_filters
         )
 
-        raw = self._fts.search(
-            query,
-            limit=candidate_limit,
-            filters=filters,
-            folder=folder,
-            snippet_words=None,
+        raw, candidate_limit = self._retrieve_candidates(
+            lambda cap: self._fts.search(
+                query, limit=cap, filters=filters, folder=folder, snippet_words=None
+            ),
+            candidate_limit,
+            exhaust="type" in okf_filters,
         )
         raw = self._filter_rows_okf(raw, okf_filters)
         downweighted = _apply_length_downweight(
@@ -1243,7 +1264,11 @@ class SearchManager:
             filters=filters,
             okf_filters=okf_filters,
         )
-        raw = self._search_vectors(query, candidate_limit, folder)
+        raw, candidate_limit = self._retrieve_candidates(
+            lambda cap: self._search_vectors(query, cap, folder),
+            candidate_limit,
+            exhaust="type" in okf_filters,
+        )
 
         filtered = self._post_filter_semantic_rows(
             raw, filters=filters, okf_filters=okf_filters
@@ -1294,19 +1319,23 @@ class SearchManager:
             okf_filters=okf_filters,
         )
 
-        fts_raw: list[FTSResult] = self._fts.search(
-            query,
-            limit=fts_candidate_limit,
-            filters=filters,
-            folder=folder,
-            snippet_words=None,
+        fts_raw, fts_candidate_limit = self._retrieve_candidates(
+            lambda cap: self._fts.search(
+                query, limit=cap, filters=filters, folder=folder, snippet_words=None
+            ),
+            fts_candidate_limit,
+            exhaust="type" in okf_filters,
         )
         fts_raw = self._filter_rows_okf(fts_raw, okf_filters)
         fts_results: list[FTSResult] = _apply_length_downweight(
             fts_raw, alpha=self._length_downweight_alpha
         )
 
-        vec_raw = self._search_vectors(query, vec_candidate_limit, folder)
+        vec_raw, vec_candidate_limit = self._retrieve_candidates(
+            lambda cap: self._search_vectors(query, cap, folder),
+            vec_candidate_limit,
+            exhaust="type" in okf_filters,
+        )
         vec_filtered = self._post_filter_semantic_rows(
             vec_raw, filters=filters, okf_filters=okf_filters
         )
@@ -1421,7 +1450,7 @@ class SearchManager:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        filters: dict[str, str | None] | None = None,
+        filters: Mapping[str, str | None] | None = None,
     ) -> list[NoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 
@@ -1440,8 +1469,9 @@ class SearchManager:
                 frontmatter (any key, list membership for list values). On
                 an active OKF bundle the dimensions ``status`` (absent
                 means ``stable``), ``stale`` (``true``/``false``), and
-                ``trust_tier`` carry OKF semantics. Attachments carry no
-                frontmatter, so any filter excludes them.
+                ``trust_tier`` carry OKF semantics; ``{"type": None}``
+                selects non-reserved notes without a non-empty string type.
+                Attachments carry no frontmatter, so any filter excludes them.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` (and
@@ -1449,8 +1479,8 @@ class SearchManager:
             objects.
 
         Raises:
-            InvalidRequestError: If an active OKF ``stale`` filter value is not a
-                true/false spelling.
+            InvalidRequestError: If a null filter is unsupported or an active
+                OKF ``stale`` value is not a true/false spelling.
         """
         folder = normalize_folder(folder)
         plain_filters, okf_filters = self._split_okf_filters(filters)

@@ -113,9 +113,8 @@ OKF_STALE_WEIGHT = 0.75
 OKF_RESERVED_WEIGHT = 0.5
 
 #: ``filters`` keys that carry OKF semantics on an active bundle (phase 2,
-#: #961). ``type`` is deliberately absent: it is a plain indexed tag lookup
-#: with no special semantics, so the ordinary ``document_tags`` path
-#: handles it.
+#: #961). String ``type`` values use the ordinary indexed tag lookup;
+#: null ``type`` is routed separately to the missing-type post-filter.
 OKF_FILTER_KEYS: tuple[str, ...] = ("status", "stale", "trust_tier")
 
 #: Accepted spellings for the boolean ``stale`` filter value.
