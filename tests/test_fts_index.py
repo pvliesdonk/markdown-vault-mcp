@@ -1868,18 +1868,18 @@ class TestFtsRowidMapMigration:
         idx = FTSIndex(db_path=db)
         idx.upsert_note(make_note("a.md"))
         conn = idx._conn()
-        tables = ("notes_fts", "notes_fts_rowid_map", "meta")
-        before = {
-            table: [tuple(r) for r in conn.execute(f"SELECT * FROM {table}")]
-            for table in tables
-        }
+        queries = (
+            "SELECT * FROM notes_fts",
+            "SELECT * FROM notes_fts_rowid_map",
+            "SELECT * FROM meta",
+        )
+        before = {query: [tuple(r) for r in conn.execute(query)] for query in queries}
         idx.close()
 
         with caplog.at_level("INFO", logger="markdown_vault_mcp.fts_index"):
             idx = FTSIndex(db_path=db)
         after = {
-            table: [tuple(r) for r in idx._conn().execute(f"SELECT * FROM {table}")]
-            for table in tables
+            query: [tuple(r) for r in idx._conn().execute(query)] for query in queries
         }
         assert before == after
         assert not any(
