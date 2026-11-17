@@ -252,7 +252,8 @@ def run_git(
 
     Raw paths supplied via ``pathspecs`` are literal and must be nonempty.
     Only ``-c`` pairs are supported before the git subcommand.
-    Index writes require paths unless ``whole_repo`` is explicitly set.
+    ``add``, ``commit``, and ``diff --cached`` or ``diff --staged`` require
+    paths unless ``whole_repo`` is explicitly set.
 
     Raises:
         subprocess.CalledProcessError: If git exits non-zero.  Callers

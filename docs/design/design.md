@@ -3913,10 +3913,11 @@ per-operation staging guarantee below failing through the note's name rather
 than through a missing pathspec. Every command in `git/` that takes a pathspec
 therefore builds it with `literal_pathspec` (`git/_run.py`), which prefixes
 git's `:(literal)` magic. The shared runner constructs literal pathspecs for
-staging and conflict recovery and refuses unscoped index writes unless the
-caller explicitly selects the whole repository. `check-ignore` is the one exception and not an
-oversight: it takes pathnames, matches them literally already, and rejects
-pathspec magic outright.
+staging and conflict recovery. It refuses unscoped `add`, `commit`, and
+`diff --cached` or `diff --staged` unless the caller explicitly selects the
+whole repository. `check-ignore` is the one exception and not an oversight:
+it takes pathnames, matches them literally already, and rejects pathspec magic
+outright.
 
 **Per-operation staging guarantee (#894).** (What `add` and `check-ignore`
 accept: [`reference/git-staging-and-commits.md`](reference/git-staging-and-commits.md) § Staging.) One MCP write operation produces
