@@ -603,20 +603,12 @@ class SearchManager:
     ) -> tuple[dict[str, str] | None, dict[str, str | None]]:
         """Split *filters* into plain tag filters and OKF dimensions.
 
-        The OKF dimensions (:data:`~markdown_vault_mcp.okf.OKF_FILTER_KEYS`:
-        ``status`` / ``stale`` / ``trust_tier``) and null ``type`` get OKF
-        semantics only when a detector is wired and read semantics are active;
-        otherwise every
-        string key stays a plain filter, preserving pre-OKF behavior. Null is
-        supported only for type on active bundles. A ``stale`` value is
-        validated eagerly so an invalid spelling fails the whole call instead of silently matching nothing.
-
-        Args:
-            filters: The caller's ``filters`` dict, or ``None``.
+        OKF dimensions and null ``type`` use OKF semantics only when active.
+        Other string values remain plain filters. Null is supported only for
+        type on active bundles; ``stale`` is validated before matching.
 
         Returns:
-            ``(plain_filters_or_None, okf_filters)`` — the second dict is
-            empty when OKF semantics do not apply.
+            Plain filters and OKF filters; the latter are empty when inactive.
 
         Raises:
             InvalidRequestError: If a null filter is unsupported or an active
@@ -624,7 +616,14 @@ class SearchManager:
         """
         if not filters:
             return None, {}
-        active = self._okf is not None and self._okf.state().active
+        active = (
+            self._okf is not None
+            and any(
+                k in OKF_FILTER_KEYS or (k == "type" and v is None)
+                for k, v in filters.items()
+            )
+            and self._okf.state().active
+        )
         plain: dict[str, str] = {}
         okf_filters: dict[str, str | None] = {}
         for key, value in filters.items():

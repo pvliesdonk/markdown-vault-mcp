@@ -196,3 +196,26 @@ def test_unsupported_null_is_rejected(
         mgr.search("zebra", mode="keyword", filters=filters)
     with pytest.raises(InvalidRequestError, match="null is supported only for type"):
         mgr.list(filters=filters)
+
+
+def test_plain_list_filter_does_not_probe_okf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ordinary equality listing does not inspect the OKF declaration."""
+    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.managers.search import SearchManager
+    from markdown_vault_mcp.okf import OkfDetector
+    from markdown_vault_mcp.scanner import scan_directory
+
+    (tmp_path / "note.md").write_text("---\ntags: [x]\n---\nNote")
+    fts = FTSIndex(db_path=":memory:")
+    for note in scan_directory(tmp_path):
+        fts.upsert_note(note)
+    detector = OkfDetector(tmp_path)
+
+    def unexpected_state() -> None:
+        pytest.fail("plain filters must not inspect OKF state")
+
+    monkeypatch.setattr(detector, "state", unexpected_state)
+    mgr = SearchManager(fts=fts, source_dir=tmp_path, okf_detector=detector)
+    assert [row.path for row in mgr.list(filters={"tags": "x"})] == ["note.md"]
