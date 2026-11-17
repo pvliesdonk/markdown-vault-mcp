@@ -61,3 +61,90 @@ def test_metadata_preserves_carriage_return_and_replaces_invalid_utf8(
     rows = _commit_rows_for(git_repo, {commit}, "note.md", None)
     assert entries[0].message == "subject\rbroken\ufffd"
     assert rows[0][3] == "subject\rbroken\ufffd"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX filesystem byte names")
+@pytest.mark.parametrize("marker", [b"\x1e", b"\xff\x1e"])
+def test_record_separator_in_history_paths(git_repo: Path, marker: bytes) -> None:
+    """History paths containing RS remain usable across a rename and empty subject."""
+    from markdown_vault_mcp.git.query import _name_segments, _per_commit_rows
+    from markdown_vault_mcp.git.types import RevisionQuery
+
+    old = os.fsdecode(marker + b"old[\r\n].md")
+    new = os.fsdecode(marker + b"new[\r\n].md")
+    body = "".join(f"line {i}\n" for i in range(30))
+    blob = _git_bytes(
+        git_repo, "hash-object", "-w", "--stdin", data=body.encode()
+    ).strip()
+    _git_bytes(
+        git_repo,
+        "update-index",
+        "-z",
+        "--index-info",
+        data=b"100644 " + blob + b"\t" + os.fsencode(old) + b"\0",
+    )
+    (git_repo / "aaa.md").write_text("peer\n")
+    _run_git(git_repo, "add", "--", "aaa.md")
+    _run_git(git_repo, "commit", "-q", "--allow-empty-message", "-m", "")
+    first = _run_git(git_repo, "rev-parse", "HEAD").strip()
+    _git_bytes(
+        git_repo,
+        "update-index",
+        "-z",
+        "--index-info",
+        data=b"0 "
+        + b"0" * 40
+        + b"\t"
+        + os.fsencode(old)
+        + b"\0"
+        + b"100644 "
+        + blob
+        + b"\t"
+        + os.fsencode(new)
+        + b"\0",
+    )
+    _run_git(git_repo, "commit", "-qm", "rename")
+    renamed = _run_git(git_repo, "rev-parse", "HEAD").strip()
+    edited = _git_bytes(
+        git_repo, "hash-object", "-w", "--stdin", data=(body + "edit\n").encode()
+    ).strip()
+    _git_bytes(
+        git_repo,
+        "update-index",
+        "-z",
+        "--index-info",
+        data=b"100644 " + edited + b"\t" + os.fsencode(new) + b"\0",
+    )
+    _run_git(git_repo, "commit", "-qm", "edit")
+    last = _run_git(git_repo, "rev-parse", "HEAD").strip()
+    strategy = GitWriteStrategy()
+    history = strategy.get_file_history(git_repo, None, None, 10)
+    assert history[0].paths_changed == [new]
+    birth = next(entry for entry in history if entry.sha == first)
+    assert set(birth.paths_changed) == {"aaa.md", old}
+    assert birth.message == ""
+    for entry in history:
+        for name in entry.paths_changed:
+            result = strategy.get_file_at_ref(
+                RevisionQuery(
+                    repo_path=git_repo, path=git_repo / name, ref=entry.sha, max_bytes=0
+                )
+            )
+            assert result.historical_path == name
+    single = strategy.get_file_history(git_repo, git_repo / new, None, 10)
+    assert [entry.sha for entry in single] == [last, renamed, first]
+    result = strategy.get_file_at_ref(
+        RevisionQuery(repo_path=git_repo, path=git_repo / new, ref=first, max_bytes=0)
+    )
+    assert (result.historical_path, result.content) == (old, body)
+    assert [
+        row[0] for row in _per_commit_rows(git_repo, git_repo / new, first, None, None)
+    ] == [last, renamed]
+    assert {
+        entry.sha
+        for entry in _history_entries_for(git_repo, {first, renamed, last}, "", None)
+    } == {first, renamed, last}
+    assert {
+        row[0] for row in _commit_rows_for(git_repo, {first, renamed, last}, new, None)
+    } == {first, renamed, last}
+    assert {seg.name for seg in _name_segments(git_repo, new, None)} == {old, new}

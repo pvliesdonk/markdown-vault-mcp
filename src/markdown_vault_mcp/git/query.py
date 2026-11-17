@@ -81,10 +81,9 @@ _RENAME_THRESHOLD = "--find-renames=30"
 # whatever the operator has in their git config.
 _RENAME_LIMIT = "diff.renameLimit=2000"
 
-# \x1e (ASCII Record Separator) marks the start of each commit block in
-# ``git log`` output.  Commit messages do not carry it, and while a POSIX
-# filename legally may, git has no framing that would let a block boundary be
-# found without a marker of some kind.
+# Each commit block starts with two NULs and this ASCII Record Separator.
+# Paths may contain RS but cannot contain NUL or be empty, so the combined
+# marker cannot occur within the path list.
 _HISTORY_SENTINEL = "\x1e"
 
 
@@ -429,7 +428,7 @@ def _lineage(
         "--follow",
         "--name-status",
         _RENAME_THRESHOLD,
-        f"--format={_HISTORY_SENTINEL}%H",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H",
     ]
     if rev_range is not None:
         cmd.append(rev_range)
@@ -438,7 +437,7 @@ def _lineage(
         return _Lineage(None, False)
     shas: set[str] = set()
     tracked = cur_rel
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         split = _split_z_block(block, 1)
         if split is None:
             continue
@@ -479,7 +478,7 @@ def _first_parent_records_args(revs: str | None) -> list[str]:
         "--name-status",
         "-z",
         _RENAME_THRESHOLD,
-        f"--format={_HISTORY_SENTINEL}%H",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H",
     ]
     if revs is not None:
         cmd.append(revs)
@@ -599,7 +598,7 @@ def _walk_one_name(
     tracked, through = frontier.name, frontier.through
     segments: list[_NameSegment] = []
     opened: list[_Frontier] = []
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         split = _split_z_block(block, 1)
         if split is None:
             continue
@@ -777,8 +776,8 @@ def _history_log_args(
         is_dir: When ``True``, *path* is a directory subtree.
 
     Returns:
-        Git arguments, formatted with :data:`_HISTORY_SENTINEL`
-        block markers and NUL-separated header fields.  ``-z`` frames the
+        Git arguments, formatted with two NULs and :data:`_HISTORY_SENTINEL`
+        as block markers and NUL-separated header fields.  ``-z`` frames the
         ``--name-only`` paths by NUL as well, so a non-ASCII name reaches
         the caller as git recorded it rather than octal-escaped inside
         double quotes (see :func:`_split_z_block`).  A single-file query
@@ -797,7 +796,7 @@ def _history_log_args(
     cmd += [
         "log",
         "-z",
-        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
         f"-n{limit}",
     ]
     if since:
@@ -927,7 +926,7 @@ def _history_entries_for(
         "log",
         "--no-walk",
         "-z",
-        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
         *sorted(shas),
         "--",
         env=env,
@@ -935,7 +934,7 @@ def _history_entries_for(
     if result.returncode != 0:
         return []
     entries: list[HistoryEntry] = []
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         entry = _parse_history_block(block, vault_prefix, collect_paths=False)
         if entry is not None:
             entries.append(entry)
@@ -998,14 +997,14 @@ def _parse_history_entries(
 ) -> list[HistoryEntry]:
     """Parse a history walk's ``-z`` stream into the note's own entries.
 
-    Splits on the sentinel embedded at the start of each format line.  The
-    first element will be empty (output starts with the sentinel); the parser
+    Splits on two NULs and the sentinel at the start of each format line. The
+    first element will be empty (output starts with the marker); the parser
     rejects it along with any other empty or malformed block.  Commits outside
     *lineage* are dropped, so a reused name does not hand the caller its
     previous occupant's commits (#1285).
     """
     entries: list[HistoryEntry] = []
-    for block in raw.split(_HISTORY_SENTINEL):
+    for block in raw.split("\0\0" + _HISTORY_SENTINEL):
         entry = _parse_history_block(block, vault_prefix, collect_paths=collect_paths)
         if entry is None:
             continue
@@ -1496,7 +1495,7 @@ def _commit_rows_for(
         "log",
         "--no-walk",
         "-z",
-        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
         *sorted(shas),
         "--",
         env=env,
@@ -1504,7 +1503,7 @@ def _commit_rows_for(
     if result.returncode != 0:
         return []
     rows: list[tuple[str, ...]] = []
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         row = _parse_log_block(block, name)
         if row is not None:
             rows.append(row)
@@ -1580,7 +1579,7 @@ def _per_commit_rows(
         "-z",
         "--follow",
         _RENAME_THRESHOLD,
-        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
         "--name-only",
     ]
     clamped_limit = None if limit is None else min(max(1, limit), 100)
@@ -1610,7 +1609,7 @@ def _per_commit_rows(
         else _lineage(git_root, path, cur_rel, env, rev_range=f"{ref}..HEAD")
     )
     rows: list[tuple[str, ...]] = []
-    for block in log_result.stdout.split(_HISTORY_SENTINEL):
+    for block in log_result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         parsed = _parse_log_block(block, rel_fallback)
         if parsed is None:
             continue
