@@ -4552,7 +4552,8 @@ class TestReadAtRevisionTool:
                     ["git", "-C", str(vault), *args], capture_output=True, check=True
                 )
             (vault / "alpha.md").write_text("# Alpha\n\nA different note.\n")
-            for args in (["add", "."], ["commit", "-m", "write: alpha.md"]):
+            # Keep this fixture commit scoped to the recreated note.
+            for args in (["add", "alpha.md"], ["commit", "-m", "write: alpha.md"]):
                 subprocess.run(
                     ["git", "-C", str(vault), *args], capture_output=True, check=True
                 )
