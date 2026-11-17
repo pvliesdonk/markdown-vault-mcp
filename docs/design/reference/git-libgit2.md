@@ -54,6 +54,18 @@ sources:
     title: libgit2 blob API
     resource: https://github.com/libgit2/libgit2/blob/v1.9.7/include/git2/blob.h
     accessed: 2026-11-16
+  - id: git-shared
+    title: Git core.sharedRepository configuration
+    resource: https://github.com/git/git/blob/v2.56.1/Documentation/config/core.adoc
+    accessed: 2026-11-17
+  - id: git-date-256
+    title: Git date parser and formatter
+    resource: https://github.com/git/git/blob/v2.56.1/date.c
+    accessed: 2026-11-17
+  - id: git-pretty
+    title: Git pretty formats
+    resource: https://github.com/git/git/blob/v2.56.1/Documentation/pretty-formats.adoc
+    accessed: 2026-11-17
 ---
 
 # Local Git operations through pygit2
@@ -71,6 +83,9 @@ remote operations are outside its scope. The native Git store depends on it.
 
 - Effective nonempty `working-tree-encoding` is refused at startup for tracked paths and before writes: native blob creation does not perform Git’s encoding conversion. [observed: isolated temporary repository, 2026-11-16] [pins: tests/test_git_libgit2_capabilities.py::test_encoding_refused_at_open_and_after_open]
 - Supported dates are ISO 8601, `N units ago` (including compound and dotted forms), `yesterday`, `last <weekday>`, `today`, `midnight`, and `noon`. Other expressions raise an actionable request error. [source: git-date] [pins: tests/test_git_libgit2_capabilities.py::test_supported_dates_match_git]
+- Git's `core.sharedRepository` changes repository permissions for group, all, and octal modes; `umask` and false use the process umask. In synthetic repositories Git and libgit2 produced different index, object-directory and ref permissions for shared modes, so the native store refuses them at open and before writes. [source: git-shared] [observed: Git 2.56.1 and pygit2 1.21.0, synthetic repositories with umask 022 and 077] [pins: tests/test_git_libgit2_lineage.py::test_shared_repository_refused_at_open_and_write, tests/test_git_libgit2_lineage.py::test_shared_repository_umask_modes_allowed]
+- With the clock frozen at 2024-01-02 09:30 UTC, Git 2.56.1 resolves bare `noon` to the preceding day's 12:00 UTC. [source: git-date-256] [observed: `TZ=UTC GIT_TEST_DATE_NOW=1704187800 git rev-parse --since=noon`] [pins: tests/test_git_libgit2_capabilities.py::test_noon_before_noon_matches_frozen_git]
+- Git's `%aI` formats the author date in strict ISO 8601; Git 2.56.1 renders a zero offset as `Z`. [source: git-pretty] [observed: synthetic UTC author commit, Git 2.56.1] [pins: tests/test_git_libgit2_capabilities.py::test_utc_author_timestamp_matches_cli]
 - A write whose tree equals HEAD still reconciles its touched index paths; a failed write refreshes the worktree health condition where inspection succeeds. History and per-commit diff limits are clamped to 1–100; an omitted diff limit is unbounded. [pins: tests/test_git_libgit2_boundaries.py::test_noop_reconciles_index_without_observer]
 - Git subtracts seconds through weeks as durations, but months and years modify local calendar fields. [source: git-date] [pins: tests/test_git_libgit2_capabilities.py::test_supported_dates_match_git]
 - Git and libgit2 may assign different similarity scores to the same deleted and added blobs: an isolated seed scored 25% in Git and 30% in libgit2. Queries refuse uncertain pairs instead of choosing either score, including a newly added note with a potentially unrelated deletion. Unique exact-OID pairs remain supported; ambiguous matches, binary summaries, and mode-changing rename diffs refuse actionably. Committed-revision lookup checks the current path without following renames and returns no breadcrumb when it cannot prove a result. Scoped vault and directory history refuses merges inside the requested window. Single-file history and per-commit diffs refuse merge commits that differ from every parent; revision reads refuse traversal across a merge. A local force push reports success when its tracking ref already matches HEAD. `core.symlinks=false` repositories are refused; with `core.filemode=false`, new regular files and symlink-to-file transitions use mode 100644 and existing regular files retain their mode. [observed: isolated repository, 2026-11-16] [pins: tests/test_git_libgit2_capabilities.py::test_inexact_pairing_refused_across_native_queries]

@@ -240,3 +240,31 @@ def test_single_file_conflict_merge_history_is_exact_or_refused(isolated_repo):
         assert "merge" in str(exc) and "GitWriteStrategy" in str(exc)
     else:
         assert [row.sha for row in actual] == [row.sha for row in expected]
+
+
+@pytest.mark.parametrize("value", ["group", "all", "0640", "true", "1", None])
+@pytest.mark.parametrize("phase", ["open", "write"])
+def test_shared_repository_refused_at_open_and_write(isolated_repo, value, phase):
+    repo = isolated_repo
+    store = Libgit2Store(repo)
+    if value is None:
+        with (repo / ".git/config").open("a") as config:
+            config.write("\n[core]\n\tsharedRepository\n")
+    else:
+        _git(repo, "config", "core.sharedRepository", value)
+    note = repo / "new.md"
+    note.write_text("new\n")
+    with pytest.raises(ConfigurationError, match=r"sharedRepository.*GitWriteStrategy"):
+        if phase == "open":
+            Libgit2Store(repo)
+        else:
+            store(note, "", "write")
+
+
+@pytest.mark.parametrize("value", ["umask", "false", "0"])
+def test_shared_repository_umask_modes_allowed(isolated_repo, value):
+    _git(isolated_repo, "config", "core.sharedRepository", value)
+    note = isolated_repo / "new.md"
+    note.write_text("new\n")
+    Libgit2Store(isolated_repo)(note, "", "write")
+    assert _git(isolated_repo, "show", "HEAD:new.md") == "new\n"

@@ -75,12 +75,16 @@ def _rel(repo: Any, path: Path) -> str:
     )
 
 
+def _common(gitdir: Path) -> Path:
+    common = gitdir / "commondir"
+    if is_regular_file(common):
+        return (gitdir / common.read_text().strip()).resolve()
+    return gitdir
+
+
 def _probe_config(gitdir: Path, pg: Any) -> None:
     try:
-        common = gitdir / "commondir"
-        if is_regular_file(common):
-            gitdir = (gitdir / common.read_text().strip()).resolve()
-        config = pg.Config(str(gitdir / "config"))
+        config = pg.Config(str(_common(gitdir) / "config"))
         keys = {entry.name.lower(): entry.value for entry in config}
     except (OSError, pg.GitError) as exc:
         raise _unsupported("an unreadable repository configuration") from exc
@@ -97,19 +101,22 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
         raise _unsupported("partial clones")
 
 
+_UMASK = {"", "false", "umask", "0", "no", "off"}
+
+
 def _probe_policy(repo: Any) -> None:
     if _config_bool(repo.config, "commit.gpgsign"):
         raise _unsupported("signed commits")
     if not _config_bool(repo.config, "core.symlinks", True):
         raise _unsupported("core.symlinks=false repositories")
+    shared = _tree_entry(repo.config, "core.sharedrepository")
+    if "core.sharedrepository" in repo.config and str(shared).lower() not in _UMASK:
+        raise _unsupported("core.sharedRepository repositories")
     configured = _tree_entry(repo.config, "core.hookspath")
-    gitdir = Path(repo.path)
-    common = gitdir / "commondir"
-    if is_regular_file(common):
-        gitdir = (gitdir / common.read_text().strip()).resolve()
-    hooks = Path(configured).expanduser() if configured else gitdir / "hooks"
-    if not hooks.is_absolute():
-        hooks = Path(repo.workdir) / hooks
+    hooks = (
+        Path(repo.workdir)
+        / Path(configured or _common(Path(repo.path)) / "hooks").expanduser()
+    )
     for name in (
         "pre-commit",
         "prepare-commit-msg",

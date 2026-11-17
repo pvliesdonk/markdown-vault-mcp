@@ -113,20 +113,20 @@ _AGO = re.compile(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?")
 def _date(value: str | None) -> float | None:  # noqa: C901, PLR0911, RUF100 -- bounded date grammar.
     if value is None:
         return None
+    now = dt.datetime.now().astimezone()
     try:
         parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-            now = dt.datetime.now()
             parsed = parsed.replace(hour=now.hour, minute=now.minute, second=now.second)
         return parsed.timestamp()
     except ValueError:
         pass
     try:
         text = re.sub(r"[._]", " ", value.lower()).strip()
-        now = dt.datetime.now().astimezone()
         if text in {"today", "midnight", "noon"}:
             hour = 12 if text == "noon" else 0
-            return now.replace(hour=hour, minute=0, second=0, microsecond=0).timestamp()
+            day = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+            return (day - dt.timedelta(days=day > now)).timestamp()
         if text == "yesterday":
             return (now - dt.timedelta(days=1)).timestamp()
         weekdays = (
@@ -184,7 +184,7 @@ def _history_entry(repo: Any, commit: Any, paths: list[str]) -> HistoryEntry:
     return HistoryEntry(
         str(commit.id),
         _short_id(repo, commit),
-        _timestamp(commit),
+        _timestamp(commit).replace("+00:00", "Z"),
         f"{author.name} <{author.email}>",
         " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines()),
         paths,

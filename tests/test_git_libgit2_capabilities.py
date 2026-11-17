@@ -250,3 +250,42 @@ def test_uncertain_rename_pair_refused(isolated_repo, kind):
     _git(repo, "commit", "-qm", "replacement")
     with pytest.raises(InvalidRequestError, match="GitWriteStrategy"):
         Libgit2Store(repo).get_file_diff(repo, new, before, False)
+
+
+def test_noon_before_noon_matches_frozen_git(isolated_repo, monkeypatch):
+    import datetime as dt
+    import time
+
+    import markdown_vault_mcp.git.libgit2_history as history
+
+    class FrozenDateTime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2024, 1, 2, 9, 30, tzinfo=tz)
+
+    try:
+        with monkeypatch.context() as frozen:
+            frozen.setenv("TZ", "UTC")
+            time.tzset()
+            frozen.setenv("GIT_TEST_DATE_NOW", "1704187800")
+            expected = int(
+                _git(isolated_repo, "rev-parse", "--since=noon").split("=")[1]
+            )
+            assert expected == 1704110400  # 2024-01-01 12:00 UTC
+            frozen.setattr(history.dt, "datetime", FrozenDateTime)
+            assert _date("noon") == expected
+    finally:
+        time.tzset()
+
+
+def test_utc_author_timestamp_matches_cli(isolated_repo, monkeypatch):
+    repo = isolated_repo
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2024-01-02T03:04:05+00:00")
+    note = repo / "utc.md"
+    note.write_text("utc\n")
+    _git(repo, "add", "utc.md")
+    _git(repo, "commit", "-qm", "UTC author")
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    expected = cli.get_file_history(repo, note, None, 1)
+    assert _git(repo, "log", "-1", "--format=%aI").strip() == "2024-01-02T03:04:05Z"
+    assert Libgit2Store(repo).get_file_history(repo, note, None, 1) == expected

@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-17
+
+- [Local Git operations through pygit2](git-libgit2.md): recorded Git 2.56.1 shared repository permissions, frozen-clock noon parsing and UTC author-date formatting, with synthetic parity regressions. Other claims and review deadline remain unchanged.
+
 ## 2026-11-16
 
 - New: [Local Git operations through pygit2](git-libgit2.md), covering the native index, blob and rename APIs and an external-filter counterexample. Next review: 2027-05-16.

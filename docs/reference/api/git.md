@@ -54,6 +54,8 @@ vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(read_onl
 ```
 
 The constructor rejects unsupported repository formats and partial clones.
+It also refuses non-default `core.sharedRepository` permissions; unset,
+`umask`, and false settings remain supported.
 It also refuses commit signing and executable commit or reference hooks, such
 as `reference-transaction` and `post-index-change`. For tracked paths, a
 configured external clean or process filter, including Git LFS, or a
