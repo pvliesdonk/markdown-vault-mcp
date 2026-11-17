@@ -3624,6 +3624,21 @@ isolated unit testing and clear dependency boundaries. Pure utility functions
 live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
 ``utils/links.py`` (link target computation and replacement).
 
+#### Atomic file permissions
+
+`managers/_write_kernel.py` owns atomic note and attachment writes (#2054).
+A new file gets the mode a plain create receives in its directory: with a
+POSIX default ACL, the ACL's owner, group-class and other entries restricted
+to `0666`; otherwise `0666` less the process umask. The mode is derived from
+the directory's `system.posix_acl_default` xattr rather than learned by
+creating a file, so the vault never sees a probe. Content is staged in an
+owner-only temp file, which inherits the ACL's entries, and is chmod'd to
+that mode before `Path.replace` publishes it. Existing files keep the
+`copymode` policy. ACL read errors propagate before publication and staging
+is cleaned. Other ACL models (NFSv4, SMB) are not derived and fall back to
+the umask. See [file creation permissions](reference/file-creation-permissions.md)
+for the external rules and focused regressions.
+
 #### Facets (`facets/`, #604)
 
 The ``facets/`` package groups the formerly flat ``Vault`` surface into
