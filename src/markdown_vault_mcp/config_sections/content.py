@@ -8,26 +8,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from markdown_vault_mcp.config_sections.vault_settings import DEFAULT_CONVENTIONS_FILE
 from markdown_vault_mcp.exceptions import ConfigurationError
-
-DEFAULT_CONVENTIONS_FILE = ".conventions.md"
-LEGACY_CONVENTIONS_FILE = "_conventions.md"
-
-
-def conventions_filenames(name: str | None) -> tuple[str, ...]:
-    """Return the ordered filenames used for the configured conventions name.
-
-    Args:
-        name: Configured filename, or None when conventions are disabled.
-
-    Returns:
-        The primary filename and, for the default, its legacy fallback.
-    """
-    if name is None:
-        return ()
-    if name == DEFAULT_CONVENTIONS_FILE:
-        return (name, LEGACY_CONVENTIONS_FILE)
-    return (name,)
 
 
 @dataclass(frozen=True)

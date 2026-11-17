@@ -1843,7 +1843,7 @@ it *transports* user-authored convention text without interpreting it.
 **Storage.** Conventions live in-vault as per-folder files with a well-known
 name (`ContentConfig.conventions_file`, env
 `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`, default `.conventions.md`; the sentinel
-`none` disables the feature). With the default name, a missing `.conventions.md` falls back to `_conventions.md` in that folder. A present but unreadable primary does not fall back; custom names use only the configured name. Semantics are CLAUDE.md-style accumulation: a
+`none` disables the feature). With the default name, a missing `.conventions.md` falls back to `_conventions.md` in that folder. A present primary wins even when empty; fallback occurs only when it is absent. A present but unreadable primary does not fall back; custom names use only the configured name. Semantics are CLAUDE.md-style accumulation: a
 root-level file applies vault-wide and nested files *add to* (never replace)
 their ancestors. Content is free-form markdown; a YAML frontmatter block, if
 present, is stripped before transport (fallback to raw text on parse errors).

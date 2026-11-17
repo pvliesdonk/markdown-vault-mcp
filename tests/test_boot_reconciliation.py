@@ -12,6 +12,7 @@ pull, or manual reindex.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
@@ -20,8 +21,6 @@ from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import _parse_tool_data, wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
 
 
@@ -358,3 +357,74 @@ class TestBootReindexDisabled:
 
         # The initial build ran despite the switch: all 3 notes are indexed.
         assert status["documents_indexed"] == 3
+
+
+def _released_v12_conventions_index(tmp_path: Path) -> Path:
+    """Copy an index built by v6.1.2 with its visible conventions default."""
+    import shutil
+    import sqlite3
+    from contextlib import closing
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / ".conventions.md").write_text("Hidden policy token.\n", encoding="utf-8")
+    (vault / "_conventions.md").write_text("Legacy policy token.\n", encoding="utf-8")
+    (vault / "normal.md").write_text(
+        "# Ordinary\n\nRetained ordinary token.\n", encoding="utf-8"
+    )
+    fixture = Path(__file__).parent / "fixtures/hidden_conventions_v12/index.db"
+    shutil.copyfile(fixture, tmp_path / "fts.db")
+    with closing(sqlite3.connect(tmp_path / "fts.db")) as db:
+        version = db.execute(
+            "SELECT value FROM meta WHERE key = 'index_semantics_version'"
+        ).fetchone()
+    assert version == ("12",)
+    return vault
+
+
+def test_released_v12_index_upgrades_on_library_build(tmp_path: Path) -> None:
+    vault = _released_v12_conventions_index(tmp_path)
+    col = Vault(
+        source_dir=vault,
+        settings=VaultSettings(
+            index_path=tmp_path / "fts.db", state_path=tmp_path / "s.json"
+        ),
+    )
+    try:
+        col.index.build_index()
+        assert [note.path for note in col.reader.list_documents()] == ["normal.md"]
+        assert (
+            col.conventions.for_path("normal.md")[0].content == "Hidden policy token."
+        )
+        assert col._fts.count_documents() == 1
+    finally:
+        col.close()
+
+
+def test_released_v12_index_upgrades_with_boot_reindex_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.server import make_server
+
+    vault = _released_v12_conventions_index(tmp_path)
+    _set_env(monkeypatch, vault, tmp_path)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
+
+    server = make_server()
+
+    async def run() -> tuple[list[str], list[str], dict[str, Any]]:
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            listed = await client.call_tool("list_documents", {})
+            searched = await client.call_tool("search", {"query": "policy token"})
+            status = await client.call_tool("get_index_status", {})
+            return (
+                [r["path"] for r in _parse_tool_data(listed)],
+                [r["path"] for r in _parse_tool_data(searched)],
+                status.structured_content or {},
+            )
+
+    paths, hits, status = asyncio.run(run())
+    assert paths == ["normal.md"]
+    assert hits == []
+    assert status["documents_indexed"] == 1

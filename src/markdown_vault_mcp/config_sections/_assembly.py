@@ -36,8 +36,10 @@ from markdown_vault_mcp._identity import (
     configure_identity_claims,
     configure_service_subjects,
 )
-from markdown_vault_mcp.config_sections.content import DEFAULT_CONVENTIONS_FILE
-from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+from markdown_vault_mcp.config_sections.vault_settings import (
+    DEFAULT_CONVENTIONS_FILE,
+    VaultSettings,
+)
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.utils.fs import is_directory
 

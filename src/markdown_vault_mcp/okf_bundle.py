@@ -28,7 +28,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.config_sections.content import conventions_filenames
+from markdown_vault_mcp.config_sections.vault_settings import conventions_filenames
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.types import NoteInfo
 from markdown_vault_mcp.utils.text import read_text_utf8

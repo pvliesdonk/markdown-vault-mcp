@@ -178,7 +178,7 @@ current projects ("this relates to yesterday's slide deck…"). Per-folder
 write time (in the results of `write`, `edit`, `append` and `fetch`, and through the `get_conventions` tool).
 The files are excluded from search results but stay readable.
 
-The default `.conventions.md` falls back to `_conventions.md` in each folder when the hidden file is absent. Custom filenames do not use the fallback.
+The default `.conventions.md` falls back to `_conventions.md` in each folder when the hidden file is absent. A present primary wins even when empty; the legacy file is used only when the primary is absent. Custom filenames do not use the fallback.
 
 Two example files that encode PARA's linking directionality:
 

@@ -299,3 +299,12 @@ def test_invalid_primary_does_not_use_legacy(tmp_path: Path) -> None:
 def test_custom_name_does_not_use_legacy(tmp_path: Path) -> None:
     (tmp_path / "_conventions.md").write_text("Old rules", encoding="utf-8")
     assert ConventionsResolver(tmp_path, "AGENTS.md").for_path("") == []
+
+
+def test_empty_primary_shadows_legacy(tmp_path: Path) -> None:
+    (tmp_path / ".conventions.md").write_text("", encoding="utf-8")
+    (tmp_path / "_conventions.md").write_text("Legacy", encoding="utf-8")
+    entries = ConventionsResolver(tmp_path, ".conventions.md").for_path("")
+    assert [(entry.path, entry.content) for entry in entries] == [
+        (".conventions.md", "")
+    ]

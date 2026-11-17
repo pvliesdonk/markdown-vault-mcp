@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from markdown_vault_mcp.config_sections.content import conventions_filenames
+from markdown_vault_mcp.config_sections.vault_settings import conventions_filenames
 from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import (
     is_note,
@@ -98,7 +98,6 @@ class ConventionsResolver:
     ) -> None:
         self._source_dir = source_dir
         self._filename = filename
-        self._names = conventions_filenames(filename)
         self._exclude_patterns = list(exclude_patterns or [])
         # Convention files already reported as truncated, so the warning is
         # logged once per file rather than on every write result.
@@ -163,7 +162,7 @@ class ConventionsResolver:
             return []
         folders: set[str] = set()
         for abs_path in iter_markdown_files(self._source_dir, self._exclude_patterns):
-            if abs_path.name not in self._names:
+            if abs_path.name not in conventions_filenames(self._filename):
                 continue
             rel = abs_path.relative_to(self._source_dir)
             if any(part.startswith(".") for part in rel.parts[:-1]):
@@ -210,7 +209,7 @@ class ConventionsResolver:
             The entry with frontmatter stripped and content truncated, or
             ``None`` when the file does not exist or cannot be read.
         """
-        for name in self._names:
+        for name in conventions_filenames(self._filename):
             rel = f"{folder}/{name}" if folder else name
             file_path = self._source_dir / rel
             try:

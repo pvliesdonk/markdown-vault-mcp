@@ -18,11 +18,6 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.config_sections.content import (
-    DEFAULT_CONVENTIONS_FILE,
-    conventions_filenames,
-)
-
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
@@ -47,6 +42,26 @@ _DEFAULT_STATE_SUFFIX = ".state.json"
 #: of cutting it at a dot (#819), and built from the whole name, so
 #: ``notes.db`` and ``notes.sqlite`` never share vectors.
 _DEFAULT_EMBEDDINGS_SUFFIX = "-embeddings"
+
+
+DEFAULT_CONVENTIONS_FILE = ".conventions.md"
+LEGACY_CONVENTIONS_FILE = "_conventions.md"
+
+
+def conventions_filenames(name: str | None) -> tuple[str, ...]:
+    """Return the ordered filenames used for the configured conventions name.
+
+    Args:
+        name: Configured filename, or None when conventions are disabled.
+
+    Returns:
+        The primary filename and, for the default, its legacy fallback.
+    """
+    if name is None:
+        return ()
+    if name == DEFAULT_CONVENTIONS_FILE:
+        return (name, LEGACY_CONVENTIONS_FILE)
+    return (name,)
 
 
 @dataclasses.dataclass(frozen=True)
