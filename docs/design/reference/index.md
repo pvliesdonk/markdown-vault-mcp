@@ -8,6 +8,8 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [File creation permissions and default ACLs](file-creation-permissions.md) —
+  kernel permission inheritance for atomic note and attachment writes.
 - [LEANN query-time embedding recomputation](leann.md) — the external
   technique behind the deferred #1368 proposal; project revisit criteria
   remain in the embedding-store design.

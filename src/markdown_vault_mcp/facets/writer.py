@@ -9,10 +9,9 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, TypeVar
 
-from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
+from markdown_vault_mcp.okf import is_okf_reserved_file
 from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
@@ -41,11 +40,6 @@ if TYPE_CHECKING:
     )
 
 _R = TypeVar("_R", "WriteResult", "EditResult")
-
-
-def _is_reserved(path: str) -> bool:
-    """Whether *path* names a reserved OKF file (``index.md`` / ``log.md``)."""
-    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
 
 
 class WriterFacet:
@@ -456,8 +450,8 @@ class WriterFacet:
         if (
             self._convention_maintainer is not None
             and is_note(new_path)
-            and not _is_reserved(old_path)
-            and not _is_reserved(new_path)
+            and not is_okf_reserved_file(old_path)
+            and not is_okf_reserved_file(new_path)
         ):
             # The old folder still lists the note; the new one does not yet
             # (#1609). Regenerating the nearest indexed level at or above the

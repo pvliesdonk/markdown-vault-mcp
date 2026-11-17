@@ -26,7 +26,7 @@ Give Claude, or any MCP client, a folder of Markdown notes to search, read and w
 - **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it. A rename still accepts an etag that only the server's own link rewrites made stale. Per-folder `_conventions.md` rules reach the client as it writes.
 - **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. Submodules and plain repositories nested in a Git-backed vault are read-only. Startup warns about uncommitted files without committing them automatically. History and conflict recovery preserve carriage returns in filenames. See [Git integration](docs/use/git-integration.md).
 - **Links.** Backlinks, outlinks, broken links and the path between two notes, for wikilinks and Markdown links alike, with interactive views in clients that render [MCP Apps](docs/deploy/mcp-apps.md). The [vault explorer](docs/use/vault-explorer.md) keeps its search field named and its context heading nonempty while loading. With `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`, `write`, `edit` and `append` name each link they added that doesn't resolve.
-- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. An operator command, `admin repair-log`, previews and then removes the frontmatter blocks 4.1.0 stacked in `log.md`, keeping the complete original ([legacy log repair](docs/use/okf.md#repairing-legacy-log-frontmatter)). See [OKF](docs/use/okf.md).
+- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. `config://vault` reports the configured OKF write flag and whether it is effective; active bundles also report both in `stats.okf`. The layer is effective when configured, OKF is active, and the vault is not read-only. An operator command, `admin repair-log`, previews and then removes the frontmatter blocks 4.1.0 stacked in `log.md`, keeping the complete original ([legacy log repair](docs/use/okf.md#repairing-legacy-log-frontmatter)). See [OKF](docs/use/okf.md).
 
 The [tools reference](docs/reference/tools/index.md) lists every tool. The same engine is a Python library: see the [Vault API](docs/reference/api/vault.md).
 <!-- DOMAIN-README-PITCH-END -->
@@ -40,10 +40,10 @@ It suits one person or a small team who keep notes as Markdown files and want Cl
 
 What it assumes:
 
-- **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME`.
+- **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME` and [advertise its note URLs](docs/reference/configuration.md#cross-instance-note-links).
 - **Markdown is what gets searched.** Other files, such as PDFs and images, can be read and written as attachments, but their contents are not indexed yet ([#1234](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234)).
 - **The default store trades search speed for memory.** With an index path the vectors live in a SQLite database and each search reads them from it: measured with 227,640 sections at 1,024 dimensions, searching added 25 MB to the server and 95 in 100 searches returned within about a second. Holding them in memory (the `numpy` store) answered those searches about ten times faster, and peaked at about 1.25 GB while searching. [Choosing an embedding store](docs/use/embedding-stores.md) has the measured costs and the limits.
-- **State sits on local disk.** The index and embeddings are files, and the change-tracking file sits beside the index, never inside the vault. Without `MARKDOWN_VAULT_MCP_INDEX_PATH`, the index and that file stay in memory and are rebuilt at each start.
+- **State sits on local disk.** The index and embeddings are files, and the change-tracking file sits beside the index, never inside the vault. Without `MARKDOWN_VAULT_MCP_INDEX_PATH`, the index and that file stay in memory and are rebuilt at each start. For Docker, an [optional search-data volume](docs/deploy/docker.md#separate-search-data-from-persistent-state) separates the index from persistent server state.
 - **A failed embedding model change reports an error.** Semantic and hybrid searches retry until compatible embeddings can be saved; [Common tips](docs/use/embeddings.md#common-to-all-providers) covers recovery.
 
 Reach for something else for a corpus beyond the 227,640 sections it was measured at (a vector database behind a retrieval pipeline), for mostly scanned or office documents (a document management system with text recognition), or for many users who must not see each other's notes (a multi-tenant knowledge platform): every caller the server admits gets every tool it exposes.
@@ -85,6 +85,10 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
+
+For VS Code or Goose Desktop, use the
+[remote vault connection examples](docs/get-started/http-client.md#vs-code-connect-to-this-vault)
+or the [local Goose configuration](docs/get-started/installation.md#goose-desktop-local-vault).
 <!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration
@@ -124,6 +128,7 @@ Every variable the server reads, the shared ones included, is in the [configurat
 - **Hybrid search uses Reciprocal Rank Fusion** over the FTS5 and vector result lists, with diversity-aware ranking capping chunks per document.
 - **Tool semantics mirror Claude Code's Read/Write/Edit patterns**, so LLM clients drive the vault with habits they already have.
 - **The library is synchronous**; the MCP layer wraps calls in `asyncio.to_thread()`. File writes return after saving, while index updates run in the background. Index-dependent mutations wait for prior writes; see [index freshness](docs/reference/api/vault.md#index-freshness-after-writes).
+- **Admin indexing commands report store-open failures** on stderr and exit with code 1; see [storage](docs/use/storage.md#one-process-writes-an-index) for recovery.
 - **Indexing is hash-based**: unchanged files are never re-parsed, and any change to how stored rows derive from a note's bytes bumps `INDEX_SEMANTICS_VERSION` so deployed vaults rebuild themselves once on upgrade.
 
 The full decision log lives in the [design document](docs/design/design.md).
