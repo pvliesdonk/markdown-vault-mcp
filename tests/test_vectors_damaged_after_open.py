@@ -19,7 +19,7 @@ import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.exceptions import StoreCorruptError, StoreUnavailableError
-from markdown_vault_mcp.indexing.index_writer import FlushDirtyEmbeddings
+from markdown_vault_mcp.indexing.index_writer import BuildIndex, FlushDirtyEmbeddings
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
 from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity
@@ -473,6 +473,68 @@ class TestAWriterJob:
                 "beta.md",
                 "gamma.md",
             }
+        finally:
+            vault.close()
+
+    def test_recovery_publish_failure_retries_unchanged_notes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorStore
+
+        vault = _built(tmp_path, embedding_search="streamed")
+        publish = SqliteVectorStore.publish_generation
+        failed = False
+
+        def fail_once(store: Any, *args: Any, **kwargs: Any) -> Any:
+            nonlocal failed
+            if not failed:
+                failed = True
+                raise OSError("synthetic disk full")
+            return publish(store, *args, **kwargs)
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(SqliteVectorStore, "publish_generation", fail_once)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            with pytest.raises(OSError, match="disk full"):
+                vault.index.reindex()
+            assert len(_aside(tmp_path)) == 1
+            vault.writer.write("alpha.md", "# Alpha\n\nFresh lemons.\n")
+            assert vault._coordinator.wait_for_drain(timeout=5)
+            assert set(metadata_by_path(vault._vectors)) == {"alpha.md", "beta.md"}
+        finally:
+            vault.close()
+
+    def test_build_index_purge_recovery_retries_unchanged_notes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = _source(tmp_path)
+        (root / "gamma.md").write_text("# Gamma\n\nBlueberries.\n")
+        vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
+        provider = vault._embedding_provider
+        assert provider is not None
+        embed = provider.embed
+        calls = 0
+
+        def fail_second(texts: list[str]) -> list[list[float]]:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("synthetic provider outage")
+            return embed(texts)
+
+        try:
+            _damage(tmp_path)
+            vault._index_mgr._exclude_patterns = ["alpha.md"]
+            monkeypatch.setattr(provider, "embed", fail_second)
+            with pytest.raises(RuntimeError, match="build_embeddings"):
+                vault._coordinator.writer.submit(BuildIndex()).result(timeout=5)
+            assert len(_aside(tmp_path)) == 1
+            assert "alpha.md" not in {row["path"] for row in vault._fts.list_notes()}
+            monkeypatch.setattr(provider, "embed", embed)
+            vault.writer.write("beta.md", "# Beta\n\nFresh lemons.\n")
+            assert vault._coordinator.wait_for_drain(timeout=5)
+            assert set(metadata_by_path(vault._vectors)) == {"beta.md", "gamma.md"}
         finally:
             vault.close()
 

@@ -251,16 +251,14 @@ class EmbeddingsManager:
         """Rebuild the store after it would not open: of another identity, or corrupt.
 
         The store is opened again to tell the two apart. One of another
-        identity, including one that differs only in dimension and so
-        opens, is rebuilt with ``force``, re-embedding every chunk. A
-        corrupt one, which the slot moved aside, reopens empty and takes the
-        ordinary cold build, where a compatible 5.x sidecar donates, so
-        unchanged notes cost no provider call (#1505). A store a search
-        found damaged after it opened is condemned first, here on the
-        writer thread, and then takes the same cold build (#1881).
+        identity, a dimension change included, is rebuilt with ``force``,
+        embedding every chunk. A corrupt one, moved aside by the slot, reopens
+        empty and takes the cold build, where a compatible 5.x sidecar donates,
+        so unchanged notes cost no provider call (#1505). One found damaged
+        after it opened is condemned first, then takes that build (#1881).
 
         Args:
-            _strict: Report provider failures after writer-detected corruption.
+            _strict: Retain every note's retry; report failed provider batches.
 
         Returns:
             Number of chunks embedded.
@@ -269,13 +267,15 @@ class EmbeddingsManager:
             EmbeddingsNotConfiguredError: If no embedding provider is configured.
             EmbeddingsRebuildFailedError: If an incompatible store's rebuild
                 publishes no generation.
-            StoreOpenError: If the store still will not open, or a damaged
-                one cannot be moved aside.
+            StoreOpenError: If it still will not open or cannot be moved aside.
             RuntimeError: If writer recovery has failed provider batches.
         """
         self._require_vectors()
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
+        self._retries.update(
+            row["path"] for row in (self._fts.list_notes() if _strict else ())
+        )
         self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
@@ -389,13 +389,12 @@ class EmbeddingsManager:
 
         Raises:
             EmbeddingsNotConfiguredError: If ``embedding_provider`` is not
-                configured. A ``ValueError``
-                subclass, so callers may catch either; narrow to it to let
-                genuine internal ``ValueError``s surface (#774).
+                configured. A ``ValueError`` subclass, so callers may catch
+                either; narrow to it to let genuine internal ``ValueError``s
+                surface (#774).
             EmbeddingsNotPublishedError: If a full build would have replaced
-                a store that already holds vectors but a provider batch
-                failed: nothing was published and the existing embeddings
-                stay (#1505).
+                a store holding vectors but a provider batch failed: nothing
+                was published and the existing embeddings stay (#1505).
             EmbeddingsRebuildFailedError: If a forced incompatible rebuild
                 publishes no generation.
             RuntimeError: If damaged-store recovery is incomplete; notes stay retried.
@@ -437,12 +436,13 @@ class EmbeddingsManager:
         finally:
             if upgrade is not None:
                 upgrade.close()
-        if _recovery and outcome.failed_batches:
-            self._retries.update(row["path"] for row in self._fts.list_notes())
-            raise RuntimeError(
-                "Vector recovery is incomplete; retry build_embeddings "
-                "when the embedding provider is available."
-            )
+        if _recovery:
+            if outcome.failed_batches:
+                raise RuntimeError(
+                    "Vector recovery is incomplete; retry build_embeddings "
+                    "or restart when the provider is back."
+                )
+            self._retries.clear()
         return outcome.embedded
 
     def _full_build(
@@ -815,25 +815,25 @@ class EmbeddingsManager:
     def flush_dirty_embeddings(self, paths: set[str]) -> None:
         """Reconcile each path in the snapshot and checkpoint the store once.
 
-        Called only by the IndexWriter's ``FlushDirtyEmbeddings`` runner,
-        after the keyword index was refreshed for these paths: every row
-        comes from the keyword index, no file is read (#1768). A path whose
-        input and token are unchanged costs nothing, so retrying a failed
-        batch does not charge again for its already embedded siblings. A
-        path the keyword index holds no rows for (deleted, excluded or
-        tombstoned, #1129) loses its vectors on an exclusion or a source
-        probe answering *absent* (#1785); a tombstoned one keeps them, out of
-        search, until it is fixed or deleted (#1505). A provider failure
-        or a refused vector keeps that path's rows and is logged; a
-        conflicting write is recorded for re-queueing. Store open and
-        rebuild errors propagate to the writer's Future.
+        Called only by the IndexWriter's ``FlushDirtyEmbeddings`` runner, after
+        the keyword index was refreshed for these paths: every row comes from
+        the keyword index, no file is read (#1768). A path whose input and
+        token are unchanged costs nothing, so a retry does not charge again for
+        embedded siblings. A path the keyword index holds no rows for (deleted,
+        excluded or tombstoned, #1129) loses its vectors on an exclusion or a
+        source probe answering *absent* (#1785); a tombstoned one keeps them,
+        out of search, until fixed or deleted (#1505). A provider failure or a
+        refused vector keeps that path's rows and is logged; a conflicting
+        write is recorded for re-queueing. Retained retries join the snapshot;
+        open and rebuild errors propagate to the writer's Future.
 
         Args:
             paths: Paths to reconcile (relative to source_dir).
         """
-        if self._reconciler is None or not paths:
+        if self._reconciler is None or not (paths or self._retries):
             return
         vectors = self._open_store()
+        paths |= self.take_embedding_retries()
         self.reconcile_paths(vectors, paths, site="flush")
         if self._slot is not None and self._slot.has_suspect():
             self.rebuild_after_fault(_strict=True)
