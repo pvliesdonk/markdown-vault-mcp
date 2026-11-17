@@ -131,7 +131,7 @@ class ConventionMaintainer:
             # A suppressed write (okf_verify's attestation, a mechanical
             # transform) gets neither provenance stamping nor maintenance.
             return
-        if is_okf_reserved_file(path):
+        if is_okf_reserved_file(Path(path).as_posix()):
             return
         if not self._detector.state().active:
             return
@@ -231,7 +231,7 @@ class ConventionMaintainer:
         intent = current_okf_intent()
         if intent is not None and intent.suppress:
             return False
-        if all(is_okf_reserved_file(p) for p in trigger_paths):
+        if all(is_okf_reserved_file(Path(p).as_posix()) for p in trigger_paths):
             return False
         return self._detector.state().active
 

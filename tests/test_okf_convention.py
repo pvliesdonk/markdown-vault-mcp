@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
@@ -151,6 +152,41 @@ class TestMaintainerGuards:
         with okf_write_suppressed():
             m.maintain("note.md", "write")
         assert doc.writes == [] and migrate.index_calls == []
+
+
+def _maintain(m: ConventionMaintainer, path: str) -> None:
+    m.maintain(path, "write")
+
+
+def _refresh(m: ConventionMaintainer, path: str) -> None:
+    m.refresh_indexes(["guides"], trigger_paths=[path])
+
+
+class TestMaintainerNativePathGuard:
+    """The reserved-file guard keeps the caller's native ``Path`` parsing (#1268).
+
+    No Windows host runs this suite, so ``PureWindowsPath`` stands in for the
+    module's ``Path`` to model a native backslash path a Windows caller accepts.
+    """
+
+    @pytest.mark.parametrize("entry", [_maintain, _refresh])
+    @pytest.mark.parametrize("path", [r"guides\index.md", r"guides\log.md"])
+    def test_windows_reserved_path_triggers_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, entry: Any, path: str
+    ) -> None:
+        monkeypatch.setattr("markdown_vault_mcp._okf_convention.Path", PureWindowsPath)
+        m, doc, migrate = _maintainer()
+        entry(m, path)
+        assert doc.writes == [] and migrate.index_calls == []
+
+    @pytest.mark.parametrize("entry", [_maintain, _refresh])
+    def test_windows_note_path_still_triggers(
+        self, monkeypatch: pytest.MonkeyPatch, entry: Any
+    ) -> None:
+        monkeypatch.setattr("markdown_vault_mcp._okf_convention.Path", PureWindowsPath)
+        m, doc, migrate = _maintainer()
+        entry(m, r"guides\note.md")
+        assert doc.writes or migrate.index_calls
 
 
 class TestMaintainerFailureIsolation:
