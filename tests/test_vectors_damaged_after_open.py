@@ -886,6 +886,19 @@ class TestAWriterJob:
         finally:
             vault.close()
 
+    def test_unowed_fault_rebuild_does_not_reclassify_corrupt_open(
+        self, tmp_path: Path
+    ) -> None:
+        _built(tmp_path, embedding_search="streamed").close()
+        _damage(tmp_path)
+        vault = _vault(tmp_path, embedding_search="streamed")
+        try:
+            with pytest.raises(StoreCorruptError):
+                vault._index_mgr._embeddings.rebuild_after_fault()
+            assert not _aside(tmp_path)
+        finally:
+            vault.close()
+
     def test_unowned_store_raises(
         self,
         tmp_path: Path,
