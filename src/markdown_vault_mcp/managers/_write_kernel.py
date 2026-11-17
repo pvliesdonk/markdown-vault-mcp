@@ -6,20 +6,21 @@ same way: atomically, and under the same etag precondition. These are the
 genuinely pure parts of that — they read no manager state — so they live here
 as module functions rather than being inherited or copied.
 
-Private staging uses :mod:`tempfile`'s ``0o600``. For new files, an empty
-sibling probe obtains the mode a plain create receives from the kernel,
-including default ACLs; that mode is applied before publication. See
+Private staging uses :mod:`tempfile`'s ``0o600``. A new file is chmod'd,
+before publication, to the mode a plain create receives: the directory's
+POSIX default ACL when it has one, else the process umask. See
 ``docs/design/reference/file-creation-permissions.md``.
 """
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
-import stat
+import struct
+import sys
 import tempfile
 import threading
-import uuid
 from pathlib import Path
 
 from markdown_vault_mcp.exceptions import ConcurrentModificationError
@@ -55,30 +56,103 @@ def _process_umask() -> int:
     return _umask
 
 
-def new_file_mode(parent: Path | None = None) -> int:
-    """Return the mode a plain file creation receives.
+# Linux ``posix_acl_xattr`` ABI (include/uapi/linux/posix_acl_xattr.h): a
+# little-endian u32 version header, then (u16 tag, u16 perm, u32 id) entries.
+_ACL_XATTR_DEFAULT = "system.posix_acl_default"
+_ACL_XATTR_VERSION = 2
+_ACL_HEADER = struct.Struct("<I")
+_ACL_ENTRY = struct.Struct("<HHI")
+_ACL_USER_OBJ = 0x01
+_ACL_GROUP_OBJ = 0x04
+_ACL_MASK = 0x10
+_ACL_OTHER = 0x20
+# getxattr errnos meaning "no default ACL here", not a failure.
+_NO_ACL_ERRNOS = frozenset(
+    {errno.ENODATA, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS}
+)
+
+
+def _read_default_acl(parent: Path) -> bytes | None:
+    """Return *parent*'s raw ``system.posix_acl_default`` xattr.
 
     Args:
-        parent: Destination directory, including its default ACL policy.
-            Omit for the legacy umask-only calculation.
+        parent: Directory whose default ACL is read.
 
     Returns:
-        Permission bits assigned by the kernel, or the umask-only mode.
+        The xattr bytes, or ``None`` off Linux, on a filesystem without
+        xattr support, or when the directory has no default ACL.
+
+    Raises:
+        OSError: The read failed for another reason (for example
+            ``EACCES``).
     """
-    if parent is None:
-        return 0o666 & ~_process_umask()
-    for _ in range(100):
-        probe = parent / f".mode-{uuid.uuid4().hex}.tmp"
-        try:
-            fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
-        except FileExistsError:
-            continue
-        try:
-            return stat.S_IMODE(os.fstat(fd).st_mode)
-        finally:
-            os.close(fd)
-            probe.unlink()
-    raise FileExistsError("Could not create an exclusive permission probe")
+    if sys.platform != "linux":
+        return None
+    try:
+        return os.getxattr(parent, _ACL_XATTR_DEFAULT)
+    except OSError as exc:
+        if exc.errno in _NO_ACL_ERRNOS:
+            return None
+        raise
+
+
+def _acl_class_perms(raw: bytes) -> tuple[int, int, int] | None:
+    """Extract the owner, group-class and other permissions of an ACL.
+
+    The group class is the ``ACL_MASK`` entry when the ACL has one, else
+    ``ACL_GROUP_OBJ`` (acl(5), "Correspondence between ACL entries and
+    file permission bits").
+
+    Args:
+        raw: A ``posix_acl_xattr``-encoded ACL.
+
+    Returns:
+        ``(owner, group_class, other)`` permission triplets, or ``None``
+        when *raw* is not a version-2 ACL carrying those entries.
+    """
+    body = len(raw) - _ACL_HEADER.size
+    if body < 0 or body % _ACL_ENTRY.size:
+        return None
+    if _ACL_HEADER.unpack_from(raw)[0] != _ACL_XATTR_VERSION:
+        return None
+    perms: dict[int, int] = {}
+    for tag, perm, _id in _ACL_ENTRY.iter_unpack(raw[_ACL_HEADER.size :]):
+        perms.setdefault(tag, perm & 0o7)
+    owner = perms.get(_ACL_USER_OBJ)
+    group = perms.get(_ACL_MASK, perms.get(_ACL_GROUP_OBJ))
+    other = perms.get(_ACL_OTHER)
+    if owner is None or group is None or other is None:
+        return None
+    return owner, group, other
+
+
+def new_file_mode(parent: Path | None = None) -> int:
+    """Return the mode a plain ``open(path, "w")`` would give a new file.
+
+    A plain create requests ``0o666``. In a directory with a POSIX default
+    ACL the kernel ignores the umask and restricts the default ACL's owner,
+    group-class (mask) and other entries by that request; elsewhere the
+    umask applies (acl(5), "Object creation and default ACLs"). The mode
+    is derived from the directory's ``system.posix_acl_default`` xattr,
+    so no file is created to learn it.
+
+    Args:
+        parent: Destination directory, whose default ACL is consulted.
+            Omit for the umask-only calculation.
+
+    Returns:
+        Permission bits for the new file.
+
+    Raises:
+        OSError: The directory's default ACL could not be read.
+    """
+    requested = 0o666
+    raw = None if parent is None else _read_default_acl(parent)
+    acl = None if raw is None else _acl_class_perms(raw)
+    if acl is None:
+        return requested & ~_process_umask()
+    owner, group, other = acl
+    return requested & (owner << 6 | group << 3 | other)
 
 
 def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:

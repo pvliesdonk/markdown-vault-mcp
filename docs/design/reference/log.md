@@ -1,5 +1,12 @@
 # Reference research log
 
+## 2026-11-17
+
+- Updated: [File creation permissions and default ACLs](file-creation-permissions.md),
+  for #2054. Rechecked acl(5)'s permission-bit correspondence for a default
+  ACL without a mask; the runtime now reads the default-ACL xattr instead of
+  creating a probe file.
+
 ## 2026-11-16
 
 - New: [File creation permissions and default ACLs](file-creation-permissions.md),

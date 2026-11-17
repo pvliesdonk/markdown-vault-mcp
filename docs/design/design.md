@@ -3606,17 +3606,17 @@ live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
 #### Atomic file permissions
 
 `managers/_write_kernel.py` owns atomic note and attachment writes (#2054).
-New-file permissions come from an empty, exclusively created sibling probe
-requested with mode `0666`, so the kernel applies the directory's default ACL
-or the process umask. The probe contains no note content and is removed after
-its mode is read. The actual staging file remains private while content is
-written; its inherited ACL entries remain in place, and its final mode is set
-before `Path.replace` publishes it. Existing files keep the same `copymode`
-policy. Permission errors propagate before publication and staging is cleaned.
-No target placeholder or process-umask change is needed for a new write.
-The no-argument `new_file_mode()` helper retains its legacy umask-only result.
-See [file creation permissions](reference/file-creation-permissions.md) for the
-external rules and focused regressions.
+A new file gets the mode a plain create receives in its directory: with a
+POSIX default ACL, the ACL's owner, group-class and other entries restricted
+to `0666`; otherwise `0666` less the process umask. The mode is derived from
+the directory's `system.posix_acl_default` xattr rather than learned by
+creating a file, so the vault never sees a probe. Content is staged in an
+owner-only temp file, which inherits the ACL's entries, and is chmod'd to
+that mode before `Path.replace` publishes it. Existing files keep the
+`copymode` policy. ACL read errors propagate before publication and staging
+is cleaned. Other ACL models (NFSv4, SMB) are not derived and fall back to
+the umask. See [file creation permissions](reference/file-creation-permissions.md)
+for the external rules and focused regressions.
 
 #### Facets (`facets/`, #604)
 

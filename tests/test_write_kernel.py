@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import stat
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.managers import _write_kernel as kernel
+from tests.fixtures.permissions import encode_acl
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -46,9 +48,12 @@ def test_new_files_inherit_default_acl(acl_directory: Path, data: str | bytes) -
 
 
 @pytest.mark.parametrize("mask", [0o022, 0o027, 0o077])
-def test_probe_honors_umask_without_acl(tmp_path: Path, mask: int) -> None:
-    """Without a default ACL, the kernel still applies the process umask."""
+def test_mode_honors_umask_without_acl(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mask: int
+) -> None:
+    """Without a default ACL, the derived mode is the umask-masked plain create."""
     previous = os.umask(mask)
+    monkeypatch.setattr(kernel, "_umask", None)
     try:
         plain = tmp_path / "plain"
         plain.write_bytes(b"")
@@ -59,59 +64,93 @@ def test_probe_honors_umask_without_acl(tmp_path: Path, mask: int) -> None:
     assert list(tmp_path.iterdir()) == [plain]
 
 
-def test_probe_retries_collision_without_touching_existing_file(
+@pytest.mark.usefixtures("umask_022")
+def test_minimal_default_acl_uses_group_obj(minimal_acl_directory: Path) -> None:
+    """A default ACL without a mask takes its group class from ACL_GROUP_OBJ."""
+    plain = minimal_acl_directory / "plain.md"
+    plain.write_text("plain create")
+    target = minimal_acl_directory / "atomic.md"
+
+    kernel.atomic_write(target, "content")
+
+    assert stat.S_IMODE(plain.stat().st_mode) == 0o660
+    assert stat.S_IMODE(target.stat().st_mode) == 0o660
+
+
+@pytest.mark.usefixtures("umask_022")
+@pytest.mark.parametrize("acl_directory", [7, 4], indirect=True)
+def test_mode_is_derived_without_creating_a_file(acl_directory: Path) -> None:
+    """Learning the mode leaves the directory, and so the watcher, untouched."""
+    plain = acl_directory / "plain.md"
+    plain.write_text("plain create")
+
+    mode = kernel.new_file_mode(acl_directory)
+
+    assert mode == stat.S_IMODE(plain.stat().st_mode)
+    assert list(acl_directory.iterdir()) == [plain]
+
+
+@pytest.mark.usefixtures("umask_022")
+@pytest.mark.parametrize("err", [errno.ENODATA, errno.ENOTSUP, errno.ENOSYS])
+def test_missing_default_acl_falls_back_to_umask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, err: int
+) -> None:
+    """No default ACL, or no xattr support, means the umask applies."""
+
+    def fail(_path: Path, _name: str) -> bytes:
+        raise OSError(err, os.strerror(err))
+
+    monkeypatch.setattr(kernel.sys, "platform", "linux")
+    monkeypatch.setattr(kernel.os, "getxattr", fail, raising=False)
+    assert kernel.new_file_mode(tmp_path) == 0o644
+
+
+@pytest.mark.usefixtures("umask_022")
+def test_unreadable_default_acl_propagates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exclusive creation never truncates or removes another file."""
-    from uuid import UUID
+    """A real read failure is not hidden behind the umask fallback."""
 
-    occupied = tmp_path / f".mode-{UUID(int=1).hex}.tmp"
-    occupied.write_text("keep")
-    candidates = iter([UUID(int=1), UUID(int=2)])
-    monkeypatch.setattr(kernel.uuid, "uuid4", lambda: next(candidates))
+    def fail(_path: Path, _name: str) -> bytes:
+        raise PermissionError(errno.EACCES, "denied")
 
-    kernel.new_file_mode(tmp_path)
-
-    assert occupied.read_text() == "keep"
-    assert list(tmp_path.iterdir()) == [occupied]
-
-
-def test_probe_collision_retries_are_bounded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An unusable name source fails without deleting the colliding file."""
-    from uuid import UUID
-
-    occupied = tmp_path / f".mode-{UUID(int=1).hex}.tmp"
-    occupied.write_text("keep")
-    monkeypatch.setattr(kernel.uuid, "uuid4", lambda: UUID(int=1))
-    with pytest.raises(FileExistsError, match="exclusive permission probe"):
+    monkeypatch.setattr(kernel.sys, "platform", "linux")
+    monkeypatch.setattr(kernel.os, "getxattr", fail, raising=False)
+    with pytest.raises(PermissionError):
         kernel.new_file_mode(tmp_path)
-    assert occupied.read_text() == "keep"
-    assert list(tmp_path.iterdir()) == [occupied]
 
 
-def test_probe_failure_closes_and_removes_empty_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.usefixtures("umask_022")
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"",
+        encode_acl([(0x01, 7, 0)])[:-1],
+        encode_acl([(0x01, 7, 0), (0x04, 7, 0), (0x20, 7, 0)], version=3),
+        encode_acl([(0x04, 7, 0), (0x20, 7, 0)]),
+        encode_acl([(0x01, 7, 0), (0x20, 7, 0)]),
+    ],
+    ids=["empty", "truncated", "version", "no-owner", "no-group"],
+)
+def test_unparseable_default_acl_falls_back_to_umask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: bytes
 ) -> None:
-    """An fstat error propagates without leaving the probe or its fd open."""
-    import errno
+    """An xattr that is not a usable version-2 ACL leaves the umask in charge."""
+    monkeypatch.setattr(kernel.sys, "platform", "linux")
+    monkeypatch.setattr(kernel.os, "getxattr", lambda *_: raw, raising=False)
+    assert kernel.new_file_mode(tmp_path) == 0o644
 
-    fstat = os.fstat
-    descriptors: list[int] = []
 
-    def fail(fd: int) -> os.stat_result:
-        descriptors.append(fd)
-        raise OSError("cannot inspect probe")
+@pytest.mark.usefixtures("umask_022")
+def test_non_linux_uses_umask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Other platforms keep the umask-only mode without reading xattrs."""
 
-    with monkeypatch.context() as scoped:
-        scoped.setattr(kernel.os, "fstat", fail)
-        with pytest.raises(OSError, match="cannot inspect probe"):
-            kernel.new_file_mode(tmp_path)
-    assert list(tmp_path.iterdir()) == []
-    with pytest.raises(OSError) as error:
-        fstat(descriptors[0])
-    assert error.value.errno == errno.EBADF
+    def fail(*_args: object) -> bytes:
+        raise AssertionError("must not read xattrs off Linux")
+
+    monkeypatch.setattr(kernel.sys, "platform", "darwin")
+    monkeypatch.setattr(kernel.os, "getxattr", fail, raising=False)
+    assert kernel.new_file_mode(tmp_path) == 0o644
 
 
 def test_mode_error_does_not_publish_or_leave_staging(
@@ -132,7 +171,7 @@ def test_mode_error_does_not_publish_or_leave_staging(
 def test_new_content_stays_private_until_permissions_are_prepared(
     acl_directory: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The mode probe is empty; only private staging holds the note's text."""
+    """Only owner-only staging holds the note's text before publication."""
     original = kernel.new_file_mode
 
     def inspect(parent: Path) -> int:
