@@ -13,7 +13,9 @@ from tests.fixtures.git import _run_git
 
 @pytest.mark.parametrize("runner", [run_git, run_git_capturing])
 @pytest.mark.parametrize("verb", ["diff", "show"])
-@pytest.mark.parametrize("prefix", [(), ("-c", "user.name=test")])
+@pytest.mark.parametrize(
+    "prefix", [(), ("-c", "user.name=test"), ("-c", "core.quotePath=true")]
+)
 def test_rendering_config_is_central(
     runner: Any, verb: str, prefix: tuple[str, ...]
 ) -> None:
@@ -23,9 +25,9 @@ def test_rendering_config_is_central(
             "git",
             "-C",
             "/repo",
+            *prefix,
             "-c",
             "core.quotePath=false",
-            *prefix,
             verb,
             "HEAD",
         ]

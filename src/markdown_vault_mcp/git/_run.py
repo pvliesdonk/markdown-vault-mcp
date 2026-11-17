@@ -246,7 +246,7 @@ def _argv(
         if command and command[0] in ("diff", "show")
         else []
     )
-    return ["git", "-C", str(git_root), *config, *args, *suffix]
+    return ["git", "-C", str(git_root), *args[:i], *config, *command, *suffix]
 
 
 def run_git(

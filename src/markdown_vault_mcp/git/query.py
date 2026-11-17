@@ -707,7 +707,7 @@ def _diff_is_binary(
     pathspecs: list[str] | None,
     env: dict[str, str] | None,
 ) -> bool:
-    """Probe numstat using revision or blob args separate from raw pathspecs.
+    """Probe numstat for revision args plus pathspecs; a blob pair takes ``None``.
 
     A failure is surfaced by the subsequent checked diff.
     """
