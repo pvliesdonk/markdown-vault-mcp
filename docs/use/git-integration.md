@@ -45,6 +45,10 @@ backlinks or OKF refreshes index listings. Those derived writes stay in the
 same commit. A `move_folder` call that moves several files still uses the
 batch summary.
 
+A writing MCP call waits up to 30 seconds for its local commit attempt before
+returning; on timeout or failure, the result returns and the commit may be late
+or absent. Push remains deferred.
+
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.

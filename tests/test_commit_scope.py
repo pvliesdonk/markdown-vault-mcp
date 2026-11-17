@@ -90,6 +90,107 @@ class _PlainRecorder:
         self.singles.append((abs_path, operation))
 
 
+class TestScopeAcknowledgement:
+    def test_wait_and_empty_scope_do_not_flush_another_scope(self) -> None:
+        entered, release, finished = (
+            threading.Event(),
+            threading.Event(),
+            threading.Event(),
+        )
+
+        class Gated(_BatchRecorder):
+            def on_write_batch(
+                self, items: Sequence[WriteBatchItem], tool_name: str
+            ) -> None:
+                entered.set()
+                assert release.wait(5)
+                super().on_write_batch(items, tool_name)
+
+        recorder = Gated()
+        dispatcher = WriteCallbackDispatcher(recorder)
+        with bound_commit_scope("open") as open_scope:
+            dispatcher.fire(Path("open.md"), "", "write")
+        with bound_commit_scope("write") as scope:
+            dispatcher.fire(Path("note.md"), "", "write")
+        worker = threading.Thread(
+            target=lambda: (dispatcher.end_scope(scope, wait=True), finished.set())
+        )
+        worker.start()
+        try:
+            assert entered.wait(5)
+            assert not finished.is_set()
+            with bound_commit_scope("read") as empty:
+                dispatcher.end_scope(empty, wait=True)
+            assert not finished.is_set()
+        finally:
+            release.set()
+            worker.join(5)
+        assert finished.is_set()
+        assert recorder.batches == [("write", [Path("note.md")])]
+        dispatcher.end_scope(open_scope, wait=True)
+        dispatcher.close()
+        assert recorder.batches[-1] == ("open", [Path("open.md")])
+
+    def test_timeout_and_default_nonblocking(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: Any
+    ) -> None:
+        entered, release = threading.Event(), threading.Event()
+
+        class Gated(_BatchRecorder):
+            def on_write_batch(
+                self, items: Sequence[WriteBatchItem], tool_name: str
+            ) -> None:
+                entered.set()
+                assert release.wait(5)
+                super().on_write_batch(items, tool_name)
+
+        monkeypatch.setattr(
+            "markdown_vault_mcp.write_callback._SCOPE_WAIT_TIMEOUT", 0.01
+        )
+        dispatcher = WriteCallbackDispatcher(Gated())
+        try:
+            with bound_commit_scope("first") as first:
+                dispatcher.fire(Path("first.md"), "", "write")
+                dispatcher.end_scope(first)
+            assert entered.wait(5)
+            with bound_commit_scope("second") as second:
+                dispatcher.fire(Path("second.md"), "", "write")
+                dispatcher.end_scope(second, wait=True)
+            assert "commit_scope_wait_timeout" in caplog.text
+        finally:
+            release.set()
+            dispatcher.close()
+
+    def test_callback_failure_acknowledges_and_noops(self, caplog: Any) -> None:
+        class Failing(_BatchRecorder):
+            def on_write_batch(
+                self, items: Sequence[WriteBatchItem], tool_name: str
+            ) -> None:
+                raise ValueError(f"broken {tool_name}: {len(items)}")
+
+        dispatcher = WriteCallbackDispatcher(Failing())
+        with bound_commit_scope("write") as scope:
+            dispatcher.fire(Path("note.md"), "", "write")
+            dispatcher.end_scope(scope, wait=True)
+        assert "write_callback_batch_failed" in caplog.text
+        dispatcher.close()
+        dispatcher.end_scope(scope, wait=True)
+        WriteCallbackDispatcher(None).end_scope(scope, wait=True)
+        WriteCallbackDispatcher(_PlainRecorder()).end_scope(scope, wait=True)
+
+    def test_dead_worker_is_reported(self, caplog: Any) -> None:
+        dispatcher = WriteCallbackDispatcher(_BatchRecorder())
+        dead = threading.Thread(target=lambda: None)
+        dead.start()
+        dead.join()
+        with bound_commit_scope("write") as scope:
+            dispatcher._worker = dead
+            dispatcher._scopes_with_writes.add(scope.token)
+            dispatcher.end_scope(scope, wait=True)
+        assert "commit_scope_wait_dead_worker" in caplog.text
+        dispatcher.close()
+
+
 class TestScopeBinding:
     def test_no_scope_outside_a_tool_call(self) -> None:
         assert current_commit_scope() is None
@@ -358,7 +459,10 @@ class TestMiddleware:
         closed: list[CommitScope] = []
 
         class _Vault:
-            def end_commit_scope(self, scope: CommitScope) -> None:
+            def end_commit_scope(
+                self, scope: CommitScope, *, wait: bool = False
+            ) -> None:
+                assert wait
                 closed.append(scope)
 
         middleware = CommitScopeMiddleware()
@@ -1144,6 +1248,97 @@ class TestScopeSurvivesARealToolCall:
         assert len(subjects) == before + 1, subjects
         assert subjects[0] == "move_folder: 3 files"
         assert _files_in_head(repo) == {f"dst/{n}.md" for n in ("a", "b", "c")}
+
+    async def test_write_finishes_commit_before_sequential_folder_move(
+        self, _git_vault_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A sequential move records the note and OKF files as renames."""
+        import subprocess
+
+        from fastmcp import Client
+
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+        from tests.server_factory import make_server
+
+        repo = _git_vault_env
+        (repo / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
+        (repo / "proj/a").mkdir(parents=True)
+        (repo / "proj/a/note.md").write_text("# Note\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "index.md", "proj/a/note.md"], check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "OKF seed"],
+            check=True,
+            capture_output=True,
+        )
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+        entered, release = threading.Event(), threading.Event()
+        original = GitWriteStrategy.on_write_batch
+
+        def gated(strategy: Any, items: Any, tool_name: str, **kwargs: Any) -> None:
+            if tool_name == "write":
+                entered.set()
+                assert release.wait(10)
+            original(strategy, items, tool_name, **kwargs)
+
+        monkeypatch.setattr(GitWriteStrategy, "on_write_batch", gated)
+        async with Client(make_server()) as client:
+            task = asyncio.create_task(
+                client.call_tool(
+                    "write",
+                    {
+                        "path": "proj/a/second.md",
+                        "content": "second",
+                        "frontmatter": {"title": "Second"},
+                    },
+                )
+            )
+            try:
+                assert await asyncio.to_thread(entered.wait, 10)
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(task), 0.1)
+            finally:
+                release.set()
+                await task
+            write_status = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "show",
+                    "--format=%s",
+                    "--name-status",
+                    "HEAD",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "write: proj/a/second.md" in write_status
+            for path in ("second.md", "index.md", "log.md"):
+                assert f"A\tproj/a/{path}" in write_status
+            await client.call_tool(
+                "move_folder", {"old_dir": "proj/a", "new_dir": "proj/b"}
+            )
+            move_status = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "show",
+                    "--format=%s",
+                    "--name-status",
+                    "--find-renames",
+                    "HEAD",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "R100\tproj/a/second.md\tproj/b/second.md" in move_status
 
     async def test_a_single_file_tool_call_still_names_its_path(
         self, _git_vault_env: Path

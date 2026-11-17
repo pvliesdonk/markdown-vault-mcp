@@ -6591,8 +6591,17 @@ first item. Multi-file folder moves retain their
 batch summary; exact folder roots are not inferred from the moved files
 (#1676, single-note slice).
 
-Three properties this depends on:
+Properties this depends on:
 
+- **A writing call waits for its callback attempt (#2128).** The server
+  awaits a per-scope marker, without blocking the event loop or flushing other
+  open scopes. Empty scopes return immediately. The wait is bounded at 30
+  seconds; a timeout or dead worker is logged and the result returns best
+  effort, with a commit possibly landing later. Callback failure is also logged;
+  completion does not guarantee Git succeeded. Concurrent calls share FIFO
+  latency but are not isolated from each other's filesystem changes. Library
+  scope closing remains nonblocking by default, and non-batch callbacks retain
+  their asynchronous per-write timing. Push remains deferred.
 - **The scope is read in `fire`, never on the worker.** `fire` runs on the
   request's `to_thread` worker, whose copied context carries the contextvar;
   the dispatcher thread has no request context, so reading there would always

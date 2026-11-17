@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+_SCOPE_WAIT_TIMEOUT = 30.0
 
 
 class _DrainMarker:
@@ -87,13 +88,14 @@ class _ScopeEnd:
     Enqueued by
     :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
     when a tool call returns. FIFO ordering guarantees every write that call
-    fired precedes this marker, so no wait or handshake is needed.
+    fired precedes this marker. ``done`` acknowledges the flush attempt.
     """
 
-    __slots__ = ("token",)
+    __slots__ = ("done", "token")
 
     def __init__(self, token: int) -> None:
         self.token = token
+        self.done = threading.Event()
 
 
 class WriteCallbackDispatcher:
@@ -155,6 +157,7 @@ class WriteCallbackDispatcher:
         # ``close`` has queued the sentinel.
         self._worker_lock = threading.Lock()
         self._closed = False
+        self._scopes_with_writes: set[int] = set()
 
     def fire(
         self,
@@ -213,6 +216,8 @@ class WriteCallbackDispatcher:
                 )
                 return
             self._ensure_worker_locked()
+            if scope is not None:
+                self._scopes_with_writes.add(scope.token)
             # Enqueue under the lock so close() cannot slip the sentinel in
             # ahead of this item (which would leave it permanently undrained).
             self._queue.put(
@@ -227,26 +232,47 @@ class WriteCallbackDispatcher:
                 )
             )
 
-    def end_scope(self, scope: CommitScope) -> None:
+    def end_scope(self, scope: CommitScope, *, wait: bool = False) -> None:
         """Close *scope*, committing everything fired under it as one group.
 
         A no-op when no callback is configured, when the callback did not opt
         into :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`, after
         :meth:`close`, or when the worker was never started — in each case
         nothing was buffered under this scope, so there is nothing to flush.
-        Never blocks: the marker is enqueued and the worker flushes it in FIFO
-        order, behind every write the scope fired.
+        By default the marker is queued without waiting. With ``wait=True``,
+        wait up to 30 seconds for this scope's callback attempt to finish.
+        A timeout or dead worker is logged and leaves completion best effort.
 
         Args:
             scope: The scope to close, as returned by
                 :func:`~markdown_vault_mcp._commit_scope.bound_commit_scope`.
+            wait: Wait for the scope's callback attempt when it wrote anything.
         """
         if self._on_write is None or not self._accepts_batch:
             return
         with self._worker_lock:
             if self._closed or self._worker is None:
                 return
-            self._queue.put(_ScopeEnd(scope.token))
+            wrote = scope.token in self._scopes_with_writes
+            self._scopes_with_writes.discard(scope.token)
+            if wait and not wrote:
+                return
+            if wait and not self._worker.is_alive():
+                logger.error(
+                    "commit_scope_wait_dead_worker tool=%s token=%s outcome=will_not_commit",
+                    scope.tool_name,
+                    scope.token,
+                )
+                return
+            marker = _ScopeEnd(scope.token)
+            self._queue.put(marker)
+        if wait and not marker.done.wait(_SCOPE_WAIT_TIMEOUT):
+            logger.warning(
+                "commit_scope_wait_timeout tool=%s token=%s timeout_s=%s outcome=commit_pending",
+                scope.tool_name,
+                scope.token,
+                _SCOPE_WAIT_TIMEOUT,
+            )
 
     def _flush_scope(self, token: int) -> None:
         """Dispatch one buffered scope's writes, then forget it.
@@ -355,7 +381,10 @@ class WriteCallbackDispatcher:
                     item.event.set()
                     continue
                 if isinstance(item, _ScopeEnd):
-                    self._flush_scope(item.token)
+                    try:
+                        self._flush_scope(item.token)
+                    finally:
+                        item.done.set()
                     continue
                 abs_path, content, operation, old_path, principal, scope, auxiliary = (
                     item

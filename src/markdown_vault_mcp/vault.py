@@ -1072,18 +1072,19 @@ class Vault:
         if self._git_strategy is not None:
             self._git_strategy.stop()
 
-    def end_commit_scope(self, scope: CommitScope) -> None:
+    def end_commit_scope(self, scope: CommitScope, *, wait: bool = False) -> None:
         """Close a tool call's commit scope, grouping its writes into one commit.
 
         Called by
         :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
-        when a tool call returns. Never blocks: the marker is queued behind the writes
-        that call fired, and the dispatcher flushes it in order.
+        when a tool call returns. By default this queues the marker without
+        blocking; waiting is bounded and acknowledges the callback attempt.
 
         Args:
             scope: The scope to close.
+            wait: Wait for the scope's callback attempt when it wrote anything.
         """
-        self._write_callback.end_scope(scope)
+        self._write_callback.end_scope(scope, wait=wait)
 
     def close(self) -> None:
         """Release what the vault opened.
