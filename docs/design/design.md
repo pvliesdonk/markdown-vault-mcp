@@ -6594,7 +6594,7 @@ batch summary; exact folder roots are not inferred from the moved files
 Properties this depends on:
 
 - **A writing call waits for its callback attempt (#2128).** The server
-  awaits a per-scope marker, without blocking the event loop or flushing other
+  awaits a per-scope marker without occupying an executor thread or flushing other
   open scopes. Empty scopes return immediately. The wait is bounded at 30
   seconds; a timeout or dead worker is logged and the result returns best
   effort, with a commit possibly landing later. Callback failure is also logged;

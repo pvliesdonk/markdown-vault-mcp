@@ -92,11 +92,7 @@ class _PlainRecorder:
 
 class TestScopeAcknowledgement:
     def test_wait_and_empty_scope_do_not_flush_another_scope(self) -> None:
-        entered, release, finished = (
-            threading.Event(),
-            threading.Event(),
-            threading.Event(),
-        )
+        entered, release = threading.Event(), threading.Event()
 
         class Gated(_BatchRecorder):
             def on_write_batch(
@@ -112,28 +108,26 @@ class TestScopeAcknowledgement:
             dispatcher.fire(Path("open.md"), "", "write")
         with bound_commit_scope("write") as scope:
             dispatcher.fire(Path("note.md"), "", "write")
-        worker = threading.Thread(
-            target=lambda: (dispatcher.end_scope(scope, wait=True), finished.set())
-        )
-        worker.start()
+        done = dispatcher._enqueue_scope_end(scope)
+        assert done is not None
         try:
             assert entered.wait(5)
-            assert not finished.is_set()
+            assert not done.done()
+            assert not done.cancel()
             with bound_commit_scope("read") as empty:
-                dispatcher.end_scope(empty, wait=True)
-            assert not finished.is_set()
+                assert dispatcher._enqueue_scope_end(empty) is None
+            assert not done.done()
         finally:
             release.set()
-            worker.join(5)
-        assert finished.is_set()
+        done.result(timeout=5)
         assert recorder.batches == [("write", [Path("note.md")])]
-        dispatcher.end_scope(open_scope, wait=True)
+        open_done = dispatcher._enqueue_scope_end(open_scope)
+        assert open_done is not None
+        open_done.result(timeout=5)
         dispatcher.close()
         assert recorder.batches[-1] == ("open", [Path("open.md")])
 
-    def test_timeout_and_default_nonblocking(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: Any
-    ) -> None:
+    def test_default_close_is_nonblocking(self) -> None:
         entered, release = threading.Event(), threading.Event()
 
         class Gated(_BatchRecorder):
@@ -144,19 +138,13 @@ class TestScopeAcknowledgement:
                 assert release.wait(5)
                 super().on_write_batch(items, tool_name)
 
-        monkeypatch.setattr(
-            "markdown_vault_mcp.write_callback._SCOPE_WAIT_TIMEOUT", 0.01
-        )
         dispatcher = WriteCallbackDispatcher(Gated())
         try:
             with bound_commit_scope("first") as first:
                 dispatcher.fire(Path("first.md"), "", "write")
                 dispatcher.end_scope(first)
             assert entered.wait(5)
-            with bound_commit_scope("second") as second:
-                dispatcher.fire(Path("second.md"), "", "write")
-                dispatcher.end_scope(second, wait=True)
-            assert "commit_scope_wait_timeout" in caplog.text
+            assert not release.is_set()
         finally:
             release.set()
             dispatcher.close()
@@ -171,12 +159,16 @@ class TestScopeAcknowledgement:
         dispatcher = WriteCallbackDispatcher(Failing())
         with bound_commit_scope("write") as scope:
             dispatcher.fire(Path("note.md"), "", "write")
-            dispatcher.end_scope(scope, wait=True)
+            done = dispatcher._enqueue_scope_end(scope)
+            assert done is not None
+            done.result(timeout=5)
         assert "write_callback_batch_failed" in caplog.text
         dispatcher.close()
-        dispatcher.end_scope(scope, wait=True)
-        WriteCallbackDispatcher(None).end_scope(scope, wait=True)
-        WriteCallbackDispatcher(_PlainRecorder()).end_scope(scope, wait=True)
+        assert dispatcher._enqueue_scope_end(scope) is None
+        assert WriteCallbackDispatcher(None)._enqueue_scope_end(scope) is None
+        assert (
+            WriteCallbackDispatcher(_PlainRecorder())._enqueue_scope_end(scope) is None
+        )
 
     def test_dead_worker_is_reported(self, caplog: Any) -> None:
         dispatcher = WriteCallbackDispatcher(_BatchRecorder())
@@ -186,7 +178,7 @@ class TestScopeAcknowledgement:
         with bound_commit_scope("write") as scope:
             dispatcher._worker = dead
             dispatcher._scopes_with_writes.add(scope.token)
-            dispatcher.end_scope(scope, wait=True)
+            assert dispatcher._enqueue_scope_end(scope) is None
         assert "commit_scope_wait_dead_worker" in caplog.text
         dispatcher.close()
 
@@ -424,6 +416,148 @@ class _FakeMiddlewareContext:
 
 
 class TestMiddleware:
+    @pytest.mark.asyncio
+    async def test_waiting_commit_does_not_starve_default_executor(self) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        loop = asyncio.get_running_loop()
+        entered = asyncio.Event()
+        release = threading.Event()
+
+        class Gated(_BatchRecorder):
+            def on_write_batch(
+                self, items: Sequence[WriteBatchItem], tool_name: str
+            ) -> None:
+                loop.call_soon_threadsafe(entered.set)
+                assert release.wait(5)
+                super().on_write_batch(items, tool_name)
+
+        dispatcher = WriteCallbackDispatcher(Gated())
+
+        class Vault:
+            _enqueue_commit_scope_end = dispatcher._enqueue_scope_end
+
+        async def write(_ctx: Any) -> str:
+            dispatcher.fire(Path("note.md"), "", "write")
+            return "ok"
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        loop.set_default_executor(pool)
+        with mock.patch("markdown_vault_mcp.domain.get_vault", return_value=Vault()):
+            task = asyncio.create_task(
+                CommitScopeMiddleware().on_call_tool(
+                    _FakeMiddlewareContext("write", object()), write
+                )
+            )  # type: ignore[arg-type]
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                assert await asyncio.wait_for(asyncio.to_thread(lambda: 42), 0.2) == 42
+            finally:
+                release.set()
+                await task
+                dispatcher.close()
+                pool.shutdown(wait=True)
+
+    @pytest.mark.asyncio
+    async def test_cancellation_cannot_prevent_scope_enqueue(self) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        loop = asyncio.get_running_loop()
+        occupied, release, fired = (
+            threading.Event(),
+            threading.Event(),
+            threading.Event(),
+        )
+        release_commit = threading.Event()
+        body_finished = asyncio.Event()
+
+        class Recorder(_BatchRecorder):
+            def on_write_batch(
+                self, items: Sequence[WriteBatchItem], tool_name: str
+            ) -> None:
+                assert release_commit.wait(5)
+                super().on_write_batch(items, tool_name)
+                fired.set()
+
+        dispatcher = WriteCallbackDispatcher(Recorder())
+
+        class Vault:
+            _enqueue_commit_scope_end = dispatcher._enqueue_scope_end
+
+        async def write(_ctx: Any) -> str:
+            dispatcher.fire(Path("note.md"), "", "write")
+            body_finished.set()
+            return "ok"
+
+        def occupy() -> None:
+            occupied.set()
+            release.wait(5)
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        loop.set_default_executor(pool)
+        pool.submit(occupy)
+        assert occupied.wait(2)
+        with mock.patch("markdown_vault_mcp.domain.get_vault", return_value=Vault()):
+            task = asyncio.create_task(
+                CommitScopeMiddleware().on_call_tool(
+                    _FakeMiddlewareContext("write", object()), write
+                )
+            )  # type: ignore[arg-type]
+            try:
+                await body_finished.wait()
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                release.set()
+                release_commit.set()
+                assert await asyncio.to_thread(fired.wait, 2)
+            finally:
+                release.set()
+                release_commit.set()
+                dispatcher.close()
+                pool.shutdown(wait=True)
+
+    @pytest.mark.asyncio
+    async def test_timeout_allows_late_callback_completion(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: Any
+    ) -> None:
+        release, fired = threading.Event(), threading.Event()
+
+        class Recorder(_BatchRecorder):
+            def on_write_batch(
+                self, items: Sequence[WriteBatchItem], tool_name: str
+            ) -> None:
+                assert release.wait(5)
+                super().on_write_batch(items, tool_name)
+                fired.set()
+
+        dispatcher = WriteCallbackDispatcher(Recorder())
+
+        class Vault:
+            _enqueue_commit_scope_end = dispatcher._enqueue_scope_end
+
+        async def write(_ctx: Any) -> str:
+            dispatcher.fire(Path("note.md"), "", "write")
+            return "ok"
+
+        monkeypatch.setattr(
+            "markdown_vault_mcp._server_commit_scope._SCOPE_WAIT_TIMEOUT", 0.01
+        )
+        try:
+            with mock.patch(
+                "markdown_vault_mcp.domain.get_vault", return_value=Vault()
+            ):
+                result = await CommitScopeMiddleware().on_call_tool(
+                    _FakeMiddlewareContext("write", object()), write
+                )  # type: ignore[arg-type]
+            assert result == "ok"
+            assert "commit_scope_wait_timeout" in caplog.text
+            release.set()
+            assert await asyncio.to_thread(fired.wait, 2)
+        finally:
+            release.set()
+            dispatcher.close()
+
     @staticmethod
     async def _run(
         middleware: CommitScopeMiddleware,
@@ -459,10 +593,7 @@ class TestMiddleware:
         closed: list[CommitScope] = []
 
         class _Vault:
-            def end_commit_scope(
-                self, scope: CommitScope, *, wait: bool = False
-            ) -> None:
-                assert wait
+            def _enqueue_commit_scope_end(self, scope: CommitScope) -> None:
                 closed.append(scope)
 
         middleware = CommitScopeMiddleware()

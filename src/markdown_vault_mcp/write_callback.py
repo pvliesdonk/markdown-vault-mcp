@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+from concurrent.futures import Future
 from typing import TYPE_CHECKING, cast
 
 from markdown_vault_mcp._commit_scope import (
@@ -59,7 +60,6 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
-_SCOPE_WAIT_TIMEOUT = 30.0
 
 
 class _DrainMarker:
@@ -95,7 +95,8 @@ class _ScopeEnd:
 
     def __init__(self, token: int) -> None:
         self.token = token
-        self.done = threading.Event()
+        self.done: Future[None] = Future()
+        self.done.set_running_or_notify_cancel()
 
 
 class WriteCallbackDispatcher:
@@ -232,47 +233,52 @@ class WriteCallbackDispatcher:
                 )
             )
 
-    def end_scope(self, scope: CommitScope, *, wait: bool = False) -> None:
+    def end_scope(self, scope: CommitScope) -> None:
         """Close *scope*, committing everything fired under it as one group.
 
         A no-op when no callback is configured, when the callback did not opt
         into :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`, after
         :meth:`close`, or when the worker was never started — in each case
         nothing was buffered under this scope, so there is nothing to flush.
-        By default the marker is queued without waiting. With ``wait=True``,
-        wait up to 30 seconds for this scope's callback attempt to finish.
-        A timeout or dead worker is logged and leaves completion best effort.
+        The marker is queued without waiting.
 
         Args:
             scope: The scope to close, as returned by
                 :func:`~markdown_vault_mcp._commit_scope.bound_commit_scope`.
-            wait: Wait for the scope's callback attempt when it wrote anything.
+        """
+        self._enqueue_scope_end(scope, skip_empty=False)
+
+    def _enqueue_scope_end(
+        self, scope: CommitScope, *, skip_empty: bool = True
+    ) -> Future[None] | None:
+        """Enqueue the scope end and return its completion without blocking.
+
+        Args:
+            scope: The scope to close.
+            skip_empty: Avoid queuing a marker when no writes were fired.
+
+        Returns:
+            A future for the callback attempt, or None when no wait is needed.
         """
         if self._on_write is None or not self._accepts_batch:
-            return
+            return None
         with self._worker_lock:
-            if self._closed or self._worker is None:
-                return
             wrote = scope.token in self._scopes_with_writes
             self._scopes_with_writes.discard(scope.token)
-            if wait and not wrote:
-                return
-            if wait and not self._worker.is_alive():
+            if self._closed or self._worker is None:
+                return None
+            if skip_empty and not wrote:
+                return None
+            if skip_empty and not self._worker.is_alive():
                 logger.error(
                     "commit_scope_wait_dead_worker tool=%s token=%s outcome=will_not_commit",
                     scope.tool_name,
                     scope.token,
                 )
-                return
+                return None
             marker = _ScopeEnd(scope.token)
             self._queue.put(marker)
-        if wait and not marker.done.wait(_SCOPE_WAIT_TIMEOUT):
-            logger.warning(
-                "commit_scope_wait_timeout tool=%s token=%s timeout_s=%s outcome=commit_pending",
-                scope.tool_name,
-                scope.token,
-                _SCOPE_WAIT_TIMEOUT,
-            )
+        return marker.done
 
     def _flush_scope(self, token: int) -> None:
         """Dispatch one buffered scope's writes, then forget it.
@@ -384,7 +390,7 @@ class WriteCallbackDispatcher:
                     try:
                         self._flush_scope(item.token)
                     finally:
-                        item.done.set()
+                        item.done.set_result(None)
                     continue
                 abs_path, content, operation, old_path, principal, scope, auxiliary = (
                     item

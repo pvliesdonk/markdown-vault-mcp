@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from fastmcp.tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
+_SCOPE_WAIT_TIMEOUT = 30.0
 
 
 class CommitScopeMiddleware(Middleware):
@@ -63,7 +64,19 @@ class CommitScopeMiddleware(Middleware):
             from markdown_vault_mcp.domain import get_vault
 
             vault = get_vault(fastmcp_context)
-            await asyncio.to_thread(vault.end_commit_scope, scope, wait=True)
+            done = vault._enqueue_commit_scope_end(scope)
+            if done is not None:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(asyncio.wrap_future(done)), _SCOPE_WAIT_TIMEOUT
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "commit_scope_wait_timeout tool=%s token=%s timeout_s=%s outcome=commit_pending",
+                        scope.tool_name,
+                        scope.token,
+                        _SCOPE_WAIT_TIMEOUT,
+                    )
         except Exception:
             # Deliberately broad, and deliberately swallowed. This runs in the
             # ``finally`` of on_call_tool, so ANY exception escaping here
