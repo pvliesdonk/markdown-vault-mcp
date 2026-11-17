@@ -6573,10 +6573,14 @@ subject when the call staged exactly one path.
 An internal commit group binds a persistent scope to an opaque, server-minted
 handle. The dispatcher provides `open_group`, `bind_group`, and `close_group`
 for this internal API. It buffers writes across calls and closes the group with
-its description as the Git subject. A close while a timed-out dispatcher
-shutdown is still running refuses because the result is unavailable. The result reports `committed`, `failed`,
+its description as the Git subject. One principal may hold several groups;
+nested binding and closing a group with active writes are refused. A close while
+a timed-out dispatcher shutdown is still running refuses because the result is
+unavailable. The result reports `committed`, `failed`,
 or `no_changes`: a commit was made, a flush failed, or no commit was needed.
-Failure remains sticky across flushes. It reports a SHA when available and the
+An interrupted group callback records `failed` before the worker exits; other
+queued groups or close markers can remain unresolved after worker death. Failure
+remains sticky across flushes. It reports a SHA when available and the
 number of paths in the commit (a rename counts both paths), or zero when the
 count is unknown. Untracked ignored writes are skipped; tracked updates are
 committed even when they match an ignore rule. A failed flush consumes

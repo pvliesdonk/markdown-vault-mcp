@@ -896,3 +896,50 @@ def test_git_group_surrounds_per_call_scope(git_repo: Path) -> None:
     finally:
         dispatcher.close()
         strategy.close()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+@pytest.mark.parametrize("fatal", [SystemExit, KeyboardInterrupt])
+@pytest.mark.parametrize("flush", ["close_group", "drain", "shutdown"])
+def test_interrupted_group_callback_reports_failed(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    fatal: type[BaseException],
+    flush: str,
+) -> None:
+    class FatalCallback:
+        accepts_batch = True
+        accepts_group_commit = True
+
+        def __call__(self, _path: Path, _content: str, _operation: str) -> None:
+            raise AssertionError("expected grouped batch")
+
+        def on_write_batch(self, *_args: object, **_kwargs: object) -> None:
+            raise fatal("interrupted")
+
+    dispatcher = WriteCallbackDispatcher(FatalCallback())
+    try:
+        group = dispatcher.open_group("Interrupted", None)
+        note = tmp_path / "note.md"
+        note.write_text("on disk", encoding="utf-8")
+        with dispatcher.bind_group(group.handle, None):
+            dispatcher.fire(note, "on disk", "write")
+        if flush == "close_group":
+            result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        elif flush == "drain":
+            dispatcher.drain(timeout=0)
+            assert dispatcher._worker is not None
+            dispatcher._worker.join(timeout=5)
+            result = group.result
+        else:
+            dispatcher.close(timeout=5)
+            result = group.result
+        assert dispatcher._worker is not None
+        dispatcher._worker.join(timeout=5)
+        assert not dispatcher._worker.is_alive()
+        assert "write_callback_worker_died" in caplog.text
+        assert result.status == "failed"
+        assert result.sha is None
+        assert note.read_text(encoding="utf-8") == "on disk"
+    finally:
+        dispatcher.close()

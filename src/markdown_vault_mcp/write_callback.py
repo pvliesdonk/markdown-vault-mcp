@@ -392,11 +392,12 @@ class WriteCallbackDispatcher:
                     len(items),
                     exc_info=True,
                 )
-            group.record(
-                result
-                if isinstance(result, GroupCommitResult)
-                else GroupCommitResult(None, 0, "failed")
-            )
+            finally:
+                group.record(
+                    result
+                    if isinstance(result, GroupCommitResult)
+                    else GroupCommitResult(None, 0, "failed")
+                )
             return
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),
