@@ -213,12 +213,22 @@ class PushScheduler:
         if git_root is None or not self._enable_push:
             return
 
-        probe = self._has_unpushed or _has_unpushed_commits
-        if probe(git_root):
+        probe = (
+            self._has_unpushed
+            if self._has_unpushed is not None
+            else _has_unpushed_commits
+        )
+        try:
+            unpushed = probe(git_root)
+        except Exception as exc:
+            self._startup_backend_failed(exc)
+            return
+        if unpushed:
             logger.info("git_startup_push_pending")
             try:
                 self._run_push(git_root)
             except subprocess.CalledProcessError as exc:
+                self._push_pending = True
                 sanitized_stderr = self._redact(exc.stderr or "")
                 # WARNING for the same reason as the deferred-push leg
                 # (#1330): a startup push that cannot reach the remote is the
@@ -232,8 +242,17 @@ class PushScheduler:
                 self._health.push_failed(
                     push_failure_reason(sanitized_stderr), sanitized_stderr.strip()
                 )
+            except Exception as exc:
+                self._startup_backend_failed(exc)
             else:
                 self._health.push_succeeded()
+
+    def _startup_backend_failed(self, exc: Exception) -> None:
+        """Remember a failed startup operation while the caller holds the lock."""
+        self._push_pending = True
+        detail = self._redact(str(exc))
+        logger.warning("git_startup_push_failed error=%s", one_line(detail))
+        self._health.push_failed(PUSH_REASON_PUSH_FAILED, detail.strip() or None)
 
     def _run_push(self, git_root: Path) -> None:
         """Run the injected operation or resolve the CLI helper at call time."""

@@ -63,5 +63,5 @@ The older startup warning about missing `git config user.email` is removed. The 
 ::: markdown_vault_mcp.git.git_write_strategy
 <!-- vale on -->
 
-The optional `BatchVersioner` protocol describes implementations that opt in to
-batched writes. `Versioner` remains the per-write contract.
+The optional `BatchAwareWriteCallback` protocol in `markdown_vault_mcp.types`
+describes the batch opt-in. `Versioner` remains the per-write contract.

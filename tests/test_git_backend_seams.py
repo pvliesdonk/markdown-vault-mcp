@@ -4,22 +4,20 @@ from __future__ import annotations
 
 import subprocess
 import threading
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
 
-from markdown_vault_mcp.git import GitWriteStrategy, Versioner
+from markdown_vault_mcp.git import GitWriteStrategy
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.health import SyncHealthTracker
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.types import PUSH_REASON_PUSH_FAILED
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
-
-    from markdown_vault_mcp.types import WriteBatchItem
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -104,20 +102,6 @@ def test_default_push_is_looked_up_at_call_time(
     push.assert_called_once_with(tmp_path, None, "user")
 
 
-def test_optional_batch_protocol() -> None:
-    from markdown_vault_mcp.git import BatchVersioner
-
-    class PerWrite:
-        accepts_principal = True
-
-        def __call__(self, *args: object, **kwargs: object) -> None:
-            pass
-
-    assert isinstance(GitWriteStrategy(), BatchVersioner)
-    assert isinstance(PerWrite(), Versioner)
-    assert not isinstance(PerWrite(), BatchVersioner)
-
-
 @pytest.mark.parametrize("case", ["missing", "no_ref", "failed", "empty", "ahead"])
 def test_default_probe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
@@ -178,49 +162,76 @@ def test_assembly_returns_store(
         store.close()
 
 
-def test_batch_and_per_write_dispatch() -> None:
+@pytest.mark.parametrize("fails_at", ["probe", "push"])
+def test_startup_backend_failure_preserves_scoped_write(
+    git_repo: Path, fails_at: str, caplog: pytest.LogCaptureFixture
+) -> None:
     from markdown_vault_mcp._commit_scope import bound_commit_scope
-    from markdown_vault_mcp.git import BatchVersioner
     from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
-    class PerWrite:
-        accepts_principal = True
+    secret = "fixture-secret"
+    attempts: list[Path] = []
 
-        def __init__(self) -> None:
-            self.singles: list[Path] = []
+    def fail(path: Path) -> None:
+        attempts.append(path)
+        raise ConnectionError(f"backend unavailable {secret}")
 
-        def __call__(
-            self,
-            path: Path,
-            content: str,  # noqa: ARG002
-            operation: str,  # noqa: ARG002
-            **kwargs: object,  # noqa: ARG002
-        ) -> None:
-            self.singles.append(path)
+    strategy = GitWriteStrategy(
+        token=secret,
+        enable_pull=False,
+        enable_push=True,
+        push_delay_s=0,
+        git_lfs=False,
+    )
+    strategy._push_scheduler._has_unpushed = (
+        fail if fails_at == "probe" else lambda _: True
+    )
+    strategy._push_scheduler._push = fail
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        note = git_repo / "new.md"
+        note.write_text("saved")
+        with bound_commit_scope("write") as scope:
+            dispatcher.fire(note, "saved", "write")
+            dispatcher.end_scope(scope)
+        dispatcher.close()
+        result = subprocess.run(
+            ["git", "-C", str(git_repo), "show", "--pretty=", "--name-only", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "new.md" in result.stdout.splitlines()
+        health = strategy.sync_health()
+        assert health is not None and health.reason == PUSH_REASON_PUSH_FAILED
+        assert secret not in caplog.text
+        assert "***" in caplog.text
+        assert strategy._push_pending
+        strategy._push_scheduler._push = attempts.append
+        strategy.flush()
+        assert not strategy._push_pending
+        assert strategy.sync_health() is None
+    finally:
+        dispatcher.close()
+        strategy.close()
 
-    class Batched(PerWrite):
-        accepts_batch = True
 
-        def __init__(self) -> None:
-            super().__init__()
-            self.batches: list[tuple[str, list[Path]]] = []
+@pytest.mark.parametrize("fails_at", ["probe", "push"])
+def test_startup_failure_is_retried_without_a_write(
+    tmp_path: Path, fails_at: str
+) -> None:
+    def fail(_path: Path) -> None:
+        raise ConnectionError("offline")
 
-        def on_write_batch(
-            self, items: Sequence[WriteBatchItem], tool_name: str
-        ) -> None:
-            self.batches.append((tool_name, [item[0] for item in items]))
-
-    plain, batch = PerWrite(), Batched()
-    assert isinstance(batch, BatchVersioner)
-    for callback in (plain, batch):
-        dispatcher = WriteCallbackDispatcher(callback)
-        try:
-            with bound_commit_scope("write") as scope:
-                dispatcher.fire(Path("a.md"), "a", "write")
-                dispatcher.fire(Path("b.md"), "b", "write")
-                dispatcher.end_scope(scope)
-        finally:
-            dispatcher.close()
-    assert plain.singles == [Path("a.md"), Path("b.md")]
-    assert batch.singles == []
-    assert batch.batches == [("write", [Path("a.md"), Path("b.md")])]
+    scheduler, health = make_scheduler(
+        tmp_path,
+        has_unpushed=fail if fails_at == "probe" else lambda _: True,
+        push=fail,
+    )
+    scheduler.push_if_unpushed()
+    assert health.snapshot() is not None
+    pushed: list[Path] = []
+    scheduler._push = pushed.append
+    scheduler.flush()
+    assert pushed == [tmp_path]
+    assert health.snapshot() is None

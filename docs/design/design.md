@@ -6654,7 +6654,9 @@ the strategy closed (subsequent writes are ignored), stops the pull thread,
 then calls `flush()`. The pull loop retries a failed deferred push via
 `PushScheduler.do_push_safe()` after each tick (#957). Backends can inject
 push and startup unpushed-commit probe callables; the defaults retain the git
-CLI and resolve the `_push` helper at call time (#1308).
+CLI and resolve the `_push` helper at call time (#1308). Startup backend
+failures record redacted sync health and retain a pending push for retry, so
+local versioning can proceed.
 
 **Sync health (`git/health.py`, #1287)**: a clone whose pushes are being
 rejected keeps accepting writes — the commit lands, `read` serves it back —
@@ -6801,12 +6803,12 @@ rather than on the concrete class:
 - `Versioner` — the per-write commit; structurally the same shape as
   `PrincipalAwareWriteCallback`, restated so the module needs no runtime
   import beyond `typing`.
-- `BatchVersioner` — an optional versioner facet for callbacks that opt in to
-  batching; per-write dispatch remains available.
+  Batching is an optional `BatchAwareWriteCallback` opt-in; per-write dispatch
+  remains available.
 - `VersionedStore` — the required facets, which is what `Vault` holds.
 
 Config assembly returns `VersionedStore` through `_build_git_strategy`, the
-single construction point for a future backend selection (#1308).
+single construction point; backend selection is deferred to #1309.
 
 `GitWriteStrategy` remains the single object implementing all of them, and is
 still wired as both `git_strategy` and `on_write`; `VaultInstances.close()`
