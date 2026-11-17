@@ -40,7 +40,7 @@ It suits one person or a small team who keep notes as Markdown files and want Cl
 
 What it assumes:
 
-- **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME`.
+- **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME` and [advertise its note URLs](docs/reference/configuration.md#cross-instance-note-links).
 - **Markdown is what gets searched.** Other files, such as PDFs and images, can be read and written as attachments, but their contents are not indexed yet ([#1234](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234)).
 - **The default store trades search speed for memory.** With an index path the vectors live in a SQLite database and each search reads them from it: measured with 227,640 sections at 1,024 dimensions, searching added 25 MB to the server and 95 in 100 searches returned within about a second. Holding them in memory (the `numpy` store) answered those searches about ten times faster, and peaked at about 1.25 GB while searching. [Choosing an embedding store](docs/use/embedding-stores.md) has the measured costs and the limits.
 - **State sits on local disk.** The index and embeddings are files, and the change-tracking file sits beside the index, never inside the vault. Without `MARKDOWN_VAULT_MCP_INDEX_PATH`, the index and that file stay in memory and are rebuilt at each start.

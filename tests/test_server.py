@@ -280,7 +280,10 @@ class TestServerIdentity:
             utf16_code_units,
         )
 
-        routing = "Contains projects, meetings, and operational notes."
+        routing = (
+            "Contains craft notes. This instance serves files available at this GitHub URL: "
+            "https://github.com/pvliesdonk/corpus/blob/main/"
+        )
         policy = "Prefer concise answers and cite each note by path."
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION", routing)
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA", policy)
