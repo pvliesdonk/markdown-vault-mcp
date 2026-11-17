@@ -447,7 +447,7 @@ def test_a_destination_that_will_not_open_exits_1(
     _store(monkeypatch, "sqlite")
     result = _import("--from", "numpy")
     assert result.exit_code == 1
-    assert "the configured store cannot be opened: database down" in result.stderr
+    assert "ERROR: database down" in result.stderr
 
 
 def _postgres_configured(monkeypatch: pytest.MonkeyPatch, *, schema: str = "v") -> None:

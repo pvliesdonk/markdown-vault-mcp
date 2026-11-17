@@ -313,6 +313,7 @@ def index(
         EmbeddingsNotPublishedError,
         EmbeddingsRebuildFailedError,
         StoreBusyError,
+        StoreOpenError,
     )
 
     quiet_http_loggers()
@@ -336,6 +337,9 @@ def index(
             raise typer.Exit(1) from exc
     except StoreBusyError as exc:
         typer.echo(_busy_message(exc, "admin index"), err=True)
+        raise typer.Exit(1) from exc
+    except StoreOpenError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
@@ -379,14 +383,17 @@ def _build_owning_vault(
         The built vault.
 
     Raises:
-        typer.Exit: With code 1 when another process owns a store.
+        typer.Exit: With code 1 when a store cannot be opened.
     """
-    from markdown_vault_mcp.exceptions import StoreBusyError
+    from markdown_vault_mcp.exceptions import StoreBusyError, StoreOpenError
 
     try:
         return _build_vault(source_dir, index_path, **options)
     except StoreBusyError as exc:
         typer.echo(_busy_message(exc, command), err=True)
+        raise typer.Exit(1) from exc
+    except StoreOpenError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -560,6 +567,7 @@ def reindex(
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotConfiguredError,
         StoreBusyError,
+        StoreOpenError,
     )
 
     quiet_http_loggers()
@@ -587,6 +595,9 @@ def reindex(
             pass  # embeddings not configured
     except StoreBusyError as exc:
         typer.echo(_busy_message(exc, "admin reindex"), err=True)
+        raise typer.Exit(1) from exc
+    except StoreOpenError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
@@ -640,6 +651,7 @@ def embeddings_import(
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotPublishedError,
         EmbeddingsRebuildFailedError,
+        StoreBusyError,
         StoreOpenError,
     )
     from markdown_vault_mcp.managers.embedding_import import (
@@ -668,8 +680,11 @@ def embeddings_import(
     except (EmbeddingsNotPublishedError, EmbeddingsRebuildFailedError) as exc:
         typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
         raise typer.Exit(1) from exc
+    except StoreBusyError as exc:
+        typer.echo(_busy_message(exc, "admin embeddings import"), err=True)
+        raise typer.Exit(1) from exc
     except StoreOpenError as exc:
-        typer.echo(f"ERROR: the configured store cannot be opened: {exc}", err=True)
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
