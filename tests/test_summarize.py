@@ -348,7 +348,9 @@ def _install_fake_openai(
             api_key: str | None = None,
             base_url: str | None = None,
             timeout: float | None = None,
+            max_retries: int = 2,
         ) -> None:
+            captured["max_retries"] = max_retries
             captured["api_key"] = api_key
             captured["base_url"] = base_url
             captured["timeout"] = timeout

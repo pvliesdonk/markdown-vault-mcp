@@ -49,6 +49,23 @@ No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
+## Model-written auto-commit subjects
+
+Set `MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS=true` and configure the
+summarize backend to send each auto-commit's staged diff to that endpoint. This
+may incur charges and disclose note content to the endpoint. The default is
+false. A successful subject starts with `[AI summary]` and the original subject
+is retained in a `Mechanical-Subject` trailer. `okf_seed_log` copies the marked
+subject into the seeded history.
+
+If the backend is unavailable, the diff is empty or over 16,000 characters, or
+generation fails, times out, or returns no usable line, the original mechanical
+message is used. Diff collection waits at most two seconds and generation at
+most five seconds. A timed-out generation may continue in the background; later
+commits skip generation until it finishes. Git's partial commits use the working
+tree at commit time, so an external edit between staging and committing may not
+be represented in the summary.
+
 ## Uncommitted files at startup
 
 Startup inspects the repository's working tree and staging area in both git
