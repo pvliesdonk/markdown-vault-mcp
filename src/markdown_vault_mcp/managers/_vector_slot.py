@@ -87,6 +87,9 @@ class VectorStoreSlot:
         store: An already open store, owned by the caller.
     """
 
+    # Whether this process condemned a damaged store whose vectors are still owed.
+    _damaged = False
+
     def __init__(
         self,
         *,
@@ -118,7 +121,7 @@ class VectorStoreSlot:
         # The store a read found damaged after it opened, for the rebuild on
         # the writer thread to condemn (#1881).
         self._suspect: EmbeddingStore | None = None
-        self.recovery_owed = False
+        self.recovery_owed: bool | None = None if self._can_move_aside() else False
 
     @property
     def location(self) -> Path | str | None:
@@ -191,7 +194,7 @@ class VectorStoreSlot:
         return self._store
 
     def get(self, *, rebuild: Callable[[], object] | None) -> EmbeddingStore:
-        """Open the store, retrying owed recovery through the writer on reads.
+        """Open the store, reconciling unknown or owed recovery once per read.
 
         Args:
             rebuild: Rebuild an owned store, or ``None`` to forbid rebuilding.
@@ -202,15 +205,31 @@ class VectorStoreSlot:
         Raises:
             ValueError: If recovery remains incomplete and the store is empty.
         """
-        if rebuild is not None and self.recovery_owed:
+        if rebuild is None or self.recovery_owed is False:
+            return self._get(rebuild)
+        return self._reconciled(rebuild)
+
+    def _reconciled(self, rebuild: Callable[[], object]) -> EmbeddingStore:
+        """Reconcile an unknown or owed store once on a read.
+
+        A known debt runs the callback before the open, as for a corrupt
+        store. An unknown state opens first: a store that will not open is
+        rebuilt by the open itself, and one that does is reconciled here.
+        """
+        if self.recovery_owed:
             self._run_rebuild(rebuild, "recovery_owed")
             store = self._get(None)
-            if self.recovery_owed and not store.count:
-                raise ValueError(
-                    "Failed to rebuild the vector store after it was moved aside."
-                )
-            return store
-        return self._get(rebuild)
+        elif isinstance(opened := self._open(), StoreOpenError):
+            store = self._rebuilt(opened, rebuild)
+        else:
+            rebuild()
+            store = self._get(None)
+        self.recovery_owed = self.recovery_owed or False
+        if self._damaged and self.recovery_owed and not store.count:
+            raise ValueError(
+                "Failed to rebuild the vector store after it was moved aside."
+            )
+        return store
 
     def _get(self, rebuild: Callable[[], object] | None) -> EmbeddingStore:
         """Return the store, opening it on first use.
@@ -391,6 +410,20 @@ class VectorStoreSlot:
         with self._lock:
             suspect, self._suspect = self._suspect, None
         return suspect is not None and self.condemn(suspect)
+
+    def settle(self, owed: bool, *, damaged: bool = False) -> None:
+        """Record whether a whole-store pass left vectors owed, for a slot that can rebuild.
+
+        ``recovery_owed`` is ``None`` on a new slot that can rebuild: whether
+        its store is complete is unknown until a whole-store pass or the first
+        owning read settles it, so a restart forgets no outstanding work.
+        ``False`` for a slot that cannot rebuild, which never rebuilds on a read.
+        *damaged* marks damage this process condemned; only that makes a read
+        raise on a store still empty, and a pass that owes nothing clears it.
+        """
+        if self._can_move_aside():
+            self.recovery_owed = owed
+            self._damaged = owed and (damaged or self._damaged)
 
     def can_recover(self, store: EmbeddingStore) -> bool:
         """Return whether the installed store can be moved aside."""

@@ -155,9 +155,14 @@ class TestASearch:
 
 
 class TestRecoveryDuringOutage:
+    @pytest.mark.parametrize("restart", ["none", "server_boot", "direct"])
     @pytest.mark.parametrize("partial", [False, True])
     def test_search_after_failed_recovery_rebuilds_without_an_edit(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, partial: bool
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        partial: bool,
+        restart: str,
     ) -> None:
         root = _source(tmp_path)
         (root / "gamma.md").write_text("# Gamma\n\nUnchanged blueberries.\n")
@@ -180,6 +185,22 @@ class TestRecoveryDuringOutage:
             (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
             vault.index.reindex()
             assert len(metadata_by_path(vault._vectors)) == (2 if partial else 0)
+            if restart != "none":
+                vault.close()
+                vault = _vault(
+                    tmp_path, embedding_search="streamed", embedding_batch_size=1
+                )
+                provider = vault._embedding_provider
+                assert provider is not None
+                original = provider.embed
+
+                def offline(_texts: list[str]) -> list[list[float]]:
+                    raise RuntimeError("provider unavailable")
+
+                monkeypatch.setattr(provider, "embed", offline)
+                if restart == "server_boot":
+                    vault.index.build_index()
+                    vault.index.build_embeddings()
             monkeypatch.setattr(provider, "embed", original)
 
             results = vault.reader.search("kumquats", mode="semantic")
@@ -297,20 +318,22 @@ class TestRecoveryDuringOutage:
         finally:
             vault.close()
 
-    def test_partial_store_keeps_debt_when_outage_stops_convergence(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("note_count", [1, 8])
+    def test_partial_store_keeps_debt_during_outage(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, note_count: int
     ) -> None:
         from markdown_vault_mcp.indexing import embedding_reconciler
 
         monkeypatch.setattr(embedding_reconciler, "_METADATA_BATCH", 2)
         root = _source(tmp_path)
-        for i in range(8):
+        for i in range(note_count):
             (root / f"note-{i}.md").write_text(f"# Note {i}\n\nBody {i}.\n")
         vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
         provider = vault._embedding_provider
         assert provider is not None
         original = provider.embed
         calls = 0
+        failed_calls = 0
 
         def alternating(texts: list[str]) -> list[list[float]]:
             nonlocal calls
@@ -320,8 +343,10 @@ class TestRecoveryDuringOutage:
             return original(texts)
 
         def offline(texts: list[str]) -> list[list[float]]:
+            nonlocal failed_calls
             if texts == ["kumquats"]:
                 return original(texts)
+            failed_calls += 1
             raise RuntimeError("outage")
 
         try:
@@ -329,16 +354,21 @@ class TestRecoveryDuringOutage:
             monkeypatch.setattr(provider, "embed", alternating)
             (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
             vault.index.reindex()
-            assert 0 < len(metadata_by_path(vault._vectors)) < 10
+            saved = len(metadata_by_path(vault._vectors))
+            assert 0 < saved < note_count + 2
+            if note_count == 1:
+                assert saved == 1
             monkeypatch.setattr(provider, "embed", offline)
             vault.index.build_embeddings()
+            if note_count == 1:
+                assert failed_calls == 2
             assert vault._vector_slot.recovery_owed
             for _ in range(5):
                 assert vault.reader.search("kumquats", mode="semantic")
                 assert vault._vector_slot.recovery_owed
             monkeypatch.setattr(provider, "embed", original)
             vault.reader.search("kumquats", mode="semantic")
-            assert len(metadata_by_path(vault._vectors)) == 10
+            assert len(metadata_by_path(vault._vectors)) == note_count + 2
         finally:
             vault.close()
 

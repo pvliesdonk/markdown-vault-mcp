@@ -274,7 +274,7 @@ class EmbeddingsManager:
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
         if self._slot.has_suspect():
-            self._slot.recovery_owed = True
+            self._slot.settle(True, damaged=True)
         self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
@@ -469,11 +469,11 @@ class EmbeddingsManager:
             identity,
             donor=donor,
             reuse_own=reuse_own,
-            bounded=self._slot is not None and self._slot.recovery_owed,
+            bounded=self._slot is not None and self._slot.recovery_owed is True,
         )
         published = self._finish_cold_build(store, identity, outcome)
-        if self._slot is not None and published and not outcome.failed_batches:
-            self._slot.recovery_owed = False
+        if self._slot is not None:
+            self._slot.settle(bool(outcome.failed_batches))
         return RebuildOutcome(
             embedded=outcome.embedded,
             reused=outcome.reused,
@@ -668,10 +668,10 @@ class EmbeddingsManager:
             return self.rebuild_after_fault()
         if result.embedded or result.reused or result.removed or result.retokened:
             vectors.checkpoint()
-        if self._slot is not None and not (
-            result.stopped or result.conflicts or result.retry or result.kept
-        ):
-            self._slot.recovery_owed = False
+        if self._slot is not None:
+            self._slot.settle(
+                bool(result.stopped or result.conflicts or result.retry or result.kept)
+            )
         if result.kept:
             logger.warning(
                 "build_embeddings_converge_failed_chunks total=%d outcome=vectors_kept",
@@ -885,7 +885,7 @@ class EmbeddingsManager:
                 recover_corruption=recover,
                 bounded=paths is None
                 and self._slot is not None
-                and self._slot.recovery_owed,
+                and self._slot.recovery_owed is True,
             )
         except StoreCorruptError:
             if self._slot is None or not self._slot.mark_suspect(vectors):

@@ -5053,8 +5053,17 @@ another one, and is the explicit switch of choice C.
     inline in the same job, as for an open fault. A failed rebuild may leave
     an empty or partial store; the slot records the outstanding recovery.
     A search by meaning or an explicit embeddings build retries it, with a
-    bound on consecutive provider failures. A search fails if recovery still leaves the store empty; a partial store
-    keeps serving its saved rows. Keyword jobs log a failed recovery at WARNING after
+    bound on consecutive provider failures. The owed state is not saved: a new
+    slot that can rebuild starts with it unknown, and a full build or a
+    convergence that ends with failed or retried work marks it owed again, so
+    a restart during an outage forgets nothing. The first search by meaning
+    of such a slot that no build settled reconciles the store once. A search
+    fails if recovery still leaves the store empty only while this process
+    knows it condemned damage; after a restart, or for a cold build that
+    failed without damage, the empty store answers with no matches, as a
+    failed cold build does. A partial store keeps serving its saved rows. The keyword work is committed first, but the
+    inline recovery delays the job's completion, and so readiness, until the
+    provider answers or the failure bound is reached. Keyword jobs log a failed recovery at WARNING after
     finishing keyword work; vector-only jobs propagate the failure to their
     Future. A cold build encountering corruption at publication recovers
     through the same boundary (#1976).
