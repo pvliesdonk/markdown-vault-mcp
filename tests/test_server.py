@@ -576,7 +576,6 @@ def test_okf_write_inert_silent_otherwise(
 ) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", read_only)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", write)
-    monkeypatch.delenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", raising=False)
     with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._server_wiring"):
         make_server(transport="stdio")
     assert not any(
