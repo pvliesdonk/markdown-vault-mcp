@@ -9,6 +9,7 @@ fails its open is.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import threading
@@ -17,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
-from markdown_vault_mcp.exceptions import StoreCorruptError
+from markdown_vault_mcp.exceptions import ReadOnlyError, StoreCorruptError
 from markdown_vault_mcp.indexing.index_writer import FlushDirtyEmbeddings
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
@@ -327,6 +328,378 @@ class TestAWriterJob:
         finally:
             vault.close()
 
+    @pytest.mark.parametrize("failure", ["outage", "wrong_dimension"])
+    def test_failed_recovery_is_retried_by_later_reindex(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+    ) -> None:
+        root = _source(tmp_path)
+        (root / "gamma.md").write_text("# Gamma\n\nUnchanged blueberries.\n")
+        vault = _built(tmp_path, embedding_search="streamed")
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+
+        def bad_vectors(texts: list[str]) -> list[list[float]]:
+            if failure == "outage":
+                raise RuntimeError("provider unavailable")
+            return [[0.1] * (provider.dimension + 1) for _ in texts]
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", bad_vectors)
+            (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            assert vault.index.reindex().modified == 1
+            assert len(_aside(tmp_path)) == 1
+            assert vault._vectors.count == 0
+            monkeypatch.setattr(provider, "embed", original)
+            (root / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            assert vault.index.reindex().modified == 1
+            assert set(metadata_by_path(vault._vectors)) == {
+                "alpha.md",
+                "beta.md",
+                "gamma.md",
+            }
+        finally:
+            vault.close()
+
+    def test_successful_recovery_does_not_reconcile_unmodified_notes_on_next_flush(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            _damage(tmp_path)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            assert len(_aside(tmp_path)) == 1
+            reconciler = vault._index_mgr._embeddings._reconciler
+            assert reconciler is not None
+            original = reconciler.reconcile
+            seen: list[set[str] | None] = []
+
+            def observe(store: Any, paths: Any = None, **kwargs: Any) -> Any:
+                seen.append(set(paths) if paths is not None else None)
+                return original(store, paths, **kwargs)
+
+            monkeypatch.setattr(reconciler, "reconcile", observe)
+            writer = vault._coordinator.writer
+            writer.mark_embedding_dirty(["alpha.md"])
+            writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert seen == [{"alpha.md"}]
+        finally:
+            vault.close()
+
+    @pytest.mark.parametrize("outage_during_rebuild", [False, True])
+    def test_empty_store_publication_recovers_physical_damage(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        outage_during_rebuild: bool,
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        root = _source(tmp_path)
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+
+        def offline(_texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("provider unavailable")
+
+        try:
+            (root / "keep.txt").write_text("keep root nonempty")
+            (root / "alpha.md").unlink()
+            (root / "beta.md").unlink()
+            vault.index.reindex()
+            store = vault._vectors
+            assert store is not None and store.count == 0
+            monkeypatch.setattr(provider, "embed", offline)
+            (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            (root / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            vault.index.reindex()
+            assert store.count == 0
+            monkeypatch.setattr(provider, "embed", original)
+            conn = sqlite3.connect(_db(tmp_path))
+            page = conn.execute(
+                "SELECT rootpage FROM sqlite_master WHERE name = 'documents'"
+            ).fetchone()[0]
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.close()
+            path = _db(tmp_path)
+            data = bytearray(path.read_bytes())
+            size = int.from_bytes(data[16:18], "big")
+            data[(page - 1) * size : page * size] = b"\xff" * size
+            data[24:28] = (int.from_bytes(data[24:28], "big") + 1).to_bytes(4, "big")
+            path.write_bytes(data)
+            if outage_during_rebuild:
+                monkeypatch.setattr(provider, "embed", offline)
+                assert vault.index.build_embeddings() == 0
+                assert vault._index_mgr._embeddings._recovery_owed
+                monkeypatch.setattr(provider, "embed", original)
+                (root / "beta.md").write_text("# Beta\n\nEven fresher sailboats.\n")
+                vault.index.reindex()
+                assert not vault._index_mgr._embeddings._recovery_owed
+            else:
+                assert vault.index.build_embeddings() == 2
+            assert len(_aside(tmp_path)) == 1
+            assert set(metadata_by_path(vault._vectors)) == {"alpha.md", "beta.md"}
+        finally:
+            vault.close()
+
+    def test_empty_injected_store_publication_corruption_propagates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+
+        provider = MockEmbeddingProvider()
+        store = NumpySidecarBackend().open(None, EmbeddingIdentity.of(provider, "v1"))
+        vault = Vault(
+            source_dir=_source(tmp_path),
+            settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
+            embedding_provider=provider,
+            vector_store=store,
+        )
+
+        def corrupt(*_args: Any, **_kwargs: Any) -> None:
+            raise StoreCorruptError("damaged", backend="test", location="injected")
+
+        try:
+            vault.index.build_index()
+            monkeypatch.setattr(store, "publish_generation", corrupt)
+            with pytest.raises(StoreCorruptError):
+                vault.index.build_embeddings()
+            assert _aside(tmp_path) == []
+        finally:
+            vault.close()
+            store.close()
+
+    def test_empty_unowned_store_cannot_be_rebuilt(self, tmp_path: Path) -> None:
+        built = _built(tmp_path, embedding_search="streamed")
+        store = built._vectors
+        assert store is not None
+        store.remove_document("alpha.md", expected_token=ANY_TOKEN)
+        store.remove_document("beta.md", expected_token=ANY_TOKEN)
+        built.close()
+        vault = _vault(tmp_path, owns_index_files=False, embedding_search="streamed")
+        try:
+            vault.index.build_index()
+            vault.reader.search("apples", mode="semantic")
+            conn = sqlite3.connect(_db(tmp_path))
+            page = conn.execute(
+                "SELECT rootpage FROM sqlite_master WHERE name = 'documents'"
+            ).fetchone()[0]
+            conn.close()
+            path = _db(tmp_path)
+            data = bytearray(path.read_bytes())
+            size = int.from_bytes(data[16:18], "big")
+            data[(page - 1) * size : page * size] = b"\xff" * size
+            data[24:28] = (int.from_bytes(data[24:28], "big") + 1).to_bytes(4, "big")
+            path.write_bytes(data)
+            with pytest.raises(ReadOnlyError):
+                vault.index.build_embeddings()
+            assert _aside(tmp_path) == []
+        finally:
+            vault.close()
+
+    def test_deferred_vectors_do_not_rebuild_owed_recovery(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+        calls = 0
+
+        def offline(_texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("provider unavailable")
+
+        def observe(texts: list[str]) -> list[list[float]]:
+            nonlocal calls
+            calls += 1
+            return original(texts)
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", offline)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            manager = vault._index_mgr._embeddings
+            assert manager._recovery_owed
+            monkeypatch.setattr(provider, "embed", observe)
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            with manager.vectors_deferred():
+                vault.index.reindex()
+                assert calls == 0
+                assert manager._recovery_owed
+            vault.index.reindex()
+            assert calls > 0
+            assert not manager._recovery_owed
+        finally:
+            vault.close()
+
+    def test_partial_recovery_converges_on_flush_without_reembedding_saved_rows(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (_source(tmp_path) / "gamma.md").write_text("# Gamma\n\nBlueberries.\n")
+        vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+        calls = 0
+        retried: list[str] = []
+
+        def partial(texts: list[str]) -> list[list[float]]:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("second batch unavailable")
+            return original(texts)
+
+        def observe(texts: list[str]) -> list[list[float]]:
+            retried.extend(texts)
+            return original(texts)
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", partial)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            assert vault._index_mgr._embeddings._recovery_owed
+            assert len(metadata_by_path(vault._vectors)) == 2
+            monkeypatch.setattr(provider, "embed", observe)
+            writer = vault._coordinator.writer
+            writer.mark_embedding_dirty(["alpha.md"])
+            writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert set(metadata_by_path(vault._vectors)) == {
+                "alpha.md",
+                "beta.md",
+                "gamma.md",
+            }
+            assert len(retried) == 1
+            assert not vault._index_mgr._embeddings._recovery_owed
+        finally:
+            vault.close()
+
+    def test_conflict_keeps_recovery_owed_until_complete_convergence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.indexing.embedding_reconciler import ReconcileResult
+
+        vault = _built(tmp_path, embedding_search="streamed")
+        manager = vault._index_mgr._embeddings
+        reconciler = manager._reconciler
+        store = vault._vectors
+        assert reconciler is not None and store is not None
+        original = reconciler.reconcile
+        try:
+            manager._recovery_owed = True
+            monkeypatch.setattr(
+                reconciler,
+                "reconcile",
+                lambda *_args, **_kw: ReconcileResult(conflicts={"alpha.md"}),
+            )
+            manager._converge_embeddings(store)
+            assert manager._recovery_owed
+            monkeypatch.setattr(reconciler, "reconcile", original)
+            manager._converge_embeddings(store)
+            assert not manager._recovery_owed
+        finally:
+            vault.close()
+
+    def test_authoritative_empty_publication_clears_recovery_owed(
+        self, tmp_path: Path
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        root = _source(tmp_path)
+        try:
+            (root / "keep.txt").write_text("keep root nonempty")
+            (root / "alpha.md").unlink()
+            (root / "beta.md").unlink()
+            vault.index.reindex()
+            manager = vault._index_mgr._embeddings
+            manager._recovery_owed = True
+            assert vault.index.build_embeddings() == 0
+            assert not manager._recovery_owed
+        finally:
+            vault.close()
+
+    def test_failed_quarantine_keyword_job_warns_and_later_retries(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        backend = vault._vector_slot._backend
+        original = backend.quarantine
+        attempts = 0
+        provider = vault._embedding_provider
+        assert provider is not None
+        original_embed = provider.embed
+        provider_calls = 0
+
+        def offline(_texts: list[str]) -> list[list[float]]:
+            nonlocal provider_calls
+            provider_calls += 1
+            raise RuntimeError("provider unavailable")
+
+        def unavailable(_location: Any) -> None:
+            nonlocal attempts
+            attempts += 1
+            raise OSError("rename unavailable")
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(backend, "quarantine", unavailable)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            assert vault.index.reindex().modified == 1
+            assert attempts == 1
+            assert vault._index_mgr._embeddings._recovery_owed
+            assert "vector_store_recovery_failed" in caplog.text
+            assert {
+                r.path for r in vault.reader.search("kumquats", mode="keyword")
+            } == {"alpha.md"}
+            monkeypatch.setattr(backend, "quarantine", original)
+            monkeypatch.setattr(provider, "embed", offline)
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            vault.index.reindex()
+            assert len(_aside(tmp_path)) == 1
+            assert provider_calls == 1
+            assert vault._index_mgr._embeddings._recovery_owed
+            monkeypatch.setattr(provider, "embed", original_embed)
+            (_source(tmp_path) / "alpha.md").write_text(
+                "# Alpha\n\nEven fresher kumquats.\n"
+            )
+            vault.index.reindex()
+            assert set(metadata_by_path(vault._vectors)) == {"alpha.md", "beta.md"}
+            assert not vault._index_mgr._embeddings._recovery_owed
+        finally:
+            vault.close()
+
+    def test_failed_quarantine_flush_raises_and_restores_snapshot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        backend = vault._vector_slot._backend
+        original = backend.quarantine
+        writer = vault._coordinator.writer
+
+        def unavailable(_location: Any) -> None:
+            raise OSError("rename unavailable")
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(backend, "quarantine", unavailable)
+            writer.mark_embedding_dirty(["alpha.md"])
+            with pytest.raises(OSError, match="rename unavailable"):
+                writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert vault._index_mgr._embeddings._recovery_owed
+            monkeypatch.setattr(backend, "quarantine", original)
+            writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert len(_aside(tmp_path)) == 1
+            assert set(metadata_by_path(vault._vectors)) == {"alpha.md", "beta.md"}
+            assert not vault._index_mgr._embeddings._recovery_owed
+        finally:
+            vault.close()
+
     @pytest.mark.parametrize("owned", [True, False])
     def test_lazy_purge_count_corruption(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owned: bool
@@ -513,7 +886,22 @@ class TestAWriterJob:
         finally:
             vault.close()
 
-    def test_unowned_store_raises(self, tmp_path: Path) -> None:
+    def test_unowned_store_raises(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from markdown_vault_mcp.indexing import index_writer
+
+        logged = threading.Event()
+        original_log = index_writer._log_job_failure
+
+        def log_failure(kind: str, exc: Exception) -> None:
+            original_log(kind, exc)
+            logged.set()
+
+        monkeypatch.setattr(index_writer, "_log_job_failure", log_failure)
         _built(tmp_path).close()
         vault = _vault(tmp_path, owns_index_files=False, embedding_search="streamed")
         try:
@@ -524,7 +912,14 @@ class TestAWriterJob:
             writer.mark_embedding_dirty(["alpha.md"])
             with pytest.raises(StoreCorruptError):
                 writer.submit(FlushDirtyEmbeddings()).result(timeout=5)
+            assert logged.wait(timeout=5)
             assert _aside(tmp_path) == []
+            assert any(
+                record.levelno == logging.ERROR
+                and "writer_job_failed" in record.message
+                and record.exc_info is not None
+                for record in caplog.records
+            )
         finally:
             vault.close()
 
@@ -651,6 +1046,22 @@ class TestCondemn:
         (reopened,) = opened
         assert reopened.count == 0  # a fresh store, not the damaged files
         slot.close()
+
+    def test_stale_suspect_does_not_block_replacement(self, tmp_path: Path) -> None:
+        base = tmp_path / "vec"
+        _seeded(base)
+        slot = _slot(base)
+        try:
+            store = slot.get(rebuild=None)
+            assert slot.mark_suspect(store)
+            replacement = slot.fresh()
+            assert not slot.has_suspect()
+            replacement.replace_document(
+                doc("new.md", [[1, 0, 0]]), expected_token=None
+            )
+            assert replacement.tokens() == {"new.md": "t1"}
+        finally:
+            slot.close()
 
     def test_a_slot_in_memory_condemns_nothing(self) -> None:
         slot = _slot(None)  # type: ignore[arg-type]

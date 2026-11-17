@@ -5049,12 +5049,17 @@ another one, and is the explicit switch of choice C.
 
   - A writer reconciliation that encounters corruption marks the store suspect
     and rebuilds it in the same job after keyword work finishes. SQLite classifies
-    corruption from its write transaction as well as reads. A failed rebuild has
-    the same empty or partial result as a cold build after an open fault. An
-    incremental build does not verify pages it does not read (#1976).
+    corruption from its write transaction as well as reads. The rebuild runs
+    inline in the same job, as for an open fault. A failed rebuild may leave
+    an empty or partial store; the next reindex or flush retries the missing
+    vectors. Keyword jobs log a failed recovery at WARNING after finishing
+    keyword work; vector-only jobs propagate the failure to their Future.
+    Incremental builds verify an empty target before publishing (#1976).
 
   A slot that cannot condemn preserves per-document handling of write errors;
-  corruption found in a read still raises `StoreCorruptError`.
+  corruption found in a read still raises `StoreCorruptError`. A job that
+  cannot recover corruption logs ERROR with its traceback: the store needs
+  operator attention, and automatic condemnation is not permitted.
 - As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not

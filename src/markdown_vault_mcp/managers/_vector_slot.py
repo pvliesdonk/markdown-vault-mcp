@@ -369,19 +369,21 @@ class VectorStoreSlot:
             suspect, self._suspect = self._suspect, None
         return suspect is not None and self.condemn(suspect)
 
+    def can_recover(self, store: EmbeddingStore) -> bool:
+        """Return whether the installed store can be moved aside."""
+        return self._store is store and self._can_move_aside()
+
     def mark_suspect(self, store: EmbeddingStore) -> bool:
         """Mark an installed, recoverable store for condemnation."""
-        if not self._can_move_aside():
-            return False
         with self._lock:
-            if self._store is not store:
+            if not self.can_recover(store):
                 return False
             self._suspect = store
         return True
 
     def has_suspect(self) -> bool:
         """Return whether a store awaits condemnation."""
-        return self._suspect is not None
+        return self._suspect is not None and self._suspect is self._store
 
     def rebuilt_after_read(
         self, store: EmbeddingStore, rebuild: Callable[[], object]

@@ -225,7 +225,7 @@ def _outcome(kind: type[StoreOpenError], message: str, where: str) -> StoreOpenE
 def _classified(
     exc: sqlite3.Error, where: str, action: str = "opened"
 ) -> StoreOpenError:
-    """Return the outcome a SQLite error stands for, for an open or a read.
+    """Return the outcome a SQLite error stands for on open, read or write.
 
     Damage is corrupt: a file SQLite does not recognise, pages it reports
     corrupt, or a text cell that no longer decodes. Anything else, such as a
