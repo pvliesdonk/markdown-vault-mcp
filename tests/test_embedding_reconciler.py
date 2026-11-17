@@ -1508,3 +1508,45 @@ def test_unavailable_scratch_fails_before_provider_and_keeps_store(tmp_path):
         rec.rebuild(store, store.identity)
     assert provider.texts == []
     assert store.tokens() == before
+
+
+@pytest.mark.parametrize("failure", ["source", "donor", "publisher"])
+def test_primary_build_failure_survives_scratch_cleanup_error(
+    tmp_path, monkeypatch, caplog, failure
+):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    fts, _, store, rec = _setup(tmp_path, NOTES)
+    rec.rebuild(store, store.identity)
+    before = store.tokens()
+    enter = EmbeddingStage.__enter__
+
+    def failing_cleanup(stage):
+        enter(stage)
+        cleanup = stage._temp.cleanup
+
+        def fail():
+            cleanup()
+            raise OSError("scratch cleanup failed")
+
+        monkeypatch.setattr(stage._temp, "cleanup", fail)
+        return stage
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError(f"{failure} failed")
+
+    class BrokenDonor:
+        source = "fixture"
+        refused_rows = 0
+        vectors_for = staticmethod(fail)
+
+    monkeypatch.setattr(EmbeddingStage, "__enter__", failing_cleanup)
+    if failure == "source":
+        monkeypatch.setattr(fts, "iter_chunks", fail)
+    elif failure == "publisher":
+        monkeypatch.setattr(store, "publish_generation", fail)
+    donor = BrokenDonor() if failure == "donor" else None
+    with pytest.raises(RuntimeError, match=f"{failure} failed"):
+        rec.rebuild(store, store.identity, donor=donor)
+    assert store.tokens() == before
+    assert "embedding_stage_cleanup_failed" in caplog.text
