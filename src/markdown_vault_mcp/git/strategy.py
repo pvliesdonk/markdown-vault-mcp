@@ -40,7 +40,7 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
-from markdown_vault_mcp._commit_groups import GroupCommitRequest, GroupCommitResult
+from markdown_vault_mcp._commit_groups import GroupCommitResult
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
@@ -430,8 +430,8 @@ class GitWriteStrategy:
         tool_name: str,
         *,
         primary_paths: frozenset[Path] | None = None,
-        group: GroupCommitRequest | None = None,
-    ) -> None:
+        group_subject: str | None = None,
+    ) -> GroupCommitResult | None:
         """Commit every write from one tool call as a single commit.
 
         Mirrors :meth:`__call__`'s guards and push scheduling; only the commit
@@ -445,21 +445,23 @@ class GitWriteStrategy:
             tool_name: The MCP tool that produced them.
             primary_paths: Paths written outside secondary maintenance, or
                 ``None`` to retain the ordinary batch subject.
-            group: Optional explicit subject and result sink for a persistent
-                group. The sink receives the SHA and path count under the lock.
+            group_subject: Optional subject for a persistent group.
+
+        Returns:
+            The group result, or None for ordinary batches or a commit failure.
         """
         if self._closed or not items:
-            return
+            return None
 
         first_path = items[0][0]
         self._ensure_git_root(first_path)
         if self._git_root is None:
             logger.debug("git_repo_not_found path=%s", first_path)
-            return
+            return None
 
         self._ensure_write_init()
         if self._git_root is None:
-            return
+            return None
 
         principal = items[0][3]
         principal_name = principal.display_name if principal is not None else None
@@ -467,51 +469,24 @@ class GitWriteStrategy:
         effective_name = principal_name or self._commit_name
         effective_email = principal_email or self._commit_email
 
+        identity = _CommitIdentity(
+            self._commit_name,
+            self._commit_email,
+            effective_name if effective_name != self._commit_name else None,
+            effective_email if effective_email != self._commit_email else None,
+        )
+        result = None
         try:
             git_root = self._git_root
             with self._lock, self._observed_commit(git_root):
-                committed = _stage_and_commit_batch(
-                    git_root,
-                    items,
-                    tool_name,
-                    _CommitIdentity(
-                        self._commit_name,
-                        self._commit_email,
-                        effective_name if effective_name != self._commit_name else None,
-                        effective_email
-                        if effective_email != self._commit_email
-                        else None,
-                    ),
-                    primary_paths,
-                    group,
-                )
-                if group is not None:
-                    if committed:
-                        sha = self.head_sha(git_root)
-                        paths = self._git(
-                            git_root,
-                            "diff-tree",
-                            "--root",
-                            "--no-commit-id",
-                            "--name-only",
-                            "-r",
-                            sha,
-                        ).splitlines()
-                        group.report(
-                            GroupCommitResult(
-                                sha,
-                                len(paths),
-                                "failed" if group.stage_failed else "committed",
-                            )
-                        )
-                    else:
-                        group.report(
-                            GroupCommitResult(
-                                None,
-                                0,
-                                "failed" if group.stage_failed else "no_changes",
-                            )
-                        )
+                if group_subject is None:
+                    _stage_and_commit_batch(
+                        git_root, items, tool_name, identity, primary_paths
+                    )
+                else:
+                    result = self._stage_and_commit_group(
+                        git_root, items, group_subject, identity
+                    )
             if self._enable_push:
                 self._push_scheduler.schedule_push()
         except subprocess.CalledProcessError as exc:
@@ -521,6 +496,63 @@ class GitWriteStrategy:
                 len(items),
                 self._redact(exc.stderr or ""),
             )
+        return result
+
+    def _stage_and_commit_group(
+        self,
+        git_root: Path,
+        items: Sequence[WriteBatchItem],
+        subject: str,
+        identity: _CommitIdentity,
+    ) -> GroupCommitResult:
+        """Stage final group paths and report the resulting commit."""
+        root = str(git_root)
+        items = _group_final_items(root, items)
+        ignored = _ignored_paths(
+            root, [p for p, op, _, _ in items if op in {"write", "edit", "append"}]
+        )
+        scope: list[str] = []
+        staged = failed = whole_repo = False
+        for path, operation, old_path, _principal in items:
+            if operation in {"write", "edit", "append"} and str(path) in ignored:
+                logger.debug("git_group_ignored path=%s", path)
+                continue
+            try:
+                item_scope = _stage_one(root, path, operation, old_path)
+            except subprocess.CalledProcessError:
+                failed = True
+                logger.error(
+                    "git_stage_failed path=%s op=%s", path, operation, exc_info=True
+                )
+                continue
+            if item_scope is not None:
+                staged = True
+                whole_repo = whole_repo or not item_scope
+                scope.extend(item_scope)
+        commit_scope = [] if whole_repo else scope
+        if not staged or _index_matches_head(root, commit_scope):
+            return GroupCommitResult(None, 0, "failed" if failed else "no_changes")
+        _commit_staged(root, subject, identity, commit_scope)
+        sha = None
+        try:
+            sha = self._git(git_root, "rev-parse", "HEAD").strip()
+            paths = self._git(
+                git_root,
+                "diff-tree",
+                "--root",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                "--no-renames",
+                "-z",
+                sha,
+            )
+            return GroupCommitResult(
+                sha, paths.count("\0"), "failed" if failed else "committed"
+            )
+        except (subprocess.CalledProcessError, OSError, UnicodeError):
+            logger.error("git_group_report_failed subject=%s", subject, exc_info=True)
+            return GroupCommitResult(sha, 0, "failed")
 
     def __call__(
         self,
@@ -2493,14 +2525,13 @@ def _group_final_items(
     return final
 
 
-def _stage_and_commit_batch(  # noqa: C901, PLR0913, RUF100 -- preserve the shared batch path and callback compatibility
+def _stage_and_commit_batch(
     git_root: Path,
     items: Sequence[WriteBatchItem],
     tool_name: str,
     identity: _CommitIdentity,
     primary_paths: frozenset[Path] | None = None,
-    group: GroupCommitRequest | None = None,
-) -> bool | None:
+) -> None:
     """Stage every write from one tool call and commit them together.
 
     Staging is per item, using the same scoped rules as a single write, so a
@@ -2510,9 +2541,9 @@ def _stage_and_commit_batch(  # noqa: C901, PLR0913, RUF100 -- preserve the shar
     scoped to, both taken from the union of what the items reported
     (#1249, #1273).
 
-    An ordinary one-item batch delegates to :func:`_stage_and_commit`, so its
-    subject stays that file's path. A group uses its explicit subject even
-    for one item.
+    A one-item batch delegates to :func:`_stage_and_commit` instead, so the
+    commit subject stays that file's own path rather than becoming the
+    pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
 
     Args:
         git_root: Git repository root.
@@ -2521,14 +2552,9 @@ def _stage_and_commit_batch(  # noqa: C901, PLR0913, RUF100 -- preserve the shar
             when the batch holds more than one write without a single primary.
         identity: Committer and author identity for the commit.
         primary_paths: Optional primary-write provenance. A sole primary path
-            with one staged item names the ordinary subject.
-        group: Optional request whose subject overrides ordinary naming.
-
-    Returns:
-        ``True`` when this batch path committed; ``None`` when it did not or
-        when an ordinary one-item batch delegated to the single-write path.
+            with one staged item names the subject; all items enter the commit.
     """
-    if len(items) == 1 and group is None:
+    if len(items) == 1:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps
         # its commit subject the path ("write: notes/one.md") rather than the
@@ -2544,11 +2570,9 @@ def _stage_and_commit_batch(  # noqa: C901, PLR0913, RUF100 -- preserve the shar
             author_name=identity.author_name,
             author_email=identity.author_email,
         )
-        return None
+        return
 
     root = str(git_root)
-    if group is not None:
-        items = _group_final_items(root, items)
     staged = 0
     primary: list[tuple[Path, WriteOperation, Path | None]] = []
     scope: list[str] = []
@@ -2557,8 +2581,6 @@ def _stage_and_commit_batch(  # noqa: C901, PLR0913, RUF100 -- preserve the shar
         try:
             item_scope = _stage_one(root, path, operation, old_path)
         except subprocess.CalledProcessError:
-            if group is not None:
-                group.stage_failed = True
             # One unstageable path must not cost the rest of the batch its
             # commit — the files are already written to disk either way.
             logger.error(
@@ -2582,26 +2604,21 @@ def _stage_and_commit_batch(  # noqa: C901, PLR0913, RUF100 -- preserve the shar
         scope.extend(item_scope)
     if staged == 0:
         logger.debug("git_batch_nothing_staged tool=%s count=%s", tool_name, len(items))
-        return None
+        return
 
     # Skip commit if staging produced no diff (e.g. rewriting identical bytes).
     commit_scope = [] if whole_repo else scope
     if _index_matches_head(root, commit_scope):
         logger.debug("git_batch_no_diff tool=%s", tool_name)
-        return None
+        return
 
     noun = "file" if staged == 1 else "files"
-    subject = group.subject if group is not None else f"{tool_name}: {staged} {noun}"
-    if (
-        group is None
-        and primary_paths is not None
-        and len(primary_paths) == len(primary) == 1
-    ):
+    subject = f"{tool_name}: {staged} {noun}"
+    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
-    return True
 
 
 def _commit_staged(

@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING, Literal
 from markdown_vault_mcp._commit_scope import CommitScope, new_commit_scope
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from markdown_vault_mcp._identity import Principal
 
 COMMIT_GROUP_ATTR = "accepts_group_commit"
@@ -19,20 +17,17 @@ COMMIT_GROUP_ATTR = "accepts_group_commit"
 
 @dataclass(frozen=True, slots=True)
 class GroupCommitResult:
-    """Result of flushing a group; files counts paths in its commits."""
+    """Accumulated group result.
+
+    ``committed`` means a commit was made; ``no_changes`` means none was
+    needed; ``failed`` means staging, commit, or reporting failed. Failure is
+    sticky across flushes. An unknown path count is reported as zero.
+
+    """
 
     sha: str | None
     files: int
     status: Literal["committed", "no_changes", "failed"]
-
-
-@dataclass(slots=True)
-class GroupCommitRequest:
-    """Explicit subject and result sink for an opted-in callback."""
-
-    subject: str
-    report: Callable[[GroupCommitResult], None]
-    stage_failed: bool = False
 
 
 class CommitGroupError(ValueError):
@@ -88,7 +83,7 @@ def make_group(description: str, owner: Principal | None) -> CommitGroup:
         or description != description.strip()
         or size > 4096
         or any(
-            unicodedata.category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+            unicodedata.category(char) in {"Cc", "Cs", "Zl", "Zp"}
             for char in description
         )
     ):

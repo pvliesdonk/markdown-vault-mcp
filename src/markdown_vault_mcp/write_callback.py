@@ -37,7 +37,6 @@ from markdown_vault_mcp._commit_groups import (
     COMMIT_GROUP_ATTR,
     CommitGroup,
     CommitGroupError,
-    GroupCommitRequest,
     GroupCommitResult,
     make_group,
     owner_key,
@@ -133,9 +132,8 @@ class WriteCallbackDispatcher:
                 ``rename`` dispatches (#894).
         """
         self._on_write = on_write
-        self._accepts_group = bool(getattr(on_write, COMMIT_GROUP_ATTR, False))
         self._groups: dict[str, CommitGroup] = {}
-        self._group_lock = threading.RLock()
+        self._group_lock = threading.Lock()
         # Read the opt-ins once, here, rather than per dispatch: the callback
         # is fixed for the dispatcher's lifetime, and the worker loop is on
         # the write path.
@@ -145,6 +143,9 @@ class WriteCallbackDispatcher:
         # at a time — grouping is an optimisation the callback opts into, never
         # a contract change third-party callbacks must absorb.
         self._accepts_batch = bool(getattr(on_write, ACCEPTS_BATCH_ATTR, False))
+        self._accepts_group = self._accepts_batch and bool(
+            getattr(on_write, COMMIT_GROUP_ATTR, False)
+        )
         self._accepts_primary_paths = bool(
             getattr(on_write, ACCEPTS_PRIMARY_PATHS_ATTR, False)
         )
@@ -366,19 +367,13 @@ class WriteCallbackDispatcher:
                 None,
             )
         if group is not None and self._accepts_group:
-            reported = False
-
-            def report(result: GroupCommitResult) -> None:
-                nonlocal reported
-                reported = True
-                group.record(result)
-
+            result = None
             try:
-                getattr(on_write, "on_write_batch")(  # noqa: B009 -- callback opts in dynamically
+                result = getattr(on_write, "on_write_batch")(  # noqa: B009 -- callback opts in dynamically
                     items,
                     scope.tool_name,
                     primary_paths=frozenset(primary_paths),
-                    group=GroupCommitRequest(group.description, report),
+                    group_subject=group.description,
                 )
             except Exception:
                 logger.error(
@@ -387,8 +382,11 @@ class WriteCallbackDispatcher:
                     len(items),
                     exc_info=True,
                 )
-            if not reported:
-                group.record(GroupCommitResult(None, 0, "failed"))
+            group.record(
+                result
+                if isinstance(result, GroupCommitResult)
+                else GroupCommitResult(None, 0, "failed")
+            )
             return
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),

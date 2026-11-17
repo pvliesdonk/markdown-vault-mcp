@@ -5,20 +5,22 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
+import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.types import WriteBatchItem
+
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+from tests.fixtures.git import _run_git
 
 
 def git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
+    return _run_git(repo, *args).strip()
 
 
 def test_group_commits_multiple_writes_on_close(tmp_path: Path) -> None:
@@ -517,3 +519,227 @@ def test_group_rename_revisits_original_path(tmp_path: Path) -> None:
     finally:
         dispatcher.close()
         strategy.close()
+
+
+def test_group_skips_ignored_files(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    (repo / ".gitignore").write_text("ignored.md\n", encoding="utf-8")
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Mixed", None)
+        with dispatcher.bind_group(group.handle, None):
+            for name in ("ignored.md", "good.md"):
+                path = repo / name
+                path.write_text(name, encoding="utf-8")
+                dispatcher.fire(path, name, "write")
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "committed"
+        assert result.files == 1
+        empty = dispatcher.open_group("Ignored only", None)
+        with dispatcher.bind_group(empty.handle, None):
+            dispatcher.fire(repo / "ignored.md", "ignored", "write")
+        assert (
+            dispatcher.close_group(empty.handle, None).result(timeout=5).status
+            == "no_changes"
+        )
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_group_counts_unicode_separator_filename(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    git(repo, "config", "core.quotePath", "false")
+    git(repo, "commit", "--allow-empty", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Unicode", None)
+        path = repo / "one\u2028two.md"
+        path.write_text("note", encoding="utf-8")
+        with dispatcher.bind_group(group.handle, None):
+            dispatcher.fire(path, "note", "write")
+        assert dispatcher.close_group(group.handle, None).result(timeout=5).files == 1
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        subprocess.CalledProcessError(1, "git"),
+        OSError("unavailable"),
+        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid"),
+    ],
+)
+def test_group_post_commit_metadata_failure_keeps_sha_and_schedules_push(
+    tmp_path: Path,
+    error: Exception,
+) -> None:
+    from unittest.mock import patch
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    git(repo, "commit", "--allow-empty", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=True,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    original = strategy._git
+
+    def fail_diff(root: Path, *args: str, **kwargs: object) -> str:
+        if args[0] == "diff-tree":
+            raise error
+        return original(root, *args, **kwargs)
+
+    try:
+        group = dispatcher.open_group("Commit despite metadata", None)
+        path = repo / "note.md"
+        path.write_text("note", encoding="utf-8")
+        with dispatcher.bind_group(group.handle, None):
+            dispatcher.fire(path, "note", "write")
+        with (
+            patch.object(strategy, "_git", side_effect=fail_diff),
+            patch.object(strategy._push_scheduler, "schedule_push") as schedule,
+        ):
+            result = dispatcher.close_group(group.handle, None).result(timeout=5)
+            schedule.assert_called_once()
+        assert result.status == "failed"
+        assert result.sha == git(repo, "rev-parse", "HEAD")
+        assert result.files == 0
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_group_accepts_format_characters() -> None:
+    dispatcher = WriteCallbackDispatcher(None)
+    for description in ("می‌خواهم", "👩‍💻"):
+        group = dispatcher.open_group(description, None)
+        assert (
+            dispatcher.close_group(group.handle, None).result().status == "no_changes"
+        )
+    dispatcher.close()
+
+
+def test_group_opt_in_without_batch_does_not_strand_writes(tmp_path: Path) -> None:
+    class Callback:
+        accepts_group_commit = True
+
+        def __init__(self) -> None:
+            self.paths: list[Path] = []
+
+        def __call__(self, path: Path, _content: str, _operation: str) -> None:
+            self.paths.append(path)
+
+    callback = Callback()
+    dispatcher = WriteCallbackDispatcher(callback)
+    group = dispatcher.open_group("Group", None)
+    with dispatcher.bind_group(group.handle, None):
+        dispatcher.fire(tmp_path / "note.md", "note", "write")
+    assert (
+        dispatcher.close_group(group.handle, None).result(timeout=5).status
+        == "no_changes"
+    )
+    dispatcher.close()
+    assert callback.paths == [tmp_path / "note.md"]
+
+
+def test_ordinary_write_during_group_and_group_author(git_repo: Path) -> None:
+    from markdown_vault_mcp._identity import Principal, bound_principal
+
+    principal = Principal("alice", "Alice", "alice@example.com", "human")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=git_repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Grouped", principal)
+        grouped = git_repo / "grouped.md"
+        grouped.write_text("grouped", encoding="utf-8")
+        with bound_principal(principal), dispatcher.bind_group(group.handle, principal):
+            dispatcher.fire(grouped, "grouped", "write")
+        ordinary = git_repo / "ordinary.md"
+        ordinary.write_text("ordinary", encoding="utf-8")
+        dispatcher.fire(ordinary, "ordinary", "write")
+        assert dispatcher.drain()
+        assert git(git_repo, "log", "-2", "--format=%s").splitlines() == [
+            "Grouped",
+            "write: ordinary.md",
+        ]
+        assert (
+            git(git_repo, "log", "-1", "--format=%an <%ae>")
+            == "Alice <alice@example.com>"
+        )
+        assert (
+            dispatcher.close_group(group.handle, principal).result(timeout=5).status
+            == "committed"
+        )
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_ordinary_batch_callback_receives_no_group_keyword(tmp_path: Path) -> None:
+    from markdown_vault_mcp._commit_scope import bound_commit_scope
+
+    class Callback:
+        accepts_batch = True
+
+        def __init__(self) -> None:
+            self.batches: list[tuple[object, str]] = []
+
+        def __call__(self, _path: Path, _content: str, _operation: str) -> None:
+            raise AssertionError("ordinary scope should be batched")
+
+        def on_write_batch(self, items: list[WriteBatchItem], tool_name: str) -> None:
+            self.batches.append((items, tool_name))
+
+    callback = Callback()
+    dispatcher = WriteCallbackDispatcher(callback)
+    with bound_commit_scope("ordinary") as scope:
+        dispatcher.fire(tmp_path / "note.md", "note", "write")
+        dispatcher.end_scope(scope)
+    assert dispatcher.drain()
+    dispatcher.close()
+    assert len(callback.batches) == 1
+    assert callback.batches[0][1] == "ordinary"
