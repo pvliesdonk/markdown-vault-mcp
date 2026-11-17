@@ -118,6 +118,7 @@ class VectorStoreSlot:
         # The store a read found damaged after it opened, for the rebuild on
         # the writer thread to condemn (#1881).
         self._suspect: EmbeddingStore | None = None
+        self.recovery_owed = False
 
     @property
     def location(self) -> Path | str | None:
@@ -190,6 +191,28 @@ class VectorStoreSlot:
         return self._store
 
     def get(self, *, rebuild: Callable[[], object] | None) -> EmbeddingStore:
+        """Open the store, retrying owed recovery through the writer on reads.
+
+        Args:
+            rebuild: Rebuild an owned store, or ``None`` to forbid rebuilding.
+
+        Returns:
+            The opened store.
+
+        Raises:
+            ValueError: If recovery remains incomplete and the store is empty.
+        """
+        if rebuild is not None and self.recovery_owed:
+            self._run_rebuild(rebuild, "recovery_owed")
+            store = self._get(None)
+            if self.recovery_owed and not store.count:
+                raise ValueError(
+                    "Failed to rebuild the vector store after it was moved aside."
+                )
+            return store
+        return self._get(rebuild)
+
+    def _get(self, rebuild: Callable[[], object] | None) -> EmbeddingStore:
         """Return the store, opening it on first use.
 
         A store that opens with nothing stored and no known dimension is
@@ -698,7 +721,7 @@ class VectorStoreSlot:
             StoreIncompatibleError: If the store holds another identity and
                 may not be rebuilt.
         """
-        store = self.get(rebuild=rebuild)
+        store = self._get(rebuild)
         if not self.answers(store):
             if store.count == 0:
                 self.fresh()

@@ -91,6 +91,10 @@ def stored_inputs(
 #: replaces, each of which copies the whole matrix (#1768).
 _BULK_RETOKEN = 64
 
+# Recovery passes stop after consecutive provider failures; a success resets
+# the count, and the next pass resumes after the last attempted path (#1976).
+_MAX_CONSECUTIVE_FAILURES = 3
+
 # Documents whose stored metadata one read fetches, from a store that reads
 # in batches (#1937): few round trips, and memory bounded by the batch.
 _METADATA_BATCH = 500
@@ -117,6 +121,7 @@ class ReconcileResult:
         up_to_date: Chunks already converged.
         conflicts: Paths another writer changed underneath; the caller
             re-queues them for another flush.
+        stopped: A bounded pass stopped after consecutive provider failures.
         retry: Paths the provider or a store write failed for; their rows
             stay, and the caller keeps them dirty for the next flush.
     """
@@ -129,6 +134,7 @@ class ReconcileResult:
     up_to_date: int = 0
     conflicts: set[str] = field(default_factory=set)
     retry: set[str] = field(default_factory=set)
+    stopped: bool = False
 
 
 @dataclass(frozen=True)
@@ -179,7 +185,7 @@ class _Document:
     metadata: tuple[dict[str, Any], ...]
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Pass:
     """The state one reconcile pass shares between its steps."""
 
@@ -188,6 +194,8 @@ class _Pass:
     result: ReconcileResult
     site: str
     recover_corruption: bool
+    bounded: bool = False
+    failures: int = 0
 
 
 def _stored_metadata(
@@ -255,6 +263,8 @@ class EmbeddingReconciler:
         self._batch_size = batch_size
         self._source_probe = source_probe
         self._is_excluded = is_excluded
+        # Writer-owned cursor shared by cold and incremental recovery passes.
+        self._recovery_after: tuple[str, str | None] | None = None
 
     def documents(self, paths: Collection[str] | None = None) -> dict[str, _Document]:
         """Read *paths*' (or every) document's embedding inputs from the keyword index.
@@ -307,6 +317,7 @@ class EmbeddingReconciler:
         *,
         site: str,
         recover_corruption: bool = False,
+        bounded: bool = False,
     ) -> ReconcileResult:
         """Bring *paths* (or every document) in the store in line with the keyword index.
 
@@ -325,6 +336,7 @@ class EmbeddingReconciler:
             paths: The documents to reconcile; ``None`` for a whole-store pass.
             site: Which caller, for the log lines.
             recover_corruption: Propagate typed write corruption for recovery.
+            bounded: Stop after consecutive provider failures.
 
         Returns:
             What the pass did; ``conflicts`` holds the paths to re-queue.
@@ -332,18 +344,36 @@ class EmbeddingReconciler:
         stored = store.tokens()
         docs = self.documents(paths)
         held = set(stored) if paths is None else set(paths) & set(stored)
-        state = _Pass(store, stored, ReconcileResult(), site, recover_corruption)
+        state = _Pass(
+            store, stored, ReconcileResult(), site, recover_corruption, bounded
+        )
         self._remove_unbacked(state, sorted(held - set(docs)))
         retoken: list[_Document] = []
         ordered = sorted(docs)
+        if bounded and self._recovery_after is not None:
+            after = self._recovery_after[0]
+            ordered = [p for p in ordered if p > after] + [
+                p for p in ordered if p <= after
+            ]
+        halted = False
         for start in range(0, len(ordered), _METADATA_BATCH):
+            if halted:
+                break
             batch = ordered[start : start + _METADATA_BATCH]
             current = _stored_metadata(store, batch)
             for path in batch:
+                if halted:
+                    break
                 held_rows = None if current is None else current.get(path, [])
                 if self._reconcile_document(state, docs[path], held_rows):
                     retoken.append(docs[path])
+                if state.result.stopped:
+                    halted = True
+                    if self._recovery_after is None or self._recovery_after[0] != path:
+                        self._recovery_after = (path, None)
         self._retoken(state, retoken)
+        if bounded and not state.result.stopped:
+            self._recovery_after = None
         return state.result
 
     def _remove_unbacked(self, state: _Pass, paths: list[str]) -> None:
@@ -449,12 +479,22 @@ class EmbeddingReconciler:
         known = self._stored_inputs(stored)
         misses = [text for text in dict.fromkeys(doc.texts) if text not in known]
         try:
-            fresh = self._embed(misses)
+            if state.bounded and _signature([r.metadata for r in stored]) <= _signature(
+                doc.metadata
+            ):
+                fresh = self._embed_recovery_inputs(state, doc, misses)
+            else:
+                fresh = dict(zip(misses, self._embed(misses), strict=True))
+                state.failures = 0
         except Exception as exc:
             # Broad by design: providers raise heterogeneous types for a
             # timeout, an oversized batch or an outage. The rows stay.
             state.result.kept += len(doc.texts)
             state.result.retry.add(doc.path)
+            state.failures += 1
+            state.result.stopped = (
+                state.bounded and state.failures >= _MAX_CONSECUTIVE_FAILURES
+            )
             logger.warning(
                 "embedding_reconcile_skip_doc site=%s path=%s chunks=%d err=%s",
                 state.site,
@@ -465,10 +505,13 @@ class EmbeddingReconciler:
             )
             return
         try:
-            known.update(zip(misses, fresh, strict=True))
+            known.update(fresh)
+            if not fresh and misses:
+                return
             rows = [
                 VectorRow(known[text], dict(m))
                 for text, m in zip(doc.texts, doc.metadata, strict=True)
+                if text in known
             ]
             outcome = state.store.replace_document(
                 DocumentRows(doc.path, doc.token, rows),
@@ -494,9 +537,8 @@ class EmbeddingReconciler:
         if outcome == "conflict":
             self._conflict(state, doc.path)
             return
-        missed = set(misses)
-        embedded = sum(1 for text in doc.texts if text in missed)
-        reused = len(doc.texts) - embedded
+        embedded = sum(1 for text in doc.texts if text in fresh)
+        reused = len(rows) - embedded
         state.result.embedded += embedded
         state.result.reused += reused
         if reused:
@@ -507,6 +549,41 @@ class EmbeddingReconciler:
                 embedded,
                 reused,
             )
+
+    def _embed_recovery_inputs(
+        self, state: _Pass, doc: _Document, misses: list[str]
+    ) -> dict[str, list[float]]:
+        """Embed missing chunks in bounded passes while retaining saved rows."""
+        if self._recovery_after is not None and self._recovery_after[0] == doc.path:
+            after = self._recovery_after[1]
+            if after in misses:
+                start = misses.index(after) + 1
+                misses = misses[start:] + misses[:start]
+        fresh: dict[str, list[float]] = {}
+        for start in range(0, len(misses), self._batch_size):
+            batch = misses[start : start + self._batch_size]
+            try:
+                vectors = self._provider.embed(batch)
+                accepted = dict(zip(batch, vectors, strict=True))
+                fresh.update(accepted)
+                state.failures = 0
+            except Exception as exc:
+                state.result.kept += len(batch)
+                state.result.retry.add(doc.path)
+                state.failures += 1
+                logger.warning(
+                    "embedding_reconcile_skip_doc site=%s path=%s chunks=%d err=%s",
+                    state.site,
+                    doc.path,
+                    len(batch),
+                    exc,
+                    exc_info=True,
+                )
+                if state.failures >= _MAX_CONSECUTIVE_FAILURES:
+                    state.result.stopped = True
+                    self._recovery_after = (doc.path, batch[-1])
+                    break
+        return fresh
 
     def _stored_inputs(self, rows: list[VectorRow]) -> dict[str, Any]:
         """Map the embedding input each of *rows* was embedded from to its vector."""
@@ -588,6 +665,7 @@ class EmbeddingReconciler:
         *,
         donor: Donor | None = None,
         reuse_own: bool = False,
+        bounded: bool = False,
     ) -> RebuildOutcome:
         """Build every document the keyword index holds and publish one generation.
 
@@ -610,6 +688,7 @@ class EmbeddingReconciler:
             donor: A read-only store to copy matching vectors from.
             reuse_own: Copy matching vectors from *store*'s current rows; off
                 by default, so a forced rebuild re-embeds every chunk.
+            bounded: Stop after consecutive provider failures.
 
         Returns:
             What the build did.
@@ -623,7 +702,9 @@ class EmbeddingReconciler:
         found, misses, donated = self._split(
             docs, store, identity.dimension, donor, reuse_own
         )
-        embedded_inputs, failed = self._embed_batches(misses, identity.dimension)
+        embedded_inputs, failed = self._embed_batches(
+            misses, identity.dimension, bounded
+        )
         rows, embedded = _assemble(docs, found, embedded_inputs)
         reused = sum(len(v) for v in found.values())
         published = False
@@ -723,6 +804,7 @@ class EmbeddingReconciler:
         self,
         flat: list[tuple[str, RevisionToken, str, dict[str, Any]]],
         dimension: int,
+        bounded: bool = False,
     ) -> tuple[dict[tuple[str, str], array[float]], int]:
         """Embed *flat* in bounded batches, skipping a batch that fails.
 
@@ -734,10 +816,22 @@ class EmbeddingReconciler:
             Each embedded ``(path, input)`` to its float32 vector, and the
             number of batches that failed.
         """
+        if bounded and self._recovery_after is not None:
+            path, text = self._recovery_after
+            start_after = next(
+                (
+                    i + 1
+                    for i, row in enumerate(flat)
+                    if (row[0], row[2]) == (path, text)
+                ),
+                next((i for i, row in enumerate(flat) if row[0] > path), 0),
+            )
+            flat = flat[start_after:] + flat[:start_after]
         total = len(flat)
         started = time.monotonic()
         last_decile = 0
         failed = 0
+        consecutive = 0
         kept: dict[tuple[str, str], array[float]] = {}
         for start in range(0, total, self._batch_size):
             end = min(start + self._batch_size, total)
@@ -752,6 +846,7 @@ class EmbeddingReconciler:
                 # Broad by design: providers raise heterogeneous types for an
                 # oversized batch (RuntimeError, httpx errors, ...).
                 failed += 1
+                consecutive += 1
                 logger.warning(
                     "build_embeddings_skip_batch chunks_start=%d chunks_end=%d "
                     "chunks_total=%d err=%s",
@@ -762,6 +857,7 @@ class EmbeddingReconciler:
                     exc_info=True,
                 )
             else:
+                consecutive = 0
                 for (path, _token, text, _meta), vector in zip(
                     batch, vectors, strict=True
                 ):
@@ -774,6 +870,12 @@ class EmbeddingReconciler:
                 total,
             )
             last_decile = _log_progress(end, total, started, last_decile)
+            if bounded and consecutive >= _MAX_CONSECUTIVE_FAILURES:
+                self._recovery_after = (batch[-1][0], batch[-1][2])
+                break
+        else:
+            if bounded:
+                self._recovery_after = None
         return kept, failed
 
     @staticmethod

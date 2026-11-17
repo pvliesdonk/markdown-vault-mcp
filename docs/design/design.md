@@ -5051,10 +5051,13 @@ another one, and is the explicit switch of choice C.
     and rebuilds it in the same job after keyword work finishes. SQLite classifies
     corruption from its write transaction as well as reads. The rebuild runs
     inline in the same job, as for an open fault. A failed rebuild may leave
-    an empty or partial store; the next reindex or flush retries the missing
-    vectors. Keyword jobs log a failed recovery at WARNING after finishing
-    keyword work; vector-only jobs propagate the failure to their Future.
-    Incremental builds verify an empty target before publishing (#1976).
+    an empty or partial store; the slot records the outstanding recovery.
+    A search by meaning or an explicit embeddings build retries it, with a
+    bound on consecutive provider failures. A search fails if recovery still leaves the store empty; a partial store
+    keeps serving its saved rows. Keyword jobs log a failed recovery at WARNING after
+    finishing keyword work; vector-only jobs propagate the failure to their
+    Future. A cold build encountering corruption at publication recovers
+    through the same boundary (#1976).
 
   A slot that cannot condemn preserves per-document handling of write errors;
   corruption found in a read still raises `StoreCorruptError`. A job that

@@ -134,7 +134,6 @@ class EmbeddingsManager:
         # While set, the keyword index updates with the vector store left
         # closed and unwritten: an import's full build follows (#1505).
         self._vectors_deferred = False
-        self._recovery_owed = False
         self._conflicts: set[str] = set()
         self._retries: set[str] = set()
         self._reconciler = (
@@ -258,7 +257,8 @@ class EmbeddingsManager:
         ordinary cold build, where a compatible 5.x sidecar donates, so
         unchanged notes cost no provider call (#1505). A store a search
         found damaged after it opened is condemned first, here on the
-        writer thread, and then takes the same cold build (#1881).
+        writer thread, and then takes the same cold build (#1881). The slot
+        records an incomplete recovery for a later search or build (#1976).
 
         Returns:
             Number of chunks embedded.
@@ -274,12 +274,12 @@ class EmbeddingsManager:
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
         if self._slot.has_suspect():
-            self._recovery_owed = True
+            self._slot.recovery_owed = True
         self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
         except StoreCorruptError:
-            if not self._recovery_owed:
+            if not self._slot.recovery_owed:
                 raise
             store = self._slot.rebuild_target()
         except StoreIncompatibleError:
@@ -425,15 +425,7 @@ class EmbeddingsManager:
             store = self._open_store()
             if self._has_vectors(store):
                 return self._converge_embeddings(store)
-            # Verify before publishing into an empty store as on a forced build.
-            recoverable = self._slot.can_recover(store) and self._slot.answers(store)
-            owed = self._recovery_owed
-            if recoverable:
-                self._recovery_owed = True
-            target = self._slot.rebuild_target()
-            if target is store:
-                self._recovery_owed = owed
-            store = target
+            # Empty store: fall through to the full cold build.
 
         identity = self._slot.identity
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
@@ -443,6 +435,10 @@ class EmbeddingsManager:
             outcome = self._full_build(
                 store, identity, donor=donor or upgrade, reuse_own=reuse_own
             )
+        except StoreCorruptError:
+            if self._slot.recovery_owed or not self._slot.mark_suspect(store):
+                raise
+            return self.rebuild_after_fault()
         finally:
             if upgrade is not None:
                 upgrade.close()
@@ -469,11 +465,15 @@ class EmbeddingsManager:
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
         outcome = self._reconciler.rebuild(
-            store, identity, donor=donor, reuse_own=reuse_own
+            store,
+            identity,
+            donor=donor,
+            reuse_own=reuse_own,
+            bounded=self._slot is not None and self._slot.recovery_owed,
         )
         published = self._finish_cold_build(store, identity, outcome)
-        if published and not outcome.failed_batches:
-            self._recovery_owed = False
+        if self._slot is not None and published and not outcome.failed_batches:
+            self._slot.recovery_owed = False
         return RebuildOutcome(
             embedded=outcome.embedded,
             reused=outcome.reused,
@@ -667,8 +667,10 @@ class EmbeddingsManager:
             return self.rebuild_after_fault()
         if result.embedded or result.reused or result.removed or result.retokened:
             vectors.checkpoint()
-        if not (result.kept or result.retry or result.conflicts):
-            self._recovery_owed = False
+        if self._slot is not None and not (
+            result.stopped or result.conflicts or result.retry or result.kept
+        ):
+            self._slot.recovery_owed = False
         if result.kept:
             logger.warning(
                 "build_embeddings_converge_failed_chunks total=%d outcome=vectors_kept",
@@ -833,21 +835,16 @@ class EmbeddingsManager:
         search, until it is fixed or deleted (#1505). A provider failure
         or a refused vector keeps that path's rows and is logged; a
         conflicting write is recorded for re-queueing. Store open and
-        rebuild errors propagate to the writer's Future. An empty snapshot
-        retries an owed recovery unless vector work is deferred.
+        rebuild errors propagate to the writer's Future.
 
         Args:
             paths: Paths to reconcile (relative to source_dir).
         """
-        if self._reconciler is None:
-            return
-        if not paths:
-            if self._recovery_owed and not self._vectors_deferred:
-                self.rebuild_after_fault()
+        if self._reconciler is None or not paths:
             return
         vectors = self._open_store()
         self.reconcile_paths(vectors, paths, site="flush")
-        if self._recovery_owed or (self._slot is not None and self._slot.has_suspect()):
+        if self._slot is not None and self._slot.has_suspect():
             self.rebuild_after_fault()
             return
         # Checkpoint even when every row was current: a prior checkpoint may
@@ -881,7 +878,13 @@ class EmbeddingsManager:
         recover = self._slot is not None and self._slot.can_recover(vectors)
         try:
             result = self._reconciler.reconcile(
-                vectors, paths, site=site, recover_corruption=recover
+                vectors,
+                paths,
+                site=site,
+                recover_corruption=recover,
+                bounded=paths is None
+                and self._slot is not None
+                and self._slot.recovery_owed,
             )
         except StoreCorruptError:
             if self._slot is None or not self._slot.mark_suspect(vectors):
@@ -892,12 +895,8 @@ class EmbeddingsManager:
         return result
 
     def finish_vector_recovery(self) -> None:
-        """Attempt suspect or owed recovery after keyword work, unless deferred."""
-        if self._vectors_deferred:
-            return
-        if not self._recovery_owed and (
-            self._slot is None or not self._slot.has_suspect()
-        ):
+        """Recover a suspect store after keyword work, unless deferred."""
+        if self._vectors_deferred or self._slot is None or not self._slot.has_suspect():
             return
         try:
             self.rebuild_after_fault()
