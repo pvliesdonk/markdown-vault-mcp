@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
 import markdown_vault_mcp.stores.sqlite_keyword
 import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
+from markdown_vault_mcp.bundle_inventory import InspectionPolicy
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
@@ -701,6 +702,18 @@ class Vault:
             title_field=self._title_field,
             okf_write_enrich=self._okf_write_enrich,
             submodule_guard=self._build_submodule_guard(),
+            inspection_policy=InspectionPolicy(
+                settings.conventions_file,
+                tuple(
+                    path
+                    for path in (
+                        self._state_path,
+                        self._index_path,
+                        self._embeddings_path,
+                    )
+                    if path is not None
+                ),
+            ),
         )
 
     def _build_submodule_guard(self) -> SubmoduleGuard | None:

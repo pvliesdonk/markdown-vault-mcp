@@ -70,7 +70,8 @@ continues to support computed OKF filters.
 
 `inspect_bundle` reads one explicitly selected directory without building or
 querying an index. Untyped and malformed Markdown remain visible even when
-index admission requires frontmatter fields.
+index admission requires frontmatter fields. See the [security model](../../security-model.md)
+for the filesystem boundary.
 
 ```python { .fragment }
 from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
@@ -92,8 +93,10 @@ The frozen `BundleInspection` contains the request, sorted `BundleEntry` values,
 missing directory within an accessible source is `missing`.
 
 Each entry contains its vault-relative `path`, filename-based `role`, `state`,
-`reason`, `parse_state` and `type_state`. Exact `index.md` and `log.md` names mean
-`navigation` and `history`; other `.md` files are `concept_candidate`.
+`reason`, `parse_state`, `type_state`, `visibility` and `hidden_path`. Exact
+`index.md` and `log.md` names mean `navigation` and `history`; the configured
+conventions filename has role `support`, and other `.md` files are
+`concept_candidate`.
 Directories and allowed regular attachments have `directory` and `supporting`
 roles. Roles describe observations and grant no conformance or write authority.
 
@@ -105,9 +108,12 @@ targets are returned.
 
 Enumeration is `complete`, `entry_limit`, `unavailable` or `not_inspected`.
 `complete` covers only immediate policy-visible enumeration, even if individual
-entries remain unavailable or not inspected. Excluded paths, hidden components
-and non-directory filenames outside the configured attachment allowlist are
-omitted. Visible symlinks and special files remain unavailable and are
+entries remain unavailable or not inspected. Paths matching index exclusions
+are labelled `index_excluded`, and dot paths have `hidden_path=true`; neither
+label prevents inspection. Non-directory filenames outside the attachment
+allowlist, `.git`, server state directories, and permission-denied children are
+omitted. A denied child makes enumeration unavailable without hiding readable
+siblings. Visible symlinks and special files remain unavailable and are
 never followed or read. When a stat failure prevents determining whether an
 omitted name is a visible directory, enumeration is `unavailable`.
 

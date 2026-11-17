@@ -5,7 +5,7 @@ from __future__ import annotations
 import errno
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
 import yaml
@@ -15,7 +15,6 @@ from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.content_kind import is_allowed_artifact, is_note
 from markdown_vault_mcp.utils.fs import (
-    is_subtree_excluded,
     open_directory_nofollow,
     read_regular_nofollow,
 )
@@ -28,7 +27,13 @@ if TYPE_CHECKING:
 ScopeState = Literal["inspected", "missing", "excluded", "unavailable"]
 EntryState = Literal["inspected", "missing", "not_inspected", "unavailable"]
 Role = Literal[
-    "navigation", "history", "concept_candidate", "supporting", "directory", "unknown"
+    "navigation",
+    "history",
+    "concept_candidate",
+    "support",
+    "supporting",
+    "directory",
+    "unknown",
 ]
 ParseState = Literal["not_inspected", "valid", "invalid_encoding", "malformed_metadata"]
 TypeState = Literal["not_inspected", "absent", "invalid", "present"]
@@ -42,6 +47,19 @@ def _components(path: str) -> tuple[str, ...]:
     if any(part in {"", ".", ".."} for part in parts):
         raise ValueError("Scope must contain only plain relative components")
     return parts
+
+
+@dataclass(frozen=True)
+class InspectionPolicy:
+    """Configured conventions filename and server-owned state locations.
+
+    Args:
+        conventions_file: Filename used for per-folder conventions, if enabled.
+        state_paths: Configured files or sidecar bases holding server state.
+    """
+
+    conventions_file: str | None = "_conventions.md"
+    state_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -76,6 +94,8 @@ class BundleEntry:
         reason: Stable reason for an uninspected or unavailable entry.
         parse_state: Outcome of decoding and parsing complete Markdown bytes.
         type_state: Presence of a nonempty string ``type`` field, not vocabulary validation.
+        visibility: Whether the path matches an effective index exclusion.
+        hidden_path: Whether any vault-relative component begins with a dot.
     """
 
     path: str
@@ -84,6 +104,8 @@ class BundleEntry:
     reason: str | None = None
     parse_state: ParseState = "not_inspected"
     type_state: TypeState = "not_inspected"
+    visibility: Literal["visible", "index_excluded"] = "visible"
+    hidden_path: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,7 +133,9 @@ def _missing(exc: OSError) -> bool:
     return exc.errno in {errno.ENOENT, errno.ENOTDIR}
 
 
-def _role(name: str) -> Role:
+def _role(name: str, conventions_file: str | None) -> Role:
+    if name == conventions_file:
+        return "support"
     if name == "index.md":
         return "navigation"
     if name == "log.md":
@@ -178,6 +202,7 @@ class BundleInspector:
         excludes: Effective vault-relative exclude patterns.
         extensions: Existing artifact allowlist.
         note_limit: Configured full-note byte cap (zero disables only that cap).
+        policy: Conventions and server state boundaries for inspection.
     """
 
     def __init__(
@@ -186,19 +211,38 @@ class BundleInspector:
         excludes: Sequence[str],
         extensions: frozenset[str],
         note_limit: int,
+        policy: InspectionPolicy = InspectionPolicy(),
     ) -> None:
         self._source = source
+        self._policy = policy
+        root = source.absolute()
+        self._absolute_source = root
+        internal = []
+        for state_path in policy.state_paths:
+            if str(state_path) == ":memory:":
+                continue
+            path = state_path.absolute()
+            if path.is_relative_to(root) and path != root:
+                internal.append(path if path.parent == root else path.parent)
+        self._internal_paths = tuple(internal)
         self._excludes = excludes
         self._extensions = extensions
         self._note_limit = min(65536, note_limit) if note_limit > 0 else 65536
 
-    def _excluded(self, path: str) -> bool:
+    def _internal(self, path: str) -> bool:
+        if any(part in {".git", ".markdown_vault_mcp"} for part in path.split("/")):
+            return True
+        candidate = self._absolute_source.joinpath(*path.split("/"))
         return any(
-            part.startswith(".") for part in path.split("/") if part
-        ) or is_path_excluded(path, self._excludes)
+            candidate == internal or candidate.is_relative_to(internal)
+            for internal in self._internal_paths
+        )
+
+    def _index_excluded(self, path: str) -> bool:
+        return is_path_excluded(path, self._excludes)
 
     def inspect(self, request: BundleInspectionRequest) -> BundleInspection:
-        """Observe one directory without reading excluded candidates or any index.
+        """Observe one directory independently of index admission.
 
         Args:
             request: Explicit validated selection and entry bound.
@@ -207,10 +251,9 @@ class BundleInspector:
             Bounded observations with independent scope and enumeration outcomes.
         """
         parts = _components(request.root) + _components(request.directory)
-        # Subtree proofs apply to descendants; exact directory exclusions do not.
         scope = "/".join(parts)
-        if self._excluded(scope) or is_subtree_excluded(scope, self._excludes):
-            return BundleInspection(request, "excluded")
+        if self._internal(scope):
+            return BundleInspection(request, "unavailable")
         try:
             with open_directory_nofollow(self._source, parts) as parent:
                 return self._enumerate(parent, request, scope)
@@ -229,15 +272,35 @@ class BundleInspector:
             with os.scandir(parent) as children:
                 for ordinal, child in enumerate(children):
                     if ordinal == request.entry_limit:
-                        enumeration = "entry_limit"
+                        if enumeration == "complete":
+                            enumeration = "entry_limit"
                         break
                     path = f"{scope}/{child.name}" if scope else child.name
-                    if self._excluded(path):
+                    if self._internal(path):
                         continue
-                    entry, consumed = self._observe(parent, child.name, path, remaining)
+                    try:
+                        entry, consumed = self._observe(
+                            parent, child.name, path, remaining
+                        )
+                    except OSError as exc:
+                        if exc.errno not in {errno.EACCES, errno.EPERM}:
+                            raise
+                        remaining -= min(self._note_limit + 1, remaining)
+                        enumeration = "unavailable"
+                        continue
                     remaining -= consumed
                     if entry is not None:
-                        entries.append(entry)
+                        entries.append(
+                            replace(
+                                entry,
+                                visibility="index_excluded"
+                                if self._index_excluded(path)
+                                else "visible",
+                                hidden_path=any(
+                                    part.startswith(".") for part in path.split("/")
+                                ),
+                            )
+                        )
         except OSError:
             enumeration = "unavailable"
         return BundleInspection(
@@ -254,6 +317,8 @@ class BundleInspector:
             mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode
             return self._classify(parent, path, mode, remaining)
         except OSError as exc:
+            if exc.errno in {errno.EACCES, errno.EPERM}:
+                raise
             if not self._visible_file(path):
                 # It might be a visible directory; omit its unknown name but
                 # refuse a complete enumeration when visibility is unknowable.
@@ -268,8 +333,6 @@ class BundleInspector:
         self, parent: int, path: str, mode: int, remaining: int
     ) -> tuple[BundleEntry | None, int]:
         if stat.S_ISDIR(mode):
-            if is_subtree_excluded(path, self._excludes):
-                return None, 0
             return BundleEntry(path, "directory", reason="directory"), 0
         if not self._visible_file(path):
             return None, 0
@@ -283,13 +346,15 @@ class BundleInspector:
         self, parent: int, path: str, remaining: int
     ) -> tuple[BundleEntry, int]:
         name = path.rsplit("/", 1)[-1]
-        role = _role(name)
+        role = _role(name, self._policy.conventions_file)
         if remaining == 0:
             return BundleEntry(path, role, reason="byte_budget"), 0
         limit = min(self._note_limit + 1, remaining)
         try:
             raw = read_regular_nofollow(parent, name, limit)
         except OSError as exc:
+            if exc.errno in {errno.EACCES, errno.EPERM}:
+                raise
             state: EntryState = "missing" if _missing(exc) else "unavailable"
             # Reserve the whole attempted read after errors: partial consumption
             # is unknowable, but must still count against the aggregate cap.

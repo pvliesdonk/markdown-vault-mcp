@@ -3597,12 +3597,15 @@ malformed Markdown remain visible, and search state stays `not_evaluated`.
 Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
 candidates) confer no bundle conformance, global OKF activation or writer authority.
 
-Exact effective excludes use original vault-relative spellings before candidate
-probes. Only the existing proven subtree-prune patterns imply descendant
-exclusion. Hidden components are conservatively omitted, and non-directory filenames
-retain `ArtifactStore.extensions()` allowlist policy, including unreadable or
-nonregular candidates. No excluded names,
-counts, metadata values, bodies or symlink targets are returned. The configured
+Effective index excludes label matching entries `index_excluded` without hiding
+or refusing them. Dot components are labelled `hidden_path`; `.git` and the
+legacy `.markdown_vault_mcp` state directory and configured state directories
+inside the vault are never entered. Filesystem
+permission refusals make enumeration incomplete and do not reveal denied child
+names. The configured conventions filename has the support role. Non-directory
+filenames retain `ArtifactStore.extensions()` allowlist policy, including
+unreadable or nonregular candidates. No metadata values, bodies or symlink
+targets are returned. The configured
 source resolves once and its absolute components are opened from the filesystem
 root without following symlinks; selected components and child reads remain
 anchored to no-follow directory descriptors. Symlink/nonregular reads fail closed. Missing

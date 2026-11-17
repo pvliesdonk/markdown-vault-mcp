@@ -68,7 +68,8 @@ def test_public_reader_before_build(
         assert items["typed.md"].type_state == "present"
         assert items["invalid.md"].type_state == "invalid"
         assert items["broken.md"].parse_state == "malformed_metadata"
-        assert "_conventions.md" not in items
+        assert items["_conventions.md"].role == "support"
+        assert items["_conventions.md"].visibility == "index_excluded"
         assert "Secret" not in json.dumps(asdict(result))
         callback.assert_not_called()
     finally:
@@ -100,50 +101,13 @@ def test_explicit_root_required() -> None:
         BundleInspectionRequest()  # type: ignore[call-arg]
 
 
-@pytest.mark.parametrize("root", ["secret", "secret/missing", ".git", "bundle/secret"])
-def test_excluded_scope_never_probed(
-    tmp_path: Path, root: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def forbidden(*_args: object, **_kwargs: object) -> None:
-        pytest.fail("Excluded selection probed")
-
-    monkeypatch.setattr(inventory, "open_directory_nofollow", forbidden)
-    result = inspector(tmp_path, ("secret/**", "**/secret/**")).inspect(
-        BundleInspectionRequest(root=root)
-    )
-    assert result.state == "excluded"
-    assert result.entries == ()
-
-
-def test_excludes_exact_spelling_and_before_stat(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "secret.md").write_text("secret body")
-    (tmp_path / "private").mkdir()
-    (tmp_path / "private" / "visible.md").write_text("visible")
-    (tmp_path / "nested").mkdir()
-    (tmp_path / "nested" / "private").mkdir()
-    original = inventory.os.stat
-
-    def checked_stat(path: object, *args: object, **kwargs: object) -> os.stat_result:
-        assert path != "secret.md"
-        return original(path, *args, **kwargs)  # type: ignore[call-overload]
-
-    monkeypatch.setattr(inventory.os, "stat", checked_stat)
-    subject = inspector(tmp_path, ("secret.md", "**/private/**"))
-    result = subject.inspect(BundleInspectionRequest(root=""))
-    assert "secret" not in json.dumps(asdict(result))
-    assert any(entry.path == "private" for entry in result.entries)
-    assert (
-        subject.inspect(BundleInspectionRequest(root="private")).entries[0].path
-        == "private/visible.md"
-    )
-    assert (
-        subject.inspect(
-            BundleInspectionRequest(root="nested", directory="private")
-        ).state
-        == "excluded"
-    )
+def test_index_excluded_directory_remains_inspectable(tmp_path: Path) -> None:
+    folder = tmp_path / "private"
+    folder.mkdir()
+    (folder / "note.md").write_text("body")
+    subject = inspector(tmp_path, ("private/**",))
+    result = subject.inspect(BundleInspectionRequest(root="private"))
+    assert result.entries[0].visibility == "index_excluded"
 
 
 def test_roles_allowlist_and_nonrecursive(tmp_path: Path) -> None:
@@ -154,6 +118,7 @@ def test_roles_allowlist_and_nonrecursive(tmp_path: Path) -> None:
     result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
     assert {entry.path: entry.role for entry in result.entries} == {
         "folder": "directory",
+        ".private.md": "concept_candidate",
         "photo.png": "supporting",
         "INDEX.md": "concept_candidate",
     }
@@ -254,7 +219,11 @@ def test_scope_and_entry_io_states(
 
     monkeypatch.setattr(inventory, "read_regular_nofollow", refused)
     result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
-    assert result.entries[0].state == expected
+    if error == errno.EACCES:
+        assert result.entries == ()
+        assert result.enumeration == "unavailable"
+    else:
+        assert result.entries[0].state == expected
     assert "secret detail" not in json.dumps(asdict(result))
     monkeypatch.setattr(inventory, "open_directory_nofollow", refused)
     assert (
@@ -378,9 +347,9 @@ def test_entry_cap_counts_omitted_and_only_one_lookahead(
         BundleInspectionRequest(root="", entry_limit=2)
     )
     assert len(visits) == 3
-    assert result.entries == ()
+    assert len(result.entries) == 2
+    assert all(entry.visibility == "index_excluded" for entry in result.entries)
     assert result.enumeration == "entry_limit"
-    assert "secret" not in json.dumps(asdict(result))
 
 
 def test_iteration_error_retains_observations(
@@ -413,9 +382,10 @@ def test_exact_directory_exclude_does_not_exclude_descendants(tmp_path: Path) ->
     nested.mkdir(parents=True)
     (nested / "note.md").write_text("body")
     subject = inspector(tmp_path, ("a",))
-    assert subject.inspect(BundleInspectionRequest(root="a")).state == "excluded"
+    assert subject.inspect(BundleInspectionRequest(root="a")).state == "inspected"
     result = subject.inspect(BundleInspectionRequest(root="a/sub"))
     assert result.entries[0].path == "a/sub/note.md"
+    assert result.entries[0].visibility == "visible"
 
 
 def test_stat_error_is_visible_without_content_probe(
@@ -430,9 +400,9 @@ def test_stat_error_is_visible_without_content_probe(
         return original(path, *args, **kwargs)  # type: ignore[call-overload]
 
     monkeypatch.setattr(inventory.os, "stat", refused)
-    entry = inspector(tmp_path).inspect(BundleInspectionRequest(root="")).entries[0]
-    assert entry.state == "unavailable"
-    assert entry.role == "unknown"
+    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
+    assert result.entries == ()
+    assert result.enumeration == "unavailable"
 
 
 def test_swap_to_fifo_is_not_read(
@@ -524,7 +494,11 @@ def test_subtree_rule_does_not_exclude_regular_prefix_names(tmp_path: Path) -> N
     (tmp_path / "hidden-subtree").mkdir()
     subject = inspector(tmp_path, ("folder.md/**", "photo.png/**", "hidden-subtree/**"))
     result = subject.inspect(BundleInspectionRequest(root=""))
-    assert {entry.path for entry in result.entries} == {"folder.md", "photo.png"}
+    assert {entry.path for entry in result.entries} == {
+        "folder.md",
+        "photo.png",
+        "hidden-subtree",
+    }
 
 
 def test_allowlist_also_hides_nonregular_and_stat_failures(
@@ -795,3 +769,102 @@ def test_numeric_parser_limit_remains_uninspected_with_valid_sibling(
     assert entries["large.md"].reason == "metadata_complexity"
     assert entries["large.md"].parse_state == "not_inspected"
     assert entries["good.md"].type_state == "present"
+
+
+def test_inventory_includes_index_excluded_hidden_and_conventions(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "excluded.md").write_text("---\ntype: concept\n---\nBody")
+    (tmp_path / "_conventions.md").write_text("Guidance")
+    hidden = tmp_path / ".claude" / "notes"
+    hidden.mkdir(parents=True)
+    (hidden / "n.md").write_text("---\ntype: concept\n---\nBody")
+    subject = inspector(tmp_path, ("excluded.md", "_conventions.md"))
+    root = {
+        entry.path: entry
+        for entry in subject.inspect(BundleInspectionRequest(root="")).entries
+    }
+    assert root["excluded.md"].visibility == "index_excluded"
+    assert root["_conventions.md"].role == "support"
+    note = subject.inspect(BundleInspectionRequest(root=".claude/notes")).entries[0]
+    assert note.hidden_path is True
+    assert note.parse_state == "valid"
+    assert note.type_state == "present"
+
+
+def test_internal_scopes_are_never_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened = Mock(side_effect=AssertionError("internal scope opened"))
+    monkeypatch.setattr(inventory, "open_directory_nofollow", opened)
+    for path in (".git", ".markdown_vault_mcp", "nested/.git/objects"):
+        result = inspector(tmp_path).inspect(BundleInspectionRequest(root=path))
+        assert result.state == "unavailable"
+    opened.assert_not_called()
+
+
+def test_configured_conventions_and_state_directory(tmp_path: Path) -> None:
+    (tmp_path / "guidance.md").write_text("Guidance")
+    internal = tmp_path / "server-data"
+    internal.mkdir()
+    (internal / "secret.md").write_text("secret")
+    settings = VaultSettings(
+        conventions_file="guidance.md", state_path=internal / "state.json"
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        root = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        entries = {entry.path: entry for entry in root.entries}
+        assert entries["guidance.md"].role == "support"
+        assert entries["guidance.md"].visibility == "index_excluded"
+        assert "server-data" not in entries
+        denied = vault.reader.inspect_bundle(
+            BundleInspectionRequest(root="server-data")
+        )
+        assert denied.state == "unavailable"
+        assert denied.entries == ()
+    finally:
+        vault.close()
+
+
+def test_permission_refusal_does_not_hide_readable_siblings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "denied.md").write_text("secret")
+    (tmp_path / "readable.md").write_text("---\ntype: concept\n---\nbody")
+    original = inventory.read_regular_nofollow
+    scandir = inventory.os.scandir
+
+    class OrderedScan:
+        def __enter__(self) -> Iterator[os.DirEntry[str]]:
+            with scandir(tmp_path) as children:
+                return iter(sorted(children, key=lambda child: child.name))
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: OrderedScan())
+
+    def refused(parent: int, name: str, limit: int) -> bytes:
+        if name == "denied.md":
+            raise PermissionError(errno.EACCES, "denied")
+        return original(parent, name, limit)
+
+    monkeypatch.setattr(inventory, "read_regular_nofollow", refused)
+    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
+    assert result.enumeration == "unavailable"
+    assert [entry.path for entry in result.entries] == ["readable.md"]
+    assert result.entries[0].type_state == "present"
+
+
+def test_state_file_at_vault_root_does_not_hide_vault(tmp_path: Path) -> None:
+    (tmp_path / "note.md").write_text("body")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(state_path=tmp_path / "state.json")
+    )
+    try:
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert result.state == "inspected"
+        assert [entry.path for entry in result.entries] == ["note.md"]
+    finally:
+        vault.close()
