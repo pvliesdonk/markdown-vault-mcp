@@ -24,7 +24,7 @@ from tests.fixtures.cli_graph import graph_source  # noqa: F401
 # F811 redefinition check on the parameter shadowing).
 from tests.fixtures.cli_http import cli_client_profile  # noqa: F401
 from tests.fixtures.cli_paths import path_source  # noqa: F401
-from tests.fixtures.git import git_repo, git_repo_pair  # noqa: F401
+from tests.fixtures.git import git_repo, git_repo_pair, isolated_git  # noqa: F401
 from tests.fixtures.logging import isolated_root_logging  # noqa: F401
 from tests.fixtures.permissions import acl_directory  # noqa: F401
 from tests.fixtures.postgres import postgres_schema, postgres_server  # noqa: F401
