@@ -436,7 +436,7 @@ class ProjectConfig:
         default=False,
         metadata={
             "help": (
-                "OKF (Open Knowledge Format) enforced write layer. When true on "
+                "Deprecated alias for the OKF (Open Knowledge Format) enforced write layer. When true on "
                 "an OKF-active vault, the server stamps generated provenance on "
                 "each write and clears any verified attestation when a note's "
                 "content changes. It also keeps each written folder's log.md and "
@@ -1371,6 +1371,7 @@ class ProjectConfig:
             "exclude",
             "searchable_fields",
             "attachment_extensions",
+            "okf_folders",
         )
         for name in sequence_fields:
             value = getattr(self, name)

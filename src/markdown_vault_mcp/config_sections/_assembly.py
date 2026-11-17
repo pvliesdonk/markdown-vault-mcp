@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -48,6 +49,8 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import WriteCallback
 
 logger = logging.getLogger(__name__)
+_okf_warning_lock = threading.Lock()
+_okf_warning_emitted = False
 
 # Full env-var name for the required source dir, used in the missing-var message.
 _SOURCE_DIR_VAR = "MARKDOWN_VAULT_MCP_SOURCE_DIR"
@@ -72,11 +75,16 @@ _MAX_CHUNK_CHARS_CEILING = 1500
 
 
 def warn_okf_write_deprecated() -> None:
-    """Warn once per configuration constructed with the legacy write switch."""
-    logger.warning(
-        "okf_write_deprecated replacements=%s",
-        "OKF_AUTHOR,OKF_VERIFY,OKF_INDEX,OKF_LOG,OKF_FOLDERS",
-    )
+    """Warn once per process when the legacy write switch is enabled."""
+    global _okf_warning_emitted
+    with _okf_warning_lock:
+        if _okf_warning_emitted:
+            return
+        logger.warning(
+            "okf_write_deprecated replacements=%s",
+            "OKF_AUTHOR,OKF_VERIFY,OKF_INDEX,OKF_LOG,OKF_FOLDERS",
+        )
+        _okf_warning_emitted = True
 
 
 def derive_max_chunk_chars(*, context_length: int | None, override: int | None) -> int:

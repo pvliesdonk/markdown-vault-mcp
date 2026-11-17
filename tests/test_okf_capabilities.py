@@ -1,10 +1,12 @@
 """Independent OKF authority and the legacy transition."""
 
 import logging
+from dataclasses import replace
 
 import pytest
 
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections import _assembly
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 
@@ -23,7 +25,8 @@ def test_defaults_preserve_legacy_field_but_grant_no_writes():
     ) == (False, "off", False, "off", (".",), False)
 
 
-def test_alias_and_explicit_overrides(caplog):
+def test_alias_and_explicit_overrides(caplog, monkeypatch):
+    monkeypatch.setattr(_assembly, "_okf_warning_emitted", False)
     with caplog.at_level(logging.WARNING):
         config = ProjectConfig(
             okf_write=True,
@@ -109,3 +112,25 @@ def test_explicit_elicit_and_folder_immutability():
     folders.append("other")
     assert content.okf_capabilities.verify == "elicit"
     assert content.okf_capabilities.folders == ("projects/*",)
+
+
+def test_deprecation_warns_once_across_env_and_copies(monkeypatch, caplog):
+    monkeypatch.setattr(_assembly, "_okf_warning_emitted", False)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    with caplog.at_level(logging.WARNING):
+        config = ProjectConfig.from_env()
+        replace(config)
+        replace(config, okf_index=False)
+    assert sum(r.msg.startswith("okf_write_deprecated") for r in caplog.records) == 1
+
+
+def test_project_config_snapshots_folders():
+    folders = ["projects/*"]
+    config = ProjectConfig(okf_folders=folders)
+    folders.append("secret/*")
+    assert config.okf_folders == ("projects/*",)
+    assert replace(config).content.okf_capabilities.folders == ("projects/*",)
+    with pytest.raises(ConfigurationError, match="okf_folders"):
+        ProjectConfig(okf_folders=["valid", ""])
+    with pytest.raises(ConfigurationError, match="okf_folders"):
+        ProjectConfig(okf_folders="invalid")
