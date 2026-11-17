@@ -3410,9 +3410,9 @@
 </ol>
 <p>Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
 and arrive at :meth:<code>on_write_batch</code>, which stages every path the same
-scoped way and commits them once as <code>"&lt;tool&gt;: N files"</code>. A call that
-touched a single file commits under that file's own path instead, so
-ordinary writes read in <code>git log</code> exactly as they always have. A write
+scoped way and commits them once as <code>"&lt;tool&gt;: N files"</code>. A call
+touching a single file ordinarily names that file instead; folder moves
+name their roots even for one file. A write
 with no owning tool call takes the per-write path above.</p>
 <p>Push is deferred to a background <code>threading.Timer</code> that resets on
 each write.  When the timer fires (no writes for <code>push_delay_s</code>),
@@ -3711,10 +3711,10 @@ private attribute before the promotion.</p>
 
         <p>Commit every write from one tool call as a single commit.</p>
 <p>Mirrors :meth:<code>__call__</code>'s guards and push scheduling; only the commit
-boundary differs, and for a call that wrote a single file not even
-that — see :func:<code>_stage_and_commit_batch</code>. The author identity is
-taken from the first item's principal: one tool call has one acting
-principal, so the items cannot legitimately disagree.</p>
+boundary differs; an ordinary single-file call keeps its file subject,
+while a folder move names its roots — see :func:<code>_stage_and_commit_batch</code>.
+The author identity is taken from the first item's principal: one tool
+call has one acting principal, so the items cannot legitimately disagree.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>

@@ -2418,6 +2418,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.okf_write_state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_write_state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.vault.Vault.pause_writes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3400,6 +3411,17 @@
     <span class="md-ellipsis">
       
         max_attachment_size_mb
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.okf_write_state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_write_state
       
     </span>
   </a>
@@ -5262,6 +5284,78 @@ vault library itself.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.okf_write_state" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">okf_write_state</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">active</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.vault.Vault.okf_write_state" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return configured and effective OKF write-layer state.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>active</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The current OKF detection result.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="bool">bool</span>, <span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Configured OKF write flag and whether the layer is effective.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 

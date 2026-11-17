@@ -4338,7 +4338,7 @@ continues to support computed OKF filters.</p>
 
 
 <h2 id="markdown_vault_mcp.facets.reader.ReaderFacet" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ReaderFacet</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">search_mgr</span><span class="p">,</span> <span class="n">doc_mgr</span><span class="p">,</span> <span class="n">git_query_mgr</span><span class="p">,</span> <span class="n">require_built</span><span class="p">,</span> <span class="n">okf_audit</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">ReaderFacet</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">search_mgr</span><span class="p">,</span> <span class="n">doc_mgr</span><span class="p">,</span> <span class="n">git_query_mgr</span><span class="p">,</span> <span class="n">require_built</span><span class="p">,</span> <span class="n">okf_audit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">okf_write_state</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.reader.ReaderFacet" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -4439,6 +4439,22 @@ queries.</p>
               <div class="doc-md-description">
                 <p>Bound OKF conformance audit (#962), or <code>None</code> when
 the composition root does not provide one.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>okf_write_state</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span>[[], <span title="tuple">tuple</span>[<span title="bool">bool</span>, <span title="bool">bool</span>]] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Configured and effective write-layer projection.</p>
               </div>
             </td>
             <td>
@@ -7153,7 +7169,7 @@ type.</p>
     <div class="doc doc-contents ">
 
         <p>Return the OKF statistics section, or <code>None</code> when inactive.</p>
-<p>Delegates to :meth:<code>SearchManager.okf_stats</code>.</p>
+<p>Adds the vault's write state to :meth:<code>SearchManager.okf_stats</code>.</p>
 
 
     <p><span class="doc-section-title">Returns:</span></p>
@@ -7181,7 +7197,7 @@ type.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>status/trust breakdowns, stale count), or <code>None</code> when OKF</p>
+                <p>status/trust breakdowns, stale count, and <code>write_configured</code></p>
               </div>
             </td>
           </tr>
@@ -7191,7 +7207,17 @@ type.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>read semantics are not active.</p>
+                <p>and <code>write_effective</code> when wired), or <code>None</code> when OKF read</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>semantics are not active.</p>
               </div>
             </td>
           </tr>

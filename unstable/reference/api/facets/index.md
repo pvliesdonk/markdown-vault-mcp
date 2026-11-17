@@ -50,7 +50,7 @@ Exact paths rank first. Literal prefix matches rank ahead of matches within a pa
 
 Invalid indexed fields raise `InvalidRequestError`. Existing ranked search continues to support computed OKF filters.
 
-## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None)`
+## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None, okf_write_state=None)`
 
 Read-only queries over the shared managers.
 
@@ -58,13 +58,14 @@ Hold the managers the read methods delegate to.
 
 Parameters:
 
-| Name            | Type                             | Description                                                    | Default                                                                                     |
-| --------------- | -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `search_mgr`    | `SearchManager`                  | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
-| `doc_mgr`       | `DocumentManager`                | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
-| `git_query_mgr` | `GitQueryManager`                | Git history / diff / revision reads.                           | *required*                                                                                  |
-| `require_built` | `Callable[[], None]`             | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
-| `okf_audit`     | \`Callable\[[], OkfAuditReport\] | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
+| Name              | Type                                | Description                                                    | Default                                                                                     |
+| ----------------- | ----------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `search_mgr`      | `SearchManager`                     | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
+| `doc_mgr`         | `DocumentManager`                   | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
+| `git_query_mgr`   | `GitQueryManager`                   | Git history / diff / revision reads.                           | *required*                                                                                  |
+| `require_built`   | `Callable[[], None]`                | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
+| `okf_audit`       | \`Callable\[[], OkfAuditReport\]    | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
+| `okf_write_state` | \`Callable\[[], tuple[bool, bool]\] | None\`                                                         | Configured and effective write-layer projection.                                            |
 
 ### `okf_validate()`
 
@@ -507,12 +508,13 @@ Returns:
 
 Return the OKF statistics section, or `None` when inactive.
 
-Delegates to :meth:`SearchManager.okf_stats`.
+Adds the vault's write state to :meth:`SearchManager.okf_stats`.
 
 Returns:
 
 | Type             | Description |
 | ---------------- | ----------- |
+| \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |

@@ -193,6 +193,8 @@ Claude Desktop passes every value as written, so paths are absolute (`~` is not 
 
 ### What this server needs
 
+In the `.mcpb` install screen, leave **Embedding provider**, API keys and Git settings empty when you do not need them. The bundle supplies empty defaults for these optional fields, so skipped fields do not become literal `${user_config.*}` values. Existing model and host defaults remain unchanged.
+
 The server needs one setting: `MARKDOWN_VAULT_MCP_SOURCE_DIR`, the absolute path of the folder that holds your notes. For a first run, also set `MARKDOWN_VAULT_MCP_READ_ONLY` to `true`. Claude then gets the tools that search and read, and none of the tools that change files:
 
 ```
@@ -395,6 +397,30 @@ For result fields and error handling, see the [MCP tool-result contract](https:/
 
 The synthetic HTTP contract tests exercise the native vault server and these whole-result shapes expected by an Executor caller. They do not establish acceptance by an installed Executor runtime or verify a personal connection. Use the operator's [authentication instructions](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/authentication/index.md) for credentials. The contract tests use only synthetic notes.
 
+### VS Code: connect to this vault
+
+Use the operator's full MCP endpoint, such as `https://mcp.example.com/mcp`, with server ID `markdown-vault-mcp` in [VS Code's add-server flow](https://code.visualstudio.com/docs/agent-customization/mcp-servers#add-a-server-by-url-or-command). Choose HTTP, then complete the operator's sign-in or bearer-token setup. Ask Copilot to search the vault for a known note to check the connection.
+
+For this deployment's authentication mode, follow [Which mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/#which-mode), [provider setup](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc-providers/index.md), and [VS Code's authorization guidance](https://code.visualstudio.com/api/extension-guides/ai/mcp#authorization). Check `MARKDOWN_VAULT_MCP_BASE_URL` using the [reverse-proxy checklist](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/reverse-proxy/#what-the-server-needs-from-the-proxy).
+
+### Goose Desktop: connect to this vault
+
+For a vault on your own machine, start with the [read-only local Goose configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/installation/#goose-desktop-local-vault). For a hosted vault, use this extension entry in Goose's configuration; replace the example URL with the endpoint the operator supplied:
+
+```
+extensions:
+  markdown-vault-mcp:
+    name: Markdown Vault MCP
+    type: streamable_http
+    uri: https://mcp.example.com/mcp
+    enabled: true
+    timeout: 300
+```
+
+This entry targets the server's `http` transport, not its `sse` transport. It does not supply a credential. Complete the operator's [authentication setup](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/authentication/index.md) using [Goose's current extension guidance](https://goose-docs.ai/docs/getting-started/using-extensions/), including its pre-registered OAuth client settings when needed. For a bearer deployment, the extension's `headers` mapping can carry `Authorization: "Bearer <operator-provided-token>"`; keep the real token out of shared configuration and source control. [Goose's extension schema](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/extension.rs) also accepts `available_tools: [get_server_info, search, read]` to limit this vault's tool list. This client-side selection does not replace the server's read-only setting.
+
+These examples were checked against the server configuration and primary client documentation on November 16, 2026, not against installed clients or a live identity provider. Confirm a read-only search before relying on a remote session; older client issue reports do not establish current compatibility with this deployment.
+
 ## Next
 
 - [Deploy](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/index.md): run a server like this one yourself.
@@ -510,6 +536,27 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin install `[all]`. The `mcp` extra stays for older install commands; the plain package already includes the server. [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) explains choosing a provider.
+
+### Goose Desktop: local vault
+
+After [installing the command](#as-a-command-on-your-machine), add this entry to `extensions` in `~/.config/goose/config.yaml`, preserving any existing entries. Replace both paths with absolute paths on your machine; `uv tool dir --bin` locates the installed command.
+
+```
+extensions:
+  markdown-vault-mcp:
+    name: Markdown Vault MCP
+    type: stdio
+    cmd: /Users/me/.local/bin/markdown-vault-mcp
+    args: [serve, --transport, stdio]
+    enabled: true
+    timeout: 300
+    envs:
+      MARKDOWN_VAULT_MCP_SOURCE_DIR: /Users/me/Documents/Notes
+      MARKDOWN_VAULT_MCP_READ_ONLY: "true"
+      MARKDOWN_VAULT_MCP_EXCLUDE: .obsidian/**,.trash/**
+```
+
+This starts a local, read-only vault over stdio, without an HTTP listener. The settings folder and trash of an Obsidian vault stay out of searches. Ask Goose to find a known note. See [Goose's extension setup](https://goose-docs.ai/docs/getting-started/using-extensions/) for adding the entry through Desktop instead. The [remote client examples](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/http-client/#vs-code-connect-to-this-vault) cover VS Code and a hosted vault in Goose. This local setup does not need HTTP authentication; a public HTTP server does.
 # Deploy
 
 # Deploy
@@ -871,7 +918,64 @@ The image carries the `markdown-vault-mcp` command, so you can search and read t
 
 ### What `/data/state` holds
 
-This server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md)).
+By default, this server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/storage/index.md)).
+
+### Separate search data from persistent state
+
+For an opt-in separation, keep the existing `state-data` volume for the default file-backed KV store and FastMCP state, and put search data on a second local volume. This preserves the existing auth, session and other KV state when switching an existing deployment. The vault remains on its own mount. External KV or PostgreSQL embedding stores retain their own storage and are not reset by this recipe.
+
+Save this as `compose.override.yml` beside `compose.yml`. If that file already exists, merge these entries into it and keep its existing settings:
+
+```
+services:
+  markdown-vault-mcp:
+    volumes:
+      - search-data:/data/search
+    environment:
+      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/search/index.db
+      MARKDOWN_VAULT_MCP_STATE_PATH: /data/search/index.db.state.json
+      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/search/embeddings/embeddings
+      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/search/fastembed
+
+volumes:
+  search-data:
+```
+
+The four paths hold the SQLite index, change tracker, local embeddings and FastEmbed model cache, respectively. The tracker normally defaults to `index.db.state.json` beside the index. The overlay overrides any values for these paths in `.env` or `compose.yml`; adjust it if you have customised them. It leaves `FASTMCP_HOME` at `/data/state/fastmcp` and the default `MARKDOWN_VAULT_MCP_KV_STORE_URL` at `file:///data/state`. If either was customised, keep its persistent storage mounted and backed up separately.
+
+The normal root-started image changes ownership of root-owned directories under `/data`, including the new volume, before dropping privileges to `PUID`/`PGID`. With a Compose `user:` override, provision the new volume as writable by that user yourself; the entrypoint cannot fix its ownership.
+
+With default file selection, Compose loads `compose.override.yml` automatically. If you select files with `COMPOSE_FILE` or `-f`, include the override in that selection on every command. Before starting, this recipe chooses a cold rebuild on an empty `search-data` volume: local vectors are generated again, and a metered embedding provider can charge for them again. The cold reset below repeats that work and cost.
+
+Start or recreate the service, including after later changes:
+
+```
+docker compose up -d
+```
+
+The server rebuilds search data from the vault; model downloads and embedding generation can take time. The old search files remain unused in `state-data`; keep them until you have verified the new index.
+
+Use the configured full paths above for backups. With the default SQLite embedding store, the file is `/data/search/embeddings/embeddings.sqlite3`. Stop the service before file-level copies, or use SQLite's online backup. Once the split is verified, resetting auth and session data on `state-data` leaves the active search data on `search-data` untouched.
+
+A normal reindex is the usual way to rebuild search; the following cold reset is for testing a fresh search volume. Before resetting, use `docker compose config` to confirm the `/data/search` mount and all four paths above. The reset deletes everything on `/data/search`, so use it only with the overlay above and no other data on that volume:
+
+```
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/search -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
+```
+
+The reset leaves `state-data` and the vault mounted, preserving their contents.
+
+To reset local persistent state while keeping the active search data, first use `docker compose config` to confirm the `/data/state` mount, `FASTMCP_HOME=/data/state/fastmcp`, and the `/data/search` mount and four search paths above. Confirm the KV URL is `file:///data/state`, or that both `MARKDOWN_VAULT_MCP_KV_STORE_URL` and the legacy `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` are unset, which selects that default. This deletes **all** contents of `state-data`, including local auth, session and other KV state and any unused old search files. Use it only when those contents can be lost; custom or external KV stores are not reset by this procedure:
+
+```
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/state -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
+```
+
+The active index and local embeddings on `search-data` remain in place.
 
 ### Git
 
@@ -2158,7 +2262,7 @@ Regardless of which provider you choose:
 - **Back up the stored vectors before you risk them:** [Backing up](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/#backing-up) gives the command for each store, and [Restoring](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embedding-state/#restoring) shows how a restore embeds only the notes changed since.
 - Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
 - **A failed model change fails the search.** When a changed model or vector size requires a rebuild and no new embeddings are saved, semantic and hybrid searches report an error. The previous stored vectors remain untouched; they cannot answer queries from the new model. Later searches retry the rebuild and recover once the provider works again. A completed rebuild of an empty vault still returns no matches.
-- **A damaged `numpy` or `sqlite` store is set aside, not overwritten.** When the vectors' files no longer read back, at startup, during a search or before a full rebuild, the server renames them with a `.corrupt-<time>` suffix (such as `index-db-embeddings.v2.json.corrupt-20261024T120000Z`) and builds the vectors again; the log line `vector_store_moved_aside` names the renamed files. If the 5.x files from an upgrade are still there, it copies every vector whose note text is unchanged from them instead of embedding it again. The renamed copies are yours to inspect or delete; the server never touches them again. A store in a read-only folder cannot be renamed: the server leaves it in place, and searches by meaning fail until the folder is writable.
+- **A damaged `numpy` or `sqlite` store is set aside, not overwritten.** When the vectors' files no longer read back, at startup, during a search, while updating embeddings or before a full rebuild, the server renames them with a `.corrupt-<time>` suffix (such as `index-db-embeddings.v2.json.corrupt-20261024T120000Z`) and builds the vectors again; the log line `vector_store_moved_aside` names the renamed files. If the 5.x files from an upgrade are still there, it copies every vector whose note text is unchanged from them instead of embedding it again. If an update finds a `sqlite` store damaged after it opened and recovery cannot build every vector, the job reports an error and keeps every note for the next embedding update, which embeds the ones still missing once the provider answers; nothing retries on its own while the provider is down. To finish the rebuild at once, run [`build_embeddings`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/indexing/#build_embeddings), or restart the server if a failed full index build left the tool unavailable; startup builds the index, then the missing vectors. The renamed copies are yours to inspect or delete; the server never touches them again. A store in a read-only folder cannot be renamed: the server leaves it in place, and searches by meaning fail until the folder is writable.
 - **A note that stops parsing keeps its embeddings.** A note whose frontmatter does not parse, that lacks a field `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` asks for, or that is not valid UTF-8 is left out of the index and listed in `get_index_status`'s `skipped_files`. Its embeddings stay stored but never appear in search results. Once you fix the note, only the sections whose text changed are embedded again; a changed title counts as a change to every section. Deleting, renaming or excluding the note removes them; a full rebuild while it is broken drops them too.
 - The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/indexing/#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
@@ -2690,6 +2794,8 @@ Only one process at a time writes a given index. While a server has it open, the
 - A second server started on the same `MARKDOWN_VAULT_MCP_INDEX_PATH` starts with the vault unavailable. Every tool says that another process is writing the index. The second server opens the vault within a few seconds of the first one exiting.
 - `markdown-vault-mcp search` and other commands that only read are never blocked.
 
+If an admin command cannot open a store for another reason, it exits with an `ERROR:` message describing the failure. Use the reported cause to correct the problem before retrying.
+
 The lock is not taken on Windows. A lock across a network share or a virtual machine's shared folder may not hold, so in those setups make sure only one process writes the index yourself.
 
 At shutdown, the server waits up to 30 seconds for indexing work in progress. It doesn't wait for work still running after that: it logs a warning, `index_close_skipped`, leaves the index open to that work, and the work stops when the process exits. What it had committed stays; run `markdown-vault-mcp admin reindex` if it was a long rebuild.
@@ -2733,13 +2839,19 @@ Use this guide to choose and configure the right git mode for your deployment.
 1. **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo) The server commits writes (one commit per tool call), but never pulls or pushes.
 1. **No-git** (default) The vault is treated as a plain directory with no git operations.
 
+## Runtime Git version
+
+For a Git-backed vault, startup logs `git_runtime_version` at INFO with the output of `git --version`. This identifies the Git executable on the server's `PATH`, not Git on your MCP client's computer. Include that value when reporting a Git problem. A container uses Git inside the container, so do not substitute the host's version.
+
+The diagnostic does not enforce a minimum version or certify compatibility. A failed version probe is logged at DEBUG and does not block startup. A plain-directory vault does not emit this diagnostic.
+
 ## Filenames from outside the server
 
 Notes created through Git or directly on disk can carry carriage returns (`CR`) or carriage-return/newline pairs (`CRLF`) in their filenames. History, rename tracking, revision reads and conflict recovery preserve those characters, along with newlines, tabs and supported non-ASCII names. Ignored filenames retain the same spelling when Git decides which paths to stage.
 
 ## What a commit covers
 
-In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many primary files, such as `move_folder` or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit`, `append` or `delete` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path. A single-note rename names both paths: `rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites backlinks or OKF refreshes index listings. Those derived writes stay in the same commit. A `move_folder` call that moves several files still uses the batch summary.
+In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many primary files, such as `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit`, `append` or `delete` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path. A single-note rename names both paths: `rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites backlinks or OKF refreshes index listings. Those derived writes stay in the same commit. A folder move names its source and destination relative to the Git working tree root, or as an absolute path if a root lies outside it: `move_folder: drafts -> archive/2026`. Moved files, backlink rewrites, and OKF updates share that commit. Folder names with control characters, boundary whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped to keep the subject identifiable on one line.
 
 No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
 
@@ -3282,7 +3394,9 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off`            | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on`             | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own.                                              |
 
-Check the current state at any time through the `okf` section of the `stats` tool, or the `config://vault` resource.
+Check the current state through the `config://vault` resource. Its `okf_write_configured` field reports the configured `OKF_WRITE` flag, and `okf_write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the `stats` tool's `okf` section reports the same values as `write_configured` and `write_effective`. The section is absent when OKF is inactive; use `config://vault` to inspect that state. Detection reflects changes to the declaration on the next call.
+
+The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether `okf_verify` is available: `OKF_VERIFY=off` can hide that tool while the write layer remains effective. Independent capability reporting is planned in [#1412](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412).
 
 ## What the metadata means
 
@@ -5092,7 +5206,7 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 
 For HTTP authentication, a static bearer token is the simplest option. OIDC configuration and deployment examples are covered in the [authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/authentication/index.md) and [OIDC deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/index.md).
 
-The subsections below follow the order of the variable tables after them.
+The interaction subsections below follow the order of the variable tables after them.
 
 #### Write safety
 
@@ -5157,6 +5271,21 @@ One-time transfer links require HTTP or SSE transport plus `BASE_URL`. Their ung
 #### Jobs
 
 Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native background tasks when the client supports them. Other clients receive an inline result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with `get_job_result`. A Redis tasks backend is durable and shared across workers; the default memory backend is process-local and does not survive restarts.
+
+### Cross-instance note links
+
+When an agent connects to several vault servers, give each server a distinct name and describe the URL prefix for its own vault. Configure one server with:
+
+```
+MARKDOWN_VAULT_MCP_SERVER_NAME=corpus-mcp
+MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION="Contains craft notes. This instance serves files available at this GitHub URL: https://github.com/pvliesdonk/corpus/blob/main/"
+```
+
+Configure each other server independently with its own name and URL prefix. Keep any existing description text in the same value, adding the URL sentence to it. The sentence describes this instance's notes; it need not name other instances. A client that passes the server instructions to its model can use the prefix to choose the server and infer the vault-relative path.
+
+The prefix represents the vault root: a link ending in `blob/main/craft/note.md` maps to `craft/note.md`. If the vault serves a repository subfolder, include that subfolder in the prefix. Update the prefix if the publication branch or folder moves. Never include a token in the URL: the description reaches connected clients.
+
+An unset description adds nothing. Restart the server and reconnect after changing the value. The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement suppresses the description; see [Server](#server) for precedence and the instruction budget.
 
 ### Vault
 
@@ -5595,7 +5724,7 @@ Dict with the following fields:
 - `link_count` (int): Total number of indexed links. 0 may mean no links exist or link tracking not yet built (call 'reindex').
 - `broken_link_count` (int): Links pointing to missing documents. Call '`get_broken_links`' if non-zero.
 - `orphan_count` (int): Notes with no inbound or outbound links. Call '`get_orphan_notes`' if non-zero.
-- okf (dict, optional): Present only when the vault is an active OKF (Open Knowledge Format) bundle. Carries mode, `declared_version`, a per-`type` histogram plus `untyped_count`, status and trust-tier breakdowns, and `stale_count`. Those cover the note population '`okf_validate`' audits; the reserved `index.md` / `log.md` files are counted apart as `reserved_count`.
+- okf (dict, optional): Present only when the vault is an active OKF (Open Knowledge Format) bundle. Carries mode, `declared_version`, a per-`type` histogram plus `untyped_count`, status and trust-tier breakdowns, and `stale_count`. Those cover the note population '`okf_validate`' audits; the reserved `index.md` / `log.md` files are counted apart as `reserved_count`. `write_configured` is the configured OKF write flag; `write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only.
 
 Index freshness rides in the response's `_meta.index_stale` field: True when the IndexWriter was non-idle, a write completed inside the read window, or `wait_for_pending_writes` timed out; False otherwise.
 
@@ -7222,7 +7351,7 @@ A resource is data this server serves at a URI, for a client to attach to the co
 
 `config://vault` (application/json)
 
-The vault's settings: read-only mode, indexed fields, exclusions, OKF state.
+Vault settings, indexed fields, exclusions, and OKF detection and write state.
 
 ## `vault_stats`
 
@@ -8300,6 +8429,22 @@ The attachment context-size cap in MB (`0` = unlimited).
 
 Enforced by the `read` / `write` / `fetch` MCP tools, not by the vault library itself.
 
+### `okf_write_state(*, active)`
+
+Return configured and effective OKF write-layer state.
+
+Parameters:
+
+| Name     | Type   | Description                       | Default    |
+| -------- | ------ | --------------------------------- | ---------- |
+| `active` | `bool` | The current OKF detection result. | *required* |
+
+Returns:
+
+| Type                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `tuple[bool, bool]` | Configured OKF write flag and whether the layer is effective. |
+
 ### `pause_writes()`
 
 Block file-mutation write operations until the context exits.
@@ -8463,7 +8608,7 @@ Exact paths rank first. Literal prefix matches rank ahead of matches within a pa
 
 Invalid indexed fields raise `InvalidRequestError`. Existing ranked search continues to support computed OKF filters.
 
-## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None)`
+## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None, okf_write_state=None)`
 
 Read-only queries over the shared managers.
 
@@ -8471,13 +8616,14 @@ Hold the managers the read methods delegate to.
 
 Parameters:
 
-| Name            | Type                             | Description                                                    | Default                                                                                     |
-| --------------- | -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `search_mgr`    | `SearchManager`                  | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
-| `doc_mgr`       | `DocumentManager`                | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
-| `git_query_mgr` | `GitQueryManager`                | Git history / diff / revision reads.                           | *required*                                                                                  |
-| `require_built` | `Callable[[], None]`             | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
-| `okf_audit`     | \`Callable\[[], OkfAuditReport\] | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
+| Name              | Type                                | Description                                                    | Default                                                                                     |
+| ----------------- | ----------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `search_mgr`      | `SearchManager`                     | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
+| `doc_mgr`         | `DocumentManager`                   | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
+| `git_query_mgr`   | `GitQueryManager`                   | Git history / diff / revision reads.                           | *required*                                                                                  |
+| `require_built`   | `Callable[[], None]`                | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
+| `okf_audit`       | \`Callable\[[], OkfAuditReport\]    | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
+| `okf_write_state` | \`Callable\[[], tuple[bool, bool]\] | None\`                                                         | Configured and effective write-layer projection.                                            |
 
 ### `okf_validate()`
 
@@ -8920,12 +9066,13 @@ Returns:
 
 Return the OKF statistics section, or `None` when inactive.
 
-Delegates to :meth:`SearchManager.okf_stats`.
+Adds the vault's write state to :meth:`SearchManager.okf_stats`.
 
 Returns:
 
 | Type             | Description |
 | ---------------- | ----------- |
+| \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
@@ -10321,7 +10468,7 @@ On each callback invocation:
 1. Commits with an auto-generated message (`"operation: path"`).
 1. Resets the push timer — push fires after `push_delay_s` of idle.
 
-Writes fired by one MCP tool call are grouped by the dispatcher (#1264) and arrive at :meth:`on_write_batch`, which stages every path the same scoped way and commits them once as `"<tool>: N files"`. A call that touched a single file commits under that file's own path instead, so ordinary writes read in `git log` exactly as they always have. A write with no owning tool call takes the per-write path above.
+Writes fired by one MCP tool call are grouped by the dispatcher (#1264) and arrive at :meth:`on_write_batch`, which stages every path the same scoped way and commits them once as `"<tool>: N files"`. A call touching a single file ordinarily names that file instead; folder moves name their roots even for one file. A write with no owning tool call takes the per-write path above.
 
 Push is deferred to a background `threading.Timer` that resets on each write. When the timer fires (no writes for `push_delay_s`), all accumulated local commits are pushed in a single `git push`.
 
@@ -10368,7 +10515,7 @@ Validate git settings and report uncommitted startup work.
 
 Commit every write from one tool call as a single commit.
 
-Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary differs, and for a call that wrote a single file not even that — see :func:`_stage_and_commit_batch`. The author identity is taken from the first item's principal: one tool call has one acting principal, so the items cannot legitimately disagree.
+Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary differs; an ordinary single-file call keeps its file subject, while a folder move names its roots — see :func:`_stage_and_commit_batch`. The author identity is taken from the first item's principal: one tool call has one acting principal, so the items cannot legitimately disagree.
 
 Parameters:
 

@@ -307,6 +307,22 @@ The attachment context-size cap in MB (`0` = unlimited).
 
 Enforced by the `read` / `write` / `fetch` MCP tools, not by the vault library itself.
 
+### `okf_write_state(*, active)`
+
+Return configured and effective OKF write-layer state.
+
+Parameters:
+
+| Name     | Type   | Description                       | Default    |
+| -------- | ------ | --------------------------------- | ---------- |
+| `active` | `bool` | The current OKF detection result. | *required* |
+
+Returns:
+
+| Type                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `tuple[bool, bool]` | Configured OKF write flag and whether the layer is effective. |
+
 ### `pause_writes()`
 
 Block file-mutation write operations until the context exits.

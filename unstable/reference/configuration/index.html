@@ -1804,6 +1804,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-instance-note-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-instance note links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#vault" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3341,6 +3352,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-instance-note-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-instance note links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#vault" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3950,7 +3972,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 configuration and deployment examples are covered in the
 <a href="../../deploy/authentication/">authentication guide</a> and
 <a href="../../deploy/oidc/">OIDC deployment guide</a>.</p>
-<p>The subsections below follow the order of the variable tables after them.</p>
+<p>The interaction subsections below follow the order of the variable tables after them.</p>
 <h4 id="write-safety">Write safety<a class="headerlink" href="#write-safety" title="Permanent link">&para;</a></h4>
 <p><code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> hides every write-tagged tool. Writable
 servers default to <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>.
@@ -4057,6 +4079,26 @@ background tasks when the client supports them. Other clients receive an inline
 result before <code>JOBS_SOFT_DEADLINE_S</code>, or a <code>job_id</code> to poll with
 <code>get_job_result</code>. A Redis tasks backend is durable and shared across workers;
 the default memory backend is process-local and does not survive restarts.</p>
+<h3 id="cross-instance-note-links">Cross-instance note links<a class="headerlink" href="#cross-instance-note-links" title="Permanent link">&para;</a></h3>
+<p>When an agent connects to several vault servers, give each server a distinct
+name and describe the URL prefix for its own vault. Configure one server with:</p>
+<div class="highlight"><pre><span></span><code>MARKDOWN_VAULT_MCP_SERVER_NAME=corpus-mcp
+MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION="Contains craft notes. This instance serves files available at this GitHub URL: https://github.com/pvliesdonk/corpus/blob/main/"
+</code></pre></div>
+<p>Configure each other server independently with its own name and URL prefix.
+Keep any existing description text in the same value, adding the URL sentence
+to it. The sentence describes this instance's notes; it need not name other
+instances. A client that passes the server instructions to its model can use
+the prefix to choose the server and infer the vault-relative path.</p>
+<p>The prefix represents the vault root: a link ending in
+<code>blob/main/craft/note.md</code> maps to <code>craft/note.md</code>. If the vault serves a
+repository subfolder, include that subfolder in the prefix. Update the prefix
+if the publication branch or folder moves. Never include a token in the URL:
+the description reaches connected clients.</p>
+<p>An unset description adds nothing. Restart the server and reconnect after changing
+the value. The legacy <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> full replacement
+suppresses the description; see <a href="#server">Server</a> for precedence and the
+instruction budget.</p>
 <h3 id="vault">Vault<a class="headerlink" href="#vault" title="Permanent link">&para;</a></h3>
 <p>The tables from here on list every domain variable with its default and
 description, one table per group. The first holds the settings that belong

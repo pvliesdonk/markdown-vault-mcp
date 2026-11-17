@@ -3146,7 +3146,8 @@
 </tr>
 </tbody>
 </table>
-<p>Check the current state at any time through the <code>okf</code> section of the <code>stats</code> tool, or the <code>config://vault</code> resource.</p>
+<p>Check the current state through the <code>config://vault</code> resource. Its <code>okf_write_configured</code> field reports the configured <code>OKF_WRITE</code> flag, and <code>okf_write_effective</code> is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the <code>stats</code> tool's <code>okf</code> section reports the same values as <code>write_configured</code> and <code>write_effective</code>. The section is absent when OKF is inactive; use <code>config://vault</code> to inspect that state. Detection reflects changes to the declaration on the next call.</p>
+<p>The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether <code>okf_verify</code> is available: <code>OKF_VERIFY=off</code> can hide that tool while the write layer remains effective. Independent capability reporting is planned in <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412">#1412</a>.</p>
 <h2 id="what-the-metadata-means">What the metadata means<a class="headerlink" href="#what-the-metadata-means" title="Permanent link">&para;</a></h2>
 <p>On a recognised bundle, the server reads a few OKF frontmatter families and surfaces them in <code>search</code>, <code>read</code>, and <code>get_context</code> results under an <code>okf</code> key:</p>
 <ul>
