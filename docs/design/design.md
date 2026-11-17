@@ -5048,30 +5048,14 @@ another one, and is the explicit switch of choice C.
     because its open reads everything.
 
   - A writer reconciliation that encounters corruption marks the store suspect
-    and rebuilds it in the same job after keyword work finishes. SQLite classifies
-    corruption from its write transaction as well as reads. The rebuild runs
-    inline in the same job, as for an open fault. A failed rebuild may leave
-    an empty or partial store; the slot records the outstanding recovery.
-    A search by meaning or an explicit embeddings build retries it, with a
-    bound on consecutive provider failures. The owed state is not saved: a new
-    slot that can rebuild starts with it unknown, and a full build or a
-    convergence that ends with failed or retried work marks it owed again, so
-    a restart during an outage forgets nothing. The first search by meaning
-    of such a slot that no build settled reconciles the store once. A search
-    fails if recovery still leaves the store empty only while this process
-    knows it condemned damage; after a restart, or for a cold build that
-    failed without damage, the empty store answers with no matches, as a
-    failed cold build does. A partial store keeps serving its saved rows. The keyword work is committed first, but the
-    inline recovery delays the job's completion, and so readiness, until the
-    provider answers or the failure bound is reached. Keyword jobs log a failed recovery at WARNING after
-    finishing keyword work; vector-only jobs propagate the failure to their
-    Future. A cold build encountering corruption at publication recovers
-    through the same boundary (#1976).
+    and rebuilds it in the same job after keyword work finishes. This includes
+    the stale or excluded vector purge during `build_index`. SQLite classifies
+    corruption in write transactions as well as reads. Recovery runs inline;
+    a failed rebuild follows the existing cold-build failure behavior (#1976).
 
   A slot that cannot condemn preserves per-document handling of write errors;
   corruption found in a read still raises `StoreCorruptError`. A job that
-  cannot recover corruption logs ERROR with its traceback: the store needs
-  operator attention, and automatic condemnation is not permitted.
+  cannot recover corruption reports the failure with its traceback.
 - As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not

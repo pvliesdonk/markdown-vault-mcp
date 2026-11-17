@@ -257,8 +257,7 @@ class EmbeddingsManager:
         ordinary cold build, where a compatible 5.x sidecar donates, so
         unchanged notes cost no provider call (#1505). A store a search
         found damaged after it opened is condemned first, here on the
-        writer thread, and then takes the same cold build (#1881). The slot
-        records an incomplete recovery for a later search or build (#1976).
+        writer thread, and then takes the same cold build (#1881).
 
         Returns:
             Number of chunks embedded.
@@ -273,15 +272,9 @@ class EmbeddingsManager:
         self._require_vectors()
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
-        if self._slot.has_suspect():
-            self._slot.settle(True, damaged=True)
         self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
-        except StoreCorruptError:
-            if not self._slot.recovery_owed:
-                raise
-            store = self._slot.rebuild_target()
         except StoreIncompatibleError:
             return self._rebuild_changed_identity()
         # A store that differs only in dimension opens at its stored one, so
@@ -435,10 +428,6 @@ class EmbeddingsManager:
             outcome = self._full_build(
                 store, identity, donor=donor or upgrade, reuse_own=reuse_own
             )
-        except StoreCorruptError:
-            if self._slot.recovery_owed or not self._slot.mark_suspect(store):
-                raise
-            return self.rebuild_after_fault()
         finally:
             if upgrade is not None:
                 upgrade.close()
@@ -465,15 +454,9 @@ class EmbeddingsManager:
         if self._reconciler is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
         outcome = self._reconciler.rebuild(
-            store,
-            identity,
-            donor=donor,
-            reuse_own=reuse_own,
-            bounded=self._slot is not None and self._slot.recovery_owed is True,
+            store, identity, donor=donor, reuse_own=reuse_own
         )
         published = self._finish_cold_build(store, identity, outcome)
-        if self._slot is not None:
-            self._slot.settle(bool(outcome.failed_batches))
         return RebuildOutcome(
             embedded=outcome.embedded,
             reused=outcome.reused,
@@ -643,10 +626,9 @@ class EmbeddingsManager:
         on an exclusion or a source probe answering *absent* (#1130,
         #1785); a tombstoned note keeps them, out of search, until it is
         fixed or deleted (#1505).
-        A provider failure or a refused vector normally skips that document
-        with its vectors kept; the next run retries it (#649, #935). Bounded
-        recovery may add successful chunks while retaining matching saved
-        rows. The store is checkpointed only when something changed.
+        A provider failure or a refused vector skips that document with its
+        vectors kept, and the next run retries it (#649, #935). The store is
+        checkpointed only when something changed.
 
         Thread-safety: runs on the single-owner
         :class:`~markdown_vault_mcp.indexing.IndexWriter` thread via
@@ -663,15 +645,13 @@ class EmbeddingsManager:
             raise RuntimeError(
                 "_require_vectors() must be called before _converge_embeddings()"
             )
+        if self._slot is not None and self._slot.has_suspect():
+            return self.rebuild_after_fault()
         result = self.reconcile_paths(vectors, None, site="converge")
         if self._slot is not None and self._slot.has_suspect():
             return self.rebuild_after_fault()
         if result.embedded or result.reused or result.removed or result.retokened:
             vectors.checkpoint()
-        if self._slot is not None:
-            self._slot.settle(
-                bool(result.stopped or result.conflicts or result.retry or result.kept)
-            )
         if result.kept:
             logger.warning(
                 "build_embeddings_converge_failed_chunks total=%d outcome=vectors_kept",
@@ -861,8 +841,7 @@ class EmbeddingsManager:
         Used by the purge loops after they delete keyword rows: a path left
         with no rows loses its vectors on an exclusion or an absent source,
         with the token observed; a tombstoned one keeps them (#1505). Owned
-        corruption marks the store suspect; later calls in the same job
-        write nothing until its rebuild (#1976).
+        corruption marks the store suspect for rebuilding (#1976).
 
         Args:
             vectors: The store to write.
@@ -874,8 +853,6 @@ class EmbeddingsManager:
         """
         if self._reconciler is None:
             return ReconcileResult()
-        if self._slot is not None and self._slot.has_suspect():
-            return ReconcileResult()
         recover = self._slot is not None and self._slot.can_recover(vectors)
         try:
             result = self._reconciler.reconcile(
@@ -883,9 +860,6 @@ class EmbeddingsManager:
                 paths,
                 site=site,
                 recover_corruption=recover,
-                bounded=paths is None
-                and self._slot is not None
-                and self._slot.recovery_owed is True,
             )
         except StoreCorruptError:
             if self._slot is None or not self._slot.mark_suspect(vectors):
@@ -899,12 +873,7 @@ class EmbeddingsManager:
         """Recover a suspect store after keyword work, unless deferred."""
         if self._vectors_deferred or self._slot is None or not self._slot.has_suspect():
             return
-        try:
-            self.rebuild_after_fault()
-        except Exception:
-            logger.warning(
-                "vector_store_recovery_failed outcome=retry_on_request", exc_info=True
-            )
+        self.rebuild_after_fault()
 
     def take_embedding_retries(self) -> set[str]:
         """Return and forget the paths the provider failed for, at any site.
