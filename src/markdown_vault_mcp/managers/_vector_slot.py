@@ -39,7 +39,6 @@ from markdown_vault_mcp.exceptions import (
     StoreCorruptError,
     StoreIncompatibleError,
     StoreOpenError,
-    StoreUnavailableError,
 )
 from markdown_vault_mcp.interfaces import (
     DescribesStore,
@@ -119,8 +118,6 @@ class VectorStoreSlot:
         # The store a read found damaged after it opened, for the rebuild on
         # the writer thread to condemn (#1881).
         self._suspect: EmbeddingStore | None = None
-        self._recovery_pending = False
-        self._recovery_thread: int | None = None
 
     @property
     def location(self) -> Path | str | None:
@@ -214,14 +211,6 @@ class VectorStoreSlot:
             StoreOpenError: If the store is unavailable or of an unsupported
                 schema.
         """
-        if self._recovery_pending and self._recovery_thread != threading.get_ident():
-            if rebuild is None:
-                raise StoreUnavailableError(
-                    "The damaged vector store has not been rebuilt yet.",
-                    backend=self.backend_name,
-                    location=str(self._location),
-                )
-            self._run_rebuild(rebuild, "incomplete_recovery")
         if self._store is not None:
             return self._store
         opened = self._open()
@@ -307,21 +296,6 @@ class VectorStoreSlot:
                 self._move_aside()
             return None
 
-    def mark_recovery_pending(self) -> None:
-        """Require a successful rebuild before this slot can serve again."""
-        self._recovery_pending = True
-
-    def begin_recovery(self) -> bool:
-        """Allow the writer to access the target while recovery remains pending."""
-        self._recovery_thread = threading.get_ident()
-        return self._recovery_pending
-
-    def finish_recovery(self, *, succeeded: bool) -> None:
-        """Clear a fulfilled obligation, or retain it for the next request."""
-        if succeeded:
-            self._recovery_pending = False
-        self._recovery_thread = None
-
     def _can_move_aside(self) -> bool:
         """Whether this slot may rename its store's files: owned, on disk, quarantinable."""
         return (
@@ -395,6 +369,21 @@ class VectorStoreSlot:
             suspect, self._suspect = self._suspect, None
         return suspect is not None and self.condemn(suspect)
 
+    def mark_suspect(self, store: EmbeddingStore) -> bool:
+        """Mark an installed, recoverable store for condemnation."""
+        if not self._can_move_aside():
+            return False
+        with self._lock:
+            if self._store is not store:
+                return False
+            self._suspect = store
+        return True
+
+    def has_suspect(self) -> bool:
+        """Return whether a store awaits condemnation."""
+        with self._lock:
+            return self._suspect is not None
+
     def rebuilt_after_read(
         self, store: EmbeddingStore, rebuild: Callable[[], object]
     ) -> EmbeddingStore | None:
@@ -420,12 +409,8 @@ class VectorStoreSlot:
         Raises:
             ValueError: If the rebuild leaves *store* or no store installed.
         """
-        if not self._can_move_aside():
-            return None
-        with self._lock:
-            if self._store is not store:
-                return self._store
-            self._suspect = store
+        if not self.mark_suspect(store):
+            return self._store if self._can_move_aside() else None
         self._run_rebuild(rebuild, "StoreCorruptError")
         rebuilt = self._store
         if rebuilt is None or rebuilt is store:
@@ -674,7 +659,7 @@ class VectorStoreSlot:
         by another model.
         """
         store = self._store
-        if self._recovery_pending or store is None or not self._same_space(store):
+        if store is None or not self._same_space(store):
             return None
         return store
 

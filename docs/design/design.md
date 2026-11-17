@@ -5047,12 +5047,11 @@ another one, and is the explicit switch of choice C.
     rebuild starts from a fresh one. The numpy store has no `verify`,
     because its open reads everything.
 
-  - A writer reconciliation that encounters corruption condemns the store
-    and rebuilds after keyword work finishes. SQLite classifies corruption
-    from its write transaction as well as reads. If the rebuild cannot publish
-    a complete generation, the slot keeps recovery pending and a later request
-    retries it without returning the incomplete store. An incremental build
-    does not proactively verify pages it does not read (#1976).
+  - A writer reconciliation that encounters corruption marks the store suspect
+    and rebuilds it in the same job after keyword work finishes. SQLite classifies
+    corruption from its write transaction as well as reads. A failed rebuild has
+    the same empty or partial result as a cold build after an open fault. An
+    incremental build does not verify pages it does not read (#1976).
 
   A slot that cannot condemn preserves per-document handling of write errors;
   corruption found in a read still raises `StoreCorruptError`.

@@ -1068,7 +1068,8 @@ class SqliteVectorStore(ResidentStore):
                 metadata cannot be stored as JSON.
             StoreUnavailableError: If the first write cannot create the
                 database; nothing changed.
-            sqlite3.Error: If the write fails; nothing changed.
+            StoreCorruptError: If SQLite reports damaged pages; nothing changed.
+            sqlite3.Error: If another write error occurs; nothing changed.
         """
         with self._lock:
             snap = self._writable()
@@ -1102,9 +1103,8 @@ class SqliteVectorStore(ResidentStore):
                 *path*; nothing changed.
             StoreIncompatibleError: If a streamed store finds another
                 identity published since open; nothing changed.
-            StoreCorruptError: If a streamed store finds the database
-                damaged; nothing changed.
-            sqlite3.Error: If the write fails; nothing changed.
+            StoreCorruptError: If the database is damaged; nothing changed.
+            sqlite3.Error: If another write error occurs; nothing changed.
         """
         with self._lock:
             snap = self._writable()
@@ -1141,7 +1141,9 @@ class SqliteVectorStore(ResidentStore):
                 dimension, not finite, or its metadata cannot be stored.
             StoreUnavailableError: If the first write cannot create the
                 database; the previous generation stands.
-            sqlite3.Error: If the write fails; the previous generation stands.
+            StoreCorruptError: If SQLite reports damaged pages; the previous
+                generation stands.
+            sqlite3.Error: If another write error occurs; the previous generation stands.
         """
         docs, blocks = validated_generation(identity, documents)
         with self._lock:

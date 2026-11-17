@@ -561,8 +561,6 @@ class IndexManager:
         if vectors is not None and stale_paths:
             # The reconciler removes each with the token it observes (#1785).
             self._embeddings.reconcile_paths(vectors, stale_paths, site="purge")
-        if vectors is not None:
-            vectors = self._embeddings._loaded_store()
         return len(stale_paths), vectors
 
     # ------------------------------------------------------------------
@@ -891,8 +889,6 @@ class IndexManager:
         vector_index_changed = bool(
             indexed_added or indexed_modified or changes.deleted or stale_excluded
         )
-        if vectors is not None:
-            vectors = self._embeddings._loaded_store()
         if vectors is not None and vector_index_changed:
             vectors.checkpoint()
 
@@ -909,9 +905,7 @@ class IndexManager:
             # A tombstone kept its note's vectors (#1505); with the note gone
             # they go too, now rather than at the next full converge.
             self._embeddings.reconcile_paths(vectors, dropped, site="purge")
-            vectors = self._embeddings._loaded_store()
-            if vectors is not None:
-                vectors.checkpoint()
+            vectors.checkpoint()
 
         self._embeddings.finish_vector_recovery()
         return ReindexResult(
