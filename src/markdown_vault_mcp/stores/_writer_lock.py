@@ -192,7 +192,8 @@ def _lock(fd: int) -> None:
     if fcntl is not None:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     else:
-        assert msvcrt is not None
+        if msvcrt is None:
+            raise RuntimeError("writer lock API unavailable")
         os.lseek(fd, _PID_BYTES, os.SEEK_SET)
         msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
 
@@ -215,7 +216,8 @@ def _unlock(fd: int) -> None:
         if fcntl is not None:
             fcntl.flock(fd, fcntl.LOCK_UN)
         else:
-            assert msvcrt is not None
+            if msvcrt is None:
+                raise RuntimeError("writer lock API unavailable")
             os.lseek(fd, _PID_BYTES, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
     os.close(fd)
