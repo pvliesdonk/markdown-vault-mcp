@@ -539,3 +539,43 @@ def test_candidate_limits_and_walk_failure(
     monkeypatch.setattr(document, "iter_markdown_files", failing_walk)
     with pytest.raises(OSError, match="unreadable"):
         replacer.replace(ReplaceRequest("a", folders=("",)))
+
+
+def test_small_regex_match_in_large_note_is_allowed(tmp_path: Path) -> None:
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    note = tmp_path / "a.md"
+    note.write_text(
+        ("z" * 49 + "\n") * 4000 + "https://old.example/item\n", encoding="utf-8"
+    )
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    result = BulkReplacer(manager).replace(
+        ReplaceRequest(
+            r"https://old\.example/(\w+)",
+            r"https://new.example/a/longer/path/to/the/item/\1",
+            paths=("a.md",),
+            regex=True,
+        )
+    )
+    assert result.notes[0].replacements == 1
+
+
+def test_regex_timeout_covers_callback() -> None:
+    import time
+
+    import regex
+
+    def slow(_match: object) -> str:
+        until = time.process_time() + 0.02
+        while time.process_time() < until:
+            pass
+        return "x"
+
+    with pytest.raises(TimeoutError):
+        regex.sub("a", slow, "aaaa", timeout=0.001)

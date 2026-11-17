@@ -349,33 +349,9 @@ class DocumentManager:
         selected: dict[str, int] = {}
 
         def add(path: str, *, explicit: bool) -> None:
-            absolute = self._validate_path(path)
-            relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
-            excluded = self._is_path_excluded(relative) or self.in_submodule(relative)
-            if not explicit and (
-                excluded
-                or absolute.name in {"index.md", "log.md"}
-                or any(part.startswith(".") for part in Path(relative).parts[:-1])
-            ):
-                return
-            if explicit and excluded:
-                raise InvalidRequestError(
-                    f"Cannot select {path!r}; choose a note outside exclusions and submodules."
-                )
-            try:
-                info = absolute.stat()
-            except (FileNotFoundError, NotADirectoryError) as exc:
-                raise DocumentNotFoundError.note(path) from exc
-            if not stat.S_ISREG(info.st_mode):
-                raise DocumentNotFoundError.note(path)
-            if (
-                self._max_note_read_bytes > 0
-                and info.st_size > self._max_note_read_bytes
-            ):
-                raise InvalidRequestError(
-                    "Note exceeds the read limit; narrow paths or folders."
-                )
-            selected[relative] = info.st_size
+            candidate = self._replace_candidate(path, explicit=explicit)
+            if candidate is not None:
+                selected[candidate[0]] = candidate[1]
             if len(selected) > limit:
                 raise InvalidRequestError("Too many notes; narrow paths or folders.")
 
@@ -394,6 +370,34 @@ class DocumentManager:
             for file in iter_markdown_files(root, on_error=fail):
                 add(file.relative_to(self._source_dir).as_posix(), explicit=False)
         return sorted(selected.items())
+
+    def _replace_candidate(
+        self, path: str, *, explicit: bool
+    ) -> tuple[str, int] | None:
+        absolute = self._validate_path(path)
+        relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
+        excluded = self._is_path_excluded(relative) or self.in_submodule(relative)
+        if not explicit and (
+            excluded
+            or absolute.name in {"index.md", "log.md"}
+            or any(part.startswith(".") for part in Path(relative).parts[:-1])
+        ):
+            return None
+        if explicit and excluded:
+            raise InvalidRequestError(
+                f"Cannot select {path!r}; choose a note outside exclusions and submodules."
+            )
+        try:
+            info = absolute.stat()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise DocumentNotFoundError.note(path) from exc
+        if not stat.S_ISREG(info.st_mode):
+            raise DocumentNotFoundError.note(path)
+        if self._max_note_read_bytes > 0 and info.st_size > self._max_note_read_bytes:
+            raise InvalidRequestError(
+                "Note exceeds the read limit; narrow paths or folders."
+            )
+        return relative, info.st_size
 
     def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
         """Read a bounded note snapshot and its raw-byte etag.

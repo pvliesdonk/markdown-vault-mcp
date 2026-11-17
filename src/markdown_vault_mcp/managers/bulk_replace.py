@@ -1,4 +1,7 @@
-"""Bounded preview and application of a scoped textual replacement."""
+"""Bounded preview and application of a scoped textual replacement.
+
+Regex timeout semantics are recorded in docs/design/reference/regex-timeout.md.
+"""
 
 from __future__ import annotations
 
@@ -93,30 +96,7 @@ class BulkReplacer:
         Returns:
             Complete replacement counts and diffs for a preview.
         """
-        if not request.pattern or not (request.paths or request.folders):
-            raise InvalidRequestError(
-                "Provide a nonempty pattern and paths or folders."
-            )
-        if (
-            len(request.pattern.encode()) > 4096
-            or len(request.replacement.encode()) > 65536
-        ):
-            raise InvalidRequestError(
-                "Pattern or replacement too large; shorten the request."
-            )
-        if not request.dry_run and not request.plan:
-            raise InvalidRequestError("Preview first, then pass the returned plan.")
-        try:
-            pattern = regex_engine.compile(
-                request.pattern
-                if request.regex
-                else regex_engine.escape(request.pattern),
-                regex_engine.V0,
-            )
-        except regex_engine.error as exc:
-            raise InvalidRequestError(
-                f"Invalid pattern: {exc}; correct the pattern."
-            ) from exc
+        pattern = self._compile(request)
         if request.dry_run:
             return self._prepare(request, pattern)[0]
         self._doc_mgr.ensure_writable()
@@ -151,9 +131,35 @@ class BulkReplacer:
             note.diff = None
         return result
 
-    def _prepare(
-        self, request: ReplaceRequest, pattern: regex_engine.Pattern
-    ) -> tuple[ReplaceResult, list[tuple[str, str, str]]]:
+    @staticmethod
+    def _compile(request: ReplaceRequest) -> regex_engine.Pattern:
+        if not request.pattern or not (request.paths or request.folders):
+            raise InvalidRequestError(
+                "Provide a nonempty pattern and paths or folders."
+            )
+        if (
+            len(request.pattern.encode()) > 4096
+            or len(request.replacement.encode()) > 65536
+        ):
+            raise InvalidRequestError(
+                "Pattern or replacement too large; shorten the request."
+            )
+        if not request.dry_run and not request.plan:
+            raise InvalidRequestError("Preview first, then pass the returned plan.")
+        try:
+            pattern = regex_engine.compile(
+                request.pattern
+                if request.regex
+                else regex_engine.escape(request.pattern),
+                regex_engine.V0,
+            )
+        except regex_engine.error as exc:
+            raise InvalidRequestError(
+                f"Invalid pattern: {exc}; correct the pattern."
+            ) from exc
+        return pattern
+
+    def _snapshots(self, request: ReplaceRequest) -> list[tuple[str, str, str]]:
         candidates = self._doc_mgr.replace_candidates(
             request.paths, request.folders, MAX_NOTES
         )
@@ -172,6 +178,35 @@ class BulkReplacer:
             )
             remaining -= size
             snapshots.append((path, text, etag))
+        return snapshots
+
+    @staticmethod
+    def _diff(path: str, text: str, new: str, total_diff: int) -> tuple[str, int]:
+        diff = "".join(
+            line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
+            for line in difflib.unified_diff(
+                text.splitlines(keepends=True),
+                new.splitlines(keepends=True),
+                fromfile=path,
+                tofile=path,
+            )
+        )
+        total_diff += len(diff)
+        if total_diff > MAX_DIFF_CHARS:
+            raise InvalidRequestError("Diff too large; narrow paths or folders.")
+        return diff, total_diff
+
+    @staticmethod
+    def _timeout(deadline: float) -> float:
+        timeout = min(REGEX_NOTE_SECONDS, deadline - time.monotonic())
+        if timeout <= 0:
+            raise InvalidRequestError("Regex timed out; simplify the pattern.")
+        return timeout
+
+    def _prepare(
+        self, request: ReplaceRequest, pattern: regex_engine.Pattern
+    ) -> tuple[ReplaceResult, list[tuple[str, str, str]]]:
+        snapshots = self._snapshots(request)
         identity = [(path, etag) for path, _, etag in snapshots]
         plan = compute_etag(
             json.dumps(
@@ -199,10 +234,18 @@ class BulkReplacer:
                         "Too many matches; narrow paths or folders."
                     )
                 generated += len(text[last : match.start()].encode())
-                # Upper bound expansion before the engine allocates it.
+                # Each template byte can expand to at most one full captured span.
+                longest = max(
+                    (
+                        match.end(i) - match.start(i)
+                        for i in range(pattern.groups + 1)
+                        if match.start(i) >= 0
+                    ),
+                    default=0,
+                )
                 if (
                     request.regex
-                    and len(request.replacement.encode()) * max(1, len(text.encode()))
+                    and len(request.replacement.encode()) * max(1, 4 * longest)
                     > MAX_OUTPUT_BYTES - total_output - generated
                 ):
                     raise InvalidRequestError(
@@ -221,9 +264,7 @@ class BulkReplacer:
                     )
                 return value
 
-            timeout = min(REGEX_NOTE_SECONDS, deadline - time.monotonic())
-            if timeout <= 0:
-                raise InvalidRequestError("Regex timed out; simplify the pattern.")
+            timeout = self._timeout(deadline)
             try:
                 new, count = pattern.subn(replacement, text, timeout=timeout)
             except TimeoutError as exc:
@@ -242,20 +283,7 @@ class BulkReplacer:
                 )
             if new == text:
                 continue
-            diff = "".join(
-                line
-                if line.endswith("\n")
-                else line + "\n\\ No newline at end of file\n"
-                for line in difflib.unified_diff(
-                    text.splitlines(keepends=True),
-                    new.splitlines(keepends=True),
-                    fromfile=path,
-                    tofile=path,
-                )
-            )
-            total_diff += len(diff)
-            if total_diff > MAX_DIFF_CHARS:
-                raise InvalidRequestError("Diff too large; narrow paths or folders.")
+            diff, total_diff = self._diff(path, text, new, total_diff)
             notes.append(NoteReplacement(path, count, diff))
             changes.append((path, new, etag))
         return ReplaceResult(
