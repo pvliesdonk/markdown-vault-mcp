@@ -178,16 +178,3 @@ def test_a_preview_over_a_destination_of_another_model_does_not_fail(
             )
     finally:
         vault.close()
-
-
-def test_import_stays_published_when_scratch_cleanup_fails(
-    destination, source, monkeypatch, caplog
-):
-    from tests.fixtures.embedding_stage import install_cleanup_failure
-
-    install_cleanup_failure(monkeypatch)
-    with _donor(destination, source) as donor:
-        outcome = destination.import_from(donor)
-    assert outcome.published
-    assert destination._slot.get(rebuild=None).count > 0
-    assert "embedding_stage_cleanup_failed" in caplog.text

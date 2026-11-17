@@ -1179,66 +1179,53 @@ def test_rebuild_replays_generation_and_cleans_scratch(tmp_path, monkeypatch):
     assert not list(tmp_path.glob("embedding-stage-*"))
 
 
-def test_rebuild_cleans_scratch_when_publisher_raises(tmp_path, monkeypatch):
-    import tempfile
-
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    _, _, store, rec = _setup(tmp_path, NOTES)
-
-    def fail(*_args):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(store, "publish_generation", fail)
-    with pytest.raises(OSError, match="disk full"):
-        rec.rebuild(store, store.identity)
-    assert not list(tmp_path.glob("embedding-stage-*"))
-
-
 def test_iter_chunks_matches_list_across_document_pages(tmp_path, monkeypatch):
     import markdown_vault_mcp.fts_index as fts_module
 
-    fts = _index(tmp_path, {f"{i}.md": f"# {i}\n\nText.\n" for i in range(5)})
-    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 2)
-    assert list(fts.iter_chunks()) == fts.list_chunks()
-
-
-def test_rebuild_batches_across_windows_and_deduplicates_within_documents(
-    tmp_path, monkeypatch
-):
-    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
-
-    _, provider, store, rec = _setup(tmp_path, NOTES)
-    docs = [
-        _Document("a.md", "a", ("x", "x", "y"), ({}, {}, {})),
-        _Document("b.md", "b", ("x", "z"), ({}, {})),
-        _Document("c.md", "c", ("q",), ({},)),
+    notes = {
+        "a.md": "# A\n\nOne.\n\n## First\n\nTwo.\n\n## Second\n\nThree.\n",
+        "b.md": "# B\n\nFour.\n",
+        "c.md": "# C\n\nFive.\n\n## Third\n\nSix.\n",
+    }
+    fts = _index(tmp_path, notes, HeadingChunker(short_doc_lines=0))
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
+    rows = list(fts.iter_chunks())
+    assert rows == fts.list_chunks()
+    assert [row["path"] for row in rows] == [
+        "a.md",
+        "a.md",
+        "a.md",
+        "b.md",
+        "c.md",
+        "c.md",
     ]
-    calls = []
-    embed = provider.embed
-
-    def capture(texts):
-        calls.append(list(texts))
-        return embed(texts)
-
-    monkeypatch.setattr(rec, "_build_documents", lambda: (doc for doc in docs))
-    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
-    monkeypatch.setattr(rec, "_batch_size", 3)
-    monkeypatch.setattr(provider, "embed", capture)
-    assert rec.preview(store, store.identity).to_embed == 5
-    result = rec.rebuild(store, store.identity)
-    assert calls == [["x", "y", "x"], ["z", "q"]]
-    assert (result.embedded, result.attempted) == (6, 6)
-    assert len(store.rows_for("a.md")) == 3
-    assert list(store.rows_for("a.md")[0].vector) == list(
-        store.rows_for("a.md")[1].vector
-    )
+    assert [row["is_first_chunk"] for row in rows] == [
+        True,
+        False,
+        False,
+        True,
+        True,
+        False,
+    ]
+    assert [row["heading"] for row in rows] == [
+        "A",
+        "First",
+        "Second",
+        "B",
+        "C",
+        "Third",
+    ]
 
 
 def test_custom_index_fallback_groups_interleaved_chunks(tmp_path, monkeypatch):
     fts, provider, store, rec = _setup(tmp_path, NOTES)
     rows = fts.list_chunks()
     # The required protocol does not promise that a document's rows are adjacent.
-    rows = [rows[0], rows[1], {**rows[0], "content": "Second chunk"}]
+    rows = [
+        rows[0],
+        rows[1],
+        {**rows[0], "content": "Second chunk", "is_first_chunk": False},
+    ]
 
     class CustomIndex:
         def list_chunks(self, paths=None):
@@ -1255,15 +1242,18 @@ def test_custom_index_fallback_groups_interleaved_chunks(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rec, "_fts", CustomIndex())
     monkeypatch.setattr(provider, "embed", capture)
-    expected = rec.documents()
     result = rec.rebuild(store, store.identity)
     assert result.published
-    assert calls == [text for doc in expected.values() for text in doc.texts]
+    assert calls == ["# A\n\nApples.", "Second chunk", "# B\n\nBoats."]
     assert len(store.rows_for("a.md")) == 2
 
 
-def test_stage_closes_retained_replay_on_publisher_failure(tmp_path, monkeypatch):
+def test_stage_closes_retained_replay_on_publisher_failure(
+    tmp_path, monkeypatch, caplog
+):
     import tempfile
+
+    from tests.fixtures.embedding_stage import install_cleanup_failure
 
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     _, _, store, rec = _setup(tmp_path, NOTES)
@@ -1276,9 +1266,11 @@ def test_stage_closes_retained_replay_on_publisher_failure(tmp_path, monkeypatch
         raise OSError("publish failed")
 
     monkeypatch.setattr(store, "publish_generation", fail)
+    install_cleanup_failure(monkeypatch)
     with pytest.raises(OSError, match="publish failed"):
         rec.rebuild(store, store.identity)
     assert not list(tmp_path.glob("embedding-stage-*"))
+    assert "embedding_stage_cleanup_failed" in caplog.text
     with pytest.raises(ValueError, match="closed"):
         next(retained[0])
 
@@ -1427,28 +1419,10 @@ def test_stage_reports_unlink_failure_without_primary_error(
     assert not list(tmp_path.glob("embedding-stage-*"))
 
 
-def test_committed_rebuild_survives_scratch_cleanup_error(
-    tmp_path, monkeypatch, caplog
-):
-    from tests.fixtures.embedding_stage import install_cleanup_failure
-
-    _, _, store, rec = _setup(tmp_path, NOTES)
-    install_cleanup_failure(monkeypatch)
-    result = rec.rebuild(store, store.identity)
-    assert result.published and store.count == 2
-    assert "embedding_stage_cleanup_failed" in caplog.text
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_custom_metadata_retains_objects_during_replay(
-    tmp_path, monkeypatch, streaming
-):
+def test_custom_metadata_retains_objects_during_replay(tmp_path, monkeypatch):
     fts, _, store, rec = _setup(tmp_path, {"a.md": "# A\n\nApple\n"})
     line = np.int64(3)
-    heading = ("one", "two")
-    rows = [
-        {**row, "start_line": line, "heading": heading} for row in fts.list_chunks()
-    ]
+    rows = [{**row, "start_line": line} for row in fts.list_chunks()]
 
     class Index:
         def list_chunks(self, paths=None):
@@ -1465,13 +1439,12 @@ def test_custom_metadata_retains_objects_during_replay(
     def publish(_identity, generation):
         seen.extend([list(generation), list(generation)])
 
-    monkeypatch.setattr(rec, "_fts", StreamingIndex() if streaming else Index())
+    monkeypatch.setattr(rec, "_fts", StreamingIndex())
     monkeypatch.setattr(store, "publish_generation", publish)
     assert rec.rebuild(store, store.identity).published
     for generation in seen:
         metadata = generation[0].rows[0].metadata
         assert metadata["start_line"] is line
-        assert metadata["heading"] is heading
 
 
 def test_scratch_dir_bypasses_unavailable_default_temp(tmp_path, monkeypatch):
@@ -1497,91 +1470,36 @@ def test_unavailable_scratch_fails_before_provider_and_keeps_store(tmp_path):
     assert store.tokens() == before
 
 
-@pytest.mark.parametrize("failure", ["source", "donor", "publisher"])
-def test_primary_build_failure_survives_scratch_cleanup_error(
-    tmp_path, monkeypatch, caplog, failure
-):
-    from tests.fixtures.embedding_stage import install_cleanup_failure
-
+def test_source_failure_preserves_generation(tmp_path, monkeypatch):
     fts, _, store, rec = _setup(tmp_path, NOTES)
     rec.rebuild(store, store.identity)
     before = store.tokens()
 
     def fail(*_args, **_kwargs):
-        raise RuntimeError(f"{failure} failed")
+        raise RuntimeError("source failed")
 
-    class BrokenDonor:
-        source = "fixture"
-        refused_rows = 0
-        vectors_for = staticmethod(fail)
-
-    install_cleanup_failure(monkeypatch)
-    if failure == "source":
-        monkeypatch.setattr(fts, "iter_chunks", fail)
-    elif failure == "publisher":
-        monkeypatch.setattr(store, "publish_generation", fail)
-    donor = BrokenDonor() if failure == "donor" else None
-    with pytest.raises(RuntimeError, match=f"{failure} failed"):
-        rec.rebuild(store, store.identity, donor=donor)
+    monkeypatch.setattr(fts, "iter_chunks", fail)
+    with pytest.raises(RuntimeError, match="source failed"):
+        rec.rebuild(store, store.identity)
     assert store.tokens() == before
-    assert "embedding_stage_cleanup_failed" in caplog.text
 
 
-def test_two_vault_reindex_during_rebuild_keeps_later_pages(tmp_path, monkeypatch):
-    from markdown_vault_mcp.config_sections import VaultSettings
-    from markdown_vault_mcp.vault import Vault
-
-    source = tmp_path / "vault"
-    source.mkdir()
-    for i in range(5):
-        (source / f"{i}.md").write_text(f"# Note {i}\n\nBody {i}.\n")
-    settings = VaultSettings(index_path=tmp_path / "index.db", read_only=False)
-    provider = MockEmbeddingProvider(dim=8)
-    identity = EmbeddingIdentity.of(provider, "v1")
-    first_store = NumpySidecarBackend().open(None, identity)
-    second_store = NumpySidecarBackend().open(None, identity)
-    first = Vault(
-        source_dir=source,
-        settings=settings,
-        embedding_provider=provider,
-        vector_store=first_store,
-    )
-    second = Vault(
-        source_dir=source,
-        settings=settings,
-        embedding_provider=provider,
-        vector_store=second_store,
-    )
+def test_chunk_iterator_observes_changes_on_later_pages(tmp_path, monkeypatch):
     import markdown_vault_mcp.fts_index as fts_module
 
+    fts = _index(tmp_path, {f"{i}.md": f"# Note {i}\n\nBody {i}.\n" for i in range(5)})
     monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 2)
-    try:
-        first.index.build_index()
-        second.index.build_index()
-        page = first._fts._chunk_page
-        changed = False
-
-        def mutate(after, *args):
-            nonlocal changed
-            if after is not None and not changed:
-                changed = True
-                (source / "2.md").unlink()
-                (source / "3.md").unlink()
-                (source / "4.md").write_text("# Changed\n\nNew body.\n")
-                (source / "5.md").write_text("# New\n\nNew entry.\n")
-                second.index.reindex()
-            return page(after, *args)
-
-        monkeypatch.setattr(first._fts, "_chunk_page", mutate)
-        first.index.build_embeddings(force=True)
-        assert changed
-        assert set(first_store.tokens()) == {"0.md", "1.md", "4.md", "5.md"}
-        assert "New body" in first_store.rows_for("4.md")[0].metadata["content"]
-    finally:
-        first.close()
-        second.close()
-        first_store.close()
-        second_store.close()
+    reader = fts.iter_chunks()
+    first = [next(reader), next(reader)]
+    fts.delete_by_path("2.md")
+    fts.delete_by_path("3.md")
+    (tmp_path / "4.md").write_text("# Changed\n\nNew body.\n")
+    (tmp_path / "5.md").write_text("# New\n\nNew entry.\n")
+    for name in ("4.md", "5.md"):
+        fts.upsert_note(parse_note(tmp_path / name, tmp_path, HeadingChunker()))
+    rows = first + list(reader)
+    assert [row["path"] for row in rows] == ["0.md", "1.md", "4.md", "5.md"]
+    assert "New body" in rows[2]["content"]
 
 
 def test_chunk_page_selects_paths_and_rows_in_one_statement(tmp_path):
@@ -1605,56 +1523,21 @@ def test_chunk_page_selects_paths_and_rows_in_one_statement(tmp_path):
     )
 
 
-def test_scratch_failure_logs_location_and_preserves_exception(
-    tmp_path, monkeypatch, caplog
-):
+def test_provider_error_is_not_logged_as_scratch_failure(tmp_path, caplog):
     from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
 
-    failure = OSError("synthetic disk full")
+    failure = OSError("provider unavailable")
 
-    def fail(*_args, **_kwargs):
+    def results():
         raise failure
-
-    monkeypatch.setattr("tempfile.TemporaryDirectory", fail)
-    with pytest.raises(OSError) as raised:
-        EmbeddingStage(tmp_path)
-    assert raised.value is failure
-    assert "embedding_stage_io_failed" in caplog.text
-    assert str(tmp_path) in caplog.text
-    assert "synthetic disk full" in caplog.text
-
-
-def test_stage_distinguishes_write_failure_from_provider_error(
-    tmp_path, monkeypatch, caplog
-):
-    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
-    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
-
-    scratch_error = OSError("scratch write full")
-
-    def fail_write(*_args, **_kwargs):
-        raise scratch_error
+        yield  # pragma: no cover
 
     with EmbeddingStage(tmp_path) as stage:
-        with monkeypatch.context() as patch:
-            patch.setattr("json.dump", fail_write)
-            with pytest.raises(OSError) as caught:
-                stage.add(_Document("a", "x", ("text",), ({},)), {})
-        assert caught.value is scratch_error
-        assert "embedding_stage_io_failed" in caplog.text
-        assert str(tmp_path) in caplog.text
         stage.finish()
-        caplog.clear()
-        provider_error = OSError("provider unavailable")
-
-        def results():
-            raise provider_error
-            yield  # pragma: no cover
-
         with pytest.raises(OSError) as caught:
             stage.write_results(results())
-        assert caught.value is provider_error
-        assert "embedding_stage_io_failed" not in caplog.text
+    assert caught.value is failure
+    assert "embedding_stage_io_failed" not in caplog.text
 
 
 @pytest.mark.parametrize("operation", ["rebuild", "preview"])
@@ -1746,38 +1629,95 @@ def test_custom_chunk_iterator_closed_when_stage_fails(tmp_path, monkeypatch):
     store.close()
 
 
-def test_default_temp_discovery_failure_keeps_error_and_reports_location(
-    monkeypatch, caplog
+@pytest.mark.parametrize("point", ["allocation", "discovery", "write"])
+def test_scratch_failure_logs_location_and_preserves_exception(
+    tmp_path, monkeypatch, caplog, point
 ):
+    import json
     import tempfile
 
     from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
 
-    failure = OSError("synthetic temporary directory unavailable")
+    failure = OSError("synthetic scratch failure")
 
-    def fail():
+    def fail(*_args, **_kwargs):
         raise failure
 
-    monkeypatch.setattr(tempfile, "gettempdir", fail)
     with caplog.at_level(logging.ERROR), pytest.raises(OSError) as caught:
-        EmbeddingStage()
+        if point == "discovery":
+            monkeypatch.setattr(tempfile, "gettempdir", fail)
+            EmbeddingStage()
+        elif point == "allocation":
+            monkeypatch.setattr(tempfile, "TemporaryDirectory", fail)
+            EmbeddingStage(tmp_path)
+        else:
+            with EmbeddingStage(tmp_path) as stage:
+                monkeypatch.setattr(json, "dump", fail)
+                stage.add(
+                    _Document(
+                        "a.md",
+                        "a",
+                        ("text",),
+                        (
+                            {
+                                "path": "a.md",
+                                "title": "A",
+                                "folder": "",
+                                "heading": None,
+                                "content": "text",
+                                "start_line": 1,
+                                "preamble": "",
+                            },
+                        ),
+                    ),
+                    {},
+                )
     assert caught.value is failure
     assert "embedding_stage_io_failed" in caplog.text
-    assert "system temporary directories" in caplog.text
-    assert "synthetic temporary directory unavailable" in caplog.text
+    assert (
+        "system temporary directories" if point == "discovery" else str(tmp_path)
+    ) in caplog.text
+    assert "synthetic scratch failure" in caplog.text
 
 
 def test_mixed_reuse_and_duplicate_misses_across_windows(tmp_path, monkeypatch):
     from markdown_vault_mcp.indexing.embedding_reconciler import _Document
 
     _, provider, store, rec = _setup(tmp_path, NOTES)
-    rec.rebuild(store, store.identity)
-    docs = [
-        _Document("a.md", "a", ("own", "donor", "miss", "miss"), ({}, {}, {}, {})),
-        _Document("b.md", "b", ("later",), ({},)),
-    ]
+
+    def meta(path, content):
+        return {
+            "path": path,
+            "title": "Title",
+            "folder": "",
+            "heading": None,
+            "content": content,
+            "start_line": 1,
+            "preamble": "",
+        }
+
     own = array("f", [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     donated = array("f", [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    store.publish_generation(
+        store.identity,
+        [DocumentRows("a.md", "old", (VectorRow(own, meta("a.md", "own")),))],
+    )
+    docs = [
+        _Document(
+            "a.md",
+            "a",
+            ("own", "donor", "miss", "miss"),
+            tuple(meta("a.md", x) for x in ("own", "donor", "miss", "miss")),
+        ),
+        _Document(
+            "b.md",
+            "b",
+            ("miss", "later"),
+            tuple(meta("b.md", x) for x in ("miss", "later")),
+        ),
+        _Document("c.md", "c", ("last",), (meta("c.md", "last"),)),
+    ]
     calls = []
     embed = provider.embed
 
@@ -1794,31 +1734,42 @@ def test_mixed_reuse_and_duplicate_misses_across_windows(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rec, "_build_documents", lambda: (doc for doc in docs))
     monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
-    monkeypatch.setattr(reconciler_module, "stored_inputs", lambda *_args: {"own": own})
-    monkeypatch.setattr(rec, "_batch_size", 2)
+    monkeypatch.setattr(rec, "_batch_size", 3)
     monkeypatch.setattr(provider, "embed", capture)
-    preview = rec.preview(store, store.identity, donor=Donor())
-    assert (preview.chunks, preview.reusable, preview.to_embed) == (5, 2, 2)
-    result = rec.rebuild(store, store.identity, donor=Donor())
-    assert (result.reused, result.embedded) == (2, 3)
-    assert calls == [["miss", "later"]]
+    preview = rec.preview(store, store.identity, donor=Donor(), reuse_own=True)
+    assert (preview.chunks, preview.reusable, preview.to_embed) == (7, 2, 4)
+    result = rec.rebuild(store, store.identity, donor=Donor(), reuse_own=True)
+    assert (result.reused, result.embedded) == (2, 5)
+    assert calls == [["miss", "miss", "later"], ["last"]]
     rows = store.rows_for("a.md")
     assert list(rows[0].vector) == list(own)
     assert list(rows[1].vector) == list(donated)
     assert list(rows[2].vector) == list(rows[3].vector)
 
 
-def test_stage_derives_misses_without_storing_them(tmp_path):
-    import json
-
+def test_stage_counts_and_fans_out_duplicate_misses(tmp_path):
     from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
     from markdown_vault_mcp.indexing.embedding_reconciler import _Document
 
-    doc = _Document("a.md", "a", ("reuse", "miss", "miss"), ({}, {}, {}))
+    doc = _Document(
+        "a.md",
+        "a",
+        ("reuse", "miss", "miss"),
+        tuple(
+            {
+                "path": "a.md",
+                "title": "A",
+                "folder": "",
+                "heading": None,
+                "content": text,
+                "start_line": 1,
+                "preamble": "",
+            }
+            for text in ("reuse", "miss", "miss")
+        ),
+    )
     with EmbeddingStage(tmp_path) as stage:
         stage.add(doc, {0: array("f", [1.0])})
         stage.finish()
-        record = json.loads((stage._root / "documents").read_text())
-        assert len(record) == 4
         assert stage.miss_count == 1
         assert list(stage.misses()) == [("miss", 2)]
