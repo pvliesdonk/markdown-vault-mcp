@@ -750,6 +750,7 @@ class Vault:
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
             okf_audit=self._okf_audit,
+            okf_write_state=lambda: self.okf_write_state(active=True),
         )
         # The reserved files the OKF generators write are subject to this
         # vault's own required-frontmatter gate, so the generators need the
@@ -877,6 +878,18 @@ class Vault:
     def okf(self) -> OkfDetector:
         """OKF detection probe (disk-read, index-independent)."""
         return self._okf
+
+    def okf_write_state(self, *, active: bool) -> tuple[bool, bool]:
+        """Return configured and effective OKF write-layer state.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Configured OKF write flag and whether the layer is effective.
+        """
+        configured = self._okf_write_enrich is not None
+        return configured, configured and active and not self._read_only
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).
