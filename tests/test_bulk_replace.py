@@ -602,24 +602,37 @@ def test_regex_timeout_covers_callback() -> None:
 
 
 def test_excluded_and_hidden_aliases_do_not_select_outside(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
     from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
 
     (tmp_path / "scope" / ".hidden").mkdir(parents=True)
     (tmp_path / "outside.md").write_text("old", encoding="utf-8")
+    external = tmp_path.parent / f"{tmp_path.name}-outside.md"
+    external.write_text("old", encoding="utf-8")
     (tmp_path / "scope" / ".hidden" / "alias.md").symlink_to(tmp_path / "outside.md")
     (tmp_path / "scope" / "excluded.md").symlink_to(tmp_path / "outside.md")
+    (tmp_path / "scope" / "in-vault.md").symlink_to(tmp_path / "outside.md")
+    (tmp_path / "scope" / "escape.md").symlink_to(external)
+    (tmp_path / "scope" / "protected.md").write_text("old", encoding="utf-8")
+    (tmp_path / "scope" / "protected-alias.md").symlink_to(
+        tmp_path / "scope" / "protected.md"
+    )
     manager = DocumentManager(
         FTSIndex(db_path=":memory:"),
         tmp_path,
         write_lock=threading.RLock(),
         chunk_strategy=HeadingChunker(),
         read_only=False,
-        exclude_patterns=["scope/excluded.md"],
+        exclude_patterns=["scope/excluded.md", "scope/protected.md"],
     )
     result = BulkReplacer(manager).replace(
         ReplaceRequest("old", "new", folders=("scope",))
     )
     assert result.notes == []
+    with pytest.raises(InvalidRequestError):
+        BulkReplacer(manager).replace(
+            ReplaceRequest("old", "new", paths=(f"../{external.name}",))
+        )
 
 
 def test_reserved_explicit_note_with_maintenance_refused(tmp_path: Path) -> None:
@@ -642,7 +655,10 @@ def test_reserved_explicit_note_with_maintenance_refused(tmp_path: Path) -> None
         )
 
 
-def test_callback_failure_reports_and_maintains_mutated_note(tmp_path: Path) -> None:
+@pytest.mark.parametrize("unreadable_after_write", [False, True])
+def test_callback_failure_reports_and_maintains_mutated_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unreadable_after_write: bool
+) -> None:
     from markdown_vault_mcp.managers.bulk_replace import (
         BulkReplacer,
         ReplaceInterruptedError,
@@ -653,6 +669,12 @@ def test_callback_failure_reports_and_maintains_mutated_note(tmp_path: Path) -> 
     note.write_text("old", encoding="utf-8")
 
     def fail(_paths: object) -> None:
+        if unreadable_after_write:
+
+            def unreadable(*_args: object, **_kwargs: object) -> None:
+                raise OSError("unreadable")
+
+            monkeypatch.setattr(manager, "read_for_replace", unreadable)
         raise OSError("index failed")
 
     manager = DocumentManager(
