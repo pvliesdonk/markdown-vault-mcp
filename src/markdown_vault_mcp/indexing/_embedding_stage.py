@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Iterator
+    from collections.abc import Callable, Generator, Iterable, Iterator, Mapping
     from types import TracebackType
     from typing import TextIO
 
@@ -35,6 +35,13 @@ def _unpack(value: str) -> array[float]:
     result: array[float] = array("f")
     result.frombytes(base64.b64decode(value))
     return result
+
+
+def _misses(texts: Iterable[str], hits: Mapping[int, Any]) -> list[str]:
+    """Return ordered unique inputs without a reusable vector."""
+    return list(
+        dict.fromkeys(text for index, text in enumerate(texts) if index not in hits)
+    )
 
 
 class EmbeddingStage:
@@ -102,9 +109,7 @@ class EmbeddingStage:
                 )
         self._readers.clear()
 
-    def add(
-        self, doc: _Document, hits: dict[int, array[float]], wanted: list[str]
-    ) -> None:
+    def add(self, doc: _Document, hits: dict[int, array[float]]) -> None:
         """Write one classified document and its ordered unique misses."""
         scalar = (type(None), bool, int, float, str)
         safe = (
@@ -128,26 +133,25 @@ class EmbeddingStage:
             reference,
             doc.texts,
             {str(k): _pack(v) for k, v in hits.items()},
-            wanted,
         ]
         self._io(lambda: json.dump(record, self._docs))
         self._io(lambda: self._docs.write("\n"))
-        self.miss_count += len(wanted)
+        self.miss_count += len(_misses(doc.texts, hits))
 
     def finish(self) -> None:
         """Close the classification file before reading it."""
         self._io(self._docs.close)
 
-    def _records(self) -> Generator[tuple[Any, Any, Any, Any, Any, Any]]:
+    def _records(self) -> Generator[tuple[Any, Any, Any, Any, Any]]:
         stream = self._io(lambda: (self._root / "documents").open(encoding="utf-8"))
         self._readers.add(stream)
         try:
             while line := self._io(stream.readline):
-                identity, reference, texts, hits, wanted = json.loads(line)
+                identity, reference, texts, hits = json.loads(line)
                 path, token, metadata = (
                     self._opaque[reference] if reference is not None else identity
                 )
-                yield path, token, texts, metadata, hits, wanted
+                yield path, token, texts, metadata, {int(k): v for k, v in hits.items()}
         finally:
             self._io(stream.close)
             self._readers.discard(stream)
@@ -155,9 +159,9 @@ class EmbeddingStage:
     def misses(self) -> Generator[tuple[str, int]]:
         """Yield misses in provider order with their chunk fanout."""
         with closing(self._records()) as records:
-            for _path, _token, texts, _metadata, _hits, wanted in records:
+            for _path, _token, texts, _metadata, hits in records:
                 counts = Counter(texts)
-                for text in wanted:
+                for text in _misses(texts, hits):
                     yield text, counts[text]
 
     @contextmanager
@@ -184,9 +188,9 @@ class EmbeddingStage:
         self._readers.add(results)
         try:
             with closing(self._records()) as records:
-                for path, token, texts, metadata, hits, wanted in records:
+                for path, token, texts, metadata, hits in records:
                     fresh: dict[str, Any] = {}
-                    for text in wanted:
+                    for text in _misses(texts, hits):
                         value = json.loads(self._io(lambda: next(results)))
                         if value is not None:
                             fresh[text] = _unpack(value)
@@ -194,7 +198,7 @@ class EmbeddingStage:
                     for index, (text, meta) in enumerate(
                         zip(texts, metadata, strict=True)
                     ):
-                        value = hits.get(str(index))
+                        value = hits.get(index)
                         vector = (
                             _unpack(value) if value is not None else fresh.get(text)
                         )

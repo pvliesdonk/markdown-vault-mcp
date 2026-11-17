@@ -2267,32 +2267,24 @@ class FTSIndex:
         return list(_mark_chunk_rows(fetched))
 
     def iter_chunks(self) -> Iterator[dict[str, Any]]:
-        """Yield whole-document pages from one consistent read snapshot.
+        """Yield path-ordered, atomic whole-document pages.
 
-        The dedicated read transaction closes on exhaustion or iterator close.
-        A concurrent writer can extend the WAL until that snapshot closes.
+        Changes between pages may be observed or missed; convergence handles
+        later edits. A document present throughout appears once. Read locks
+        are held only while each page is fetched.
         """
-        self._conn()  # Respect the index lifecycle before opening the snapshot.
-        conn = self._registry.connect()
-        try:
-            self._registry.apply_pragmas(conn)
-            conn.execute("BEGIN")
-            after: str | None = None
-            while rows := self._chunk_page(after, conn):
-                yield from _mark_chunk_rows(rows)
-                after = rows[-1]["path"]
-        finally:
-            conn.close()
+        after: str | None = None
+        while rows := self._chunk_page(after):
+            yield from _mark_chunk_rows(rows)
+            after = rows[-1]["path"]
 
     @_retry_on_locked
-    def _chunk_page(
-        self, after: str | None, conn: sqlite3.Connection | None = None
-    ) -> list[sqlite3.Row]:
-        """Fetch one page's paths and chunks atomically from *conn*."""
+    def _chunk_page(self, after: str | None) -> list[sqlite3.Row]:
+        """Fetch one page's paths and chunks atomically."""
         continuation = "d.path > ? AND " if after is not None else ""
         params = (after, _CHUNK_PAGE_DOCS) if after is not None else (_CHUNK_PAGE_DOCS,)
         return (
-            (conn or self._conn())
+            self._conn()
             .execute(
                 "WITH page AS (SELECT d.id, d.path, d.title, d.folder, "
                 "d.frontmatter_json, d.content_hash FROM documents AS d WHERE "

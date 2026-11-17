@@ -1527,7 +1527,7 @@ def test_primary_build_failure_survives_scratch_cleanup_error(
     assert "embedding_stage_cleanup_failed" in caplog.text
 
 
-def test_two_vault_reindex_during_rebuild_keeps_snapshot(tmp_path, monkeypatch):
+def test_two_vault_reindex_during_rebuild_keeps_later_pages(tmp_path, monkeypatch):
     from markdown_vault_mcp.config_sections import VaultSettings
     from markdown_vault_mcp.vault import Vault
 
@@ -1575,47 +1575,13 @@ def test_two_vault_reindex_during_rebuild_keeps_snapshot(tmp_path, monkeypatch):
         monkeypatch.setattr(first._fts, "_chunk_page", mutate)
         first.index.build_embeddings(force=True)
         assert changed
-        assert set(first_store.tokens()) == {f"{i}.md" for i in range(5)}
-        assert first_store.rows_for("4.md")[0].metadata["content"].find("Body 4") >= 0
+        assert set(first_store.tokens()) == {"0.md", "1.md", "4.md", "5.md"}
+        assert "New body" in first_store.rows_for("4.md")[0].metadata["content"]
     finally:
         first.close()
         second.close()
         first_store.close()
         second_store.close()
-
-
-def test_chunk_iterator_releases_snapshot_on_close_or_error(tmp_path, monkeypatch):
-    import markdown_vault_mcp.fts_index as fts_module
-
-    fts = _index(tmp_path, {f"{i}.md": f"# {i}\n\nBody.\n" for i in range(3)})
-    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
-    connections = []
-    connect = fts._registry.connect
-
-    def track():
-        conn = connect()
-        connections.append(conn)
-        return conn
-
-    monkeypatch.setattr(fts._registry, "connect", track)
-    reader = fts.iter_chunks()
-    next(reader)
-    assert connections[0].in_transaction
-    reader.close()
-    with pytest.raises(sqlite3.ProgrammingError):
-        connections[0].execute("SELECT 1")
-    page = fts._chunk_page
-
-    def fail(after, *args):
-        if after is not None:
-            raise RuntimeError("read failed")
-        return page(after, *args)
-
-    monkeypatch.setattr(fts, "_chunk_page", fail)
-    with pytest.raises(RuntimeError, match="read failed"):
-        list(fts.iter_chunks())
-    with pytest.raises(sqlite3.ProgrammingError):
-        connections[1].execute("SELECT 1")
 
 
 def test_chunk_page_selects_paths_and_rows_in_one_statement(tmp_path):
@@ -1658,46 +1624,6 @@ def test_scratch_failure_logs_location_and_preserves_exception(
     assert "synthetic disk full" in caplog.text
 
 
-@pytest.mark.parametrize("failure", ["donor", "stage"])
-def test_rebuild_releases_source_snapshot_on_preparation_failure(
-    tmp_path, monkeypatch, failure
-):
-    import markdown_vault_mcp.fts_index as fts_module
-    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
-
-    fts, _, store, rec = _setup(
-        tmp_path, {f"{i}.md": f"# {i}\n\nBody {i}.\n" for i in range(3)}
-    )
-    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
-    connections = []
-    connect = fts._registry.connect
-
-    def track():
-        conn = connect()
-        connections.append(conn)
-        return conn
-
-    def fail(*_args, **_kwargs):
-        raise RuntimeError("synthetic preparation failure")
-
-    class BrokenDonor:
-        source = "fixture"
-        refused_rows = 0
-        vectors_for = staticmethod(fail)
-
-    monkeypatch.setattr(fts._registry, "connect", track)
-    if failure == "stage":
-        monkeypatch.setattr(EmbeddingStage, "add", fail)
-    with pytest.raises(RuntimeError, match="synthetic preparation failure") as captured:
-        rec.rebuild(
-            store, store.identity, donor=BrokenDonor() if failure == "donor" else None
-        )
-    assert captured.value
-    assert connections
-    with pytest.raises(sqlite3.ProgrammingError):
-        connections[0].execute("SELECT 1")
-
-
 def test_stage_distinguishes_write_failure_from_provider_error(
     tmp_path, monkeypatch, caplog
 ):
@@ -1713,7 +1639,7 @@ def test_stage_distinguishes_write_failure_from_provider_error(
         with monkeypatch.context() as patch:
             patch.setattr("json.dump", fail_write)
             with pytest.raises(OSError) as caught:
-                stage.add(_Document("a", "x", ("text",), ({},)), {}, ["text"])
+                stage.add(_Document("a", "x", ("text",), ({},)), {})
         assert caught.value is scratch_error
         assert "embedding_stage_io_failed" in caplog.text
         assert str(tmp_path) in caplog.text
@@ -1729,3 +1655,170 @@ def test_stage_distinguishes_write_failure_from_provider_error(
             stage.write_results(results())
         assert caught.value is provider_error
         assert "embedding_stage_io_failed" not in caplog.text
+
+
+@pytest.mark.parametrize("operation", ["rebuild", "preview"])
+def test_memory_writer_during_donor_read(tmp_path, monkeypatch, operation):
+    from threading import Thread
+
+    import markdown_vault_mcp.fts_index as fts_module
+    import markdown_vault_mcp.indexing.embedding_reconciler as reconciler_module
+    from markdown_vault_mcp.scanner import HeadingChunker, parse_note
+
+    fts, _, store, rec = _setup(
+        tmp_path, {f"{i}.md": f"# {i}\n\nBody {i}.\n" for i in range(3)}
+    )
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
+    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
+    errors = []
+    updated = []
+
+    def write():
+        try:
+            (tmp_path / "2.md").write_text("# Updated\n\nNew body.\n")
+            fts.upsert_note(parse_note(tmp_path / "2.md", tmp_path, HeadingChunker()))
+            updated.append(True)
+        except Exception as error:
+            errors.append(error)
+
+    class Donor:
+        source = "fixture"
+        refused_rows = 0
+
+        def vectors_for(self, _path):
+            if not updated and not errors:
+                thread = Thread(target=write)
+                thread.start()
+                thread.join()
+            return {}
+
+    try:
+        result = getattr(rec, operation)(store, store.identity, donor=Donor())
+        assert not errors
+        assert updated
+        if operation == "rebuild":
+            assert result.published and set(store.tokens()) == {"0.md", "1.md", "2.md"}
+            assert "New body" in store.rows_for("2.md")[0].metadata["content"]
+        else:
+            assert result.chunks == 3
+    finally:
+        fts.close()
+        store.close()
+
+
+def test_custom_chunk_iterator_closed_when_stage_fails(tmp_path, monkeypatch):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    fts, _, store, rec = _setup(
+        tmp_path, {"a.md": "# A\n\nApple\n", "b.md": "# B\n\nBerry\n"}
+    )
+    closed = []
+    rows = fts.list_chunks()
+
+    def source():
+        try:
+            yield from rows
+        finally:
+            closed.append(True)
+
+    retained = source()
+
+    class CustomIndex:
+        def list_chunks(self, paths=None):
+            return (
+                rows if paths is None else [row for row in rows if row["path"] in paths]
+            )
+
+        def iter_chunks(self):
+            return retained
+
+    def fail(*_args, **_kwargs):
+        assert not closed
+        raise RuntimeError("stage failed")
+
+    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
+    monkeypatch.setattr(rec, "_fts", CustomIndex())
+    monkeypatch.setattr(EmbeddingStage, "add", fail)
+    with pytest.raises(RuntimeError, match="stage failed"):
+        rec.rebuild(store, store.identity)
+    assert closed == [True]
+    fts.close()
+    store.close()
+
+
+def test_default_temp_discovery_failure_keeps_error_and_reports_location(
+    monkeypatch, caplog
+):
+    import tempfile
+
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    failure = OSError("synthetic temporary directory unavailable")
+
+    def fail():
+        raise failure
+
+    monkeypatch.setattr(tempfile, "gettempdir", fail)
+    with caplog.at_level(logging.ERROR), pytest.raises(OSError) as caught:
+        EmbeddingStage()
+    assert caught.value is failure
+    assert "embedding_stage_io_failed" in caplog.text
+    assert "system temporary directories" in caplog.text
+    assert "synthetic temporary directory unavailable" in caplog.text
+
+
+def test_mixed_reuse_and_duplicate_misses_across_windows(tmp_path, monkeypatch):
+    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+
+    _, provider, store, rec = _setup(tmp_path, NOTES)
+    rec.rebuild(store, store.identity)
+    docs = [
+        _Document("a.md", "a", ("own", "donor", "miss", "miss"), ({}, {}, {}, {})),
+        _Document("b.md", "b", ("later",), ({},)),
+    ]
+    own = array("f", [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    donated = array("f", [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    calls = []
+    embed = provider.embed
+
+    class Donor:
+        source = "fixture"
+        refused_rows = 0
+
+        def vectors_for(self, _path):
+            return {"own": donated, "donor": donated}
+
+    def capture(texts):
+        calls.append(list(texts))
+        return embed(texts)
+
+    monkeypatch.setattr(rec, "_build_documents", lambda: (doc for doc in docs))
+    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
+    monkeypatch.setattr(reconciler_module, "stored_inputs", lambda *_args: {"own": own})
+    monkeypatch.setattr(rec, "_batch_size", 2)
+    monkeypatch.setattr(provider, "embed", capture)
+    preview = rec.preview(store, store.identity, donor=Donor())
+    assert (preview.chunks, preview.reusable, preview.to_embed) == (5, 2, 2)
+    result = rec.rebuild(store, store.identity, donor=Donor())
+    assert (result.reused, result.embedded) == (2, 3)
+    assert calls == [["miss", "later"]]
+    rows = store.rows_for("a.md")
+    assert list(rows[0].vector) == list(own)
+    assert list(rows[1].vector) == list(donated)
+    assert list(rows[2].vector) == list(rows[3].vector)
+
+
+def test_stage_derives_misses_without_storing_them(tmp_path):
+    import json
+
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+
+    doc = _Document("a.md", "a", ("reuse", "miss", "miss"), ({}, {}, {}))
+    with EmbeddingStage(tmp_path) as stage:
+        stage.add(doc, {0: array("f", [1.0])})
+        stage.finish()
+        record = json.loads((stage._root / "documents").read_text())
+        assert len(record) == 4
+        assert stage.miss_count == 1
+        assert list(stage.misses()) == [("miss", 2)]

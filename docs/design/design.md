@@ -1158,7 +1158,7 @@ A full embedding rebuild classifies whole-document windows and stages their
 text, metadata and reused vectors beside the configured state file before any
 provider call, or under the temporary directory when there is no state file. It then embeds the ordered misses across windows and replays
 the staged generation to the publisher. The optional `IteratesChunks`
-reader pages whole documents; the built-in reader holds a consistent SQLite snapshot during classification and donor reads, then releases it before provider calls. Concurrent writes can grow the WAL while the snapshot is open. A keyword index without the iterator retains the eager
+reader pages whole documents in path order, with each page read atomically. Changes between pages can be observed or missed and convergence reconciles later edits. Read locks are held only during page fetches, not donor or provider work. A keyword index without the iterator retains the eager
 `list_chunks` grouping. Scratch stores embedding text and metadata content as well as base64-encoded
 vectors. An unavailable or full scratch directory fails preparation before
 publication. Compatible and owned stores retain previous vectors; an incompatible injected store is emptied before this preparation. Cleanup failures are logged without changing the build outcome.

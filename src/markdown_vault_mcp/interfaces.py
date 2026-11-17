@@ -689,6 +689,8 @@ class VectorPublisher(Protocol):
 
         A reader sees the previous generation until this returns; an
         interrupted publication leaves the previous generation in place.
+        *documents* is re-iterable; it does not promise a length, indexing,
+        or a meaningful truth value.
         """
         ...
 

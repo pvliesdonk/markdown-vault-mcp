@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import ReadOnlyError
-from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage, _misses
 from markdown_vault_mcp.interfaces import (
     IteratesChunks,
     ReadsMetadataInBatches,
@@ -284,25 +284,24 @@ class EmbeddingReconciler:
             holds rows for but with nothing embeddable (#1087) is present,
             with no texts.
         """
-        texts: dict[str, list[str]] = {}
-        metadata: dict[str, list[dict[str, Any]]] = {}
-        tokens: dict[str, RevisionToken] = {}
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for row in self._fts.list_chunks(paths=paths):
-            path = row["path"]
-            tokens[path] = row["content_hash"]
-            texts.setdefault(path, [])
-            metadata.setdefault(path, [])
+            grouped.setdefault(row["path"], []).append(row)
+        return {path: self._document(path, rows) for path, rows in grouped.items()}
+
+    def _document(self, path: str, rows: Iterable[dict[str, Any]]) -> _Document:
+        """Project grouped rows to one document's embedding inputs."""
+        texts: list[str] = []
+        metadata: list[dict[str, Any]] = []
+        token = ""
+        for row in rows:
+            token = row["content_hash"]
             item = self._embedding_input(row)
             if item is not None:
                 text, meta = item
-                texts[path].append(text)
-                metadata[path].append(meta)
-        return {
-            path: _Document(
-                path, tokens[path], tuple(texts[path]), tuple(metadata[path])
-            )
-            for path in tokens
-        }
+                texts.append(text)
+                metadata.append(meta)
+        return _Document(path, token, tuple(texts), tuple(metadata))
 
     def _embedding_input(
         self, row: dict[str, Any]
@@ -331,17 +330,7 @@ class EmbeddingReconciler:
         source = self._fts.iter_chunks()
         try:
             for path, rows in groupby(source, key=lambda row: row["path"]):
-                texts: list[str] = []
-                metadata: list[dict[str, Any]] = []
-                token = ""
-                for row in rows:
-                    token = row["content_hash"]
-                    item = self._embedding_input(row)
-                    if item is not None:
-                        text, meta = item
-                        texts.append(text)
-                        metadata.append(meta)
-                yield _Document(path, token, tuple(texts), tuple(metadata))
+                yield self._document(path, rows)
         finally:
             close = getattr(source, "close", None)
             if close is not None:
@@ -353,7 +342,7 @@ class EmbeddingReconciler:
         dimension: int,
         donor: Donor | None,
         reuse_own: bool,
-    ) -> Generator[tuple[_Document, dict[int, array[float]], list[str], int]]:
+    ) -> Generator[tuple[_Document, dict[int, array[float]], int]]:
         """Classify one bounded document window at a time."""
         with closing(self._build_documents()) as source:
             docs = (doc for doc in source if doc.texts)
@@ -364,8 +353,8 @@ class EmbeddingReconciler:
                 for doc, (_path, rows) in zip(window, stored, strict=True):
                     mine = stored_inputs(self._builder, rows)
                     given = donor.vectors_for(doc.path) if donor is not None else {}
-                    hits, wanted, donated = _split_document(doc, mine, given, dimension)
-                    yield doc, hits, [item[2] for item in wanted], donated
+                    hits, donated = _split_document(doc, mine, given, dimension)
+                    yield doc, hits, donated
 
     def reconcile(
         self,
@@ -688,8 +677,8 @@ class EmbeddingReconciler:
             with closing(
                 self._classified(store, identity.dimension, donor, reuse_own)
             ) as classified:
-                for doc, hits, wanted, from_donor in classified:
-                    stage.add(doc, hits, wanted)
+                for doc, hits, from_donor in classified:
+                    stage.add(doc, hits)
                     attempted += len(doc.texts)
                     reused += len(hits)
                     donated += from_donor
@@ -743,10 +732,10 @@ class EmbeddingReconciler:
         with closing(
             self._classified(store, identity.dimension, donor, reuse_own)
         ) as classified:
-            for doc, hits, wanted, _ in classified:
+            for doc, hits, _ in classified:
                 chunks += len(doc.texts)
                 reusable += len(hits)
-                to_embed += len(wanted)
+                to_embed += len(_misses(doc.texts, hits))
         return RebuildPreview(chunks, reusable, to_embed)
 
     def _embed_stage(self, stage: EmbeddingStage, dimension: int) -> tuple[int, int]:
@@ -823,30 +812,18 @@ def _split_document(
     mine: dict[str, Any],
     given: dict[str, Any],
     dimension: int,
-) -> tuple[
-    dict[int, array[float]], list[tuple[str, RevisionToken, str, dict[str, Any]]], int
-]:
-    """Sort one document's chunks: own rows first, then the donor's, else a miss.
-
-    Returns:
-        Chunk index to its found vector; the inputs to embed, each once; and
-        how many found vectors came from the donor.
-    """
+) -> tuple[dict[int, array[float]], int]:
+    """Find own then donor vectors for one document's chunk inputs."""
     found: dict[int, array[float]] = {}
-    misses: list[tuple[str, RevisionToken, str, dict[str, Any]]] = []
-    wanted: set[str] = set()
     donated = 0
-    for index, (text, meta) in enumerate(zip(doc.texts, doc.metadata, strict=True)):
+    for index, text in enumerate(doc.texts):
         vector = _sized(mine.get(text), dimension)
         if vector is None:
             vector = _sized(given.get(text), dimension)
             donated += vector is not None
         if vector is not None:
             found[index] = vector
-        elif text not in wanted:
-            wanted.add(text)
-            misses.append((doc.path, doc.token, text, meta))
-    return found, misses, donated
+    return found, donated
 
 
 def _float32_rows(
