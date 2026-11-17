@@ -39,7 +39,7 @@ def page(browser: Browser) -> Iterator[Page]:
     instance.close()
 
 
-def _open_vault(page: Page) -> Frame:
+def _open_vault(page: Page, csp: str | None = None) -> Frame:
     """Load the served app with only synthetic host transport and no network."""
     host = (_ROOT / "tests/fixtures/vault_app_host.html").read_text()
     app = (_ROOT / "src/markdown_vault_mcp/static/app.html").read_text()
@@ -49,11 +49,17 @@ def _open_vault(page: Page) -> Frame:
         lambda route: route.fulfill(
             content_type="text/html",
             body=app if route.request.url.endswith("/app.html") else host,
+            headers={"Content-Security-Policy": csp}
+            if csp and route.request.url.endswith("/app.html")
+            else {},
         ),
     )
     page.goto("https://vault.test/")
     frame = page.frames[1]
-    frame.wait_for_function("window.vaultApp?.getHostContext()?.theme === 'light'")
+    if csp:
+        page.wait_for_timeout(500)
+    else:
+        frame.wait_for_function("window.vaultApp?.getHostContext()?.theme === 'light'")
     return frame
 
 
@@ -104,3 +110,30 @@ def test_search_name_survives_populated_value(page: Page) -> None:
         search.fill(query)
         assert search.input_value() == query
         assert 'textbox "Search vault"' in search.aria_snapshot()
+
+
+def test_embedded_fonts_load_under_strict_csp(page: Page) -> None:
+    """All five binary faces load without requests under the host font policy."""
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url))
+    page.add_init_script(
+        "window.violations = []; document.addEventListener('securitypolicyviolation', e => window.violations.push(e.violatedDirective))"
+    )
+    csp = "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'"
+    frame = _open_vault(page, csp)
+    frame.evaluate("() => document.fonts.ready")
+    assert frame.evaluate(
+        "() => [...document.fonts].length === 5 && [...document.fonts].every(f => f.status === 'loaded')"
+    )
+    assert frame.evaluate("""() => [
+        document.fonts.check('600 17px Newsreader'),
+        document.fonts.check('500 13px "Public Sans"'),
+        document.fonts.check('600 12px "IBM Plex Mono"'),
+    ]""") == [True, True, True]
+    assert frame.evaluate("() => window.violations") == []
+    assert sorted(requests) == ["https://vault.test/", "https://vault.test/app.html"]
+    frame.evaluate("""() => { const s = document.createElement('style');
+      s.textContent = '@font-face { font-family: Control; src: url(data:font/woff2;base64,AA==) } body { font-family: Control }';
+      document.head.append(s); }""")
+    page.wait_for_timeout(200)
+    assert "font-src" in frame.evaluate("() => window.violations")

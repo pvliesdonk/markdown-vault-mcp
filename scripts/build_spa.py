@@ -9,6 +9,7 @@ self-contained file that ``scripts/vendor_spa.py`` then vendors into the served
 
     spa/*  ->  build_spa.py  ->  app.src.html  ->  vendor_spa.py  ->  app.html
 
+Binary ``/*@@B64:relpath@@*/`` markers embed local WOFF2 files as base64.
 Assembly is a recursive include: every ``/*@@FILE:relpath@@*/`` marker in a
 partial is replaced by the verbatim bytes of ``spa/relpath``.  The marker is a
 valid comment in both CSS (inside ``<style>``) and JavaScript (inside
@@ -31,11 +32,13 @@ Usage::
 
 from __future__ import annotations
 
+import base64
 import re
 import sys
 from pathlib import Path
 
 # A ``/*@@FILE:path@@*/`` include marker — valid comment in CSS and JS alike.
+_B64_MARKER = re.compile(r"/\*@@B64:([^@]+?)@@\*/")
 _MARKER = re.compile(r"/\*@@FILE:([^@]+?)@@\*/")
 
 # Guard against a partial including itself (directly or via a cycle).
@@ -82,12 +85,24 @@ def _read_partial(spa_dir: Path, rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _read_binary_partial(spa_dir: Path, rel: str) -> str:
+    path = (spa_dir / rel).resolve()
+    if not path.is_relative_to(spa_dir.resolve()):
+        raise SystemExit(f"ERROR: include escapes spa/ dir: {rel}")
+    if path.suffix != ".woff2" or not path.is_file():
+        raise SystemExit(f"ERROR: invalid or missing WOFF2 include: {rel}")
+    return base64.b64encode(path.read_bytes()).decode("ascii")
+
+
 def assemble(spa_dir: Path) -> str:
     """Return the assembled ``app.src.html`` text from ``spa/shell.html``."""
 
     def expand(text: str, depth: int) -> str:
         if depth > _MAX_DEPTH:
             raise SystemExit("ERROR: include recursion too deep (cycle?)")
+        text = _B64_MARKER.sub(
+            lambda m: _read_binary_partial(spa_dir, m.group(1).strip()), text
+        )
         return _MARKER.sub(
             lambda m: expand(_read_partial(spa_dir, m.group(1).strip()), depth + 1),
             text,
@@ -104,6 +119,8 @@ def assemble(spa_dir: Path) -> str:
             "ERROR: an @@FILE include marker survived assembly — check for a "
             "malformed /*@@FILE:path@@*/ marker in the spa/ partials."
         )
+    if "@@B64" in result:
+        raise SystemExit("ERROR: an @@B64 include marker survived assembly")
     if not result.startswith(_DOCTYPE):
         raise SystemExit("ERROR: spa/shell.html must begin with '<!DOCTYPE html>'.")
     return _DOCTYPE + _GENERATED_BANNER + result[len(_DOCTYPE) :]

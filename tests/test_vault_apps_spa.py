@@ -100,7 +100,18 @@ def test_declared_csp_origins_reach_the_app_resource() -> None:
     assert config.csp is not None
     domains = config.csp.resource_domains
     assert domains == vault_apps._CDN_RESOURCE_DOMAINS
-    assert sorted(domains) == [
-        "https://fonts.googleapis.com",
-        "https://fonts.gstatic.com",
-    ]
+    assert domains == []
+
+
+def test_served_spa_contains_font_licenses() -> None:
+    """The served HTML carries the families and their complete licenses."""
+    html = apps._SPA_SHELL_HTML
+    assert 'rel="preconnect"' not in html
+    for family in ("Newsreader", "Public Sans", "IBM Plex Mono"):
+        assert family in html
+    fonts = (
+        Path(__file__).resolve().parent.parent
+        / "src/markdown_vault_mcp/static/spa/fonts"
+    )
+    for notice in fonts.glob("OFL-*.txt"):
+        assert notice.read_text() in html

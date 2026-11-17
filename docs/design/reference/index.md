@@ -8,6 +8,7 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [MCP Apps font loading under CSP](mcp-apps-fonts.md) — binary font sources, CSP and font licenses.
 - [LEANN query-time embedding recomputation](leann.md) — the external
   technique behind the deferred #1368 proposal; project revisit criteria
   remain in the embedding-store design.

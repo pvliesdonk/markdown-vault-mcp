@@ -160,3 +160,50 @@ def test_find_spa_dir_errors_when_multiple(
         (d / "shell.html").write_text("<!DOCTYPE html>\n", encoding="utf-8")
     with pytest.raises(SystemExit, match=r"multiple .*shell\.html found"):
         build_spa._find_spa_dir()
+
+
+def test_binary_include_embeds_bytes(spa_copy: Path) -> None:
+    """Binary markers embed the exact asset bytes as base64."""
+    (spa_copy / "sample.woff2").write_bytes(b"\x00\xfftest")
+    _patch_shell(spa_copy, "/*@@FILE:core.js@@*/", "/*@@B64:sample.woff2@@*/")
+    assert "AP90ZXN0" in build_spa.assemble(spa_copy)
+
+
+@pytest.mark.parametrize("path", ["../escape.woff2", "missing.woff2", "styles.css"])
+def test_binary_include_rejects_invalid_paths(spa_copy: Path, path: str) -> None:
+    """Binary includes must be existing WOFF2 files inside the SPA."""
+    _patch_shell(spa_copy, "/*@@FILE:core.js@@*/", f"/*@@B64:{path}@@*/")
+    with pytest.raises(SystemExit):
+        build_spa.assemble(spa_copy)
+
+
+def test_font_sources_match_hashes() -> None:
+    """The vendored font bytes match the recorded package hashes."""
+    import hashlib
+
+    fonts = _REAL_SPA / "fonts"
+    sources = (fonts / "SOURCES.md").read_text()
+    for font in fonts.glob("*.woff2"):
+        assert font.name in sources
+        assert hashlib.sha256(font.read_bytes()).hexdigest() in sources
+
+
+@pytest.mark.parametrize(
+    "asset", ["newsreader-latin-opsz-normal.woff2", "OFL-newsreader.txt"]
+)
+def test_check_detects_changed_font_assets(
+    spa_copy: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, asset: str
+) -> None:
+    """Changes to font data or its license invalidate the assembled source."""
+    (tmp_path / "app.src.html").write_text(build_spa.assemble(spa_copy))
+    monkeypatch.setattr(build_spa, "_find_spa_dir", lambda: spa_copy)
+    path = spa_copy / "fonts" / asset
+    path.write_bytes(path.read_bytes() + b"x")
+    assert build_spa.main(["build_spa.py", "--check"]) == 1
+
+
+def test_assemble_rejects_malformed_binary_marker(spa_copy: Path) -> None:
+    """A malformed binary marker cannot survive into the output."""
+    _patch_shell(spa_copy, "/*@@FILE:core.js@@*/", "/*@@B64 missing.woff2@@*/")
+    with pytest.raises(SystemExit, match="@@B64 include marker survived"):
+        build_spa.assemble(spa_copy)

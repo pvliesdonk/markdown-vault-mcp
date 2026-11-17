@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-16
+
+- New: [MCP Apps font loading under CSP](mcp-apps-fonts.md), for #1198. Read the MCP Apps and CSS Font Loading specifications and package licenses; checked Chromium under a strict font policy. Next review: 2027-05-16.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
