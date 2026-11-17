@@ -59,7 +59,7 @@
       : '';
     // The supplied field is a claim, not evidence about the displayed content.
     const review = Object.prototype.hasOwnProperty.call(fm, 'verified')
-      ? '<p>Recorded review metadata (verified). Applicability to current content: unknown.</p>'
+      ? '<p>Supplied verified field. Review applicability to current content: unknown.</p>'
       : '';
     return review + '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
   }

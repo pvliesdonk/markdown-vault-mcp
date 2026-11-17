@@ -1055,8 +1055,8 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
     the current bytes and is overwritten with the instant of this write —
     "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
+    write; ``verified`` is dropped without assessing whether a prior review
+    applies; ``sources`` and every other field are untouched.
 
     Args:
         text: The full note file text (frontmatter and body).

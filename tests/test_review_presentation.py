@@ -15,6 +15,9 @@ from markdown_vault_mcp._cli_output import render_reply
 from markdown_vault_mcp._cli_remote import RemoteReply
 
 _NOTICE = "Applicability to current content: unknown."
+_APP_NOTICE = (
+    "Supplied verified field. Review applicability to current content: unknown."
+)
 
 
 @pytest.mark.parametrize("tier", ["human-reviewed", "machine-confirmed", "unverified"])
@@ -151,10 +154,9 @@ def test_app_review_notice_is_visible_and_preserves_supplied_metadata(
     assert after == inputs
     for index, html in enumerate(rendered):
         if index == 1:
-            assert _NOTICE not in html
+            assert _APP_NOTICE not in html
             continue
-        assert "Recorded review metadata (verified)." in html
-        assert _NOTICE in html
+        assert _APP_NOTICE in html
         assert "human-reviewed" not in html
     assert "human:&lt;reviewer&gt;" in rendered[0]
     assert "2099-01-01" in rendered[0]
@@ -163,7 +165,7 @@ def test_app_review_notice_is_visible_and_preserves_supplied_metadata(
     if view == "note":
         # The warning sits before the collapsed property container, even when
         # the verified field itself is beyond the three initially shown rows.
-        assert rendered[0].index(_NOTICE) < rendered[0].index('id="preview-props"')
+        assert rendered[0].index(_APP_NOTICE) < rendered[0].index('id="preview-props"')
         assert "html += renderProps(data.frontmatter)" in source
     else:
         assert (

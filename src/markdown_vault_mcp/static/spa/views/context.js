@@ -56,7 +56,7 @@
     if (fm.status != null) html += '<span class="chip">' + escapeHtml(String(fm.status)) + '</span>';
     // Describe the supplied field without authenticating it or assessing validity.
     if (Object.prototype.hasOwnProperty.call(fm, 'verified')) {
-      html += '<span class="chip">Recorded review metadata (verified). Applicability to current content: unknown.</span>';
+      html += '<span class="chip">Supplied verified field. Review applicability to current content: unknown.</span>';
     }
     return html;
   }

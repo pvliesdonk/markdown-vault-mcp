@@ -474,9 +474,9 @@ def register(mcp: FastMCP) -> None:
               OKF (Open Knowledge Format) bundle. Carries mode,
               declared_version, a per-`type` histogram plus untyped_count,
               status and recorded-review trust-tier breakdowns, and stale_count.
-              These classifications do not establish review applicability to
-              current content. Those cover
-              the note population 'okf_validate' audits; the reserved
+              These counts cover the note population 'okf_validate' audits;
+              the classifications do not establish review applicability to
+              current content. The reserved
               `index.md` / `log.md` files are counted apart as
               reserved_count.
 
