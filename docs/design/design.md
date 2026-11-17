@@ -1947,7 +1947,12 @@ the spec itself says, dated and sourced, in
   breakdowns, stale count — aggregated from the same `documents` rows
   `stats` already reads, minus the reserved files, which are counted
   apart as `reserved_count` so the histograms cover the same note
-  population `okf_validate` audits); `config://vault` reports `okf_mode` /
+  population `okf_validate` audits). Its `write_configured` reports the
+  vault's configured `OKF_WRITE` flag and `write_effective` is true only
+  when that flag is enabled, OKF detection is active, and the vault is not
+  read-only. The section remains absent when OKF is inactive.
+  `config://vault` reports those same values as `okf_write_configured` and
+  `okf_write_effective`, including when inactive, and reports `okf_mode` /
   `okf_active` / `okf_declared_version`; the default server instructions
   gain an OKF guidance sentence whenever the mode permits detection
   (same pre-clone rationale as the conventions sentence).

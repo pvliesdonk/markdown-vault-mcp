@@ -420,6 +420,7 @@ class Vault:
         self._embeddings_path = settings.effective_embeddings_path()
         self._embedding_batch_size = settings.embedding_batch_size
         self._read_only = settings.read_only
+        self._okf_write_configured = settings.okf_write
         self._write_protect_existing = settings.write_protect_existing
         self._report_unresolved_links = settings.report_unresolved_links
         # OKF detection (disk probe, index-independent). When read semantics
@@ -877,6 +878,18 @@ class Vault:
     def okf(self) -> OkfDetector:
         """OKF detection probe (disk-read, index-independent)."""
         return self._okf
+
+    def okf_write_state(self, *, active: bool) -> tuple[bool, bool]:
+        """Return configured and effective OKF write-layer state.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Configured OKF write flag and whether the layer is effective.
+        """
+        configured = self._okf_write_configured
+        return configured, configured and active and not self._read_only
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).

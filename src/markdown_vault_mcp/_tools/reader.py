@@ -474,7 +474,9 @@ def register(mcp: FastMCP) -> None:
               status and trust-tier breakdowns, and stale_count. Those cover
               the note population 'okf_validate' audits; the reserved
               `index.md` / `log.md` files are counted apart as
-              reserved_count.
+              reserved_count. write_configured is the configured OKF write
+              flag; write_effective is true when that flag is enabled, OKF
+              is active, and the vault is not read-only.
 
             Index freshness rides in the response's `_meta.index_stale`
             field: True when the IndexWriter was non-idle, a write completed
@@ -487,6 +489,9 @@ def register(mcp: FastMCP) -> None:
         payload = asdict(result)
         okf_section = await asyncio.to_thread(vault.reader.okf_stats)
         if okf_section is not None:
+            configured, effective = vault.okf_write_state(active=True)
+            okf_section["write_configured"] = configured
+            okf_section["write_effective"] = effective
             payload["okf"] = okf_section
         return _staleness_result(
             vault, payload, drained_on_request=drained, gen_before=gen_before
