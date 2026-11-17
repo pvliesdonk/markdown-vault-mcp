@@ -276,7 +276,7 @@ class EmbeddingsManager:
         self._require_vectors()
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
-        recovering = self._slot.condemn_suspect()
+        self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
         except StoreIncompatibleError:
@@ -285,7 +285,7 @@ class EmbeddingsManager:
         # only this check finds it; the cold build would call back here.
         if store.count and not self._slot.answers(store):
             return self._rebuild_changed_identity()
-        return self.build_embeddings(_recovery=_strict and recovering)
+        return self.build_embeddings(_recovery=_strict)
 
     def _rebuild_changed_identity(
         self, *, donor: Donor | None = None, reuse_own: bool = False
