@@ -2121,7 +2121,7 @@ class FTSIndex:
         Returns:
             Mapping from each live path to its stored JSON, including nulls.
         """
-        paths_list = list(dict.fromkeys(paths))
+        paths_list = list(paths)
 
         def _do() -> dict[str, str | None]:
             conn = self._conn()

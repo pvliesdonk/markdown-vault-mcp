@@ -27,6 +27,7 @@ from markdown_vault_mcp.exceptions import (
     StoreCorruptError,
     StoreOpenError,
 )
+from markdown_vault_mcp.interfaces import FetchesFrontmatterBatch
 from markdown_vault_mcp.managers._ranking import (
     ChannelRow as _ChannelRow,
 )
@@ -702,8 +703,8 @@ class SearchManager:
         """Widen a candidate pool when a post-filter will thin it.
 
         Frontmatter and OKF dimensions are evaluated after the pool is
-        capped (each needs a per-path lookup, so they cannot ride along in
-        the similarity scan), and every candidate they discard is one the
+        capped (the vector store lacks their metadata), and every candidate
+        they discard is one the
         result list never gets back.  Widening mitigates that; it does not
         remove it.  The folder scope is treated exactly instead — it is
         passed to the store as ``folder`` — so it is deliberately not a
@@ -735,8 +736,8 @@ class SearchManager:
         dimensions are checked after the fact: *filters* against
         frontmatter via :meth:`_row_matches_filters` (any frontmatter key —
         not limited to ``indexed_frontmatter_fields``), *okf_filters*
-        against the OKF annotations. Frontmatter is fetched in batches for
-        distinct paths; OKF checks are memoized per path. Callers widen the
+        against the OKF annotations. Both use frontmatter fetched in batches
+        for distinct paths; their verdicts are memoized per path. Callers widen the
         candidate pool for these post-filters (see :meth:`_widen_for_post_filter`).
 
         The folder scope is deliberately absent: it is applied inside
@@ -755,11 +756,10 @@ class SearchManager:
         """
         okf_filters = okf_filters or {}
         frontmatter: dict[str, str | None] = {}
-        if filters and raw:
+        if (filters or okf_filters) and raw:
             paths = dict.fromkeys(r["path"] for r in raw)
-            batch = getattr(self._fts, "get_frontmatter_batch", None)
-            if callable(batch):
-                frontmatter = batch(paths)
+            if isinstance(self._fts, FetchesFrontmatterBatch):
+                frontmatter = self._fts.get_frontmatter_batch(paths)
             else:
                 for path in paths:
                     note = self._fts.get_note(path)
@@ -772,16 +772,19 @@ class SearchManager:
             if filters:
                 path = r["path"]
                 if path not in filter_verdicts:
-                    filter_verdicts[path] = (
-                        path in frontmatter
-                        and self._row_matches_filters(frontmatter[path], filters)
+                    filter_verdicts[path] = self._row_matches_filters(
+                        frontmatter.get(path), filters
                     )
                 if not filter_verdicts[path]:
                     continue
             if okf_filters:
                 verdict = okf_verdicts.get(r["path"])
                 if verdict is None:
-                    verdict = self._path_matches_okf(r["path"], okf_filters)
+                    path = r["path"]
+                    verdict = path in frontmatter and matches_okf_filters(
+                        self._parse_frontmatter_json(frontmatter[path], path),
+                        okf_filters,
+                    )
                     okf_verdicts[r["path"]] = verdict
                 if not verdict:
                     continue

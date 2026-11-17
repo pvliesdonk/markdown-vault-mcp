@@ -560,9 +560,9 @@ similarity pass is a full dot product over every stored chunk regardless
 of `limit`; a streamed store filters the scope in SQL, and a predicate
 costs it decoding each batch's metadata (Search memory, below). Folder is the
 dimension that rides along, because every backend holds it beside the
-vector; frontmatter and OKF
-dimensions stay post-hoc (per-path lookups are too expensive to run over
-every chunk — see #875) and keep the widening.
+vector; frontmatter and OKF dimensions stay post-hoc because the store does
+not carry their metadata, and keep the widening. Their candidate frontmatter
+is fetched in bounded batches (#875).
 
 `get_similar` still widens ×4 when a folder is given, for a different
 reason than the post-filter one: grouping keeps only `chunks_per_file`

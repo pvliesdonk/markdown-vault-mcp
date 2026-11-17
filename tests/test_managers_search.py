@@ -2023,7 +2023,10 @@ def test_post_filter_custom_index_fallback_memoizes_paths(
     monkeypatch.setattr(search_mgr, "_fts", legacy)
     rows = [{"path": p} for p in ("a.md", "a.md", "missing.md", "missing.md")]
     assert (
-        search_mgr._post_filter_semantic_rows(rows, filters={"tag": "yes"}) == rows[:2]
+        search_mgr._post_filter_semantic_rows(
+            rows, filters={"tag": "yes"}, okf_filters={"status": "stable"}
+        )
+        == rows[:2]
     )
     assert legacy.calls == ["a.md", "missing.md"]
 
@@ -2041,3 +2044,37 @@ def test_batch_frontmatter_respects_sqlite_variable_limit(
         assert index.get_frontmatter_batch(paths) == {}
     finally:
         conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, old_limit)
+
+
+def test_post_filter_reuses_batch_for_plain_and_okf_filters(
+    search_mgr: SearchManager,
+) -> None:
+    conn = search_mgr._fts._conn()
+    queries: list[str] = []
+    rows = [{"path": p} for p in ("alpha.md", "beta.md", "alpha.md", "missing.md")]
+    conn.set_trace_callback(queries.append)
+    try:
+        result = search_mgr._post_filter_semantic_rows(
+            rows, filters={"tags": "b"}, okf_filters={"status": "stable"}
+        )
+    finally:
+        conn.set_trace_callback(None)
+    assert result == rows[:3]
+    assert len([q for q in queries if "FROM documents_live" in q]) == 1
+
+
+def test_post_filter_okf_only_batches_and_excludes_missing(
+    search_mgr: SearchManager,
+) -> None:
+    conn = search_mgr._fts._conn()
+    queries: list[str] = []
+    rows = [{"path": p} for p in ("alpha.md", "missing.md", "alpha.md")]
+    conn.set_trace_callback(queries.append)
+    try:
+        result = search_mgr._post_filter_semantic_rows(
+            rows, filters=None, okf_filters={"status": "stable"}
+        )
+    finally:
+        conn.set_trace_callback(None)
+    assert result == [rows[0], rows[2]]
+    assert len([q for q in queries if "FROM documents_live" in q]) == 1

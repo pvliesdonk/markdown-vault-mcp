@@ -285,6 +285,10 @@ def _check_get_note(idx: FTSIndex) -> None:
     assert idx.get_note(TOMB) is None
 
 
+def _check_get_frontmatter_batch(idx: FTSIndex) -> None:
+    assert TOMB not in idx.get_frontmatter_batch(["sub/live.md", TOMB])
+
+
 def _check_list_notes(idx: FTSIndex) -> None:
     assert {r["path"] for r in idx.list_notes()} == {"sub/live.md", "sub/other.md"}
 
@@ -366,6 +370,7 @@ def _check_get_outlinks(idx: FTSIndex) -> None:
     "check",
     [
         _check_get_note,
+        _check_get_frontmatter_batch,
         _check_list_notes,
         _check_list_notes_folder,
         _check_list_folders,

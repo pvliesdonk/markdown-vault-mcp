@@ -347,15 +347,26 @@ def test_get_frontmatter_batch_retries_generator(tmp_path: Path) -> None:
     try:
         for path in ("a.md", "b.md"):
             fts.upsert_note(parse_note(tmp_path / path, tmp_path))
-        state = {"failed": False}
+        state = {"failed": False, "selects": 0}
         real_conn = fts._conn
+        real_conn().setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 1)
+
+        class FailSecondBatch(_WrappedConnection):
+            def execute(self, sql: str, *params: object) -> sqlite3.Cursor:
+                if "SELECT path, frontmatter_json" in sql:
+                    state["selects"] += 1
+                    if state["selects"] == 2:
+                        state["failed"] = True
+                        raise sqlite3.OperationalError("database table is locked")
+                return self._real.execute(sql, *params)  # type: ignore[no-any-return]
 
         def wrapped_conn() -> _WrappedConnection:
-            return _WrappedConnection(real_conn(), state, "SELECT")
+            return FailSecondBatch(real_conn(), state, "never matches")
 
         with patch.object(fts, "_conn", wrapped_conn):
             result = fts.get_frontmatter_batch(p for p in ("a.md", "b.md"))
         assert state["failed"]
+        assert state["selects"] == 4
         assert set(result) == {"a.md", "b.md"}
     finally:
         fts.close()
