@@ -52,6 +52,7 @@ from markdown_vault_mcp.git._run import (
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.health import SyncHealth, SyncHealthTracker
 from markdown_vault_mcp.git.interfaces import (
+    BatchVersioner,
     HistorySource,
     RevisionReader,
     Syncer,
@@ -94,6 +95,7 @@ __all__ = [
     "PUSH_REASON_NO_REMOTE",
     "PUSH_REASON_PUSH_FAILED",
     "REMOTE_STATE_UNSYNCED",
+    "BatchVersioner",
     "GitWriteStrategy",
     "HistorySource",
     "PullResult",

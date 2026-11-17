@@ -8,7 +8,8 @@ plus the push execution paths (:meth:`PushScheduler.do_push_safe`,
 :class:`~markdown_vault_mcp.git.strategy.GitWriteStrategy` — the same object,
 so the documented lock-ordering contracts of the pull/write paths still hold.
 
-The module-level :func:`_push` helper (GIT_ASKPASS-authenticated
+Backend push and startup-probe callables can be injected; the defaults use
+the git CLI. The module-level :func:`_push` helper (GIT_ASKPASS-authenticated
 ``git push origin``) also lives here; tests patch it as
 ``markdown_vault_mcp.git.push_scheduler._push``.
 """
@@ -31,6 +32,8 @@ from markdown_vault_mcp.git.health import one_line, push_failure_reason
 from markdown_vault_mcp.git.types import PUSH_REASON_PUSH_FAILED
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from markdown_vault_mcp.git.bootstrap import RepoBootstrap
     from markdown_vault_mcp.git.health import SyncHealthTracker
 
@@ -64,6 +67,8 @@ class PushScheduler:
         enable_push: Whether deferred push behaviour is enabled at all.
         push_delay_s: Seconds of idle before the timer pushes.  ``0``
             disables the timer (push only on ``flush``/``close``).
+        push: Backend push operation; defaults to the git CLI.
+        has_unpushed: Startup probe; defaults to the git CLI.
     """
 
     def __init__(
@@ -74,7 +79,11 @@ class PushScheduler:
         health: SyncHealthTracker,
         enable_push: bool,
         push_delay_s: float,
+        push: Callable[[Path], None] | None = None,
+        has_unpushed: Callable[[Path], bool] | None = None,
     ) -> None:
+        self._push = push
+        self._has_unpushed = has_unpushed
         self._lock = lock
         self._bootstrap = bootstrap
         self._health = health
@@ -175,7 +184,7 @@ class PushScheduler:
             if not self._enable_push or not self._push_pending or git_root is None:
                 return
             try:
-                _push(git_root, self._token, self._username)
+                self._run_push(git_root)
             except subprocess.CalledProcessError as exc:
                 # The stderr travels with the reason: ``push_failed`` is the
                 # bucket every unrecognised message lands in, so the reason
@@ -204,37 +213,11 @@ class PushScheduler:
         if git_root is None or not self._enable_push:
             return
 
-        try:
-            ref = resolve_tracking_ref(git_root)
-            if ref is None:
-                # No remote-tracking ref resolvable — not an error at startup.
-                logger.debug("git_push_no_remote_ref")
-                return
-            result = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(git_root),
-                    "log",
-                    "--oneline",
-                    f"{ref}..HEAD",
-                ],
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            logger.debug("git_push_skipped reason=git_not_found")
-            return
-
-        if result.returncode != 0:
-            # No remote-tracking ref or no remote — not an error at startup.
-            logger.debug("git_push_no_remote_ref")
-            return
-
-        if result.stdout.strip():
+        probe = self._has_unpushed or _has_unpushed_commits
+        if probe(git_root):
             logger.info("git_startup_push_pending")
             try:
-                _push(git_root, self._token, self._username)
+                self._run_push(git_root)
             except subprocess.CalledProcessError as exc:
                 sanitized_stderr = self._redact(exc.stderr or "")
                 # WARNING for the same reason as the deferred-push leg
@@ -252,6 +235,13 @@ class PushScheduler:
             else:
                 self._health.push_succeeded()
 
+    def _run_push(self, git_root: Path) -> None:
+        """Run the injected operation or resolve the CLI helper at call time."""
+        if self._push is not None:
+            self._push(git_root)
+        else:
+            _push(git_root, self._token, self._username)
+
     def flush(self) -> None:
         """Block until any pending push completes.
 
@@ -266,6 +256,27 @@ class PushScheduler:
 
         if pending and self._git_root is not None:
             self.do_push_safe()
+
+
+def _has_unpushed_commits(git_root: Path) -> bool:
+    """Check the CLI tracking ref for local commits to push."""
+    try:
+        ref = resolve_tracking_ref(git_root)
+        if ref is None:
+            logger.debug("git_push_no_remote_ref")
+            return False
+        result = subprocess.run(
+            ["git", "-C", str(git_root), "log", "--oneline", f"{ref}..HEAD"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        logger.debug("git_push_skipped reason=git_not_found")
+        return False
+    if result.returncode != 0:
+        logger.debug("git_push_no_remote_ref")
+        return False
+    return bool(result.stdout.strip())
 
 
 def _push(git_root: Path, token: str | None, username: str = "x-access-token") -> None:

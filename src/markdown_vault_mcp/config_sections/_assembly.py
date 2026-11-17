@@ -42,7 +42,7 @@ from markdown_vault_mcp.utils.fs import is_directory
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.git.interfaces import VersionedStore
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
     from markdown_vault_mcp.types import WriteCallback
@@ -170,8 +170,10 @@ def _build_git_strategy(
     managed: bool,
     enable_sync: bool,
     repo_url: str | None = None,
-) -> GitWriteStrategy:
-    """Build a GitWriteStrategy with the kwargs shared across all three git modes.
+) -> VersionedStore:
+    """Build the store with the kwargs shared across all three git modes.
+
+    This is the single construction point for a future backend branch.
 
     ``enable_sync`` toggles both pull and push together — every call site enables
     or disables them in lockstep.
@@ -224,7 +226,7 @@ class VaultInstances:
 
     embedding_provider: EmbeddingProvider | None
     summarizer: Summarizer | None
-    git_strategy: GitWriteStrategy
+    git_strategy: VersionedStore
     on_write: WriteCallback | None
     git_pull_interval_s: int
 
@@ -372,8 +374,8 @@ def _resolve_summarizer(config: ProjectConfig) -> Summarizer | None:
         return None
 
 
-def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
-    """Build the git strategy for the configured mode, with the pull interval.
+def _resolve_git(config: ProjectConfig) -> tuple[VersionedStore, int]:
+    """Resolve the store and pull interval through the single builder.
 
     Args:
         config: The served project configuration.

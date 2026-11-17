@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     import contextlib
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
@@ -36,10 +36,12 @@ if TYPE_CHECKING:
         CommitDiff,
         HistoryEntry,
         RevisionContent,
+        WriteBatchItem,
         WriteOperation,
     )
 
 __all__ = [
+    "BatchVersioner",
     "HistorySource",
     "RevisionReader",
     "SyncHealthReporter",
@@ -337,7 +339,8 @@ class Versioner(Protocol):
     write-callback dispatcher already types against — the two are
     interchangeable, since protocols match by shape.  Restated here rather
     than subclassed so this module needs no runtime import, keeping the seam
-    depending on nothing but ``typing``.
+    depending on nothing but ``typing``. Optional batching is declared by
+    :class:`BatchVersioner`.
     """
 
     accepts_principal: bool
@@ -359,6 +362,27 @@ class Versioner(Protocol):
             operation: Which kind of write occurred.
             old_path: The previous path, for a rename.
             principal: Who performed the write, for attribution.
+        """
+        ...
+
+
+@runtime_checkable
+class BatchVersioner(Versioner, Protocol):
+    """A versioner that optionally batches writes in a tool call.
+
+    Per-write ``__call__`` remains required. Batching is used only when
+    ``accepts_batch`` is true; ``accepts_primary_paths`` is a further opt-in
+    documented in :mod:`markdown_vault_mcp.types`.
+    """
+
+    accepts_batch: bool
+
+    def on_write_batch(self, items: Sequence[WriteBatchItem], tool_name: str) -> None:
+        """Handle a batch of writes from one tool call.
+
+        Args:
+            items: Writes in their original order.
+            tool_name: The tool that produced the writes.
         """
         ...
 
