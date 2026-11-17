@@ -1089,6 +1089,9 @@ class PrimaryAwareBatchWriteCallback(Protocol):
         ...
 
 
+ACCEPTS_FOLDER_MOVE_ATTR = "accepts_folder_move"
+
+
 class FolderMoveAwareBatchWriteCallback(Protocol):
     """A batch callback accepting folder move provenance."""
 

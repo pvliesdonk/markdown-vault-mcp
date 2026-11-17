@@ -807,23 +807,28 @@ class TestBatchCommitsForReal:
             strategy.close()
         assert strategy.called
 
-    def test_folder_move_escapes_control_characters_in_subject(
-        self, tmp_path: Path
+    @pytest.mark.parametrize(
+        ("old", "new", "expected"),
+        [
+            ("a\n\nsource", "b\tdest", 'move_folder: "a\\n\\nsource" -> "b\\tdest"'),
+            ("a", "archive ", 'move_folder: a -> "archive "'),
+        ],
+    )
+    def test_folder_move_escapes_unusual_subject_paths(
+        self, tmp_path: Path, old: str, new: str, expected: str
     ) -> None:
         """Both valid folder names remain visible in Git's one-line subject."""
         from markdown_vault_mcp.git._run import run_git
 
         repo = _repo(tmp_path)
-        (repo / "a\n\nsource").mkdir()
-        (repo / "a\n\nsource" / "x.md").write_text("x\n", encoding="utf-8")
+        (repo / old).mkdir()
+        (repo / old / "x.md").write_text("x\n", encoding="utf-8")
         run_git(str(repo), "add", "--all")
         run_git(str(repo), "commit", "-m", "folder")
         self._run_in_scope(
-            repo,
-            "move_folder",
-            lambda v: v.writer.move_folder("a\n\nsource", "b\tdest"),
+            repo, "move_folder", lambda v: v.writer.move_folder(old, new)
         )
-        assert _subjects(repo)[0] == 'move_folder: "a\\n\\nsource" -> "b\\tdest"'
+        assert _subjects(repo)[0] == expected
 
     def test_single_file_folder_move_names_folders(self, tmp_path: Path) -> None:
         """A folder containing one file still names the folder roots."""

@@ -38,6 +38,7 @@ from markdown_vault_mcp._commit_scope import (
 from markdown_vault_mcp._identity import current_principal
 from markdown_vault_mcp.types import (
     ACCEPTS_BATCH_ATTR,
+    ACCEPTS_FOLDER_MOVE_ATTR,
     ACCEPTS_OLD_PATH_ATTR,
     ACCEPTS_PRIMARY_PATHS_ATTR,
     ACCEPTS_PRINCIPAL_ATTR,
@@ -266,7 +267,7 @@ class WriteCallbackDispatcher:
             # so reaching here means ``on_write_batch`` exists.
             batch_method = getattr(on_write, "on_write_batch", None)
             if scope.folder_move is not None and getattr(
-                batch_method, "accepts_folder_move", False
+                batch_method, ACCEPTS_FOLDER_MOVE_ATTR, False
             ):
                 folder_batch = cast("FolderMoveAwareBatchWriteCallback", on_write)
                 folder_batch.on_write_batch(

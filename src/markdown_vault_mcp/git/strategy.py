@@ -75,6 +75,7 @@ from markdown_vault_mcp.git.types import (
     PullResult,
     PushResult,
 )
+from markdown_vault_mcp.types import ACCEPTS_FOLDER_MOVE_ATTR
 
 logger = logging.getLogger(__name__)
 
@@ -2018,7 +2019,7 @@ class GitWriteStrategy:
 
 
 # An override must opt in itself; inherited methods retain this capability.
-GitWriteStrategy.on_write_batch.accepts_folder_move = True  # type: ignore[attr-defined]
+setattr(GitWriteStrategy.on_write_batch, ACCEPTS_FOLDER_MOVE_ATTR, True)
 
 
 def git_write_strategy(
@@ -2430,7 +2431,11 @@ def _write_subject(
 def _folder_subject_path(path: Path) -> str:
     """Keep unusual names identifiable on a single subject line."""
     name = str(path)
-    if " -> " in name or any(ord(c) < 32 or ord(c) == 127 or c in '\\"' for c in name):
+    if (
+        name != name.strip()
+        or " -> " in name
+        or any(ord(c) < 32 or ord(c) == 127 or c in '\\"' for c in name)
+    ):
         return json.dumps(name, ensure_ascii=False)
     return name
 
