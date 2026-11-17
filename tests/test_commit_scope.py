@@ -1159,6 +1159,67 @@ class TestScopeSurvivesARealToolCall:
         assert subjects[0] == "move_folder: 3 files"
         assert _files_in_head(repo) == {f"dst/{n}.md" for n in ("a", "b", "c")}
 
+    async def test_replace_text_applies_in_one_commit(
+        self, _git_vault_env: Path
+    ) -> None:
+        """The reviewed replacement commits all notes in one MCP call."""
+        from fastmcp import Client
+
+        from tests.server_factory import make_server
+
+        repo = _git_vault_env
+        before = len(_subjects(repo))
+        async with Client(make_server()) as client:
+            preview = await client.call_tool(
+                "replace_text",
+                {"pattern": "#", "replacement": "##", "folders": ["src"]},
+            )
+            assert len(_subjects(repo)) == before
+            await client.call_tool(
+                "replace_text",
+                {
+                    "pattern": "#",
+                    "replacement": "##",
+                    "folders": ["src"],
+                    "dry_run": False,
+                    "plan": preview.data["plan"],
+                },
+            )
+            await self._drain()
+        assert len(_subjects(repo)) == before + 1
+        assert _files_in_head(repo) == {f"src/{n}.md" for n in ("a", "b", "c")}
+
+    async def test_replace_text_reports_stale_and_interrupted(
+        self, _git_vault_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The MCP caller receives recovery steps for stale and interrupted calls."""
+        from fastmcp import Client
+        from fastmcp.exceptions import ToolError
+
+        from markdown_vault_mcp.domain import get_vault_singleton
+        from tests.server_factory import make_server
+
+        args = {"pattern": "#", "replacement": "##", "folders": ["src"]}
+        async with Client(make_server()) as client:
+            preview = await client.call_tool("replace_text", args)
+            (_git_vault_env / "src/a.md").write_text("# changed\n", encoding="utf-8")
+            with pytest.raises(ToolError, match="Selection or text changed"):
+                await client.call_tool(
+                    "replace_text",
+                    {**args, "dry_run": False, "plan": preview.data["plan"]},
+                )
+            preview = await client.call_tool("replace_text", args)
+
+            def fail(*_args: object, **_kwargs: object) -> None:
+                raise OSError("disk full")
+
+            monkeypatch.setattr(get_vault_singleton()._doc_mgr, "write", fail)
+            with pytest.raises(ToolError, match="Replacement interrupted"):
+                await client.call_tool(
+                    "replace_text",
+                    {**args, "dry_run": False, "plan": preview.data["plan"]},
+                )
+
     async def test_a_single_file_tool_call_still_names_its_path(
         self, _git_vault_env: Path
     ) -> None:

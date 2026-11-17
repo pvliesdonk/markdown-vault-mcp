@@ -82,6 +82,7 @@ from markdown_vault_mcp.utils import (
 from markdown_vault_mcp.utils.fs import (
     is_directory,
     is_regular_file,
+    iter_markdown_files,
     path_exists,
     walk_files_strict,
 )
@@ -331,6 +332,97 @@ class DocumentManager:
         would otherwise silently no-op.
         """
         self._check_writable()
+
+    def replace_candidates(
+        self, paths: Sequence[str], folders: Sequence[str], limit: int
+    ) -> list[tuple[str, int]]:
+        """Collect eligible notes and their sizes for a scoped replacement.
+
+        Args:
+            paths: Explicit note paths, including reserved notes if desired.
+            folders: Recursive folder scopes; an empty string selects the root.
+            limit: Maximum number of notes.
+
+        Returns:
+            Sorted, deduplicated vault-relative paths and byte sizes.
+        """
+        selected: dict[str, int] = {}
+
+        def add(path: str, *, explicit: bool) -> None:
+            absolute = self._validate_path(path)
+            relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
+            excluded = self._is_path_excluded(relative) or self.in_submodule(relative)
+            if not explicit and (
+                excluded
+                or absolute.name in {"index.md", "log.md"}
+                or any(part.startswith(".") for part in Path(relative).parts[:-1])
+            ):
+                return
+            if explicit and excluded:
+                raise InvalidRequestError(
+                    f"Cannot select {path!r}; choose a note outside exclusions and submodules."
+                )
+            try:
+                info = absolute.stat()
+            except (FileNotFoundError, NotADirectoryError) as exc:
+                raise DocumentNotFoundError.note(path) from exc
+            if not stat.S_ISREG(info.st_mode):
+                raise DocumentNotFoundError.note(path)
+            if (
+                self._max_note_read_bytes > 0
+                and info.st_size > self._max_note_read_bytes
+            ):
+                raise InvalidRequestError(
+                    "Note exceeds the read limit; narrow paths or folders."
+                )
+            selected[relative] = info.st_size
+            if len(selected) > limit:
+                raise InvalidRequestError("Too many notes; narrow paths or folders.")
+
+        for path in paths:
+            add(path, explicit=True)
+        for folder in folders:
+            root = self._source_dir if folder == "" else self._validate_dir_path(folder)
+            if not is_directory(root):
+                raise DocumentNotFoundError(
+                    f"Folder {folder!r} does not exist; choose an existing folder."
+                )
+
+            def fail(exc: OSError) -> None:
+                raise exc
+
+            for file in iter_markdown_files(root, on_error=fail):
+                add(file.relative_to(self._source_dir).as_posix(), explicit=False)
+        return sorted(selected.items())
+
+    def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
+        """Read a bounded note snapshot and its raw-byte etag.
+
+        Args:
+            path: Vault-relative note path.
+            max_bytes: Maximum bytes to read.
+
+        Returns:
+            Normalized text, raw-byte etag, and bytes read.
+        """
+        cap = (
+            min(max_bytes, self._max_note_read_bytes)
+            if self._max_note_read_bytes > 0
+            else max_bytes
+        )
+        with self._validate_path(path).open("rb") as stream:
+            raw = stream.read(cap + 1)
+        if len(raw) > cap:
+            raise InvalidRequestError(
+                "Note exceeds the replacement limit; narrow paths or folders."
+            )
+        try:
+            text = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
+        except UnicodeDecodeError as exc:
+            raise InvalidRequestError(
+                f"Note {path!r} is not UTF-8; narrow paths or folders."
+            ) from exc
+        return text, compute_etag(raw), len(raw)
 
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.

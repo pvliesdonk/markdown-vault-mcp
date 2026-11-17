@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-16
+
+- New: [Regex substitution timeout](regex-timeout.md), for #2031. Reviewed upstream README and release files; next review 2027-05-16.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.

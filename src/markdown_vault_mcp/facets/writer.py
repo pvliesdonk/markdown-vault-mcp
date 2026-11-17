@@ -12,6 +12,11 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, TypeVar
 
+from markdown_vault_mcp.managers.bulk_replace import (
+    BulkReplacer,
+    ReplaceRequest,
+    ReplaceResult,
+)
 from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 from markdown_vault_mcp.utils import folder_of, is_note
 
@@ -89,6 +94,21 @@ class WriterFacet:
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
+
+    def replace_text(self, request: ReplaceRequest) -> ReplaceResult:
+        """Preview or apply a textual change across selected notes.
+
+        Args:
+            request: The replacement, selection and optional reviewed plan.
+
+        Returns:
+            The complete preview or application result.
+        """
+        maintainer = self._convention_maintainer
+        callback = (
+            (lambda path: maintainer.maintain(path, "edit")) if maintainer else None
+        )
+        return BulkReplacer(self._doc_mgr).replace(request, maintain=callback)
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]

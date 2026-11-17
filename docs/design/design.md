@@ -5535,7 +5535,11 @@ to avoid shadowing Python's built-in `list`. The underlying
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
 
-**Tag-based visibility**: the write tools (`write`, `edit`, `append`,
+**Scoped textual replacement.** `replace_text` selects explicit paths and recursive folders, previews a complete unified diff and a plan hash, then applies only a matching plan. The hash covers the pattern, replacement, mode and raw-byte etags of every selected note, including unchanged notes. Folder scans skip excluded, hidden, reserved and submodule notes; explicit reserved notes are allowed. Matching covers the whole note. Regex flags are inline, with capture references in replacements; literal mode is exact. Before writes the selection is rechecked under the write lock, and each write uses its etag. A late write failure reports completed and remaining paths without rollback.
+
+Selection is limited to 500 notes, 256 KiB per note and 8 MiB total; pattern and replacement limits are 4 KiB and 64 KiB, with 10,000 matches, 8 MiB output, a 100,000-character complete diff, and 0.25 seconds per note within a two-second regex budget. Limits refuse rather than truncate. Preview changes nothing; apply performs ordinary provenance stamping and folder maintenance, which the textual diff does not show.
+
+**Tag-based visibility**: the write tools (`write`, `edit`, `replace_text`, `append`,
 `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools,
 `create_upload_link`) are registered with ``tags={"write"}``. When
 ``read_only=True``, the server calls ``mcp.disable(tags={"write"})`` to hide

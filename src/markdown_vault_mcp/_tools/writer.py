@@ -43,6 +43,10 @@ from markdown_vault_mcp.exceptions import (
     FolderMoveInterruptedError,
     InvalidRequestError,
 )
+from markdown_vault_mcp.managers.bulk_replace import (
+    ReplaceInterruptedError,
+    ReplaceRequest,
+)
 from markdown_vault_mcp.okf import (
     _HUMAN_ACTOR_PREFIX,
     append_okf_verification,
@@ -285,6 +289,69 @@ def _write_payload(
 
 def register(mcp: FastMCP) -> None:
     """Register write/mutation tools on *mcp*."""
+
+    @mcp.tool(
+        tags={"write"},
+        icons=_TOOL_ICONS["replace_text"],
+        annotations={
+            "title": "Replace Text",
+            "read_only_hint": False,
+            "destructive_hint": True,
+            "idempotent_hint": False,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def replace_text(
+        pattern: str,
+        replacement: str = "",
+        paths: list[str] | None = None,
+        folders: list[str] | None = None,
+        regex: bool = False,
+        dry_run: bool = True,
+        plan: str | None = None,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Preview or apply one textual replacement across selected notes.
+
+        Matches cover the whole note, including frontmatter, code and links.
+        The preview shows text edits; applying also performs ordinary OKF
+        provenance and folder maintenance.
+
+        Args:
+            pattern: Exact text or regular expression to match.
+            replacement: Replacement text; regex mode accepts capture references.
+            paths: Explicit note paths; reserved index.md and log.md are allowed.
+            folders: Recursive folder scopes; an empty string selects the vault.
+                Folder scopes skip reserved index.md and log.md.
+            regex: Interpret pattern as a regular expression with inline flags
+                such as (?i), (?m) and (?s); otherwise match exact text.
+            dry_run: Preview complete diffs when true; apply when false.
+            plan: Plan returned by the preview of this same request, for apply.
+
+        Returns:
+            Selection count, plan, per-note counts and preview diffs.
+        """
+        request = ReplaceRequest(
+            pattern,
+            replacement,
+            tuple(paths or ()),
+            tuple(folders or ()),
+            regex,
+            dry_run,
+            plan,
+        )
+        try:
+            with write_identity_scope():
+                result = await asyncio.to_thread(vault.writer.replace_text, request)
+        except ConcurrentModificationError as exc:
+            raise ToolError(
+                "Selection or text changed; call replace_text again with dry_run=true and pass the new plan.",
+                log_level=logging.INFO,
+            ) from exc
+        except ReplaceInterruptedError as exc:
+            raise ToolError(str(exc), log_level=logging.WARNING) from exc
+        return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
         tags={"write"},

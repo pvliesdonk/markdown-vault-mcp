@@ -13,6 +13,36 @@ Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 <!-- DOMAIN-INTRO-END -->
 
+## `replace_text`
+
+**Replace Text.** Destructive. Tags: `write`.
+
+Preview or apply one textual replacement across selected notes.
+
+Matches cover the whole note, including frontmatter, code and links.
+The preview shows text edits; applying also performs ordinary OKF
+provenance and folder maintenance.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `pattern` | `string` | required | Exact text or regular expression to match. |
+| `replacement` | `string` | `""` | Replacement text; regex mode accepts capture references. |
+| `paths` | `array of string \| null` | `null` | Explicit note paths; reserved index.md and log.md are allowed. |
+| `folders` | `array of string \| null` | `null` | Recursive folder scopes; an empty string selects the vault. Folder scopes skip reserved index.md and log.md. |
+| `regex` | `boolean` | `false` | Interpret pattern as a regular expression with inline flags such as (?i), (?m) and (?s); otherwise match exact text. |
+| `dry_run` | `boolean` | `true` | Preview complete diffs when true; apply when false. |
+| `plan` | `string \| null` | `null` | Plan returned by the preview of this same request, for apply. |
+
+**Returns**
+
+Selection count, plan, per-note counts and preview diffs.
+
+<!-- DOMAIN-EXAMPLE-replace_text-START -->
+Preview `replace_text(pattern="old.example", replacement="new.example", folders=["guides"])`. Review every diff, then send the same arguments with `dry_run=false` and `plan` set to the returned plan. The apply refuses a stale selection. OKF provenance and folder maintenance happen during apply and are not shown in the text diffs.
+<!-- DOMAIN-EXAMPLE-replace_text-END -->
+
 ## `write`
 
 **Write Note.** Changes state, not destructive. Idempotent. Tags: `write`.
