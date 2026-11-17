@@ -704,9 +704,8 @@ class SearchManager:
 
         Frontmatter and OKF dimensions are evaluated after the pool is
         capped (the vector store lacks their metadata), and every candidate
-        they discard is one the
-        result list never gets back.  Widening mitigates that; it does not
-        remove it.  The folder scope is treated exactly instead — it is
+        they discard is one the result list never gets back. Widening mitigates
+        that; it does not remove it. The folder scope is treated exactly — it is
         passed to the store as ``folder`` — so it is deliberately not a
         reason to widen (#1108).
 
@@ -737,13 +736,13 @@ class SearchManager:
         frontmatter via :meth:`_row_matches_filters` (any frontmatter key —
         not limited to ``indexed_frontmatter_fields``), *okf_filters*
         against the OKF annotations. Both use frontmatter fetched in batches
-        for distinct paths; their verdicts are memoized per path. Callers widen the
-        candidate pool for these post-filters (see :meth:`_widen_for_post_filter`).
+        for distinct paths; their verdicts are memoized per path. Callers widen
+        the candidate pool for these post-filters (see :meth:`_widen_for_post_filter`).
 
         The folder scope is deliberately absent: it is applied inside
         the store's ``search`` / ``similar_to_document`` before the
-        candidate cap, so repeating
-        it here would be a second place for one rule to live (#1108).
+        candidate cap, so repeating it here would be a second place for one
+        rule to live (#1108).
 
         Args:
             raw: Result dicts from the store's ``search`` /

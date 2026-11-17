@@ -537,10 +537,9 @@ which thinned duplicates but did not group them.
 shared `_post_filter_semantic_rows` helper (the vector store carries no
 structured metadata). Frontmatter for distinct candidate paths is read in
 bounded batches, with a per-path fallback for custom keyword indexes; OKF
-checks are memoized per path. The
-folder scope is not, and lives solely in the store's `folder` argument
-below. The
-post-filter matches against full frontmatter, so — unlike keyword-mode
+checks are memoized per path. The folder scope lives solely in the store's
+`folder` argument below. The post-filter matches against full frontmatter,
+so — unlike keyword-mode
 `search` filters — it is not limited to `indexed_frontmatter_fields`; the
 candidate pool is widened (×4, floor 200) when either is active so narrow
 scopes do not starve the result list.
