@@ -136,7 +136,7 @@ def test_default_probe(
 
 @pytest.mark.parametrize("site", ["probe", "push"])
 @pytest.mark.parametrize("failure", ["connection", "process"])
-def test_startup_backend_failure_is_sanitized_and_does_not_schedule(
+def test_startup_backend_failure_is_sanitized_and_retried(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, site: str, failure: str
 ) -> None:
     secret = "fixture-secret"
@@ -168,8 +168,10 @@ def test_startup_backend_failure_is_sanitized_and_does_not_schedule(
     assert secret not in caplog.text
     assert "***" in caplog.text
     before = push.call_count
+    push.side_effect = None
     scheduler.flush()
-    assert push.call_count == before
+    assert push.call_count == before + 1
+    assert health.snapshot() is None
 
 
 def test_startup_failure_preserves_scoped_write(
@@ -318,3 +320,56 @@ def test_injected_exception_has_no_original_context(
     assert caught.value.__cause__ is None
     assert secret not in str(caught.value)
     assert "***" in str(caught.value)
+
+
+@pytest.mark.parametrize("site", ["startup_probe", "startup_push", "deferred", "retry"])
+@pytest.mark.parametrize(
+    "stderr,reason",
+    [("non-fast-forward", "non_fast_forward"), ("permission denied", "push_failed")],
+)
+def test_backend_process_rejection_preserves_sanitized_diagnostics(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    site: str,
+    stderr: str,
+    reason: str,
+) -> None:
+    import logging
+
+    secret = "fixture-secret"
+    lock = threading.Lock()
+    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
+    bootstrap.git_root = tmp_path
+    health = SyncHealthTracker()
+
+    def fail(_path: Path) -> None:
+        raise subprocess.CalledProcessError(
+            1,
+            ["backend", secret],
+            output=secret,
+            stderr=f"rejected {stderr} for {secret}",
+        )
+
+    scheduler = PushScheduler(
+        lock=lock,
+        bootstrap=bootstrap,
+        health=health,
+        enable_push=True,
+        push_delay_s=0,
+        push=fail,
+        has_unpushed=fail if site == "startup_probe" else lambda _: True,
+    )
+    with caplog.at_level(logging.DEBUG):
+        if site.startswith("startup"):
+            scheduler.push_if_unpushed()
+        else:
+            scheduler.schedule_push()
+            scheduler.do_push_safe(retry=site == "retry")
+    snapshot = health.snapshot()
+    assert snapshot is not None
+    assert snapshot.reason == reason
+    assert stderr in caplog.text
+    assert "exit status 1" in caplog.text
+    assert secret not in caplog.text
+    assert "***" in caplog.text
+    assert "Traceback" not in caplog.text

@@ -206,6 +206,9 @@ class PushScheduler:
                 stderr = self._redact(exc.stderr or "")
                 self._health.push_failed(push_failure_reason(stderr), stderr.strip())
                 raise
+            except PushBackendError as exc:
+                self._health.push_failed(push_failure_reason(str(exc)), str(exc))
+                raise
             except Exception as exc:
                 # Redacted like the stderr arm: an exception raised while
                 # building the push command can echo the remote URL.
@@ -260,15 +263,19 @@ class PushScheduler:
 
     def _startup_backend_failed(self, exc: PushBackendError) -> None:
         """Record a sanitized backend failure while the caller holds the lock."""
+        self._push_pending = True
         logger.warning("git_startup_push_failed error=%s", one_line(str(exc)))
-        self._health.push_failed(PUSH_REASON_PUSH_FAILED, str(exc))
+        self._health.push_failed(push_failure_reason(str(exc)), str(exc))
 
     def _call_backend(self, fn: Callable[[Path], _Result], git_root: Path) -> _Result:
         """Wrap injected errors without retaining their original context."""
         try:
             return fn(git_root)
         except Exception as exc:
-            detail = self._redact(f"{type(exc).__name__}: {exc}")
+            detail = f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
+                detail = f"{detail} stderr={exc.stderr}"
+            detail = self._redact(detail)
         raise PushBackendError(detail)
 
     def _run_push(self, git_root: Path) -> None:
