@@ -1966,7 +1966,6 @@ class TestAttachmentSizeCap:
             return real(self, path)
 
         monkeypatch.setattr(DocumentManager, "read_attachment", spy)
-
         server = make_server()
         async with Client(server) as client:
             with pytest.raises(ToolError, match="byte limit"):
