@@ -226,7 +226,7 @@ class TestPullDivergenceClassification:
         assert result.from_sha == result.to_sha
 
     def test_an_available_fast_forward_can_still_fail_on_a_dirty_tree(
-        self, git_repo_pair: GitRepoPair
+        self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
     ) -> None:
         """History says fast-forward; the working tree can still refuse it.
 
@@ -248,11 +248,15 @@ class TestPullDivergenceClassification:
         )
         head = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
 
-        result = strategy.force_pull()
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
+            result = strategy.force_pull()
 
         assert result.applied is False
         assert result.reason == "conflict_resolution_failed"
         assert result.from_sha == result.to_sha == head
+        line = next(r for r in caplog.records if r.msg.startswith("git_ff_only_failed"))
+        assert "local changes" in line.getMessage()
+        assert "\n" not in line.getMessage()
         # The uncommitted edit is still on disk — nothing was thrown away.
         assert (
             git_repo_pair.local_path / "README.md"
@@ -283,7 +287,10 @@ class TestPullDivergenceClassification:
         ) -> subprocess.CompletedProcess[str]:
             if args[:2] == ("merge-base", "--is-ancestor"):
                 return subprocess.CompletedProcess(
-                    args=["git", *args], returncode=128, stdout="", stderr="boom\n"
+                    args=["git", *args],
+                    returncode=128,
+                    stdout="",
+                    stderr="boom\n  details\n",
                 )
             return real_capturing(git_root, *args, **kwargs)  # type: ignore[arg-type]
 
@@ -294,7 +301,10 @@ class TestPullDivergenceClassification:
 
         assert result.fast_forward is False
         assert result.reason == "diverged"
-        assert any("git_merge_base_failed" in r.message for r in caplog.records)
+        line = next(
+            r for r in caplog.records if r.msg.startswith("git_merge_base_failed")
+        )
+        assert line.getMessage().endswith("stderr=boom details")
 
 
 class TestForcePush:

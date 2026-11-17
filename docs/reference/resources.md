@@ -30,7 +30,7 @@ A resource is data this server serves at a URI, for a client to attach to the co
 
 `config://vault` (application/json)
 
-The vault's settings: read-only mode, indexed fields, exclusions, OKF state.
+Vault settings, indexed fields, exclusions, and OKF detection and write state.
 
 ## `vault_stats`
 

@@ -213,6 +213,14 @@ Pins: no test in this repository asserts any claim below yet.
 
 ## Where this project departs from the subject
 
+The vault install-screen curation supplies explicit empty-string defaults for
+optional fields that otherwise have no default (#1729). The generated MCPB
+and Claude Code plugin manifests share that curation. In MCPB 2.1.2, an
+omitted field therefore resolves to an empty string, while a stored value
+still overrides the default. The server already treats these empty values
+as unset. A probe of the released library verifies the substitution; this
+is not a verification of Claude Desktop’s install dialog.
+
 The project's required `source_dir` field ships a `${DOCUMENTS}/Vault`
 default, and `packaging/pre-release-checks.sh` asserts that the placeholder
 survives rendering. Both rely on the spec's default-variable list. The
