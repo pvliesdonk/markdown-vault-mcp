@@ -69,7 +69,9 @@ with the commit.
 If the backend is unavailable, the diff is empty or over 16,000 characters, or
 generation fails, times out, or returns no usable line, the original mechanical
 message is used. Each Git check waits at most two seconds and generation at
-most five seconds. A timed-out generation may continue in the background; later
+most five seconds. Together they can add about 11 seconds while holding the
+strategy lock, delaying other writes and sync operations. A timed-out generation
+may continue in the background; later
 commits skip generation until it finishes. Git's partial commits use the working
 tree at commit time, so an external edit between staging and committing may not
 be represented in the summary.

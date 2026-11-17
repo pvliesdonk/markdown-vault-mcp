@@ -26,9 +26,13 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-@pytest.mark.parametrize("operation", ["write", "rename", "delete"])
+@pytest.mark.parametrize("operation", ["write", "rename", "delete", "surrogate"])
 def test_commit_and_seed_log_preserve_attribution(repo: Path, operation: str) -> None:
-    fake = FakeSummarizer('  "Raise retention period."\nignored')
+    fake = FakeSummarizer(
+        "broken\ud800text"
+        if operation == "surrogate"
+        else '  "Raise retention period."\nignored'
+    )
     strategy = GitWriteStrategy(
         enable_pull=False,
         enable_push=False,
@@ -37,7 +41,7 @@ def test_commit_and_seed_log_preserve_attribution(repo: Path, operation: str) ->
     )
     old, note = repo / "old.md", repo / "note.md"
     try:
-        if operation != "write":
+        if operation in {"rename", "delete"}:
             old.write_text("synthetic retention", encoding="utf-8")
             strategy(old, "", "write")
         if operation == "rename":
@@ -52,11 +56,17 @@ def test_commit_and_seed_log_preserve_attribution(repo: Path, operation: str) ->
             note.write_text("synthetic retention", encoding="utf-8")
             strategy(note, "", "write")
             mechanical = "write: note.md"
-        subject = "[AI summary] Raise retention period"
-        assert (
-            git(repo, "log", "-1", "--format=%B")
-            == f"{subject}\n\nMechanical-Subject: {mechanical}\n\n"
+        subject = (
+            mechanical
+            if operation == "surrogate"
+            else "[AI summary] Raise retention period"
         )
+        message = (
+            f"{subject}\n\n"
+            if operation == "surrogate"
+            else f"{subject}\n\nMechanical-Subject: {mechanical}\n\n"
+        )
+        assert git(repo, "log", "-1", "--format=%B") == message
         assert (
             "rename from old.md" if operation == "rename" else "synthetic retention"
         ) in fake.calls[-1][1]

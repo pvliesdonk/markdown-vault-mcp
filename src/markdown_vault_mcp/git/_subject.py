@@ -127,7 +127,7 @@ class SubjectWriter:
                 return mechanical
             future: Future[str] = Future()
             threading.Thread(target=self._run, args=(future, diff), daemon=True).start()
-            line = _clean(future.result(timeout=_DEADLINE))
+            line = _clean(future.result(timeout=_DEADLINE).encode().decode())
             if not line:
                 logger.debug("git_subject_skipped reason=empty_response")
             elif _unchanged(root, pathspec, command, diff):
