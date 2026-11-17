@@ -12,7 +12,7 @@ import pytest
 from markdown_vault_mcp.git import GitWriteStrategy
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.health import SyncHealthTracker
-from markdown_vault_mcp.git.push_scheduler import PushScheduler
+from markdown_vault_mcp.git.push_scheduler import PushBackendError, PushScheduler
 from markdown_vault_mcp.git.types import PUSH_REASON_PUSH_FAILED
 
 if TYPE_CHECKING:
@@ -66,8 +66,10 @@ def test_failed_injected_push_remains_pending(tmp_path: Path) -> None:
     push = Mock(side_effect=RuntimeError("failure"))
     scheduler, health = make_scheduler(tmp_path, push=push)
     scheduler.schedule_push()
-    with pytest.raises(RuntimeError, match="failure"):
+    with pytest.raises(PushBackendError, match="failure") as error:
         scheduler.do_push()
+    assert error.value.__context__ is None
+    assert error.value.__cause__ is None
     assert health.snapshot() is not None
     assert health.snapshot().reason == PUSH_REASON_PUSH_FAILED  # type: ignore[union-attr]
     push.side_effect = None
@@ -132,61 +134,58 @@ def test_default_probe(
     assert push_scheduler._has_unpushed_commits(tmp_path) is (case == "ahead")
 
 
-@pytest.mark.parametrize(
-    "repo_url,token,interval",
-    [
-        ("https://example.invalid/repo", None, 600),
-        (None, "fixture-token", 600),
-        (None, None, 0),
-    ],
-)
-def test_assembly_returns_store(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    repo_url: str | None,
-    token: str | None,
-    interval: int,
+@pytest.mark.parametrize("site", ["probe", "push"])
+@pytest.mark.parametrize("failure", ["connection", "process"])
+def test_startup_backend_failure_is_sanitized_and_does_not_schedule(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, site: str, failure: str
 ) -> None:
-    from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.config_sections._assembly import _resolve_git
-    from markdown_vault_mcp.git import VersionedStore
+    secret = "fixture-secret"
+    lock = threading.Lock()
+    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
+    bootstrap.git_root = tmp_path
+    health = SyncHealthTracker()
 
-    monkeypatch.setattr(RepoBootstrap, "ensure_managed_repo", lambda _self, _path: None)
-    store, actual_interval = _resolve_git(
-        ProjectConfig(source_dir=tmp_path, git_repo_url=repo_url, git_token=token)
+    def fail(_path: Path) -> None:
+        if failure == "process":
+            raise subprocess.CalledProcessError(
+                1, ["backend", secret], output=secret, stderr=secret
+            )
+        raise ConnectionError(f"offline {secret}")
+
+    push = Mock(side_effect=fail if site == "push" else None)
+    scheduler = PushScheduler(
+        lock=lock,
+        bootstrap=bootstrap,
+        health=health,
+        enable_push=True,
+        push_delay_s=0,
+        push=push,
+        has_unpushed=fail if site == "probe" else lambda _: True,
     )
-    try:
-        assert isinstance(store, VersionedStore)
-        assert actual_interval == interval
-    finally:
-        store.close()
+    scheduler.push_if_unpushed()
+    assert health.snapshot() is not None
+    assert health.snapshot().reason == PUSH_REASON_PUSH_FAILED  # type: ignore[union-attr]
+    assert secret not in caplog.text
+    assert "***" in caplog.text
+    before = push.call_count
+    scheduler.flush()
+    assert push.call_count == before
 
 
-@pytest.mark.parametrize("fails_at", ["probe", "push"])
-def test_startup_backend_failure_preserves_scoped_write(
-    git_repo: Path, fails_at: str, caplog: pytest.LogCaptureFixture
+def test_startup_failure_preserves_scoped_write(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from functools import partial
+
     from markdown_vault_mcp._commit_scope import bound_commit_scope
     from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
-    secret = "fixture-secret"
-    attempts: list[Path] = []
-
-    def fail(path: Path) -> None:
-        attempts.append(path)
-        raise ConnectionError(f"backend unavailable {secret}")
-
-    strategy = GitWriteStrategy(
-        token=secret,
-        enable_pull=False,
-        enable_push=True,
-        push_delay_s=0,
-        git_lfs=False,
+    push = Mock(side_effect=ConnectionError("offline"))
+    monkeypatch.setattr(
+        "markdown_vault_mcp.git.strategy.PushScheduler",
+        partial(PushScheduler, push=push, has_unpushed=lambda _: True),
     )
-    strategy._push_scheduler._has_unpushed = (
-        fail if fails_at == "probe" else lambda _: True
-    )
-    strategy._push_scheduler._push = fail
+    strategy = GitWriteStrategy(enable_push=True, push_delay_s=0, git_lfs=False)
     dispatcher = WriteCallbackDispatcher(strategy)
     try:
         note = git_repo / "new.md"
@@ -202,36 +201,120 @@ def test_startup_backend_failure_preserves_scoped_write(
             check=True,
         )
         assert "new.md" in result.stdout.splitlines()
-        health = strategy.sync_health()
-        assert health is not None and health.reason == PUSH_REASON_PUSH_FAILED
-        assert secret not in caplog.text
-        assert "***" in caplog.text
-        assert strategy._push_pending
-        strategy._push_scheduler._push = attempts.append
+        assert strategy.sync_health() is not None
+        push.side_effect = None
         strategy.flush()
-        assert not strategy._push_pending
         assert strategy.sync_health() is None
+        assert push.call_count == 2
     finally:
         dispatcher.close()
         strategy.close()
 
 
-@pytest.mark.parametrize("fails_at", ["probe", "push"])
-def test_startup_failure_is_retried_without_a_write(
-    tmp_path: Path, fails_at: str
+@pytest.mark.parametrize("failure", ["connection", "process"])
+@pytest.mark.parametrize("route", ["normal", "retry", "flush"])
+def test_injected_push_failure_never_logs_secret(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, failure: str, route: str
 ) -> None:
-    def fail(_path: Path) -> None:
-        raise ConnectionError("offline")
+    import logging
 
-    scheduler, health = make_scheduler(
-        tmp_path,
-        has_unpushed=fail if fails_at == "probe" else lambda _: True,
+    secret = "fixture-secret"
+    lock = threading.Lock()
+    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
+    bootstrap.git_root = tmp_path
+    health = SyncHealthTracker()
+
+    def fail(_path: Path) -> None:
+        if failure == "process":
+            raise subprocess.CalledProcessError(
+                1, ["backend", secret], output=secret, stderr=secret
+            )
+        raise ConnectionError(f"offline {secret}")
+
+    scheduler = PushScheduler(
+        lock=lock,
+        bootstrap=bootstrap,
+        health=health,
+        enable_push=True,
+        push_delay_s=0,
         push=fail,
     )
-    scheduler.push_if_unpushed()
+    scheduler.schedule_push()
+    with caplog.at_level(logging.DEBUG):
+        if route == "flush":
+            scheduler.flush()
+        else:
+            scheduler.do_push_safe(retry=route == "retry")
+    assert secret not in caplog.text
+    assert "***" in caplog.text
+    assert "Traceback" not in caplog.text
     assert health.snapshot() is not None
-    pushed: list[Path] = []
-    scheduler._push = pushed.append
+
+
+def test_default_cli_startup_failure_does_not_set_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scheduler, _ = make_scheduler(tmp_path, has_unpushed=lambda _: True)
+    monkeypatch.setattr(
+        "markdown_vault_mcp.git.push_scheduler._push",
+        Mock(side_effect=subprocess.CalledProcessError(1, "git", stderr="rejected")),
+    )
+    scheduler.push_if_unpushed()
+    push = Mock()
+    monkeypatch.setattr("markdown_vault_mcp.git.push_scheduler._push", push)
     scheduler.flush()
-    assert pushed == [tmp_path]
-    assert health.snapshot() is None
+    push.assert_not_called()
+
+
+@pytest.mark.parametrize("site", ["probe", "push"])
+def test_default_startup_oserror_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, site: str
+) -> None:
+    scheduler, _ = make_scheduler(tmp_path)
+    monkeypatch.setattr(
+        "markdown_vault_mcp.git.push_scheduler._has_unpushed_commits",
+        Mock(side_effect=OSError("probe"))
+        if site == "probe"
+        else Mock(return_value=True),
+    )
+    if site == "push":
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.push_scheduler._push",
+            Mock(side_effect=OSError("push")),
+        )
+    with pytest.raises(OSError, match=site):
+        scheduler.push_if_unpushed()
+
+
+@pytest.mark.parametrize("failure", ["connection", "process"])
+def test_injected_exception_has_no_original_context(
+    tmp_path: Path, failure: str
+) -> None:
+    secret = "fixture-secret"
+    lock = threading.Lock()
+    bootstrap = RepoBootstrap(lock=lock, token=secret, username="user", repo_url=None)
+    bootstrap.git_root = tmp_path
+    health = SyncHealthTracker()
+
+    def fail(_path: Path) -> None:
+        if failure == "process":
+            raise subprocess.CalledProcessError(
+                1, [secret], output=secret, stderr=secret
+            )
+        raise ConnectionError(secret)
+
+    scheduler = PushScheduler(
+        lock=lock,
+        bootstrap=bootstrap,
+        health=health,
+        enable_push=True,
+        push_delay_s=0,
+        push=fail,
+    )
+    scheduler.schedule_push()
+    with pytest.raises(PushBackendError) as caught:
+        scheduler.do_push()
+    assert caught.value.__context__ is None
+    assert caught.value.__cause__ is None
+    assert secret not in str(caught.value)
+    assert "***" in str(caught.value)

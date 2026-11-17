@@ -6652,11 +6652,12 @@ seconds of idle, all accumulated local commits are pushed in a single
 `PushScheduler.flush()` (cancel timer + synchronous push); `close()` marks
 the strategy closed (subsequent writes are ignored), stops the pull thread,
 then calls `flush()`. The pull loop retries a failed deferred push via
-`PushScheduler.do_push_safe()` after each tick (#957). Backends can inject
-push and startup unpushed-commit probe callables; the defaults retain the git
-CLI and resolve the `_push` helper at call time (#1308). Startup backend
-failures record redacted sync health and retain a pending push for retry, so
-local versioning can proceed.
+`PushScheduler.do_push_safe()` after each tick (#957). A backend can compose
+`PushScheduler` with push and startup probe callables;
+the default CLI path is unchanged and resolves `_push` at call time (#1308).
+Injected failures are sanitized before logging and health reporting. A startup
+failure permits local versioning without setting a pending push; the next
+write schedules one.
 
 **Sync health (`git/health.py`, #1287)**: a clone whose pushes are being
 rejected keeps accepting writes — the commit lands, `read` serves it back —

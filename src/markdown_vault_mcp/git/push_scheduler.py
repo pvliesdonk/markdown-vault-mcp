@@ -21,7 +21,7 @@ import logging
 import subprocess
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from markdown_vault_mcp.git._run import (
     _build_askpass_env,
@@ -38,6 +38,12 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.git.health import SyncHealthTracker
 
 logger = logging.getLogger(__name__)
+
+_Result = TypeVar("_Result")
+
+
+class PushBackendError(Exception):
+    """Sanitized failure from an injected backend operation."""
 
 
 class PushScheduler:
@@ -67,8 +73,10 @@ class PushScheduler:
         enable_push: Whether deferred push behaviour is enabled at all.
         push_delay_s: Seconds of idle before the timer pushes.  ``0``
             disables the timer (push only on ``flush``/``close``).
-        push: Backend push operation; defaults to the git CLI.
-        has_unpushed: Startup probe; defaults to the git CLI.
+        push: Operation for direct composition; raise on failure. Defaults to
+            the git CLI. The backend must redact its own credentials.
+        has_unpushed: Probe for direct composition; raise on failure. Defaults
+            to the git CLI. The backend must redact its own credentials.
     """
 
     def __init__(
@@ -159,6 +167,12 @@ class PushScheduler:
                 exc.returncode,
                 one_line(self._redact(exc.stderr or "")),
             )
+        except PushBackendError as exc:
+            logger.log(
+                logging.DEBUG if retry else logging.WARNING,
+                "git_push_failed error=%s",
+                one_line(str(exc)),
+            )
         except Exception:
             logger.error("git_push_unexpected_error", exc_info=True)
 
@@ -213,14 +227,12 @@ class PushScheduler:
         if git_root is None or not self._enable_push:
             return
 
-        probe = (
-            self._has_unpushed
-            if self._has_unpushed is not None
-            else _has_unpushed_commits
-        )
         try:
-            unpushed = probe(git_root)
-        except Exception as exc:
+            if self._has_unpushed is None:
+                unpushed = _has_unpushed_commits(git_root)
+            else:
+                unpushed = self._call_backend(self._has_unpushed, git_root)
+        except PushBackendError as exc:
             self._startup_backend_failed(exc)
             return
         if unpushed:
@@ -228,7 +240,6 @@ class PushScheduler:
             try:
                 self._run_push(git_root)
             except subprocess.CalledProcessError as exc:
-                self._push_pending = True
                 sanitized_stderr = self._redact(exc.stderr or "")
                 # WARNING for the same reason as the deferred-push leg
                 # (#1330): a startup push that cannot reach the remote is the
@@ -242,22 +253,28 @@ class PushScheduler:
                 self._health.push_failed(
                     push_failure_reason(sanitized_stderr), sanitized_stderr.strip()
                 )
-            except Exception as exc:
+            except PushBackendError as exc:
                 self._startup_backend_failed(exc)
             else:
                 self._health.push_succeeded()
 
-    def _startup_backend_failed(self, exc: Exception) -> None:
-        """Remember a failed startup operation while the caller holds the lock."""
-        self._push_pending = True
-        detail = self._redact(str(exc))
-        logger.warning("git_startup_push_failed error=%s", one_line(detail))
-        self._health.push_failed(PUSH_REASON_PUSH_FAILED, detail.strip() or None)
+    def _startup_backend_failed(self, exc: PushBackendError) -> None:
+        """Record a sanitized backend failure while the caller holds the lock."""
+        logger.warning("git_startup_push_failed error=%s", one_line(str(exc)))
+        self._health.push_failed(PUSH_REASON_PUSH_FAILED, str(exc))
+
+    def _call_backend(self, fn: Callable[[Path], _Result], git_root: Path) -> _Result:
+        """Wrap injected errors without retaining their original context."""
+        try:
+            return fn(git_root)
+        except Exception as exc:
+            detail = self._redact(f"{type(exc).__name__}: {exc}")
+        raise PushBackendError(detail)
 
     def _run_push(self, git_root: Path) -> None:
         """Run the injected operation or resolve the CLI helper at call time."""
         if self._push is not None:
-            self._push(git_root)
+            self._call_backend(self._push, git_root)
         else:
             _push(git_root, self._token, self._username)
 

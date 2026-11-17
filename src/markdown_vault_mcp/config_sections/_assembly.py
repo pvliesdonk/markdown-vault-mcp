@@ -173,8 +173,6 @@ def _build_git_strategy(
 ) -> VersionedStore:
     """Build the store with the kwargs shared across all three git modes.
 
-    This is the single construction point for a future backend branch.
-
     ``enable_sync`` toggles both pull and push together — every call site enables
     or disables them in lockstep.
     """
