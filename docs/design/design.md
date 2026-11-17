@@ -4337,7 +4337,9 @@ closing the old store and opening the fresh one, so no other process can
 take the lock in between; a store collected unclosed gives its share back
 through a finalizer that never waits for the lock's guard, and a forked
 child holds nothing. The [Windows lock reference](reference/windows-byte-locking.md)
-records the byte-range API and error semantics. Where no lock can be taken
+records the byte-range API and error semantics: byte 32 is locked outside the
+32-byte PID diagnostic field, which is overwritten without truncating the file.
+Where no lock can be taken
 (no supported API or a lock file that cannot be created) the writer proceeds as before, logged
 at DEBUG `writer_lock_skipped`; a lock file this user cannot
 write is locked read-only; a lock over a network or VM file share may not

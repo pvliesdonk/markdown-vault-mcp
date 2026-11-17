@@ -137,7 +137,7 @@ def hold_writer_lock(
     )
     if fcntl is None and msvcrt is None:
         return _skipped(path, "unsupported")
-    key = os.path.realpath(path)
+    key = os.path.normcase(os.path.realpath(path))
     with _GUARD:
         _drain()
         held = _HELD.get(key)

@@ -92,3 +92,21 @@ def test_windows_read_only_file_can_lock(
     share = _writer_lock.hold_writer_lock(tmp_path / "emb", backend="test")
     share.release()
     assert windows.calls == [(windows.LK_NBLCK, 32, 1), (windows.LK_UNLCK, 32, 1)]
+
+
+def test_windows_case_alias_shares_one_lock(
+    windows: FakeMsvcrt, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        _writer_lock.os.path, "normcase", lambda path: str(path).lower()
+    )
+    first = _writer_lock.hold_writer_lock(tmp_path / "EMB", backend="test")
+    second = _writer_lock.hold_writer_lock(tmp_path / "emb", backend="test")
+    try:
+        assert windows.calls == [(windows.LK_NBLCK, 32, 1)]
+        first.release()
+        assert windows.calls == [(windows.LK_NBLCK, 32, 1)]
+    finally:
+        first.release()
+        second.release()
+    assert windows.calls == [(windows.LK_NBLCK, 32, 1), (windows.LK_UNLCK, 32, 1)]

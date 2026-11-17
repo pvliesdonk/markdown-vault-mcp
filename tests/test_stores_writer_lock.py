@@ -208,13 +208,14 @@ def test_an_unlockable_directory_writes_as_before(
     ] == [(str(folder / "emb.lock"), "unwritable")]
 
 
-def test_without_fcntl_the_writer_proceeds(
+def test_without_supported_api_the_writer_proceeds(
     name: str,
     base: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(_writer_lock, "fcntl", None)
+    monkeypatch.setattr(_writer_lock, "msvcrt", None)
     with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.stores"):
         _backend(name).open(base, IDENT).close()
     reasons = [
