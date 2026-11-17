@@ -6738,6 +6738,10 @@ path reports it.
   `restore_upstream_paths`). The guidance the incident produced still holds:
   alert on the transitions, not the attempts.
 
+Git CLI stderr in log fields is token-redacted and collapsed to one line so
+line-oriented collectors keep each event together (#1349). Result hints and
+details retain their existing redacted text and whitespace.
+
 Every vault-mutating write tool passes its result through
 `attach_remote_health`, which adds a `remote` object while the clone is
 unsynced and adds nothing otherwise — the `previous_revision` idiom, where
