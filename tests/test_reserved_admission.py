@@ -113,3 +113,24 @@ def test_old_semantics_rebuilds_on_open(tmp_path: Path) -> None:
         assert "index.md" in {n.path for n in vault.reader.list_documents()}
     finally:
         vault.close()
+
+
+def test_body_only_index_and_incremental_scan(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text("# Navigation\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on", required_frontmatter=["title"]),
+    )
+    try:
+        vault.index.build_index()
+        assert {n.path for n in vault.reader.list_documents()} == {"index.md"}
+        (tmp_path / "log.md").write_text("# History\n")
+        (tmp_path / "concept.md").write_text("# Concept\n")
+        vault.index.reindex()
+        assert {n.path for n in vault.reader.list_documents()} == {"index.md", "log.md"}
+        assert (
+            vault._tracker.skip_reasons()["concept.md"]["category"]
+            == "missing_frontmatter"
+        )
+    finally:
+        vault.close()
