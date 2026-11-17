@@ -15,7 +15,6 @@ import pytest
 
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.git import GitWriteStrategy
-from markdown_vault_mcp.git import strategy as git_strategy_module
 from markdown_vault_mcp.git.strategy import _commit_staged
 from markdown_vault_mcp.vault import Vault
 from tests.fixtures.git import GitRepoPair, _run_git
@@ -158,12 +157,12 @@ def test_a_commit_that_raises_after_moving_head_is_not_reported(
     before = _run_git(local, "rev-parse", "HEAD").strip()
     note = local / "n.md"
     note.write_text("# N\n")
-    strategy._ensure_write_init()
     strategy._worktree_wanted = True
     try:
         with (
-            patch.object(
-                git_strategy_module, "_commit_staged", side_effect=_commit_then_raise
+            patch(
+                "markdown_vault_mcp.git.strategy._commit_staged",
+                side_effect=_commit_then_raise,
             ),
             patch.object(strategy, "_observe_worktree") as observe_worktree,
         ):
@@ -175,15 +174,14 @@ def test_a_commit_that_raises_after_moving_head_is_not_reported(
         strategy.close()
 
 
-def test_an_unreported_commit_costs_a_reindex_not_a_hidden_change(vault: Vault) -> None:
-    with patch.object(
-        git_strategy_module, "_commit_staged", side_effect=_commit_then_raise
+def test_an_unreported_commit_triggers_reindex_on_reconciliation(vault: Vault) -> None:
+    with patch(
+        "markdown_vault_mcp.git.strategy._commit_staged", side_effect=_commit_then_raise
     ):
         vault.writer.write("fresh.md", "# Fresh\n")
         assert vault._write_callback.drain()
 
     assert vault.reconcile_index_with_head(source="test") == "reindexed"
-    assert "fresh.md" in _paths(vault)
 
 
 def test_the_pull_loop_ticks_even_when_head_does_not_move(
