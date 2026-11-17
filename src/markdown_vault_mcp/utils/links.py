@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, NamedTuple, TypeVar
 from urllib.parse import quote, unquote
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Mapping
 
 #: Characters left unescaped when re-encoding a destination that the author
 #: already wrote percent-encoded. Only ``/`` — it is the path separator, and
@@ -38,8 +38,8 @@ def decode_link_target(target: str) -> str:
     CommonMark defines a markdown destination as a URL, so its escapes name
     the same file the literal spelling does (#1332): ``b%5B1%5D.md`` is
     ``b[1].md``. Three escapes are refused, and a refusal leaves the *whole*
-    destination exactly as written, so it stays visible to
-    ``get_broken_links`` and never resolves onto an unrelated note:
+    destination exactly as written. A matching literal source-relative file
+    can still resolve; vault-wide fallback does not use refused destinations:
 
     * an encoded separator (``%2F``) — path data, not structure;
     * an encoded NUL (``%00``) — no file system allows it in a name;
@@ -58,12 +58,18 @@ def decode_link_target(target: str) -> str:
         The decoded path, or *target* unchanged when it carries a refused
         escape.
     """
+    decoded = _decode_link_target_strict(target)
+    return target if decoded is None else decoded
+
+
+def _decode_link_target_strict(target: str) -> str | None:
+    """Decode a percent spelling, returning None when the escape is refused."""
     if _RE_REFUSED_ESCAPE.search(target):
-        return target
+        return None
     try:
         return unquote(target, errors="strict")
     except UnicodeDecodeError:
-        return target
+        return None
 
 
 #: What a *plain* (unbracketed) markdown destination cannot hold: the space
@@ -255,22 +261,38 @@ def decode_markdown_destination(raw: str) -> str:
     Returns:
         The decoded destination, fragment still attached.
     """
+    return _decode_destination(raw)[0]
+
+
+def _decode_destination(raw: str) -> tuple[str, bool]:
+    """Decode a destination and retain whether its percent layer was refused."""
     inner = raw[1:-1] if is_pointy_destination(raw) else raw
-    return decode_link_target(_decode_escapes_and_entities(inner))
+    spelling = _decode_escapes_and_entities(inner)
+    decoded = _decode_link_target_strict(spelling)
+    return (spelling, True) if decoded is None else (decoded, False)
 
 
-def parse_markdown_destination(raw: str) -> tuple[str, str | None]:
+class MarkdownDestination(NamedTuple):
+    """A decoded path, its written fragment, and percent-decoding status."""
+
+    path: str
+    fragment: str | None
+    refused: bool
+
+
+def parse_markdown_destination(raw: str) -> MarkdownDestination:
     """Decode a destination's path after separating its written fragment.
 
     Args:
         raw: The destination as written, including optional pointy brackets.
 
     Returns:
-        The decoded path and the original fragment, if present.
+        The decoded path, original fragment, and whether decoding was refused.
     """
     written = raw[1:-1] if is_pointy_destination(raw) else raw
     path, fragment = split_markdown_fragment(written)
-    return decode_markdown_destination(path), fragment
+    decoded, refused = _decode_destination(path)
+    return MarkdownDestination(decoded, fragment, refused)
 
 
 #: How deep the destination parser balances parentheses before giving up —
@@ -983,8 +1005,8 @@ def iter_inline_links(region: str) -> Iterator[InlineLink]:
         )
 
 
-def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> str:
-    r"""Rewrite every ``[text](old_raw)`` destination in *content*.
+def _replace_inline_destinations(content: str, replacements: Mapping[str, str]) -> str:
+    r"""Rewrite matching inline destinations in *content*.
 
     The links are read by :func:`iter_inline_links`, the same scan the
     index is built with, because a rewrite has to see exactly the links the
@@ -999,21 +1021,20 @@ def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> st
     the class it replaces is already quadratic on a run of bare ``[``
     (285 ms at 8000). The scan is a single pass over both.
 
-    Only the destination is matched literally, exactly as before: *old_raw*
+    Only the destination is matched literally: each replacement key
     is the destination as the file spells it, which is what the index
     stored, so an equality test is the right one and the pointy, encoded
     and escaped spellings need no special case here.
 
     Args:
         content: Full file content.
-        old_raw: The destination to replace, as written in the file.
-        new_raw: The destination to write in its place.
+        replacements: Written destinations and their replacements.
 
     Returns:
-        *content* with every matching destination replaced.
+        *content* with every matching destination replaced once.
 
     The scan reports where each destination starts, and the splice uses
-    that offset rather than searching the region for *old_raw*. A search
+    that offset rather than searching the region for the destination. A search
     finds the wrong occurrence whenever the text after the destination
     repeats it: given ``[a](x.md "the x.md note")`` it rewrote the title
     and left the destination stale, a broken link reported as a successful
@@ -1027,7 +1048,8 @@ def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> st
     out: list[str] = []
     read = 0
     for link in iter_inline_links(content):
-        if link.raw_target != old_raw:
+        new_raw = replacements.get(link.raw_target)
+        if new_raw is None:
             continue
         # Everything from the destination's end to ``link.end`` is the
         # author's: an optional title, whatever spacing they chose, and the
@@ -1035,41 +1057,62 @@ def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> st
         start = link.target_start
         out.append(content[read:start])
         out.append(new_raw)
-        out.append(content[start + len(old_raw) : link.end])
+        out.append(content[start + len(link.raw_target) : link.end])
         read = link.end
     out.append(content[read:])
     return "".join(out)
 
 
-def apply_link_replacement(
-    content: str, link_type: str, old_raw: str, new_raw: str
+def apply_link_replacements(
+    content: str, link_type: str, replacements: Mapping[str, str]
 ) -> str:
-    """Replace a single link target occurrence in file content.
+    """Replace original link destinations without cascading replacements.
 
     Args:
         content: Full file content to modify.
         link_type: One of ``"markdown"``, ``"reference"``, ``"wikilink"``.
-        old_raw: The original raw_target string to find.
-        new_raw: The replacement raw_target string.
+        replacements: Original raw targets mapped to their replacements.
 
     Returns:
-        Updated content with all occurrences of *old_raw* replaced.
+        Updated content with matching destinations replaced.
     """
+    if not replacements:
+        return content
     if link_type == "markdown":
-        return _replace_inline_destinations(content, old_raw, new_raw)
-    elif link_type == "reference":
+        return _replace_inline_destinations(content, replacements)
+    alternatives = "|".join(
+        re.escape(key) for key in sorted(replacements, key=len, reverse=True)
+    )
+    if link_type == "reference":
         # Match reference definition lines: [id]: url optional-title
         # Anchored to line start with MULTILINE so we don't match inline text.
         return re.sub(
-            r"^(\[.*?\]:\s+)" + re.escape(old_raw) + r"([ \t].*|$)",
-            lambda m: m.group(1) + new_raw + m.group(2),
+            r"^(\[.*?\]:\s+)(" + alternatives + r")([ \t].*|$)",
+            lambda m: m.group(1) + replacements[m.group(2)] + m.group(3),
             content,
             flags=re.MULTILINE,
         )
-    elif link_type == "wikilink":
+    if link_type == "wikilink":
         return re.sub(
-            r"\[\[" + re.escape(old_raw) + r"(\|[^\]]*)?\]\]",
-            lambda m: "[[" + new_raw + (m.group(1) or "") + "]]",
+            r"\[\[(" + alternatives + r")(\|[^\]]*)?\]\]",
+            lambda m: "[[" + replacements[m.group(1)] + (m.group(2) or "") + "]]",
             content,
         )
     return content
+
+
+def apply_link_replacement(
+    content: str, link_type: str, old_raw: str, new_raw: str
+) -> str:
+    """Replace all occurrences of one written link destination.
+
+    Args:
+        content: Full file content to modify.
+        link_type: One of ``markdown``, ``reference``, or ``wikilink``.
+        old_raw: The original destination.
+        new_raw: The replacement destination.
+
+    Returns:
+        Updated content with matching destinations replaced.
+    """
+    return apply_link_replacements(content, link_type, {old_raw: new_raw})

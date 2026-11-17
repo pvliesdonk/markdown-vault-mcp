@@ -505,7 +505,8 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: in v6.1.1; rebuilding adds the previously missing link rows.
 #: Version 13 (#1383) adds vault-wide fallback for missing source-relative
 #: markdown and reference links, shared grouped path matching, and
-#: shadow-safe rewrites, including links in moved sources. Version 12 shipped
+#: shadow-safe rewrites, including links in moved sources, and refuses vault
+#: search on destinations with refused escapes. Version 12 shipped
 #: in v6.1.2.
 INDEX_SEMANTICS_VERSION = 13
 
@@ -677,9 +678,10 @@ def _markdown_link_target(
     raw: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
 ) -> str:
     """Resolve a markdown destination, keeping explicit and existing local paths."""
-    decoded, _ = parse_markdown_destination(raw)
+    parsed = parse_markdown_destination(raw)
+    decoded = parsed.path
     baseline, _ = _resolve_link_path(decoded, source)
-    if baseline in path_set or decoded.startswith(("/", "./", "../")):
+    if parsed.refused or baseline in path_set or decoded.startswith(("/", "./", "../")):
         return baseline
     target, _ = _resolve_link_path(decoded, "")
     return _match_vault_path(target, source, path_set, by_name) or baseline

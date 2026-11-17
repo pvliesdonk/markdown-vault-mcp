@@ -655,13 +655,14 @@ def register(mcp: FastMCP) -> None:
                 changes since are link rewrites the server made.
             update_links: Rewrite links to old_path in other notes so they point at
                 new_path; attachment references are not tracked. Default false; pass
-                true for every note.
+                true for every note. The moved note's own links may change; read
+                new_path for its current etag before a guarded write.
 
         Returns:
             Dict with old_path (str), new_path (str), and updated_links (int)
             counting the number of source documents whose links were updated.
-            Carries hint (str) only when update_links was requested for an
-            attachment, saying why nothing was rewritten.
+            Carries hint (str) when update_links was requested for an attachment
+            or when the moved note's links could not be rewritten.
 
             - link_rewrites_since_etag (int, optional): present only when
               if_match was accepted although the server had since rewritten links

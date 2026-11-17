@@ -209,16 +209,17 @@ class TestApplyLinkReplacement:
         assert result == "[[new]] and [[new]]"
 
 
-def test_nested_vault_path_rewrite_is_source_relative() -> None:
-    """Encoded pointy links retain their fragment and cannot hit a local shadow."""
-    assert (
-        compute_new_raw_target(
-            link_type="reference",
-            raw_target="<A/My%20Note.md#heading>",
-            fragment="heading",
-            new_path="B/New Note.md",
-            source_path="Sub/source.md",
-            old_path="A/My Note.md",
+def test_batch_rewrites_swap_original_destinations() -> None:
+    from markdown_vault_mcp.utils.links import apply_link_replacements
+
+    for link_type, content, expected in [
+        ("markdown", "[a](a.md) [b](b.md)", "[a](b.md) [b](a.md)"),
+        ("reference", "[a]: a.md\n[b]: b.md\n", "[a]: b.md\n[b]: a.md\n"),
+        ("wikilink", "[[a.md|A]] [[b.md]]", "[[b.md|A]] [[a.md]]"),
+    ]:
+        assert (
+            apply_link_replacements(
+                content, link_type, {"a.md": "b.md", "b.md": "a.md"}
+            )
+            == expected
         )
-        == "<../B/New%20Note.md#heading>"
-    )

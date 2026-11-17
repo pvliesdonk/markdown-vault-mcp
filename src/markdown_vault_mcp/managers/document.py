@@ -87,7 +87,7 @@ from markdown_vault_mcp.utils.fs import (
     walk_files_strict,
 )
 from markdown_vault_mcp.utils.links import (
-    apply_link_replacement as _apply_link_replacement,
+    apply_link_replacements as _apply_link_replacements,
 )
 from markdown_vault_mcp.utils.links import (
     compute_new_raw_target as _compute_new_raw_target,
@@ -1372,8 +1372,9 @@ class DocumentManager:
             update_links: When ``True``, find all documents that link to
                 *old_path* and rewrite their link targets to point to
                 *new_path*. Also preserve resolved outgoing vault-fallback
-                links when the source note moves. Only applies to ``.md``
-                documents.
+                links when the source note moves. Those changes may invalidate
+                its old etag; read *new_path* before a guarded write. Only
+                applies to ``.md`` documents.
             tolerate_link_rewrites: When ``True``, a note's *if_match* that
                 no longer matches is still accepted if every change since
                 it is a link rewrite this manager recorded, such as one a
@@ -1442,27 +1443,18 @@ class DocumentManager:
                 )
 
                 backlink_callbacks, backlink_paths, unrewritten = (
-                    self._update_backlinks(old_path, new_path, backlinks)
+                    self._update_backlinks(old_path, new_path, backlinks, outgoing)
                 )
-                by_source: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(
-                    list
-                )
-                target_map: dict[str, str] = {}
-                for target, row in outgoing:
-                    if target != old_path:
-                        by_source[new_path].append((target, row))
-                        target_map[target] = target
-                source_callbacks, source_paths, source_failures = (
-                    self._rewrite_link_sources(
-                        by_source, target_map, op_name="_update_backlinks"
-                    )
-                )
-                backlink_callbacks.extend(source_callbacks)
-                backlink_paths.extend(source_paths)
-                unrewritten.extend(source_failures)
                 callback_content = _read_text_utf8(new_abs)
                 updated_links = len(set(backlink_paths))
                 hint = self._submodule_links_hint(unrewritten)
+                if new_path in unrewritten:
+                    warning = (
+                        f"Note {new_path!r} moved but its links could not be rewritten; "
+                        "a link may now point to a different file. Check its links "
+                        "or rename it back."
+                    )
+                    hint = f"{hint} {warning}" if hint else warning
 
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
@@ -1579,7 +1571,7 @@ class DocumentManager:
         # as Path.read_text would, which the rewrite has always relied on.
         raw = source_abs.read_bytes()
         original = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
-        content = original
+        replacements: dict[str, dict[str, str]] = defaultdict(dict)
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
             new_raw = _compute_new_raw_target(
                 link_type,
@@ -1589,7 +1581,10 @@ class DocumentManager:
                 source_path=source_path,
                 old_path=target_old,
             )
-            content = _apply_link_replacement(content, link_type, raw_target, new_raw)
+            replacements[link_type].setdefault(raw_target, new_raw)
+        content = original
+        for link_type, mapping in replacements.items():
+            content = _apply_link_replacements(content, link_type, mapping)
         if content == original:
             # The index held a row the rewrite could not find. That is a
             # disagreement between the two, not a no-op, so it is logged
@@ -1725,6 +1720,7 @@ class DocumentManager:
         old_path: str,
         new_path: str,
         backlinks: list[dict[str, Any]],
+        outgoing: Iterable[tuple[str, dict[str, Any]]] = (),
     ) -> tuple[list[tuple[Path, str]], list[str], list[str]]:
         """Rewrite source files that link to *old_path* to point to *new_path*.
 
@@ -1742,6 +1738,7 @@ class DocumentManager:
             new_path: Vault-relative path after the rename (the new location).
             backlinks: Rows returned by :meth:`FTSIndex.get_backlinks` before
                 the rename.
+            outgoing: Resolved fallback links in the moved source.
 
         Returns:
             Tuple ``(callbacks, dirty_paths, failed_sources)``:
@@ -1754,9 +1751,6 @@ class DocumentManager:
             * ``failed_sources`` — sources left naming *old_path*, such as
               a note inside a git submodule or nested repository (#1564).
         """
-        if not backlinks:
-            return [], [], []
-
         by_source: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
         for row in backlinks:
             by_source[row["source_path"]].append((old_path, row))
@@ -1764,8 +1758,14 @@ class DocumentManager:
         if old_path in by_source:
             by_source[new_path] = by_source.pop(old_path)
 
+        target_map = {old_path: new_path}
+        for target, row in outgoing:
+            if target != old_path:
+                by_source[new_path].append((target, row))
+                target_map[target] = target
+
         return self._rewrite_link_sources(
-            by_source, {old_path: new_path}, op_name="_update_backlinks"
+            by_source, target_map, op_name="_update_backlinks"
         )
 
     def _plan_folder_move(

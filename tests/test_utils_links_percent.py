@@ -33,7 +33,7 @@ class TestComputeNewRawTargetEncoded:
             == "probe/b2.md"
         )
 
-    def test_root_relative_encoded_target_from_a_subfolder_source(self) -> None:
+    def test_nested_encoded_vault_path_becomes_source_relative(self) -> None:
         """The shape test compares raw_target to old_path, so an encoded
         target never matched and fell into the relative-to-source branch.
 

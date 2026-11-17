@@ -339,8 +339,8 @@ class TestRenameKeepsTheSpelling:
             == "<new name.md#Top>"
         )
 
-    def test_escaped_destination_is_recognised_as_the_old_path(self) -> None:
-        # Decoding identifies a vault path; a nested source needs an
+    def test_nested_escaped_vault_path_becomes_source_relative(self) -> None:
+        # Decoding identifies a vault path; a nested source uses a
         # relative path to avoid a source-local shadow.
         assert (
             compute_new_raw_target(

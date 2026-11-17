@@ -1288,7 +1288,8 @@ def _resolve_link_path(
         # invents a resolvable name; the traversal clamp below still runs on
         # whatever comes out, so a decoded ``%2E%2E`` cannot climb above the
         # root. See :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`.
-        target, fragment = parse_markdown_destination(target)
+        parsed = parse_markdown_destination(target)
+        target, fragment = parsed.path, parsed.fragment
 
     if not target:
         # Link with only a fragment — points to the source document itself.
