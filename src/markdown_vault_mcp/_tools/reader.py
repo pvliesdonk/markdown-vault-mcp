@@ -112,7 +112,7 @@ def register(mcp: FastMCP) -> None:
             vault.source_dir,
             config.reference_namespace,
             attachment_extensions=config.attachment_extensions,
-            history_available=vault._git_strategy is not None,
+            history_available=await asyncio.to_thread(vault.git_head) is not None,
         )
         cap = (
             config.max_note_read_bytes

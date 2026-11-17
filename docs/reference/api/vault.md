@@ -158,8 +158,9 @@ retry it rather than saving a partial result.
 No historical copy is retained. Without another retained copy, old bytes may
 be unavailable. A standalone reader defaults to reporting history unavailable
 in its context; pass `history_available=True` only when the caller has Git
-backing to inspect. The MCP adapter uses the vault's configured Git strategy
-for this context. This capability does not guarantee that saved bytes are in
+backing to inspect. The MCP adapter uses a readable Git HEAD for this context;
+an unborn repository or unreadable HEAD reports history unavailable. This
+capability does not guarantee that saved bytes are in
 history. For a Git-backed vault, `get_history` may help find an earlier
 commit; `read(path, revision=...)` can retrieve historical notes using its
 existing rename-aware rules. Historical binary reads are not provided by that

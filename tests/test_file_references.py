@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import subprocess
 from dataclasses import replace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
@@ -104,14 +105,32 @@ def test_external_history_context(tmp_path: Path, missing: bool) -> None:
     assert "No historical copy is retained" in result.detail
 
 
-@pytest.mark.parametrize("history_available", [False, True])
+@pytest.mark.parametrize("repository", ["none", "unborn", "committed"])
+@pytest.mark.parametrize("missing", [False, True])
 async def test_mcp_history_context(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, history_available: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repository: str, missing: bool
 ) -> None:
-    from markdown_vault_mcp.domain import get_vault_singleton
-
     file = tmp_path / "note.md"
     file.write_bytes(b"original")
+    if repository != "none":
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    if repository == "committed":
+        subprocess.run(["git", "-C", str(tmp_path), "add", "note.md"], check=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+            check=True,
+        )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     config = replace(ProjectConfig.from_env(), reference_namespace="a")
     async with Client(make_server(config=config)) as client:
@@ -120,16 +139,15 @@ async def test_mcp_history_context(
                 "get_file_reference", {"path": "note.md", "include_sha256": True}
             )
         ).structured_content
-        file.write_bytes(b"changed")
-        vault = get_vault_singleton()
-        with monkeypatch.context() as scoped:
-            scoped.setattr(
-                vault, "_git_strategy", object() if history_available else None
-            )
-            result = (
-                await client.call_tool("resolve_file_reference", {"reference": saved})
-            ).structured_content
-        assert result["status"] == "changed"
+        if missing:
+            file.unlink()
+        else:
+            file.write_bytes(b"changed")
+        result = (
+            await client.call_tool("resolve_file_reference", {"reference": saved})
+        ).structured_content
+        history_available = repository == "committed"
+        assert result["status"] == ("missing" if missing else "changed")
         assert ("does not guarantee" in result["detail"]) is history_available
         assert ("history is unavailable" in result["detail"]) is not history_available
 
