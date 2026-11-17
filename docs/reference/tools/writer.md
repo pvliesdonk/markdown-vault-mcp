@@ -13,6 +13,7 @@ Writes preserve the supplied frontmatter field order, including nested mappings 
 Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
+New notes and attachments receive the same permissions as a plain file creation in their destination folder. On Linux, a folder's default access control list (ACL) can grant a shared group write access even when the process umask would remove it. Overwriting an existing file preserves its permission bits.
 <!-- DOMAIN-INTRO-END -->
 
 ## `write`

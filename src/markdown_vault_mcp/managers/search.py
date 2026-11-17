@@ -56,8 +56,8 @@ from markdown_vault_mcp.managers._ranking import (
 )
 from markdown_vault_mcp.okf import (
     OKF_FILTER_KEYS,
-    OKF_RESERVED_FILENAMES,
     derive_annotation,
+    is_okf_reserved_file,
     matches_okf_filters,
     okf_downweight_factor,
     parse_stale_filter,
@@ -1684,7 +1684,7 @@ class SearchManager:
         stale = 0
         reserved = 0
         for row in self._fts.list_notes():
-            if row["path"].rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+            if is_okf_reserved_file(row["path"]):
                 reserved += 1
                 continue
             metadata = self._parse_frontmatter_json(
