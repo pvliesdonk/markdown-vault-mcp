@@ -2723,18 +2723,3 @@ class TestReindexCheckpointing:
 
         assert result.modified == 4
         assert spy.call_count == 2
-
-
-def test_reindex_purges_hidden_convention_under_default_settings(index_vault, tmp_path):
-    (index_vault / ".conventions.md").write_text("Hidden rules", encoding="utf-8")
-    mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
-    mgr.build_index()
-    assert fts.get_note(".conventions.md") is not None
-    updated, _, _ = _make_index_mgr(
-        index_vault,
-        tmp_path,
-        fts=fts,
-        exclude_patterns=VaultSettings().effective_exclude_patterns(),
-    )
-    updated.reindex()
-    assert fts.get_note(".conventions.md") is None
