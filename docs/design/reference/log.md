@@ -12,6 +12,9 @@
 - New: [File creation permissions and default ACLs](file-creation-permissions.md),
   for #2054. Checked Linux ACL inheritance, chmod masks and private staging;
   reproduced the new-file group-write loss against plain creation.
+- [SQLite FTS5](sqlite-fts5.md): checked the documented default docsize
+  rowid inventory in SQLite FTS5 §§4.5 and 9.3 for #1538; pinned insert
+  and delete behavior in a fixture. Other claims and review date unchanged.
 
 ## 2026-11-15
 

@@ -157,12 +157,13 @@ skill fixes them at implementation.
 `okf_version` is read from the root `index.md` frontmatter by a small pure
 disk-I/O probe (same pattern as `ConventionsResolver`: no index coupling, so
 detection works before the index is built — relevant in managed-git mode where
-the clone happens inside the server lifespan). The detection result (mode,
-declared version, active state) is exposed via `stats` and
-`config://vault`; the effective write-side state (`OKF_WRITE` and, once
-they exist, the §6.0 switches) is not reported by either today, which the
-`okf` section of both should fix (#1432). `get_server_info` cannot carry it because that tool is
-template-owned; `stats` is the authoritative reporting surface.
+the clone happens inside the server lifespan). `config://vault` reports the
+mode, declared version and active state, as well as `okf_write_configured`
+and `okf_write_effective`. Active `stats.okf` reports the configured and
+effective write layer as `write_configured` and `write_effective`; it is
+absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
+OKF is active, and the vault is not read-only. Independent services remain
+the subject of #1412.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
