@@ -245,8 +245,26 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
-          "description": "How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error.",
+          "description": "How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. The independently configured mode is resolved now; runtime gating continues to require OKF_WRITE until a later update.",
           "default": "elicit"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_AUTHOR",
+          "description": "Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting.",
+          "format": "boolean"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
+          "description": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+          "format": "boolean"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
+          "description": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting."
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
@@ -902,8 +920,26 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
-          "description": "How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error.",
+          "description": "How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. The independently configured mode is resolved now; runtime gating continues to require OKF_WRITE until a later update.",
           "default": "elicit"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_AUTHOR",
+          "description": "Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting.",
+          "format": "boolean"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
+          "description": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+          "format": "boolean"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
+          "description": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting."
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",

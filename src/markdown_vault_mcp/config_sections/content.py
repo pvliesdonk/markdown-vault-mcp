@@ -9,6 +9,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.okf_capabilities import (
+    DEFAULT_VERIFY,
+    DefaultVerify,
+    OkfCapabilities,
+)
 
 
 @dataclass(frozen=True)
@@ -44,8 +49,30 @@ class ContentConfig:
     conventions_file: str | None = "_conventions.md"
     okf_mode: str = "auto"
     okf_write: bool = False
-    okf_verify: str = "elicit"
+    okf_verify: str = DEFAULT_VERIFY
     service_subjects: Sequence[str] | None = None
+    okf_author: bool | None = None
+    okf_index: bool | None = None
+    okf_log: str | None = None
+    okf_folders: Sequence[str] | None = None
+
+    @property
+    def okf_capabilities(self) -> OkfCapabilities:
+        """Resolve configured authority without applying runtime restrictions."""
+        return OkfCapabilities(
+            author=self.okf_author if self.okf_author is not None else False,
+            verify=("elicit" if self.okf_write else "off")
+            if isinstance(self.okf_verify, DefaultVerify)
+            else self.okf_verify,
+            index=self.okf_index if self.okf_index is not None else self.okf_write,
+            log=self.okf_log
+            if self.okf_log is not None
+            else ("writes" if self.okf_write else "off"),
+            folders=tuple(self.okf_folders)
+            if self.okf_folders is not None
+            else (("**",) if self.okf_write else (".",)),
+            legacy_stamping=self.okf_write,
+        )
 
     def __post_init__(self) -> None:
         """Validate size limits (#638) and freeze attachment_extensions (#639).
@@ -126,11 +153,21 @@ class ContentConfig:
                 "okf_verify must be one of elicit/off/trust-auth, got "
                 f"{self.okf_verify!r}"
             )
-        # okf_verify only governs the okf_verify tool, which OKF_WRITE gates; a
-        # non-default value with the enforced layer off is an operator mistake
-        # (the tool is hidden, so the setting would silently do nothing).
-        if not self.okf_write and self.okf_verify != "elicit":
+        if self.okf_log not in (None, "off", "events", "writes"):
+            raise ConfigurationError("okf_log must be one of off/events/writes")
+        if self.okf_folders is not None:
+            if isinstance(self.okf_folders, (str, bytes)) or not all(
+                isinstance(folder, str) and folder.strip()
+                for folder in self.okf_folders
+            ):
+                raise ConfigurationError(
+                    "okf_folders must be a sequence of non-empty globs"
+                )
+            object.__setattr__(self, "okf_folders", tuple(self.okf_folders))
+        caps = self.okf_capabilities
+        if self.okf_mode == "off" and (
+            caps.author or caps.verify != "off" or caps.index or caps.log != "off"
+        ):
             raise ConfigurationError(
-                "okf_verify is only meaningful when okf_write is enabled; set "
-                "okf_write=true or leave okf_verify at its default 'elicit'"
+                "OKF write capabilities require okf_mode to be auto or on"
             )

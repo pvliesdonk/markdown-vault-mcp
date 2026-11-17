@@ -71,6 +71,14 @@ _CHARS_PER_TOKEN = 2.8
 _MAX_CHUNK_CHARS_CEILING = 1500
 
 
+def warn_okf_write_deprecated() -> None:
+    """Warn once per configuration constructed with the legacy write switch."""
+    logger.warning(
+        "okf_write_deprecated replacements=%s",
+        "OKF_AUTHOR,OKF_VERIFY,OKF_INDEX,OKF_LOG,OKF_FOLDERS",
+    )
+
+
 def derive_max_chunk_chars(*, context_length: int | None, override: int | None) -> int:
     """Resolve the chunker character cap.
 

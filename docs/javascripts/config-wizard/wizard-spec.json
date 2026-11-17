@@ -701,7 +701,39 @@
       "label": "Okf Verify",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
-      "help": "How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error.",
+      "help": "How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. The independently configured mode is resolved now; runtime gating continues to require OKF_WRITE until a later update.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_author",
+      "label": "Okf Author",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_OKF_AUTHOR",
+      "help": "Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_index",
+      "label": "Okf Index",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_OKF_INDEX",
+      "help": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_log",
+      "label": "Okf Log",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_LOG",
+      "help": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting.",
+      "advancedGroup": "Content"
+    },
+    {
+      "id": "okf_folders",
+      "label": "Okf Folders",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
+      "help": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting.",
       "advancedGroup": "Content"
     },
     {

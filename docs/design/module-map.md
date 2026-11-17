@@ -171,3 +171,5 @@ src/markdown_vault_mcp/
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
 ```
+
+- `okf_capabilities.py` — resolve configured OKF authority and the legacy alias.
