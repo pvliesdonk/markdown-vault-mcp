@@ -4592,7 +4592,7 @@ class TestReadAtRevisionTool:
                     ["git", "-C", str(vault), *args], capture_output=True, check=True
                 )
             (vault / "alpha.md").write_text("# Alpha\n\nA different note.\n")
-            # The live server can create transient state files during staging.
+            # Keep this fixture commit scoped to the recreated note.
             for args in (["add", "alpha.md"], ["commit", "-m", "write: alpha.md"]):
                 subprocess.run(
                     ["git", "-C", str(vault), *args], capture_output=True, check=True
