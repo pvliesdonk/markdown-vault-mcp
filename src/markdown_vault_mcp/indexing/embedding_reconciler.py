@@ -400,8 +400,6 @@ class EmbeddingReconciler:
         except ReadOnlyError:
             raise
         except Exception as exc:
-            if isinstance(exc, StoreCorruptError) and state.recover_corruption:
-                raise
             # Broad by design: each backend raises its own I/O error.
             self._write_failed(state, path, removed, exc)
             return
@@ -490,8 +488,6 @@ class EmbeddingReconciler:
         except ReadOnlyError:
             raise
         except Exception as exc:
-            if isinstance(exc, StoreCorruptError) and state.recover_corruption:
-                raise
             # Broad by design: each backend raises its own I/O error.
             self._write_failed(state, doc.path, len(doc.texts), exc)
             return
@@ -782,11 +778,11 @@ class EmbeddingReconciler:
 
     @staticmethod
     def _write_failed(state: _Pass, path: str, chunks: int, exc: Exception) -> None:
-        """Keep *path*'s rows after a store write failed, for the next flush.
+        """Keep *path*'s rows after a write failure, unless corruption is recoverable.
 
-        A store that writes durably raises its own I/O errors (a full disk,
-        a lock timeout); like a provider failure, it costs this path, not
-        the pass (#1497).
+        Other store write errors, such as a full disk or lock timeout, cost
+        this path rather than the pass (#1497). Recoverable corruption
+        propagates to the owner for rebuilding (#1976).
         """
         if isinstance(exc, StoreCorruptError) and state.recover_corruption:
             raise exc

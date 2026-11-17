@@ -5055,7 +5055,7 @@ another one, and is the explicit switch of choice C.
 
   A slot that cannot condemn preserves per-document handling of write errors;
   corruption found in a read still raises `StoreCorruptError`. A job that
-  cannot recover corruption reports the failure with its traceback.
+  cannot recover corruption follows the existing job failure logging.
 - As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not

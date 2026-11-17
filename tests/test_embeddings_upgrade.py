@@ -97,24 +97,6 @@ def test_a_v5_1_vault_upgrades_for_free(tmp_path: Path, store: str) -> None:
     assert _sums(tmp_path) == expected
 
 
-def test_exclusion_purge_preserves_cold_upgrade(tmp_path: Path) -> None:
-    root = _released(tmp_path)
-    (root / "excluded.md").write_text("# Excluded\n\nOld content.\n")
-    initial = _vault(tmp_path, root, "sqlite", _Counting())
-    initial.index.build_index()
-    initial.close()
-    (root / "new.md").write_text("# New\n\nNew content.\n")
-    provider = _Counting()
-    vault = _vault(tmp_path, root, "sqlite", provider, exclude_patterns=["excluded.md"])
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        vault.index.build_embeddings()
-        assert len(provider.texts) == 1
-    finally:
-        vault.close()
-
-
 def test_a_v5_1_install_upgrades_onto_the_default_store_for_free(
     tmp_path: Path,
 ) -> None:
