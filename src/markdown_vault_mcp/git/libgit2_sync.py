@@ -95,13 +95,14 @@ def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
 
 
 def _extra_policy(repo: Any) -> None:
-    _probe_config_hooks(repo, ("pre-push", "post-merge", "post-checkout"))
+    events = ("pre-push", "post-merge", "post-checkout", "pre-rebase", "post-rewrite")
+    _probe_config_hooks(repo, events)
     hooks_path = _tree_entry(repo.config, "core.hookspath")
     gitdir = _common(Path(repo.path))
     hooks = Path(hooks_path).expanduser() if hooks_path else gitdir / "hooks"
     if not hooks.is_absolute():
         hooks = Path(repo.workdir) / hooks
-    for name in ("pre-push", "post-merge", "post-checkout"):
+    for name in events:
         if os.access(hooks / name, os.X_OK):
             raise ConfigurationError(f"libgit2 cannot run {name} hooks. {_FALLBACK}")
     if _tree_entry(repo.config, "core.sshcommand"):
@@ -300,14 +301,17 @@ class Libgit2SyncStore(Libgit2Store):
     def _gate(self, repo: Any) -> None:
         try:
             _checked(repo)
+            _probe_policy(repo)
+            _extra_policy(repo)
         except ConfigurationError as exc:
-            raise ConfigurationError(f"{exc} {_FALLBACK}") from None
-        _probe_policy(repo)
+            detail = str(exc)
+            raise ConfigurationError(
+                detail if _FALLBACK in detail else f"{detail} {_FALLBACK}"
+            ) from None
         if repo.is_shallow or _config_bool(repo.config, "core.sparsecheckout"):
             raise ConfigurationError(
                 f"Shallow or sparse repositories are unsupported. {_FALLBACK}"
             )
-        _extra_policy(repo)
         remote = self._origin()
         if remote:
             for url in (remote.url, remote.push_url or remote.url):
@@ -440,8 +444,6 @@ class Libgit2SyncStore(Libgit2Store):
     def _pull(self, dry_run: bool, *, startup: bool = False) -> PullResult:  # noqa: PLR0911, RUF100 -- distinct outcomes preserve result contracts.
         repo = self._repo
         before = str(repo.head.target) if repo and not repo.head_is_unborn else ""
-        if not self._enable_sync:
-            return PullResult.head_unchanged_failure("", PULL_REASON_PULL_DISABLED)
         remote = self._origin()
         if remote is None or repo is None:
             return PullResult.head_unchanged_failure(before, PULL_REASON_NO_REMOTE)
@@ -501,20 +503,18 @@ class Libgit2SyncStore(Libgit2Store):
                 result_reason,
                 tuple(siblings),
             )
-        except ConfigurationError as exc:
+        except Exception as exc:
             detail = _safe(str(exc), self._token)
-            if startup:
+            if startup and isinstance(exc, ConfigurationError):
                 raise ConfigurationError(
                     detail if _FALLBACK in detail else f"{detail} {_FALLBACK}"
                 ) from None
+            if "ambiguous path" in detail or (
+                "conflict" in detail and "checkout" in detail
+            ):
+                detail = f"{detail}; inspect local changes and move untracked obstructions before retrying."
             return PullResult.head_unchanged_failure(
                 before, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
-            )
-        except Exception as exc:
-            return PullResult.head_unchanged_failure(
-                before,
-                PULL_REASON_CONFLICT_RESOLUTION_FAILED,
-                _safe(str(exc), self._token),
             )
 
     def _apply(self, repo: Any, before: str, target: Any) -> None:
@@ -597,6 +597,7 @@ class Libgit2SyncStore(Libgit2Store):
                 raise ConfigurationError(
                     f"Incoming attributes conflict with checkout attributes. {_FALLBACK}"
                 )
+            self._pair_renames(repo, _operation, target, index, conflicts)
             for ancestor, remote, local in list(index.conflicts or []):
                 path = (local or remote or ancestor).path
                 del index.conflicts[path]
@@ -616,6 +617,39 @@ class Libgit2SyncStore(Libgit2Store):
             return target.id, PULL_REASON_REBASED, []
         return self._save_siblings(repo, head, target, conflicts, signature)
 
+    def _pair_renames(
+        self,
+        repo: Any,
+        operation: Any,
+        target: Any,
+        index: Any,
+        conflicts: dict[str, Any],
+    ) -> None:
+        if (entries := index.conflicts) and repo[operation.id].parents:
+            diff = repo.diff(repo[operation.id].parents[0].tree, target.tree)
+            diff.find_similar(flags=self._pg.enums.DiffFind.FIND_RENAMES)
+            for delta in diff.deltas:
+                old, new = delta.old_file.path, delta.new_file.path
+                if delta.status != self._pg.enums.DeltaStatus.RENAMED:
+                    continue
+                if old not in entries or new not in entries:
+                    continue
+                ancestor, remote, local = entries[old]
+                new_ancestor, new_remote, new_local = entries[new]
+                if not (
+                    ancestor
+                    and local
+                    and not remote
+                    and not new_ancestor
+                    and new_remote
+                    and not new_local
+                ):
+                    continue
+                del entries[old]
+                del entries[new]
+                index.add(new_remote)
+                conflicts[new] = local
+
     def _save_siblings(
         self,
         repo: Any,
@@ -631,7 +665,7 @@ class Libgit2SyncStore(Libgit2Store):
         head_index = self._pg.Index()
         head_index.read_tree(head.tree)
         for path, entry in conflicts.items():
-            local = _tree_entry(head_index, path) or entry
+            local = _tree_entry(head_index, entry.path) or entry
             original = _tree_entry(index, path)
             name = conflict_sibling_name(Path(path), date.strftime("%Y%m%d-%H%M%S"))
             counter = 1
@@ -643,17 +677,10 @@ class Libgit2SyncStore(Libgit2Store):
                 )
                 counter += 1
             try:
-                relative = (
-                    (Path(repo.workdir) / path)
-                    .resolve()
-                    .relative_to(self._sync_path.resolve())
-                    .as_posix()
-                )
-                sibling_relative = (
-                    (Path(repo.workdir) / name)
-                    .resolve()
-                    .relative_to(self._sync_path.resolve())
-                    .as_posix()
+                root = self._sync_path.resolve()
+                relative, sibling_relative = (
+                    (Path(repo.workdir) / item).resolve().relative_to(root).as_posix()
+                    for item in (path, name)
                 )
                 siblings.append(sibling_relative)
             except ValueError:
@@ -775,11 +802,7 @@ class Libgit2SyncStore(Libgit2Store):
                     "Push dry run is not supported.",
                 )
             try:
-                ahead = (
-                    repo.ahead_behind(repo.head.target, tracking.target)[0]
-                    if tracking
-                    else sum(1 for _ in repo.walk(repo.head.target))
-                )
+                ahead = repo.ahead_behind(repo.head.target, tracking.target)[0]
                 self._push(self._sync_path)
             except PushBackendError as exc:
                 reason = push_failure_reason(str(exc))

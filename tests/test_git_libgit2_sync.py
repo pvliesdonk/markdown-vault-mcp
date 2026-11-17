@@ -201,7 +201,9 @@ def test_incoming_filter_refused_before_checkout(
     store.close()
 
 
-@pytest.mark.parametrize("hook", ["pre-push", "post-merge", "post-checkout"])
+@pytest.mark.parametrize(
+    "hook", ["pre-push", "post-merge", "post-checkout", "pre-rebase", "post-rewrite"]
+)
 def test_startup_refuses_hooks(git_repo: Path, hook: str) -> None:
     path = git_repo / ".git/hooks" / hook
     path.write_text("#!/bin/sh\nexit 0\n")
@@ -1937,5 +1939,186 @@ def test_conflict_preserves_remote_symlink_and_local_regular_bytes(
         assert (local / "README.md").readlink() == Path("target.md")
         sibling = next(local.glob("README.conflict-mcp-*.md"))
         assert sibling.read_bytes() == b"local body\n"
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    "old_name,new_name", [("README.md", "renamed.md"), ("a [x].md", "b [y].md")]
+)
+def test_remote_rename_and_conflicting_edit_preserves_reciprocal_versions(
+    git_repo_pair: GitRepoPair, tmp_path: Path, old_name: str, new_name: str
+) -> None:
+    import frontmatter
+
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "core.hooksPath", str(tmp_path / "empty-hooks"))
+    base = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\ntheta\niota\nkappa\n"
+    _git_commit(local, old_name, base, "base")
+    _git_commit(local, "z-clean.md", "clean rename\n", "second base")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, old_name, base.replace("gamma", "local"), "local edit")
+    _git_commit(
+        local,
+        old_name,
+        base.replace("gamma", "local").replace("kappa", "later"),
+        "later edit",
+    )
+    _git_commit(local, "local-add.md", "local addition\n", "local add")
+    _run_git(other, "mv", old_name, new_name)
+    _run_git(other, "mv", "z-clean.md", "z-renamed.md")
+    (other / new_name).write_text(base.replace("gamma", "remote"))
+    (other / "remote-add.md").write_text("remote addition\n")
+    _run_git(other, "add", new_name, "remote-add.md")
+    _run_git(other, "commit", "-m", "rename and edit")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert result.applied
+        original = frontmatter.loads((local / new_name).read_text())
+        sibling = local / result.conflict_files[0]
+        saved = frontmatter.loads(sibling.read_text())
+        assert (
+            "remote" in original.content
+            and "local" in saved.content
+            and "later" in saved.content
+        )
+        assert original["conflict_with"] == sibling.name
+        assert saved["conflict_with"] == new_name
+        assert (local / "local-add.md").read_text() == "local addition\n"
+        assert (local / "remote-add.md").read_text() == "remote addition\n"
+        assert (local / "z-renamed.md").read_text() == "clean rename\n"
+        assert store.force_push().applied
+        _run_git(other, "pull", "--ff-only")
+        assert (other / sibling.name).read_bytes() == sibling.read_bytes()
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("hook", ["pre-rebase", "post-rewrite"])
+@pytest.mark.parametrize("state", ["enabled", "disabled", "reset"])
+def test_configured_rebase_hook_policy_matches_cli(
+    git_repo_pair: GitRepoPair, tmp_path: Path, hook: str, state: str
+) -> None:
+    import shlex
+
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "local.md", "local\n", "local")
+    _git_commit(other, "remote.md", "remote\n", "remote")
+    _run_git(other, "push")
+    _run_git(local, "fetch")
+    marker = tmp_path / "rebase-hook-marker"
+    _run_git(local, "config", "hook.fixture.event", hook)
+    command = shlex.quote(f"touch {shlex.quote(str(marker))}")
+    _run_git(local, "config", "hook.fixture.command", f"sh -c {command}")
+    if state == "disabled":
+        _run_git(local, "config", f"hook.{hook}.enabled", "false")
+    elif state == "reset":
+        _run_git(local, "config", "--add", "hook.fixture.event", "")
+    _run_git(local, "rebase", "origin/main")
+    assert marker.exists() is (state == "enabled")
+    if state == "enabled":
+        with pytest.raises(ConfigurationError, match=r"GIT_BACKEND=cli"):
+            Libgit2SyncStore(local, enable_sync=True)
+    else:
+        store = Libgit2SyncStore(local, enable_sync=True)
+        store.close()
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_untracked_directory_file_collision_has_actionable_detail(
+    git_repo_pair: GitRepoPair, tmp_path: Path, kind: str
+) -> None:
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    if kind == "file":
+        (local / "clash").write_text("keep local\n")
+        (other / "clash").mkdir()
+        _git_commit(other, "clash/note.md", "remote\n", "remote directory")
+    else:
+        (local / "clash").mkdir()
+        (local / "clash/keep.md").write_text("keep local\n")
+        _git_commit(other, "clash", "remote\n", "remote file")
+    _run_git(other, "push")
+    before = _git_head(local)
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert not result.applied and _git_head(local) == before
+        assert "untracked" in (result.detail or "").lower()
+        assert "move" in (result.detail or "").lower()
+        kept = local / ("clash" if kind == "file" else "clash/keep.md")
+        assert kept.read_text() == "keep local\n"
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("delete_renamed", [False, True])
+def test_rename_with_actual_local_deletion_refuses_without_state_loss(
+    git_repo_pair: GitRepoPair, tmp_path: Path, delete_renamed: bool
+) -> None:
+    local = git_repo_pair.local_path
+    _run_git(local, "config", "core.hooksPath", str(tmp_path / "empty-hooks"))
+    base = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\ntheta\niota\nkappa\n"
+    _git_commit(local, "README.md", base, "base")
+    _git_commit(local, "deleted.md", "original\n", "base deletion")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    if delete_renamed:
+        _run_git(local, "rm", "README.md")
+    else:
+        (local / "README.md").write_text(base.replace("gamma", "local"))
+        _run_git(local, "add", "README.md")
+        _run_git(local, "rm", "deleted.md")
+    _run_git(local, "commit", "-m", "local changes")
+    _run_git(other, "mv", "README.md", "renamed.md")
+    (other / "renamed.md").write_text(base.replace("gamma", "remote"))
+    (other / "deleted.md").write_text("remote change\n")
+    _run_git(other, "add", "renamed.md", "deleted.md")
+    _run_git(other, "commit", "-m", "remote changes")
+    _run_git(other, "push")
+    before = _git_head(local)
+    index_before = _run_git(local, "ls-files", "--stage")
+    status_before = _run_git(local, "status", "--porcelain")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        result = store.force_pull()
+        assert not result.applied and "deletion" in (result.detail or "").lower()
+        assert _git_head(local) == before
+        assert _run_git(local, "ls-files", "--stage") == index_before
+        assert _run_git(local, "status", "--porcelain") == status_before
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("hook", ["pre-rebase", "post-rewrite"])
+@pytest.mark.parametrize("kind", ["file", "configured"])
+def test_rebase_hook_added_after_startup_blocks_pull(
+    git_repo_pair: GitRepoPair, tmp_path: Path, hook: str, kind: str
+) -> None:
+    local = git_repo_pair.local_path
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "local.md", "local\n", "local")
+    _git_commit(other, "remote.md", "remote\n", "remote")
+    _run_git(other, "push")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    try:
+        before = _run_git(local, "show-ref")
+        if kind == "file":
+            path = local / ".git/hooks" / hook
+            path.write_text("#!/bin/sh\nexit 0\n")
+            path.chmod(0o755)
+        else:
+            _run_git(local, "config", "hook.fixture.event", hook)
+            _run_git(local, "config", "hook.fixture.command", "true")
+        result = store.force_pull()
+        assert not result.applied
+        assert hook in (result.detail or "") and "GIT_BACKEND=cli" in (
+            result.detail or ""
+        )
+        assert _run_git(local, "show-ref") == before
     finally:
         store.close()

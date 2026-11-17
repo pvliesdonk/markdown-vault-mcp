@@ -52,6 +52,11 @@ resolutions cannot safely be preserved; use the CLI backend for those. A local
 deletion that conflicts with a remote edit is also refused; reconcile that
 conflict manually before retrying.
 Repeated conflicts on one path retain the final local version in one sibling.
+If the remote deleted the original, the saved local sibling's `conflict_with`
+names that now-missing path; there is no original file to link back to it.
+The `conflict_resolution_failed` pull reason also covers refusals such as
+overlapping local changes and unsupported capabilities; read `detail` for the
+specific cause and recovery guidance.
 Checkout refuses overlapping uncommitted changes and preserves unrelated work.
 If checkout or reference publication fails, the store restores the affected paths
 and invalidates search for reindexing. If restoration also fails, HEAD remains
