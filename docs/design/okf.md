@@ -604,7 +604,9 @@ OKF vault remain subject to it. Full builds, incremental scans and dirty-path
 refreshes use the same admission rule (#1438). A root index change also
 reconciles the other reserved files on the next indexing pass. After a dirty
 refresh changes the scope, the admission marker stays unknown until a reindex
-also reconciles tracker state. Warm reopen compares the effective state
+also reconciles tracker state. Successful dirty refreshes remember the reconciled
+scope in process, so later writes only refresh their own paths until the scope
+changes again. Warm reopen compares the effective state
 recorded with a complete build. An upgrade from older index semantics rebuilds
 the index once. Keyword backends without the optional OKF
 admission provenance capability rebuild conservatively on reopen.

@@ -720,6 +720,7 @@ class IndexManager:
         # reconciliation pass after a cold build (#665) — does not re-report
         # them as added and re-log every skip.
         skipped_state: dict[str, str] = {}
+        failed_skip = False
         for abs_path, rel_str in candidates:
             if rel_str in indexed_paths:
                 continue
@@ -736,12 +737,20 @@ class IndexManager:
             # reusing the hash just computed so both records cover the same
             # bytes. A transient (unrecorded) hash tombstones nothing —
             # tracker and tombstone stay in lockstep.
-            if recorded and rel_str in skip_files:
-                self._tombstone_skip(
+            if (
+                recorded
+                and rel_str in skip_files
+                and not self._tombstone_skip(
                     skip_files[rel_str],
                     abs_path,
                     content_hash=skipped_state[rel_str],
                 )
+                and exempt is not None
+                and is_okf_reserved_file(rel_str)
+            ):
+                skipped_state.pop(rel_str, None)
+                skip_reasons.pop(rel_str, None)
+                failed_skip = True
 
         # Update tracker state so reindex() knows the baseline. Kept rows go in
         # with an empty hash, so the first scan that reads them re-parses them.
@@ -783,7 +792,7 @@ class IndexManager:
                 self._attachment_extensions
             ),
         )
-        if exempt is not None and not walk_errors and not errored:
+        if exempt is not None and not walk_errors and not errored and not failed_skip:
             self._store_exempt(exempt)
         return IndexStats(
             documents_indexed=len(notes) - errored,
@@ -801,14 +810,13 @@ class IndexManager:
 
     def _stored_exempt(self) -> bool | None:
         getter = getattr(self._fts, "get_okf_admission_meta", None)
-        return getter() if callable(getter) else self._memory_exempt
+        return getter() if callable(getter) else None
 
     def _store_exempt(self, value: bool | None) -> None:
         setter = getattr(self._fts, "set_okf_admission_meta", None)
         if callable(setter):
             setter(value)
-        else:
-            self._memory_exempt = value
+        self._memory_exempt = value
 
     def _stale_reserved(self, exempt: bool | None) -> set[str]:
         if exempt is None or exempt == self._stored_exempt():
@@ -1081,7 +1089,11 @@ class IndexManager:
                     )
                     if persisted and resolved_skips is not None:
                         resolved_skips.add(path)
-                    if not persisted:
+                    if (
+                        not persisted
+                        and exempt is not None
+                        and is_okf_reserved_file(path)
+                    ):
                         newly_skipped.pop(path, None)
                         newly_skip_reasons.pop(path, None)
                 continue
@@ -1301,8 +1313,11 @@ class IndexManager:
         if not paths:
             return
         exempt = self._admission_snapshot()
-        stale = self._stale_reserved(exempt)
-        if exempt is not None and exempt != self._stored_exempt():
+        previous = self._memory_exempt
+        if previous is None:
+            previous = self._stored_exempt()
+        stale = set() if exempt == previous else self._stale_reserved(exempt)
+        if exempt is not None and exempt != previous:
             self._store_exempt(None)
         try:
             first_error: Exception | None = None
@@ -1329,8 +1344,8 @@ class IndexManager:
             # A graph failure must fail the job and retain its dirty paths;
             # otherwise a later mutation could trust an incomplete refresh.
             self._fts.resolve_vault_wikilinks()
-            if exempt is not None and not stale:
-                self._store_exempt(exempt)
+            if exempt is not None:
+                self._memory_exempt = exempt
 
     def _process_dirty_path(self, path: str, *, exempt: bool | None = None) -> None:
         """Refresh one row, propagating any failure that leaves it stale."""
