@@ -722,7 +722,8 @@ class IndexManager:
         skipped_state: dict[str, str] = {}
         failed_skip = False
         for abs_path, rel_str in candidates:
-            if rel_str in indexed_paths:
+            # An uncategorized read failure must be retried on reindex.
+            if rel_str in indexed_paths or rel_str not in skip_files:
                 continue
             # A failed hash is possibly transient — left unrecorded so the
             # next scan retries the file (#802; see _record_skip_hash).

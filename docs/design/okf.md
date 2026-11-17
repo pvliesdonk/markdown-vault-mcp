@@ -609,7 +609,10 @@ scope in process, so later writes only refresh their own paths until the scope
 changes again. Warm reopen compares the effective state
 recorded with a complete build. An upgrade from older index semantics rebuilds
 the index once. Keyword backends without the optional OKF
-admission provenance capability rebuild conservatively on reopen.
+admission provenance capability rebuild conservatively on reopen. An unread
+build candidate is retried on the next reindex; the version 13 rebuild also
+clears old tracker-only skips left by version 12. Reopening before a reindex
+after a dirty scope change triggers one conservative rebuild.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
 carry. Both generators and the `OKF_WRITE` maintainer write through it:
