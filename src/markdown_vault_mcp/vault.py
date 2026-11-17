@@ -626,7 +626,6 @@ class Vault:
             title_field=self._title_field,
             searchable_fields=",".join(self._searchable_frontmatter_fields),
             indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
-            okf_admission_active=reserved_exempt,
             attachment_extensions=canonical_attachment_extensions(
                 effective_attachment_extensions(self._attachment_extensions)
             ),

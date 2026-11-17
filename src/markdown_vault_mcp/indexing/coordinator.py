@@ -40,7 +40,7 @@ from markdown_vault_mcp.indexing.readiness import ReadinessState
 
 if TYPE_CHECKING:
     import threading
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import KeywordIndex
@@ -66,10 +66,9 @@ class IndexWriteCoordinator:
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
         attachment_extensions: str = "",
-        okf_admission_active: Callable[[], bool | None] | None = None,
     ) -> None:
         self._fts = fts
-        self._okf_admission_active = okf_admission_active
+        self._index_mgr = index_mgr
         self._index_path = index_path
         # file_write_lock remains a constructor compatibility parameter; build
         # scheduling no longer borrows the file-mutation lock.
@@ -318,12 +317,9 @@ class IndexWriteCoordinator:
             the first mismatching key at INFO, so the rebuild an operator
             sees in the log names its own cause.
         """
-        active = self._okf_admission_active() if self._okf_admission_active else None
+        active = self._index_mgr._admission_snapshot()
         if active is not None:
-            get_admission_meta = getattr(self._fts, "get_okf_admission_meta", None)
-            stored_active = (
-                get_admission_meta() if callable(get_admission_meta) else None
-            )
+            stored_active = self._index_mgr._stored_exempt()
             if stored_active != active:
                 logger.info(
                     "index_provenance_changed key=%s stored=%s current=%s action=rebuild",
