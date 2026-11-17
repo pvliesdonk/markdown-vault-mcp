@@ -700,6 +700,30 @@ class TestMaintainerFolderWalks:
 
 
 class TestIndexRefreshEdgeCases:
+    def test_move_reserved_named_folders_preserves_handwritten_index(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "vault"
+        (root / "index.md").mkdir(parents=True)
+        (root / "index.md/note.md").write_text("# Note\n", encoding="utf-8")
+        (root / "index.md/index.md").write_text(
+            "# Precious index\n\nUnique hand-written content.\n", encoding="utf-8"
+        )
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+        )
+        vault.index.build_index()
+        try:
+            vault.writer.move_folder("index.md/", "log.md/")
+            wait_for_writer_drain(vault)
+            assert (root / "log.md/note.md").is_file()
+            assert "Unique hand-written content." in (
+                root / "log.md/index.md"
+            ).read_text(encoding="utf-8")
+        finally:
+            vault.close()
+
     def test_renaming_a_note_onto_a_reserved_name_keeps_its_body(
         self, enforced_vault: Vault
     ) -> None:

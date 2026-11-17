@@ -26,6 +26,7 @@ import datetime as _dt
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 # Both halves of the library are used here, deliberately: `fm` serialises the
@@ -79,8 +80,9 @@ OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
 def is_okf_reserved_file(path: str) -> bool:
     """Classify an already scoped vault-relative POSIX path by its basename.
 
-    This lexical check grants no detection, admission, authorship, or
-    maintenance authority.
+    POSIX basename rules ignore trailing separators and dot components;
+    backslashes remain literal. This lexical check grants no detection,
+    admission, authorship, or maintenance authority.
 
     Args:
         path: A vault-relative POSIX path.
@@ -88,7 +90,7 @@ def is_okf_reserved_file(path: str) -> bool:
     Returns:
         Whether its basename is an exact-case reserved OKF filename.
     """
-    return path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES
+    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
 
 
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
