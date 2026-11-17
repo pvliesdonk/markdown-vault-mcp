@@ -5808,6 +5808,15 @@ and logs a deprecation warning; when it is set, both additive variables are
 ignored. None reaches `ProjectConfig`: a domain field mirroring them would be
 a second, silently-diverging reader of the same variables.
 
+For cross-instance note links (#1131), an operator can include the GitHub file
+URL prefix for this vault root in its instance description. A model receiving
+the instructions can infer the serving instance and the path relative to that
+prefix. This is self-advertisement, with no sibling list. The server neither
+fetches nor verifies the URL, and does not derive it from `GIT_REPO_URL`: that
+is a clone URL, its branch is unknown, and it can sit beside credentials.
+Whether instructions reach the model depends on the client; see the
+[model-facing text reference](reference/mcp-model-facing-text.md).
+
 The generated-text compatibility target is a tested configuration matrix,
 not an estimate from the default stdio server. The maximal case enables
 read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
