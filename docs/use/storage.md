@@ -28,7 +28,7 @@ Only one process at a time writes a given index. While a server has it open, the
 - A second server started on the same `MARKDOWN_VAULT_MCP_INDEX_PATH` starts with the vault unavailable. Every tool says that another process is writing the index. The second server opens the vault within a few seconds of the first one exiting.
 - `markdown-vault-mcp search` and other commands that only read are never blocked.
 
-A lock across a network share or a virtual machine's shared folder may not hold, so in those setups make sure only one process writes the index yourself.
+If the lock file cannot be opened or the filesystem cannot lock it, the writer proceeds unlocked and logs `writer_lock_skipped` at DEBUG. A lock across a network share or a virtual machine's shared folder may not hold, so in those setups make sure only one process writes the index yourself.
 
 At shutdown, the server waits up to 30 seconds for indexing work in progress. It doesn't wait for work still running after that: it logs a warning, `index_close_skipped`, leaves the index open to that work, and the work stops when the process exits. What it had committed stays; run `markdown-vault-mcp admin reindex` if it was a long rebuild.
 
