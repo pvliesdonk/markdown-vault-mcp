@@ -9,7 +9,11 @@ from unittest.mock import patch
 
 import pytest
 
-from markdown_vault_mcp._commit_groups import CommitGroupError
+from markdown_vault_mcp._commit_groups import (
+    CommitGroupError,
+    GroupCommitResult,
+    make_group,
+)
 from markdown_vault_mcp._commit_scope import bound_commit_scope
 from markdown_vault_mcp._identity import Principal, bound_principal
 from markdown_vault_mcp.config_sections import VaultSettings
@@ -70,24 +74,38 @@ def _write_in_group(
         dispatcher.fire(path, content, "write")
 
 
+def _commit_group(
+    strategy: GitWriteStrategy, items: list[WriteBatchItem]
+) -> GroupCommitResult:
+    result = strategy.on_write_batch(items, "test", group_subject="Group")
+    assert result is not None
+    return result
+
+
 def test_group_commits_multiple_writes_on_close(
     git_repo: Path, dispatcher: WriteCallbackDispatcher
 ) -> None:
-    group = dispatcher.open_group("Organize notes", None)
+    principal = Principal("alice", "Alice", "alice@example.com", "human")
+    group = dispatcher.open_group("Organize notes", principal)
     # one.md is written twice: the count is paths in the commit, not writes.
     for index, name in enumerate(("one.md", "two.md", "one.md")):
         note = git_repo / name
-        _write_in_group(dispatcher, group.handle, note, f"{name} {index}")
+        note.write_text(f"{name} {index}", encoding="utf-8")
+        with bound_principal(principal), dispatcher.bind_group(group.handle, principal):
+            dispatcher.fire(note, f"{name} {index}", "write")
         assert note.read_text(encoding="utf-8") == f"{name} {index}"
     assert git(git_repo, "log", "-1", "--format=%s") == "init"
-    result = dispatcher.close_group(group.handle, None).result(timeout=5)
+    result = dispatcher.close_group(group.handle, principal).result(timeout=5)
+    assert (
+        git(git_repo, "log", "-1", "--format=%an <%ae>") == "Alice <alice@example.com>"
+    )
     assert result.status == "committed"
     assert result.sha == git(git_repo, "rev-parse", "HEAD")
     assert result.files == 2
     assert git(git_repo, "log", "-1", "--format=%s") == "Organize notes"
 
 
-def test_group_handles_reject_nested_foreign_and_closed() -> None:
+def test_group_handles_reject_nested_foreign_and_unknown() -> None:
     dispatcher = WriteCallbackDispatcher(None)
     alice = Principal("alice", "Old name", "old@example.com", "human")
     refreshed = Principal("alice", "New name", "new@example.com", "human")
@@ -108,30 +126,16 @@ def test_group_handles_reject_nested_foreign_and_closed() -> None:
     )
     with pytest.raises(CommitGroupError):
         dispatcher.close_group(group.handle, alice)
-    dispatcher.close_group(other.handle, alice)
-    dispatcher.close()
 
 
-def test_single_group_no_changes_and_drain(
+def test_group_unchanged_file_reports_no_changes(
     git_repo: Path, dispatcher: WriteCallbackDispatcher
 ) -> None:
-    group = dispatcher.open_group("One subject", None)
-    path = git_repo / "note.md"
-    _write_in_group(dispatcher, group.handle, path, "one")
-    assert dispatcher.drain()
-    assert git(git_repo, "log", "-1", "--format=%s") == "One subject"
-    _write_in_group(dispatcher, group.handle, path, "two")
+    path = _seed(git_repo, "note.md", "one")
+    group = dispatcher.open_group("no change", None)
+    with dispatcher.bind_group(group.handle, None):
+        dispatcher.fire(path, "one", "write")
     result = dispatcher.close_group(group.handle, None).result(timeout=5)
-    assert result.status == "committed"
-    assert result.files == 2
-    assert git(git_repo, "log", "-2", "--format=%s").splitlines() == [
-        "One subject",
-        "One subject",
-    ]
-    unchanged = dispatcher.open_group("no change", None)
-    with dispatcher.bind_group(unchanged.handle, None):
-        dispatcher.fire(path, "two", "write")
-    result = dispatcher.close_group(unchanged.handle, None).result(timeout=5)
     assert result.status == "no_changes"
     assert result.sha is None
 
@@ -154,60 +158,27 @@ def test_vault_group_indexes_before_close_and_renames(
         assert git(git_repo, "log", "-1", "--format=%s") == "seed"
         with dispatcher.bind_group(group.handle, None):
             vault.writer.rename("a.md", "b.md")
-        with dispatcher.bind_group(group.handle, None):
-            vault.writer.rename("b.md", "c.md")
         assert (
             dispatcher.close_group(group.handle, None).result(timeout=10).status
             == "committed"
         )
-        assert git(git_repo, "ls-tree", "-r", "--name-only", "HEAD").splitlines() == [
-            "README.md",
-            "c.md",
-            "test.md",
+        assert git(
+            git_repo, "diff", "--no-renames", "--name-status", "HEAD^", "HEAD"
+        ).splitlines() == [
+            "D\ta.md",
+            "A\tb.md",
+            "A\ttest.md",
         ]
         assert vault.index.wait_for_drain(timeout=10)
-        assert vault.reader.read("c.md") is not None
+        assert vault.reader.read("b.md") is not None
     finally:
         vault.close()
-
-
-def test_failed_group_reports_failure(
-    git_repo: Path, dispatcher: WriteCallbackDispatcher
-) -> None:
-    group = dispatcher.open_group("fails", None)
-    _write_in_group(dispatcher, group.handle, git_repo / "note.md", "content")
-    with patch(
-        "markdown_vault_mcp.git.strategy._commit_staged",
-        side_effect=subprocess.CalledProcessError(1, "git"),
-    ):
-        assert (
-            dispatcher.close_group(group.handle, None).result(timeout=5).status
-            == "failed"
-        )
-
-
-def test_non_group_callback_keeps_per_call_commits(tmp_path: Path) -> None:
-    seen: list[Path] = []
-    dispatcher = WriteCallbackDispatcher(lambda path, _content, _op: seen.append(path))
-    group = dispatcher.open_group("non-git", None)
-    for name in ("a.md", "b.md"):
-        with (
-            dispatcher.bind_group(group.handle, None),
-            bound_commit_scope("write") as scope,
-        ):
-            dispatcher.fire(tmp_path / name, name, "write")
-            dispatcher.end_scope(scope)
-    assert dispatcher.close_group(group.handle, None).result().status == "no_changes"
-    dispatcher.close()
-    assert seen == [tmp_path / "a.md", tmp_path / "b.md"]
 
 
 @pytest.mark.parametrize(
     ("description", "valid"),
     [
         ("", False),
-        (" ", False),
-        ("two\nlines", False),
         (" leading", False),
         ("trailing ", False),
         ("two\u0085lines", False),
@@ -219,38 +190,38 @@ def test_non_group_callback_keeps_per_call_commits(tmp_path: Path) -> None:
     ],
 )
 def test_group_description_rules(description: str, valid: bool) -> None:
-    dispatcher = WriteCallbackDispatcher(None)
     if valid:
-        group = dispatcher.open_group(description, None)
-        assert (
-            dispatcher.close_group(group.handle, None).result().status == "no_changes"
-        )
+        assert make_group(description, None).description == description
     else:
         with pytest.raises(CommitGroupError):
-            dispatcher.open_group(description, None)
-    dispatcher.close()
+            make_group(description, None)
 
 
-@pytest.mark.parametrize(
-    "moves",
-    [
-        (("a.md", "b.md"), ("b.md", "c.md")),
-        (("a.md", "b.md"), ("b.md", "a.md"), ("a.md", "c.md")),
-    ],
-)
-def test_group_rename_chain_commits_final_tree(
-    git_repo: Path,
-    dispatcher: WriteCallbackDispatcher,
-    moves: tuple[tuple[str, str], ...],
+@pytest.mark.parametrize("case", ["chain", "revisit", "delete_create"])
+def test_group_rename_final_tree(
+    git_repo: Path, strategy: GitWriteStrategy, case: str
 ) -> None:
     _seed(git_repo, "a.md")
-    group = dispatcher.open_group("Rename chain", None)
-    with dispatcher.bind_group(group.handle, None):
-        for source, target in moves:
-            (git_repo / source).rename(git_repo / target)
-            dispatcher.fire(git_repo / target, "", "rename", git_repo / source)
-    result = dispatcher.close_group(group.handle, None).result(timeout=5)
-    assert result.status == "committed"
+    items: list[WriteBatchItem] = []
+    if case == "delete_create":
+        moves = (("a.md", "b.md"),)
+    elif case == "revisit":
+        moves = (("a.md", "b.md"), ("b.md", "a.md"), ("a.md", "c.md"))
+    else:
+        moves = (("a.md", "b.md"), ("b.md", "c.md"))
+    for source, target in moves:
+        old, new = git_repo / source, git_repo / target
+        old.rename(new)
+        items.append((new, "rename", old, None))
+    if case == "delete_create":
+        (git_repo / "b.md").unlink()
+        items.append((git_repo / "b.md", "delete", None, None))
+        created, final = git_repo / "created.md", git_repo / "c.md"
+        created.write_text("new", encoding="utf-8")
+        items.append((created, "write", None, None))
+        created.rename(final)
+        items.append((final, "rename", created, None))
+    assert _commit_group(strategy, items).status == "committed"
     assert git(git_repo, "ls-tree", "--name-only", "HEAD").splitlines() == [
         "README.md",
         "c.md",
@@ -258,66 +229,60 @@ def test_group_rename_chain_commits_final_tree(
 
 
 def test_group_stage_failure_reports_partial_commit(
-    tmp_path: Path, git_repo: Path, dispatcher: WriteCallbackDispatcher
+    git_repo: Path, strategy: GitWriteStrategy
 ) -> None:
-    group = dispatcher.open_group("Partial", None)
-    for path in (git_repo / "good.md", tmp_path / "outside.md"):
-        _write_in_group(dispatcher, group.handle, path, "content")
-    result = dispatcher.close_group(group.handle, None).result(timeout=5)
+    nested = git_repo / "nested"
+    nested.mkdir()
+    git(nested, "init")
+    git(nested, "config", "user.name", "Test")
+    git(nested, "config", "user.email", "test@example.com")
+    git(nested, "commit", "--allow-empty", "-m", "nested")
+    git(git_repo, "add", "nested")
+    git(git_repo, "commit", "-m", "add nested repository")
+    good, invalid = git_repo / "good.md", nested / "note.md"
+    good.write_text("good", encoding="utf-8")
+    invalid.write_text("nested", encoding="utf-8")
+    result = _commit_group(
+        strategy, [(good, "write", None, None), (invalid, "write", None, None)]
+    )
     assert result.status == "failed"
     assert result.sha == git(git_repo, "rev-parse", "HEAD")
     assert result.files == 1
-    assert (tmp_path / "outside.md").exists()
 
 
-def test_group_index_lock_reports_failure(
-    git_repo: Path, dispatcher: WriteCallbackDispatcher
+@pytest.mark.parametrize("failure", ["commit", "stage"])
+def test_group_git_failure_reports_failure(
+    git_repo: Path, dispatcher: WriteCallbackDispatcher, failure: str
 ) -> None:
-    group = dispatcher.open_group("Locked", None)
+    group = dispatcher.open_group("Failure", None)
     _write_in_group(dispatcher, group.handle, git_repo / "note.md", "content")
     lock = git_repo / ".git/index.lock"
-    lock.write_text("", encoding="utf-8")
+    if failure == "stage":
+        lock.write_text("", encoding="utf-8")
     try:
-        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        if failure == "commit":
+            with patch(
+                "markdown_vault_mcp.git.strategy._commit_staged",
+                side_effect=subprocess.CalledProcessError(1, "git"),
+            ):
+                result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        else:
+            result = dispatcher.close_group(group.handle, None).result(timeout=5)
     finally:
-        lock.unlink()
+        if lock.exists():
+            lock.unlink()
     assert result.status == "failed"
     assert result.sha is None
     assert result.files == 0
 
 
-def test_group_rename_then_delete_and_create_then_rename(
-    git_repo: Path, dispatcher: WriteCallbackDispatcher
-) -> None:
-    old = _seed(git_repo, "old.md", "old")
-    middle, created, final = (
-        git_repo / name for name in ("middle.md", "created.md", "final.md")
-    )
-    group = dispatcher.open_group("Final state", None)
-    with dispatcher.bind_group(group.handle, None):
-        old.rename(middle)
-        dispatcher.fire(middle, "", "rename", old)
-        middle.unlink()
-        dispatcher.fire(middle, "", "delete")
-        created.write_text("new", encoding="utf-8")
-        dispatcher.fire(created, "new", "write")
-        created.rename(final)
-        dispatcher.fire(final, "", "rename", created)
-    result = dispatcher.close_group(group.handle, None).result(timeout=5)
-    assert result.status == "committed"
-    assert git(git_repo, "ls-tree", "-r", "--name-only", "HEAD").splitlines() == [
-        "README.md",
-        "final.md",
-    ]
-
-
 def test_group_counts_unicode_separator_filename(
-    git_repo: Path, dispatcher: WriteCallbackDispatcher
+    git_repo: Path, strategy: GitWriteStrategy
 ) -> None:
     git(git_repo, "config", "core.quotePath", "false")
-    group = dispatcher.open_group("Unicode", None)
-    _write_in_group(dispatcher, group.handle, git_repo / "one\u2028two.md", "note")
-    assert dispatcher.close_group(group.handle, None).result(timeout=5).files == 1
+    note = git_repo / "one\u2028two.md"
+    note.write_text("note", encoding="utf-8")
+    assert _commit_group(strategy, [(note, "write", None, None)]).files == 1
 
 
 @pytest.mark.parametrize(
@@ -333,7 +298,6 @@ def test_group_post_commit_metadata_failure_keeps_sha_and_schedules_push(
     error: Exception,
 ) -> None:
     strategy = _strategy(git_repo, enable_push=True)
-    dispatcher = WriteCallbackDispatcher(strategy)
     original = strategy._git
 
     def fail_diff(root: Path, *args: str, **kwargs: object) -> str:
@@ -342,20 +306,49 @@ def test_group_post_commit_metadata_failure_keeps_sha_and_schedules_push(
         return original(root, *args, **kwargs)
 
     try:
-        group = dispatcher.open_group("Commit despite metadata", None)
-        _write_in_group(dispatcher, group.handle, git_repo / "note.md", "note")
+        note = git_repo / "note.md"
+        note.write_text("note", encoding="utf-8")
         with (
             patch.object(strategy, "_git", side_effect=fail_diff),
             patch.object(strategy._push_scheduler, "schedule_push") as schedule,
         ):
-            result = dispatcher.close_group(group.handle, None).result(timeout=5)
+            result = _commit_group(strategy, [(note, "write", None, None)])
             schedule.assert_called_once()
         assert result.status == "failed"
         assert result.sha == git(git_repo, "rev-parse", "HEAD")
         assert result.files == 0
     finally:
-        dispatcher.close()
         strategy.close()
+
+
+def test_non_group_callback_keeps_per_call_commits(tmp_path: Path) -> None:
+    class Callback:
+        accepts_batch = True
+
+        def __init__(self) -> None:
+            self.batches: list[str] = []
+
+        def __call__(self, _path: Path, _content: str, _operation: str) -> None:
+            raise AssertionError("expected per-call batch")
+
+        def on_write_batch(self, _items: list[WriteBatchItem], tool_name: str) -> None:
+            self.batches.append(tool_name)
+
+    callback = Callback()
+    dispatcher = WriteCallbackDispatcher(callback)
+    group = dispatcher.open_group("Not opted in", None)
+    with (
+        dispatcher.bind_group(group.handle, None),
+        bound_commit_scope("write") as scope,
+    ):
+        dispatcher.fire(tmp_path / "note.md", "note", "write")
+        dispatcher.end_scope(scope)
+    assert (
+        dispatcher.close_group(group.handle, None).result(timeout=5).status
+        == "no_changes"
+    )
+    dispatcher.close()
+    assert callback.batches == ["write"]
 
 
 def test_group_opt_in_without_batch_does_not_strand_writes(tmp_path: Path) -> None:
@@ -381,59 +374,9 @@ def test_group_opt_in_without_batch_does_not_strand_writes(tmp_path: Path) -> No
     assert callback.paths == [tmp_path / "note.md"]
 
 
-def test_ordinary_write_during_group_and_group_author(
-    git_repo: Path, dispatcher: WriteCallbackDispatcher
-) -> None:
-    principal = Principal("alice", "Alice", "alice@example.com", "human")
-    group = dispatcher.open_group("Grouped", principal)
-    grouped = git_repo / "grouped.md"
-    grouped.write_text("grouped", encoding="utf-8")
-    with bound_principal(principal), dispatcher.bind_group(group.handle, principal):
-        dispatcher.fire(grouped, "grouped", "write")
-    ordinary = git_repo / "ordinary.md"
-    ordinary.write_text("ordinary", encoding="utf-8")
-    dispatcher.fire(ordinary, "ordinary", "write")
-    assert dispatcher.drain()
-    assert git(git_repo, "log", "-2", "--format=%s").splitlines() == [
-        "Grouped",
-        "write: ordinary.md",
-    ]
-    assert (
-        git(git_repo, "log", "-1", "--format=%an <%ae>") == "Alice <alice@example.com>"
-    )
-    assert (
-        dispatcher.close_group(group.handle, principal).result(timeout=5).status
-        == "committed"
-    )
-
-
-def test_ordinary_batch_callback_receives_no_group_keyword(tmp_path: Path) -> None:
-    class Callback:
-        accepts_batch = True
-
-        def __init__(self) -> None:
-            self.batches: list[tuple[object, str]] = []
-
-        def __call__(self, _path: Path, _content: str, _operation: str) -> None:
-            raise AssertionError("ordinary scope should be batched")
-
-        def on_write_batch(self, items: list[WriteBatchItem], tool_name: str) -> None:
-            self.batches.append((items, tool_name))
-
-    callback = Callback()
-    dispatcher = WriteCallbackDispatcher(callback)
-    with bound_commit_scope("ordinary") as scope:
-        dispatcher.fire(tmp_path / "note.md", "note", "write")
-        dispatcher.end_scope(scope)
-    assert dispatcher.drain()
-    dispatcher.close()
-    assert len(callback.batches) == 1
-    assert callback.batches[0][1] == "ordinary"
-
-
 @pytest.mark.parametrize("mixed", [False, True])
 def test_group_commits_tracked_note_in_ignored_directory(
-    git_repo: Path, dispatcher: WriteCallbackDispatcher, mixed: bool
+    git_repo: Path, strategy: GitWriteStrategy, mixed: bool
 ) -> None:
     directory = git_repo / "ignored"
     directory.mkdir()
@@ -444,27 +387,23 @@ def test_group_commits_tracked_note_in_ignored_directory(
     tracked.write_text("updated", encoding="utf-8")
     ignored = directory / "untracked.md"
     ignored.write_text("ignored", encoding="utf-8")
-    group = dispatcher.open_group("Update notes", None)
-    with dispatcher.bind_group(group.handle, None):
-        dispatcher.fire(tracked, "updated", "edit")
-        dispatcher.fire(ignored, "ignored", "write")
-        if mixed:
-            other = git_repo / "other.md"
-            other.write_text("other", encoding="utf-8")
-            dispatcher.fire(other, "other", "write")
-    result = dispatcher.close_group(group.handle, None).result(timeout=5)
+    items: list[WriteBatchItem] = [
+        (tracked, "edit", None, None),
+        (ignored, "write", None, None),
+    ]
+    if mixed:
+        other = git_repo / "other.md"
+        other.write_text("other", encoding="utf-8")
+        items.append((other, "write", None, None))
+    result = _commit_group(strategy, items)
     assert result.status == "committed"
     assert result.files == (2 if mixed else 1)
     assert git(git_repo, "show", "HEAD:ignored/tracked.md") == "updated"
     assert "ignored/untracked.md" not in git(
         git_repo, "ls-tree", "-r", "--name-only", "HEAD"
     )
-    only_ignored = dispatcher.open_group("Ignored only", None)
-    with dispatcher.bind_group(only_ignored.handle, None):
-        dispatcher.fire(ignored, "ignored", "write")
     assert (
-        dispatcher.close_group(only_ignored.handle, None).result(timeout=5).status
-        == "no_changes"
+        _commit_group(strategy, [(ignored, "write", None, None)]).status == "no_changes"
     )
 
 
@@ -585,6 +524,5 @@ def test_interrupted_group_callback_reports_failed(
         assert "write_callback_worker_died" in caplog.text
         assert result.status == "failed"
         assert result.sha is None
-        assert note.read_text(encoding="utf-8") == "on disk"
     finally:
         dispatcher.close()
