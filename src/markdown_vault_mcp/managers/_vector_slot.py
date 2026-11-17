@@ -381,8 +381,7 @@ class VectorStoreSlot:
 
     def has_suspect(self) -> bool:
         """Return whether a store awaits condemnation."""
-        with self._lock:
-            return self._suspect is not None
+        return self._suspect is not None
 
     def rebuilt_after_read(
         self, store: EmbeddingStore, rebuild: Callable[[], object]
