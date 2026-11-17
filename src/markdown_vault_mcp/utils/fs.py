@@ -233,6 +233,20 @@ def _should_prune_dir(
     return False
 
 
+def is_directory_excluded(path: str, patterns: Sequence[str]) -> bool:
+    """Return whether exclusion patterns cover every descendant of a directory.
+
+    Args:
+        path: Vault-relative directory path.
+        patterns: Exclusion patterns.
+
+    Returns:
+        Whether the shared pruning rules prove the subtree excluded.
+    """
+    anchored, anydepth = _dir_prune_rules(patterns)
+    return _should_prune_dir(path, anchored, anydepth)
+
+
 def iter_markdown_files(
     source_dir: Path,
     exclude_patterns: Sequence[str] | None = None,

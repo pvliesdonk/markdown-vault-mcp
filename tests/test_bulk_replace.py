@@ -172,8 +172,8 @@ def test_folder_selection_skips_reserved_hidden_and_excluded(
     result = BulkReplacer(manager).replace(
         ReplaceRequest("old", "new", folders=("",), paths=("index.md", "a.md"))
     )
-    assert [note.path for note in result.notes] == ["a.md", "index.md"]
-    assert result.scanned == 2
+    assert [note.path for note in result.notes] == ["a.md", "index.md", "log.md"]
+    assert result.scanned == 3
 
 
 @pytest.mark.parametrize("failure", ["before", "after", "after_unreadable", "conflict"])
@@ -391,6 +391,8 @@ def test_folder_skips_submodule_but_explicit_refuses(
     assert [note.path for note in result.notes] == ["top.md"]
     with pytest.raises(InvalidRequestError, match="submodules"):
         replacer.replace(ReplaceRequest("old", "new", paths=("sub/note.md",)))
+    with pytest.raises(InvalidRequestError, match="sub"):
+        replacer.replace(ReplaceRequest("old", "new", folders=("sub",)))
     scandir = os.scandir
 
     def deny_submodule(path: Any) -> Any:
@@ -453,14 +455,16 @@ def test_files_growing_after_stat_still_respect_total_cap(
     manager = manager_factory(tmp_path)
     candidates = manager.replace_candidates
 
-    def grow(paths: Sequence[str], folders: Sequence[str], limit: int) -> list[str]:
-        result = candidates(paths, folders, limit)
+    def grow(
+        paths: Sequence[str], folders: Sequence[str], limit: int, **kwargs: Any
+    ) -> list[str]:
+        result = candidates(paths, folders, limit, **kwargs)
         (tmp_path / "a.md").write_text("aaaaaa", encoding="utf-8")
         return result
 
     monkeypatch.setattr(manager, "replace_candidates", grow)
     monkeypatch.setattr(bulk_replace, "MAX_TOTAL_BYTES", 10)
-    with pytest.raises(InvalidRequestError, match="limit"):
+    with pytest.raises(InvalidRequestError, match="budget"):
         BulkReplacer(manager).replace(ReplaceRequest("a", "b", folders=("",)))
 
 
@@ -739,6 +743,19 @@ def test_replace_preserves_line_endings(
     )
     preview = replacer.replace(request)
     assert preview.replacements == 1
+    for pattern in (r"^one", r"(?m)old$", "one\nold"):
+        assert (
+            replacer.replace(
+                ReplaceRequest(pattern, "x", paths=("a.md",), regex=True)
+            ).replacements
+            == 0
+        )
+    assert (
+        replacer.replace(
+            ReplaceRequest("\ufeffone\r\nold", "x", paths=("a.md",))
+        ).replacements
+        == 1
+    )
     replacer.replace(replace(request, dry_run=False, plan=preview.plan))
     assert note.read_bytes() == b"\xef\xbb\xbfone\r\nnew\r\nthree\r\n"
 
@@ -809,6 +826,12 @@ def test_reserved_alias_refused_with_maintenance(
     with pytest.raises(InvalidRequestError, match="reserved"):
         BulkReplacer(manager).replace(
             ReplaceRequest("old", "new", paths=("log.md",)), maintain=lambda _: None
+        )
+    (tmp_path / "ordinary.md").symlink_to(tmp_path / "log.md")
+    with pytest.raises(InvalidRequestError, match="reserved"):
+        BulkReplacer(manager).replace(
+            ReplaceRequest("old", "new", paths=("ordinary.md",)),
+            maintain=lambda _: None,
         )
 
 
@@ -895,20 +918,6 @@ def test_folder_selection_does_not_walk_unrelated_tree(
     assert tmp_path / "unrelated" not in visited
 
 
-def test_raw_matching_includes_bom_and_carriage_returns(
-    tmp_path: Path, manager_factory: Callable[..., DocumentManager]
-) -> None:
-    (tmp_path / "a.md").write_bytes(b"\xef\xbb\xbffoo\r\nbar\r\n")
-    replacer = BulkReplacer(manager_factory(tmp_path))
-    for pattern in (r"^foo", r"(?m)foo$", "foo\nbar"):
-        result = replacer.replace(
-            ReplaceRequest(pattern, "x", paths=("a.md",), regex=True)
-        )
-        assert result.replacements == 0
-    result = replacer.replace(ReplaceRequest("\ufefffoo\r\nbar", "x", paths=("a.md",)))
-    assert result.replacements == 1
-
-
 def test_nested_scope_respects_vault_anchored_pruning(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -931,10 +940,8 @@ def test_nested_scope_respects_vault_anchored_pruning(
     replacer = BulkReplacer(
         manager_factory(tmp_path, exclude_patterns=["selected/excluded/**"])
     )
-    assert (
-        replacer.replace(ReplaceRequest("old", folders=("selected/excluded",))).scanned
-        == 0
-    )
+    with pytest.raises(InvalidRequestError, match="selected/excluded"):
+        replacer.replace(ReplaceRequest("old", folders=("selected/excluded",)))
     assert folder not in visited
 
 
@@ -989,8 +996,137 @@ def test_hidden_selected_folder_is_pruned_before_walk(
         return original(path)
 
     monkeypatch.setattr(os, "scandir", record)
-    result = BulkReplacer(manager_factory(tmp_path)).replace(
-        ReplaceRequest("old", folders=(".hidden",))
-    )
-    assert result.scanned == 0
+    with pytest.raises(InvalidRequestError, match=r"\.hidden"):
+        BulkReplacer(manager_factory(tmp_path)).replace(
+            ReplaceRequest("old", folders=(".hidden",))
+        )
     assert folder not in visited
+
+
+@pytest.mark.parametrize("maintenance", [False, True])
+def test_folder_reserved_names_follow_maintenance_policy(
+    tmp_path: Path, manager_factory: Callable[..., DocumentManager], maintenance: bool
+) -> None:
+    from dataclasses import replace
+
+    for name in ("a.md", "index.md", "log.md"):
+        (tmp_path / name).write_text("old", encoding="utf-8")
+    replacer = BulkReplacer(manager_factory(tmp_path))
+    request = ReplaceRequest("old", "new", folders=("",))
+    upkeep = (lambda _path: None) if maintenance else None
+    preview = replacer.replace(request, maintain=upkeep)
+    expected = ["a.md"] if maintenance else ["a.md", "index.md", "log.md"]
+    assert [note.path for note in preview.notes] == expected
+    replacer.replace(
+        replace(request, dry_run=False, plan=preview.plan), maintain=upkeep
+    )
+    for name in expected:
+        assert (tmp_path / name).read_text() == "new"
+    if maintenance:
+        assert (tmp_path / "index.md").read_text() == "old"
+        assert (tmp_path / "log.md").read_text() == "old"
+
+
+@pytest.mark.parametrize("folder", ["excluded", ".hidden"])
+def test_explicit_ineligible_folder_refuses(
+    tmp_path: Path, manager_factory: Callable[..., DocumentManager], folder: str
+) -> None:
+    (tmp_path / folder).mkdir()
+    (tmp_path / folder / "note.md").write_text("old", encoding="utf-8")
+    replacer = BulkReplacer(manager_factory(tmp_path, exclude_patterns=["excluded/**"]))
+    with pytest.raises(InvalidRequestError, match=folder.replace(".", r"\.")):
+        replacer.replace(ReplaceRequest("old", "new", folders=(folder,)))
+
+
+def test_oversized_note_refusal_identifies_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    (tmp_path / "large.md").write_text("old note", encoding="utf-8")
+    monkeypatch.setattr(bulk_replace, "MAX_NOTE_BYTES", 4)
+    with pytest.raises(InvalidRequestError, match=r"large\.md"):
+        BulkReplacer(manager_factory(tmp_path)).replace(
+            ReplaceRequest("old", "new", paths=("large.md",))
+        )
+
+
+def test_output_limit_refusal_does_not_blame_pattern(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    (tmp_path / "a.md").write_text("aaa", encoding="utf-8")
+    monkeypatch.setattr(bulk_replace, "MAX_OUTPUT_BYTES", 3)
+    with pytest.raises(InvalidRequestError) as exc:
+        BulkReplacer(manager_factory(tmp_path)).replace(
+            ReplaceRequest("a", "bb", paths=("a.md",))
+        )
+    assert "output too large" in str(exc.value).lower()
+    assert "invalid pattern" not in str(exc.value).lower()
+
+
+def test_partial_file_glob_does_not_prune_folder(
+    tmp_path: Path, manager_factory: Callable[..., DocumentManager]
+) -> None:
+    folder = tmp_path / "scope"
+    folder.mkdir()
+    for name in ("a.md", "p.md"):
+        (folder / name).write_text("old", encoding="utf-8")
+    replacer = BulkReplacer(manager_factory(tmp_path, exclude_patterns=["scope/p*.md"]))
+    result = replacer.replace(ReplaceRequest("old", "new", folders=("scope",)))
+    assert [note.path for note in result.notes] == ["scope/a.md"]
+
+
+@pytest.mark.parametrize("failure", ["timeout", "crash", "bad_json", "launch"])
+def test_worker_failures_distinguish_timeout_and_fault(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+    failure: str,
+) -> None:
+    import subprocess
+    from types import SimpleNamespace
+
+    (tmp_path / "a.md").write_text("old", encoding="utf-8")
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired("worker", 3)
+        if failure == "crash":
+            raise subprocess.CalledProcessError(1, "worker")
+        if failure == "launch":
+            raise OSError("unavailable")
+        return SimpleNamespace(stdout="not json")
+
+    monkeypatch.setattr(bulk_replace.subprocess, "run", fail)
+    error = InvalidRequestError if failure == "timeout" else RuntimeError
+    with pytest.raises(
+        error, match="timed out" if failure == "timeout" else "worker failed"
+    ):
+        BulkReplacer(manager_factory(tmp_path)).replace(
+            ReplaceRequest("old", paths=("a.md",))
+        )
+
+
+def test_aggregate_budget_refusal_names_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manager_factory: Callable[..., DocumentManager],
+) -> None:
+    for name in ("a.md", "b.md"):
+        (tmp_path / name).write_text("12345", encoding="utf-8")
+    monkeypatch.setattr(bulk_replace, "MAX_TOTAL_BYTES", 7)
+    with pytest.raises(InvalidRequestError, match=r"b\.md.*aggregate"):
+        BulkReplacer(manager_factory(tmp_path, max_note_read_bytes=0)).replace(
+            ReplaceRequest("1", "2", folders=("",))
+        )
+
+
+def test_missing_explicit_folder_names_path(
+    tmp_path: Path, manager_factory: Callable[..., DocumentManager]
+) -> None:
+    with pytest.raises(InvalidRequestError, match="missing"):
+        BulkReplacer(manager_factory(tmp_path)).replace(
+            ReplaceRequest("old", folders=("missing",))
+        )

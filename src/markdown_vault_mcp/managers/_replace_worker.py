@@ -9,6 +9,10 @@ import sys
 from typing import Any
 
 
+class ReplacementLimit(ValueError):
+    """A bounded replacement exceeded a request limit."""
+
+
 def _diff(path: str, text: str, new: str) -> str:
     return "".join(
         line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
@@ -43,13 +47,13 @@ def propose(data: dict[str, Any]) -> list[tuple[str, str, int, str | None]]:
             nonlocal matches, added
             matches += 1
             if matches > data["max_matches"]:
-                raise ValueError("Too many matches; narrow paths or folders.")
+                raise ReplacementLimit("Too many matches; narrow paths or folders.")
             parts = []
             for fragment in fragments:
                 value = match.expand(fragment) if data["regex"] else fragment
                 added += len(value.encode())
                 if added > data["max_output"]:
-                    raise ValueError(
+                    raise ReplacementLimit(
                         "Replacement output too large; narrow the request."
                     )
                 parts.append(value)
@@ -58,7 +62,7 @@ def propose(data: dict[str, Any]) -> list[tuple[str, str, int, str | None]]:
         new, count = pattern.subn(expand, text)
         output += len(new.encode())
         if output > data["max_output"]:
-            raise ValueError("Replacement output too large; narrow the request.")
+            raise ReplacementLimit("Replacement output too large; narrow the request.")
         if new == text:
             continue
         diff = None
@@ -66,7 +70,7 @@ def propose(data: dict[str, Any]) -> list[tuple[str, str, int, str | None]]:
             diff = _diff(path, text, new)
             diff_size += len(diff)
             if diff_size > data["max_diff"]:
-                raise ValueError("Diff too large; narrow paths or folders.")
+                raise ReplacementLimit("Diff too large; narrow paths or folders.")
         proposals.append((path, new, count, diff))
     return proposals
 
@@ -76,5 +80,7 @@ if __name__ == "__main__":
         print(
             json.dumps({"proposals": propose(json.load(sys.stdin))}, ensure_ascii=True)
         )
-    except (re.error, IndexError, ValueError, OverflowError, RecursionError) as exc:
+    except ReplacementLimit as exc:
+        print(json.dumps({"limit": str(exc)}))
+    except (re.error, IndexError, OverflowError, RecursionError) as exc:
         print(json.dumps({"error": str(exc)}))

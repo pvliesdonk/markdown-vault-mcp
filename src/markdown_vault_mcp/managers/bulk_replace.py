@@ -9,7 +9,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.exceptions import (
@@ -18,7 +18,6 @@ from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
 )
 from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,7 +29,7 @@ MAX_NOTE_BYTES = 256 * 1024
 MAX_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_MATCHES = 10_000
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024
-MAX_DIFF_CHARS = 100_000
+MAX_DIFF_CHARS = 1024 * 1024
 REPLACE_SECONDS = 3.0
 
 
@@ -162,20 +161,15 @@ class BulkReplacer:
         self, request: ReplaceRequest, *, reject_reserved: bool
     ) -> list[tuple[str, str, str]]:
         candidates = self._doc_mgr.replace_candidates(
-            request.paths, request.folders, MAX_NOTES
+            request.paths, request.folders, MAX_NOTES, skip_reserved=reject_reserved
         )
-        if reject_reserved and any(
-            PurePosixPath(path).name in OKF_RESERVED_FILENAMES
-            for path in (*request.paths, *candidates)
-        ):
-            raise InvalidRequestError(
-                "reserved index.md and log.md cannot be selected with OKF maintenance; choose other notes."
-            )
         snapshots = []
         remaining = MAX_TOTAL_BYTES
         for path in candidates:
             text, etag, size = self._doc_mgr.read_for_replace(
-                path, min(MAX_NOTE_BYTES, remaining)
+                path,
+                min(MAX_NOTE_BYTES, remaining),
+                aggregate=remaining < MAX_NOTE_BYTES,
             )
             remaining -= size
             snapshots.append((path, text, etag))
@@ -209,14 +203,18 @@ class BulkReplacer:
                 check=True,
             )
             response = json.loads(result.stdout)
-        except (subprocess.SubprocessError, ValueError) as exc:
+        except subprocess.TimeoutExpired as exc:
             raise InvalidRequestError(
-                "Replacement worker could not complete; narrow the selection or simplify the pattern."
+                "Replacement worker timed out; narrow the selection or simplify the pattern."
             ) from exc
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            raise RuntimeError("Replacement worker failed to complete.") from exc
         if "error" in response:
             raise InvalidRequestError(
                 f"Invalid pattern or replacement: {response['error']}"
             )
+        if "limit" in response:
+            raise InvalidRequestError(response["limit"])
         etags = {path: etag for path, _, etag in snapshots}
         notes = []
         changes = []

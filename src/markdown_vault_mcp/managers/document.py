@@ -82,6 +82,7 @@ from markdown_vault_mcp.utils import (
 )
 from markdown_vault_mcp.utils.fs import (
     is_directory,
+    is_directory_excluded,
     is_regular_file,
     iter_markdown_files,
     path_exists,
@@ -335,7 +336,12 @@ class DocumentManager:
         self._check_writable()
 
     def replace_candidates(
-        self, paths: Sequence[str], folders: Sequence[str], limit: int
+        self,
+        paths: Sequence[str],
+        folders: Sequence[str],
+        limit: int,
+        *,
+        skip_reserved: bool = False,
     ) -> list[str]:
         """Collect eligible notes for a scoped replacement.
 
@@ -343,6 +349,7 @@ class DocumentManager:
             paths: Explicit note paths, including reserved notes if desired.
             folders: Recursive folder scopes; an empty string selects the root.
             limit: Maximum number of notes.
+            skip_reserved: Skip reserved folder notes and refuse explicit ones.
 
         Returns:
             Sorted, deduplicated vault-relative paths.
@@ -352,7 +359,9 @@ class DocumentManager:
         scopes = [self._selection_scope(folder) for folder in folders]
 
         def add(path: str, *, explicit: bool) -> None:
-            candidate = self._selection_entry(path, explicit=explicit, scopes=scopes)
+            candidate = self._selection_entry(
+                path, explicit=explicit, scopes=scopes, skip_reserved=skip_reserved
+            )
             if candidate is not None:
                 name, identity, links = candidate
                 self._selection_add(selected, name, identity, links)
@@ -404,24 +413,36 @@ class DocumentManager:
             raise DocumentNotFoundError(
                 f"Folder {folder!r} does not exist; choose an existing folder."
             )
-        return (Path(os.path.normpath(folder)) if folder else Path()), resolved
+        lexical = Path(os.path.normpath(folder)) if folder else Path()
+        target = resolved.relative_to(self._source_dir.resolve())
+        if folder and (
+            not self._selection_directory_policy(lexical)
+            or not self._selection_directory_policy(target)
+        ):
+            raise InvalidRequestError(
+                f"Cannot select folder {folder!r}; choose an eligible folder."
+            )
+        return lexical, resolved
+
+    def _selection_directory_policy(self, relative: Path) -> bool:
+        return not (
+            any(part.startswith(".") for part in relative.parts)
+            or is_directory_excluded(relative.as_posix(), self._exclude_patterns or ())
+            or self.in_submodule((relative / "placeholder.md").as_posix())
+        )
 
     def _selection_directory_allowed(
         self, directory: Path, scopes: list[tuple[Path, Path]]
     ) -> bool:
         relative = directory.relative_to(self._source_dir)
-        if not self._selection_allowed(
-            (relative / "placeholder.md").as_posix(), explicit=False
-        ):
+        if not self._selection_directory_policy(relative):
             return False
         try:
             resolved = directory.resolve()
             target = resolved.relative_to(self._source_dir.resolve())
         except (OSError, ValueError, RuntimeError):
             return False
-        return self._selection_allowed(
-            (target / "placeholder.md").as_posix(), explicit=False
-        ) and any(
+        return self._selection_directory_policy(target) and any(
             relative.is_relative_to(scope) and resolved.is_relative_to(target_scope)
             for scope, target_scope in scopes
         )
@@ -450,13 +471,15 @@ class DocumentManager:
                 )
             return False
         parts = Path(path).parts
-        return explicit or (
-            Path(path).name not in OKF_RESERVED_FILENAMES
-            and not any(part.startswith(".") for part in parts[:-1])
-        )
+        return explicit or not any(part.startswith(".") for part in parts[:-1])
 
     def _selection_entry(
-        self, path: str, *, explicit: bool, scopes: list[tuple[Path, Path]]
+        self,
+        path: str,
+        *,
+        explicit: bool,
+        scopes: list[tuple[Path, Path]],
+        skip_reserved: bool,
     ) -> tuple[str, tuple[int, int], int] | None:
         if not self._selection_allowed(path, explicit=explicit):
             return None
@@ -474,6 +497,15 @@ class DocumentManager:
         relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
         if not self._selection_allowed(relative, explicit=explicit):
             return None
+        if skip_reserved and (
+            Path(path).name in OKF_RESERVED_FILENAMES
+            or Path(relative).name in OKF_RESERVED_FILENAMES
+        ):
+            if explicit:
+                raise InvalidRequestError(
+                    f"Cannot select reserved note {path!r} with OKF maintenance."
+                )
+            return None
         try:
             info = absolute.stat()
         except (FileNotFoundError, NotADirectoryError) as exc:
@@ -482,12 +514,15 @@ class DocumentManager:
             raise DocumentNotFoundError.note(path)
         return relative, (info.st_dev, info.st_ino), info.st_nlink
 
-    def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
+    def read_for_replace(
+        self, path: str, max_bytes: int, *, aggregate: bool = False
+    ) -> tuple[str, str, int]:
         """Read a bounded note snapshot and its raw-byte etag.
 
         Args:
             path: Vault-relative note path.
             max_bytes: Maximum bytes to read.
+            aggregate: The cap is the remaining aggregate budget.
 
         Returns:
             Decoded text, raw-byte etag, and bytes read.
@@ -500,8 +535,13 @@ class DocumentManager:
         with self._validate_path(path).open("rb") as stream:
             raw = stream.read(cap + 1)
         if len(raw) > cap:
+            limit = (
+                "aggregate replacement budget"
+                if aggregate
+                else "note replacement limit"
+            )
             raise InvalidRequestError(
-                "Note exceeds the replacement limit; narrow paths or folders."
+                f"Note {path!r} exceeds the {limit}; narrow paths or folders."
             )
         try:
             text = raw.decode("utf-8")
