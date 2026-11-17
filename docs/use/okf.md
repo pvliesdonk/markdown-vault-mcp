@@ -74,7 +74,7 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 
 Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
-The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server currently writes the required fields into them. Existing fields are preserved; reserved files remain indexed in an active OKF vault even without them.
+The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server currently writes the required fields into them. Existing fields are preserved; reserved files remain indexed in an active OKF vault even without them. A declaration change reaches reserved files on the next indexing pass, and upgrading an older index rebuilds it once.
 
 ### 2. Declare
 

@@ -66,7 +66,7 @@ class IndexWriteCoordinator:
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
         attachment_extensions: str = "",
-        okf_admission_active: Callable[[], bool] | None = None,
+        okf_admission_active: Callable[[], bool | None] | None = None,
     ) -> None:
         self._fts = fts
         self._okf_admission_active = okf_admission_active
@@ -318,12 +318,19 @@ class IndexWriteCoordinator:
             the first mismatching key at INFO, so the rebuild an operator
             sees in the log names its own cause.
         """
-        if self._okf_admission_active is not None:
+        active = self._okf_admission_active() if self._okf_admission_active else None
+        if active is not None:
             get_admission_meta = getattr(self._fts, "get_okf_admission_meta", None)
-            if (
-                not callable(get_admission_meta)
-                or get_admission_meta() != self._okf_admission_active()
-            ):
+            stored_active = (
+                get_admission_meta() if callable(get_admission_meta) else None
+            )
+            if stored_active != active:
+                logger.info(
+                    "index_provenance_changed key=%s stored=%s current=%s action=rebuild",
+                    "okf_reserved_exempt",
+                    stored_active,
+                    active,
+                )
                 return False
         stored = self._fts.get_chunking_meta()
         checks: tuple[tuple[str, object, object], ...] = (

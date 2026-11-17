@@ -602,8 +602,11 @@ In an active OKF vault, `index.md` and `log.md` bypass the
 `required_frontmatter` gate. Concept notes and all notes outside an active
 OKF vault remain subject to it. Full builds, incremental scans and dirty-path
 refreshes use the same admission rule (#1438). A root index change also
-reconciles the other reserved files. Warm reopen compares the effective state
-recorded with a complete build. Keyword backends without the optional OKF
+reconciles the other reserved files on the next indexing pass. After a dirty
+refresh changes the scope, the admission marker stays unknown until a reindex
+also reconciles tracker state. Warm reopen compares the effective state
+recorded with a complete build. An upgrade from older index semantics rebuilds
+the index once. Keyword backends without the optional OKF
 admission provenance capability rebuild conservatively on reopen.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files

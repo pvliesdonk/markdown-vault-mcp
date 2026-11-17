@@ -50,7 +50,6 @@ from markdown_vault_mcp.okf import (
     OkfDetector,
     ReservedFrontmatterPolicy,
     audit_bundle,
-    is_okf_reserved_file,
 )
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
@@ -590,6 +589,10 @@ class Vault:
         #    see one store.  No write_lock — the IndexWriter thread is the
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
+
+        def reserved_exempt() -> bool | None:
+            return self._okf.state().active if self._required_frontmatter else None
+
         self._index_mgr = IndexManager(
             fts=self._fts,
             tracker=self._tracker,
@@ -599,10 +602,7 @@ class Vault:
             chunk_strategy=self._chunk_strategy,
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
-            okf_admission_active=lambda: self._okf.state().active,
-            exempt_required_frontmatter=lambda path: (
-                is_okf_reserved_file(path) and self._okf.state().active
-            ),
+            okf_admission_active=reserved_exempt,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
@@ -626,7 +626,7 @@ class Vault:
             title_field=self._title_field,
             searchable_fields=",".join(self._searchable_frontmatter_fields),
             indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
-            okf_admission_active=lambda: self._okf.state().active,
+            okf_admission_active=reserved_exempt,
             attachment_extensions=canonical_attachment_extensions(
                 effective_attachment_extensions(self._attachment_extensions)
             ),

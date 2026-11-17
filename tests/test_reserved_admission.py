@@ -97,9 +97,17 @@ def test_old_semantics_rebuilds_on_open(
     )
     vault = Vault(source_dir=root, settings=settings)
     try:
-        # Recreate old admission with the same current settings and provenance.
-        vault._index_mgr._exempt_required_frontmatter = lambda _: False
+        # Recreate an old skipped row without changing the build settings.
+        from markdown_vault_mcp.types import SkippedFile
+
         vault.index.build_index()
+        vault._fts.upsert_tombstone(
+            SkippedFile(
+                path="index.md", category="missing_frontmatter", detail="missing title"
+            ),
+            content_hash="old",
+            modified_at=(root / "index.md").stat().st_mtime,
+        )
         assert not vault.reader.list_documents()
     finally:
         vault.close()
@@ -256,8 +264,7 @@ def test_failed_reserved_reconciliation_retries(
 
         with monkeypatch.context() as patch:
             patch.setattr(index_module, "parse_note_categorized", fail_log)
-            with pytest.raises(OSError, match=r"log\.md"):
-                vault.index.reindex()
+            vault.index.reindex()
         assert vault._fts.get_okf_admission_meta() is None
         vault.index.reindex()
         assert "log.md" in {n.path for n in vault.reader.list_documents()}
@@ -265,19 +272,250 @@ def test_failed_reserved_reconciliation_retries(
         vault.close()
 
 
+@pytest.mark.parametrize("mode", ["on", "off"])
 def test_backend_without_admission_metadata_rebuilds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     (tmp_path / "index.md").write_text("# Root\n")
     vault = Vault(
         source_dir=tmp_path,
-        settings=VaultSettings(okf_mode="on", required_frontmatter=["title"]),
+        settings=VaultSettings(okf_mode=mode, required_frontmatter=["title"]),
     )
     try:
         monkeypatch.setattr(vault._fts, "set_okf_admission_meta", None)
         monkeypatch.setattr(vault._fts, "get_okf_admission_meta", None)
         vault.index.build_index()
         assert not vault._coordinator._can_warm_start()
-        assert "index.md" in {n.path for n in vault.reader.list_documents()}
+        assert ("index.md" in {n.path for n in vault.reader.list_documents()}) is (
+            mode == "on"
+        )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("start_active", [False, True])
+def test_dirty_transition_then_reindex_keeps_tracker_consistent(
+    tmp_path: Path, start_active: bool
+) -> None:
+    active = "---\nokf_version: '0.2'\n---\n# Root\n"
+    inactive = "# Root\n"
+    root = tmp_path / "index.md"
+    root.write_text(active if start_active else inactive)
+    (tmp_path / "log.md").write_text("# Log\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        vault.index.build_index()
+        root.write_text(inactive if start_active else active)
+        vault._index_mgr.process_dirty_paths({"index.md"})
+        assert (
+            "log.md" in {n.path for n in vault.reader.list_documents()}
+        ) is not start_active
+        assert vault._fts.get_okf_admission_meta() is None
+        vault._index_mgr.process_dirty_paths({"index.md"})
+        vault.index.reindex()
+        assert (
+            "log.md" in {n.path for n in vault.reader.list_documents()}
+        ) is not start_active
+        root.write_text(active if start_active else inactive)
+        vault._index_mgr.process_dirty_paths({"index.md"})
+        vault.index.reindex()
+        assert (
+            "log.md" in {n.path for n in vault.reader.list_documents()}
+        ) is start_active
+    finally:
+        vault.close()
+
+
+def test_reindex_transition_counts_each_note_once(tmp_path: Path) -> None:
+    root = tmp_path / "index.md"
+    root.write_text("# Root\n")
+    (tmp_path / "log.md").write_text("# Log\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        vault.index.build_index()
+        root.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
+        result = vault.index.reindex()
+        assert (result.added, result.modified, result.unchanged, result.skipped) == (
+            1,
+            0,
+            1,
+            0,
+        )
+        root.write_text("# Root\n")
+        result = vault.index.reindex()
+        assert (result.added, result.modified, result.unchanged, result.skipped) == (
+            0,
+            0,
+            0,
+            2,
+        )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("mode", ["off", "auto"])
+def test_incomplete_walk_does_not_block_ordinary_reindex(
+    tmp_path: Path, mode: str
+) -> None:
+    root = tmp_path / "index.md"
+    root.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
+    note = tmp_path / "note.md"
+    note.write_text("---\ntitle: A\n---\n# A\n")
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    (blocked / "x.md").write_text("# X\n")
+    blocked.chmod(0)
+    try:
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(okf_mode=mode, required_frontmatter=["title"]),
+        )
+        try:
+            vault.index.build_index()
+            note.write_text("---\ntitle: B\n---\n# B\n")
+            assert vault.index.reindex().modified == 1
+        finally:
+            vault.close()
+    finally:
+        blocked.chmod(0o700)
+
+
+def test_scope_snapshot_stays_fixed_during_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.scanner as scanner
+
+    root = tmp_path / "index.md"
+    active = "---\nokf_version: '0.2'\n---\n# Root\n"
+    root.write_text(active)
+    (tmp_path / "log.md").write_text("# Log\n")
+    original = scanner.parse_note_categorized
+
+    def parse_with_temporary_flip(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("rel_path") != "log.md":
+            return original(*args, **kwargs)
+        root.write_text("# Root\n")
+        try:
+            return original(*args, **kwargs)
+        finally:
+            root.write_text(active)
+
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        monkeypatch.setattr(
+            scanner, "parse_note_categorized", parse_with_temporary_flip
+        )
+        vault.index.build_index()
+        assert "log.md" in {n.path for n in vault.reader.list_documents()}
+        vault.index.reindex()
+        assert "log.md" in {n.path for n in vault.reader.list_documents()}
+    finally:
+        vault.close()
+
+
+def test_failed_tombstone_does_not_publish_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import inspect
+
+    root = tmp_path / "index.md"
+    root.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
+    (tmp_path / "log.md").write_text("# Log\n")
+    (tmp_path / "bad").mkdir()
+    (tmp_path / "bad/index.md").write_text("---\nbroken: [\n---\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        vault.index.build_index()
+        root.write_text("# Root\n")
+        original = Path.stat
+
+        def fail_log_stat(self: Path, *args: Any, **kwargs: Any) -> Any:
+            if self.name == "log.md" and any(
+                f.function == "_tombstone_skip" for f in inspect.stack()
+            ):
+                raise OSError("transient stat")
+            return original(self, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "stat", fail_log_stat)
+            vault.index.reindex()
+        assert "log.md" in {n.path for n in vault.reader.list_documents()}
+        assert vault._fts.get_okf_admission_meta() is None
+        vault.index.reindex()
+        assert "log.md" not in {n.path for n in vault.reader.list_documents()}
+        assert vault._fts.get_okf_admission_meta() is False
+    finally:
+        vault.close()
+
+
+def test_dirty_reserved_failure_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "index.md"
+    root.write_text("# Root\n")
+    (tmp_path / "log.md").write_text("# Log\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        vault.index.build_index()
+        root.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
+        original = vault._index_mgr._process_dirty_path
+
+        def fail_log(path: str, *, exempt: bool | None = None) -> None:
+            if path == "log.md":
+                raise OSError("transient")
+            original(path, exempt=exempt)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(vault._index_mgr, "_process_dirty_path", fail_log)
+            with pytest.raises(OSError, match="transient"):
+                vault._index_mgr.process_dirty_paths({"index.md"})
+        assert vault._fts.get_okf_admission_meta() is None
+        vault._index_mgr.process_dirty_paths({"index.md"})
+        assert "log.md" in {n.path for n in vault.reader.list_documents()}
+    finally:
+        vault.close()
+
+
+def test_no_required_fields_skips_admission_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "index.md").write_text("# Root\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        monkeypatch.setattr(vault._fts, "get_okf_admission_meta", None)
+        assert vault._coordinator._can_warm_start()
+    finally:
+        vault.close()
+
+
+def test_dirty_flip_back_before_tracker_reconciliation(tmp_path: Path) -> None:
+    root = tmp_path / "index.md"
+    active = "---\nokf_version: '0.2'\n---\n# Root\n"
+    root.write_text(active)
+    (tmp_path / "log.md").write_text("# Log\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        vault.index.build_index()
+        root.write_text("# Root\n")
+        vault._index_mgr.process_dirty_paths({"index.md"})
+        assert "log.md" not in {n.path for n in vault.reader.list_documents()}
+        root.write_text(active)
+        vault._index_mgr.process_dirty_paths({"index.md"})
+        assert "log.md" in {n.path for n in vault.reader.list_documents()}
+        vault.index.reindex()
+        assert "log.md" in {n.path for n in vault.reader.list_documents()}
     finally:
         vault.close()

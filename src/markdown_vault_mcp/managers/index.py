@@ -39,7 +39,6 @@ from markdown_vault_mcp.scanner import (
 from markdown_vault_mcp.source_probe import holds_entries
 from markdown_vault_mcp.tracker import is_under, unread_prefixes
 from markdown_vault_mcp.types import (
-    ChangeSet,
     IndexStats,
     ParsedNote,
     ReindexResult,
@@ -160,7 +159,6 @@ class IndexManager:
             inline-reindex paths. Defaults to the module constant
             ``_EMBEDDING_BATCH_SIZE``.
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
-        exempt_required_frontmatter: Path predicate for bypassing the field gate.
         okf_admission_active: Current effective OKF state, if applicable.
     """
 
@@ -183,8 +181,7 @@ class IndexManager:
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         vector_slot: VectorStoreSlot | None = None,
-        exempt_required_frontmatter: Callable[[str], bool] | None = None,
-        okf_admission_active: Callable[[], bool] | None = None,
+        okf_admission_active: Callable[[], bool | None] | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -193,9 +190,7 @@ class IndexManager:
         self._exclude_patterns = exclude_patterns
         self._okf_admission_active = okf_admission_active
         self._required_frontmatter = required_frontmatter
-        self._exempt_required_frontmatter = exempt_required_frontmatter or (
-            lambda _: False
-        )
+        self._memory_exempt: bool | None = None
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
         # Chunking provenance recorded into FTS meta after a successful build
         # (#649): the shared chunker's char cap derives from the embedding
@@ -344,7 +339,7 @@ class IndexManager:
         *,
         content_hash: str | None = None,
         retry_on_error: bool = False,
-    ) -> None:
+    ) -> bool:
         """Record a surfaced skip as an FTS tombstone row (#1129).
 
         The single skip-recording choke point shared by all three pipelines
@@ -372,10 +367,11 @@ class IndexManager:
             logger.debug("tombstone_skip_read_failed path=%s err=%s", skip.path, exc)
             if retry_on_error:
                 raise
-            return
+            return False
         self._fts.upsert_tombstone(
             skip, content_hash=content_hash, modified_at=modified_at
         )
+        return True
 
     @property
     def vault_root_empty(self) -> bool:
@@ -600,7 +596,11 @@ class IndexManager:
         return replace(state, content_hash=note.content_hash), chunks, False
 
     def _scan_and_index(
-        self, *, force: bool, on_skip: Callable[[SkippedFile], None]
+        self,
+        *,
+        force: bool,
+        on_skip: Callable[[SkippedFile], None],
+        exempt: bool | None,
     ) -> _ScanResult:
         """Index each note as the scan yields it, keeping only its state (#1938)."""
         result = _ScanResult()
@@ -613,7 +613,7 @@ class IndexManager:
             title_field=self._title_field,
             attachment_extensions=self._attachment_extensions,
             on_walk_error=result.walk_errors.append,
-            exempt_required_frontmatter=self._exempt_required_frontmatter,
+            exempt_required_frontmatter=is_okf_reserved_file if exempt else None,
         ):
             state, chunks, failed = self._index_build_note(note, force=force)
             result.notes.append(state)
@@ -652,12 +652,9 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
             was indexed.
         """
-        admission_at_start = (
-            self._okf_admission_active() if self._okf_admission_active else None
-        )
-        set_admission_meta = getattr(self._fts, "set_okf_admission_meta", None)
-        if callable(set_admission_meta) and self._okf_admission_active is not None:
-            set_admission_meta(None)
+        exempt = self._admission_snapshot()
+        if exempt is not None:
+            self._store_exempt(None)
         self._tracker.clear_carries()
         if force:
             logger.info("build_index_force_rebuild")
@@ -678,7 +675,7 @@ class IndexManager:
             skip_reasons[sf.path] = {"category": sf.category, "detail": sf.detail}
             skip_files[sf.path] = sf
 
-        scan = self._scan_and_index(force=force, on_skip=_collect_skip)
+        scan = self._scan_and_index(force=force, on_skip=_collect_skip, exempt=exempt)
         notes, total_chunks, errored = scan.notes, scan.chunks, scan.errored
         walk_errors = scan.walk_errors
         # Wait for complete unread-prefix evidence before pruning old rows.
@@ -786,14 +783,8 @@ class IndexManager:
                 self._attachment_extensions
             ),
         )
-        if (
-            callable(set_admission_meta)
-            and self._okf_admission_active is not None
-            and not walk_errors
-            and not errored
-            and admission_at_start == self._okf_admission_active()
-        ):
-            set_admission_meta(admission_at_start)
+        if exempt is not None and not walk_errors and not errored:
+            self._store_exempt(exempt)
         return IndexStats(
             documents_indexed=len(notes) - errored,
             chunks_indexed=total_chunks,
@@ -805,44 +796,46 @@ class IndexManager:
     # Incremental reindex
     # ------------------------------------------------------------------
 
-    def _reserved_reindex_paths(
-        self, changes: ChangeSet, *, root_dirty: bool
-    ) -> tuple[list[str], set[str], bool | None]:
-        """Invalidate and collect reserved paths when admission may change."""
-        changed = changes.added + changes.modified
-        active = self._okf_admission_active() if self._okf_admission_active else None
-        get_meta = getattr(self._fts, "get_okf_admission_meta", None)
-        needs_reconcile = active is not None and (
-            root_dirty
-            or "index.md" in (*changed, *changes.deleted)
-            or (callable(get_meta) and get_meta() != active)
-        )
-        if not needs_reconcile:
-            return changed, set(), None
-        set_meta = getattr(self._fts, "set_okf_admission_meta", None)
-        if callable(set_meta):
-            set_meta(None)
-        walk_errors: list[OSError] = []
-        candidates = self._discover_indexable_candidates(
-            on_walk_error=walk_errors.append
-        )
-        if walk_errors or not changes.walk_complete:
-            raise OSError("Cannot reconcile OKF admission with an incomplete walk")
-        reserved = {path for _, path in candidates if is_okf_reserved_file(path)}
-        return changed + sorted(reserved - set(changed)), reserved, active
+    def _admission_snapshot(self) -> bool | None:
+        return self._okf_admission_active() if self._okf_admission_active else None
 
-    def _finish_reserved_reindex(self, active: bool | None) -> None:
-        """Record a complete reconciliation only if its input stayed stable."""
-        set_meta = getattr(self._fts, "set_okf_admission_meta", None)
-        if (
-            active is not None
-            and callable(set_meta)
-            and self._okf_admission_active is not None
-            and active == self._okf_admission_active()
-        ):
-            set_meta(active)
+    def _stored_exempt(self) -> bool | None:
+        getter = getattr(self._fts, "get_okf_admission_meta", None)
+        return getter() if callable(getter) else self._memory_exempt
 
-    def reindex(self, *, root_dirty: bool = False) -> ReindexResult:
+    def _store_exempt(self, value: bool | None) -> None:
+        setter = getattr(self._fts, "set_okf_admission_meta", None)
+        if callable(setter):
+            setter(value)
+        else:
+            self._memory_exempt = value
+
+    def _stale_reserved(self, exempt: bool | None) -> set[str]:
+        if exempt is None or exempt == self._stored_exempt():
+            return set()
+        rows = [*self._build_state_rows(), *self._fts.list_tombstones()]
+        return {row["path"] for row in rows if is_okf_reserved_file(row["path"])}
+
+    def _begin_admission_reindex(self) -> tuple[bool | None, set[str]]:
+        """Capture admission and invalidate stale provenance before changing rows."""
+        exempt = self._admission_snapshot()
+        stale = self._stale_reserved(exempt)
+        if exempt is not None and exempt != self._stored_exempt():
+            self._store_exempt(None)
+        return exempt, stale
+
+    def _finish_admission_reindex(
+        self, exempt: bool | None, pending: set[str], *, walk_complete: bool
+    ) -> None:
+        """Publish the snapshot only when all affected rows were resolved."""
+        if pending:
+            logger.warning(
+                "okf_admission_reconcile_incomplete remaining=%d", len(pending)
+            )
+        elif exempt is not None and walk_complete:
+            self._store_exempt(exempt)
+
+    def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.
 
         Uses :class:`~markdown_vault_mcp.tracker.ChangeTracker` to detect
@@ -857,9 +850,6 @@ class IndexManager:
         document mutations route through the writer's
         FIFO queue and serialise against this job.
 
-        Args:
-            root_dirty: Re-evaluate reserved files after a root index event.
-
         Returns:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts
             of changes applied.
@@ -867,6 +857,8 @@ class IndexManager:
         # Phase 1: scan filesystem (read-only walk + hashing). Excluded
         # subtrees are filtered before hashing so they neither churn the
         # tracker nor get reported as changes (#257).
+        exempt, stale = self._begin_admission_reindex()
+        prior_skipped = set(self._tracker.skip_reasons())
         changes = self._tracker.detect_changes(
             self._source_dir, exclude_patterns=self._exclude_patterns
         )
@@ -885,11 +877,14 @@ class IndexManager:
             )
 
         # Pre-parse notes outside the lock to minimise lock hold time.
-        changed_paths, reserved_paths, active = self._reserved_reindex_paths(
-            changes, root_dirty=root_dirty
-        )
+        changed = set(changes.added + changes.modified)
+        stale -= set(changes.deleted)
+        maintenance = stale - changed
+        resolved_skips: set[str] = set()
         parsed, newly_skipped, newly_skip_reasons = self._parse_changed_notes(
-            changed_paths, strict_paths=reserved_paths
+            changes.added + changes.modified + sorted(maintenance),
+            exempt=exempt,
+            resolved_skips=resolved_skips,
         )
 
         # Phase 2: apply mutations (writer is sole mutator; no lock needed).
@@ -942,12 +937,14 @@ class IndexManager:
                     exc_info=True,
                 )
 
+        reconciled: set[str] = set()
         indexed_added, indexed_modified = self._upsert_parsed_notes(
             parsed,
             vectors,
             added_paths=set(changes.added),
             checkpoint=_checkpoint,
-            strict_paths=reserved_paths,
+            maintenance=maintenance,
+            reconciled=reconciled,
         )
 
         # Persist the vector index only when this pass actually mutated it.
@@ -958,7 +955,11 @@ class IndexManager:
         # must be included: purging excluded docs removes their vectors
         # above, mutating the in-memory index even when the file diff is empty.
         vector_index_changed = bool(
-            indexed_added or indexed_modified or changes.deleted or stale_excluded
+            indexed_added
+            or indexed_modified
+            or reconciled
+            or changes.deleted
+            or stale_excluded
         )
         if vectors is not None and vector_index_changed:
             vectors.checkpoint()
@@ -978,19 +979,30 @@ class IndexManager:
             self._embeddings.reconcile_paths(vectors, dropped, site="purge")
             vectors.checkpoint()
 
-        self._finish_reserved_reindex(active)
+        self._finish_admission_reindex(
+            exempt,
+            stale - reconciled - resolved_skips,
+            walk_complete=changes.walk_complete,
+        )
 
+        admitted = maintenance & prior_skipped & reconciled
+        rejected = (maintenance - prior_skipped) & resolved_skips
+        new_skip_count = len(set(newly_skipped) - (prior_skipped - changed))
         return ReindexResult(
             added=indexed_added,
             modified=indexed_modified,
             deleted=len(changes.deleted),
-            unchanged=changes.unchanged,
-            skipped=changes.skipped_unchanged + len(newly_skipped),
+            unchanged=changes.unchanged + len(admitted) - len(rejected),
+            skipped=changes.skipped_unchanged - len(admitted) + new_skip_count,
             walk_complete=changes.walk_complete,
         )
 
     def _parse_changed_notes(
-        self, paths: list[str], *, strict_paths: set[str] | None = None
+        self,
+        paths: list[str],
+        *,
+        exempt: bool | None = None,
+        resolved_skips: set[str] | None = None,
     ) -> tuple[list[tuple[str, ParsedNote]], dict[str, str], dict[str, dict[str, str]]]:
         """Parse changed files for :meth:`reindex`, recording surfaced skips.
 
@@ -1007,7 +1019,8 @@ class IndexManager:
 
         Args:
             paths: Vault-relative paths of added + modified files.
-            strict_paths: Paths whose transient failure must retry the job.
+            exempt: Effective OKF admission state for this pass.
+            resolved_skips: Receives skips persisted during this pass.
 
         Returns:
             Tuple ``(parsed, newly_skipped, newly_skip_reasons)``:
@@ -1029,11 +1042,9 @@ class IndexManager:
                 attachment_extensions=self._attachment_extensions,
                 required_frontmatter=self._required_frontmatter,
                 log_context="reindex",
-                exempt_required_frontmatter=self._exempt_required_frontmatter(path),
+                exempt_required_frontmatter=bool(exempt and is_okf_reserved_file(path)),
             )
             if outcome is None:
-                if strict_paths and path in strict_paths:
-                    raise OSError(f"Could not reconcile reserved file: {path}")
                 # Possibly transient (already logged) — retry next scan.
                 continue
             if isinstance(outcome, CategorizedSkip):
@@ -1055,8 +1066,6 @@ class IndexManager:
                     recorded = self._record_skip_hash(
                         newly_skipped, path, abs_path, event="reindex", surfaced=False
                     )
-                if not recorded and strict_paths and path in strict_paths:
-                    raise OSError(f"Could not reconcile reserved file: {path}")
                 if recorded:
                     newly_skip_reasons[path] = {
                         "category": sf.category,
@@ -1067,7 +1076,14 @@ class IndexManager:
                     # serving its last-good content from search/read instead
                     # of serving it indefinitely. Reuses the hash recorded
                     # above so tracker and tombstone cover the same bytes.
-                    self._tombstone_skip(sf, abs_path, content_hash=newly_skipped[path])
+                    persisted = self._tombstone_skip(
+                        sf, abs_path, content_hash=newly_skipped[path]
+                    )
+                    if persisted and resolved_skips is not None:
+                        resolved_skips.add(path)
+                    if not persisted:
+                        newly_skipped.pop(path, None)
+                        newly_skip_reasons.pop(path, None)
                 continue
             parsed.append((path, outcome))
 
@@ -1080,7 +1096,8 @@ class IndexManager:
         *,
         added_paths: set[str],
         checkpoint: Callable[[], None] | None = None,
-        strict_paths: set[str] | None = None,
+        maintenance: set[str] | None = None,
+        reconciled: set[str] | None = None,
     ) -> tuple[int, int]:
         """Upsert parsed notes into FTS (and inline-embed when loaded).
 
@@ -1098,7 +1115,8 @@ class IndexManager:
             parsed: ``(path, note)`` pairs from :meth:`_parse_changed_notes`.
             vectors: The (possibly lazily-loaded) vector index, or ``None``.
             added_paths: Paths counted as added rather than modified.
-            strict_paths: Paths whose upsert failure must retry the job.
+            maintenance: Paths reprocessed only for admission.
+            reconciled: Receives paths successfully upserted.
             checkpoint: Called at most every ``_CHECKPOINT_INTERVAL_S``
                 seconds after a successful upsert, to snapshot tracker state
                 so an interrupted pass resumes rather than restarting
@@ -1116,10 +1134,12 @@ class IndexManager:
                 self._fts.upsert_note(note)
             except Exception:
                 logger.warning("reindex_index_failed path=%s", path, exc_info=True)
-                if strict_paths and path in strict_paths:
-                    raise
                 continue
-            if path in added_paths:
+            if reconciled is not None:
+                reconciled.add(path)
+            if maintenance and path in maintenance:
+                pass
+            elif path in added_paths:
                 indexed_added += 1
             else:
                 indexed_modified += 1
@@ -1280,13 +1300,15 @@ class IndexManager:
         """
         if not paths:
             return
-        if "index.md" in paths and self._okf_admission_active is not None:
-            self.reindex(root_dirty=True)
+        exempt = self._admission_snapshot()
+        stale = self._stale_reserved(exempt)
+        if exempt is not None and exempt != self._stored_exempt():
+            self._store_exempt(None)
         try:
             first_error: Exception | None = None
-            for path in paths:
+            for path in [*paths, *sorted(stale - paths)]:
                 try:
-                    self._process_dirty_path(path)
+                    self._process_dirty_path(path, exempt=exempt)
                     if on_refreshed is not None:
                         on_refreshed(path)
                 except (OSError, UnicodeDecodeError, ValueError) as exc:
@@ -1307,8 +1329,10 @@ class IndexManager:
             # A graph failure must fail the job and retain its dirty paths;
             # otherwise a later mutation could trust an incomplete refresh.
             self._fts.resolve_vault_wikilinks()
+            if exempt is not None and not stale:
+                self._store_exempt(exempt)
 
-    def _process_dirty_path(self, path: str) -> None:
+    def _process_dirty_path(self, path: str, *, exempt: bool | None = None) -> None:
         """Refresh one row, propagating any failure that leaves it stale."""
         abs_path = self._source_dir / path
         try:
@@ -1334,7 +1358,7 @@ class IndexManager:
                     for k in (self._required_frontmatter or [])
                     if k not in (note.frontmatter or {})
                 ]
-                if missing and not self._exempt_required_frontmatter(path):
+                if missing and not (exempt and is_okf_reserved_file(path)):
                     # Tombstone rather than delete (#1129): the file
                     # is still a candidate, so its row must stay
                     # present (invisibly) instead of becoming
