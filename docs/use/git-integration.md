@@ -17,6 +17,31 @@ Use this guide to choose and configure the right git mode for your deployment.
 3. **No-git** (default)
    The vault is treated as a plain directory with no git operations.
 
+## Native Git backend
+
+The default backend invokes the Git CLI. To select the optional native backend,
+install `"markdown-vault-mcp[libgit2]"` and set
+`MARKDOWN_VAULT_MCP_GIT_BACKEND=libgit2`. The setting applies to managed,
+token-unmanaged and commit-only modes. Set it to `cli` to return to the default.
+
+The native backend does not execute Git hooks, external clean filters, Git LFS,
+or signing commands. It refuses unsupported repository settings and executable
+hooks at startup. It also refuses incoming filter and encoding attributes before
+checkout. `GIT_LFS` does not enable LFS in this backend. SSH uses an agent; a
+configured `core.sshCommand` or a build without SSH support is refused. SSH
+config features not exposed by libgit2 can instead surface as fetch failures.
+Local-path remotes with executable server hooks are refused for push because
+libgit2's local transport does not execute them.
+
+A divergent pull creates a two-parent merge in memory. Conflicting local notes
+are saved as `.conflict-mcp-*` siblings, while remote content stays at the
+original path. The existing `rebased` result reason also covers a clean merge.
+Checkout refuses overlapping uncommitted changes and preserves unrelated work.
+If a reference update fails after checkout, HEAD is unchanged but the checkout
+can contain the fetched changes; inspect the reported working tree health before
+retrying. See the [local store API](../reference/api/git.md#local-libgit2-store)
+for native history and revision-query limitations.
+
 ## Filenames from outside the server
 
 Notes created through Git or directly on disk can carry carriage returns

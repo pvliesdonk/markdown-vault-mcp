@@ -766,6 +766,14 @@ class ProjectConfig:
             "wizard": {"group": "Embeddings"},
         },
     )
+    git_backend: str = field(
+        default="cli",
+        metadata={
+            "help": "Git backend: `cli` (default) or `libgit2`.",
+            "tags": ("git",),
+            "wizard": {"group": "Git sync"},
+        },
+    )
     git_repo_url: str | None = field(
         default=None,
         metadata={
@@ -1108,6 +1116,7 @@ class ProjectConfig:
         ``GitConfig.__post_init__`` validation.
         """
         return GitConfig(
+            backend=self.git_backend,
             token=self.git_token,
             repo_url=self.git_repo_url,
             username=self.git_username,
@@ -1324,6 +1333,10 @@ class ProjectConfig:
         ``object.__setattr__(self, "name", value)``.
         """
         # CONFIG-VALIDATE-START — validate domain fields below; kept across copier update
+        if self.git_backend not in ("cli", "libgit2"):
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_GIT_BACKEND must be cli or libgit2"
+            )
         # Freeze sequence-valued flat fields into tuples for deep
         # immutability (#639); reject a bare str/bytes, which is itself a
         # Sequence[str] and would silently split into characters.
@@ -1482,6 +1495,7 @@ class ProjectConfig:
             embed_context=to_bool(env(_ENV_PREFIX, "EMBED_CONTEXT"), default=False),
             embed_timeout_s=env_float(_ENV_PREFIX, "EMBED_TIMEOUT_S", 30.0),
             embedding_batch_size=env_int(_ENV_PREFIX, "EMBEDDING_BATCH_SIZE", 4),
+            git_backend=env(_ENV_PREFIX, "GIT_BACKEND") or "cli",
             git_token=(_git_token := env(_ENV_PREFIX, "GIT_TOKEN") or None),
             git_repo_url=resolve_git_repo_url(
                 env(_ENV_PREFIX, "GIT_REPO_URL"), _git_token, _ENV_PREFIX

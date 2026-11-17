@@ -212,3 +212,22 @@ def make_nested_repository(
     _run_git(nested, "init", "-q", "--initial-branch=main")
     (nested / "note.md").write_text("# Upstream\n")
     return source
+
+
+def _git_head(repo: Path) -> str:
+    return _run_git(repo, "rev-parse", "HEAD").strip()
+
+
+def _git_clone(pair: GitRepoPair, tmp_path: Path) -> Path:
+    other = tmp_path / "other"
+    _run_git(tmp_path, "clone", "-q", str(pair.remote_path), str(other))
+    _run_git(other, "config", "user.name", "Test")
+    _run_git(other, "config", "user.email", "test@example.com")
+    return other
+
+
+def _git_commit(repo: Path, name: str, content: str, message: str) -> str:
+    (repo / name).write_bytes(content.encode("utf-8"))
+    _run_git(repo, "add", "--", name)
+    _run_git(repo, "commit", "-qm", message)
+    return _git_head(repo)

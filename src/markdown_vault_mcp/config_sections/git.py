@@ -24,6 +24,7 @@ class GitConfig:
     commit_email_claim: str | None = None
     lfs: bool = True
     pull_interval_s: int = 600
+    backend: str = "cli"
 
     def __post_init__(self) -> None:
         """Validate non-negative sync cadences on every construction path (#638).
@@ -32,6 +33,8 @@ class GitConfig:
             ConfigurationError: If ``push_delay_s`` or ``pull_interval_s`` is
                 negative.
         """
+        if self.backend not in ("cli", "libgit2"):
+            raise ConfigurationError("git backend must be cli or libgit2")
         if self.push_delay_s < 0:
             raise ConfigurationError(
                 f"push_delay_s must be >= 0, got {self.push_delay_s}"

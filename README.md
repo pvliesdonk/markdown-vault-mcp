@@ -87,7 +87,7 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
-Library callers can install `"markdown-vault-mcp[libgit2]"` for the optional local versioned store; see the [Git API guide](docs/reference/api/git.md).
+To use the optional native Git backend, install `"markdown-vault-mcp[libgit2]"` and set `MARKDOWN_VAULT_MCP_GIT_BACKEND=libgit2`. The default is `cli`. See [Git integration](docs/use/git-integration.md) for supported repositories and fallback instructions.
 <!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration

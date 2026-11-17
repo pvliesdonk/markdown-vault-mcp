@@ -90,6 +90,7 @@ src/markdown_vault_mcp/
     submodules.py      -- SubmoduleGuard: which paths lie in or hold a submodule (cached index gitlinks) or nested repository (live structural .git resolution with strict gitfile reads), so write managers refuse them (#1564, #1949)
     libgit2.py         -- optional local libgit2 versioned store and capability refusals
     libgit2_history.py -- native history, diffs and revision reads
+    libgit2_sync.py    -- native remote synchronization and lifecycle
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)

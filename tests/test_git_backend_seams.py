@@ -77,6 +77,20 @@ def test_failed_injected_push_remains_pending(tmp_path: Path) -> None:
     assert health.snapshot() is None
 
 
+def test_structured_backend_reason_survives_redaction(tmp_path: Path) -> None:
+    def fail(_path: Path) -> None:
+        raise PushBackendError("fixture-secret", reason="non_fast_forward")
+
+    scheduler, health = make_scheduler(tmp_path, token="fixture-secret", push=fail)
+    scheduler.schedule_push()
+    with pytest.raises(PushBackendError) as caught:
+        scheduler.do_push()
+    assert caught.value.reason == "non_fast_forward"
+    assert "fixture-secret" not in str(caught.value)
+    assert health.snapshot() is not None
+    assert health.snapshot().reason == "non_fast_forward"  # type: ignore[union-attr]
+
+
 @pytest.mark.parametrize("unpushed", [False, True])
 def test_injected_startup_probe_avoids_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unpushed: bool

@@ -6809,13 +6809,21 @@ rather than on the concrete class:
 - `VersionedStore` — all of them, which is what `Vault` holds.
 
 Config assembly returns `VersionedStore` through `_build_git_strategy`, the
-single construction point; backend selection is deferred to #1309.
+single construction point; `GIT_BACKEND` selects CLI or the optional native store.
 
 `GitWriteStrategy` remains the single object implementing all of them, and is
 still wired as both `git_strategy` and `on_write`; `VaultInstances.close()`
 compares the two by identity to avoid closing one object twice (#1765). Splitting into separate
 *objects* is deliberately not done — the collaborators share one lock, and
 that identity check depends on there being one object.
+
+The native sync store likewise owns one lock and one scheduler. It fetches
+before classifying a pull, creates a two-parent merge in memory for divergent
+histories, then performs a safe checkout and a reference transaction. It
+retains the existing `rebased` result reason for a clean divergent merge.
+An unsuccessful reference update can leave the checkout and index changed;
+HEAD remains unchanged and the worktree health check reports the actual state.
+The [libgit2 reference](reference/git-libgit2.md) records the underlying APIs.
 
 The promotion of `is_managed`, `resolve_force_repo`, `head_sha`, and
 `branch_name` to the public surface replaced private-attribute reads

@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Local Git operations through pygit2
-description: pygit2 and libgit2 behavior used for local commits and history.
+description: pygit2 and libgit2 behavior used for commits, history and remote synchronization.
 subject_version: "pygit2 1.21.0 and libgit2 1.9.7"
 valid_for: "pygit2 1.21 and libgit2 1.9"
 generated:
@@ -90,12 +90,24 @@ sources:
     title: Git diff configuration
     resource: https://github.com/git/git/blob/v2.56.1/Documentation/config/diff.adoc
     accessed: 2026-11-17
+  - id: checkout
+    title: libgit2 checkout API
+    resource: https://github.com/libgit2/libgit2/blob/v1.9.7/include/git2/checkout.h
+    accessed: 2026-11-17
+  - id: merge
+    title: libgit2 merge API
+    resource: https://github.com/libgit2/libgit2/blob/v1.9.7/include/git2/merge.h
+    accessed: 2026-11-17
+  - id: remote
+    title: pygit2 remote API
+    resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/remotes.py
+    accessed: 2026-11-17
 ---
 
 # Local Git operations through pygit2
 
-This reference covers local commits, attributes and history through pygit2;
-remote operations are outside its scope. The native Git store depends on it.
+This reference covers commits, attributes, history and remote synchronization
+through pygit2. The native Git stores depend on it.
 
 - pygit2 1.21 supports Python 3.11–3.15 and libgit2 1.9; binary wheels include libgit2. Its own version policy allows breaking changes in a minor version. [source: install]
 - An `Index` opened on a path writes to that path; a standalone index is an in-memory flat tree representation. [source: index]
@@ -127,6 +139,13 @@ remote operations are outside its scope. The native Git store depends on it.
 - Git's automatic abbreviation selects a starting length from an approximate object count, then extends it if ambiguous; libgit2 starts at the configured length or seven and extends for ambiguity. Full object IDs remain unchanged. Native history and per-commit diff queries refuse unset or `auto` `core.abbrev`; set a numeric length or use the CLI. [source: git-abbrev] [source: short-id] [pins: tests/test_git_libgit2_history.py::test_auto_abbreviation_queries_refuse_actionably]
 - libgit2 loads repository mailmap sources and resolves a signature to its canonical identity. [source: mailmap] [pins: tests/test_git_libgit2_history.py::test_history_author_honors_mailmap]
 
+- Safe checkout compares a target with the baseline, worktree and index; it updates the worktree and index without moving HEAD. The `DONT_OVERWRITE_IGNORED` option protects ignored files. [source: checkout] [pins: tests/test_git_libgit2_sync.py::test_staged_work_is_preserved, tests/test_git_libgit2_sync.py::test_incoming_file_does_not_overwrite_ignored_local_file]
+- A tree merge can detect renames and resolve file conflicts with union favor. [source: merge] [pins: tests/test_git_libgit2_sync.py::test_two_clone_sync]
+- The push callback reports per-reference rejection even when the push operation returns normally. [source: remote] [unverified] The network server callback has not been exercised against a real server hook in these fixtures.
+- A local-path push through pygit2 1.21.0 bypassed a bare repository's executable pre-receive hook. [observed: isolated bare local repository, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_remote_hook_rejection_is_not_reported_as_success]
+- A reference-update failure after a successful checkout leaves the checked-out files and index changed while HEAD remains unchanged. [observed: injected failure after safe checkout, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_ref_failure_reports_dirty_worktree]
+
 ## Not covered
 
-Remote transport, checkout, merge and synchronization are deferred to the remote-sync slice.
+SSH server configuration and remote hook behavior over a network transport have
+not been exercised in these local fixtures.
