@@ -6063,6 +6063,8 @@ Path JSON and human output retain the native object. Agent output emits one obje
 
 The CLI separates reading from writing (#2005). `register_read_commands` in `_cli_reader` registers `search` and every read-only command, and nothing it reaches writes the index, the stored vectors or the vault. The `admin` group in `_cli_admin` holds `index`, `reindex` and `embeddings import`; their former top-level names stay as hidden aliases that run the same command and name the new form on stderr. `serve` stays top-level because the template owns it and the image, compose file and unit call it. A client-only script (#2000) can mount the read registration alone; `tests/test_cli_structure.py` checks that it reaches no write command and that `_cli_reader` imports neither `_cli_admin` nor `cli` at load time. The local-vault helpers the read commands share are still imported lazily from `cli`.
 
+Owned-store CLI commands report typed store-open failures on stderr and exit with code 1, both during construction and subsequent index work. A busy store keeps the command-specific stop-server and retry guidance. Unexpected exceptions remain visible.
+
 ## Configuration
 
 ### The config import floor (#1259)
