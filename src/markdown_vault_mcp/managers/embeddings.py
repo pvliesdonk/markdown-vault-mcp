@@ -251,11 +251,12 @@ class EmbeddingsManager:
         """Rebuild the store after it would not open: of another identity, or corrupt.
 
         The store is opened again to tell the two apart. One of another
-        identity, a dimension change included, is rebuilt with ``force``,
-        embedding every chunk. A corrupt one, moved aside by the slot, reopens
-        empty and takes the cold build, where a compatible 5.x sidecar donates,
-        so unchanged notes cost no provider call (#1505). One found damaged
-        after it opened is condemned first, then takes that build (#1881).
+        identity, including one that differs only in dimension and so
+        opens, is rebuilt with ``force``, re-embedding every chunk. A
+        corrupt one, which the slot moved aside, reopens empty and takes the
+        ordinary cold build, where a compatible 5.x sidecar donates, so
+        unchanged notes cost no provider call (#1505). A store found
+        damaged after it opened is condemned first (#1881).
 
         Args:
             _strict: Retain every note's retry; report failed provider batches.
@@ -273,9 +274,8 @@ class EmbeddingsManager:
         self._require_vectors()
         if self._slot is None:  # pragma: no cover - _require_vectors() ran
             raise RuntimeError(_NO_RECONCILER)
-        self._retries.update(
-            row["path"] for row in (self._fts.list_notes() if _strict else ())
-        )
+        if _strict:
+            self._retries.update(row["path"] for row in self._fts.list_notes())
         self._slot.condemn_suspect()
         try:
             store = self._slot.get(rebuild=None)
@@ -342,7 +342,7 @@ class EmbeddingsManager:
     # Embeddings
     # ------------------------------------------------------------------
 
-    def build_embeddings(
+    def build_embeddings(  # noqa: C901, PLR0912, RUF100 - Build policies and recovery share this lifecycle.
         self,
         *,
         force: bool = False,
@@ -389,12 +389,12 @@ class EmbeddingsManager:
 
         Raises:
             EmbeddingsNotConfiguredError: If ``embedding_provider`` is not
-                configured. A ``ValueError`` subclass, so callers may catch
-                either; narrow to it to let genuine internal ``ValueError``s
-                surface (#774).
+                configured. A ``ValueError``
+                subclass, so callers may catch either; narrow to it to let
+                genuine internal ``ValueError``s surface (#774).
             EmbeddingsNotPublishedError: If a full build would have replaced
-                a store holding vectors but a provider batch failed: nothing
-                was published and the existing embeddings stay (#1505).
+                a store that already holds vectors but a provider batch
+                failed: nothing was published and the existing embeddings stay (#1505).
             EmbeddingsRebuildFailedError: If a forced incompatible rebuild
                 publishes no generation.
             RuntimeError: If damaged-store recovery is incomplete; notes stay retried.
@@ -815,17 +815,17 @@ class EmbeddingsManager:
     def flush_dirty_embeddings(self, paths: set[str]) -> None:
         """Reconcile each path in the snapshot and checkpoint the store once.
 
-        Called only by the IndexWriter's ``FlushDirtyEmbeddings`` runner, after
-        the keyword index was refreshed for these paths: every row comes from
-        the keyword index, no file is read (#1768). A path whose input and
-        token are unchanged costs nothing, so a retry does not charge again for
-        embedded siblings. A path the keyword index holds no rows for (deleted,
-        excluded or tombstoned, #1129) loses its vectors on an exclusion or a
-        source probe answering *absent* (#1785); a tombstoned one keeps them,
-        out of search, until fixed or deleted (#1505). A provider failure or a
-        refused vector keeps that path's rows and is logged; a conflicting
-        write is recorded for re-queueing. Retained retries join the snapshot;
-        open and rebuild errors propagate to the writer's Future.
+        Called only by the IndexWriter's ``FlushDirtyEmbeddings`` runner,
+        after the keyword index was refreshed for these paths: every row
+        comes from the keyword index, no file is read (#1768). A path whose
+        input and token are unchanged costs nothing, so retrying a failed
+        batch does not charge again for its already embedded siblings. A
+        path the keyword index holds no rows for (deleted, excluded or
+        tombstoned, #1129) loses its vectors on an exclusion or a source
+        probe answering *absent* (#1785); a tombstoned one keeps them, out of
+        search, until it is fixed or deleted (#1505). A provider failure
+        or a refused vector keeps that path's rows and is logged; a conflict
+        is recorded for re-queueing, retained retries join, errors propagate.
 
         Args:
             paths: Paths to reconcile (relative to source_dir).
