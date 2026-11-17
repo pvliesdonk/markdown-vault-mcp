@@ -441,12 +441,11 @@ Tool tags following switches: #1412.
   told which note and why rather than being handed the parser's own exception.
   With `OKF_WRITE` off there is no stamp to fail: the write lands, and the
   indexer records the file as a `parse_error` skip (#1408).
-- **Verification invalidation** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
-  carrying `verified` clears the `verified` list — verification attests to
-  bytes that no longer exist. Frontmatter-only edits that do not touch the
-  body also invalidate (the spec ties verification to the concept, not the
-  body alone); rename does not. This is the highest-value enforcement:
-  it is exactly the invariant an advisory-only setup eventually misses.
+- **Verification clearing** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
+  carrying `verified` clears the `verified` list. Frontmatter-only edits that
+  do not touch the body also clear it; rename does not. This existing write
+  behavior does not establish that a prior review is invalid or that it applies
+  to the current content. The preservation transition is separate work (#1443).
 - **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
