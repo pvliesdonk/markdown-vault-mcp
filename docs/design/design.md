@@ -6456,11 +6456,16 @@ SQLite (3.53.1 at template v11.5.0), so the image no longer runs Debian's
 CI/CD, GitHub Actions, and PyPI publishing adapted from ifcraftcorpus with
 minimal changes.
 
-**Volume layout**: two volumes: `/data/vault` (user content, bind-mount or
+**Default volume layout**: two volumes: `/data/vault` (user content, bind-mount or
 named volume) and `/data/state` (all internal state: SQLite index, embeddings,
 FastEmbed model cache, OIDC proxy state via `FASTMCP_HOME`). The Dockerfile
 sets `FASTMCP_HOME=/data/state/fastmcp` so OIDCProxy persists JTI mappings
 and upstream tokens across restarts.
+
+The [opt-in Docker recipe](../deploy/docker.md#separate-search-data-from-persistent-state)
+keeps KV and FastMCP state persistent while separating the index, tracker,
+local vectors and model cache. Search data can be rebuilt from the vault;
+the model cache can be downloaded again.
 
 **Entrypoint + gosu privilege drop**: the container starts as root and runs
 `docker-entrypoint.sh`, which chowns `/data/*` to `appuser` (fixing
