@@ -259,6 +259,10 @@ class TestDeclaredBundle:
                 )
             )
         assert context["okf"]["type"] == "Playbook"
+        assert context["okf"]["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
 
     async def test_stats_okf_section(self) -> None:
         async with Client(make_server()) as client:

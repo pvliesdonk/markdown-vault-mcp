@@ -207,9 +207,10 @@ frontmatter blob; not persisted):
 - `review_applicability`: supplied review entries report `snapshot: unbound`
   and `basis: no_snapshot_binding`; timestamps and extensions do not establish
   coverage. This includes malformed entries: unbound describes binding absence,
-  while `review` reports entry validity. An absent or empty review reports `review: none` with
-  `basis: no_review_supplied`; a malformed outer value reports `review: unknown`
-  with `basis: malformed_review`. This assessment is separate from freshness.
+  while `review` reports entry validity. An absent or empty review reports
+  `review: none` with `basis: no_review_supplied`; a malformed outer value
+  reports `review: unknown` with `basis: malformed_review`. This assessment is
+  separate from freshness.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
 `T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
