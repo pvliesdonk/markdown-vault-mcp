@@ -89,6 +89,8 @@ Some tools send data beyond the vault:
 
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string. The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the [CLI reference](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/cli/#search-a-hosted-vault).
 
+The [legacy log repair](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
+
 ## What answers without a credential
 
 Some routes answer anyone who can reach the port, with authentication on or off:
@@ -2353,7 +2355,7 @@ How to read it:
 - **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` streams too, but scores in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
 - **Edits.** `sqlite`'s figure counts the edited note's pages and the keyword index together; `postgres` writes its WAL in the database and the keyword index locally; `numpy` rewrites the whole store on every save.
 - **Restarts.** No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; `postgres` reads what it holds for 500 notes at a time, so it comes back in a time comparable to a local store's. Its figures come from restarts measured on their own, not in a whole run, so they are not directly comparable with the other columns. A database across a network adds a round trip to each of those reads.
-- **The first build.** Building the index and every vector from nothing peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
+- **The first build.** The measured October envelope peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). The keyword scan releases completed note bodies and frontmatter as it indexes them; path and title bookkeeping still grows with the vault. Preparing and publishing embeddings has separate memory costs, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.
 
@@ -2737,9 +2739,19 @@ Notes created through Git or directly on disk can carry carriage returns (`CR`) 
 
 ## What a commit covers
 
-In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many files, such as `move_folder`, `rename` with `update_links=True`, or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit` or `append` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path.
+In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many primary files, such as `move_folder` or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit`, `append` or `delete` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path. A single-note rename names both paths: `rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites backlinks or OKF refreshes index listings. Those derived writes stay in the same commit. A `move_folder` call that moves several files still uses the batch summary.
 
 No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
+
+## Uncommitted files at startup
+
+Startup inspects the repository's working tree and staging area in both git modes, even with periodic pulls disabled. If it finds changes, it logs `git_worktree_dirty`. `sync_health()` reports `reason=uncommitted_changes`, which also appears in the `remote` diagnostic on write-tool results. Ignored files do not trigger this warning; files Git reports as `untracked` do. Changes inside submodules and plain repositories nested in the vault do not, because the server never writes into them.
+
+The server cannot tell whether a crash or an operator left those changes. It does not automatically commit or discard them. Inspect `git status` in the repository, preserve the files you need, and commit or resolve the changes yourself. If the vault is a subdirectory, the check covers its whole repository, since git sync acts on that repository.
+
+The health result caches the startup observation. The server checks outstanding startup changes after its commits and during sync, and only a clean tree clears the warning. A successful push or pull alone does not. An external repair shows at the next such check or at restart, with `git_worktree_clean` in the log. After that, ordinary pending writes do not open another startup warning.
+
+A failed inspection keeps any existing warning and is retried at the first commit or sync a minute later. The server logs `git_worktree_check_failed` for the first failure only.
 
 ## Getting an overwritten note back
 
@@ -2921,6 +2933,28 @@ A write whose deferred git commit has not yet run when a pull starts is never lo
 The full enumeration of `pull.reason` and `push.reason` values lives in the [`git_sync` tool reference](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/tools/git/#git_sync).
 
 `git_sync` is hidden when the deployment isn't in managed git mode (no `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
+
+## Recurring conflicts on append-heavy notes
+
+If several writers keep appending to the same note, first agree whether its entries can appear in any order. Prefer separate notes or coordinate writers when order matters. Do the same if existing entries are edited or metadata changes alongside the text. Keep the normal conflict handling for those files.
+
+For an append-only note, Git's built-in `union` merge driver is an opt-in alternative. It combines lines from both sides instead of leaving conflict markers. It does not understand Markdown structure or YAML frontmatter, and it can silently retain competing edits. A successful sync does not establish that the combined note is correct. Git warns that added lines may appear in an arbitrary order; review the result. See [Git's merge-driver documentation](https://git-scm.com/docs/gitattributes#_built_in_merge_drivers).
+
+To try this for one agreed note, add a matching entry to the vault repository's `.gitattributes`, using the path relative to that file. With `.gitattributes` at the repository root:
+
+```
+journal/append-only.md merge=union
+```
+
+Commit and share that file through your normal Git workflow before concurrent edits. Do not apply `merge=union` to all Markdown files: the attribute covers the whole file, including frontmatter, not just its appended section. Test it on disposable copies with the same clients and Git settings before adopting it for a shared vault. The server does not add this attribute for you.
+
+### Where merge drivers apply
+
+In managed mode, a diverged pull first runs native `git rebase`, and Git applies the repository's merge attributes during that rebase as it does in any other merge. A conflict that Git resolves there never reaches the server's sibling resolver.
+
+If Git still reports paths with unresolved conflicts, the server's resolver does not call merge drivers again: it preserves the local versions as siblings and takes the upstream versions at the original paths, as described under [Manual sync](#manual-sync-git_sync-tool). An attribute is not a repair for existing siblings or a guarantee that every conflict will disappear.
+
+In commit-only mode the server never pulls; the client that performs the merge decides whether the attribute is used. Check every writer: a Git client implemented without native Git need not support `.gitattributes`. Custom merge drivers also need their command configured on each participating host; committing the attribute alone does not install a driver. The built-in `union` driver needs no custom command.
 
 ## When the clone stops reaching its remote
 
@@ -3361,7 +3395,31 @@ A few boundaries keep this predictable, and they are also its limits. Maintenanc
 
 One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
 
-To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Removing those blocks is a manual edit: the server cannot tell a block it stacked from one the log quotes on purpose, so it leaves all of them alone.
+To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Ordinary writes leave those blocks alone. The deliberate repair below requires review because the server cannot distinguish a block it stacked from one the log quotes on purpose.
+
+## Repairing legacy log frontmatter
+
+Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the start of `log.md`. The [`admin repair-log`](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/cli/#markdown-vault-mcp-admin-repair-log) command repairs one such file at a time. Without `--apply` it only previews. As an operator command rather than an MCP tool, it is out of every client's reach.
+
+Preview the affected log with its vault-relative path:
+
+```
+markdown-vault-mcp admin repair-log guides/log.md
+```
+
+The preview prints the exact bytes it would remove, with their byte offsets, between `>>> removal begins` and `<<< removal ends`. Below them it prints the command that applies the removal. It keeps the opening block and removes only the identical copies directly after it. Matching blocks alone do not prove the old defect wrote them: a log can quote its own frontmatter on purpose. Apply only when nothing in the removal was written deliberately. `Nothing to repair` means the file holds no supported repeated run: differing, interleaved or malformed blocks are left for you to edit by hand.
+
+To apply, run the printed command. It carries the `etag` of the log as you previewed it:
+
+```
+markdown-vault-mcp admin repair-log guides/log.md --apply <etag>
+```
+
+If the log changed after the preview, apply refuses and changes nothing; preview it again and review the new removal. Apply first keeps the complete original as `log.md.frontmatter-repair.bak` beside the log, then removes only the previewed repeats. The opening frontmatter, provenance fields, line endings and the rest of the file stay byte for byte; no `log.md` entry or provenance stamp is added. On systems that enforce Unix file modes, only the account that ran the command can read the recovery file. It is not indexed as a note. In a Git-backed vault both files are committed like any other write. Keep the recovery file until you have checked the result. The same preview and apply are available to library callers as `Vault.writer.okf_preview_log_repair` and `Vault.writer.okf_apply_log_repair`.
+
+Any existing recovery entry blocks apply, even one with the same bytes. If apply stops part-way, its error says whether the log may already have changed. The recovery file may then be partial or missing, so inspect both files. Apply never reuses or deletes the recovery file: move it somewhere safe before a retry.
+
+Stop the server before applying. Apply refuses while a server holds the on-disk index (`MARKDOWN_VAULT_MCP_INDEX_PATH`), but a server with an in-memory index, another editor, or a sync tool writing the same file is not detected. Apply is not a transaction and gives no guarantee across a power loss. Apply does not update the search index. The next `admin reindex`, or the reindex the server runs when it starts, finds the changed log.
 
 ## Using OKF with PARA or Zettelkasten
 
@@ -5024,11 +5082,19 @@ Development only; the image must be built with `--build-arg DEBUG=true`, and the
 
 ## Domain variables
 
+### How the settings interact
+
 Configuration is validated at startup
 
 Invalid numeric ranges and incompatible settings fail startup with a `ConfigurationError` naming the setting. The server does not silently replace invalid values with defaults.
 
-### Write safety
+Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made starting points live under `examples/`: `obsidian-readonly.env`, `obsidian-readwrite.env`, `obsidian-oidc.env`, and `ifcraftcorpus.env`.
+
+For HTTP authentication, a static bearer token is the simplest option. OIDC configuration and deployment examples are covered in the [authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) and [OIDC deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc/index.md).
+
+The subsections below follow the order of the variable tables after them.
+
+#### Write safety
 
 `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`. Whole-file `write` operations (notes and attachments) and `fetch` operations over an existing path require the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
 
@@ -5044,17 +5110,37 @@ Set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly if a deployment
 
 Direct Python construction with `VaultSettings` retains its library default, `write_protect_existing=False`. Settings assembled from `ProjectConfig` use the server default above.
 
-### Indexing and search
+#### Embeddings
+
+When `EMBEDDING_PROVIDER` is unset, provider detection tries OpenAI when `OPENAI_API_KEY` exists, then a reachable Ollama server, then FastEmbed when its package is installed. Voyage is never auto-selected. An explicitly selected provider that cannot be configured fails startup; failed auto-detection logs a warning and leaves semantic search disabled.
+
+#### Indexing
 
 Persistent deployments normally put `INDEX_PATH`, `EMBEDDINGS_PATH`, and `STATE_PATH` outside content folders. The file watcher excludes the directories holding those files so index writes cannot trigger another scan; placing state inside a content directory also prevents sibling content in that directory from being watched.
 
 `INDEXED_FIELDS` controls structured filters. `SEARCHABLE_FIELDS` defaults to the same list and controls keyword-searchable frontmatter plus first-chunk embedding context; set it to `none` to keep fields filterable but not searchable. Changing either field triggers the required one-time index or embedding rebuild on the next startup.
 
+#### Content
+
+Folder convention files guide clients before writes. OKF read semantics can be auto-detected from a root `index.md`; the separately gated OKF write layer adds provenance, invalidates stale verification, and maintains `log.md` and `index.md`. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/index.md) for the trust and verification model.
+
+Attachments in hidden or excluded directories are never listed. Full note reads default to a 256 KiB limit and attachment reads to 1 MiB; section reads avoid loading an oversized note into the client context.
+
+#### Search tuning
+
 Ranking-only settings such as `CHUNKS_PER_FILE`, `SNIPPET_WORDS`, folder weights, and FTS weights take effect without reindexing. Chunk-size and overlap settings change the stored index and require `reindex`. Changing the embedding model or an explicit character cap rejects the warm-start shortcut and rebuilds automatically.
 
-### Embeddings and summarization
+#### Git sync
 
-When `EMBEDDING_PROVIDER` is unset, provider detection tries OpenAI when `OPENAI_API_KEY` exists, then a reachable Ollama server, then FastEmbed when its package is installed. Voyage is never auto-selected. An explicitly selected provider that cannot be configured fails startup; failed auto-detection logs a warning and leaves semantic search disabled.
+Git has three modes: managed clone/pull/push with `GIT_REPO_URL`, commit-only when the source directory is already a repository, and plain filesystem mode. Token-authenticated remotes must use HTTPS.
+
+#### Change detection
+
+A GitHub webhook can trigger an immediate pull and reindex in managed mode; periodic pull remains a fallback.
+
+The filesystem watcher is enabled by default when neither periodic git pull nor a live webhook owns change detection. Those mechanisms disable the watcher to avoid scanning a partially updated checkout. A webhook credential counts only where its endpoint exists: under `--transport stdio` there is no HTTP server to receive a delivery, so the watcher keeps running rather than leaving that deployment with no change detection at all. On macOS, set `FILE_WATCHER_ROOT_FLOOR=false` for a home-rooted vault if FSEvents causes repeated privacy prompts; root-level notes then rely on explicit scans.
+
+#### Summarize
 
 The optional `summarize` tool accepts any OpenAI-compatible chat-completions endpoint. An API key enables hosted providers; setting `SUMMARIZE_OPENAI_BASE_URL` enables keyless local endpoints such as Ollama. The bare `OPENAI_BASE_URL` only routes summarization when a key already enables it.
 
@@ -5064,25 +5150,17 @@ The `summarize` tool sends referenced notes to its configured model provider. Do
 
 Without a summarization backend, clients summarize with their own model through the `summarize-subtree` prompt. With one, the `summarize` tool does it in one call, and the prompt points clients at it. The tool costs the client's context nothing, while the prompt route has the client's model read every note, in subagents where the client has them so the bodies stay out of the conversation. The backend is billed separately, which matters when a subscription already covers the client. Neither route is more private by nature: a local backend can disclose less than a hosted client model. The backend receives the notes' text as sent, while a subagent running the prompt can follow a link mid-summary to resolve a reference.
 
-Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native background tasks when the client supports them. Other clients receive an inline result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with `get_job_result`. A Redis tasks backend is durable and shared across workers; the default memory backend is process-local and does not survive restarts.
-
-### Synchronization
-
-Git has three modes: managed clone/pull/push with `GIT_REPO_URL`, commit-only when the source directory is already a repository, and plain filesystem mode. Token-authenticated remotes must use HTTPS. A GitHub webhook can trigger an immediate pull and reindex in managed mode; periodic pull remains a fallback.
-
-The filesystem watcher is enabled by default when neither periodic git pull nor a live webhook owns change detection. Those mechanisms disable the watcher to avoid scanning a partially updated checkout. A webhook credential counts only where its endpoint exists: under `--transport stdio` there is no HTTP server to receive a delivery, so the watcher keeps running rather than leaving that deployment with no change detection at all. On macOS, set `FILE_WATCHER_ROOT_FLOOR=false` for a home-rooted vault if FSEvents causes repeated privacy prompts; root-level notes then rely on explicit scans.
-
-### Content and transfer
-
-Folder convention files guide clients before writes. OKF read semantics can be auto-detected from a root `index.md`; the separately gated OKF write layer adds provenance, invalidates stale verification, and maintains `log.md` and `index.md`. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/index.md) for the trust and verification model.
-
-Attachments in hidden or excluded directories are never listed. Full note reads default to a 256 KiB limit and attachment reads to 1 MiB; section reads avoid loading an oversized note into the client context.
+#### Transfer
 
 One-time transfer links require HTTP or SSE transport plus `BASE_URL`. Their unguessable capability token is the authorization, and the persistent state backend stores token state. The tools are absent on stdio.
 
-For HTTP authentication, a static bearer token is the simplest option. OIDC configuration and deployment examples are covered in the [authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) and [OIDC deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc/index.md).
+#### Jobs
 
-Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made starting points live under `examples/`: `obsidian-readonly.env`, `obsidian-readwrite.env`, `obsidian-oidc.env`, and `ifcraftcorpus.env`.
+Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native background tasks when the client supports them. Other clients receive an inline result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with `get_job_result`. A Redis tasks backend is durable and shared across workers; the default memory backend is process-local and does not survive restarts.
+
+### Vault
+
+The tables from here on list every domain variable with its default and description, one table per group. The first holds the settings that belong to no group, starting with the vault path. [Write safety](#write-safety) explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 
 | Variable                                     | Default       | Required | Description                                                                                                                                                                                                                                                                         |
 | -------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -7292,7 +7370,7 @@ Summarize a folder or a set of notes with your own model, in batches that keep n
 
 # Command line
 
-`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex` and `admin embeddings import`. Their former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex`, `admin embeddings import` and `admin repair-log`, which removes the frontmatter blocks old releases stacked in a `log.md` ([Repairing legacy log frontmatter](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/#repairing-legacy-log-frontmatter)). The first three's former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md) is configured and an index path, an embeddings path or a [PostgreSQL store](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/postgresql/index.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
 
 ### Search a hosted vault
 
@@ -7860,7 +7938,7 @@ Discover exact paths before optional bounded typo matches.
 
 ## `markdown-vault-mcp admin`
 
-Commands that write the index or the stored vectors.
+Commands that write the index, the stored vectors or the vault.
 
 ## `markdown-vault-mcp admin index`
 
@@ -7881,6 +7959,21 @@ Incrementally reindex the vault.
 | `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                                                                                                                              |
 | `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`).                                                                                                                           |
 | `--force`      |         | False   | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |
+
+## `markdown-vault-mcp admin repair-log`
+
+Preview, then remove, frontmatter blocks stacked at the start of a log.md.
+
+Versions 4.1.0 and 4.2.0-rc.0 could repeat a log's frontmatter block. By default the command prints the exact repeats it would remove. Review them, since identical blocks can be written on purpose. Applying keeps the complete original as log.md.frontmatter-repair.bak beside the log.
+
+| Argument | Description                                                        |
+| -------- | ------------------------------------------------------------------ |
+| `PATH`   | Vault-relative path of the affected log.md, such as guides/log.md. |
+
+| Option         | Env var | Default | Description                                                                                        |
+| -------------- | ------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                               |
+| `--apply`      |         |         | Remove the blocks the preview showed, for the etag it printed; refused when the log changed since. |
 
 ## `markdown-vault-mcp admin embeddings`
 
@@ -8868,6 +8961,40 @@ Parameters:
 | `convention_maintainer` | \`ConventionMaintainer   | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
 | `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                    |
 | `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.   |
+
+### `okf_preview_log_repair(path)`
+
+Preview exact candidate bytes for an operator to review.
+
+Parameters:
+
+| Name   | Type  | Description                           | Default    |
+| ------ | ----- | ------------------------------------- | ---------- |
+| `path` | `str` | Vault-relative path ending in log.md. | *required* |
+
+Returns:
+
+| Type               | Description                                                     |
+| ------------------ | --------------------------------------------------------------- |
+| `LogRepairPreview` | The exact candidate removal and the snapshot etag that applying |
+| `LogRepairPreview` | it requires, or an explanation that there is no candidate.      |
+
+### `okf_apply_log_repair(path, *, etag)`
+
+Apply an operator-reviewed legacy repair, retaining the complete original.
+
+Parameters:
+
+| Name   | Type  | Description                                                                         | Default    |
+| ------ | ----- | ----------------------------------------------------------------------------------- | ---------- |
+| `path` | `str` | Exact log.md path used for the preview.                                             | *required* |
+| `etag` | `str` | The etag of the preview the operator reviewed; a log changed since then is refused. | *required* |
+
+Returns:
+
+| Type              | Description                                                  |
+| ----------------- | ------------------------------------------------------------ |
+| `LogRepairResult` | The resulting byte etag and adjacent recovery artifact path. |
 
 ### `okf_convert_links(*, folder=None)`
 
@@ -10114,6 +10241,22 @@ Returns:
 | --------------- | ------------------------------------------------------------- |
 | `NoteAggregate` | Exact total, missing count and bounded distinct-note buckets. |
 
+## Build-state listing
+
+A build's final sweep needs each live note's path, title, hash and modification time, not its frontmatter. A keyword index that has the optional `ListsNoteStates` protocol returns exactly those four fields, and `FTSIndex` does. A custom keyword backend without it keeps working: the build reads the same fields through `list_notes()`, at the cost of loading every note's frontmatter.
+
+## `ListsNoteStates`
+
+Bases: `Protocol`
+
+A keyword index that lists live notes' build state alone (#1938); optional.
+
+A build's final sweep and exclusion purge need each live note's path, title, hash and modification time. An index without this reads them through :meth:`KeywordIndex.list_notes`, frontmatter included.
+
+### `list_note_states()`
+
+Return `path`, `title`, `content_hash` and `modified_at` per live note.
+
 # Git Integration
 
 The `git` module provides:
@@ -10186,19 +10329,19 @@ On startup, any unpushed local commits (from a previous crash) are pushed immedi
 
 Parameters:
 
-| Name           | Type    | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                    |
-| -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `token`        | \`str   | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                           |
-| `username`     | `str`   | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                         |
-| `repo_url`     | \`str   | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                       |
-| `managed`      | `bool`  | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                    |
-| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                     |
-| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                     |
-| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                     |
-| `commit_name`  | \`str   | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                 |
-| `commit_email` | \`str   | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                               |
-| `git_lfs`      | `bool`  | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                     |
-| `repo_path`    | \`Path  | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
+| Name           | Type    | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                                                                           |
+| -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token`        | \`str   | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                                                                                  |
+| `username`     | `str`   | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                                                                                |
+| `repo_url`     | \`str   | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                                                                              |
+| `managed`      | `bool`  | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                                                                           |
+| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                                                                            |
+| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                                                                            |
+| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                                                                            |
+| `commit_name`  | \`str   | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                                                                        |
+| `commit_email` | \`str   | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                                                                                      |
+| `git_lfs`      | `bool`  | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                                                                            |
+| `repo_path`    | \`Path  | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation and reporting uncommitted files without modifying them. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
 
 Author identity arrives per write as a resolved `principal`. OIDC claim-key registration belongs to :func:`markdown_vault_mcp._identity.configure_identity_claims`, not this constructor. The removed claim keywords raise :exc:`TypeError`; `git_lfs` and `repo_path` must be passed by keyword (#1236).
 
@@ -10219,7 +10362,7 @@ Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam (#1229): the
 
 ### `validate_startup(repo_path)`
 
-Validate startup git settings for token-authenticated workflows.
+Validate git settings and report uncommitted startup work.
 
 ### `on_write_batch(items, tool_name, *, primary_paths=None)`
 
@@ -10360,7 +10503,7 @@ Raises:
 
 ### `sync_health()`
 
-Report whether this clone is known not to be reaching its remote.
+Report uncommitted startup work or known replication failure.
 
 Read without taking the strategy-wide lock, so a write response never blocks behind an in-flight pull.
 
@@ -10369,6 +10512,8 @@ Returns:
 | Name | Type         | Description |
 | ---- | ------------ | ----------- |
 | `A`  | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
 |      | \`SyncHealth | None\`      |
 |      | \`SyncHealth | None\`      |
 |      | \`SyncHealth | None\`      |
@@ -10415,7 +10560,9 @@ Parameters:
 
 ### `start(*, repo_path, pull_interval_s, on_pull=None, on_tick=None)`
 
-Start a periodic fetch + ff-only update loop in a daemon thread.
+Inspect startup changes and start a periodic fetch + ff-only loop.
+
+Uncommitted startup work is reported even when pulling or the loop is disabled. A closed strategy performs neither operation.
 
 Parameters:
 

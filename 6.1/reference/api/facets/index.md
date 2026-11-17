@@ -549,6 +549,40 @@ Parameters:
 | `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                    |
 | `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.   |
 
+### `okf_preview_log_repair(path)`
+
+Preview exact candidate bytes for an operator to review.
+
+Parameters:
+
+| Name   | Type  | Description                           | Default    |
+| ------ | ----- | ------------------------------------- | ---------- |
+| `path` | `str` | Vault-relative path ending in log.md. | *required* |
+
+Returns:
+
+| Type               | Description                                                     |
+| ------------------ | --------------------------------------------------------------- |
+| `LogRepairPreview` | The exact candidate removal and the snapshot etag that applying |
+| `LogRepairPreview` | it requires, or an explanation that there is no candidate.      |
+
+### `okf_apply_log_repair(path, *, etag)`
+
+Apply an operator-reviewed legacy repair, retaining the complete original.
+
+Parameters:
+
+| Name   | Type  | Description                                                                         | Default    |
+| ------ | ----- | ----------------------------------------------------------------------------------- | ---------- |
+| `path` | `str` | Exact log.md path used for the preview.                                             | *required* |
+| `etag` | `str` | The etag of the preview the operator reviewed; a log changed since then is refused. | *required* |
+
+Returns:
+
+| Type              | Description                                                  |
+| ----------------- | ------------------------------------------------------------ |
+| `LogRepairResult` | The resulting byte etag and adjacent recovery artifact path. |
+
 ### `okf_convert_links(*, folder=None)`
 
 Rewrite resolvable wikilinks as root-absolute markdown links (#963).

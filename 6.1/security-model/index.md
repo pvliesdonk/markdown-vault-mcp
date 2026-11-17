@@ -39,6 +39,8 @@ Some tools send data beyond the vault:
 
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string. The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the [CLI reference](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/cli/#search-a-hosted-vault).
 
+The [legacy log repair](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
+
 ## What answers without a credential
 
 Some routes answer anyone who can reach the port, with authentication on or off:

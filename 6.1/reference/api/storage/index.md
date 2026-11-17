@@ -601,3 +601,19 @@ Returns:
 | Type            | Description                                                   |
 | --------------- | ------------------------------------------------------------- |
 | `NoteAggregate` | Exact total, missing count and bounded distinct-note buckets. |
+
+## Build-state listing
+
+A build's final sweep needs each live note's path, title, hash and modification time, not its frontmatter. A keyword index that has the optional `ListsNoteStates` protocol returns exactly those four fields, and `FTSIndex` does. A custom keyword backend without it keeps working: the build reads the same fields through `list_notes()`, at the cost of loading every note's frontmatter.
+
+## `ListsNoteStates`
+
+Bases: `Protocol`
+
+A keyword index that lists live notes' build state alone (#1938); optional.
+
+A build's final sweep and exclusion purge need each live note's path, title, hash and modification time. An index without this reads them through :meth:`KeywordIndex.list_notes`, frontmatter included.
+
+### `list_note_states()`
+
+Return `path`, `title`, `content_hash` and `modified_at` per live note.
