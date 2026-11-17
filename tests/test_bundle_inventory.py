@@ -990,3 +990,101 @@ def test_vector_sidecars_do_not_hide_neighboring_notes(tmp_path: Path) -> None:
     )
     result = subject.inspect(BundleInspectionRequest(root=""))
     assert [entry.path for entry in result.entries] == ["vectors-notes.md"]
+
+
+def test_reader_vector_base_note_and_legacy_matrices(tmp_path: Path) -> None:
+    (tmp_path / "vectors.md").write_text("---\ntype: concept\n---\nbody")
+    for name in ("vectors.m3.npy", "vectors.v2.m4.npy", "vectors.mbad.npy"):
+        (tmp_path / name).write_text("data")
+    settings = VaultSettings(
+        embeddings_path=tmp_path / "vectors.md", attachment_extensions=["npy"]
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        entries = vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries
+        assert {entry.path for entry in entries} == {"vectors.md", "vectors.mbad.npy"}
+    finally:
+        vault.close()
+
+
+def test_vector_base_also_configured_as_state_stays_hidden(tmp_path: Path) -> None:
+    (tmp_path / "vectors.md").write_text("body")
+    settings = VaultSettings(
+        embeddings_path=tmp_path / "vectors.md", state_path=tmp_path / "vectors.md"
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        assert (
+            vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries == ()
+        )
+    finally:
+        vault.close()
+
+
+def test_unstatable_state_preserves_unrelated_inventory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "note.md").write_text("body")
+    (tmp_path / "other").mkdir()
+    state = tmp_path / "other" / "state.md"
+    state.write_text("secret")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(state_path=state))
+    original = type(state).stat
+
+    def refused(path: Path, *args: object, **kwargs: object) -> os.stat_result:
+        if path == state.resolve():
+            raise PermissionError(errno.EACCES, "private")
+        return original(path, *args, **kwargs)  # type: ignore[call-arg]
+
+    try:
+        monkeypatch.setattr(type(state), "stat", refused)
+        root = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert root.state == "inspected"
+        assert "note.md" in {entry.path for entry in root.entries}
+        nested = vault.reader.inspect_bundle(BundleInspectionRequest(root="other"))
+        assert "other/state.md" not in {entry.path for entry in nested.entries}
+        assert nested.enumeration == "unavailable"
+    finally:
+        vault.close()
+
+
+def test_vector_base_different_parent_and_invalid_state_parent(tmp_path: Path) -> None:
+    (tmp_path / "note.md").write_text("body")
+    (tmp_path / "not-a-directory").write_text("body")
+    settings = VaultSettings(
+        state_path=tmp_path / "not-a-directory" / "state.json",
+        embeddings_path=tmp_path / "elsewhere" / "vectors",
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert result.state == "inspected"
+        assert [entry.path for entry in result.entries] == ["note.md"]
+    finally:
+        vault.close()
+
+
+def test_unresolvable_state_parent_does_not_block_unrelated_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "note.md").write_text("body")
+    private = tmp_path / "private"
+    private.mkdir()
+    state = private / "state.md"
+    state.write_text("secret")
+    subject = BundleInspector(
+        tmp_path, (), frozenset(), 0, inventory.InspectionPolicy(state_paths=(state,))
+    )
+    resolve = type(state).resolve
+
+    def denied(path: Path, strict: bool = False) -> Path:
+        if path in (state, private):
+            raise PermissionError(errno.EACCES, "private")
+        return resolve(path, strict=strict)
+
+    monkeypatch.setattr(type(state), "resolve", denied)
+    root = subject.inspect(BundleInspectionRequest(root=""))
+    assert root.state == "inspected"
+    assert "note.md" in {entry.path for entry in root.entries}
+    nested = subject.inspect(BundleInspectionRequest(root="private"))
+    assert "private/state.md" not in {entry.path for entry in nested.entries}

@@ -12,6 +12,7 @@ import yaml
 from frontmatter.default_handlers import YAMLHandler
 
 from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.stores._legacy import matrix_sequence
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.content_kind import is_allowed_artifact, is_note
 from markdown_vault_mcp.utils.fs import (
@@ -238,19 +239,20 @@ class BundleInspector:
         self._absolute_source = root
         files: set[Path] = set()
         directories: set[Path] = set()
-        configured_paths = self._policy.state_paths
-        if self._policy.embeddings_path is not None:
-            configured_paths += (self._policy.embeddings_path,)
         vector_bases: set[Path] = set()
-        for configured in configured_paths:
+        unavailable: set[Path] = set()
+        for configured in self._policy.state_paths:
             if str(configured) == ":memory:":
                 continue
-            path = configured.resolve()
-            spelled = configured.parent.resolve() / configured.name
+            path, spelled = self._policy_spellings(configured, root)
             try:
                 mode = path.stat().st_mode
-            except FileNotFoundError:
+            except (FileNotFoundError, NotADirectoryError):
                 mode = 0
+            except OSError:
+                mode = 0
+                directories.update((path, spelled))
+                unavailable.update((path, spelled))
             if stat.S_ISDIR(mode):
                 directories.update((path, spelled))
                 continue
@@ -258,13 +260,35 @@ class BundleInspector:
                 files.add(owned)
                 for suffix in ("-wal", "-shm", "-journal", ".lock"):
                     files.add(owned.with_name(owned.name + suffix))
-            if configured == self._policy.embeddings_path:
-                for base in (path, spelled):
-                    vector_bases.add(base)
-                    files.update(_vector_sidecars(base))
+        if self._policy.embeddings_path is not None:
+            vector_bases.update(
+                self._policy_spellings(self._policy.embeddings_path, root)
+            )
+            for base in vector_bases:
+                files.update(_vector_sidecars(base))
+        self._unavailable_policy_paths = unavailable
         self._vector_bases = vector_bases
         self._internal_paths = files
         self._internal_directories = directories
+
+    def _policy_spellings(self, configured: Path, root: Path) -> tuple[Path, Path]:
+        try:
+            return configured.resolve(), configured.parent.resolve() / configured.name
+        except (OSError, RuntimeError):
+            # Resolve the nearest reachable ancestor without following the failed path.
+            absolute = type(configured)(os.path.abspath(configured))  # noqa: PTH100 - lexical fallback must not resolve
+            ancestor = absolute.parent
+            while ancestor != ancestor.parent:
+                try:
+                    resolved = ancestor.resolve(strict=True)
+                    candidate = resolved / absolute.relative_to(ancestor)
+                    return candidate, candidate
+                except (OSError, RuntimeError):
+                    ancestor = ancestor.parent
+            source = type(configured)(os.path.abspath(self._source))  # noqa: PTH100 - lexical fallback must not resolve
+            if absolute.is_relative_to(source):
+                absolute = root / absolute.relative_to(source)
+            return absolute, absolute
 
     def _internal(self, path: str) -> bool:
         if any(part in {".git", ".markdown_vault_mcp"} for part in path.split("/")):
@@ -273,14 +297,15 @@ class BundleInspector:
         for base in self._vector_bases:
             if candidate.parent != base.parent:
                 continue
-            stem = base.with_suffix("").name + ".v2.m"
-            name = candidate.name
-            if (
-                name.startswith(stem)
-                and name.endswith(".npy")
-                and name[len(stem) : -4].isdigit()
-            ):
-                return True
+            for prefix in (".m", ".v2.m"):
+                stem = base.with_suffix(prefix).name
+                name = candidate.name
+                if (
+                    name.startswith(stem)
+                    and name.endswith(".npy")
+                    and matrix_sequence(name, stem) is not None
+                ):
+                    return True
         return candidate in self._internal_paths or any(
             candidate == internal or candidate.is_relative_to(internal)
             for internal in self._internal_directories
@@ -325,7 +350,12 @@ class BundleInspector:
     ) -> BundleInspection:
         entries: list[BundleEntry] = []
         remaining = 1024 * 1024
-        enumeration: Enumeration = "complete"
+        selected = self._absolute_source.joinpath(*scope.split("/"))
+        enumeration: Enumeration = (
+            "unavailable"
+            if any(path.parent == selected for path in self._unavailable_policy_paths)
+            else "complete"
+        )
         try:
             with os.scandir(parent) as children:
                 for ordinal, child in enumerate(children):
