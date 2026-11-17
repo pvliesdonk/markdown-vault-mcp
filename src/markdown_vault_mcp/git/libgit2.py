@@ -111,14 +111,14 @@ _OFF = {"", "false", "umask", "0", "no", "off"}
 _CLEANUPS = {None, "default", "whitespace", "verbatim", "scissors"}
 
 
-def _probe_config_hooks(repo: Any) -> None:
+def _probe_config_hooks(repo: Any, hooks: Sequence[str] = _HOOKS) -> None:
     config = repo.config
     for entry in config:
         name = entry.name.removesuffix(".event")
         events = list(config.get_multivar(entry.name)) if name != entry.name else []
         while "" in events:  # an empty event resets the earlier list
             del events[: events.index("") + 1]
-        for event in set(events).intersection(_HOOKS):
+        for event in set(events).intersection(hooks):
             if (
                 name.startswith("hook.")
                 and _tree_entry(config, f"{name}.command")
