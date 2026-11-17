@@ -6600,7 +6600,7 @@ Properties this depends on:
   effort, with a commit possibly landing later. Callback failure is also logged;
   completion does not guarantee Git succeeded. Concurrent calls share FIFO
   latency but are not isolated from each other's filesystem changes. Library
-  scope closing remains nonblocking by default, and non-batch callbacks retain
+  scope closing remains nonblocking, and non-batch callbacks retain
   their asynchronous per-write timing. Push remains deferred.
 - **The scope is read in `fire`, never on the worker.** `fire` runs on the
   request's `to_thread` worker, whose copied context carries the contextvar;
