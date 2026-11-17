@@ -6655,8 +6655,9 @@ then calls `flush()`. The pull loop retries a failed deferred push via
 `PushScheduler.do_push_safe()` after each tick (#957). A backend can compose
 `PushScheduler` with push and startup probe callables;
 the default CLI path is unchanged (#1308).
-Injected failures are sanitized before logging and health reporting. An injected
-startup failure permits local versioning and leaves a pending push for retry.
+Injected failures are sanitized before logging and health reporting. Like the
+CLI, an injected startup failure permits local versioning without an automatic
+startup retry.
 
 **Sync health (`git/health.py`, #1287)**: a clone whose pushes are being
 rejected keeps accepting writes — the commit lands, `read` serves it back —

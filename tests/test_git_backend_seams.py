@@ -123,24 +123,55 @@ def test_default_probe(
 
 
 @pytest.mark.parametrize("site", ["probe", "push"])
-def test_startup_backend_failure_is_retried(tmp_path: Path, site: str) -> None:
+def test_startup_failure_does_not_schedule_push(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, site: str
+) -> None:
+    secret = "fixture-secret"
+
     def fail(_path: Path) -> None:
-        raise ConnectionError("offline")
+        raise ConnectionError(f"offline {secret}")
 
     push = Mock(side_effect=fail if site == "push" else None)
     scheduler, health = make_scheduler(
         tmp_path,
+        token=secret,
         push=push,
         has_unpushed=fail if site == "probe" else lambda _: True,
     )
     scheduler.push_if_unpushed()
     snapshot = health.snapshot()
-    assert snapshot is not None and snapshot.reason == PUSH_REASON_PUSH_FAILED
+    if site == "probe":
+        assert snapshot is None
+    else:
+        assert snapshot is not None and snapshot.reason == PUSH_REASON_PUSH_FAILED
+    assert secret not in caplog.text and "***" in caplog.text
     before = push.call_count
     push.side_effect = None
     scheduler.flush()
+    assert push.call_count == before
+    scheduler.schedule_push()
+    scheduler.flush()
     assert push.call_count == before + 1
     assert health.snapshot() is None
+
+
+@pytest.mark.parametrize("unhealthy", [False, True])
+def test_probe_failure_preserves_existing_pending_work(
+    tmp_path: Path, unhealthy: bool
+) -> None:
+    def fail(_path: Path) -> None:
+        raise ConnectionError("offline")
+
+    push = Mock()
+    scheduler, health = make_scheduler(tmp_path, push=push, has_unpushed=fail)
+    scheduler.schedule_push()
+    if unhealthy:
+        health.push_failed(PUSH_REASON_PUSH_FAILED)
+    before = health.snapshot()
+    scheduler.push_if_unpushed()
+    assert health.snapshot() == before
+    scheduler.flush()
+    push.assert_called_once_with(tmp_path)
 
 
 def test_startup_failure_preserves_scoped_write(
@@ -289,8 +320,11 @@ def test_backend_process_rejection_preserves_sanitized_diagnostics(
             else:
                 scheduler.do_push_safe(retry=site == "retry")
     snapshot = health.snapshot()
-    assert snapshot is not None
-    assert snapshot.reason == reason
+    if site == "startup_probe":
+        assert snapshot is None
+    else:
+        assert snapshot is not None
+        assert snapshot.reason == reason
     if stderr != "connection":
         assert stderr in caplog.text
         assert "exit status 1" in caplog.text

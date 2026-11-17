@@ -235,7 +235,7 @@ class PushScheduler:
             else:
                 unpushed = self._call_backend(self._has_unpushed, git_root)
         except PushBackendError as exc:
-            self._startup_backend_failed(exc)
+            logger.warning("git_startup_push_failed error=%s", one_line(str(exc)))
             return
         if unpushed:
             logger.info("git_startup_push_pending")
@@ -262,7 +262,6 @@ class PushScheduler:
 
     def _startup_backend_failed(self, exc: PushBackendError) -> None:
         """Record a sanitized backend failure while the caller holds the lock."""
-        self._push_pending = True
         logger.warning("git_startup_push_failed error=%s", one_line(str(exc)))
         self._health.push_failed(push_failure_reason(str(exc)), str(exc))
 
