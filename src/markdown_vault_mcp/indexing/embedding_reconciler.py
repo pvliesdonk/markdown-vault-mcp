@@ -195,6 +195,16 @@ class _Document:
 
 
 @dataclass(frozen=True)
+class _PendingEmbed:
+    """A document's reusable vectors and inputs still needing embeddings."""
+
+    doc: _Document
+    stored: list[VectorRow]
+    known: dict[str, Any]
+    misses: list[str]
+
+
+@dataclass(frozen=True)
 class _Pass:
     """The state one reconcile pass shares between its steps."""
 
@@ -202,6 +212,7 @@ class _Pass:
     stored: dict[str, RevisionToken | None]
     result: ReconcileResult
     site: str
+    pending: list[_PendingEmbed] = field(default_factory=list)
 
 
 def _stored_metadata(
@@ -241,7 +252,7 @@ def _signature(rows: Collection[dict[str, Any]]) -> Counter[tuple[Any, ...]]:
 
 
 class EmbeddingReconciler:
-    """Publishes every embedding row, one document at a time.
+    """Batches embedding inputs across documents and publishes each document separately.
 
     Args:
         fts: The keyword index, the source of every row.
@@ -372,7 +383,8 @@ class EmbeddingReconciler:
         from a store that reads in batches (#1937); every write is still
         conditional on the token read first, so a change landing between
         the reads conflicts too. Removals run first, then each document's
-        re-embed, then the re-tokens, so a bulk re-token publish sees the
+        re-embed (with misses batched across documents), then the re-tokens,
+        so a bulk re-token publish sees the
         pass's other writes.
 
         Args:
@@ -397,6 +409,7 @@ class EmbeddingReconciler:
                 held_rows = None if current is None else current.get(path, [])
                 if self._reconcile_document(state, docs[path], held_rows):
                     retoken.append(docs[path])
+        self._flush(state)
         self._retoken(state, retoken)
         return state.result
 
@@ -487,21 +500,62 @@ class EmbeddingReconciler:
             return True
         if stored is None:
             stored = state.store.rows_for(doc.path) if current else []
-        self._embed_and_publish(state, doc, stored)
+        self._queue(state, self._prepare(doc, stored))
         return False
 
-    def _embed_and_publish(
-        self, state: _Pass, doc: _Document, stored: list[VectorRow]
-    ) -> None:
-        """Embed *doc*'s changed chunks and replace its rows, keeping them on any failure.
-
-        A chunk whose embedding input one of *stored* was embedded from keeps
-        that row's vector: the store's identity fixes the provider, model and
-        text format, so the same input embeds to the same vector. Only the
-        other inputs go to the provider, each once.
-        """
+    def _prepare(self, doc: _Document, stored: list[VectorRow]) -> _PendingEmbed:
+        """Find reusable vectors and distinct misses for one document."""
         known = self._stored_inputs(stored)
         misses = [text for text in dict.fromkeys(doc.texts) if text not in known]
+        return _PendingEmbed(doc, stored, known, misses)
+
+    def _queue(self, state: _Pass, item: _PendingEmbed) -> None:
+        """Publish reuse-only documents or pack misses into bounded requests."""
+        if not item.misses:
+            self._publish(state, item, [])
+            return
+        count = sum(len(p.misses) for p in state.pending)
+        if count + len(item.misses) > self._batch_size:
+            self._flush(state)
+            count = 0
+        state.pending.append(item)
+        if count + len(item.misses) >= self._batch_size:
+            self._flush(state)
+
+    def _flush(self, state: _Pass) -> None:
+        """Embed queued documents together, falling back to each on failure."""
+        pending = state.pending[:]
+        state.pending.clear()
+        if not pending:
+            return
+        if len(pending) == 1:
+            self._embed_one(state, pending[0])
+            return
+        texts = [text for item in pending for text in item.misses]
+        try:
+            vectors = self._provider.embed(texts)
+            if len(vectors) != len(texts):
+                raise ValueError("provider returned the wrong vector count")
+        except Exception as exc:
+            logger.debug(
+                "embedding_reconcile_batch_fallback site=%s docs=%d texts=%d err=%s",
+                state.site,
+                len(pending),
+                len(texts),
+                exc,
+            )
+            for item in pending:
+                self._embed_one(state, item)
+            return
+        offset = 0
+        for item in pending:
+            end = offset + len(item.misses)
+            self._publish(state, item, vectors[offset:end])
+            offset = end
+
+    def _embed_one(self, state: _Pass, item: _PendingEmbed) -> None:
+        """Embed one document, keeping its old rows on provider failure."""
+        doc, misses = item.doc, item.misses
         try:
             fresh = self._embed(misses)
         except Exception as exc:
@@ -518,6 +572,13 @@ class EmbeddingReconciler:
                 exc_info=True,
             )
             return
+        self._publish(state, item, fresh)
+
+    def _publish(
+        self, state: _Pass, item: _PendingEmbed, fresh: list[list[float]]
+    ) -> None:
+        """Conditionally publish one document using reused and fresh vectors."""
+        doc, known, misses = item.doc, item.known, item.misses
         try:
             known.update(zip(misses, fresh, strict=True))
             rows = [

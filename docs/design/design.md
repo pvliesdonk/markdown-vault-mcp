@@ -1576,7 +1576,7 @@ signature with the store's before calling the provider, so repeated FTS/graph
 retries reuse completed embeddings. Changed content, chunk boundaries/positions,
 titles, headings, or configured frontmatter preambles replace the note's rows,
 embedding only the chunks whose input changed (the others keep their stored
-vectors); an unchanged input under a new token is re-tokened without a provider call. A provider
+vectors); an unchanged input under a new token is re-tokened without a provider call. Changed notes share provider requests of up to the configured batch size (#1496). If a shared request fails, each note is retried alone, so only a rejected note is held for retry. A provider
 failure keeps the note's rows and holds its path for the next flush, without
 queueing one and without counting as pending work, so a note the provider keeps
 rejecting never leaves the writer undrained; a conflicting write is re-queued
@@ -4728,7 +4728,7 @@ keyword rows and hand the paths to the reconciler too, so every vector
 write carries the token it observed. An empty cold build is published only
 when the keyword index's last build completed and read every directory
 (`is_build_walk_complete()`); the source walk and root check are gone
-from the embedding path. It embeds before
+from the embedding path. Incremental reconciliation batches missing inputs across documents up to the configured batch size (#1496); a failed shared request falls back to each document separately, preserving successful siblings. It embeds before
 touching the store and publishes with `replace_document` /
 `remove_document` passing the token it observed, read before the
 keyword-index rows (a revision the rows miss was published after that

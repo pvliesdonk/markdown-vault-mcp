@@ -36,9 +36,11 @@ class _Counting(MockEmbeddingProvider):
     def __init__(self) -> None:
         super().__init__(dim=8)
         self.texts: list[str] = []
+        self.calls: list[list[str]] = []
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         self.texts.extend(texts)
+        self.calls.append(list(texts))
         return super().embed(texts)
 
 
@@ -106,6 +108,105 @@ def _setup(
 
 
 NOTES = {"a.md": "# A\n\nApples.\n", "b.md": "# B\n\nBoats.\n"}
+
+
+def test_changed_documents_share_one_request(tmp_path):
+    fts, provider, store, rec = _setup(tmp_path, NOTES)
+    rec.reconcile(store, site="test")
+    for path, body in (("a.md", "Quinces"), ("b.md", "Harbours")):
+        (tmp_path / path).write_text(f"# {path[0].upper()}\n\n{body}.\n")
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, HeadingChunker()))
+    provider.calls.clear()
+    result = rec.reconcile(store, ["a.md", "b.md"], site="flush")
+    assert len(provider.calls) == 1
+    assert len(provider.calls[0]) == 2
+    assert result.embedded == 2
+    for path, text in zip(("a.md", "b.md"), provider.calls[0], strict=True):
+        row = store.rows_for(path)[0]
+        assert row.metadata["path"] == path
+        vector = np.array(MockEmbeddingProvider.embed(provider, [text])[0])
+        assert list(row.vector) == pytest.approx(vector / np.linalg.norm(vector))
+
+
+def test_batch_limit_spans_documents(tmp_path):
+    notes = {f"{i}.md": f"# Note {i}\n\nBody {i}.\n" for i in range(5)}
+    _, provider, store, rec = _setup(tmp_path, notes)
+    rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4, 1]
+    assert set(store.tokens()) == set(notes)
+
+
+def test_oversized_document_is_sliced_before_next_document(tmp_path):
+    notes = {
+        "a.md": "# A\n\n"
+        + "\n".join(f"## Section {i}\n\nContent {i}.\n" for i in range(5)),
+        "b.md": "# B\n\nOther.\n",
+    }
+    _, provider, store, rec = _setup(
+        tmp_path, notes, chunker=HeadingChunker(short_doc_lines=0)
+    )
+    rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4, 1, 1]
+    assert "Other" in provider.calls[-1][0]
+    assert len(store.rows_for("a.md")) == 5
+
+
+@pytest.mark.parametrize("failure", ["rejected", "count"])
+def test_shared_request_falls_back_per_document(tmp_path, monkeypatch, failure):
+    fts, provider, store, rec = _setup(tmp_path, NOTES)
+    rec.reconcile(store, site="test")
+    old = store.rows_for("a.md")
+    for path in NOTES:
+        (tmp_path / path).write_text(f"# {path[0].upper()}\n\nNew {path}.\n")
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, HeadingChunker()))
+    provider.calls.clear()
+    embed = provider.embed
+
+    def flaky(texts):
+        if failure == "rejected" and any("New a.md" in t for t in texts):
+            provider.calls.append(list(texts))
+            raise RuntimeError("rejected")
+        if failure == "count" and len(texts) > 1:
+            provider.calls.append(list(texts))
+            return []
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", flaky)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [2, 1, 1]
+    assert "New b.md" in store.rows_for("b.md")[0].metadata["content"]
+    if failure == "rejected":
+        assert result.retry == {"a.md"}
+        assert store.rows_for("a.md") == old
+    else:
+        assert not result.retry
+        assert "New a.md" in store.rows_for("a.md")[0].metadata["content"]
+
+
+def test_reuse_only_document_publishes_while_other_is_pending(tmp_path):
+    notes = {
+        "a.md": "# A\n\nApple.\n",
+        "b.md": "# S\n\nIntro.\n\n## One\n\nApples.\n\n## Two\n\nBoats.\n\n## End\n\nFin.\n",
+    }
+    chunker = HeadingChunker(short_doc_lines=0)
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    (tmp_path / "a.md").write_text("# A\n\nNew apples.\n")
+    (tmp_path / "b.md").write_text(
+        "# S\n\nIntro.\n\n## Two\n\nBoats.\n\n## One\n\nApples.\n\n## End\n\nFin.\n"
+    )
+    for path in notes:
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    provider.calls.clear()
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [1]
+    assert result.reused == 4
+    assert [r.metadata["heading"] for r in store.rows_for("b.md")] == [
+        "S",
+        "Two",
+        "One",
+        "End",
+    ]
 
 
 class TestDecisions:
