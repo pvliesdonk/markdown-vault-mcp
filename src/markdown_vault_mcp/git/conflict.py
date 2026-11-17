@@ -1,8 +1,8 @@
 """Rebase-conflict resolution mechanics.
 
-Contract: every function here assumes the CALLER already holds
+Contract: CLI rebase orchestration assumes the CALLER already holds
 ``GitWriteStrategy._lock`` and that a rebase is in progress (or being driven) on
-``git_root``. These functions take no lock of their own -- serialization is the
+``git_root``. Those functions take no lock of their own -- serialization is the
 strategy's responsibility. Subprocess calls are module-qualified
 (``subprocess.run``, or ``run_git_capturing`` from ``git/_run.py``) so the test
 suite's global ``subprocess.run`` monkeypatch still intercepts them.
