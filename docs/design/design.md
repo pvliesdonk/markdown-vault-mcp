@@ -928,6 +928,11 @@ Two methods manage the index:
   `reindex(force=True)` is the manual counterpart, surfacing the
   already-existing `build_index(force=True)` for an index an operator has
   reason to distrust.
+
+  Version 13 (#1438) rebuilds indexes written with version 12, which shipped
+  in v6.1.2, so reserved OKF files can be admitted without required concept
+  fields. See [Generated reserved files and the index gate](okf.md#generated-reserved-files-and-the-index-gate).
+
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
