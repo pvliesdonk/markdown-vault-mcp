@@ -200,6 +200,10 @@ class TestDeclaredBundle:
         assert playbook["status"] == "deprecated"
         assert playbook["stale"] is True
         assert playbook["trust_tier"] == "human-reviewed"
+        assert playbook["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
         assert playbook["sources_count"] == 2
         assert "sources" not in playbook
         plain = by_path["guides/plain.md"]["okf"]
@@ -224,6 +228,10 @@ class TestDeclaredBundle:
             )
         okf = read["okf"]
         assert okf["trust_tier"] == "human-reviewed"
+        assert okf["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
         assert [s["resource"] for s in okf["sources"]] == [
             "https://example.com/a",
             "https://example.com/b",

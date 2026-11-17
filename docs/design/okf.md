@@ -808,8 +808,9 @@ phase owns.
 
 ## 10. Open questions
 
-- Review applicability after observed changes remains separate from recorded
-  claim interpretation (#1413).
+- Reads report supplied review entries as unbound (#1413). How observed changes
+  are represented and how reviews bind to snapshots remain follow-ups (#1414,
+  #1445).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
   amendment and #1373: the value carries its own offset; a bare date is the
   server-local day.

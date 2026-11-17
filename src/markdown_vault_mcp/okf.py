@@ -360,9 +360,12 @@ def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str
     }
 
 
-def _review_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
+def _review_evidence(
+    metadata: dict[str, Any], entries: list[Any] | None = None
+) -> dict[str, Any]:
     """Count usable recorded claims separately from malformed input."""
-    entries = verified_entries(metadata)
+    if entries is None:
+        entries = verified_entries(metadata)
     recorded = sum(_review_recorded(entry) for entry in entries)
     malformed = len(entries) - recorded
     if "verified" not in metadata:
@@ -381,11 +384,9 @@ def _review_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _review_applicability(
-    metadata: dict[str, Any], review: dict[str, Any]
-) -> dict[str, str]:
+def _review_applicability(entries: list[Any], review: dict[str, Any]) -> dict[str, str]:
     """Describe whether supplied review entries have a snapshot binding."""
-    if verified_entries(metadata):
+    if entries:
         return {"snapshot": "unbound", "basis": "no_snapshot_binding"}
     if review["state"] == "malformed":
         return {"review": "unknown", "basis": "malformed_review"}
@@ -432,9 +433,10 @@ def derive_annotation(
     annotation["stale"] = derive_stale(metadata, now=now)
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)
-    annotation["review"] = _review_evidence(metadata)
+    entries = verified_entries(metadata)
+    annotation["review"] = _review_evidence(metadata, entries)
     annotation["review_applicability"] = _review_applicability(
-        metadata, annotation["review"]
+        entries, annotation["review"]
     )
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []

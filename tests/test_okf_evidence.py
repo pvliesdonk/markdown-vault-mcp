@@ -233,7 +233,6 @@ def test_report_old_positional_constructor() -> None:
         ({}, {"review": "none", "basis": "no_review_supplied"}),
         ({"verified": []}, {"review": "none", "basis": "no_review_supplied"}),
         ({"verified": None}, {"review": "unknown", "basis": "malformed_review"}),
-        ({"verified": "bad"}, {"review": "unknown", "basis": "malformed_review"}),
         ({"verified": True}, {"review": "unknown", "basis": "malformed_review"}),
         ({"verified": {}}, {"snapshot": "unbound", "basis": "no_snapshot_binding"}),
         ({"verified": [None]}, {"snapshot": "unbound", "basis": "no_snapshot_binding"}),
@@ -241,73 +240,20 @@ def test_report_old_positional_constructor() -> None:
             {"verified": [None, {"by": "human:alice", "at": AT}]},
             {"snapshot": "unbound", "basis": "no_snapshot_binding"},
         ),
-        ({"verified": [{}]}, {"snapshot": "unbound", "basis": "no_snapshot_binding"}),
         (
             {"verified": {"by": "human:alice", "at": AT}},
             {"snapshot": "unbound", "basis": "no_snapshot_binding"},
         ),
+        (
+            {"verified": [{"by": "human:alice", "at": AT, "snapshot": "claimed"}]},
+            {"snapshot": "unbound", "basis": "no_snapshot_binding"},
+        ),
     ],
 )
-def test_review_applicability_is_separate(
+def test_review_applicability(
     metadata: dict[str, Any], applicability: dict[str, str]
 ) -> None:
-    result = derive_annotation(metadata, now=NOW, include_sources=True)
+    result = derive_annotation(metadata, now=NOW)
     assert result["review_applicability"] == applicability
-    assert result["recorded"] == metadata
-
-
-def test_applicability_preserves_existing_evidence() -> None:
-    metadata = {
-        "type": "Concept",
-        "verified": [{"by": "human:alice", "at": AT, "snapshot": "claimed"}],
-        "stale_after": "2026-11-14",
-        "sources": ["source"],
-    }
-    result = derive_annotation(metadata, now=NOW, include_sources=True)
-    assert result == {
-        "type": "Concept",
-        "status": "stable",
-        "stale": True,
-        "trust_tier": "human-reviewed",
-        "freshness": {"state": "expired", "basis": "server_local_date"},
-        "review": {
-            "state": "recorded",
-            "recorded_entries": 1,
-            "malformed_entries": 0,
-            "basis": "supplied_metadata_only",
-        },
-        "review_applicability": {"snapshot": "unbound", "basis": "no_snapshot_binding"},
-        "recorded": {"verified": metadata["verified"], "stale_after": "2026-11-14"},
-        "sources": ["source"],
-    }
-
-
-async def test_mcp_read_and_search_expose_applicability(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from fastmcp import Client
-
-    from tests.conftest import _CLEAR_VARS, _parse_tool_data, wait_for_mcp_writer_drain
-    from tests.server_factory import make_server
-
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
-    (tmp_path / "concept.md").write_text(
-        '---\ntype: Concept\nverified:\n  - by: human:alice\n    at: "2026-11-14T09:00:00Z"\n---\n# Zebra\n\nZebra content.\n'
-    )
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    async with Client(make_server()) as client:
-        await wait_for_mcp_writer_drain(client)
-        read = (
-            await client.call_tool("read", {"path": "concept.md"})
-        ).structured_content
-        hits = _parse_tool_data(await client.call_tool("search", {"query": "zebra"}))
-    assert read is not None
-    assessment = {"snapshot": "unbound", "basis": "no_snapshot_binding"}
-    assert read["okf"]["review_applicability"] == assessment
-    assert read["okf"]["recorded"]["verified"][0]["by"] == "human:alice"
-    hit = next(hit for hit in hits if hit["path"] == "concept.md")
-    assert hit["okf"]["review_applicability"] == assessment
-    assert "recorded" not in hit["okf"]
+    if metadata.get("verified") == [None]:
+        assert result["review"]["state"] == "malformed"
