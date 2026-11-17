@@ -45,7 +45,7 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 - **Review applicability**: `review_applicability` reports `snapshot: unbound` and `basis: no_snapshot_binding` for supplied entries, including malformed entries. This describes the absence of a binding; `review` reports entry validity. No timestamp or extension establishes coverage of the current content. Absent or empty reviews report `review: none`; malformed outer values report `review: unknown`. This assessment is separate from freshness and the recorded review tier.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
 
-You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
+You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. Use `{"type": null}` to find searchable notes without a non-empty type; reserved `index.md` and `log.md` files are excluded. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 
 ## Frontmatter fields
 

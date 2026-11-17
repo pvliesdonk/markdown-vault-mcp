@@ -226,7 +226,7 @@ The `filters` parameter on `search()` generates
 `document_id IN (SELECT ... FROM document_tags WHERE ...)` subqueries. This
 gives O(1) indexed lookup without `json_extract()` performance problems.
 
-**Filter semantics**: `filters` is `dict[str, str]`. Each key-value pair is
+**Filter semantics**: `filters` maps keys to strings. On an active OKF bundle, `type: null` selects indexed non-reserved notes without a non-empty type; it is evaluated after admission and does not change indexed rows. Each key-value pair is
 ANDed. Example: `filters={"cluster": "fiction", "genre": "horror"}` returns
 documents tagged with both `cluster=fiction` AND `genre=horror`. Multi-valued
 OR queries within a single key are not supported in Phase 1; use multiple

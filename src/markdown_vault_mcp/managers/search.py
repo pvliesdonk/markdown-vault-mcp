@@ -89,7 +89,7 @@ from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, is_regular_file
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import (
@@ -591,16 +591,17 @@ class SearchManager:
         return True
 
     def _split_okf_filters(
-        self, filters: dict[str, str] | None
-    ) -> tuple[dict[str, str] | None, dict[str, str]]:
+        self, filters: Mapping[str, str | None] | None
+    ) -> tuple[dict[str, str] | None, dict[str, str | None]]:
         """Split *filters* into plain tag filters and OKF dimensions.
 
         The OKF dimensions (:data:`~markdown_vault_mcp.okf.OKF_FILTER_KEYS`:
-        ``status`` / ``stale`` / ``trust_tier``) get OKF semantics only when
-        a detector is wired and read semantics are active; otherwise every
-        key stays a plain filter, preserving pre-OKF behavior byte for
-        byte. A ``stale`` value is validated eagerly so an invalid spelling
-        fails the whole call instead of silently matching nothing.
+        ``status`` / ``stale`` / ``trust_tier``) and null ``type`` get OKF
+        semantics only when a detector is wired and read semantics are active;
+        otherwise every
+        string key stays a plain filter, preserving pre-OKF behavior. Null is
+        supported only for type on active bundles. A ``stale`` value is
+        validated eagerly so an invalid spelling fails the whole call instead of silently matching nothing.
 
         Args:
             filters: The caller's ``filters`` dict, or ``None``.
@@ -610,20 +611,33 @@ class SearchManager:
             empty when OKF semantics do not apply.
 
         Raises:
-            InvalidRequestError: If an active ``stale`` filter value is not a
-                true/false spelling.
+            InvalidRequestError: If a null filter is unsupported or an active
+                ``stale`` value is not a true/false spelling.
         """
-        if not filters or self._okf is None:
-            return filters, {}
-        okf_filters = {k: v for k, v in filters.items() if k in OKF_FILTER_KEYS}
-        if not okf_filters or not self._okf.state().active:
-            return filters, {}
+        if not filters:
+            return None, {}
+        active = self._okf is not None and self._okf.state().active
+        plain: dict[str, str] = {}
+        okf_filters: dict[str, str | None] = {}
+        for key, value in filters.items():
+            if active and key == "type" and value is None:
+                okf_filters[key] = value
+            elif value is None:
+                raise InvalidRequestError(
+                    "null is supported only for type on an active OKF bundle"
+                )
+            elif active and key in OKF_FILTER_KEYS:
+                okf_filters[key] = value
+            else:
+                plain[key] = value
         if "stale" in okf_filters:
-            parse_stale_filter(okf_filters["stale"])
-        plain = {k: v for k, v in filters.items() if k not in OKF_FILTER_KEYS}
+            stale = okf_filters["stale"]
+            if stale is None:
+                raise InvalidRequestError("stale filter must be true or false")
+            parse_stale_filter(stale)
         return (plain or None), okf_filters
 
-    def _path_matches_okf(self, path: str, okf_filters: dict[str, str]) -> bool:
+    def _path_matches_okf(self, path: str, okf_filters: dict[str, str | None]) -> bool:
         """Evaluate the OKF filter dimensions for one document path.
 
         Args:
@@ -636,11 +650,13 @@ class SearchManager:
         note_row = self._fts.get_note(path)
         if note_row is None:
             return False
+        if "type" in okf_filters and is_okf_reserved_file(path):
+            return False
         metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
         return matches_okf_filters(metadata, okf_filters)
 
     def _filter_rows_okf(
-        self, rows: builtins.list[FTSResult], okf_filters: dict[str, str]
+        self, rows: builtins.list[FTSResult], okf_filters: dict[str, str | None]
     ) -> builtins.list[FTSResult]:
         """Drop FTS chunk rows whose document fails the OKF dimensions.
 
@@ -702,7 +718,7 @@ class SearchManager:
         candidate_limit: int,
         *,
         filters: dict[str, str] | None = None,
-        okf_filters: dict[str, str] | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> int:
         """Widen a candidate pool when a post-filter will thin it.
 
@@ -732,7 +748,7 @@ class SearchManager:
         raw: builtins.list[dict[str, Any]],
         *,
         filters: dict[str, str] | None,
-        okf_filters: dict[str, str] | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> builtins.list[dict[str, Any]]:
         """Apply frontmatter and OKF filters to vector-search rows.
 
@@ -886,7 +902,7 @@ class SearchManager:
         *,
         limit: int = 10,
         mode: Literal["keyword", "semantic", "hybrid"] | None = None,
-        filters: dict[str, str] | None = None,
+        filters: dict[str, str | None] | None = None,
         folder: str | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
@@ -927,7 +943,7 @@ class SearchManager:
         )
         eff_snip = snippet_words if snippet_words is not None else self._snippet_words
         folder = normalize_folder(folder)
-        filters, okf_filters = self._split_okf_filters(filters)
+        plain_filters, okf_filters = self._split_okf_filters(filters)
 
         mode = self._resolve_mode(mode)
 
@@ -935,7 +951,7 @@ class SearchManager:
             return self._keyword_search(
                 query,
                 limit=limit,
-                filters=filters,
+                filters=plain_filters,
                 folder=folder,
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
@@ -949,7 +965,7 @@ class SearchManager:
             return self._semantic_search(
                 query,
                 limit=limit,
-                filters=filters,
+                filters=plain_filters,
                 folder=folder,
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
@@ -963,7 +979,7 @@ class SearchManager:
         return self._hybrid_search(
             query,
             limit=limit,
-            filters=filters,
+            filters=plain_filters,
             folder=folder,
             chunks_per_file=eff_cap,
             snippet_words=eff_snip,
@@ -1101,7 +1117,7 @@ class SearchManager:
         folder: str | None,
         chunks_per_file: int,
         snippet_words: int,
-        okf_filters: dict[str, str] | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1219,7 +1235,7 @@ class SearchManager:
         folder: str | None = None,
         chunks_per_file: int,
         snippet_words: int,
-        okf_filters: dict[str, str] | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1259,7 +1275,7 @@ class SearchManager:
         folder: str | None,
         chunks_per_file: int,
         snippet_words: int,
-        okf_filters: dict[str, str] | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
         okf_filters = okf_filters or {}
@@ -1405,7 +1421,7 @@ class SearchManager:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        filters: dict[str, str] | None = None,
+        filters: dict[str, str | None] | None = None,
     ) -> list[NoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 
@@ -1451,7 +1467,10 @@ class SearchManager:
             ]
         if okf_filters:
             note_infos = [
-                n for n in note_infos if matches_okf_filters(n.frontmatter, okf_filters)
+                n
+                for n in note_infos
+                if not ("type" in okf_filters and is_okf_reserved_file(n.path))
+                and matches_okf_filters(n.frontmatter, okf_filters)
             ]
         notes: list[NoteInfo | AttachmentInfo] = list(note_infos)
 

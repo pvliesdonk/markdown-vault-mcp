@@ -285,7 +285,7 @@ is disk-based rather than index-based, and the tool is hidden under
 `search` and `list_documents` accept OKF filter dimensions, implemented on the
 existing `filters` → `document_tags` subquery path (AND semantics unchanged):
 
-- `type=<value>` — direct tag lookup.
+- `type=<value>` — direct tag lookup. `type=null` post-filters admitted notes without a non-empty type, excluding reserved files.
 - `status=<value>` — tag lookup with the documented caveat that absent
   `status` means `stable` (the filter for `stable` must match
   absent-or-stable; this is the one filter that cannot be a pure tag lookup
