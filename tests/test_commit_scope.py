@@ -109,19 +109,6 @@ class TestScopeBinding:
 
 
 class TestGrouping:
-    def test_folder_metadata_keeps_legacy_batch_callback(self) -> None:
-        """A batch callback keeps its existing signature with folder metadata."""
-        cb = _BatchRecorder()
-        dispatcher = WriteCallbackDispatcher(cb)
-        with bound_commit_scope("move_folder") as scope:
-            scope.folder_move = (Path("old"), Path("new"))
-            dispatcher.fire(
-                Path("new/a.md"), "text", "rename", old_path=Path("old/a.md")
-            )
-            dispatcher.end_scope(scope)
-        dispatcher.close()
-        assert cb.batches == [("move_folder", [Path("new/a.md")])]
-
     @pytest.mark.parametrize("raise_batch", [False, True])
     def test_folder_roots_are_isolated_and_reset(self, raise_batch: bool) -> None:
         """Batch roots reset before unscoped callbacks, including after failure."""
@@ -158,6 +145,10 @@ class TestGrouping:
         dispatcher.close()
         assert cb.roots == [(Path("a"), Path("b")), None, None]
         assert cb.scopes == [None, None, None]
+        assert cb.batches == [
+            ("move_folder", [Path("b/x.md")]),
+            ("write", [Path("other.md")]),
+        ]
 
     def test_one_scope_produces_one_batch(self) -> None:
         cb = _BatchRecorder()
@@ -537,10 +528,10 @@ class TestBatchCommitsForReal:
     """
 
     @staticmethod
-    def _strategy(repo: Path):
+    def _strategy(repo: Path, strategy_cls: Any = None):
         from markdown_vault_mcp.git.strategy import GitWriteStrategy
 
-        return GitWriteStrategy(
+        return (strategy_cls or GitWriteStrategy)(
             token=None,
             repo_url=None,
             managed=False,
@@ -687,11 +678,13 @@ class TestBatchCommitsForReal:
             expected.add("index.md")
         assert _files_in_head(repo) == expected
 
-    def _run_in_scope(self, repo: Path, tool: str, op: Callable[[Any], object]) -> None:
+    def _run_in_scope(
+        self, repo: Path, tool: str, op: Callable[[Any], object], strategy: Any = None
+    ) -> None:
         """Run *op* against a fresh vault on *repo* inside one tool's scope."""
         from markdown_vault_mcp.vault import Vault, VaultSettings
 
-        strategy = self._strategy(repo)
+        strategy = strategy or self._strategy(repo)
         vault = Vault(
             source_dir=repo,
             settings=VaultSettings(read_only=False),
@@ -858,14 +851,7 @@ class TestBatchCommitsForReal:
         (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
         run_git(str(repo), "add", "a")
         run_git(str(repo), "commit", "-m", "folder")
-        strategy = FollowupStrategy(
-            token=None,
-            repo_url=None,
-            managed=False,
-            enable_pull=False,
-            enable_push=False,
-            repo_path=repo,
-        )
+        strategy = self._strategy(repo, FollowupStrategy)
         vault = Vault(
             source_dir=repo, settings=VaultSettings(read_only=False), on_write=strategy
         )
@@ -884,14 +870,12 @@ class TestBatchCommitsForReal:
             vault.close()
             strategy.close()
 
-    @pytest.mark.parametrize("multiple", [False, True])
     def test_folder_move_preserves_overridden_batch_callback(
-        self, tmp_path: Path, multiple: bool
+        self, tmp_path: Path
     ) -> None:
         """An existing strategy subclass still receives its public callback."""
         from markdown_vault_mcp.git._run import run_git
         from markdown_vault_mcp.git.strategy import GitWriteStrategy
-        from markdown_vault_mcp.vault import Vault, VaultSettings
 
         class CustomStrategy(GitWriteStrategy):
             called = False
@@ -909,38 +893,19 @@ class TestBatchCommitsForReal:
         repo = _repo(tmp_path)
         (repo / "a").mkdir()
         (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
-        if multiple:
-            (repo / "a" / "y.md").write_text("y\n", encoding="utf-8")
-            (repo / "source.md").write_text("[X](a/x.md)\n", encoding="utf-8")
+        (repo / "a" / "y.md").write_text("y\n", encoding="utf-8")
+        (repo / "source.md").write_text("[X](a/x.md)\n", encoding="utf-8")
         run_git(str(repo), "add", "--all")
         run_git(str(repo), "commit", "-m", "folder")
         before = len(_subjects(repo))
-        strategy = CustomStrategy(
-            token=None,
-            repo_url=None,
-            managed=False,
-            enable_pull=False,
-            enable_push=False,
-            repo_path=repo,
+        strategy = self._strategy(repo, CustomStrategy)
+        self._run_in_scope(
+            repo, "move_folder", lambda v: v.writer.move_folder("a", "b"), strategy
         )
-        vault = Vault(
-            source_dir=repo, settings=VaultSettings(read_only=False), on_write=strategy
-        )
-        vault.index.build_index()
-        try:
-            with bound_commit_scope("move_folder") as scope:
-                vault.writer.move_folder("a", "b")
-                vault.end_commit_scope(scope)
-        finally:
-            vault.close()
-            strategy.close()
         assert strategy.called
         assert _subjects(repo)[0] == "move_folder: a -> b"
         assert len(_subjects(repo)) == before + 1
-        expected = {"b/x.md"}
-        if multiple:
-            expected |= {"b/y.md", "source.md"}
-        assert expected <= _files_in_head(repo)
+        assert {"b/x.md", "b/y.md", "source.md"} <= _files_in_head(repo)
 
     @pytest.mark.parametrize(
         ("old", "new", "expected"),
