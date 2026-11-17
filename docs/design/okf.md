@@ -612,7 +612,11 @@ the index once. Keyword backends without the optional OKF
 admission provenance capability rebuild conservatively on reopen. An unread
 build candidate is retried on the next reindex; the version 13 rebuild also
 clears old tracker-only skips left by version 12. Reopening before a reindex
-after a dirty scope change triggers one conservative rebuild.
+after a dirty scope change triggers one conservative rebuild. If reading the
+root `index.md` fails with an I/O error, admission keeps its last confirmed
+state when available and logs `okf_scope_probe_failed`; without a confirmed
+state it remains unknown. A missing declaration still deactivates auto mode,
+and forced-on mode is unaffected.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
 carry. Both generators and the `OKF_WRITE` maintainer write through it:

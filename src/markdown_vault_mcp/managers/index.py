@@ -807,7 +807,21 @@ class IndexManager:
     # ------------------------------------------------------------------
 
     def _admission_snapshot(self) -> bool | None:
-        return self._okf_admission_active() if self._okf_admission_active else None
+        return self._scope_or_last_good(self._okf_admission_active)
+
+    def _scope_or_last_good(
+        self, probe: Callable[[], bool | None] | None
+    ) -> bool | None:
+        """Read the scope, or keep the last confirmed admission if the read fails."""
+        if probe is None:
+            return None
+        try:
+            return probe()
+        except OSError:
+            kept = self._memory_exempt
+            kept = self._stored_exempt() if kept is None else kept
+            logger.warning("okf_scope_probe_failed retained=%s", kept)
+            return kept
 
     def _stored_exempt(self) -> bool | None:
         getter = getattr(self._fts, "get_okf_admission_meta", None)

@@ -492,13 +492,18 @@ def test_dirty_reserved_failure_retries(
         vault.close()
 
 
-def test_no_required_fields_skips_admission_provenance(tmp_path: Path) -> None:
+def test_no_required_fields_skips_admission_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     (tmp_path / "index.md").write_text("# Root\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         vault.index.build_index()
         assert vault._fts.get_okf_admission_meta() is None
         assert vault._coordinator._can_warm_start()
+        monkeypatch.setattr(vault._index_mgr, "_okf_admission_active", None)
+        vault.index.reindex()
+        assert vault._fts.get_okf_admission_meta() is None
     finally:
         vault.close()
 
@@ -668,5 +673,146 @@ def test_build_transient_reserved_read_retries(
     vault = Vault(source_dir=root, settings=settings)
     try:
         assert vault._coordinator._can_warm_start()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("route", ["build", "reindex", "dirty", "reopen"])
+@pytest.mark.parametrize("mode", ["auto", "on"])
+def test_unreadable_okf_probe_preserves_reserved_membership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str, mode: str
+) -> None:
+    import markdown_vault_mcp.okf as okf
+    from tests.conftest import MockEmbeddingProvider
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    index = root / "index.md"
+    index.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
+    (root / "log.md").write_text("# Historytoken\n")
+    (root / "folder").mkdir()
+    (root / "folder/index.md").write_text("# Navigationtoken\n")
+    (root / "concept.md").write_text("# Concept\n")
+    settings = VaultSettings(
+        index_path=tmp_path / "index.db",
+        state_path=tmp_path / "state.json",
+        embeddings_path=tmp_path / "vectors",
+        required_frontmatter=["title"],
+        indexed_frontmatter_fields=["type", "status", "stale_after"],
+        okf_mode=mode,
+    )
+    provider = MockEmbeddingProvider()
+    vault = Vault(source_dir=root, settings=settings, embedding_provider=provider)
+    original = okf.read_text_utf8
+
+    def fail_probe(path: Path, **kwargs: Any) -> str:
+        if path == index:
+            raise OSError("transient root probe")
+        return original(path, **kwargs)
+
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        vectors = vault._index_mgr._embeddings._loaded_store()
+        assert vectors is not None
+        vector_count = vectors.count
+        assert vector_count > 0 and vault._fts.get_okf_admission_meta() is True
+        if route == "reopen":
+            vault.close()
+        with monkeypatch.context() as patch:
+            patch.setattr(okf, "read_text_utf8", fail_probe)
+            if route == "reopen":
+                vault = Vault(
+                    source_dir=root, settings=settings, embedding_provider=provider
+                )
+                assert vault._coordinator._can_warm_start()
+                vault.index.build_index()
+            elif route == "build":
+                vault.index.build_index(force=True)
+            elif route == "reindex":
+                vault.index.reindex()
+            else:
+                vault._index_mgr.process_dirty_paths({"concept.md"})
+            assert {n.path for n in vault.reader.list_documents()} == {
+                "index.md",
+                "log.md",
+                "folder/index.md",
+            }
+            assert {
+                n.path for n in vault.reader.search("Historytoken", mode="keyword")
+            } == {"log.md"}
+            assert vault._fts.get_okf_admission_meta() is True
+            vectors = vault._search_mgr._load_vectors()
+            assert vectors is not None
+            assert vectors.count == vector_count
+        vault.index.reindex()
+        assert {
+            n.path for n in vault.reader.search("Historytoken", mode="keyword")
+        } == {"log.md"}
+        assert vault._fts.get_okf_admission_meta() is True
+    finally:
+        vault.close()
+
+
+def test_actual_root_declaration_removal_deactivates_okf(tmp_path: Path) -> None:
+    root = tmp_path / "index.md"
+    root.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
+    (tmp_path / "log.md").write_text("# Historytoken\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        vault.index.build_index()
+        assert {
+            n.path for n in vault.reader.search("Historytoken", mode="keyword")
+        } == {"log.md"}
+        root.unlink()
+        vault.index.reindex()
+        assert vault.reader.search("Historytoken", mode="keyword") == []
+        assert vault.reader.list_documents() == []
+        assert vault._fts.get_okf_admission_meta() is False
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("confirmed_inactive", [False, True])
+def test_unreadable_probe_without_active_fallback_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, confirmed_inactive: bool
+) -> None:
+    import markdown_vault_mcp.okf as okf
+
+    root = tmp_path / "index.md"
+    root.write_text("# Root\n")
+    (tmp_path / "log.md").write_text("# Historytoken\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    original = okf.read_text_utf8
+
+    def fail_probe(path: Path, **kwargs: Any) -> str:
+        if path == root:
+            raise OSError("transient root probe")
+        return original(path, **kwargs)
+
+    try:
+        if confirmed_inactive:
+            vault.index.build_index()
+            assert vault._fts.get_okf_admission_meta() is False
+        root.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
+        with monkeypatch.context() as patch:
+            patch.setattr(okf, "read_text_utf8", fail_probe)
+            if confirmed_inactive:
+                vault.index.reindex()
+            else:
+                vault.index.build_index()
+            assert vault._fts.get_okf_admission_meta() is (
+                False if confirmed_inactive else None
+            )
+            assert vault.reader.search("Historytoken", mode="keyword") == []
+        vault.index.reindex()
+        assert {
+            n.path for n in vault.reader.search("Historytoken", mode="keyword")
+        } == {"log.md"}
+        assert vault._fts.get_okf_admission_meta() is True
     finally:
         vault.close()
