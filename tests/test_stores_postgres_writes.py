@@ -1291,41 +1291,14 @@ def test_invalid_generation_never_enters_writing(
 
 
 def test_generation_load_copies_keys_before_replay() -> None:
+    from unittest.mock import MagicMock
+
     events: list[str] = []
-
-    class Copy:
-        def __enter__(self) -> Any:
-            return self
-
-        def __exit__(self, *args: Any) -> None:
-            pass
-
-        def set_types(self, types: Any) -> None:
-            pass
-
-        def write_row(self, row: Any) -> None:
-            events.append(row[0])
-
-    class Cursor:
-        def __enter__(self) -> Any:
-            return self
-
-        def __exit__(self, *args: Any) -> None:
-            pass
-
-        def copy(self, _query: Any) -> Copy:
-            return Copy()
-
-    class Connection:
-        def cursor(self) -> Cursor:
-            return Cursor()
-
-        def execute(self, *_args: Any) -> Any:
-            class Result:
-                def fetchall(self) -> list[tuple[int]]:
-                    return [(1,)]
-
-            return Result()
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    copy = cursor.copy.return_value.__enter__.return_value
+    copy.write_row.side_effect = lambda row: events.append(row[0])
+    conn.execute.return_value.fetchall.return_value = [(1,)]
 
     def chunks() -> Iterator[Any]:
         assert events == ["a.md", "b.md"]
@@ -1333,14 +1306,14 @@ def test_generation_load_copies_keys_before_replay() -> None:
 
     assert (
         tables.load_generation(
-            Connection(),
+            conn,
             schema="test",
             identity=_ID,
             documents=[("a.md", None), ("b.md", None)],
             chunks=chunks(),
         )
         == 1
-    )  # type: ignore[arg-type]
+    )
     assert events == ["a.md", "b.md", "chunk"]
 
 
