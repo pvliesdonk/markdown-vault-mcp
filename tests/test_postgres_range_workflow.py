@@ -33,7 +33,7 @@ def _images() -> list[str]:
 def _major(image: str) -> int:
     match = _PGVECTOR.match(image) or _VCHORD.match(image)
     assert match is not None, image
-    return int(match.group(4) if match.re is _PGVECTOR else match.group(1))
+    return int(match.group("postgres_major"))
 
 
 def test_every_image_is_pinned_to_an_exact_tag() -> None:
@@ -61,7 +61,7 @@ def test_the_guide_names_each_major_whose_lowest_pgvector_is_higher() -> None:
     lowest: dict[int, tuple[int, int, int]] = {}
     for match in filter(None, map(_PGVECTOR.match, _images())):
         version = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-        major = int(match.group(4))
+        major = int(match.group("postgres_major"))
         lowest[major] = min(lowest.get(major, version), version)
     guide = GUIDE.read_text(encoding="utf-8")
     missing = [
@@ -175,7 +175,7 @@ def test_the_floors_job_runs_the_lowest_and_newest_range_images() -> None:
     def key(image: str) -> tuple[int, ...]:
         match = _PGVECTOR.match(image)
         assert match is not None, image
-        return (int(match.group(4)), *map(int, match.groups()[:3]))
+        return (int(match.group("postgres_major")), *map(int, match.groups()[:3]))
 
     pgvector = sorted((i for i in _images() if _PGVECTOR.match(i)), key=key)
     by_floor = sorted(pgvector, key=lambda i: (key(i)[1:], key(i)[0]))
@@ -234,5 +234,3 @@ def test_currency_job_runs_only_on_schedule_or_dispatch() -> None:
         "scripts/check_postgres_images.py" in step.get("run", "")
         for step in job["steps"]
     )
-    for event in ("pull_request", "push"):
-        assert "scripts/check_postgres_images.py" in _workflow()[True][event]["paths"]

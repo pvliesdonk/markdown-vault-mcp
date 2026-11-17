@@ -17,13 +17,11 @@ PG_TAGS = [f"0.8.7-pg{major}" for major in range(15, 19)]
 VC_TAGS = ["pg17-20260501"]
 
 
-def test_new_pgvector_patch_names_only_the_lagging_image() -> None:
+def test_new_pgvector_patch_and_minor_are_reported() -> None:
     assert lagging(IMAGES, [*PG_TAGS, "0.8.8-pg17"], VC_TAGS) == [
         "pgvector/pgvector:0.8.7-pg17 is behind 0.8.8-pg17"
     ]
 
-
-def test_new_pgvector_minor_flags_each_tested_major() -> None:
     tags = [f"0.9.0-pg{major}" for major in range(15, 19)]
     assert lagging(IMAGES, tags, VC_TAGS) == [
         f"pgvector/pgvector:0.8.7-pg{major} is behind 0.9.0-pg{major}"

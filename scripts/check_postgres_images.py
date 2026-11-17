@@ -9,8 +9,10 @@ from urllib.request import urlopen
 
 import yaml
 
-_PGVECTOR = re.compile(r"^pgvector/pgvector:(\d+)\.(\d+)\.(\d+)-pg(\d+)$")
-_VCHORD = re.compile(r"^tensorchord/vchord-suite:pg(\d+)-(\d{8})$")
+_PGVECTOR = re.compile(
+    r"^pgvector/pgvector:(\d+)\.(\d+)\.(\d+)-pg(?P<postgres_major>\d+)$"
+)
+_VCHORD = re.compile(r"^tensorchord/vchord-suite:pg(?P<postgres_major>\d+)-(\d{8})$")
 _ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -19,7 +21,7 @@ def _pg_versions(images: list[str]) -> dict[int, tuple[tuple[int, ...], str]]:
     for image in images:
         if match := _PGVECTOR.fullmatch(image):
             version = tuple(map(int, match.groups()[:3]))
-            major = int(match.group(4))
+            major = int(match.group("postgres_major"))
             versions[major] = max(
                 versions.get(major, (version, image)), (version, image)
             )
@@ -30,7 +32,7 @@ def _vchord_versions(images: list[str]) -> dict[int, tuple[str, str]]:
     versions: dict[int, tuple[str, str]] = {}
     for image in images:
         if match := _VCHORD.fullmatch(image):
-            major = int(match.group(1))
+            major = int(match.group("postgres_major"))
             value = (match.group(2), image)
             versions[major] = max(versions.get(major, value), value)
     return versions
