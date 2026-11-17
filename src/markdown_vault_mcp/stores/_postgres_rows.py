@@ -15,10 +15,13 @@ in ``docs/design/reference/pgvector-search.md``.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
-from typing import TYPE_CHECKING, Any
+import tempfile
+from typing import TYPE_CHECKING, Any, BinaryIO
 
+import numpy as np
 from psycopg.types.json import Jsonb
 
 from markdown_vault_mcp.stores._resident import row_metadata, row_vectors
@@ -94,6 +97,60 @@ def generation_values(
         docs.append((document.path, document.token))
         chunks.extend(chunk_values(document, dimension))
     return docs, chunks
+
+
+class GenerationReplay:
+    """Validated document keys and a private replay of normalized chunk rows."""
+
+    def __init__(self, stream: BinaryIO, dimension: int) -> None:
+        self.stream = stream
+        self.dimension = dimension
+        self.documents: list[tuple[str, RevisionToken | None]] = []
+        self.count = 0
+
+    def chunks(self) -> Iterator[ChunkValues]:
+        """Replay the validated rows in their original order."""
+        self.stream.seek(0)
+        while line := self.stream.readline():
+            path, ordinal, folder, metadata = json.loads(line)
+            vector = np.frombuffer(self.stream.read(self.dimension * 4), dtype="<f4")
+            yield (
+                path,
+                ordinal,
+                folder,
+                vector.astype(np.float32, copy=False),
+                Jsonb(metadata, dumps=_DUMPS),
+            )
+
+
+@contextlib.contextmanager
+def generation_replay(
+    documents: Iterable[DocumentRows], dimension: int
+) -> Iterator[GenerationReplay]:
+    """Validate a one-shot generation before yielding its disposable replay."""
+    require_dimension(dimension)
+    with tempfile.TemporaryFile(mode="w+b") as stream:
+        replay = GenerationReplay(stream, dimension)
+        seen: set[str] = set()
+        for document in documents:
+            if document.path in seen:
+                raise ValueError(
+                    f"publish_generation got {document.path[:80]!r} twice."
+                )
+            seen.add(document.path)
+            replay.documents.append((document.path, document.token))
+            for path, ordinal, folder, vector, metadata in chunk_values(
+                document, dimension
+            ):
+                stream.write(
+                    (_DUMPS([path, ordinal, folder, metadata.obj]) + "\n").encode(
+                        "utf-8"
+                    )
+                )
+                stream.write(vector.astype("<f4", copy=False).tobytes())
+                replay.count += 1
+        stream.flush()
+        yield replay
 
 
 def require_dimension(dimension: int) -> None:

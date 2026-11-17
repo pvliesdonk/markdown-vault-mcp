@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
+import weakref
 from array import array
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import psycopg
 import pytest
 from psycopg import sql
@@ -1214,3 +1216,261 @@ def test_an_attempted_identity_that_did_not_land_is_not_adopted(store: Any) -> N
     assert store.identity == _ID
     store.replace_document(_doc("b.md", [[0, 1, 0]]), expected_token=None)
     assert store.identity == _ID
+
+
+def test_generation_replay_validates_before_yielding_rows() -> None:
+    from markdown_vault_mcp.stores._postgres_rows import generation_replay
+
+    consumed = False
+
+    def documents() -> Iterator[DocumentRows]:
+        nonlocal consumed
+        yield _doc("a.md", [[1, 0, 0]])
+        consumed = True
+        yield _doc("b.md", [[0, 1, 0]])
+
+    with generation_replay(documents(), 3) as replay:
+        assert consumed
+        assert [d[0] for d in replay.documents] == ["a.md", "b.md"]
+        assert [r[0] for r in replay.chunks()] == ["a.md", "b.md"]
+
+
+@pytest.mark.parametrize("failure", ["duplicate", "dimension", "json", "iterator"])
+def test_generation_replay_refuses_late_invalid_input(failure: str) -> None:
+    from markdown_vault_mcp.stores._postgres_rows import generation_replay
+
+    def documents() -> Iterator[DocumentRows]:
+        yield _doc("a.md", [[1, 0, 0]])
+        if failure == "iterator":
+            raise RuntimeError("source failed")
+        document = _doc(
+            "a.md" if failure == "duplicate" else "b.md",
+            [[1, 0] if failure == "dimension" else [1, 0, 0]],
+        )
+        if failure == "json":
+            document.rows[0].metadata["bad"] = float("nan")
+        yield document
+
+    with pytest.raises((ValueError, RuntimeError)), generation_replay(documents(), 3):
+        pytest.fail("invalid generation reached the transaction")
+
+
+def test_generation_replay_closes_scratch_and_preserves_json() -> None:
+    from markdown_vault_mcp.stores._postgres_rows import generation_replay
+
+    document = _doc("a.md", [[1, 2, 3]])
+    document.rows[0].metadata["nested"] = {1: ("value", None)}
+    with generation_replay(iter([document]), 3) as replay:
+        stream = replay.stream
+        row = next(replay.chunks())
+        assert row[4].obj["nested"] == {"1": ["value", None]}
+        from markdown_vault_mcp.stores._postgres_rows import chunk_values
+
+        expected = chunk_values(document, 3)[0]
+        np.testing.assert_array_equal(row[3], expected[3])
+        assert replay.count == 1
+    assert stream.closed
+
+
+def test_invalid_generation_never_enters_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorStore
+
+    store = object.__new__(PostgresVectorStore)
+    monkeypatch.setattr(PostgresVectorStore, "_ensure_lease", lambda _self: None)
+
+    def unexpected(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("write transaction started")
+
+    monkeypatch.setattr(PostgresVectorStore, "_writing", unexpected)
+    with pytest.raises(ValueError):
+        store.publish_generation(
+            _ID, iter([_doc("a.md", [[1, 0, 0]]), _doc("b.md", [[1, 0]])])
+        )
+
+
+def test_generation_load_copies_keys_before_replay() -> None:
+    events: list[str] = []
+
+    class Copy:
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+        def set_types(self, types: Any) -> None:
+            pass
+
+        def write_row(self, row: Any) -> None:
+            events.append(row[0])
+
+    class Cursor:
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+        def copy(self, _query: Any) -> Copy:
+            return Copy()
+
+    class Connection:
+        def cursor(self) -> Cursor:
+            return Cursor()
+
+        def execute(self, *_args: Any) -> Any:
+            class Result:
+                def fetchall(self) -> list[tuple[int]]:
+                    return [(1,)]
+
+            return Result()
+
+    def chunks() -> Iterator[Any]:
+        assert events == ["a.md", "b.md"]
+        yield ("chunk", 0, "", [1, 0, 0], None)
+
+    assert (
+        tables.load_generation(
+            Connection(),
+            schema="test",
+            identity=_ID,
+            documents=[("a.md", None), ("b.md", None)],
+            chunks=chunks(),
+        )
+        == 1
+    )  # type: ignore[arg-type]
+    assert events == ["a.md", "b.md", "chunk"]
+
+
+def test_scratch_flush_failure_precedes_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.stores import _postgres_rows
+    from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorStore
+
+    class BadFlush:
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            pass
+
+        def write(self, _value: bytes) -> None:
+            pass
+
+        def flush(self) -> None:
+            raise OSError("scratch full")
+
+    monkeypatch.setattr(
+        _postgres_rows.tempfile, "TemporaryFile", lambda **_kwargs: BadFlush()
+    )
+    monkeypatch.setattr(PostgresVectorStore, "_ensure_lease", lambda _self: None)
+
+    def unexpected(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("write transaction started")
+
+    monkeypatch.setattr(PostgresVectorStore, "_writing", unexpected)
+    store = object.__new__(PostgresVectorStore)
+    with pytest.raises(OSError, match="scratch full"):
+        store.publish_generation(_ID, [_doc("a.md", [[1, 0, 0]])])
+
+
+def test_postgres_generation_releases_older_vector_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.stores import _postgres_rows
+    from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorStore
+
+    store = object.__new__(PostgresVectorStore)
+    store._schema = "test"
+    monkeypatch.setattr(PostgresVectorStore, "_ensure_lease", lambda _self: None)
+
+    def writing(_self: Any, _work: Any, **_kwargs: Any) -> str:
+        raise RuntimeError("writing reached")
+
+    monkeypatch.setattr(PostgresVectorStore, "_writing", writing)
+    refs: list[Any] = []
+    normalize = _postgres_rows.row_vectors
+
+    def track(rows: Any, dimension: int) -> Any:
+        block = normalize(rows, dimension)
+        refs.append(weakref.ref(block))
+        return block
+
+    monkeypatch.setattr(_postgres_rows, "row_vectors", track)
+
+    def documents() -> Iterator[DocumentRows]:
+        for index in range(6):
+            if index >= 3:
+                assert refs[index - 3]() is None
+            yield _doc(f"{index}.md", [[1, 0, 0]])
+
+    with pytest.raises(RuntimeError, match="writing reached"):
+        store.publish_generation(_ID, documents())
+
+
+@pytest.mark.parametrize("reset_pending", [False, True])
+def test_generation_publication_replays_once_and_adopts_identity(
+    monkeypatch: pytest.MonkeyPatch, reset_pending: bool
+) -> None:
+    from types import SimpleNamespace
+
+    from markdown_vault_mcp.stores import postgres_vectors as pv
+
+    store = object.__new__(pv.PostgresVectorStore)
+    store._schema = "test"
+    store._state = SimpleNamespace(reset_pending=reset_pending)
+    events: list[Any] = []
+    connection = object()
+    monkeypatch.setattr(pv.PostgresVectorStore, "_ensure_lease", lambda _self: None)
+
+    def empty(conn: Any, *, schema: str) -> None:
+        events.append(("empty", conn, schema))
+
+    def load(conn: Any, **kwargs: Any) -> int:
+        events.append(("load", conn, kwargs["documents"], list(kwargs["chunks"])))
+        return 7
+
+    def writing(_self: Any, work: Any, **kwargs: Any) -> str:
+        assert kwargs == {"unbounded": True, "identity": _ID}
+        return work(connection)
+
+    monkeypatch.setattr(pv, "empty_rows", empty)
+    monkeypatch.setattr(pv, "load_generation", load)
+    monkeypatch.setattr(pv.PostgresVectorStore, "_writing", writing)
+    store.publish_generation(_ID, iter([_doc("a.md", [[1, 0, 0]]), _doc("b.md", [])]))
+    assert store.identity == _ID
+    assert [event[0] for event in events] == (
+        ["load"] if reset_pending else ["empty", "load"]
+    )
+    load_event = events[-1]
+    assert load_event[1:3] == (connection, [("a.md", "t1"), ("b.md", "t1")])
+    assert [row[0] for row in load_event[3]] == ["a.md"]
+
+
+def test_generation_closes_scratch_after_write_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.stores import _postgres_rows
+    from markdown_vault_mcp.stores import postgres_vectors as pv
+
+    opened: list[Any] = []
+    temporary_file = _postgres_rows.tempfile.TemporaryFile
+
+    def capture(**kwargs: Any) -> Any:
+        stream = temporary_file(**kwargs)
+        opened.append(stream)
+        return stream
+
+    def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("write failed")
+
+    monkeypatch.setattr(_postgres_rows.tempfile, "TemporaryFile", capture)
+    monkeypatch.setattr(pv.PostgresVectorStore, "_ensure_lease", lambda _self: None)
+    monkeypatch.setattr(pv.PostgresVectorStore, "_writing", fail)
+    store = object.__new__(pv.PostgresVectorStore)
+    with pytest.raises(RuntimeError, match="write failed"):
+        store.publish_generation(_ID, [_doc("a.md", [[1, 0, 0]])])
+    assert len(opened) == 1 and opened[0].closed
