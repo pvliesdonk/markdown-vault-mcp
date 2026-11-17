@@ -37,10 +37,10 @@ from markdown_vault_mcp._commit_groups import (
     COMMIT_GROUP_ATTR,
     CommitGroup,
     CommitGroupError,
-    GroupAwareCallback,
     GroupCommitRequest,
     GroupCommitResult,
     make_group,
+    owner_key,
 )
 from markdown_vault_mcp._commit_scope import (
     bound_commit_group,
@@ -262,7 +262,7 @@ class WriteCallbackDispatcher:
 
     def _get_group(self, handle: str, principal: Principal | None) -> CommitGroup:
         group = self._groups.get(handle)
-        if group is None or group.closed or group.owner != principal:
+        if group is None or group.closed or group.owner != owner_key(principal):
             raise CommitGroupError("Unknown or unavailable group")
         return group
 
@@ -374,7 +374,7 @@ class WriteCallbackDispatcher:
                 group.record(result)
 
             try:
-                cast("GroupAwareCallback", on_write).on_write_batch(
+                getattr(on_write, "on_write_batch")(  # noqa: B009 -- callback opts in dynamically
                     items,
                     scope.tool_name,
                     primary_paths=frozenset(primary_paths),

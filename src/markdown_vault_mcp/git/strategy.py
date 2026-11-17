@@ -497,9 +497,21 @@ class GitWriteStrategy:
                             "-r",
                             sha,
                         ).splitlines()
-                        group.report(GroupCommitResult(sha, len(paths), "committed"))
+                        group.report(
+                            GroupCommitResult(
+                                sha,
+                                len(paths),
+                                "failed" if group.stage_failed else "committed",
+                            )
+                        )
                     else:
-                        group.report(GroupCommitResult(None, 0, "no_changes"))
+                        group.report(
+                            GroupCommitResult(
+                                None,
+                                0,
+                                "failed" if group.stage_failed else "no_changes",
+                            )
+                        )
             if self._enable_push:
                 self._push_scheduler.schedule_push()
         except subprocess.CalledProcessError as exc:
@@ -2462,7 +2474,26 @@ class _CommitIdentity:
     author_email: str | None = None
 
 
-def _stage_and_commit_batch(
+def _group_final_items(
+    root: str, items: Sequence[WriteBatchItem]
+) -> list[WriteBatchItem]:
+    """Replace vanished intermediate paths with tracked final-state deletions."""
+    final: list[WriteBatchItem] = []
+    missing_seen: set[Path] = set()
+    for path, operation, old_path, principal in items:
+        if path.exists() or path.is_symlink():
+            final.append((path, operation, old_path, principal))
+            continue
+        paths = (old_path, path) if operation == "rename" else (path,)
+        for missing in paths:
+            if missing is not None and missing not in missing_seen:
+                missing_seen.add(missing)
+                if _is_tracked(root, missing):
+                    final.append((missing, "delete", None, principal))
+    return final
+
+
+def _stage_and_commit_batch(  # noqa: C901, PLR0913, RUF100 -- preserve the shared batch path and callback compatibility
     git_root: Path,
     items: Sequence[WriteBatchItem],
     tool_name: str,
@@ -2516,6 +2547,8 @@ def _stage_and_commit_batch(
         return None
 
     root = str(git_root)
+    if group is not None:
+        items = _group_final_items(root, items)
     staged = 0
     primary: list[tuple[Path, WriteOperation, Path | None]] = []
     scope: list[str] = []
@@ -2524,6 +2557,8 @@ def _stage_and_commit_batch(
         try:
             item_scope = _stage_one(root, path, operation, old_path)
         except subprocess.CalledProcessError:
+            if group is not None:
+                group.stage_failed = True
             # One unstageable path must not cost the rest of the batch its
             # commit — the files are already written to disk either way.
             logger.error(

@@ -268,3 +268,252 @@ def test_invalid_descriptions_rejected() -> None:
     for description in ("", " ", "two\nlines", " leading", "trailing "):
         with pytest.raises(CommitGroupError):
             dispatcher.open_group(description, None)
+
+
+def test_group_rename_chain_commits_final_tree(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    original, middle, final = (repo / name for name in ("a.md", "b.md", "c.md"))
+    original.write_text("note", encoding="utf-8")
+    git(repo, "add", "a.md")
+    git(repo, "commit", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Rename chain", None)
+        with dispatcher.bind_group(group.handle, None):
+            original.rename(middle)
+            dispatcher.fire(middle, "", "rename", original)
+            middle.rename(final)
+            dispatcher.fire(final, "", "rename", middle)
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "committed"
+        assert git(repo, "ls-tree", "--name-only", "HEAD") == "c.md"
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_group_stage_failure_reports_partial_commit(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    git(repo, "commit", "--allow-empty", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Partial", None)
+        for path in (repo / "good.md", tmp_path / "outside.md"):
+            path.write_text("content", encoding="utf-8")
+            with dispatcher.bind_group(group.handle, None):
+                dispatcher.fire(path, "content", "write")
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "failed"
+        assert result.sha == git(repo, "rev-parse", "HEAD")
+        assert result.files == 1
+        assert (tmp_path / "outside.md").exists()
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_group_index_lock_reports_failure(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Locked", None)
+        note = repo / "note.md"
+        note.write_text("content", encoding="utf-8")
+        with dispatcher.bind_group(group.handle, None):
+            dispatcher.fire(note, "content", "write")
+        (repo / ".git/index.lock").write_text("", encoding="utf-8")
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "failed"
+        assert result.sha is None
+        assert result.files == 0
+    finally:
+        (repo / ".git/index.lock").unlink(missing_ok=True)
+        dispatcher.close()
+        strategy.close()
+
+
+def test_group_owner_uses_stable_principal_identity() -> None:
+    from markdown_vault_mcp._identity import Principal
+
+    dispatcher = WriteCallbackDispatcher(None)
+    original = Principal("alice", "Old name", "old@example.com", "human")
+    refreshed = Principal("alice", "New name", "new@example.com", "human")
+    group = dispatcher.open_group("Owned", original)
+    with dispatcher.bind_group(group.handle, refreshed):
+        pass
+    assert (
+        dispatcher.close_group(group.handle, refreshed).result().status == "no_changes"
+    )
+    dispatcher.close()
+
+
+def test_subject_rejects_unicode_controls_and_excessive_utf8_bytes() -> None:
+    import pytest
+
+    from markdown_vault_mcp._commit_groups import CommitGroupError
+
+    dispatcher = WriteCallbackDispatcher(None)
+    for description in (
+        "two\u0085lines",
+        "two\u2028lines",
+        "two\u2029lines",
+        "é" * 2049,
+    ):
+        with pytest.raises(CommitGroupError):
+            dispatcher.open_group(description, None)
+    dispatcher.close()
+
+
+def test_vault_group_rename_chain(tmp_path: Path) -> None:
+    from markdown_vault_mcp.config_sections import VaultSettings
+    from markdown_vault_mcp.vault import Vault
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    (repo / "a.md").write_text("# Note\n", encoding="utf-8")
+    git(repo, "add", "a.md")
+    git(repo, "commit", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    vault = Vault(
+        source_dir=repo, settings=VaultSettings(read_only=False), on_write=strategy
+    )
+    try:
+        dispatcher = vault._write_callback
+        group = dispatcher.open_group("Move note", None)
+        with dispatcher.bind_group(group.handle, None):
+            vault.writer.rename("a.md", "b.md")
+        with dispatcher.bind_group(group.handle, None):
+            vault.writer.rename("b.md", "c.md")
+        assert (
+            dispatcher.close_group(group.handle, None).result(timeout=10).status
+            == "committed"
+        )
+        assert git(repo, "ls-tree", "-r", "--name-only", "HEAD").splitlines() == [
+            "c.md"
+        ]
+        assert vault.index.wait_for_drain(timeout=10)
+        assert vault.reader.read("c.md") is not None
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_group_rename_then_delete_and_create_then_rename(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    old, middle, created, final = (
+        repo / name for name in ("old.md", "middle.md", "created.md", "final.md")
+    )
+    old.write_text("old", encoding="utf-8")
+    git(repo, "add", "old.md")
+    git(repo, "commit", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Final state", None)
+        with dispatcher.bind_group(group.handle, None):
+            old.rename(middle)
+            dispatcher.fire(middle, "", "rename", old)
+            middle.unlink()
+            dispatcher.fire(middle, "", "delete")
+            created.write_text("new", encoding="utf-8")
+            dispatcher.fire(created, "new", "write")
+            created.rename(final)
+            dispatcher.fire(final, "", "rename", created)
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "committed"
+        assert git(repo, "ls-tree", "-r", "--name-only", "HEAD") == "final.md"
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_group_rename_revisits_original_path(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
+    original, middle, final = (repo / name for name in ("a.md", "b.md", "c.md"))
+    original.write_text("note", encoding="utf-8")
+    git(repo, "add", "a.md")
+    git(repo, "commit", "-m", "seed")
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    try:
+        group = dispatcher.open_group("Revisit", None)
+        with dispatcher.bind_group(group.handle, None):
+            for source, target in (
+                (original, middle),
+                (middle, original),
+                (original, final),
+            ):
+                source.rename(target)
+                dispatcher.fire(target, "", "rename", source)
+        result = dispatcher.close_group(group.handle, None).result(timeout=5)
+        assert result.status == "committed"
+        assert git(repo, "ls-tree", "--name-only", "HEAD") == "c.md"
+    finally:
+        dispatcher.close()
+        strategy.close()
