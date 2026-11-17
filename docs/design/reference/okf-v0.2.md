@@ -254,8 +254,9 @@ tree, 2026-09-07].
   originally kept generated files visible under the index gate (#1174,
   #1175); in an active OKF vault, reserved files now pass that gate without
   those fields (#1438). Existing keys, including the root `okf_version`, are preserved;
-  `okf_version` is never synthesised into a folder index. With nothing
-  required, the files are written body-only as §8 and §9 have them.
+  a required `okf_version` is seeded as `null` in a folder index, not as a
+  version declaration. With nothing required, the files are written body-only
+  as §8 and §9 have them.
   Deliberate; decided in `docs/design/okf.md`, "Generated reserved files
   and the index gate". The audit does not exempt the result: keys seeded
   into an `index.md` are reported as `index_frontmatter` (#1396).

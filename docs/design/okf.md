@@ -615,7 +615,7 @@ clears old tracker-only skips left by version 12. Reopening before a reindex
 after a dirty scope change triggers one conservative rebuild. If reading the
 root `index.md` fails with an I/O error, admission keeps its last confirmed
 state when available and logs `okf_scope_probe_failed`; without a confirmed
-state it remains unknown. A missing declaration still deactivates auto mode,
+state the indexing pass fails for retry before changing rows. A missing declaration still deactivates auto mode,
 and forced-on mode is unaffected.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files

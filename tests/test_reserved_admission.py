@@ -54,10 +54,13 @@ def test_reserved_admission_on_full_build(
         vault.close()
 
 
-def test_generated_folder_index_survives_version_gate(tmp_path: Path) -> None:
+def test_body_only_and_generated_folder_indexes_survive_version_gate(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "index.md").write_text("---\nokf_version: '0.2'\n---\n# Index\n")
     (tmp_path / "folder").mkdir()
     (tmp_path / "folder" / "index.md").write_text("# Folder\n")
+    (tmp_path / "generated").mkdir()
     (tmp_path / "concept.md").write_text("# Concept\n")
     vault = Vault(
         source_dir=tmp_path,
@@ -69,6 +72,11 @@ def test_generated_folder_index_survives_version_gate(tmp_path: Path) -> None:
         paths = {n.path for n in vault.reader.list_documents()}
         assert "folder/index.md" in paths
         assert "concept.md" not in paths
+        vault.writer.okf_generate_index(folder="generated")
+        assert vault.index.wait_for_drain(timeout=5)
+        generated = vault.reader.read("generated/index.md")
+        assert generated.frontmatter["okf_version"] is None
+        assert "generated/index.md" in {n.path for n in vault.reader.list_documents()}
     finally:
         vault.close()
 
@@ -621,8 +629,9 @@ def test_admission_metadata_roundtrip_and_dirty_reopen(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("persistent", [False, True])
-def test_build_transient_reserved_read_retries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, persistent: bool
+@pytest.mark.parametrize("path", ["log.md", "note.md"])
+def test_build_transient_read_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, persistent: bool, path: str
 ) -> None:
     import markdown_vault_mcp.managers.index as index_module
     import markdown_vault_mcp.scanner as scanner
@@ -631,7 +640,11 @@ def test_build_transient_reserved_read_retries(
     root.mkdir()
     index = root / "index.md"
     index.write_text("# Root\n")
-    (root / "log.md").write_text("# Uniquehistorytoken\n")
+    (root / path).write_text(
+        "# Uniquehistorytoken\n"
+        if path == "log.md"
+        else "---\ntitle: Concept\n---\n# Uniquehistorytoken\n"
+    )
     settings = VaultSettings(
         index_path=tmp_path / "index.db",
         state_path=tmp_path / "state.json",
@@ -643,8 +656,8 @@ def test_build_transient_reserved_read_retries(
     calls: list[str] = []
 
     def unread_log(*args: Any, **kwargs: Any) -> Any:
-        if kwargs.get("rel_path") == "log.md":
-            calls.append("log.md")
+        if kwargs.get("rel_path") == path:
+            calls.append(path)
             return None
         return original(*args, **kwargs)
 
@@ -652,8 +665,8 @@ def test_build_transient_reserved_read_retries(
         with monkeypatch.context() as patch:
             patch.setattr(scanner, "parse_note_categorized", unread_log)
             vault.index.build_index()
-        assert "log.md" not in vault._tracker._load_state()[1]
-        assert vault._fts.get_tombstone("log.md") is None
+        assert path not in vault._tracker._load_state()[1]
+        assert vault._fts.get_tombstone(path) is None
         assert vault._fts.get_okf_admission_meta() is False
         index.write_text("---\nokf_version: '0.2'\n---\n# Root\n")
         if persistent:
@@ -662,10 +675,10 @@ def test_build_transient_reserved_read_retries(
                 vault.index.reindex()
                 vault.index.reindex()
             assert len(calls) == 3
-            assert "log.md" not in vault._tracker._load_state()[1]
+            assert path not in vault._tracker._load_state()[1]
         vault.index.reindex()
-        assert "log.md" in {n.path for n in vault.reader.list_documents()}
-        assert "log.md" in {n.path for n in vault.reader.search("Uniquehistorytoken")}
+        assert path in {n.path for n in vault.reader.list_documents()}
+        assert path in {n.path for n in vault.reader.search("Uniquehistorytoken")}
         again = vault.index.reindex()
         assert (again.added, again.modified) == (0, 0)
     finally:
@@ -803,16 +816,89 @@ def test_unreadable_probe_without_active_fallback_retries(
             patch.setattr(okf, "read_text_utf8", fail_probe)
             if confirmed_inactive:
                 vault.index.reindex()
+                assert vault._fts.get_okf_admission_meta() is False
+                assert vault.reader.search("Historytoken", mode="keyword") == []
             else:
-                vault.index.build_index()
-            assert vault._fts.get_okf_admission_meta() is (
-                False if confirmed_inactive else None
-            )
-            assert vault.reader.search("Historytoken", mode="keyword") == []
+                with pytest.raises(OSError, match="scope probe"):
+                    vault.index.build_index()
+                assert vault._fts.get_okf_admission_meta() is None
+        if not confirmed_inactive:
+            vault.index.build_index()
         vault.index.reindex()
         assert {
             n.path for n in vault.reader.search("Historytoken", mode="keyword")
         } == {"log.md"}
         assert vault._fts.get_okf_admission_meta() is True
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("route", ["build", "reindex", "dirty", "reopen"])
+def test_unknown_probe_after_interrupted_transition_fails_safely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    import markdown_vault_mcp.okf as okf
+    from markdown_vault_mcp.exceptions import IndexUnavailableError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    index = root / "index.md"
+    active = "---\nokf_version: '0.2'\n---\n# Root\n"
+    index.write_text(active)
+    (root / "log.md").write_text("# Historytoken\n")
+    settings = VaultSettings(
+        index_path=tmp_path / "index.db",
+        state_path=tmp_path / "state.json",
+        required_frontmatter=["title"],
+        indexed_frontmatter_fields=["type", "status", "stale_after"],
+    )
+    vault = Vault(source_dir=root, settings=settings)
+    original_read = okf.read_text_utf8
+
+    def unread(path: Path, **kwargs: Any) -> str:
+        if path == index:
+            raise OSError("temporary probe")
+        return original_read(path, **kwargs)
+
+    try:
+        vault.index.build_index()
+        original_refresh = vault._index_mgr._process_dirty_path
+
+        def fail_log(path: str, *, exempt: bool | None = None) -> None:
+            if path == "log.md":
+                raise OSError("temporary dirty failure")
+            original_refresh(path, exempt=exempt)
+
+        index.write_text("# Inactive\n")
+        with monkeypatch.context() as patch:
+            patch.setattr(vault._index_mgr, "_process_dirty_path", fail_log)
+            with pytest.raises(OSError, match="temporary dirty failure"):
+                vault._index_mgr.process_dirty_paths({"index.md", "log.md"})
+        assert vault._fts.get_okf_admission_meta() is None
+        index.write_text(active)
+        if route == "reopen":
+            vault.close()
+        with monkeypatch.context() as patch:
+            patch.setattr(okf, "read_text_utf8", unread)
+            if route == "reopen":
+                vault = Vault(source_dir=root, settings=settings)
+            with pytest.raises((OSError, IndexUnavailableError), match="scope probe"):
+                if route in {"build", "reopen"}:
+                    vault.index.build_index(force=route == "build")
+                elif route == "reindex":
+                    vault.index.reindex()
+                else:
+                    vault._index_mgr.process_dirty_paths({"index.md", "log.md"})
+            assert (
+                vault._fts.get_okf_admission_meta() is None
+                and vault._fts.get_note("log.md") is not None
+            )
+        if route in {"build", "reopen"}:
+            vault.index.build_index()
+        else:
+            vault.index.reindex()
+        assert {
+            n.path for n in vault.reader.search("Historytoken", mode="keyword")
+        } == {"log.md"}
     finally:
         vault.close()

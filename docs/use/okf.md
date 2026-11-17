@@ -99,7 +99,7 @@ Three tools handle the changes you should not make by hand. They are write tools
 
 ### Reserved files on a vault with required fields
 
-If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any listed field are excluded from the index. In an active OKF vault, reserved `index.md` and `log.md` files are indexed without those fields. The generators currently give new reserved files the required fields: the title comes from the heading and other fields are written as `null`.
+If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any listed field are excluded from the index. In an active OKF vault, reserved `index.md` and `log.md` files are indexed without those fields. The generators currently give new reserved files the required fields: the title comes from the heading and other fields are written as `null`. If the root declaration cannot be read and no confirmed admission state is available, indexing fails safely; retry after the read error is resolved.
 
 Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.
 
