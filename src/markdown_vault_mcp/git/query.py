@@ -534,7 +534,13 @@ _MAX_NAME_WALKS = 16
 
 def _parents(git_root: Path, sha: str, env: dict[str, str] | None) -> list[str]:
     """Return *sha*'s parents, first parent first; empty for a root commit."""
-    result = run_git_capturing(git_root, "rev-list", "--parents", "-n1", sha, env=env)
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "rev-list", "--parents", "-n1", sha],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
     if result.returncode != 0:
         return []
     return result.stdout.split()[1:]
@@ -1462,13 +1468,20 @@ def _canonical_order(
     module having to compare timestamps across time zones.  An invocation that
     fails returns nothing, leaving the caller with the order it already had.
     """
-    result = run_git_capturing(
-        git_root,
-        "log",
-        "--no-walk",
-        "--format=%H",
-        *sorted(shas),
-        "--",
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "log",
+            "--no-walk",
+            "--format=%H",
+            *sorted(shas),
+            "--",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
         env=env,
     )
     return result.stdout.split() if result.returncode == 0 else []
