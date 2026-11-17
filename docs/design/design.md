@@ -6590,17 +6590,19 @@ subject. The primary item carries its old path through subject selection,
 without changing the callback tuple. A path fired more than once (a renamed
 note whose self-link is rewritten) counts as one primary path, named by its
 first item. A folder move records its validated source and destination in the
-scope before dispatching writes. The Git batch writer uses those roots in the
+scope before dispatching writes. The dispatcher binds that captured scope on
+the worker during the batch callback, including through forwarding overrides.
+The Git batch writer renders the roots relative to the Git repository in the
 subject while committing all moved and derived files; unusual roots are quoted
 and escaped on one line. Other batch callbacks keep their existing contract
 (#2139).
 
 Three properties this depends on:
 
-- **The scope is read in `fire`, never on the worker.** `fire` runs on the
-  request's `to_thread` worker, whose copied context carries the contextvar;
-  the dispatcher thread has no request context, so reading there would always
-  see `None` — the same constraint that governs `current_principal` (#1218).
+- **The scope is captured in `fire`.** `fire` runs on the request's
+  `to_thread` worker, whose copied context carries the contextvar. The
+  dispatcher thread has no request context, so it binds the captured scope
+  only while invoking the batch callback and resets it afterward (#1218).
 - **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
   a shared server interleaves concurrent tool calls, and position-based
   grouping would fold two unrelated calls into one commit.

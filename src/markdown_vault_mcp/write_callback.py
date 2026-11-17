@@ -32,13 +32,13 @@ import threading
 from typing import TYPE_CHECKING, cast
 
 from markdown_vault_mcp._commit_scope import (
+    bind_commit_scope,
     current_commit_scope,
     is_auxiliary_commit_write,
 )
 from markdown_vault_mcp._identity import current_principal
 from markdown_vault_mcp.types import (
     ACCEPTS_BATCH_ATTR,
-    ACCEPTS_FOLDER_MOVE_ATTR,
     ACCEPTS_OLD_PATH_ATTR,
     ACCEPTS_PRIMARY_PATHS_ATTR,
     ACCEPTS_PRINCIPAL_ATTR,
@@ -52,7 +52,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp._identity import Principal
     from markdown_vault_mcp.types import (
         BatchAwareWriteCallback,
-        FolderMoveAwareBatchWriteCallback,
         PrimaryAwareBatchWriteCallback,
         PrincipalAwareWriteCallback,
         WriteBatchItem,
@@ -197,8 +196,8 @@ class WriteCallbackDispatcher:
         # Snapshotted here for the same reason as the principal above: ``fire``
         # runs on the request's ``to_thread`` worker, whose copied context
         # carries the variable, while the dispatcher's own thread has no request
-        # context at all. Reading the scope on the worker would always see None
-        # and silently reinstate per-file commits.
+        # context at all. Reading its ambient context before binding the
+        # captured scope would see None and reinstate per-file commits.
         #
         # Gated on the opt-in: a callback that cannot consume a batch must not
         # pay for one. Attaching the scope unconditionally would buffer its
@@ -265,25 +264,15 @@ class WriteCallbackDispatcher:
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),
             # so reaching here means ``on_write_batch`` exists.
-            batch_method = getattr(on_write, "on_write_batch", None)
-            if scope.folder_move is not None and getattr(
-                batch_method, ACCEPTS_FOLDER_MOVE_ATTR, False
-            ):
-                folder_batch = cast("FolderMoveAwareBatchWriteCallback", on_write)
-                folder_batch.on_write_batch(
-                    items,
-                    scope.tool_name,
-                    primary_paths=frozenset(primary_paths),
-                    folder_move=scope.folder_move,
-                )
-            elif self._accepts_primary_paths:
-                primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
-                primary_batch.on_write_batch(
-                    items, scope.tool_name, primary_paths=frozenset(primary_paths)
-                )
-            else:
-                batch = cast("BatchAwareWriteCallback", on_write)
-                batch.on_write_batch(items, scope.tool_name)
+            with bind_commit_scope(scope):
+                if self._accepts_primary_paths:
+                    primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
+                    primary_batch.on_write_batch(
+                        items, scope.tool_name, primary_paths=frozenset(primary_paths)
+                    )
+                else:
+                    batch = cast("BatchAwareWriteCallback", on_write)
+                    batch.on_write_batch(items, scope.tool_name)
         except Exception:
             logger.error(
                 "write_callback_batch_failed tool=%s count=%s",

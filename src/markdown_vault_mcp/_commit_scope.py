@@ -16,12 +16,10 @@ writes (OKF maintenance, a rename's backlink rewrites) are marked separately so
 they can share that note's commit without replacing its path subject with a
 count.
 
-The scope travels in a :class:`~contextvars.ContextVar` and is read in
-``fire``, never on the dispatcher's worker thread — the same constraint that
-governs :func:`~markdown_vault_mcp._identity.current_principal` (#1218). ``fire``
-runs on the request's ``to_thread`` worker, whose copied context carries the
-variable; the worker thread has no request context at all, so reading there
-would silently fall back to "no scope" and reinstate per-file commits.
+The scope travels in a :class:`~contextvars.ContextVar`. ``fire`` captures it
+on the request's ``to_thread`` worker, whose copied context carries the
+variable. The dispatcher rebinds that captured scope while invoking a batch
+callback; its worker does not inherit the request context (#1218).
 
 Grouping is keyed by scope token rather than by queue position. The queue is
 FIFO, but a shared server interleaves concurrent tool calls, and position-based
@@ -89,9 +87,23 @@ def bound_commit_scope(tool_name: str) -> Iterator[CommitScope]:
         The bound scope, so a caller can enqueue its end marker.
     """
     scope = CommitScope(token=next(_counter), tool_name=tool_name)
+    with bind_commit_scope(scope):
+        yield scope
+
+
+@contextmanager
+def bind_commit_scope(scope: CommitScope) -> Iterator[None]:
+    """Bind an existing scope for a callback and restore the prior context.
+
+    Args:
+        scope: The scope captured when the write was fired.
+
+    Yields:
+        Control while the captured scope is bound.
+    """
     var_token = _scope_var.set(scope)
     try:
-        yield scope
+        yield
     finally:
         _scope_var.reset(var_token)
 

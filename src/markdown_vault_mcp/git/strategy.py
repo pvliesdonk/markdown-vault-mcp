@@ -41,6 +41,7 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
+from markdown_vault_mcp._commit_scope import current_commit_scope
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
@@ -75,7 +76,6 @@ from markdown_vault_mcp.git.types import (
     PullResult,
     PushResult,
 )
-from markdown_vault_mcp.types import ACCEPTS_FOLDER_MOVE_ATTR
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +119,8 @@ class GitWriteStrategy:
     Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
     and arrive at :meth:`on_write_batch`, which stages every path the same
     scoped way and commits them once as ``"<tool>: N files"``. A call that
-    touched a single file commits under that file's own path instead, so
-    ordinary writes read in ``git log`` exactly as they always have. A write
+    touching a single file ordinarily names that file instead; folder moves
+    name their roots even for one file. A write
     with no owning tool call takes the per-write path above.
 
     Push is deferred to a background ``threading.Timer`` that resets on
@@ -413,10 +413,8 @@ class GitWriteStrategy:
 
     #: Opt into the dispatcher's batched dispatch (#1264), so every write from
     #: one tool call lands in a single commit instead of one commit per file.
-    #: Always on: with a single-file call still committing under its own path
-    #: (see :func:`_stage_and_commit_batch`), grouping differs from per-write
-    #: commits only where one call touches many files — which is the defect
-    #: #1264 reports, not a preference to configure. See
+    #: Ordinary single-file calls keep their path subject; folder moves name
+    #: their roots (see :func:`_stage_and_commit_batch`). See
     #: :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`.
     accepts_batch: bool = True
     #: Preserve the note subject when secondary writes (OKF maintenance, a
@@ -429,14 +427,13 @@ class GitWriteStrategy:
         tool_name: str,
         *,
         primary_paths: frozenset[Path] | None = None,
-        folder_move: tuple[Path, Path] | None = None,
     ) -> None:
         """Commit every write from one tool call as a single commit.
 
         Mirrors :meth:`__call__`'s guards and push scheduling; only the commit
-        boundary differs, and for a call that wrote a single file not even
-        that — see :func:`_stage_and_commit_batch`. The author identity is
-        taken from the first item's principal: one tool call has one acting
+        boundary differs; an ordinary single-file call keeps its file subject,
+        while a folder move names its roots — see :func:`_stage_and_commit_batch`.
+        The author identity is taken from the first item's principal: one tool call has one acting
         principal, so the items cannot legitimately disagree.
 
         Args:
@@ -444,7 +441,6 @@ class GitWriteStrategy:
             tool_name: The MCP tool that produced them.
             primary_paths: Paths written outside secondary maintenance, or
                 ``None`` to retain the ordinary batch subject.
-            folder_move: Validated source and destination directories, if moving.
         """
         if self._closed or not items:
             return
@@ -481,7 +477,6 @@ class GitWriteStrategy:
                         else None,
                     ),
                     primary_paths,
-                    folder_move,
                 )
             if self._enable_push:
                 self._push_scheduler.schedule_push()
@@ -2018,10 +2013,6 @@ class GitWriteStrategy:
         )
 
 
-# An override must opt in itself; inherited methods retain this capability.
-setattr(GitWriteStrategy.on_write_batch, ACCEPTS_FOLDER_MOVE_ATTR, True)
-
-
 def git_write_strategy(
     token: str | None = None,
     push_delay_s: float = 0,
@@ -2461,13 +2452,12 @@ class _CommitIdentity:
     author_email: str | None = None
 
 
-def _stage_and_commit_batch(  # noqa: PLR0913, RUF100 - provenance accompanies the existing batch inputs.
+def _stage_and_commit_batch(
     git_root: Path,
     items: Sequence[WriteBatchItem],
     tool_name: str,
     identity: _CommitIdentity,
     primary_paths: frozenset[Path] | None = None,
-    folder_move: tuple[Path, Path] | None = None,
 ) -> None:
     """Stage every write from one tool call and commit them together.
 
@@ -2479,8 +2469,9 @@ def _stage_and_commit_batch(  # noqa: PLR0913, RUF100 - provenance accompanies t
     (#1249, #1273).
 
     A one-item batch without folder provenance delegates to
-    :func:`_stage_and_commit`, so the commit subject stays that file's own path rather than becoming the
-    pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
+    :func:`_stage_and_commit`, so the commit subject stays that file's own
+    path rather than becoming the pathless ``"write: 1 file"``; *tool_name*
+    is unused on that branch.
 
     Args:
         git_root: Git repository root.
@@ -2490,8 +2481,9 @@ def _stage_and_commit_batch(  # noqa: PLR0913, RUF100 - provenance accompanies t
         identity: Committer and author identity for the commit.
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
-        folder_move: Validated source and destination directories, if moving.
     """
+    scope_context = current_commit_scope()
+    folder_move = scope_context.folder_move if scope_context is not None else None
     if len(items) == 1 and folder_move is None:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps
