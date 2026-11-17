@@ -21,6 +21,10 @@ def test_vault_rename_refreshes_custom_title(tmp_path: Path) -> None:
     )
     try:
         vault.index.build_index()
+        results = vault.reader.search("body", mode="keyword")
+        assert [(result.path, result.title) for result in results] == [
+            ("original.md", "Custom Title")
+        ]
         vault.writer.rename("original.md", "renamed.md")
         wait_for_writer_drain(vault)
         note = vault.reader.read("renamed.md")
