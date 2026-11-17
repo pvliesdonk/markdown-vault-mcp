@@ -98,15 +98,12 @@ def test_two_clone_sync(
     store.close()
 
 
-@pytest.mark.parametrize("overlap", [False])
-def test_staged_work_is_preserved(
-    git_repo_pair: GitRepoPair, tmp_path: Path, overlap: bool
-) -> None:
+def test_staged_work_is_preserved(git_repo_pair: GitRepoPair, tmp_path: Path) -> None:
     local = git_repo_pair.local_path
     _run_git(local, "config", "commit.gpgsign", "false")
     _run_git(local, "config", "core.hooksPath", str(tmp_path / "empty-hooks"))
     other = _git_clone(git_repo_pair, tmp_path)
-    name = "README.md" if overlap else "unrelated.md"
+    name = "unrelated.md"
     (local / name).write_text("staged\n")
     _run_git(local, "add", name)
     _git_commit(other, "README.md", "remote\n", "remote")
@@ -114,8 +111,8 @@ def test_staged_work_is_preserved(
     before = _git_head(local)
     store = Libgit2SyncStore(repo_path=local, enable_sync=True)
     result = store.force_pull()
-    assert result.applied is not overlap
-    assert (_git_head(local) == before) is overlap
+    assert result.applied
+    assert _git_head(local) != before
     assert _run_git(local, "show", f":{name}") == "staged\n"
     assert (local / name).read_text() == "staged\n"
     store.close()
@@ -289,11 +286,12 @@ def test_push_callback_rejection_is_not_treated_as_success(
         url = remote.url
         push_url = remote.push_url
 
-        def push(self, _specs, *, callbacks):
+        def push(self, _specs, *, callbacks, proxy=None):
+            assert proxy is True
             callbacks.push_update_reference("refs/heads/main", "policy rejected")
 
-        def fetch(self, *, callbacks):
-            remote.fetch(callbacks=callbacks)
+        def fetch(self, *, callbacks, proxy=None):
+            remote.fetch(callbacks=callbacks, proxy=proxy)
 
     monkeypatch.setattr(store, "_origin", lambda: RejectingRemote())
     result = store.force_push()
@@ -693,7 +691,8 @@ def test_push_callback_uses_effective_push_host(
         url = "https://fetch.example.test/repo"
         push_url = "https://push.example.test/repo"
 
-        def push(self, _specs, *, callbacks):
+        def push(self, _specs, *, callbacks, proxy=None):
+            assert proxy is True
             credential = callbacks.credentials(
                 self.push_url, None, pygit2.enums.CredentialType.USERPASS_PLAINTEXT
             )
@@ -842,10 +841,8 @@ def test_failed_checkout_keeps_vault_search_consistent(  # noqa: C901, PLR0915, 
         store.close()
 
 
-@pytest.mark.parametrize("conflict", [True])
-@pytest.mark.parametrize("query", ["revision"])
 def test_history_consumers_after_native_divergence(
-    git_repo_pair: GitRepoPair, tmp_path: Path, conflict: bool, query: str
+    git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     from markdown_vault_mcp.git.types import RevisionQuery
 
@@ -855,24 +852,18 @@ def test_history_consumers_after_native_divergence(
     birth = _git_commit(local, "notes/note.md", "base\n", "seed")
     _run_git(local, "push")
     other = _git_clone(git_repo_pair, tmp_path)
-    _git_commit(local, "notes/note.md" if conflict else "local.md", "local\n", "local")
+    _git_commit(local, "notes/note.md", "local\n", "local")
     _git_commit(other, "notes/note.md", "remote\n", "remote")
     _run_git(other, "push")
     store = Libgit2SyncStore(local, enable_sync=True)
     try:
         assert store.force_pull().applied
-        if query == "revision":
-            assert (
-                store.get_file_at_ref(
-                    RevisionQuery(local, local / "notes/note.md", birth, 0)
-                ).content
-                == "base\n"
-            )
-        else:
-            path = local / "notes" if query == "directory" else None
-            assert store.get_file_history(
-                local, path, None, 20, is_dir=query == "directory"
-            )
+        assert (
+            store.get_file_at_ref(
+                RevisionQuery(local, local / "notes/note.md", birth, 0)
+            ).content
+            == "base\n"
+        )
     finally:
         store.close()
 
@@ -1164,9 +1155,8 @@ def test_initial_sync_attribute_capability_and_network_failure(
         vault.close()
 
 
-@pytest.mark.parametrize("state", ["enabled"])
 def test_configured_pre_push_hook_policy(
-    git_repo_pair: GitRepoPair, tmp_path: Path, state: str
+    git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     import shlex
 
@@ -1181,22 +1171,12 @@ def test_configured_pre_push_hook_policy(
     if not marker.exists():
         pytest.skip("installed Git does not execute configured pre-push hooks")
     marker.unlink()
-    if state == "disabled":
-        _run_git(local, "config", "hook.pre-push.enabled", "false")
-    elif state == "reset":
-        _run_git(local, "config", "--add", "hook.fixture.event", "")
     _git_commit(local, "hook-proof.md", "second\n", "second")
-    if state != "enabled":
-        _run_git(local, "push")
-        assert not marker.exists()
-        store = Libgit2SyncStore(local, enable_sync=True)
-        store.close()
-    else:
-        with pytest.raises(ConfigurationError, match=r"pre-push.*GIT_BACKEND=cli"):
-            Libgit2SyncStore(local, enable_sync=True)
+    with pytest.raises(ConfigurationError, match=r"pre-push.*GIT_BACKEND=cli"):
+        Libgit2SyncStore(local, enable_sync=True)
 
 
-def test_review4_conflict_sibling_retains_later_clean_local_edit(
+def test_conflict_sibling_retains_later_clean_local_edit(
     git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     import frontmatter
@@ -1225,7 +1205,7 @@ def test_review4_conflict_sibling_retains_later_clean_local_edit(
         store.close()
 
 
-def test_review4_delete_modify_manual_guidance(
+def test_delete_modify_refusal_has_manual_guidance(
     git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     local = git_repo_pair.local_path
@@ -1247,7 +1227,7 @@ def test_review4_delete_modify_manual_guidance(
         store.close()
 
 
-def test_review4_incoming_union_attribute(
+def test_incoming_union_attribute_merges_both_versions(
     git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     local = git_repo_pair.local_path
@@ -1269,7 +1249,7 @@ def test_review4_incoming_union_attribute(
         store.close()
 
 
-def test_review4_shallow_startup_refusal(
+def test_shallow_repository_refused_at_startup(
     git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     source = git_repo_pair.local_path
@@ -1290,7 +1270,7 @@ def test_review4_shallow_startup_refusal(
         Libgit2SyncStore(shallow, enable_sync=True)
 
 
-def test_review4_sparse_startup_refusal(
+def test_sparse_repository_refused_at_startup(
     git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     local = git_repo_pair.local_path
@@ -1571,9 +1551,8 @@ def test_remote_rename_and_conflicting_edit_preserves_reciprocal_versions(
 
 
 @pytest.mark.parametrize("hook", ["pre-rebase", "post-rewrite"])
-@pytest.mark.parametrize("state", ["enabled"])
 def test_configured_rebase_hook_policy_matches_cli(
-    git_repo_pair: GitRepoPair, tmp_path: Path, hook: str, state: str
+    git_repo_pair: GitRepoPair, tmp_path: Path, hook: str
 ) -> None:
     import shlex
 
@@ -1587,18 +1566,10 @@ def test_configured_rebase_hook_policy_matches_cli(
     _run_git(local, "config", "hook.fixture.event", hook)
     command = shlex.quote(f"touch {shlex.quote(str(marker))}")
     _run_git(local, "config", "hook.fixture.command", f"sh -c {command}")
-    if state == "disabled":
-        _run_git(local, "config", f"hook.{hook}.enabled", "false")
-    elif state == "reset":
-        _run_git(local, "config", "--add", "hook.fixture.event", "")
     _run_git(local, "rebase", "origin/main")
-    assert marker.exists() is (state == "enabled")
-    if state == "enabled":
-        with pytest.raises(ConfigurationError, match=r"GIT_BACKEND=cli"):
-            Libgit2SyncStore(local, enable_sync=True)
-    else:
-        store = Libgit2SyncStore(local, enable_sync=True)
-        store.close()
+    assert marker.exists()
+    with pytest.raises(ConfigurationError, match=r"GIT_BACKEND=cli"):
+        Libgit2SyncStore(local, enable_sync=True)
 
 
 @pytest.mark.parametrize("kind", ["file", "directory"])
@@ -1629,9 +1600,8 @@ def test_untracked_directory_file_collision_has_actionable_detail(
         store.close()
 
 
-@pytest.mark.parametrize("delete_renamed", [True])
 def test_rename_with_actual_local_deletion_refuses_without_state_loss(
-    git_repo_pair: GitRepoPair, tmp_path: Path, delete_renamed: bool
+    git_repo_pair: GitRepoPair, tmp_path: Path
 ) -> None:
     local = git_repo_pair.local_path
     _run_git(local, "config", "core.hooksPath", str(tmp_path / "empty-hooks"))
@@ -1640,12 +1610,7 @@ def test_rename_with_actual_local_deletion_refuses_without_state_loss(
     _git_commit(local, "deleted.md", "original\n", "base deletion")
     _run_git(local, "push")
     other = _git_clone(git_repo_pair, tmp_path)
-    if delete_renamed:
-        _run_git(local, "rm", "README.md")
-    else:
-        (local / "README.md").write_text(base.replace("gamma", "local"))
-        _run_git(local, "add", "README.md")
-        _run_git(local, "rm", "deleted.md")
+    _run_git(local, "rm", "README.md")
     _run_git(local, "commit", "-m", "local changes")
     _run_git(other, "mv", "README.md", "renamed.md")
     (other / "renamed.md").write_text(base.replace("gamma", "remote"))
@@ -1709,12 +1674,10 @@ def test_explicit_sync_discovers_checkout_created_after_startup(
         store.close()
 
 
-@pytest.mark.parametrize("interleave", [True])
 def test_dry_run_attribute_guard_survives_breadcrumb_reader(
     git_repo_pair: GitRepoPair,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    interleave: bool,
 ) -> None:
     """A breadcrumb lookup must not change incoming attribute evaluation."""
     import markdown_vault_mcp.git.libgit2_sync as sync
@@ -1727,13 +1690,12 @@ def test_dry_run_attribute_guard_survives_breadcrumb_reader(
     store = Libgit2SyncStore(local, enable_sync=True)
     try:
         original_check = sync._check_tree
-        if interleave:
 
-            def with_reader(repo, commit, baseline=None):
-                assert store.committed_revision(local, local / "README.md") is not None
-                return original_check(repo, commit, baseline)
+        def with_reader(repo, commit, baseline=None):
+            assert store.committed_revision(local, local / "README.md") is not None
+            return original_check(repo, commit, baseline)
 
-            monkeypatch.setattr(sync, "_check_tree", with_reader)
+        monkeypatch.setattr(sync, "_check_tree", with_reader)
         result = store.force_pull(dry_run=True)
         assert result.reason == "conflict_resolution_failed"
         assert "filter" in (result.detail or "")
@@ -1805,3 +1767,148 @@ def test_malformed_frontmatter_conflict_is_logged_and_kept(
         [result.conflict_files[0], "README.md"]
     )
     assert all(r.exc_info for r in events)
+
+
+def _assert_refused_checkout_unchanged(
+    local: Path, head: str, index: str, status: str
+) -> None:
+    assert _git_head(local) == head
+    assert _run_git(local, "ls-files", "--stage") == index
+    assert _run_git(local, "status", "--porcelain") == status
+
+
+def _assert_conflict_published(
+    store: Libgit2SyncStore, local: Path, other: Path, sibling: Path, original: Path
+) -> None:
+    assert original.is_file()
+    assert store.force_push().applied
+    _run_git(other, "pull", "--ff-only")
+    assert (other / sibling.relative_to(local)).read_bytes() == sibling.read_bytes()
+    assert (other / original.relative_to(local)).read_bytes() == original.read_bytes()
+
+
+@pytest.mark.parametrize("ending", ["rename", "multiple", "delete"])
+@pytest.mark.parametrize("check", ["content", "link"])
+def test_conflict_then_local_rename_preserves_final_version(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ending: str,
+    check: str,
+) -> None:
+    """A later rename must not lose the final local conflict version."""
+    import frontmatter
+
+    local = git_repo_pair.local_path
+    base = "start\n" + "middle\n" * 20 + "end\n"
+    _git_commit(local, "note.md", base, "base")
+    _run_git(local, "push")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(local, "note.md", base.replace("start", "local"), "local edit")
+    _run_git(local, "mv", "note.md", "renamed.md")
+    final_local = base.replace("start", "local").replace("end", "final edit")
+    (local / "renamed.md").write_text(final_local)
+    _run_git(local, "add", "renamed.md")
+    _run_git(local, "commit", "-qm", "rename and finish")
+    if ending == "multiple":
+        _run_git(local, "mv", "renamed.md", "final.md")
+        _run_git(local, "commit", "-qm", "rename again")
+    elif ending == "delete":
+        _run_git(local, "rm", "renamed.md")
+        _run_git(local, "commit", "-qm", "delete renamed note")
+    _git_commit(other, "note.md", base.replace("start", "remote"), "remote edit")
+    _run_git(other, "push")
+    before = _git_head(local)
+    index_before = _run_git(local, "ls-files", "--stage")
+    status_before = _run_git(local, "status", "--porcelain")
+    store = Libgit2SyncStore(local, enable_sync=True)
+    checkouts = []
+    apply = store._apply
+    monkeypatch.setattr(
+        store, "_apply", lambda *args: checkouts.append(args) or apply(*args)
+    )
+    try:
+        result = store.force_pull()
+        if not result.applied:
+            assert not checkouts
+            detail = result.detail or ""
+            assert "manual" in detail.lower() or "GIT_BACKEND=cli" in detail
+            _assert_refused_checkout_unchanged(
+                local, before, index_before, status_before
+            )
+            return
+        assert ending != "delete", "deletion must be refused if identity is uncertain"
+        assert len(result.conflict_files) == 1
+        sibling = local / result.conflict_files[0]
+        saved = frontmatter.loads(sibling.read_text())
+        original = local / saved["conflict_with"]
+        if check == "content":
+            assert saved.content == final_local.strip()
+        else:
+            assert original.is_file()
+            assert (
+                frontmatter.loads(original.read_text())["conflict_with"] == sibling.name
+            )
+        _assert_conflict_published(store, local, other, sibling, original)
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("operation", ["clone", "pull", "push", "rejection_refresh"])
+def test_native_transport_requests_proxy_auto_detection(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    """Every native transport entry point asks pygit2 to discover proxies."""
+    calls = []
+    if operation == "clone":
+        original_clone = pygit2.clone_repository
+
+        def clone(url, path, **kwargs):
+            calls.append(("clone", kwargs.get("proxy")))
+            return original_clone(url, path, **kwargs)
+
+        monkeypatch.setattr(pygit2, "clone_repository", clone)
+        store = Libgit2SyncStore(
+            tmp_path / "managed", repo_url=str(git_repo_pair.remote_path), managed=True
+        )
+        store.close()
+    else:
+        local = git_repo_pair.local_path
+        if operation in ("push", "rejection_refresh"):
+            _git_commit(local, "local.md", "local\n", "local")
+        store = Libgit2SyncStore(local, enable_sync=True)
+        remote = store._origin()
+        assert remote is not None
+
+        class CapturedRemote:
+            def __getattr__(self, name):
+                return getattr(remote, name)
+
+            def fetch(self, *args, **kwargs):
+                calls.append(("fetch", kwargs.get("proxy")))
+                return remote.fetch(*args, **kwargs)
+
+            def push(self, *args, **kwargs):
+                calls.append(("push", kwargs.get("proxy")))
+                if operation == "rejection_refresh":
+                    raise RuntimeError("synthetic rejection")
+                return remote.push(*args, **kwargs)
+
+        monkeypatch.setattr(store, "_origin", lambda: CapturedRemote())
+        try:
+            if operation == "pull":
+                store.force_pull()
+            else:
+                store.force_push()
+        finally:
+            store.close()
+    expected = {
+        "clone": [("clone", True)],
+        "pull": [("fetch", True)],
+        "push": [("push", True)],
+        "rejection_refresh": [("push", True), ("fetch", True)],
+    }
+    assert calls == expected[operation]

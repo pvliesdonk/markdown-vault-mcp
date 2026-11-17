@@ -33,7 +33,10 @@ are refused for native sync. Incoming attributes are evaluated from the fetched
 index. If an incoming change to a checked-out `.gitattributes` coincides with a
 file conflict, native sync refuses with the CLI fallback because the native merge
 driver can still see checkout rules. Unchanged and conflict-free attribute edits
-remain supported.
+remain supported. During the initial fetch, a detected unsupported incoming
+capability aborts startup with guidance to use the CLI backend. Later background
+pulls report the refusal in sync health instead. Transient fetch failures remain
+sync outcomes rather than startup configuration errors.
 `GIT_LFS` does not enable LFS in this backend. SSH remotes are
 refused because native host key verification is unavailable; use the CLI backend
 for SSH. A configured `core.sshCommand` is also refused for native sync.
@@ -50,7 +53,9 @@ and cleanly replayed local edits. A clean replay reports the `rebased` result
 reason. Local-only merge commits are refused before replay because their
 resolutions cannot safely be preserved; use the CLI backend for those. A local
 deletion that conflicts with a remote edit is also refused; reconcile that
-conflict manually before retrying.
+conflict manually before retrying. If a later local rename or deletion leaves a
+conflicted path absent from the final local tree, native sync refuses rather than
+save an earlier version as the sibling. Reconcile manually or use the CLI backend.
 Repeated conflicts on one path retain the final local version in one sibling.
 If the remote deleted the original, the saved local sibling's `conflict_with`
 names that now-missing path; there is no original file to link back to it.

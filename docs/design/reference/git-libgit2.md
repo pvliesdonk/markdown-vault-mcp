@@ -126,6 +126,10 @@ sources:
     title: libgit2 attribute cache
     resource: https://github.com/libgit2/libgit2/blob/v1.9.7/src/libgit2/attr_file.c
     accessed: 2026-11-17
+  - id: clone-proxy
+    title: pygit2 clone API
+    resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/__init__.py
+    accessed: 2026-11-17
   - id: remote
     title: pygit2 remote API
     resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/remotes.py
@@ -168,9 +172,10 @@ through pygit2. The native Git stores depend on it.
 - libgit2 loads repository mailmap sources and resolves a signature to its canonical identity. [source: mailmap] [pins: tests/test_git_libgit2_history.py::test_history_author_honors_mailmap]
 
 - Safe checkout compares a target with the baseline, worktree and index; it updates the worktree and index without moving HEAD. The `DONT_OVERWRITE_IGNORED` option protects ignored files. [source: checkout] [pins: tests/test_git_libgit2_sync.py::test_staged_work_is_preserved, tests/test_git_libgit2_sync.py::test_incoming_file_does_not_overwrite_ignored_local_file]
-- A tree merge detects renames and selects `merge=union` using attributes from the worktree before the index; it does not inspect the incoming tree directly. [source: merge-driver] [pins: tests/test_git_libgit2_sync.py::test_review4_incoming_union_attribute]
-- Attribute `INDEX_ONLY` lookup uses the in-memory index. Loading the incoming tree there exposes its rules without writing the on-disk staged index; attribute cache freshness follows blob identity. Sync uses a private repository handle for that index so a concurrent `committed_revision` read cannot reset it. [source: attr-source] [source: attr-file] [observed: synthetic two-clone repository, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_review4_incoming_union_attribute, tests/test_git_libgit2_sync.py::test_dry_run_attribute_guard_survives_breadcrumb_reader]
+- A tree merge detects renames and selects `merge=union` using attributes from the worktree before the index; it does not inspect the incoming tree directly. [source: merge-driver] [pins: tests/test_git_libgit2_sync.py::test_incoming_union_attribute_merges_both_versions]
+- Attribute `INDEX_ONLY` lookup uses the in-memory index. Loading the incoming tree there exposes its rules without writing the on-disk staged index; attribute cache freshness follows blob identity. Sync uses a private repository handle for that index so a concurrent `committed_revision` read cannot reset it. [source: attr-source] [source: attr-file] [observed: synthetic two-clone repository, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_incoming_union_attribute_merges_both_versions, tests/test_git_libgit2_sync.py::test_dry_run_attribute_guard_survives_breadcrumb_reader]
 - In-memory rebase applies operations without changing HEAD or the checkout, skips merge commits, and returns an already-applied indication for empty steps. [source: rebase-source] [source: rebase-python] [pins: tests/test_git_libgit2_sync.py::test_unrelated_remote_history_has_actionable_outcome]
+- In pygit2 1.21, the clone and remote APIs default `proxy` to `None`, disabling proxy use; `proxy=True` requests automatic proxy detection. [source: clone-proxy] [source: remote] [pins: tests/test_git_libgit2_sync.py::test_native_transport_requests_proxy_auto_detection] The fixture captures arguments on local transports; it does not establish network proxy connectivity or parity with every Git proxy setting.
 - The HTTP transport retries authentication challenges and may invoke credential acquisition again after a 401. Native callbacks limit repeated token requests per operation. [source: http-auth] [pins: tests/test_git_libgit2_sync.py::test_credentials_stop_after_rejected_attempt]
 - pygit2 1.21 passes through SSH host keys in its default certificate callback, and does not expose the host key to the Python callback. Native sync refuses SSH. [pins: tests/test_git_libgit2_sync.py::test_ssh_transport_refused_with_action] Its certificate callback rejects invalid certificates. [source: callbacks]
 - The push callback reports per-reference rejection even when the push operation returns normally. [source: remote] [unverified] The network server callback has not been exercised against a real server hook in these fixtures.

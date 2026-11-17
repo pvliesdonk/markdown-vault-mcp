@@ -6822,7 +6822,9 @@ before classifying a pull, replays divergent local commits in memory, then
 performs a safe checkout and a reference transaction. A clean replay reports
 `rebased`. It refuses local-only merge commits before replay, and a local
 delete conflicting with a remote modification; repeated conflicts retain the
-final local version in one reciprocal sibling. Checkout invalidates the indexed HEAD before writing; on failure,
+final local version in one reciprocal sibling. If a conflicted path is absent
+from the final local tree after a later rename or deletion, it refuses before
+checkout rather than saving a stale sibling. Checkout invalidates the indexed HEAD before writing; on failure,
 the store restores affected paths. If restoration fails, HEAD remains unchanged,
 the worktree health check reports the state, and search reindexes from disk.
 The [libgit2 reference](reference/git-libgit2.md) records the underlying APIs.

@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _FALLBACK = "Set MARKDOWN_VAULT_MCP_GIT_BACKEND=cli to use the CLI backend."
+_NON_FAST_FORWARD = "non-fast-forward: run git_sync(direction='pull') first."
 
 
 def _ssh(url: str) -> bool:
@@ -214,6 +215,16 @@ def _conflict_contents(
     )
 
 
+def _final_local(index: Any, entry: Any) -> Any:
+    """Return the final local entry, refusing a file renamed or deleted later."""
+    if (final := _tree_entry(index, entry.path)) is None:
+        raise RuntimeError(
+            f"Local {entry.path} was renamed or deleted after its conflict; "
+            "reconcile manually."
+        )
+    return final
+
+
 class Libgit2SyncStore(Libgit2Store):
     """A versioned store with native clone, fetch, merge and push."""
 
@@ -277,9 +288,9 @@ class Libgit2SyncStore(Libgit2Store):
                 url,
                 str(path),
                 callbacks=_callbacks(pg, self._token, self._username, url),
+                proxy=True,
             )
-            local = _local_path(url, path.parent)
-            if cloned.head_is_unborn and local is not None:
+            if cloned.head_is_unborn and (local := _local_path(url, path.parent)):
                 head = pg.Repository(str(local)).lookup_reference("HEAD").target
                 if isinstance(head, str) and head.startswith("refs/heads/"):
                     cloned.set_head(head)
@@ -462,7 +473,7 @@ class Libgit2SyncStore(Libgit2Store):
                 return PullResult.head_unchanged_failure(before, PULL_REASON_NO_REMOTE)
             self._gate(repo)
             try:
-                remote.fetch(callbacks=self._callback(remote))
+                remote.fetch(callbacks=self._callback(remote), proxy=True)
             except Exception as exc:
                 return PullResult.head_unchanged_failure(
                     before, PULL_REASON_FETCH_FAILED, _safe(str(exc), self._token)
@@ -673,7 +684,7 @@ class Libgit2SyncStore(Libgit2Store):
         head_index = self._pg.Index()
         head_index.read_tree(head.tree)
         for path, entry in conflicts.items():
-            local = _tree_entry(head_index, entry.path) or entry
+            local = _final_local(head_index, entry)
             original = _tree_entry(index, path)
             name = conflict_sibling_name(Path(path), date.strftime("%Y%m%d-%H%M%S"))
             counter = 1
@@ -747,9 +758,7 @@ class Libgit2SyncStore(Libgit2Store):
             repo.ahead_behind(repo.head.target, tracking.target) if tracking else (1, 0)
         )
         if behind:
-            raise PushBackendError(
-                "non-fast-forward: run git_sync(direction='pull') first.",
-            )
+            raise PushBackendError(_NON_FAST_FORWARD)
         if not ahead:
             return
         try:
@@ -760,20 +769,22 @@ class Libgit2SyncStore(Libgit2Store):
         branch = repo.head.shorthand
         try:
             remote.push(
-                [f"refs/heads/{branch}:refs/heads/{branch}"], callbacks=callback
+                [f"refs/heads/{branch}:refs/heads/{branch}"],
+                callbacks=callback,
+                proxy=True,
             )
             if callback.rejection:
                 raise ValueError(callback.rejection)
         except Exception as exc:
             detail = _safe(str(exc), self._token)
             try:
-                remote.fetch(callbacks=self._callback(remote))
+                remote.fetch(callbacks=self._callback(remote), proxy=True)
                 refreshed = self._tracking()
                 if (
                     refreshed
                     and repo.ahead_behind(repo.head.target, refreshed.target)[1]
                 ):
-                    detail = "non-fast-forward: run git_sync(direction='pull') first."
+                    detail = _NON_FAST_FORWARD
             except Exception:
                 logger.debug("git_push_rejection_probe_failed")
             raise PushBackendError(detail) from None
