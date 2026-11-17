@@ -155,7 +155,9 @@ class TestASearch:
 
 
 class TestRecoveryDuringOutage:
-    @pytest.mark.parametrize("restart", ["none", "server_boot", "direct"])
+    @pytest.mark.parametrize(
+        "restart", ["none", "server_boot", "direct", "direct_offline"]
+    )
     @pytest.mark.parametrize("partial", [False, True])
     def test_search_after_failed_recovery_rebuilds_without_an_edit(
         self,
@@ -166,6 +168,13 @@ class TestRecoveryDuringOutage:
     ) -> None:
         root = _source(tmp_path)
         (root / "gamma.md").write_text("# Gamma\n\nUnchanged blueberries.\n")
+        extra_paths = (
+            {f"note-{i}.md" for i in range(10)}
+            if restart == "direct_offline"
+            else set()
+        )
+        for path in extra_paths:
+            (root / path).write_text(f"# {path}\n\nSynthetic content.\n")
         vault = _built(tmp_path, embedding_search="streamed", embedding_batch_size=1)
         provider = vault._embedding_provider
         assert provider is not None
@@ -175,7 +184,7 @@ class TestRecoveryDuringOutage:
         def failing(texts: list[str]) -> list[list[float]]:
             nonlocal calls
             calls += 1
-            if not partial or calls == 2:
+            if not partial or calls == 2 or (restart == "direct_offline" and calls > 1):
                 raise RuntimeError("provider unavailable")
             return original(texts)
 
@@ -184,7 +193,10 @@ class TestRecoveryDuringOutage:
             monkeypatch.setattr(provider, "embed", failing)
             (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
             vault.index.reindex()
-            assert len(metadata_by_path(vault._vectors)) == (2 if partial else 0)
+            saved = (
+                1 if partial and restart == "direct_offline" else 2 if partial else 0
+            )
+            assert len(metadata_by_path(vault._vectors)) == saved
             if restart != "none":
                 vault.close()
                 vault = _vault(
@@ -194,22 +206,32 @@ class TestRecoveryDuringOutage:
                 assert provider is not None
                 original = provider.embed
 
-                def offline(_texts: list[str]) -> list[list[float]]:
+                failed_calls = 0
+
+                def offline(texts: list[str]) -> list[list[float]]:
+                    nonlocal failed_calls
+                    if texts == ["kumquats"]:
+                        return original(texts)
+                    failed_calls += 1
                     raise RuntimeError("provider unavailable")
 
                 monkeypatch.setattr(provider, "embed", offline)
                 if restart == "server_boot":
                     vault.index.build_index()
                     vault.index.build_embeddings()
+                elif restart == "direct_offline":
+                    vault.reader.search("kumquats", mode="semantic")
+                    assert failed_calls <= 3
             monkeypatch.setattr(provider, "embed", original)
 
-            results = vault.reader.search("kumquats", mode="semantic")
+            results = vault.reader.search("kumquats", mode="semantic", limit=50)
 
             assert {row.path for row in results} >= {"alpha.md"}
             assert set(metadata_by_path(vault._vectors)) == {
                 "alpha.md",
                 "beta.md",
                 "gamma.md",
+                *extra_paths,
             }
         finally:
             vault.close()

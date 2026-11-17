@@ -222,6 +222,7 @@ class VectorStoreSlot:
         elif isinstance(opened := self._open(), StoreOpenError):
             store = self._rebuilt(opened, rebuild)
         else:
+            self.recovery_owed = True
             rebuild()
             store = self._get(None)
         self.recovery_owed = self.recovery_owed or False
