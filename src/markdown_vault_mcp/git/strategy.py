@@ -56,7 +56,7 @@ from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.health import (
     SyncHealth,
     SyncHealthTracker,
-    one_line,
+    log_git_stderr,
     push_failure_reason,
 )
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
@@ -485,7 +485,7 @@ class GitWriteStrategy:
                 "git_batch_failed tool=%s files=%s error=%s",
                 tool_name,
                 len(items),
-                self._redact(exc.stderr or ""),
+                log_git_stderr(exc.stderr or "", self._token),
             )
 
     def __call__(
@@ -565,7 +565,7 @@ class GitWriteStrategy:
                 operation,
                 exc.cmd,
                 exc.returncode,
-                sanitized_stderr,
+                log_git_stderr(sanitized_stderr),
             )
         except Exception:
             logger.error(
@@ -601,7 +601,7 @@ class GitWriteStrategy:
                 "git_lfs_pull_failed command=%s returncode=%d error=%s",
                 exc.cmd,
                 exc.returncode,
-                exc.stderr or "",
+                log_git_stderr(exc.stderr or "", self._token),
             )
         except FileNotFoundError:
             logger.error("git_lfs_pull_failed reason=git_not_found_on_path")
@@ -794,7 +794,7 @@ class GitWriteStrategy:
                 ancestor,
                 descendant,
                 proc.returncode,
-                self._redact((proc.stderr or "").strip()),
+                log_git_stderr(proc.stderr or "", self._token),
             )
             return False
         return proc.returncode == 0
@@ -1032,7 +1032,7 @@ class GitWriteStrategy:
             logger.warning(
                 "git_fetch_failed strategy=%s error=%s",
                 log_prefix,
-                stderr,
+                log_git_stderr(stderr),
             )
             return PullResult.head_unchanged_failure(from_sha, PULL_REASON_FETCH_FAILED)
 
@@ -1114,7 +1114,7 @@ class GitWriteStrategy:
             logger.debug(
                 "git_ff_only_failed strategy=%s error=%s",
                 log_prefix,
-                (ff_exc.stderr or "").strip(),
+                log_git_stderr(ff_exc.stderr or "", self._token),
             )
             return self._force_pull_rebase_fallback(
                 git_root=git_root,
@@ -1202,7 +1202,7 @@ class GitWriteStrategy:
                 "git_rebase_stopped strategy=%s target=%s error=%s",
                 log_prefix,
                 ref,
-                one_line(rebase_stderr) or "(no stderr)",
+                log_git_stderr(rebase_stderr) or "(no stderr)",
             )
             detail = rebase_stderr or None
             # Real conflicts during rebase — resolve by accepting upstream
@@ -1536,7 +1536,7 @@ class GitWriteStrategy:
 
                 logger.error(
                     "git_push_failed strategy=force_push error=%s",
-                    stderr,
+                    log_git_stderr(stderr),
                 )
                 truncated = stderr[:200]
                 return PushResult(
@@ -1614,7 +1614,7 @@ class GitWriteStrategy:
         except subprocess.CalledProcessError as exc:
             logger.warning(
                 "git_command_failed context=sync_once error=%s",
-                (exc.stderr or "").strip(),
+                log_git_stderr(exc.stderr or "", self._token),
             )
             return False
 
@@ -2174,7 +2174,7 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
         logger.warning(
             "git_check_ignore_failed rc=%s stderr=%s",
             result.returncode,
-            (result.stderr or "").strip(),
+            log_git_stderr(result.stderr or ""),
         )
         return set()
     return {entry for entry in result.stdout.split("\0") if entry}

@@ -1231,7 +1231,7 @@ class TestBatchCommitsForReal:
 
         def _explode(cmd, *args, **kwargs):
             if isinstance(cmd, list) and "commit" in cmd:
-                raise subprocess.CalledProcessError(1, cmd, stderr="boom")
+                raise subprocess.CalledProcessError(1, cmd, stderr="boom\n  details\n")
             return real_run(cmd, *args, **kwargs)
 
         with (
@@ -1243,7 +1243,8 @@ class TestBatchCommitsForReal:
             )
         strategy.close()
 
-        assert any("git_batch_failed" in r.message for r in caplog.records)
+        line = next(r for r in caplog.records if r.msg.startswith("git_batch_failed"))
+        assert line.getMessage().endswith("error=boom details")
 
     def test_an_ignored_rename_drops_out_of_the_batch(self, tmp_path: Path) -> None:
         """Both sides ignored: nothing staged, so it neither errors nor counts."""
