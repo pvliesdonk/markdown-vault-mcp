@@ -967,10 +967,11 @@ def test_unstatable_state_preserves_unrelated_inventory(
     state = tmp_path / "other" / "state.md"
     state.write_text("secret")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(state_path=state))
+    resolved_state = state.resolve()
     original = type(state).stat
 
     def refused(path: Path, *args: object, **kwargs: object) -> os.stat_result:
-        if path == state.resolve():
+        if path == resolved_state:
             raise PermissionError(errno.EACCES, "private")
         return original(path, *args, **kwargs)  # type: ignore[call-arg]
 
