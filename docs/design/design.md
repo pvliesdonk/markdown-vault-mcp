@@ -6804,8 +6804,9 @@ rather than on the concrete class:
 - `Versioner` — the per-write commit; structurally the same shape as
   `PrincipalAwareWriteCallback`, restated so the module needs no runtime
   import beyond `typing`.
-  Batching is an optional `BatchAwareWriteCallback` opt-in; per-write dispatch
-  remains available.
+  Batching is an optional `BatchAwareWriteCallback` opt-in; a store that opts
+  in must still accept per-write calls, which the dispatcher keeps using for
+  writes outside a tool call.
 - `VersionedStore` — all of them, which is what `Vault` holds.
 
 Config assembly returns `VersionedStore` through `_build_git_strategy`, the
