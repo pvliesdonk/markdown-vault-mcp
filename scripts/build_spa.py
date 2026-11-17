@@ -76,19 +76,22 @@ def _find_spa_dir() -> Path:
     return candidates[0].parent
 
 
-def _read_partial(spa_dir: Path, rel: str) -> str:
+def _include_path(spa_dir: Path, rel: str) -> Path:
     path = (spa_dir / rel).resolve()
     if not path.is_relative_to(spa_dir.resolve()):
         raise SystemExit(f"ERROR: include escapes spa/ dir: {rel}")
+    return path
+
+
+def _read_partial(spa_dir: Path, rel: str) -> str:
+    path = _include_path(spa_dir, rel)
     if not path.is_file():
         raise SystemExit(f"ERROR: included partial not found: {rel}")
     return path.read_text(encoding="utf-8")
 
 
 def _read_binary_partial(spa_dir: Path, rel: str) -> str:
-    path = (spa_dir / rel).resolve()
-    if not path.is_relative_to(spa_dir.resolve()):
-        raise SystemExit(f"ERROR: include escapes spa/ dir: {rel}")
+    path = _include_path(spa_dir, rel)
     if path.suffix != ".woff2" or not path.is_file():
         raise SystemExit(f"ERROR: invalid or missing WOFF2 include: {rel}")
     return base64.b64encode(path.read_bytes()).decode("ascii")

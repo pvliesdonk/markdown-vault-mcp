@@ -6392,7 +6392,11 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 Newsreader, Public Sans and IBM Plex Mono use Latin files with system fallback
 for other glyphs. Variable faces retain their original files but advertise
 Newsreader weights 400–600 and Public Sans 400–700, matching the earlier
-stylesheet. Full OFL notices accompany the assets and are included in
+stylesheet so existing font matching stays the same. IBM Plex Mono keeps
+400, 500 and 600 for code and metadata. Embedding raises `app.html` from
+1,245,371 to 1,541,964 bytes (+296,593, about 24%); keeping the full variable
+files preserves Newsreader optical sizing and the weights the interface uses.
+Full OFL notices accompany the assets and are included in
 the served HTML. IBM's own unmodified files preserve its reserved name. The
 [CSP reference](reference/mcp-apps-fonts.md) records the browser behavior.
 

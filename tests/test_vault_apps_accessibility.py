@@ -57,7 +57,9 @@ def _open_vault(page: Page, csp: str | None = None) -> Frame:
     page.goto("https://vault.test/")
     frame = page.frames[1]
     if csp:
-        page.wait_for_timeout(500)
+        frame.wait_for_function(
+            "() => window.vaultApp?.getHostContext()?.theme === 'light' && document.fonts.size === 5"
+        )
     else:
         frame.wait_for_function("window.vaultApp?.getHostContext()?.theme === 'light'")
     return frame
@@ -144,5 +146,4 @@ def test_embedded_fonts_load_under_strict_csp(page: Page) -> None:
     frame.evaluate("""() => { const s = document.createElement('style');
       s.textContent = '@font-face { font-family: Control; src: url(data:font/woff2;base64,AA==) } body { font-family: Control }';
       document.head.append(s); }""")
-    page.wait_for_timeout(200)
-    assert "font-src" in frame.evaluate("() => window.violations")
+    frame.wait_for_function("() => window.violations.includes('font-src')")
