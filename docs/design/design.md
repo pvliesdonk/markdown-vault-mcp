@@ -2848,6 +2848,8 @@ form) is read as a fragment, or as an anchor when the name begins with one,
 and a parenthesis that will not parse in the plain form ends the destination
 early, so `/notes/a)b.md` becomes a link to `notes/a`. Exactly those are
 backslash-escaped on rewrite (`\#y.md`, `<new\>x.md>`, `/notes/a\)b.md`).
+A literal percent escape is written with `%25`, and a named character
+reference is escaped, so decoding preserves those characters in the path.
 The paren half was first assigned to the *other* class and left unrepaired;
 #1516 showed that only an unbalanced `(` breaks visibly, while a `)`
 re-points silently, so both now escape.

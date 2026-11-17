@@ -353,17 +353,33 @@ def _parentheses_parse_plainly(name: str) -> bool:
     return depth == 0
 
 
+#: A literal ``%`` that would read as a percent-escape, or an ``&`` that
+#: would open a named character reference, once written into a destination.
+_RE_LITERAL_ENCODING = re.compile(
+    r"%(?=[0-9A-Fa-f]{2})|&(?=[A-Za-z][A-Za-z0-9]{1,31};)"
+)
+
+
+def _escape_literal_encodings(name: str) -> str:
+    """Spell a literal ``%XX`` or ``&name;`` so decoding returns it as written."""
+    return _RE_LITERAL_ENCODING.sub(
+        lambda match: "%25" if match.group() == "%" else "\\&", name
+    )
+
+
 def _escape_meaning_changers(name: str, *, pointy: bool) -> str:
     """Backslash-escape the characters that would re-parse a rewritten link.
 
     A rename introduces no escaping the author did not use — except where
     the new name would otherwise be read as something other than itself.
-    Three cases qualify, and nothing else is touched:
+    Four cases qualify, and nothing else is touched:
 
     * ``#`` is always escaped: it would be read as a fragment, and a name
       *beginning* with one as a same-document anchor (#1353).
     * ``<`` and ``>`` are escaped inside the ``<…>`` form, which they would
       end early (#1353).
+    * A literal ``%XX`` or ``&name;`` is spelled ``%25XX`` or ``\\&name;`` so
+      decoding returns the name (#1383).
     Parentheses are *not* handled here: §6.3 balances them across the whole
     destination, fragment included, so the decision cannot be made on the
     path alone — :func:`escape_unparsable_parentheses` makes it on the
@@ -376,7 +392,7 @@ def _escape_meaning_changers(name: str, *, pointy: bool) -> str:
     Returns:
         *name* with the characters that would re-point it escaped.
     """
-    name = name.replace("#", "\\#")
+    name = _escape_literal_encodings(name.replace("#", "\\#"))
     if pointy:
         name = name.replace("<", "\\<").replace(">", "\\>")
     return name
@@ -1274,6 +1290,13 @@ def _mask_code(content: str) -> str:
     return _RE_INLINE_CODE.sub(mask, _RE_FENCED_CODE.sub(mask, content))
 
 
+#: A wikilink around one target key. The scanner strips a target's
+#: surrounding whitespace and a table-cell ``\`` before ``|`` (#731); only the
+#: key group is replaced, so both and the alias survive.
+_WIKI_OPEN = r"\[\[[^\S\n]*("
+_WIKI_CLOSE = r")[^\S\n]*\\?[^\S\n]*(?=\]\]|\|[^\]]*\]\])"
+
+
 def _wikilink_destination_spans(
     masked: str, keys: Iterable[str]
 ) -> Iterator[tuple[int, str]]:
@@ -1281,7 +1304,7 @@ def _wikilink_destination_spans(
     alternatives = "|".join(
         re.escape(key) for key in sorted(keys, key=len, reverse=True)
     )
-    for match in re.finditer(r"\[\[(" + alternatives + r")(\|[^\]]*)?\]\]", masked):
+    for match in re.finditer(_WIKI_OPEN + alternatives + _WIKI_CLOSE, masked):
         yield match.start(1), match.group(1)
 
 

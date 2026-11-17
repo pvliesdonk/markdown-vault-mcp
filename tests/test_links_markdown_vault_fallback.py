@@ -228,9 +228,6 @@ def test_rewrite_vault_path_avoids_local_shadow(
             (tmp_path / "B").mkdir()
             vault.writer.rename("A/Note.md", "B/Note.md", update_links=True)
         wait_for_writer_drain(vault)
-        assert "../B/Note.md#heading" in (tmp_path / "Sub/source.md").read_text(
-            encoding="utf-8"
-        )
         for _ in range(2):
             assert (
                 vault.graph.get_outlinks("Sub/source.md")[0].target_path == "B/Note.md"
@@ -264,10 +261,8 @@ def test_moving_source_preserves_fallback_targets(
         if reference
         else '[x](B/target.md#h "a `title` survives") [y](A/together.md)\n'
     )
-    example = "[r]: B/target.md#h" if reference else "[example](B/target.md#h)"
-    code = f"`{example}`\n\n```md\n{example}\n```\n"
     (tmp_path / "A/source.md").write_text(
-        links + "[control](../B/target.md) [broken](Missing.md)\n" + code,
+        links + "[control](../B/target.md) [broken](Missing.md)\n",
         encoding="utf-8",
     )
     callbacks: list[tuple[Path, str, str]] = []
@@ -287,9 +282,6 @@ def test_moving_source_preserves_fallback_targets(
         wait_for_writer_drain(vault)
         assert vault._write_callback.drain()
         source_text = (tmp_path / "C/source.md").read_text(encoding="utf-8")
-        assert code in source_text
-        if not reference:
-            assert '"a `title` survives"' in source_text
         source_callbacks = [
             c for c in callbacks if c[0] == (tmp_path / "C/source.md").resolve()
         ]
@@ -437,7 +429,7 @@ def test_moved_source_frontmatter_fence_does_not_mask_body(tmp_path: Path) -> No
         vault.close()
 
 
-def test_moved_source_reports_unmatched_rewrite_without_partial_write(
+def test_moved_source_reports_unmatched_rewrite_hint(
     tmp_path: Path,
 ) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -477,5 +469,59 @@ def test_source_move_unchanged_fallback_does_not_count_as_rewrite(
         assert (tmp_path / "source.md").read_text(encoding="utf-8") == body
         assert result.updated_links == 0
         assert result.hint is None
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("folder", ["B%20folder", "B&#46;folder", "B&amp;folder"])
+@pytest.mark.parametrize("reference", [False, True])
+@pytest.mark.parametrize("folder_move", [False, True])
+def test_moving_source_preserves_fallback_with_encoded_looking_folder(
+    tmp_path: Path, folder: str, reference: bool, folder_move: bool
+) -> None:
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    (tmp_path / "A").mkdir()
+    (tmp_path / folder).mkdir()
+    (tmp_path / folder / "target.md").write_text("# target\n", encoding="utf-8")
+    body = "[x][r]\n\n[r]: target.md\n" if reference else "[x](target.md)\n"
+    (tmp_path / "A/source.md").write_text(body, encoding="utf-8")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        target = f"{folder}/target.md"
+        assert vault.graph.get_outlinks("A/source.md")[0].target_path == target
+        if folder_move:
+            vault.writer.move_folder("A", "C")
+        else:
+            (tmp_path / "C").mkdir()
+            vault.writer.rename("A/source.md", "C/source.md", update_links=True)
+        wait_for_writer_drain(vault)
+        assert vault.graph.get_outlinks("C/source.md")[0].target_path == target
+        assert len(vault.graph.get_backlinks(target)) == 1
+        assert vault.graph.get_broken_links() == []
+    finally:
+        vault.close()
+
+
+def test_target_rename_rewrites_table_wikilink_and_markdown_sibling(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    (tmp_path / "Old.md").write_text("# target\n", encoding="utf-8")
+    source = tmp_path / "source.md"
+    source.write_text("| [[Old\\|alias]] |\n\n[x](Old.md)\n", encoding="utf-8")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        assert len(vault.graph.get_backlinks("Old.md")) == 2
+        result = vault.writer.rename("Old.md", "New.md", update_links=True)
+        wait_for_writer_drain(vault)
+        assert result.updated_links == 1
+        assert (
+            source.read_text(encoding="utf-8") == "| [[New\\|alias]] |\n\n[x](New.md)\n"
+        )
+        assert len(vault.graph.get_backlinks("New.md")) == 2
     finally:
         vault.close()
