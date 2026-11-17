@@ -211,10 +211,12 @@ def test_rename_and_rewrite_threshold_agrees_with_cli(isolated_repo: Path) -> No
     old.rename(new)
     new.write_text("# Title\nModified line\n")
     native(new, "", "rename", old_path=old)
-    actual = native.get_file_history(isolated_repo, new, None, 10)
     expected = cli.get_file_history(isolated_repo, new, None, 10)
-    assert [entry.sha for entry in actual] == [entry.sha for entry in expected]
-    assert len(actual) == 3
+    assert len(expected) == 3
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    with pytest.raises(InvalidRequestError, match="GitWriteStrategy"):
+        native.get_file_history(isolated_repo, new, None, 10)
 
 
 @pytest.mark.parametrize("per_commit", [False, True])

@@ -165,7 +165,10 @@ def test_local_force_results_match_cli(isolated_repo: Path) -> None:
     native = Libgit2Store(isolated_repo)
     for dry_run in (False, True):
         assert native.force_pull(dry_run=dry_run) == cli.force_pull(dry_run=dry_run)
-        assert native.force_push(dry_run=dry_run).reason == "push_failed"
+        assert (
+            native.force_push(dry_run=dry_run).reason
+            == cli.force_push(dry_run=dry_run).reason
+        )
 
 
 def test_eol_attributes_are_honored(isolated_repo: Path) -> None:

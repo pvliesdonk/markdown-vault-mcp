@@ -56,13 +56,26 @@ vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(read_onl
 The constructor rejects unsupported repository formats and partial clones.
 It also refuses commit signing and executable commit or reference hooks, such
 as `reference-transaction` and `post-index-change`. For tracked paths, a
-configured external clean or process filter is refused, including Git LFS. Writes check these policies again and refuse in-progress Git
+configured external clean or process filter, including Git LFS, or a
+working-tree encoding is refused. Writes check these policies again and refuse in-progress Git
 operations, such as a merge. Use `GitWriteStrategy` for these repositories.
 A refused write updates the store's uncommitted-work health when inspection
 succeeds. A write matching HEAD reconciles its index entries without creating a
 commit. History and per-commit diff limits are clamped between 1 and 100; an omitted
-diff limit is unbounded. Dates support ISO 8601 and common Git expressions.
-For other date expressions, use `GitWriteStrategy`.
+diff limit is unbounded. Dates support ISO 8601, `N units ago` (including compound and dotted forms),
+`yesterday`, `last <weekday>`, `today`, `midnight`, `noon`, and
+`noon <day>` for the supported day forms. For other expressions, use
+`GitWriteStrategy`.
+
+When a query would need to pair a deleted and added
+path with different content, the native store refuses it because Git and
+libgit2 may score the pair differently. Exact-content renames are supported
+when the match is unambiguous.
+
+Binary diff summaries and rename diffs with
+mode changes are also refused. Use `GitWriteStrategy` for those queries.
+An uncertain committed-revision lookup returns no breadcrumb, so an
+overwrite can still proceed.
 
 ## Migrating from 4.x
 

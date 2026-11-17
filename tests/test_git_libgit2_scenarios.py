@@ -161,10 +161,16 @@ def _assert_history(
     history = store.get_file_history(repo, renamed, None, 10)
     assert len(history) == 3
     assert history[-1].sha == first
-    combined = store.get_file_diff(repo, renamed, first, False)
+    if isinstance(store, Libgit2Store):
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        with pytest.raises(InvalidRequestError, match="GitWriteStrategy"):
+            store.get_file_diff(repo, renamed, first, False)
+    else:
+        combined = store.get_file_diff(repo, renamed, first, False)
+        assert isinstance(combined, str) and "+updated" in combined
+        assert "sibling-only" not in combined and "other-only" not in combined
     per_commit = store.get_file_diff(repo, renamed, first, True)
-    assert isinstance(combined, str) and "+updated" in combined
-    assert "sibling-only" not in combined and "other-only" not in combined
     assert isinstance(per_commit, list) and len(per_commit) == 2
     assert any("+updated" in entry.diff for entry in per_commit)
     assert all(

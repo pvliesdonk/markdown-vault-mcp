@@ -45,22 +45,34 @@ def _diff(parent: Any | None, commit: Any) -> Any:
     return parent.tree.diff_to_tree(commit.tree)
 
 
-def _similar(parent: Any | None, commit: Any) -> Any:
-    diff = _diff(parent, commit)
-    diff.find_similar(
-        flags=pygit2.enums.DiffFind.FIND_RENAMES, rename_threshold=30, rename_limit=2000
+def _unsupported(shape: str) -> InvalidRequestError:
+    return InvalidRequestError(
+        f"Native Git cannot resolve {shape}; use GitWriteStrategy (the Git CLI)."
     )
-    return diff
 
 
-def _old_path(diff: Any, path: str) -> str | None:
-    for delta in diff.deltas:
+def _resolved(diff: Any, path: str) -> tuple[Any, str | None]:
+    added = [
+        d
+        for d in diff.deltas
+        if d.status == pygit2.enums.DeltaStatus.ADDED and d.new_file.path == path
+    ]
+    deleted = [d for d in diff.deltas if d.status == pygit2.enums.DeltaStatus.DELETED]
+    if added and deleted:
+        duplicates = [
+            d
+            for d in diff.deltas
+            if d.status == pygit2.enums.DeltaStatus.ADDED
+            and d.new_file.id == added[0].new_file.id
+        ]
         if (
-            delta.status == pygit2.enums.DeltaStatus.RENAMED
-            and delta.new_file.path == path
+            len(deleted) != 1
+            or len(duplicates) != 1
+            or added[0].new_file.id != deleted[0].old_file.id
         ):
-            return str(delta.old_file.path)
-    return None
+            raise _unsupported("inexact rename resolution")
+        return diff, deleted[0].old_file.path
+    return diff, None
 
 
 def _same(a: Any | None, b: Any | None) -> bool:
@@ -89,7 +101,7 @@ def _walk(repo: Any, path: str) -> Iterator[tuple[Any, str, bool, bool]]:
                 previous_name = name
                 previous = _entry(parent, name)
                 if current is not None and previous is None:
-                    previous_name = _old_path(_similar(parent, commit), name) or ""
+                    previous_name = _resolved(_diff(parent, commit), name)[1] or ""
                     previous = _entry(parent, previous_name) if previous_name else None
                 born = born and previous is None
                 differences.append(
@@ -104,21 +116,30 @@ def _walk(repo: Any, path: str) -> Iterator[tuple[Any, str, bool, bool]]:
 _AGO = re.compile(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?")
 
 
-def _date(value: str | None) -> float | None:
+def _date(value: str | None) -> float | None:  # noqa: C901, PLR0911, RUF100 -- bounded date grammar.
     if value is None:
         return None
     try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            now = dt.datetime.now()
+            parsed = parsed.replace(hour=now.hour, minute=now.minute, second=now.second)
+        return parsed.timestamp()
     except ValueError:
         pass
     try:
         text = re.sub(r"[._]", " ", value.lower()).strip()
         now = dt.datetime.now().astimezone()
+        if text in {"today", "midnight", "noon"}:
+            hour = 12 if text == "noon" else 0
+            return now.replace(hour=hour, minute=0, second=0, microsecond=0).timestamp()
         if text.startswith("noon "):
             now, text = (
                 now.replace(hour=12, minute=0, second=0, microsecond=0),
                 text[5:],
             )
+        if text == "today":
+            return now.timestamp()
         if text == "yesterday":
             return (now - dt.timedelta(days=1)).timestamp()
         weekdays = (
@@ -156,17 +177,13 @@ def _date(value: str | None) -> float | None:
     except (OverflowError, OSError, ValueError):
         pass
     raise InvalidRequestError(
-        f"Invalid or unsupported date {value!r}; use GitWriteStrategy (the Git CLI) for other Git date expressions."
+        f"Unsupported date {value!r}; use ISO 8601 or N units ago, or GitWriteStrategy for other Git date expressions."
     )
 
 
 def _timestamp(commit: Any) -> str:
     zone = dt.timezone(dt.timedelta(minutes=commit.author.offset))
     return dt.datetime.fromtimestamp(commit.author.time, zone).isoformat()
-
-
-def _subject(commit: Any) -> str:
-    return " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines())
 
 
 def _history_entry(commit: Any, paths: list[str]) -> HistoryEntry:
@@ -176,7 +193,7 @@ def _history_entry(commit: Any, paths: list[str]) -> HistoryEntry:
         sha[:7],
         _timestamp(commit),
         f"{commit.author.name} <{commit.author.email}>",
-        _subject(commit),
+        " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines()),
         paths,
     )
 
@@ -325,23 +342,13 @@ def _patches(diff: Any, names: set[str], summarize_binary: bool) -> str:
         if delta.old_file.path not in names and delta.new_file.path not in names:
             continue
         if summarize_binary and delta.is_binary:
-            chunks.append(
-                f"Binary files a/{delta.old_file.path} and b/{delta.new_file.path} differ\n"
-            )
+            raise _unsupported("binary diff summaries")
         else:
             chunks.append(patch.text or "")
     return _truncate_diff("".join(chunks))
 
 
-def _single_tree(repo: Any, commit: Any | None, name: str | None) -> Any:
-    index = pygit2.Index()
-    entry = _entry(commit, name) if commit is not None and name else None
-    if entry is not None and name is not None:
-        index.add(pygit2.IndexEntry(name, entry.id, entry.filemode))
-    return repo[index.write_tree(repo)]
-
-
-def get_file_diff(  # noqa: C901, PLR0913, RUF100 -- protocol and lineage range handling.
+def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and lineage capabilities.
     repo: Any,
     vault: Path,
     path: Path,
@@ -377,19 +384,26 @@ def get_file_diff(  # noqa: C901, PLR0913, RUF100 -- protocol and lineage range 
         if target is None:
             return [] if per_commit else ""
     if not per_commit:
+        if target is None:
+            return ""
         head = repo.head.peel(pygit2.Commit)
-        historical, reached = _at_ref(repo, current, target) if target else (None, True)
-        if not reached and _entry(target, current):
-            historical = current
-        old_tree = _single_tree(repo, target, historical)
-        new_tree = _single_tree(repo, head, current)
-        diff = old_tree.diff_to_tree(new_tree)
-        diff.find_similar(flags=pygit2.enums.DiffFind.FIND_RENAMES, rename_threshold=30)
-        return _patches(
-            diff,
-            {current, *([historical] if historical else [])},
-            summarize_binary,
-        )
+        historical, reached = _at_ref(repo, current, target)
+        if reached and historical is None:
+            old_tree = repo[repo.TreeBuilder().write()]
+        else:
+            old_tree = target.tree
+        diff, old = _resolved(old_tree.diff_to_tree(head.tree), current)
+        if old:
+            if target.tree[old].filemode != head.tree[current].filemode:
+                raise _unsupported("rename mode changes")
+            blob_patch = pygit2.Patch.create_from(
+                repo[target.tree[old].id],
+                repo[head.tree[current].id],
+                old,
+                current,
+            )
+            return _patches([blob_patch], {old, current}, summarize_binary)
+        return _patches(old_tree.diff_to_tree(head.tree), {current}, summarize_binary)
     selected = (
         (commit, name)
         for commit, name, changed, _ in _walk(repo, current)
@@ -404,19 +418,15 @@ def get_file_diff(  # noqa: C901, PLR0913, RUF100 -- protocol and lineage range 
         selected, None if limit is None else min(max(1, limit), 100)
     ):
         parent = commit.parents[0] if commit.parents else None
-        diff = _similar(parent, commit)
-        old = _old_path(diff, name)
-        patch = _patches(diff, {name, *([old] if old else [])}, summarize_binary)
-        if old and _same(_entry(parent, old), _entry(commit, name)):
+        diff, old = _resolved(_diff(parent, commit), name)
+        if old:
+            if not _same(_entry(parent, old), _entry(commit, name)):
+                raise _unsupported("rename mode changes")
             patch = f"{old} => {name} (renamed, no content change)\n"
-        sha = str(commit.id)
+        else:
+            patch = _patches(diff, {name}, summarize_binary)
+        row = _history_entry(commit, [])
         output.append(
-            CommitDiff(
-                sha,
-                sha[:7],
-                _timestamp(commit),
-                _subject(commit),
-                patch,
-            )
+            CommitDiff(row.sha, row.short_sha, row.timestamp, row.message, patch)
         )
     return output

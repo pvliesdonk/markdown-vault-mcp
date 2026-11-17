@@ -20,6 +20,7 @@ from markdown_vault_mcp.git.strategy import (
 )
 from markdown_vault_mcp.git.types import (
     PULL_REASON_PULL_DISABLED,
+    PUSH_REASON_NO_REMOTE,
     PUSH_REASON_PUSH_FAILED,
     PullResult,
     PushResult,
@@ -56,13 +57,6 @@ def _pygit2() -> Any:
             'Install "markdown-vault-mcp[libgit2]" or use GitWriteStrategy (the CLI layer).'
         ) from exc
     return pygit2
-
-
-def _config_value(config: Any, key: str, default: Any = None) -> Any:
-    try:
-        return config[key]
-    except KeyError:
-        return default
 
 
 def _config_bool(config: Any, key: str, default: bool = False) -> bool:
@@ -105,7 +99,7 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
 def _probe_policy(repo: Any) -> None:
     if _config_bool(repo.config, "commit.gpgsign"):
         raise _unsupported("signed commits")
-    configured = _config_value(repo.config, "core.hookspath")
+    configured = _tree_entry(repo.config, "core.hookspath")
     gitdir = Path(repo.path)
     common = gitdir / "commondir"
     if is_regular_file(common):
@@ -148,9 +142,12 @@ def _open(path: Path, pg: Any) -> Any | None:
 
 
 def _filter_guard(repo: Any, path: str) -> None:
+    encoding = repo.get_attr(path, "working-tree-encoding")
+    if isinstance(encoding, str) and encoding:
+        raise _unsupported(f"working-tree-encoding on {path!r}")
     name = repo.get_attr(path, "filter")
     if isinstance(name, str) and any(
-        _config_value(repo.config, f"filter.{name}.{kind}")
+        _tree_entry(repo.config, f"filter.{name}.{kind}")
         for kind in ("clean", "process")
     ):
         raise _unsupported(f"the effective {name!r} filter on {path!r}")
@@ -191,7 +188,7 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
     if (
         existing is not None
         and filemode in (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
-        and str(_config_value(repo.config, "core.filemode", "true")).lower()
+        and str(_tree_entry(repo.config, "core.filemode") or "true").lower()
         in {"false", "no", "0", "off"}
     ):
         filemode = existing.mode
@@ -294,7 +291,8 @@ class Libgit2Store:
         return self._repo
 
     def _committed(self, before: str, after: str) -> None:
-        self._observe()
+        if self._health.worktree_dirty():
+            self._observe()
         if self._observer is not None and before and before != after:
             self._observer(before, after)
 
@@ -431,13 +429,18 @@ class Libgit2Store:
     def force_push(self, *, dry_run: bool = False) -> PushResult:
         """Report that this local store does not push."""
         del dry_run
-        self.resolve_force_repo()
+        repo = self._repository(self.resolve_force_repo())
+        branch = self.branch_name(self.resolve_force_repo())
+        refs = (f"refs/remotes/origin/{branch}", "refs/remotes/origin/HEAD")
+        remote = repo is not None and any(
+            _tree_entry(repo.references, ref) for ref in refs
+        )
         return PushResult(
             False,
             0,
             "",
             "",
-            PUSH_REASON_PUSH_FAILED,
+            PUSH_REASON_PUSH_FAILED if remote else PUSH_REASON_NO_REMOTE,
             "This local store does not push; use GitWriteStrategy or the Git CLI.",
         )
 
