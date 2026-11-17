@@ -805,7 +805,7 @@
       "label": "Fts Weights",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_FTS_WEIGHTS",
-      "help": "Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. At least one effective column weight must be above 0; omitted columns default to 1. Repeated keys must have equal weights.",
+      "help": "Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. Rejected when all six columns resolve to 0 (omitted columns weigh 1). Repeated keys must have equal weights.",
       "advancedGroup": "Search tuning"
     },
     {

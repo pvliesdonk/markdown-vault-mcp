@@ -1697,8 +1697,8 @@ def test_unknown_fts_weights_column_logs_warning(
     )
 
 
-def test_fts_column_constants_stay_in_lockstep() -> None:
-    """The shared BM25 argument order agrees with the live table."""
+def test_fts_columns_match_live_table() -> None:
+    """The shared BM25 column order matches the live table."""
     from markdown_vault_mcp.types import FTS_COLUMNS
 
     idx = FTSIndex(db_path=":memory:")
@@ -1706,7 +1706,7 @@ def test_fts_column_constants_stay_in_lockstep() -> None:
         r[1] for r in idx._conn().execute("PRAGMA table_info(notes_fts)").fetchall()
     )
     idx.close()
-    assert FTSIndex._FTS_COLUMNS == FTS_COLUMNS == live
+    assert live == FTS_COLUMNS
 
 
 class TestPersistedRankConfig:

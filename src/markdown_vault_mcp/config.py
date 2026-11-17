@@ -635,9 +635,8 @@ class ProjectConfig:
             "help": (
                 "Per-column BM25 weights (`column:weight` pairs, comma-separated, "
                 "weights >= 0) for keyword ranking. Columns: path, title, folder, "
-                "heading, content, summary. At least one effective column weight must be "
-                "above 0; omitted columns default to 1. Repeated keys must have "
-                "equal weights."
+                "heading, content, summary. Rejected when all six columns resolve to 0 "
+                "(omitted columns weigh 1). Repeated keys must have equal weights."
             ),
             "tags": ("search",),
             "wizard": {"group": "Search tuning"},

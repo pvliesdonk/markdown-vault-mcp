@@ -54,7 +54,6 @@ class SearchConfig:
             return None
         items = value.items() if isinstance(value, Mapping) else value
         weights: dict[str, float] = {}
-        raw_keys: dict[str, str] = {}
         for raw_key, raw_weight in items:
             key = raw_key.strip()
             if normalise_key:
@@ -64,11 +63,10 @@ class SearchConfig:
             weight = float(raw_weight)
             if key in weights and weights[key] != weight:
                 raise ConfigurationError(
-                    f"{name}: keys {raw_keys[key]!r} and {raw_key!r} both normalise "
-                    f"to {key!r} with different weights ({weights[key]} vs {weight})"
+                    f"{name}: key {key!r} has different weights "
+                    f"({weights[key]} vs {weight})"
                 )
             weights[key] = weight
-            raw_keys[key] = raw_key
         object.__setattr__(self, name, tuple(sorted(weights.items())))
         return weights
 
