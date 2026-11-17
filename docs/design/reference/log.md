@@ -5,6 +5,9 @@
 - Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
   Observed anonymous responses for both repositories, pagination and strict tag
   shapes; checked variants against the chosen patterns. Next review: 2027-05-16.
+- [SQLite FTS5](sqlite-fts5.md): checked the documented default docsize
+  rowid inventory in SQLite FTS5 §§4.5 and 9.3 for #1538; pinned insert
+  and delete behavior in a fixture. Other claims and review date unchanged.
 
 ## 2026-11-15
 

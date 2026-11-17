@@ -228,7 +228,7 @@ configuration and deployment examples are covered in the
 [authentication guide](../deploy/authentication.md) and
 [OIDC deployment guide](../deploy/oidc.md).
 
-The subsections below follow the order of the variable tables after them.
+The interaction subsections below follow the order of the variable tables after them.
 
 #### Write safety {#write-safety}
 
@@ -358,6 +358,33 @@ background tasks when the client supports them. Other clients receive an inline
 result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with
 `get_job_result`. A Redis tasks backend is durable and shared across workers;
 the default memory backend is process-local and does not survive restarts.
+
+### Cross-instance note links
+
+When an agent connects to several vault servers, give each server a distinct
+name and describe the URL prefix for its own vault. Configure one server with:
+
+```dotenv
+MARKDOWN_VAULT_MCP_SERVER_NAME=corpus-mcp
+MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION="Contains craft notes. This instance serves files available at this GitHub URL: https://github.com/pvliesdonk/corpus/blob/main/"
+```
+
+Configure each other server independently with its own name and URL prefix.
+Keep any existing description text in the same value, adding the URL sentence
+to it. The sentence describes this instance's notes; it need not name other
+instances. A client that passes the server instructions to its model can use
+the prefix to choose the server and infer the vault-relative path.
+
+The prefix represents the vault root: a link ending in
+`blob/main/craft/note.md` maps to `craft/note.md`. If the vault serves a
+repository subfolder, include that subfolder in the prefix. Update the prefix
+if the publication branch or folder moves. Never include a token in the URL:
+the description reaches connected clients.
+
+An unset description adds nothing. Restart the server and reconnect after changing
+the value. The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement
+suppresses the description; see [Server](#server) for precedence and the
+instruction budget.
 
 ### Vault
 
