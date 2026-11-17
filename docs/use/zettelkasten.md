@@ -235,6 +235,8 @@ All three link formats work:
 - `[Markdown links](path.md)`: standard markdown
 - `[Reference-style][1]\n\n[1]: path.md`: separates link text from destination
 
+Markdown and reference destinations first resolve relative to the source note. If that path is missing, the index searches for the destination across the vault. An explicit `/`, `./`, or `../` prefix keeps its stated location.
+
 **Rename safely with link updates:**
 
 When a note title changes, rename it and update all backlinks automatically:
@@ -402,7 +404,7 @@ The `zettelkasten` prompt, an example file in the same folder (`prompts/zettelka
 2. **Survey the neighborhood**: see existing backlinks and similar notes
 3. **Discover broader connections**: search for related permanent notes
 4. **Suggest links**: present new connections with context
-5. **Check for MOC opportunity**: flag if a new MOC would help, in the folder the conventions name for MOCs, or ask you where it goes
+5. **Check for MOC opportunity**: flag if a new MOC would help. Use the folder named by the conventions, or ask where it goes
 
 **Load the prompt:** point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at the `prompts/` folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. The prompt edits notes, so a read-only server doesn't list it. [Running a prompt](../reference/prompts.md#running-a-prompt) covers how each client offers prompts.
 
@@ -511,9 +513,9 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
 ## Using Zettelkasten with OKF
 
-Zettelkasten and the [Open Knowledge Format](okf.md) sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add `okf_version: "0.2"` to the root `index.md`, and the fit is close because both are note-centric.
+Zettelkasten governs how ideas connect and mature. The [Open Knowledge Format](okf.md) describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add `okf_version: "0.2"` to the root `index.md`, and the fit is close because both are note-centric.
 
-**Types line up already.** The one hard OKF rule is a non-empty `type`, and every Zettelkasten template sets one (`fleeting`, `literature`, `permanent`, `moc`), so a vault built from the examples passes `okf_validate` from the first note, with no placeholder of the kind PARA's inbox needs. A `fleeting` note already carries its type as the quick capture.
+**Types line up already.** The one hard OKF rule is a non-empty `type`, and every Zettelkasten template sets one (`fleeting`, `literature`, `permanent`, `moc`), so a vault built from the examples passes `okf_validate` from the first note, with no placeholder of the kind needed by a PARA inbox. A `fleeting` note already carries its type as the quick capture.
 
 **Status does not collide.** Zettelkasten leans on links and tags rather than a lifecycle field, which leaves the OKF `status` field (`draft`, `stable`, `deprecated`) free to use as intended. Reach for it when a permanent note is provisional (`draft`) or has been superseded (`deprecated`); deprecated and stale notes rank lower in search on a detected bundle, which keeps a growing Zettelkasten navigable.
 

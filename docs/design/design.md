@@ -3430,6 +3430,14 @@ filename on any rename or folder move. Nothing broke — the output was a correc
 relative path — which is what made it a fidelity defect rather than a
 correctness one, and what let it go unnoticed.
 
+**Markdown and reference resolution**: The decoded destination first resolves
+relative to the source. If that indexed path is absent, the resolver searches
+for an exact vault path and then suffix matches, using the wikilink tie-break
+below. Explicit decoded `/`, `./`, and `../` prefixes keep their stated
+location. Unlike wikilinks, these links do not infer `.md` or match aliases.
+Every pass recomputes the source-relative path from the original destination,
+so adding or removing a target updates the graph consistently.
+
 **Wikilink resolution (Obsidian semantics)**: Wikilinks follow Obsidian's
 vault-wide resolution rules rather than relative path resolution:
 

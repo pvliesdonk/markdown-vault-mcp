@@ -413,8 +413,8 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   note resolves to `Sub/My Note.md`, as do `[x](Sub/My%20Note.md)` from the
   root and both spellings from `Sub/`. The link cache holds the decoded text
   (`link: "Sub/My Note.md"`). `[w](Sub/My Note.md)`, with a literal space,
-  is not a link. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The scanner resolves markdown links source-relative
-  after decoding (#1332), a departure recorded below and filed as #1383. The
+  is not a link. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The index first tries the source-relative path after decoding, then falls back
+  to a vault-wide lookup (#1383), as detailed below. The
   tolerance is one-way: every destination this server *writes* encodes its
   spaces, because Obsidian will not read back the literal form (#1494).
   [pins: tests/test_links_generated_destinations.py::TestIssueTable::test_the_index_builder_encodes_the_space, tests/test_links_generated_destinations.py::TestIssueTable::test_the_wikilink_converter_encodes_the_space, tests/test_links_generated_destinations.py::TestIssueTable::test_the_rename_rewriter_encodes_the_space]
@@ -474,12 +474,11 @@ Each entry names the function and the design section that decides it.
   documents aliases only as suggestion entries that expand to
   `[[Note|Alias]]`). Kept deliberately. design.md § Link Extraction (Alias
   resolution).
-- `_resolve_link_path` for markdown links: source-relative resolution after
-  decoding, where Obsidian looks a markdown destination up **vault-wide**
-  like a wikilink (observed above: `[y](My%20Note.md)` from the root finds
-  `Sub/My Note.md`). Contrary, and it breaks the links Obsidian writes in
-  its default "shortest path" format from another folder; #1383.
-  design.md § Link Extraction.
+- Markdown and reference links prefer an existing source-relative path before
+  the vault-wide lookup, preserving ordinary Markdown behavior. Obsidian uses
+  vault-wide precedence even when a local path exists. Explicit `/`, `./`, and
+  `../` destinations retain their stated location; no alias or extension is
+  inferred. [pins: tests/test_links_markdown_vault_fallback.py::test_reported_destinations, tests/test_links_markdown_vault_fallback.py::test_local_path_wins_and_refresh_converges, tests/test_links_markdown_vault_fallback.py::test_explicit_prefix_does_not_fallback]
 - `_insert_aliases`: honours the scalar `alias` key that Obsidian deprecated
   in 1.4 and dropped in 1.9. Wider than current Obsidian; harmless for
   vaults that predate 1.9. design.md § Link Extraction (Alias resolution).

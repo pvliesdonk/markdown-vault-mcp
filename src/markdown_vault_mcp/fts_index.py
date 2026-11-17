@@ -53,12 +53,18 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.scanner import _resolve_link_path
 from markdown_vault_mcp.types import (
     FTSResult,
     ParsedNote,
     SkippedFile,
     SubtreeNote,
     TocEntry,
+)
+from markdown_vault_mcp.utils.links import (
+    decode_markdown_destination,
+    is_pointy_destination,
+    split_markdown_fragment,
 )
 
 if TYPE_CHECKING:
@@ -499,7 +505,9 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#1383) adds vault-wide fallback for missing source-relative
+#: markdown and reference links. Version 12 shipped in v6.1.2.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):
@@ -649,6 +657,23 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     source_dir = source_path.rpartition("/")[0]
     own_folder = [p for p in candidates if p.rpartition("/")[0] == source_dir]
     return min(own_folder or candidates, key=lambda p: (len(p), p))
+
+
+def _markdown_link_target(
+    raw: str, source: str, paths: list[str], path_set: set[str]
+) -> str:
+    """Resolve a markdown destination, keeping explicit and existing local paths."""
+    baseline, _ = _resolve_link_path(raw, source, decode_markdown=True)
+    spelling = raw[1:-1] if is_pointy_destination(raw) else raw
+    spelling, _ = split_markdown_fragment(spelling)
+    decoded = decode_markdown_destination(spelling)
+    if baseline in path_set or decoded.startswith(("/", "./", "../")):
+        return baseline
+    target, _ = _resolve_link_path(raw, "", decode_markdown=True)
+    if target in path_set:
+        return target
+    candidates = [path for path in paths if path.endswith("/" + target)]
+    return _pick_wikilink_candidate(candidates, source) if candidates else baseline
 
 
 class FTSIndex:
@@ -2519,7 +2544,7 @@ class FTSIndex:
 
     @_retry_on_locked
     def resolve_vault_wikilinks(self) -> int:
-        """Resolve vault-wide wikilink ``target_path`` values against the document set.
+        """Resolve link ``target_path`` values against the document set.
 
         Obsidian resolves a bare wikilink (``[[Note]]``) by searching the
         whole vault for a document whose name matches, and a path-qualified
@@ -2536,17 +2561,21 @@ class FTSIndex:
         renamed — the original stem is always available regardless of how many
         times the index has been rebuilt.
 
-        When no path match is found, the method also checks the
+        When no wikilink path match is found, the method also checks the
         ``document_aliases`` table — if a document declares an ``aliases``
         frontmatter field containing the wikilink stem, the link resolves to
-        that document.  This mirrors Obsidian's alias resolution behaviour
-        (e.g. ``[[AI]]`` resolves to a document with ``aliases: [AI]``); the
-        tie-break among several is the path rule's, by analogy — Obsidian's
-        own alias tie-break was not observed.
+        that document (e.g. ``[[AI]]`` resolves to a document with
+        ``aliases: [AI]``); the tie-break among several is the path rule's.
 
         Wikilinks with an explicit relative prefix (``./`` or ``../``) are
         skipped; they are resolved relative to the source document at scan time
         and do not participate in vault-wide resolution.
+
+        Markdown and reference links retain an existing source-relative path.
+        Otherwise they search exact and suffix paths with the same tie-break,
+        except that explicit decoded ``/``, ``./`` and ``../`` prefixes remain
+        authoritative. They do not infer extensions or resolve aliases. Each
+        pass recomputes their source-relative path from the raw destination.
 
         Call this method after all documents have been indexed
         (``IndexFacet.build_index()`` and ``IndexFacet.reindex()`` do this
@@ -2624,6 +2653,20 @@ class FTSIndex:
                 if not candidates:
                     continue  # Genuinely broken — no document matches.
                 new_path = _pick_wikilink_candidate(candidates, row["source_path"])
+            if new_path != row["target_path"]:
+                updates.append((new_path, row["id"]))
+
+        markdown_rows = conn.execute(
+            """
+            SELECT l.id, l.raw_target, l.target_path, d.path AS source_path
+            FROM links l JOIN documents d ON d.id = l.source_id
+            WHERE l.link_type IN ('markdown', 'reference') AND l.raw_target IS NOT NULL
+            """
+        ).fetchall()
+        for row in markdown_rows:
+            new_path = _markdown_link_target(
+                row["raw_target"], row["source_path"], doc_paths, doc_paths_set
+            )
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 
