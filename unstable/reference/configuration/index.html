@@ -3974,8 +3974,11 @@ configuration and deployment examples are covered in the
 <a href="../../deploy/oidc/">OIDC deployment guide</a>.</p>
 <p>The interaction subsections below follow the order of the variable tables after them.</p>
 <h4 id="write-safety">Write safety<a class="headerlink" href="#write-safety" title="Permanent link">&para;</a></h4>
-<p><code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> hides every write-tagged tool. Writable
-servers default to <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>.
+<p><code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> hides every write-tagged tool.</p>
+<p>On a read-only server, <code>OKF_WRITE</code> is valid but inactive; see the
+<a href="../../use/okf/#the-enforced-write-layer">OKF write layer</a> for the startup
+diagnostic and affected operations.</p>
+<p>Writable servers default to <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>.
 Whole-file <code>write</code> operations (notes and attachments) and <code>fetch</code> operations
 over an existing path require the matching <code>if_match</code> etag.
 Targeted <code>edit</code>, <code>append</code>, <code>delete</code>, and <code>rename</code>
