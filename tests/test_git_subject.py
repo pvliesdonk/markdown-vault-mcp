@@ -140,10 +140,14 @@ def test_timeout_is_bounded_and_single_flight(
         ("hello\u200bworld", "helloworld"),
         ("[AI summary] [ai SUMMARY] Update note", "Update note"),
         ("[Ai summary]", ""),
+        ("[AI [AI summary] summary] x", "x"),
+        ("[AI  [ai summary]summary] y", "y"),
+        ("[[AI summary]AI summary] z", "z"),
     ],
 )
 def test_clean(value: str, expected: str) -> None:
     assert _clean(value) == expected
+    assert _clean(_clean(value)) == expected
 
 
 @pytest.mark.parametrize(

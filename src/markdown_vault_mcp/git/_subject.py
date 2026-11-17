@@ -32,7 +32,8 @@ _MARKER_PATTERN = re.compile(r"\[\s*ai\s+summary\s*\]", re.IGNORECASE)
 def _clean(text: str) -> str:
     line = next((line for line in text.splitlines() if line.strip()), "")
     line = "".join(c for c in line if unicodedata.category(c) not in {"Cc", "Cf"})
-    line = _MARKER_PATTERN.sub("", line)
+    while _MARKER_PATTERN.search(line):
+        line = _MARKER_PATTERN.sub("", line)
     line = re.sub(r"\s+", " ", line).strip().strip("'\"`").strip().rstrip(".").strip()
     limit = 100 - len(_MARKER)
     if len(line) > limit:

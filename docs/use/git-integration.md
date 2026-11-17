@@ -28,7 +28,7 @@ filenames retain the same spelling when Git decides which paths to stage.
 ## What a commit covers
 
 In both git modes, the commit boundary is the MCP tool call, not the file.
-A call that wrote one file commits under that file's path
+By default, a call that wrote one file commits under that file's path
 (`write: notes/one.md`), so an ordinary vault's log reads as it always
 did. A call that touched many primary files, such as `move_folder` or
 `okf_convert_links`, produces one commit with the
@@ -45,7 +45,9 @@ backlinks or OKF refreshes index listings. Those derived writes stay in the
 same commit. A `move_folder` call that moves several files still uses the
 batch summary.
 
-No setting changes this. In managed mode, the deferred push sends
+These examples show the default mechanical subjects. The optional
+[model-written subjects](#model-written-auto-commit-subjects) retain them in a
+Git trailer. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
