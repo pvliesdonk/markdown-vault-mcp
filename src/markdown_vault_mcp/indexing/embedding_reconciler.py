@@ -355,25 +355,22 @@ class EmbeddingReconciler:
             ordered = [p for p in ordered if p > after] + [
                 p for p in ordered if p <= after
             ]
-        halted = False
         for start in range(0, len(ordered), _METADATA_BATCH):
-            if halted:
+            if state.result.stopped:
                 break
             batch = ordered[start : start + _METADATA_BATCH]
             current = _stored_metadata(store, batch)
             for path in batch:
-                if halted:
+                if state.result.stopped:
                     break
                 held_rows = None if current is None else current.get(path, [])
                 if self._reconcile_document(state, docs[path], held_rows):
                     retoken.append(docs[path])
-                if state.result.stopped:
-                    halted = True
-                    if self._recovery_after is None or self._recovery_after[0] != path:
-                        self._recovery_after = (path, None)
+                if state.result.stopped and (
+                    self._recovery_after is None or self._recovery_after[0] != path
+                ):
+                    self._recovery_after = (path, None)
         self._retoken(state, retoken)
-        if bounded and not state.result.stopped:
-            self._recovery_after = None
         return state.result
 
     def _remove_unbacked(self, state: _Pass, paths: list[str]) -> None:
@@ -469,7 +466,10 @@ class EmbeddingReconciler:
     def _embed_and_publish(
         self, state: _Pass, doc: _Document, stored: list[VectorRow]
     ) -> None:
-        """Embed *doc*'s changed chunks and replace its rows, keeping them on any failure.
+        """Embed *doc*'s changed chunks and replace its rows, retaining saved rows on failure.
+
+        During bounded recovery, a document whose saved metadata still matches
+        may also gain successful chunks when another batch fails.
 
         A chunk whose embedding input one of *stored* was embedded from keeps
         that row's vector: the store's identity fixes the provider, model and
@@ -478,6 +478,7 @@ class EmbeddingReconciler:
         """
         known = self._stored_inputs(stored)
         misses = [text for text in dict.fromkeys(doc.texts) if text not in known]
+        fresh: dict[str, Sequence[float]]
         try:
             if state.bounded and _signature([r.metadata for r in stored]) <= _signature(
                 doc.metadata
@@ -552,18 +553,22 @@ class EmbeddingReconciler:
 
     def _embed_recovery_inputs(
         self, state: _Pass, doc: _Document, misses: list[str]
-    ) -> dict[str, list[float]]:
+    ) -> dict[str, Sequence[float]]:
         """Embed missing chunks in bounded passes while retaining saved rows."""
         if self._recovery_after is not None and self._recovery_after[0] == doc.path:
             after = self._recovery_after[1]
             if after in misses:
                 start = misses.index(after) + 1
                 misses = misses[start:] + misses[:start]
-        fresh: dict[str, list[float]] = {}
+        fresh: dict[str, Sequence[float]] = {}
         for start in range(0, len(misses), self._batch_size):
             batch = misses[start : start + self._batch_size]
             try:
-                vectors = self._provider.embed(batch)
+                vectors = _float32_batch(
+                    self._provider.embed(batch),
+                    state.store.identity.dimension,
+                    len(batch),
+                )
                 accepted = dict(zip(batch, vectors, strict=True))
                 fresh.update(accepted)
                 state.failures = 0
@@ -873,9 +878,6 @@ class EmbeddingReconciler:
             if bounded and consecutive >= _MAX_CONSECUTIVE_FAILURES:
                 self._recovery_after = (batch[-1][0], batch[-1][2])
                 break
-        else:
-            if bounded:
-                self._recovery_after = None
         return kept, failed
 
     @staticmethod

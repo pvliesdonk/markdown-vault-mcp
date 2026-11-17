@@ -243,6 +243,10 @@ class TestRecoveryDuringOutage:
         monkeypatch.setattr(embedding_reconciler, "_METADATA_BATCH", 2)
         root = _source(tmp_path)
         (root / "00-a-first.md").write_text("# First\n\nHealthy lemons.\n")
+        for i in range(3):
+            (root / f"00-a-stale-{i}.md").write_text(
+                f"# Stale {i}\n\nOriginal saved text {i}.\n"
+            )
         for i in range(bad_count):
             (root / f"00-bad-{i}.md").write_text(f"# Bad {i}\n\nREJECT-ME.\n")
         (root / "zz-healthy.md").write_text("# Healthy\n\nHealthy nectarines.\n")
@@ -264,12 +268,19 @@ class TestRecoveryDuringOutage:
             monkeypatch.setattr(provider, "embed", picky)
             (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
             vault.index.reindex()
-            assert metadata_by_path(vault._vectors)
+            saved = metadata_by_path(vault._vectors)
+            stale_paths = [f"00-a-stale-{i}.md" for i in range(3)]
+            assert all(path in saved for path in stale_paths)
+            for path in stale_paths:
+                (root / path).write_text("# Edited\n\nREJECT-ME changed input.\n")
+            vault.index.reindex()
             for _ in range(8):
                 with contextlib.suppress(ValueError):
                     vault.reader.search("nectarines", mode="semantic")
                 vault.index.build_embeddings()
-            assert "zz-healthy.md" in metadata_by_path(vault._vectors)
+            after = metadata_by_path(vault._vectors)
+            assert all(after[path] == saved[path] for path in stale_paths)
+            assert "zz-healthy.md" in after
             assert "zz-healthy.md" in {
                 row.path for row in vault.reader.search("nectarines", mode="semantic")
             }
@@ -277,6 +288,7 @@ class TestRecoveryDuringOutage:
             vault.index.build_embeddings()
             assert set(metadata_by_path(vault._vectors)) == {
                 "00-a-first.md",
+                *stale_paths,
                 *(f"00-bad-{i}.md" for i in range(bad_count)),
                 "alpha.md",
                 "beta.md",
@@ -330,9 +342,16 @@ class TestRecoveryDuringOutage:
         finally:
             vault.close()
 
+    @pytest.mark.parametrize(
+        "failure_type", ["exception", "wrong_dimension", "nonfinite"]
+    )
     @pytest.mark.parametrize("healthy_prefix", [False, True])
     def test_rejected_chunks_do_not_starve_later_chunks_in_same_note(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, healthy_prefix: bool
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        healthy_prefix: bool,
+        failure_type: str,
     ) -> None:
         root = _source(tmp_path)
         (root / "alpha.md").unlink()
@@ -355,6 +374,10 @@ class TestRecoveryDuringOutage:
         def picky(texts: list[str]) -> list[list[float]]:
             seen.extend(texts)
             if any("REJECT" in text for text in texts):
+                if failure_type == "wrong_dimension":
+                    return [[0.1] * (provider.dimension + 1) for _ in texts]
+                if failure_type == "nonfinite":
+                    return [[float("nan")] * provider.dimension for _ in texts]
                 raise RuntimeError("bad input")
             return original(texts)
 

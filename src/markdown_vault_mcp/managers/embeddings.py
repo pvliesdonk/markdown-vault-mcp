@@ -643,9 +643,10 @@ class EmbeddingsManager:
         on an exclusion or a source probe answering *absent* (#1130,
         #1785); a tombstoned note keeps them, out of search, until it is
         fixed or deleted (#1505).
-        A provider failure or a refused vector skips that document with its
-        vectors kept, and the next run retries it (#649, #935). The store is
-        checkpointed only when something changed.
+        A provider failure or a refused vector normally skips that document
+        with its vectors kept; the next run retries it (#649, #935). Bounded
+        recovery may add successful chunks while retaining matching saved
+        rows. The store is checkpointed only when something changed.
 
         Thread-safety: runs on the single-owner
         :class:`~markdown_vault_mcp.indexing.IndexWriter` thread via
