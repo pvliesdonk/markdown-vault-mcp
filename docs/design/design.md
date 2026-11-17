@@ -5050,7 +5050,7 @@ another one, and is the explicit switch of choice C.
   reopened as `_recover_corrupt` does: a damaged SQLite store still opens.
   One that another thread already replaced is left alone, and a slot that
   cannot rename files (injected, not owned, in memory, or PostgreSQL, which
-  has no `quarantine`) condemns nothing. Two paths reach it:
+  has no `quarantine`) condemns nothing. Three paths reach it:
   - A search read (`SearchManager._vector_rows`) that raises
     `StoreCorruptError` sends the store to `rebuilt_after_read`. The search
     thread only marks the store suspect and runs the usual rebuild after a
@@ -5067,10 +5067,24 @@ another one, and is the explicit switch of choice C.
     rebuild starts from a fresh one. The numpy store has no `verify`,
     because its open reads everything.
 
-  A process that does not own the files condemns nothing and raises
-  `StoreCorruptError`. A write that meets the damage is not recovered on
-  the writer thread, and an incremental `build_embeddings` runs no
-  `verify`; the next streamed search or full build recovers it (#1976).
+  - A writer reconciliation that encounters corruption marks the store suspect
+    and rebuilds it in the same job after keyword work finishes. This includes
+    the stale or excluded vector purge during `build_index`. SQLite classifies
+    corruption in write transactions as well as reads. Recovery runs inline;
+    after condemnation a provider batch failure fails the job and directs
+    the operator to retry `build_embeddings` or, when a failed full build left
+    the tool gated on a queryable index, to restart (#1976). Recovery puts
+    every note in the embedding retry set before it starts, so a failure at
+    any step keeps them, because the cold build does not say which notes it
+    lacks: the next flush reconciles them (a complete note
+    costs no provider call) and `build_embeddings` finishes the rest. They
+    are not pending work and queue no flush, so no retry loop runs while the
+    provider is down. An ordinary cold build retains its existing failure
+    behavior.
+
+  A slot that cannot condemn preserves per-document handling of write errors;
+  corruption found in a read still raises `StoreCorruptError`. A job that
+  cannot recover corruption follows the existing job failure logging.
 - As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not

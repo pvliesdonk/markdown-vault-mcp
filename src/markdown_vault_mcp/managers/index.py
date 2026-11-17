@@ -795,6 +795,7 @@ class IndexManager:
             indexed_frontmatter_fields=meta.indexed_frontmatter_fields,
             attachment_extensions=meta.attachment_extensions,
         )
+        self._embeddings.finish_vector_recovery()
         return IndexStats(
             documents_indexed=len(notes) - errored,
             chunks_indexed=total_chunks,
@@ -932,6 +933,7 @@ class IndexManager:
             self._embeddings.reconcile_paths(vectors, dropped, site="purge")
             vectors.checkpoint()
 
+        self._embeddings.finish_vector_recovery()
         return ReindexResult(
             added=indexed_added,
             modified=indexed_modified,
