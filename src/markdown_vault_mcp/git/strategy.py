@@ -1647,7 +1647,6 @@ class GitWriteStrategy:
         """
         observer = self._commit_observer
         parent = self._try_head_sha(git_root) if observer is not None else None
-        # A raised block must skip observation; an unexplained HEAD is safer.
         yield  # NOSONAR: S9152; reporting on failure could hide an external commit.
         if self._worktree_wanted:
             self._observe_worktree(git_root)
