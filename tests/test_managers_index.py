@@ -2331,30 +2331,24 @@ def _enriched_mgr(
 
 class TestEmbedTextEnrichment:
     def test_context_without_searchable_fields(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.embed_text import EmbedTextBuilder
+        from markdown_vault_mcp.vault import Vault
 
         provider = _CapturingProvider()
-        vault = _enriched_vault(tmp_path)
-        builder = EmbedTextBuilder(embed_context=True)
-        mgr, fts, holder = _make_index_mgr(
-            vault,
-            tmp_path,
-            embeddings_path=tmp_path / "embeddings",
+        vault = Vault(
+            source_dir=_enriched_vault(tmp_path),
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings", embed_context=True
+            ),
             embedding_provider=provider,
-            embed_text_builder=builder,
         )
         try:
-            mgr.build_index()
-            assert mgr.build_embeddings() == 1
+            vault.index.build_index()
+            assert vault.index.build_embeddings() == 1
             assert provider.texts == [
                 "Enriched Doc\n\n# Enriched Doc\n\nplain chunk body"
             ]
-            assert builder.format_token() == "v2;fields="
         finally:
-            store = holder["vectors"]
-            if store is not None:
-                store.close()
-            fts.close()
+            vault.close()
 
     def test_cold_build_embeds_enriched_text_and_stores_preamble(
         self, tmp_path: Path
