@@ -512,6 +512,8 @@ def test_build_vault_exclude_patterns_from_env(
     assert result._exclude_patterns == [
         "**/*.log.md",
         ".obsidian/**",
+        ".conventions.md",
+        "**/.conventions.md",
         "_conventions.md",
         "**/_conventions.md",
     ]
