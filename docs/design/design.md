@@ -1953,7 +1953,8 @@ the spec itself says, dated and sourced, in
   read-only. The section remains absent when OKF is inactive.
   `config://vault` reports those same values as `okf_write_configured` and
   `okf_write_effective`, including when inactive, and reports `okf_mode` /
-  `okf_active` / `okf_declared_version`; the default server instructions
+  `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
+  both enabled, startup logs INFO `okf_write_inert` (#1434). The default server instructions
   gain an OKF guidance sentence whenever the mode permits detection
   (same pre-clone rationale as the conventions sentence).
 - **Indexed-field extension**: when detection is active at `Vault`

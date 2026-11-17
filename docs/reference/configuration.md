@@ -238,6 +238,7 @@ Whole-file `write` operations (notes and attachments) and `fetch` operations
 over an existing path require the matching `if_match` etag.
 Targeted `edit`, `append`, `delete`, and `rename`
 operations are unaffected, as are the server's generated OKF maintenance files.
+On a read-only server, `OKF_WRITE` is valid but inactive; see the [OKF write layer](../use/okf.md#the-enforced-write-layer) for the startup diagnostic and affected operations.
 
 Upload links have no `if_match` option. With protection enabled,
 `create_upload_link` rejects existing destinations; the upload also fails if
