@@ -40,8 +40,7 @@ def test_raw_bytes_roundtrip_and_change(tmp_path: Path) -> None:
     changed = reader.resolve_file_reference(ref, include_content=True)
     assert changed.status == "changed"
     assert changed.content_base64 is None
-    assert "If this vault has Git history" in changed.detail
-    assert "otherwise they are unavailable" in changed.detail
+    assert "history is unavailable" in changed.detail
     assert "No historical copy is retained" in changed.detail
 
 
@@ -82,11 +81,57 @@ def test_missing_renamed_wrong_vault_and_relocated_root(tmp_path: Path) -> None:
     missing = reader.resolve_file_reference(ref, include_content=True)
     assert missing.status == "missing"
     assert "renamed" in missing.detail and "retained" in missing.detail
-    assert "If this vault has Git history" in missing.detail
-    assert "otherwise they are unavailable" in missing.detail
+    assert "history is unavailable" in missing.detail
     assert missing.content_base64 is None
     with pytest.raises(InvalidRequestError, match="list_documents"):
         reader.get_file_reference("note.md")
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_external_history_context(tmp_path: Path, missing: bool) -> None:
+    file = tmp_path / "note.md"
+    file.write_bytes(b"original")
+    reader = ReferenceReader(tmp_path, "a", history_available=True)
+    ref = reader.get_file_reference("note.md", include_sha256=True)
+    if missing:
+        file.unlink()
+    else:
+        file.write_bytes(b"changed")
+    result = reader.resolve_file_reference(ref)
+    assert result.status == ("missing" if missing else "changed")
+    assert "Git history" in result.detail
+    assert "does not guarantee" in result.detail
+    assert "No historical copy is retained" in result.detail
+
+
+@pytest.mark.parametrize("history_available", [False, True])
+async def test_mcp_history_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, history_available: bool
+) -> None:
+    from markdown_vault_mcp.domain import get_vault_singleton
+
+    file = tmp_path / "note.md"
+    file.write_bytes(b"original")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    config = replace(ProjectConfig.from_env(), reference_namespace="a")
+    async with Client(make_server(config=config)) as client:
+        saved = (
+            await client.call_tool(
+                "get_file_reference", {"path": "note.md", "include_sha256": True}
+            )
+        ).structured_content
+        file.write_bytes(b"changed")
+        vault = get_vault_singleton()
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                vault, "_git_strategy", object() if history_available else None
+            )
+            result = (
+                await client.call_tool("resolve_file_reference", {"reference": saved})
+            ).structured_content
+        assert result["status"] == "changed"
+        assert ("does not guarantee" in result["detail"]) is history_available
+        assert ("history is unavailable" in result["detail"]) is not history_available
 
 
 @pytest.mark.parametrize(
@@ -161,9 +206,10 @@ def test_allowlist_symlink_and_nonregular_rules(tmp_path: Path) -> None:
     (tmp_path / "folder.md").mkdir()
     with pytest.raises(InvalidRequestError, match="regular file"):
         reader.get_file_reference("folder.md")
-    os.mkfifo(tmp_path / "pipe.md")
-    with pytest.raises(InvalidRequestError, match="regular file"):
-        reader.get_file_reference("pipe.md", include_sha256=True)
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(tmp_path / "pipe.md")
+        with pytest.raises(InvalidRequestError, match="regular file"):
+            reader.get_file_reference("pipe.md", include_sha256=True)
     outside = tmp_path.parent / f"{tmp_path.name}-outside.md"
     outside.write_bytes(b"outside")
     (tmp_path / "link.md").symlink_to(outside)

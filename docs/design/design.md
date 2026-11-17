@@ -186,7 +186,10 @@ Path traversal and attachment allowlisting reuse existing access rules.
 References do not retain bytes. A rename and deletion are indistinguishable
 at a saved path and both report `missing`, with that limitation stated in the
 result. No digest lookup silently redirects a reference. Git-assisted recovery
-is a separate explicit operation; see the [public API contract](../reference/api/vault.md#portable-file-references).
+is a separate explicit operation. Resolution uses the vault's configured Git
+strategy as a history capability, not a guarantee that saved bytes were
+committed. Standalone callers opt in to that context with `history_available`;
+it defaults to false. See the [public API contract](../reference/api/vault.md#portable-file-references).
 
 ### Folder Derivation
 

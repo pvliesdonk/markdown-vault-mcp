@@ -100,12 +100,6 @@ class ReferenceResolution:
     content_base64: str | None = None
 
 
-_RETENTION = (
-    "No historical copy is retained. If this vault has Git history, get_history "
-    "and read(revision=...) may help locate old bytes; otherwise they are unavailable."
-)
-
-
 class ReferenceReader:
     """Create and resolve references over notes and allowed attachments.
 
@@ -120,6 +114,7 @@ class ReferenceReader:
         namespace: str | None,
         *,
         attachment_extensions: Sequence[str] | None = None,
+        history_available: bool = False,
     ) -> None:
         """Configure the vault root, durable namespace and attachment allowlist.
 
@@ -127,10 +122,18 @@ class ReferenceReader:
             source_dir: Root containing files, as for Vault.source_dir.
             namespace: Stable unique name chosen by the caller or operator.
             attachment_extensions: Same allowlist used for vault reads.
+            history_available: Caller has Git backing that can be inspected;
+                this does not guarantee the saved bytes are retained.
         """
         self._root = source_dir.resolve()
         self._namespace = _namespace(namespace)
         self._extensions = effective_attachment_extensions(attachment_extensions)
+        self._retention = "No historical copy is retained. " + (
+            "Configured Git history can be inspected with get_history and "
+            "read(revision=...), but it does not guarantee the saved bytes are retained."
+            if history_available
+            else "Git history is unavailable through this vault or reference context."
+        )
 
     def get_file_reference(
         self, path: str, *, include_sha256: bool = False, provenance: str | None = None
@@ -196,7 +199,8 @@ class ReferenceReader:
             return ReferenceResolution(
                 "missing",
                 reference,
-                "Saved path is missing or renamed. Locate it explicitly; " + _RETENTION,
+                "Saved path is missing or renamed. Locate it explicitly; "
+                + self._retention,
             )
         if size != reference.size_bytes or (
             reference.sha256 is not None and digest != reference.sha256
@@ -204,7 +208,7 @@ class ReferenceReader:
             return ReferenceResolution(
                 "changed",
                 reference,
-                "Current bytes differ from the saved reference. " + _RETENTION,
+                "Current bytes differ from the saved reference. " + self._retention,
             )
         if reference.sha256 is None:
             if include_content:
@@ -216,7 +220,7 @@ class ReferenceReader:
                 "unverified",
                 reference,
                 "Path exists, but no SHA-256 was saved to verify content identity. "
-                + _RETENTION,
+                + self._retention,
             )
         if include_content and raw is None:
             raise InvalidRequestError(
@@ -225,7 +229,7 @@ class ReferenceReader:
         return ReferenceResolution(
             "verified",
             reference,
-            _RETENTION,
+            self._retention,
             base64.b64encode(raw).decode("ascii") if raw is not None else None,
         )
 

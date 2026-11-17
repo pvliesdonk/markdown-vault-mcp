@@ -156,7 +156,11 @@ file over the cap returns a limit error. A concurrent change refuses the call;
 retry it rather than saving a partial result.
 
 No historical copy is retained. Without another retained copy, old bytes may
-be unavailable. For a Git-backed vault, `get_history` may help find an earlier
+be unavailable. A standalone reader defaults to reporting history unavailable
+in its context; pass `history_available=True` only when the caller has Git
+backing to inspect. The MCP adapter uses the vault's configured Git strategy
+for this context. This capability does not guarantee that saved bytes are in
+history. For a Git-backed vault, `get_history` may help find an earlier
 commit; `read(path, revision=...)` can retrieve historical notes using its
 existing rename-aware rules. Historical binary reads are not provided by that
 tool. Any candidate recovered through Git or another archive must be checked
