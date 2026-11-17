@@ -136,6 +136,22 @@ class TestKills:
 
 
 class TestFailedCommits:
+    def test_non_corruption_transaction_errors_are_unchanged(
+        self, tmp_path: Path
+    ) -> None:
+        store = SqliteVectorBackend().open(_seeded(tmp_path), IDENT)
+        error = sqlite3.OperationalError("database is locked")
+
+        def fail(_conn: sqlite3.Connection) -> str:
+            raise error
+
+        try:
+            with pytest.raises(sqlite3.OperationalError) as caught:
+                store._commit("test", fail)  # type: ignore[arg-type]
+            assert caught.value is error
+        finally:
+            store.close()
+
     def _refusing(self, tmp_path: Path) -> Path:
         base = _seeded(tmp_path)
         conn = sqlite3.connect(base.with_suffix(".sqlite3"))

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
-from markdown_vault_mcp.exceptions import StoreCorruptError
+from markdown_vault_mcp.exceptions import StoreCorruptError, StoreUnavailableError
 from markdown_vault_mcp.indexing.index_writer import FlushDirtyEmbeddings
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
@@ -154,6 +154,136 @@ class TestASearch:
 
 
 class TestAWriterJob:
+    def test_partial_recovery_is_not_served(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = _source(tmp_path)
+        for name in ("gamma", "delta", "epsilon"):
+            (root / f"{name}.md").write_text(f"# {name}\n\nSome text.\n")
+        vault = _built(tmp_path, embedding_search="streamed")
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+        calls = 0
+
+        def partial(texts: list[str]) -> list[list[float]]:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("second batch failed")
+            return original(texts)
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", partial)
+            (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            with pytest.raises(StoreUnavailableError):
+                vault._vector_slot.get(rebuild=None)
+            monkeypatch.setattr(provider, "embed", original)
+            assert len(vault.reader.search("kumquats", mode="semantic")) == 5
+        finally:
+            vault.close()
+
+    def test_recovers_physical_damage_found_by_write(self, tmp_path: Path) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        try:
+            conn = sqlite3.connect(_db(tmp_path))
+            page = conn.execute(
+                "SELECT rootpage FROM sqlite_master WHERE name = "
+                "'sqlite_autoindex_documents_1'"
+            ).fetchone()[0]
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.close()
+            path = _db(tmp_path)
+            data = bytearray(path.read_bytes())
+            size = int.from_bytes(data[16:18], "big")
+            data[(page - 1) * size : page * size] = b"\xff" * size
+            data[24:28] = (int.from_bytes(data[24:28], "big") + 1).to_bytes(4, "big")
+            path.write_bytes(data)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            assert vault._coordinator.wait_for_drain(timeout=5)
+            assert len(_aside(tmp_path)) == 1
+        finally:
+            vault.close()
+
+    def test_recovery_retries_after_provider_outage(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        vault = _built(tmp_path, embedding_search="streamed")
+        provider = vault._embedding_provider
+        assert provider is not None
+        original = provider.embed
+        calls = 0
+
+        def unavailable(_texts: list[str]) -> list[list[float]]:
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("provider unavailable")
+
+        try:
+            _damage(tmp_path)
+            monkeypatch.setattr(provider, "embed", unavailable)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            vault.index.reindex()
+            assert vault._coordinator.wait_for_drain(timeout=5)
+            assert calls == 1
+            with pytest.raises(StoreUnavailableError):
+                vault._vector_slot.get(rebuild=None)
+            assert "vector_store_recovery_failed" in caplog.text
+            with pytest.raises(StoreUnavailableError):
+                vault._vector_slot.get(rebuild=vault._coordinator.rebuild_embeddings)
+            assert calls == 2
+            assert vault._coordinator.wait_for_drain(timeout=5)
+            assert len(_aside(tmp_path)) == 1
+            monkeypatch.setattr(provider, "embed", original)
+            assert {
+                r.path for r in vault.reader.search("kumquats", mode="semantic")
+            } >= {"alpha.md", "beta.md"}
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            vault.index.reindex()
+            assert {
+                r.path for r in vault.reader.search("sailboats", mode="keyword")
+            } == {"beta.md"}
+        finally:
+            vault.close()
+
+    def test_injected_corrupt_writes_keep_keyword_updates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+
+        provider = MockEmbeddingProvider()
+        store = NumpySidecarBackend().open(None, EmbeddingIdentity.of(provider, "v1"))
+        vault = Vault(
+            source_dir=_source(tmp_path),
+            settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
+            embedding_provider=provider,
+            vector_store=store,
+        )
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+
+            def corrupt(*_args: Any, **_kwargs: Any) -> None:
+                raise StoreCorruptError("damaged", backend="test", location="injected")
+
+            monkeypatch.setattr(store, "replace_document", corrupt)
+            (_source(tmp_path) / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
+            (_source(tmp_path) / "beta.md").write_text("# Beta\n\nFresh sailboats.\n")
+            assert vault.index.reindex().modified == 2
+            assert {
+                r.path for r in vault.reader.search("sailboats", mode="keyword")
+            } == {"beta.md"}
+            assert _aside(tmp_path) == []
+        finally:
+            vault.close()
+            store.close()
+
     def test_reindex_recovers_and_indexes_both_edits(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:

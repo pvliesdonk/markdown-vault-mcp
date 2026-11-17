@@ -187,6 +187,7 @@ class _Pass:
     stored: dict[str, RevisionToken | None]
     result: ReconcileResult
     site: str
+    recover_corruption: bool
 
 
 def _stored_metadata(
@@ -305,6 +306,7 @@ class EmbeddingReconciler:
         paths: Collection[str] | None = None,
         *,
         site: str,
+        recover_corruption: bool = False,
     ) -> ReconcileResult:
         """Bring *paths* (or every document) in the store in line with the keyword index.
 
@@ -322,6 +324,7 @@ class EmbeddingReconciler:
             store: The store to write.
             paths: The documents to reconcile; ``None`` for a whole-store pass.
             site: Which caller, for the log lines.
+            recover_corruption: Propagate typed write corruption for recovery.
 
         Returns:
             What the pass did; ``conflicts`` holds the paths to re-queue.
@@ -329,7 +332,7 @@ class EmbeddingReconciler:
         stored = store.tokens()
         docs = self.documents(paths)
         held = set(stored) if paths is None else set(paths) & set(stored)
-        state = _Pass(store, stored, ReconcileResult(), site)
+        state = _Pass(store, stored, ReconcileResult(), site, recover_corruption)
         self._remove_unbacked(state, sorted(held - set(docs)))
         retoken: list[_Document] = []
         ordered = sorted(docs)
@@ -394,9 +397,11 @@ class EmbeddingReconciler:
             outcome = state.store.remove_document(
                 path, expected_token=state.stored.get(path)
             )
-        except (ReadOnlyError, StoreCorruptError):
+        except ReadOnlyError:
             raise
         except Exception as exc:
+            if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+                raise
             # Broad by design: each backend raises its own I/O error.
             self._write_failed(state, path, removed, exc)
             return
@@ -482,9 +487,11 @@ class EmbeddingReconciler:
                 exc,
             )
             return
-        except (ReadOnlyError, StoreCorruptError):
+        except ReadOnlyError:
             raise
         except Exception as exc:
+            if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+                raise
             # Broad by design: each backend raises its own I/O error.
             self._write_failed(state, doc.path, len(doc.texts), exc)
             return
@@ -539,9 +546,11 @@ class EmbeddingReconciler:
                         DocumentRows(doc.path, doc.token, rows),
                         expected_token=state.stored.get(doc.path),
                     )
-                except (ReadOnlyError, StoreCorruptError):
+                except ReadOnlyError:
                     raise
                 except Exception as exc:
+                    if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+                        raise
                     # Broad by design: each backend raises its own I/O error.
                     self._write_failed(state, doc.path, len(rows), exc)
                     continue
@@ -560,9 +569,11 @@ class EmbeddingReconciler:
                     for path, rows in _float32_rows(state.store, list(tokens))
                 ],
             )
-        except (ReadOnlyError, StoreCorruptError):
+        except ReadOnlyError:
             raise
         except Exception as exc:
+            if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+                raise
             # Broad by design: each backend raises its own I/O error. The
             # generation did not publish, so every document keeps its rows.
             state.result.kept += sum(len(doc.texts) for doc in docs)

@@ -660,8 +660,8 @@ class _FailingWrites:
 class TestStoreWriteFailures:
     @pytest.mark.parametrize("operation", ["replace_document", "remove_document"])
     def test_corruption_during_a_write_propagates(
-        self, tmp_path, monkeypatch, operation
-    ):
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+    ) -> None:
         from markdown_vault_mcp.exceptions import StoreCorruptError
 
         fts, _provider, store, rec = _setup(
@@ -676,7 +676,7 @@ class TestStoreWriteFailures:
 
         monkeypatch.setattr(store, operation, corrupt)
         with pytest.raises(StoreCorruptError):
-            rec.reconcile(store, site="test")
+            rec.reconcile(store, site="test", recover_corruption=True)
 
     def test_a_failed_write_is_retried_and_the_pass_continues(self, tmp_path, caplog):
         _fts, _provider, store, rec = _setup(tmp_path, NOTES)

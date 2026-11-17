@@ -1026,7 +1026,8 @@ class SqliteVectorStore(ResidentStore):
         Raises:
             StoreUnavailableError: If the first write cannot create the
                 database; nothing was written.
-            sqlite3.Error: If the transaction fails; nothing was written.
+            StoreCorruptError: If SQLite reports damaged pages; nothing was written.
+            sqlite3.Error: If another transaction error occurs; nothing was written.
         """
         try:
             conn = self._connection()
@@ -1047,6 +1048,10 @@ class SqliteVectorStore(ResidentStore):
                 op,
                 exc,
             )
+            if isinstance(exc, sqlite3.Error):
+                classified = _classified(exc, self._where, "written")
+                if isinstance(classified, StoreCorruptError):
+                    raise classified from exc
             raise
         if outcome != "conflict":
             self._reset_pending = False

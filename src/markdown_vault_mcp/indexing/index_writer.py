@@ -399,10 +399,7 @@ class WriterContext:
 
 def run_build_index(job: BuildIndex, ctx: WriterContext) -> Any:
     """Execute a full FTS index build."""
-    try:
-        return ctx.index_manager.build_index(force=job.force)
-    finally:
-        _requeue_conflicts(ctx)
+    return ctx.index_manager.build_index(force=job.force)
 
 
 def _requeue_conflicts(ctx: WriterContext) -> None:
@@ -415,9 +412,6 @@ def _requeue_conflicts(ctx: WriterContext) -> None:
     """
     if ctx.writer is None:
         return
-    rebuild = getattr(ctx.index_manager, "take_vector_rebuild", None)
-    if rebuild is not None and rebuild():
-        ctx.writer.submit(BuildEmbeddings(after_fault=True))
     retries = getattr(ctx.index_manager, "take_embedding_retries", None)
     retry = retries() if retries is not None else set()
     if retry:
