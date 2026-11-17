@@ -55,8 +55,9 @@ produced them.
 
 Set `MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS=true` and configure the
 summarize backend to send each auto-commit's staged diff to that endpoint. This
-may incur charges and disclose note content to the endpoint. The default is
-false. A successful subject starts with `[AI summary]` and the original subject
+may incur charges and disclose note content to the endpoint. A legacy rename
+callback without its old path sends the entire staged diff, matching its commit
+scope. The default is false. A successful subject starts with `[AI summary]` and the original subject
 is retained in a `Mechanical-Subject` trailer. `okf_seed_log` copies the marked
 subject into the seeded history. The marker is a claim, not authentication:
 anyone able to write a Git commit can create the same marker.
