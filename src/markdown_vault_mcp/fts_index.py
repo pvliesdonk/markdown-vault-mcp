@@ -2280,14 +2280,16 @@ class FTSIndex:
 
     @_retry_on_locked
     def _chunk_page(self, after: str | None) -> list[sqlite3.Row]:
+        continuation = "d.path > ? AND " if after is not None else ""
+        params = (after, _CHUNK_PAGE_DOCS) if after is not None else (_CHUNK_PAGE_DOCS,)
         paths = (
             self._conn()
             .execute(
-                "SELECT d.path FROM documents AS d "
-                "WHERE (? IS NULL OR d.path > ?) "
-                "AND EXISTS (SELECT 1 FROM sections AS s WHERE s.document_id = d.id) "
+                "SELECT d.path FROM documents AS d WHERE "
+                f"{continuation}"
+                "EXISTS (SELECT 1 FROM sections AS s WHERE s.document_id = d.id) "
                 "ORDER BY d.path LIMIT ?",
-                (after, after, _CHUNK_PAGE_DOCS),
+                params,
             )
             .fetchall()
         )

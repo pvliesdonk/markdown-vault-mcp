@@ -1302,3 +1302,124 @@ def test_stage_cleans_up_when_open_fails(tmp_path, monkeypatch, failed_name):
     with pytest.raises(OSError, match="scratch full"):
         EmbeddingStage()
     assert not list(tmp_path.glob("embedding-stage-*"))
+
+
+def test_late_chunk_page_seeks_past_earlier_documents():
+    index = FTSIndex(db_path=":memory:")
+    conn = index._conn()
+    conn.executemany(
+        "INSERT INTO documents(path,title,content_hash,modified_at) VALUES(?,?,?,?)",
+        ((f"{i:05}.md", "T", "h", 0) for i in range(8192)),
+    )
+    conn.executemany(
+        "INSERT INTO sections(document_id,heading_level,content,start_line) VALUES(?,?,?,?)",
+        ((i, 1, "body", 1) for i in range(1, 8193)),
+    )
+    conn.commit()
+
+    def steps(after):
+        calls = 0
+
+        def progress():
+            nonlocal calls
+            calls += 1
+            return 0
+
+        conn.set_progress_handler(progress, 100)
+        rows = index._chunk_page(after)
+        conn.set_progress_handler(None, 0)
+        return calls, rows
+
+    try:
+        first, _ = steps(None)
+        last, rows = steps("07935.md")
+        assert rows[0]["path"] == "07936.md"
+        assert last <= 2 * first, (first, last)
+    finally:
+        index.close()
+
+
+@pytest.mark.parametrize("primary", [True, False])
+def test_stage_attempts_all_cleanup_when_close_and_unlink_fail(
+    tmp_path, monkeypatch, primary
+):
+    import tempfile
+
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    stage = EmbeddingStage()
+    attempts = []
+
+    class FailingClose:
+        def __init__(self, name, stream):
+            self.name = name
+            self.stream = stream
+
+        def close(self):
+            attempts.append(self.name)
+            self.stream.close()
+            raise OSError(f"{self.name} flush failed")
+
+    stage._docs = FailingClose("documents", stage._docs)
+    stage._misses = FailingClose("misses", stage._misses)
+    reader = (tmp_path / "reader").open("w")
+    stage._readers.add(FailingClose("reader", reader))
+    cleanup = stage._temp.cleanup
+
+    def fail_cleanup():
+        attempts.append("unlink")
+        cleanup()
+        raise OSError("unlink failed")
+
+    monkeypatch.setattr(stage._temp, "cleanup", fail_cleanup)
+    expected = RuntimeError if primary else OSError
+    match = "donor failed" if primary else "documents flush failed"
+    with pytest.raises(expected, match=match), stage:
+        if primary:
+            raise RuntimeError("donor failed")
+    assert set(attempts) == {"documents", "misses", "reader", "unlink"}
+    assert not list(tmp_path.glob("embedding-stage-*"))
+
+
+def test_rebuild_uses_real_fts_chunk_iterator(tmp_path, monkeypatch):
+    import markdown_vault_mcp.fts_index as fts_module
+
+    notes = {f"{i:03}.md": f"# Note {i}\n\nContent {i}.\n" for i in range(5)}
+    fts, _, store, rec = _setup(tmp_path, notes)
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 2)
+    original = fts.iter_chunks
+    calls = []
+
+    def iterate():
+        calls.append(True)
+        return original()
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("rebuild used eager list_chunks")
+
+    monkeypatch.setattr(fts, "iter_chunks", iterate)
+    monkeypatch.setattr(fts, "list_chunks", unexpected)
+    outcome = rec.rebuild(store, store.identity)
+    assert outcome.published and outcome.attempted == 5
+    assert calls == [True]
+    assert set(store.tokens()) == set(notes)
+
+
+def test_stage_reports_unlink_failure_without_primary_error(tmp_path, monkeypatch):
+    import tempfile
+
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    stage = EmbeddingStage()
+    cleanup = stage._temp.cleanup
+
+    def fail_cleanup():
+        cleanup()
+        raise OSError("unlink failed")
+
+    monkeypatch.setattr(stage._temp, "cleanup", fail_cleanup)
+    with pytest.raises(OSError, match="unlink failed"), stage:
+        pass
+    assert not list(tmp_path.glob("embedding-stage-*"))

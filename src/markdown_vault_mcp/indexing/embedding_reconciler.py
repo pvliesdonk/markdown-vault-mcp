@@ -669,6 +669,7 @@ class EmbeddingReconciler:
         Raises:
             StoreUnavailableError: If *donor* can no longer be read; nothing
                 is published.
+            OSError: If scratch preparation or cleanup fails.
         """
         populated = store.count > 0
         reused = attempted = donated = 0

@@ -37,17 +37,13 @@ class EmbeddingStage:
     def __init__(self) -> None:
         self._temp = tempfile.TemporaryDirectory(prefix="embedding-stage-")
         self._root = Path(self._temp.name)
+        self._readers: set[TextIO] = set()
         try:
             self._docs = (self._root / "documents").open("w", encoding="utf-8")
-            try:
-                self._misses = (self._root / "misses").open("w", encoding="utf-8")
-            except BaseException:
-                self._docs.close()
-                raise
-        except BaseException:
-            self._temp.cleanup()
+            self._misses = (self._root / "misses").open("w", encoding="utf-8")
+        except BaseException as exc:
+            self.__exit__(type(exc), exc, exc.__traceback__)
             raise
-        self._readers: set[TextIO] = set()
         self.miss_count = 0
 
     def __enter__(self) -> EmbeddingStage:
@@ -59,12 +55,25 @@ class EmbeddingStage:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        self._docs.close()
-        self._misses.close()
-        for reader in self._readers:
-            reader.close()
+        failure = exc
+        streams = [
+            getattr(self, "_docs", None),
+            getattr(self, "_misses", None),
+            *self._readers,
+        ]
+        actions = [stream.close for stream in streams if stream is not None]
+        actions.append(self._temp.cleanup)
+        for action in actions:
+            try:
+                action()
+            except BaseException as error:
+                if failure is None:
+                    failure = error
+                else:
+                    failure.add_note(f"Scratch cleanup also failed: {error!r}")
         self._readers.clear()
-        self._temp.cleanup()
+        if exc is None and failure is not None:
+            raise failure
 
     def add(
         self, doc: _Document, hits: dict[int, array[float]], wanted: list[str]

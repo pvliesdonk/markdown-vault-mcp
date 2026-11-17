@@ -59,7 +59,11 @@ How to read it:
 - **Restarts.** No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; `postgres` reads what it holds for 500 notes at a time, so it comes back in a time comparable to a local store's. Its figures come from restarts measured on their own, not in a whole run, so they are not directly comparable with the other columns. A database across a network adds a round trip to each of those reads.
 - **The first build.** The measured October envelope peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). The keyword scan releases completed note bodies and frontmatter as it indexes them; path and title bookkeeping still grows with the vault.
 
-  Completed embedding windows go to scratch disk under `TMPDIR`. Allow space on the order of the generation size. A memory-backed temporary directory counts against memory. Built-in publishers still materialize generation copies, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](embeddings.md#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
+  Completed embedding windows go to scratch disk under `TMPDIR`. Allow space on the order of the generation size. A memory-backed temporary directory counts against memory.
+
+  An abrupt termination such as a forced kill can leave `embedding-stage-*` directories there. Remove them after confirming the build has stopped.
+
+  Built-in publishers still materialize generation copies, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](embeddings.md#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.
 
