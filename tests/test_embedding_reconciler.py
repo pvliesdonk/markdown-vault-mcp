@@ -128,6 +128,110 @@ def test_changed_documents_share_one_request(tmp_path):
         assert list(row.vector) == pytest.approx(vector / np.linalg.norm(vector))
 
 
+def _five_chunk_notes(tmp_path, sibling=False):
+    body = "# A\n\n" + "\n".join(f"## Section {i}\n\nBody {i}.\n" for i in range(5))
+    notes = {"a.md": body}
+    if sibling:
+        notes["b.md"] = "# B\n\nOther.\n"
+    chunker = HeadingChunker(short_doc_lines=0)
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    old = store.rows_for("a.md")
+    for path, text in notes.items():
+        (tmp_path / path).write_text(
+            text.replace("Body", "Changed").replace("Other", "New other")
+        )
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    provider.calls.clear()
+    return provider, store, rec, old
+
+
+def test_lone_split_request_failure_is_not_replayed(tmp_path, monkeypatch):
+    provider, store, rec, old = _five_chunk_notes(tmp_path)
+
+    def fail(texts):
+        provider.calls.append(list(texts))
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(provider, "embed", fail)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4]
+    assert result.retry == {"a.md"}
+    assert result.kept == 5
+    assert store.rows_for("a.md") == old
+
+
+def test_lone_partial_wrong_count_falls_back_to_store_policy(tmp_path, monkeypatch):
+    provider, store, rec, _ = _five_chunk_notes(tmp_path)
+    embed = provider.embed
+
+    def malformed_once(texts):
+        if not provider.calls:
+            provider.calls.append(list(texts))
+            return []
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", malformed_once)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4, 4, 1]
+    assert not result.retry
+    assert all("Changed" in row.metadata["content"] for row in store.rows_for("a.md"))
+
+
+def test_lone_tail_failure_is_not_replayed(tmp_path, monkeypatch):
+    provider, store, rec, old = _five_chunk_notes(tmp_path)
+    embed = provider.embed
+
+    def fail_tail(texts):
+        if len(texts) == 1:
+            provider.calls.append(list(texts))
+            raise RuntimeError("down")
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", fail_tail)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4, 1]
+    assert result.retry == {"a.md"}
+    assert store.rows_for("a.md") == old
+
+
+def test_shared_outage_retries_each_document_once(tmp_path, monkeypatch):
+    _, provider, store, rec = _setup(tmp_path, NOTES)
+
+    def fail(texts):
+        provider.calls.append(list(texts))
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(provider, "embed", fail)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [2, 1, 1]
+    assert result.retry == {"a.md", "b.md"}
+    assert not store.tokens()
+
+
+def test_shared_failure_retries_only_unembedded_suffix(tmp_path, monkeypatch):
+    provider, store, rec, old = _five_chunk_notes(tmp_path, sibling=True)
+    embed = provider.embed
+
+    def fail_tail(texts):
+        if any("Changed 4" in text for text in texts):
+            provider.calls.append(list(texts))
+            raise RuntimeError("rejected")
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", fail_tail)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4, 2, 1, 1]
+    assert result.retry == {"a.md"}
+    assert store.rows_for("a.md") == old
+    assert "New other" in store.rows_for("b.md")[0].metadata["content"]
+    monkeypatch.setattr(provider, "embed", embed)
+    provider.calls.clear()
+    recovered = rec.reconcile(store, site="flush")
+    assert not recovered.retry
+    assert all("Changed" in row.metadata["content"] for row in store.rows_for("a.md"))
+
+
 def test_multi_chunk_documents_fill_shared_requests(tmp_path):
     notes = {
         f"{i}.md": f"# Note {i}\n\nIntro {i}.\n\n## One\n\nApple {i}.\n\n## Two\n\nBoat {i}.\n"
