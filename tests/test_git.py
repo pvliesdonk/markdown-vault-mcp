@@ -49,7 +49,10 @@ def _write_conflict_files(
 
 
 @pytest.fixture
-def git_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
+def git_repo_with_remote(
+    tmp_path: Path,
+    isolated_git: None,  # noqa: ARG001
+) -> tuple[Path, Path]:
     """Create a working repo with a bare remote for push testing."""
     import subprocess
 
@@ -1211,6 +1214,53 @@ class TestGitLfsSupport:
             # Second call — lazy init is skipped; _lfs_pull not called again.
             strategy(test_file, "# Test\n", "write")
             assert lfs_pull_mock.call_count == 1, "_lfs_pull must not be called again"
+
+
+class TestStageAndCommitPathHandling:
+    """Path fallback and rejection through real Git repositories."""
+
+    def test_symlinked_path_commits_with_full_path_subject(
+        self, git_repo: Path, tmp_path: Path
+    ) -> None:
+        """A path via an alias can stage despite being lexical outside the root."""
+        from tests.fixtures.git import _run_git
+
+        alias = tmp_path / "alias"
+        try:
+            alias.symlink_to(git_repo, target_is_directory=True)
+        except OSError as exc:
+            import os
+
+            if os.name == "nt":
+                pytest.skip(f"directory symlinks unavailable: {exc}")
+            raise
+        note = alias / "note.md"
+        note.write_bytes(b"note\n")
+        strategy = GitWriteStrategy(enable_push=False, git_lfs=False)
+        try:
+            strategy(note, "note\n", "write")
+            assert (
+                _run_git(git_repo, "log", "-1", "--format=%s").strip()
+                == f"write: {note}"
+            )
+            assert _run_git(git_repo, "show", "HEAD:note.md") == "note\n"
+        finally:
+            strategy.close()
+
+    def test_outside_path_is_rejected_without_a_commit(
+        self, git_repo: Path, tmp_path: Path
+    ) -> None:
+        """A truly outside file cannot be staged into this repository."""
+        from markdown_vault_mcp.git import _stage_and_commit
+        from tests.fixtures.git import _git_head, _run_git
+
+        outside = tmp_path / "outside.md"
+        outside.write_bytes(b"outside\n")
+        before = _git_head(git_repo)
+        with pytest.raises(subprocess.CalledProcessError):
+            _stage_and_commit(git_repo, outside, "write")
+        assert _git_head(git_repo) == before
+        assert _run_git(git_repo, "status", "--porcelain") == ""
 
 
 class TestGlobMetacharactersInNoteNames:
@@ -3779,7 +3829,9 @@ class TestGetFileDiff:
             strategy.close()
 
     def test_get_file_diff_per_commit_parent_less_fallback_show_also_fails_raises(
-        self, tmp_path: Path
+        self,
+        tmp_path: Path,
+        isolated_git: None,  # noqa: ARG002
     ) -> None:
         """When the primary per-commit diff fails AND the parent-less ``git show``
         fallback also fails, ``ValueError("Could not retrieve diff for commit …")``
@@ -3867,7 +3919,9 @@ class TestGetFileDiff:
             )
 
     def test_get_file_diff_per_commit_non_parent_less_diff_failure_raises(
-        self, tmp_path: Path
+        self,
+        tmp_path: Path,
+        isolated_git: None,  # noqa: ARG002
     ) -> None:
         """A per-commit diff failure on a commit that HAS a parent raises
         ``ValueError`` immediately (not a silent fallback to an add-form diff).

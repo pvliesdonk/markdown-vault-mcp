@@ -74,6 +74,20 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     if os.name == "nt" and (name.endswith(" ") or any(c in name for c in '*?\r\n"\t')):
         pytest.skip("Windows cannot create these filename characters")
     repo = git_repo
+    matching = {
+        "star*.md": "starX.md",
+        "question?.md": "questionX.md",
+        "bracket[1].md": "bracket1.md",
+    }
+    sibling_name = matching.get(name)
+    if sibling_name is not None:
+        _git_commit(repo, sibling_name, "sibling original\n", "seed sibling")
+        _git_commit(
+            repo,
+            sibling_name.replace(".md", "-renamed.md"),
+            "other original\n",
+            "seed other sibling",
+        )
     unrelated = repo / "unrelated.md"
     unrelated.write_bytes(b"original\n")
     _run_git(repo, "add", "unrelated.md")
@@ -87,6 +101,9 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     store(note, body, "write")
     first = _git_head(repo)
     _bounded(repo, {name})
+    if sibling_name is not None:
+        (repo / sibling_name).write_bytes(b"sibling-only change\n")
+        _run_git(repo, "commit", "-qm", "sibling edit", "--only", "--", sibling_name)
     note.write_bytes((body + "updated\n").encode("utf-8"))
     store(note, body + "updated\n", "edit")
     _bounded(repo, {name})
@@ -94,6 +111,12 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     note.rename(renamed)
     store(renamed, body + "updated\n", "rename", old_path=note)
     _bounded(repo, {name, renamed.name})
+    if sibling_name is not None:
+        other_name = sibling_name.replace(".md", "-renamed.md")
+        (repo / other_name).write_bytes(b"other-only change\n")
+        _run_git(
+            repo, "commit", "-qm", "other sibling edit", "--only", "--", other_name
+        )
 
     history = store.get_file_history(repo, renamed, None, 10)
     assert len(history) == 3
@@ -101,8 +124,13 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     combined = store.get_file_diff(repo, renamed, first, False)
     per_commit = store.get_file_diff(repo, renamed, first, True)
     assert isinstance(combined, str) and "+updated" in combined
+    assert "sibling-only" not in combined and "other-only" not in combined
     assert isinstance(per_commit, list) and len(per_commit) == 2
     assert any("+updated" in entry.diff for entry in per_commit)
+    assert all(
+        "sibling-only" not in entry.diff and "other-only" not in entry.diff
+        for entry in per_commit
+    )
     revision = store.get_file_at_ref(
         RevisionQuery(repo_path=repo, path=renamed, ref=first, max_bytes=0)
     )
@@ -113,6 +141,11 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     store(renamed, "", "delete")
     _bounded(repo, {renamed.name})
     assert not renamed.exists()
+    deleted_revision = store.get_file_at_ref(
+        RevisionQuery(repo_path=repo, path=renamed, ref=first, max_bytes=0)
+    )
+    assert deleted_revision.historical_path == name
+    assert deleted_revision.content == body
 
 
 def test_sync_ahead_keeps_local_commit(
@@ -120,9 +153,16 @@ def test_sync_ahead_keeps_local_commit(
 ) -> None:
     """An ahead clone is preserved when there is nothing to pull."""
     local = git_repo_pair.local_path
+    original_remote = _git_head(local)
+    published = _git_commit(local, "published.md", "published\n", "published")
+    _run_git(local, "push")
     local_head = _git_commit(local, "local.md", "local\n", "local")
+    # A stale tracking ref lets the test observe the fetch even when ahead.
+    _run_git(local, "update-ref", "refs/remotes/origin/main", original_remote)
     assert store.sync_once(local) is False
     assert _git_head(local) == local_head
+    assert _run_git(local, "rev-parse", "origin/main").strip() == published
+    assert _run_git(local, "rev-list", "--count", "origin/main..HEAD").strip() == "1"
     assert (local / "local.md").read_bytes() == b"local\n"
 
 
@@ -160,9 +200,19 @@ def test_two_clone_divergence(
         advanced = store.sync_once(local)
     if mode in {"dirty", "diverged_dirty"}:
         assert not advanced and _git_head(local) == before
+        assert "git_worktree_dirty" in caplog.text
+        assert _run_git(local, "rev-parse", "origin/main").strip() == remote
+        assert (
+            _run_git(local, "rev-list", "--count", "HEAD..origin/main").strip() == "1"
+        )
         assert (local / "README.md").read_bytes() == b"uncommitted local\n"
         if mode == "diverged_dirty":
             assert (local / "local.md").read_bytes() == b"committed local\n"
+        _run_git(local, "stash", "push", "-qm", "preserve dirty edit")
+        assert store.sync_once(local) is True
+        _run_git(local, "merge-base", "--is-ancestor", remote, "HEAD")
+        assert (local / "README.md").read_bytes() == b"remote\n"
+        assert _run_git(local, "show", "stash@{0}:README.md") == "uncommitted local\n"
     else:
         assert advanced
         _run_git(local, "merge-base", "--is-ancestor", remote, "HEAD")

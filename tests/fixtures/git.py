@@ -1,6 +1,7 @@
 """Pytest fixtures for tests that need a real git repository.
 
 Provides:
+- :func:`isolated_git`: Git environment isolation for synthetic repositories.
 - :func:`git_repo`: a function-scoped local repository with one initial commit.
 - :class:`GitRepoPair`: a small named tuple bundling the bare-remote and
   local-clone paths produced by :func:`git_repo_pair`.
@@ -29,7 +30,7 @@ def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep operator Git configuration and identity out of synthetic repos."""
     # Remove all Git overrides, including repository selectors and config
     # injection; preserve the caller's ceiling so fixture discovery cannot
-    # escape into the enclosing worktree.
+    # escape into the enclosing worktree when the caller sets that ceiling.
     for key in list(os.environ):
         if key.startswith("GIT_") and key != "GIT_CEILING_DIRECTORIES":
             monkeypatch.delenv(key, raising=False)
