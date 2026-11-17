@@ -111,7 +111,7 @@ def register_resources(mcp: FastMCP) -> None:
         ctx: Context = CurrentContext(),
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """The vault's settings: read-only mode, indexed fields, exclusions, OKF state."""
+        """Vault settings, indexed fields, exclusions, and OKF detection and write state."""
         config = _get_config(ctx)
         gen_before = vault.index.write_generation()
         stats = await asyncio.to_thread(vault.reader.stats)

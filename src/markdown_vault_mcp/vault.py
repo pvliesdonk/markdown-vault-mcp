@@ -420,7 +420,6 @@ class Vault:
         self._embeddings_path = settings.effective_embeddings_path()
         self._embedding_batch_size = settings.embedding_batch_size
         self._read_only = settings.read_only
-        self._okf_write_configured = settings.okf_write
         self._write_protect_existing = settings.write_protect_existing
         self._report_unresolved_links = settings.report_unresolved_links
         # OKF detection (disk probe, index-independent). When read semantics
@@ -751,6 +750,7 @@ class Vault:
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
             okf_audit=self._okf_audit,
+            okf_write_state=lambda: self.okf_write_state(active=True),
         )
         # The reserved files the OKF generators write are subject to this
         # vault's own required-frontmatter gate, so the generators need the
@@ -888,7 +888,7 @@ class Vault:
         Returns:
             Configured OKF write flag and whether the layer is effective.
         """
-        configured = self._okf_write_configured
+        configured = self._okf_write_enrich is not None
         return configured, configured and active and not self._read_only
 
     def _okf_audit(self) -> OkfAuditReport:

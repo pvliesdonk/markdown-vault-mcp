@@ -85,9 +85,14 @@ def test_write_state_uses_vault_settings(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "false")
     vault = Vault(
-        source_dir=tmp_path, settings=VaultSettings(read_only=True, okf_write=True)
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True, okf_mode="on", okf_write=True),
     )
     try:
         assert vault.okf_write_state(active=True) == (True, False)
+        section = vault.reader.okf_stats()
+        assert section is not None
+        assert section["write_configured"] is True
+        assert section["write_effective"] is False
     finally:
         vault.close()
