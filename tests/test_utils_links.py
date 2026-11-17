@@ -222,9 +222,11 @@ class TestApplyLinkReplacement:
 def test_batch_rewrites_swap_original_destinations(
     link_type: str, content: str, expected: str
 ) -> None:
-    from markdown_vault_mcp.utils.links import apply_link_replacements
+    from markdown_vault_mcp.utils.links import rewrite_link_destinations
 
     assert (
-        apply_link_replacements(content, link_type, {"a.md": "b.md", "b.md": "a.md"})
+        rewrite_link_destinations(content, link_type, {"a.md": "b.md", "b.md": "a.md"})[
+            0
+        ]
         == expected
     )

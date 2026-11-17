@@ -1222,11 +1222,7 @@ def iter_reference_targets(clean: str) -> Iterator[tuple[str, str, int]]:
         # like an inline destination (#1353).
         destination = trailing_title_pattern.sub("", target.strip(" \t")).strip(" \t")
         if destination and destination != "<>":
-            yield (
-                key,
-                destination,
-                target_start + len(target) - len(target.lstrip(" \t")),
-            )
+            yield key, destination, target_start
 
 
 def _inline_destination_spans(masked: str) -> Iterator[tuple[int, str]]:
@@ -1331,22 +1327,6 @@ def rewrite_link_destinations(
     return "".join(out), matched
 
 
-def apply_link_replacements(
-    content: str, link_type: str, replacements: Mapping[str, str]
-) -> str:
-    """Replace original link destinations without cascading replacements.
-
-    Args:
-        content: Full file content to modify.
-        link_type: One of ``"markdown"``, ``"reference"``, ``"wikilink"``.
-        replacements: Original raw targets mapped to their replacements.
-
-    Returns:
-        Updated content with matching destinations replaced.
-    """
-    return rewrite_link_destinations(content, link_type, replacements)[0]
-
-
 def apply_link_replacement(
     content: str, link_type: str, old_raw: str, new_raw: str
 ) -> str:
@@ -1361,4 +1341,4 @@ def apply_link_replacement(
     Returns:
         Updated content with matching destinations replaced.
     """
-    return apply_link_replacements(content, link_type, {old_raw: new_raw})
+    return rewrite_link_destinations(content, link_type, {old_raw: new_raw})[0]

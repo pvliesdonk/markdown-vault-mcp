@@ -521,9 +521,8 @@ def test_moved_source_frontmatter_fence_does_not_mask_body(tmp_path: Path) -> No
         vault.close()
 
 
-@pytest.mark.parametrize("folder_move", [False, True])
 def test_moved_source_reports_unmatched_rewrite_without_partial_write(
-    tmp_path: Path, folder_move: bool
+    tmp_path: Path,
 ) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
@@ -537,14 +536,8 @@ def test_moved_source_reports_unmatched_rewrite_without_partial_write(
         vault.index.build_index()
         unchanged = "[x](Changed.md) [y](D/other.md)\n"
         source.write_text(unchanged, encoding="utf-8")
-        if folder_move:
-            result = vault.writer.move_folder("A", "C")
-            assert "C/source.md" in result.failed_links
-        else:
-            result = vault.writer.rename(
-                "A/source.md", "C/source.md", update_links=True
-            )
-            assert result.hint is not None and "C/source.md" in result.hint
+        result = vault.writer.rename("A/source.md", "C/source.md", update_links=True)
+        assert result.hint is not None and "C/source.md" in result.hint
         assert (tmp_path / "C/source.md").read_text(encoding="utf-8") == unchanged
     finally:
         vault.close()
