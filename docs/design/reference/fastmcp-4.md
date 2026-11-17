@@ -176,6 +176,8 @@ does not attempt to catalogue the rest of FastMCP's API.
   mount `get_well_known_routes()` on the outer Starlette app and the MCP app
   at that prefix. This makes path-scoped discovery available without the bare
   host-root authorization-server route. [source: mounting-auth]
+  The pin also initializes each mounted MCP app with a synthetic verified
+  token; it does not exercise an OIDC login.
   [pins: tests/test_auth_subpath.py::test_mounted_proxies_isolate_discovery_on_a_shared_host]
 
 ## Where this project departs from the subject

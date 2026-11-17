@@ -5,18 +5,25 @@ identity provider or upstream discovery request is needed for this check.
 """
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager
+from unittest.mock import AsyncMock, patch
 
 from fastmcp import FastMCP
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from httpx import ASGITransport, AsyncClient
+from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
 
 def test_mounted_proxies_isolate_discovery_on_a_shared_host() -> None:
-    """Each service advertises its own issuer and protected resource."""
+    """Discover each service and initialize it with a synthetic verified token."""
     routes = []
+    apps = []
+    patches = ExitStack()
     for prefix in ("vault", "other"):
         auth = OAuthProxy(
             upstream_authorization_endpoint="https://idp.example/authorize",
@@ -28,11 +35,32 @@ def test_mounted_proxies_isolate_discovery_on_a_shared_host() -> None:
             ),
             base_url=f"https://mcp.example.com/{prefix}",
             jwt_signing_key="x" * 32,
+            client_storage=MemoryStore(),
+        )
+        patches.enter_context(
+            patch.object(
+                auth,
+                "verify_token",
+                AsyncMock(
+                    return_value=AccessToken(
+                        token="valid", client_id="client", scopes=[]
+                    )
+                ),
+            )
         )
         mcp_app = FastMCP(prefix, auth=auth).http_app(path="/mcp")
+        apps.append(mcp_app)
         routes.extend(auth.get_well_known_routes(mcp_path="/mcp"))
         routes.append(Mount(f"/{prefix}", app=mcp_app))
-    app = Starlette(routes=routes)
+
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        async with AsyncExitStack() as stack:
+            for child in apps:
+                await stack.enter_async_context(child.router.lifespan_context(child))
+            yield
+
+    app = Starlette(routes=routes, lifespan=lifespan)
 
     async def probe() -> None:
         async with AsyncClient(
@@ -59,5 +87,29 @@ def test_mounted_proxies_isolate_discovery_on_a_shared_host() -> None:
                 assert resource.status_code == 200
                 assert resource.json()["resource"] == f"{issuer}/mcp"
                 assert resource.json()["authorization_servers"] == [issuer]
+                initialized = await client.post(
+                    f"/{prefix}/mcp",
+                    headers={
+                        "authorization": "Bearer valid",
+                        "accept": "application/json, text/event-stream",
+                    },
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-03-26",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test", "version": "1"},
+                        },
+                    },
+                )
+                assert initialized.status_code == 200
+                assert '"result"' in initialized.text
 
-    asyncio.run(probe())
+    async def run() -> None:
+        async with app.router.lifespan_context(app):
+            await probe()
+
+    with patches:
+        asyncio.run(run())
