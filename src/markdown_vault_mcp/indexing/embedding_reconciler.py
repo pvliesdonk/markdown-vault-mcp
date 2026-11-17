@@ -569,7 +569,7 @@ class EmbeddingReconciler:
         err: Exception,
     ) -> None:
         """Retry each affected document separately after a failed batch."""
-        logger.debug(
+        logger.warning(
             "embedding_reconcile_batch_fallback site=%s docs=%d texts=%d err=%s",
             state.site,
             len(pending),
