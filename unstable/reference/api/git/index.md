@@ -460,3 +460,5 @@ Returns:
 | ---- | ------------------ | ----------------------------------------------- |
 | `A`  | `GitWriteStrategy` | class:GitWriteStrategy instance (also satisfies |
 |      | `GitWriteStrategy` | data:~markdown_vault_mcp.types.WriteCallback).  |
+
+The optional `BatchAwareWriteCallback` protocol in `markdown_vault_mcp.types` describes the batch opt-in. `Versioner` remains the per-write contract.
