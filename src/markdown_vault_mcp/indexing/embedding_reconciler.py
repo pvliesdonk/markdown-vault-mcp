@@ -25,6 +25,7 @@ import math
 import time
 from array import array
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass, field
 from itertools import groupby, islice
 from typing import TYPE_CHECKING, Any
@@ -40,7 +41,14 @@ from markdown_vault_mcp.interfaces import (
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+    from collections.abc import (
+        Callable,
+        Collection,
+        Generator,
+        Iterable,
+        Iterator,
+        Sequence,
+    )
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.indexing.donor import Donor
@@ -733,41 +741,41 @@ class EmbeddingReconciler:
         started = time.monotonic()
         embedded = failed = last_decile = 0
 
-        def results() -> Iterator[array[float] | None]:
+        def results() -> Generator[array[float] | None]:
             nonlocal embedded, failed, last_decile
-            misses = stage.misses()
-            for start in range(0, total, self._batch_size):
-                batch = list(islice(misses, self._batch_size))
-                end = start + len(batch)
-                try:
-                    vectors = _float32_batch(
-                        self._provider.embed([text for text, _ in batch]),
-                        dimension,
-                        len(batch),
-                    )
-                except Exception as exc:
-                    failed += 1
-                    logger.warning(
-                        "build_embeddings_skip_batch chunks_start=%d chunks_end=%d "
-                        "chunks_total=%d err=%s",
+            with closing(stage.misses()) as misses:
+                for start in range(0, total, self._batch_size):
+                    batch = list(islice(misses, self._batch_size))
+                    end = start + len(batch)
+                    try:
+                        vectors = _float32_batch(
+                            self._provider.embed([text for text, _ in batch]),
+                            dimension,
+                            len(batch),
+                        )
+                    except Exception as exc:
+                        failed += 1
+                        logger.warning(
+                            "build_embeddings_skip_batch chunks_start=%d chunks_end=%d "
+                            "chunks_total=%d err=%s",
+                            start + 1,
+                            end,
+                            total,
+                            exc,
+                            exc_info=True,
+                        )
+                        yield from (None for _ in batch)
+                    else:
+                        embedded += sum(count for _, count in batch)
+                        yield from vectors
+                    logger.debug(
+                        "build_embeddings_embedded_batch chunks_start=%d chunks_end=%d "
+                        "chunks_total=%d",
                         start + 1,
                         end,
                         total,
-                        exc,
-                        exc_info=True,
                     )
-                    yield from (None for _ in batch)
-                else:
-                    embedded += sum(count for _, count in batch)
-                    yield from vectors
-                logger.debug(
-                    "build_embeddings_embedded_batch chunks_start=%d chunks_end=%d "
-                    "chunks_total=%d",
-                    start + 1,
-                    end,
-                    total,
-                )
-                last_decile = _log_progress(end, total, started, last_decile)
+                    last_decile = _log_progress(end, total, started, last_decile)
 
         stage.write_results(results())
         return embedded, failed

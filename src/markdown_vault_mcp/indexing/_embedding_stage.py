@@ -7,13 +7,14 @@ import json
 import tempfile
 from array import array
 from collections import Counter
+from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
     from types import TracebackType
     from typing import TextIO
 
@@ -91,16 +92,19 @@ class EmbeddingStage:
         self._docs.close()
         self._misses.close()
 
-    def misses(self) -> Iterator[tuple[str, int]]:
+    def misses(self) -> Generator[tuple[str, int]]:
         """Yield misses in provider order with their chunk fanout."""
         with (self._root / "misses").open(encoding="utf-8") as stream:
             for line in stream:
                 text, count = json.loads(line)
                 yield text, count
 
-    def write_results(self, results: Iterator[array[float] | None]) -> None:
+    def write_results(self, results: Generator[array[float] | None]) -> None:
         """Write one result or failure marker for each miss."""
-        with (self._root / "results").open("w", encoding="utf-8") as stream:
+        with (
+            closing(results),
+            (self._root / "results").open("w", encoding="utf-8") as stream,
+        ):
             for vector in results:
                 stream.write(
                     json.dumps(None if vector is None else _pack(vector)) + "\n"
