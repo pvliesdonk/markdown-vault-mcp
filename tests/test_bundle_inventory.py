@@ -467,6 +467,8 @@ def test_failed_reads_reserve_aggregate_budget(
 
     def refused(_parent: int, _name: str, limit: int) -> bytes:
         attempts.append(limit)
+        if limit == 0:
+            return b""
         raise OSError(errno.EIO, "failure after unknown partial read")
 
     monkeypatch.setattr(inventory, "read_regular_nofollow", refused)
@@ -1193,3 +1195,226 @@ def test_store_ignores_nonnumeric_matrix_names(tmp_path: Path) -> None:
     assert numbered_files(tmp_path / "vectors", ".m") == {
         3: tmp_path / "vectors.m3.npy"
     }
+
+
+@pytest.mark.parametrize("kind", ["directory", "attachment", "budget_note"])
+def test_denied_children_are_omitted_even_without_content_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    (tmp_path / "visible.md").write_text("body")
+    denied = {
+        "directory": ".denied",
+        "attachment": ".denied.png",
+        "budget_note": ".denied.md",
+    }[kind]
+    if kind == "directory":
+        (tmp_path / denied).mkdir()
+    else:
+        (tmp_path / denied).write_text("secret")
+    if kind == "budget_note":
+        for i in range(16):
+            (tmp_path / f"f{i:02}.md").write_bytes(b"x" * 65536)
+    scandir = inventory.os.scandir
+
+    class OrderedScan:
+        def __enter__(self) -> Iterator[os.DirEntry[str]]:
+            with scandir(tmp_path) as children:
+                return iter(
+                    sorted(
+                        children, key=lambda child: (child.name == denied, child.name)
+                    )
+                )
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    monkeypatch.setattr(inventory.os, "scandir", lambda _parent: OrderedScan())
+    original_open = inventory.os.open
+
+    def checked_open(name: object, flags: int, *args: object, **kwargs: object) -> int:
+        if name == denied:
+            raise PermissionError(errno.EACCES, "private")
+        return original_open(name, flags, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(inventory.os, "open", checked_open)
+    result = inspector(tmp_path).inspect(
+        BundleInspectionRequest(root="", entry_limit=100)
+    )
+    assert result.enumeration == "unavailable"
+    assert denied not in {entry.path for entry in result.entries}
+    assert "visible.md" in {entry.path for entry in result.entries}
+
+
+def test_state_directory_created_after_policy_is_never_entered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_dir = tmp_path / "state-dir"
+    subject = BundleInspector(
+        tmp_path,
+        (),
+        frozenset(),
+        0,
+        inventory.InspectionPolicy(state_paths=(state_dir,)),
+    )
+    original = subject._prepare_policy
+
+    def created(root: Path) -> None:
+        original(root)
+        state_dir.mkdir()
+        (state_dir / "secret.md").write_text("secret")
+
+    monkeypatch.setattr(subject, "_prepare_policy", created)
+    opened = Mock(side_effect=AssertionError("state directory entered"))
+    monkeypatch.setattr(inventory, "open_directory_nofollow", opened)
+    assert (
+        subject.inspect(BundleInspectionRequest(root="state-dir")).state
+        == "unavailable"
+    )
+    opened.assert_not_called()
+
+
+def test_late_created_case_variant_sidecar_obeys_filesystem_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "State.md"
+    subject = BundleInspector(
+        tmp_path,
+        (),
+        frozenset({"lock"}),
+        0,
+        inventory.InspectionPolicy(state_paths=(state,)),
+    )
+    original = subject._prepare_policy
+
+    def created(root: Path) -> None:
+        original(root)
+        (tmp_path / "state.md.lock").write_text("secret")
+
+    monkeypatch.setattr(subject, "_prepare_policy", created)
+    result = subject.inspect(BundleInspectionRequest(root=""))
+    probe = tmp_path / "State.md.lock"
+    matches = probe.exists()
+    assert ("state.md.lock" not in {entry.path for entry in result.entries}) == matches
+
+
+def test_case_variant_git_uses_filesystem_identity(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "note.md").write_text("body")
+    alternate = tmp_path / ".GIT"
+    if not alternate.exists():
+        alternate.mkdir()
+        (alternate / "note.md").write_text("ordinary")
+        expected = "inspected"
+    else:
+        expected = "unavailable"
+    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=".GIT"))
+    assert result.state == expected
+
+
+def test_configured_state_unicode_and_case_match_filesystem(tmp_path: Path) -> None:
+    directory = tmp_path / "Café"
+    directory.mkdir()
+    state = directory / "State.md"
+    state.write_text("private")
+    (directory / "note.md").write_text("body")
+    configured = tmp_path / "Cafe\u0301" / "state.md"
+    actual_match = configured.exists()
+    policy = inventory.InspectionPolicy(state_paths=(configured,))
+    subject = BundleInspector(tmp_path, (), frozenset(), 0, policy)
+    result = subject.inspect(BundleInspectionRequest(root="Café"))
+    assert (
+        "Café/State.md" not in {entry.path for entry in result.entries}
+    ) == actual_match
+    assert "Café/note.md" in {entry.path for entry in result.entries}
+
+
+def test_numbered_vector_parent_case_matches_filesystem(tmp_path: Path) -> None:
+    directory = tmp_path / "Vectors"
+    directory.mkdir()
+    (directory / "Data.v2.m3.npy").write_text("state")
+    configured = tmp_path / "Vectors" / "Data"
+    alias = tmp_path / "vectors"
+    if not alias.exists():
+        alias.mkdir()
+        (alias / "Data.v2.m3.npy").write_text("ordinary")
+        expected = {"vectors/Data.v2.m3.npy"}
+    else:
+        expected = set()
+    subject = BundleInspector(
+        tmp_path,
+        (),
+        frozenset({"npy"}),
+        0,
+        inventory.InspectionPolicy(embeddings_path=configured),
+    )
+    result = subject.inspect(BundleInspectionRequest(root="vectors"))
+    assert {entry.path for entry in result.entries} == expected
+
+
+def test_late_state_directory_case_uses_filesystem_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configured = tmp_path / "StateDir"
+    actual = tmp_path / "statedir"
+    subject = BundleInspector(
+        tmp_path,
+        (),
+        frozenset(),
+        0,
+        inventory.InspectionPolicy(state_paths=(configured,)),
+    )
+    original = subject._prepare_policy
+
+    def created(root: Path) -> None:
+        original(root)
+        actual.mkdir()
+        (actual / "note.md").write_text("body")
+
+    monkeypatch.setattr(subject, "_prepare_policy", created)
+    result = subject.inspect(BundleInspectionRequest(root="statedir"))
+    assert result.state == ("unavailable" if configured.exists() else "inspected")
+
+
+def test_reader_omits_chmod_denied_directory_and_attachment(tmp_path: Path) -> None:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root bypasses mode permissions")
+    directory = tmp_path / ".denied"
+    directory.mkdir()
+    attachment = tmp_path / ".denied.png"
+    attachment.write_text("body")
+    (tmp_path / "visible.md").write_text("body")
+    directory.chmod(0)
+    attachment.chmod(0)
+    try:
+        try:
+            fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        except PermissionError:
+            pass
+        else:
+            os.close(fd)
+            pytest.skip("filesystem permits directory access despite chmod")
+        try:
+            fd = os.open(attachment, os.O_RDONLY)
+        except PermissionError:
+            pass
+        else:
+            os.close(fd)
+            pytest.skip("filesystem permits file access despite chmod")
+        vault = Vault(
+            source_dir=tmp_path, settings=VaultSettings(attachment_extensions=["png"])
+        )
+        try:
+            result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+            assert result.enumeration == "unavailable"
+            assert [entry.path for entry in result.entries] == ["visible.md"]
+            assert (
+                vault.reader.inspect_bundle(
+                    BundleInspectionRequest(root=".denied")
+                ).state
+                == "unavailable"
+            )
+        finally:
+            vault.close()
+    finally:
+        directory.chmod(0o700)
+        attachment.chmod(0o600)

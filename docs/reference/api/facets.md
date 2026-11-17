@@ -88,8 +88,9 @@ backslashes and empty or dot components are rejected with `ValueError`.
 
 The frozen `BundleInspection` contains the request, sorted `BundleEntry` values,
 `state`, `enumeration`, `interpretation="caller_selected"`, and
-`search_state="not_evaluated"`. Scope states distinguish `inspected`, `missing` and `unavailable`. A missing configured source is `unavailable`; only a
-missing directory within an accessible source is `missing`.
+`search_state="not_evaluated"`. Scope states distinguish `inspected`, `missing`
+and `unavailable`. A missing configured source is `unavailable`; only a missing
+directory within an accessible source is `missing`.
 
 Each entry contains its vault-relative `path`, filename-based `role`, `state`,
 `reason`, `parse_state`, `type_state`, `visibility` and `hidden_path`. Exact
@@ -111,8 +112,10 @@ entries remain unavailable or not inspected. Paths matching index exclusions
 are labelled `index_excluded`, and dot paths have `hidden_path=true`; neither
 label prevents inspection. Non-directory filenames outside the attachment
 allowlist, `.git`, server-owned state directories and files, and
-permission-denied children are omitted. A state file does not hide neighboring notes. A denied child makes enumeration unavailable without hiding readable
-siblings. Visible symlinks and special files remain unavailable and are
+permission-denied children are omitted. A state file does not hide neighboring
+notes. Alternate spellings of internal paths follow filesystem identity rules. A denied child makes enumeration unavailable without hiding readable
+siblings, including when the note-read budget has been exhausted. A directory
+entry's visibility describes its own name, not the admission of its subtree. Visible symlinks and special files remain unavailable and are
 never followed or read. When a stat failure prevents determining whether an
 omitted name is a visible directory, enumeration is `unavailable`.
 

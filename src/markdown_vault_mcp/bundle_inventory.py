@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import os
 import stat
+import unicodedata
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
@@ -197,6 +198,35 @@ def _parsed(path: str, role: Role, raw: bytes) -> BundleEntry:
     )
 
 
+def _same_file(first: Path, second: Path) -> bool:
+    try:
+        return first.samefile(second)
+    except OSError:
+        return False
+
+
+def _normalized_name(name: str) -> str:
+    return unicodedata.normalize("NFD", name).casefold()
+
+
+def _vector_matrix(candidate: Path, base: Path) -> bool:
+    if candidate.parent != base.parent and not _same_file(
+        candidate.parent, base.parent
+    ):
+        return False
+    name = _normalized_name(candidate.name)
+    for prefix in (".m", ".v2.m"):
+        stem = _normalized_name(base.with_suffix(prefix).name)
+        if not (name.startswith(stem) and name.endswith(".npy")):
+            continue
+        sequence = matrix_sequence(name, stem)
+        if sequence is not None and _same_file(
+            candidate, base.with_suffix(f"{prefix}{sequence}.npy")
+        ):
+            return True
+    return False
+
+
 def _vector_sidecars(base: Path) -> set[Path]:
     paths = {
         base.with_suffix(suffix)
@@ -291,25 +321,26 @@ class BundleInspector:
             return absolute, absolute
 
     def _internal(self, path: str) -> bool:
-        if any(part in {".git", ".markdown_vault_mcp"} for part in path.split("/")):
+        parts = path.split("/")
+        if any(part in {".git", ".markdown_vault_mcp"} for part in parts):
             return True
-        candidate = self._absolute_source.joinpath(*path.split("/"))
-        for base in self._vector_bases:
-            if candidate.parent != base.parent:
-                continue
-            for prefix in (".m", ".v2.m"):
-                stem = base.with_suffix(prefix).name
-                name = candidate.name
-                if (
-                    name.startswith(stem)
-                    and name.endswith(".npy")
-                    and matrix_sequence(name, stem) is not None
-                ):
-                    return True
-        return candidate in self._internal_paths or any(
+        candidate = self._absolute_source.joinpath(*parts)
+        for internal_name in (".git", ".markdown_vault_mcp"):
+            if _normalized_name(candidate.name) == internal_name and _same_file(
+                candidate, candidate.parent / internal_name
+            ):
+                return True
+        if candidate in self._internal_paths or any(
             candidate == internal or candidate.is_relative_to(internal)
             for internal in self._internal_directories
-        )
+        ):
+            return True
+        if any(
+            _same_file(candidate, owned)
+            for owned in self._internal_paths | self._internal_directories
+        ):
+            return True
+        return any(_vector_matrix(candidate, base) for base in self._vector_bases)
 
     def _index_excluded(self, path: str) -> bool:
         return is_path_excluded(path, self._excludes)
@@ -333,7 +364,9 @@ class BundleInspector:
         except (OSError, RuntimeError):
             return BundleInspection(request, "unavailable")
         try:
-            if self._internal(scope):
+            if any(
+                self._internal("/".join(parts[:i])) for i in range(1, len(parts) + 1)
+            ):
                 return BundleInspection(request, "unavailable")
             with open_directory_nofollow(root, parts, source_resolved=True) as parent:
                 return self._enumerate(parent, request, scope)
@@ -421,12 +454,18 @@ class BundleInspector:
         self, parent: int, path: str, mode: int, remaining: int
     ) -> tuple[BundleEntry | None, int]:
         if stat.S_ISDIR(mode):
+            name = path.rsplit("/", 1)[-1]
+            descriptor = os.open(
+                name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
+            )
+            os.close(descriptor)
             return BundleEntry(path, "directory", reason="directory"), 0
         if not self._visible_file(path):
             return None, 0
         if not stat.S_ISREG(mode):
             return BundleEntry(path, state="unavailable", reason="nonregular"), 0
         if not is_note(path):
+            read_regular_nofollow(parent, path.rsplit("/", 1)[-1], 0)
             return BundleEntry(path, "supporting", reason="supporting"), 0
         return self._read_note(parent, path, remaining)
 
@@ -436,6 +475,7 @@ class BundleInspector:
         name = path.rsplit("/", 1)[-1]
         role = _role(name, self._policy.conventions_file)
         if remaining == 0:
+            read_regular_nofollow(parent, name, 0)
             return BundleEntry(path, role, reason="byte_budget"), 0
         limit = min(self._note_limit + 1, remaining)
         try:
