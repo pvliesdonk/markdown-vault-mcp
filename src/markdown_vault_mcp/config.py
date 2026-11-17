@@ -52,6 +52,7 @@ from markdown_vault_mcp.config_sections import (
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,
     normalize_templates_folder,
+    read_okf_verify,
     resolve_attachment_extensions,
     resolve_conventions_file,
     resolve_git_repo_url,
@@ -454,7 +455,7 @@ class ProjectConfig:
             "help": (
                 "How the okf_verify tool attributes a human review. This "
                 "applies only when OKF_WRITE is on, which gates the tool. With "
-                "elicit (the default), okf_verify asks the human to confirm "
+                "elicit, okf_verify asks the human to confirm "
                 "the review through an MCP elicitation, then records the "
                 "attestation only on an affirmative reply. It fails closed "
                 "when the client cannot elicit or the human declines, so a "
@@ -465,6 +466,8 @@ class ProjectConfig:
                 "as an application's. This is safe only when the sole "
                 "caller is a human-driven UI. Set off to hide the tool, "
                 "leaving attestation to external tooling. "
+                "Unset resolves to off, or elicit with OKF_WRITE enabled. An explicit "
+                "elicit or trust-auth with OKF_MODE=off is a configuration error. "
                 "The independently configured mode is resolved now; runtime gating "
                 "continues to require OKF_WRITE until a later update."
             ),
@@ -1474,9 +1477,7 @@ class ProjectConfig:
             ),
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
-            okf_verify=raw_verify.strip().lower()
-            if (raw_verify := env(_ENV_PREFIX, "OKF_VERIFY"))
-            else DEFAULT_VERIFY,
+            okf_verify=read_okf_verify(_ENV_PREFIX),
             okf_author=to_bool(raw_author, default=False)
             if (raw_author := env(_ENV_PREFIX, "OKF_AUTHOR")) is not None
             else None,

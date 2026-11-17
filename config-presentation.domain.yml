@@ -13,6 +13,21 @@
 # a dataclass field does: omit `default:` entirely to mark the var required,
 # or give it `default: null` (or a real default) to mark it optional.
 vars:
+  # The legacy library field defaults to elicit; an unset operator setting
+  # resolves to off without the alias and elicit with it.
+  - name: "{PREFIX}_OKF_VERIFY"
+    type_name: "str"
+    default: null
+    help: >-
+      Prepare review authority: off, elicit or trust-auth. Unset resolves to
+      off, or elicit when OKF_WRITE is enabled. Runtime gates still require
+      OKF_WRITE; keep it enabled until separate runtime gates are available.
+      Elicit requires a human confirmation; trust-auth uses the token subject
+      without confirmation and is safe only for a human-driven UI. Explicit
+      elicit or trust-auth with OKF_MODE=off is a configuration error.
+    tags: [content]
+    wizard: {group: Content}
+
   # Bare (unprefixed) embedding-provider conventions, read via os.environ
   # inside ProjectConfig.from_env — invisible to the prefixed AST scan.
   - name: "OLLAMA_HOST"

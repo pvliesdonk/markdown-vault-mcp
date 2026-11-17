@@ -31,6 +31,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from fastmcp_pvl_core import env
 from fastmcp_pvl_core import parse_bool as _parse_bool
 
 from markdown_vault_mcp._identity import (
@@ -81,10 +82,19 @@ def warn_okf_write_deprecated() -> None:
         if _okf_warning_emitted:
             return
         logger.warning(
-            "okf_write_deprecated replacements=%s",
+            "okf_write_deprecated replacements=%s guidance=%s",
             "OKF_AUTHOR,OKF_VERIFY,OKF_INDEX,OKF_LOG,OKF_FOLDERS",
+            "Keep OKF_WRITE enabled until the separate runtime gates are available.",
         )
         _okf_warning_emitted = True
+
+
+def read_okf_verify(prefix: str) -> str:
+    """Read the optional review setting, retaining the legacy field default."""
+    from markdown_vault_mcp.okf_capabilities import DEFAULT_VERIFY
+
+    raw = env(prefix, "OKF_VERIFY")
+    return raw.strip().lower() if raw else DEFAULT_VERIFY
 
 
 def derive_max_chunk_chars(*, context_length: int | None, override: int | None) -> int:

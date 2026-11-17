@@ -47,6 +47,7 @@ def test_alias_and_explicit_overrides(caplog, monkeypatch):
     ) == (True, "off", False, "events", ("projects/*",), True)
     notices = [r for r in caplog.records if r.msg.startswith("okf_write_deprecated")]
     assert len(notices) == 1
+    assert "Keep OKF_WRITE enabled" in notices[0].getMessage()
     assert all(
         name in notices[0].getMessage()
         for name in ("OKF_AUTHOR", "OKF_VERIFY", "OKF_INDEX", "OKF_LOG", "OKF_FOLDERS")
@@ -134,3 +135,20 @@ def test_project_config_snapshots_folders():
         ProjectConfig(okf_folders=["valid", ""])
     with pytest.raises(ConfigurationError, match="okf_folders"):
         ProjectConfig(okf_folders="invalid")
+
+
+def test_generated_examples_leave_verification_unset():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for name in ("examples/bearer-auth.env", "examples/oidc.env"):
+        text = (root / name).read_text()
+        assert "MARKDOWN_VAULT_MCP_OKF_VERIFY=\n" in text
+
+    import json
+
+    spec = json.loads(
+        (root / "docs/javascripts/config-wizard/wizard-spec.json").read_text()
+    )
+    question = next(item for item in spec["questions"] if item["id"] == "okf_verify")
+    assert not question.get("default")
