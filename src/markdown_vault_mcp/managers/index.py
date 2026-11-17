@@ -158,6 +158,7 @@ class IndexManager:
             inline-reindex paths. Defaults to the module constant
             ``_EMBEDDING_BATCH_SIZE``.
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
+        exempt_required_frontmatter: Path predicate for bypassing the field gate.
     """
 
     def __init__(
@@ -179,6 +180,7 @@ class IndexManager:
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         vector_slot: VectorStoreSlot | None = None,
+        exempt_required_frontmatter: Callable[[str], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -186,6 +188,9 @@ class IndexManager:
         self._chunk_strategy = chunk_strategy
         self._exclude_patterns = exclude_patterns
         self._required_frontmatter = required_frontmatter
+        self._exempt_required_frontmatter = exempt_required_frontmatter or (
+            lambda _: False
+        )
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
         # Chunking provenance recorded into FTS meta after a successful build
         # (#649): the shared chunker's char cap derives from the embedding
@@ -603,6 +608,7 @@ class IndexManager:
             title_field=self._title_field,
             attachment_extensions=self._attachment_extensions,
             on_walk_error=result.walk_errors.append,
+            exempt_required_frontmatter=self._exempt_required_frontmatter,
         ):
             state, chunks, failed = self._index_build_note(note, force=force)
             result.notes.append(state)
@@ -954,6 +960,7 @@ class IndexManager:
                 attachment_extensions=self._attachment_extensions,
                 required_frontmatter=self._required_frontmatter,
                 log_context="reindex",
+                exempt_required_frontmatter=self._exempt_required_frontmatter(path),
             )
             if outcome is None:
                 # Possibly transient (already logged) — retry next scan.
@@ -1248,7 +1255,7 @@ class IndexManager:
                     for k in (self._required_frontmatter or [])
                     if k not in (note.frontmatter or {})
                 ]
-                if missing:
+                if missing and not self._exempt_required_frontmatter(path):
                     # Tombstone rather than delete (#1129): the file
                     # is still a candidate, so its row must stay
                     # present (invisibly) instead of becoming

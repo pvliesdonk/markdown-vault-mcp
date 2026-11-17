@@ -50,6 +50,7 @@ from markdown_vault_mcp.okf import (
     OkfDetector,
     ReservedFrontmatterPolicy,
     audit_bundle,
+    is_okf_reserved_file,
 )
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
@@ -598,6 +599,9 @@ class Vault:
             chunk_strategy=self._chunk_strategy,
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
+            exempt_required_frontmatter=lambda path: (
+                is_okf_reserved_file(path) and self._okf.state().active
+            ),
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
