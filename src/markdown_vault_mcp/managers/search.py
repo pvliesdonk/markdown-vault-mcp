@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import fnmatch
+import functools
 import json
 import logging
 import mimetypes
@@ -400,7 +401,12 @@ class SearchManager:
             return read(rebuilt)
 
     def _search_vectors(
-        self, query: str, limit: int, folder: str | None
+        self,
+        query: str,
+        limit: int,
+        folder: str | None,
+        *,
+        embed: Callable[[str], list[float]] | None = None,
     ) -> list[dict[str, Any]]:
         """Search the vault's store for *query*; an empty store embeds nothing.
 
@@ -413,6 +419,7 @@ class SearchManager:
             query: The search text.
             limit: Maximum number of rows.
             folder: Restrict to this folder prefix, or ``None``.
+            embed: Optional request-local query embedding callable.
 
         Returns:
             The store's rows, best first.
@@ -426,7 +433,7 @@ class SearchManager:
         def read(store: EmbeddingStore) -> list[dict[str, Any]]:
             if not store.count:
                 return []
-            vector = self._query_vector(query)
+            vector = (embed or self._query_vector)(query)
             try:
                 store = self._slot.for_query(
                     store, len(vector), rebuild=self._rebuild_embeddings
@@ -1263,8 +1270,9 @@ class SearchManager:
             filters=filters,
             okf_filters=okf_filters,
         )
+        embed = functools.cache(self._query_vector)
         raw, candidate_limit = self._retrieve_candidates(
-            lambda cap: self._search_vectors(query, cap, folder),
+            lambda cap: self._search_vectors(query, cap, folder, embed=embed),
             lambda rows: self._post_filter_semantic_rows(
                 rows, filters=filters, okf_filters=okf_filters
             ),
@@ -1333,8 +1341,9 @@ class SearchManager:
             fts_raw, alpha=self._length_downweight_alpha
         )
 
+        embed = functools.cache(self._query_vector)
         vec_raw, vec_candidate_limit = self._retrieve_candidates(
-            lambda cap: self._search_vectors(query, cap, folder),
+            lambda cap: self._search_vectors(query, cap, folder, embed=embed),
             lambda rows: self._post_filter_semantic_rows(
                 rows, filters=filters, okf_filters=okf_filters
             ),

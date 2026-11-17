@@ -512,7 +512,7 @@ def parse_stale_filter(value: str) -> bool:
 
 def matches_okf_filters(
     metadata: dict[str, Any],
-    okf_filters: dict[str, str | None],
+    okf_filters: Mapping[str, str | None],
     *,
     now: _dt.datetime | None = None,
 ) -> bool:
