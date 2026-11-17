@@ -6,13 +6,12 @@ filesystem and spawn subprocesses). All subprocess calls are module-qualified
 still intercepts them.
 
 Path-stream decoding follows ``docs/design/reference/git-history-queries.md``:
-binary capture avoids Python's universal-newline translation of filenames.
+binary capture preserves filenames through the filesystem encoding.
 """
 
 from __future__ import annotations
 
 import contextlib
-import locale
 import logging
 import os
 import stat
@@ -51,6 +50,11 @@ def literal_pathspec(path: str) -> str:
         The path prefixed with git's ``:(literal)`` pathspec magic.
     """
     return f":(literal){path}"
+
+
+def text_field(value: str) -> str:
+    """Decode a Git metadata field as UTF-8, replacing invalid bytes."""
+    return os.fsencode(value).decode("utf-8", errors="replace")
 
 
 def _is_ssh_remote(url: str) -> bool:
@@ -350,8 +354,8 @@ def run_git_capturing(
             also be nonempty.
         whole_repo: Allow an index command without pathspecs.
         preserve_newlines: Capture stdout without translating CR or CRLF.
-            Use for NUL-framed path streams; ordinary text stays normalized.
-            Both modes use Python's default text encoding and strict errors.
+            NUL-framed output selects this mode automatically. Paths use the
+            filesystem encoding; ordinary text stays normalized.
         input: Optional stdin text, encoded with the same policy as stdout.
             Path streams preserve its newline characters as well as NULs.
 
@@ -361,22 +365,22 @@ def run_git_capturing(
         :func:`redact` before logging or surfacing to callers.
     """
     cmd = _argv(git_root, args, pathspecs, whole_repo)
-    if preserve_newlines:
-        # Match subprocess's default text codec, including Python UTF-8 mode,
-        # without its universal-newline translation of path identities (#1290).
-        encoding = locale.getpreferredencoding(False)
+    options = args[: args.index("--")] if "--" in args else args
+    if preserve_newlines or "-z" in options:
         raw = subprocess.run(
             cmd,
             capture_output=True,
-            input=None if input is None else input.encode(encoding),
+            input=None if input is None else os.fsencode(input),
             env=env,
             check=False,
         )
         return subprocess.CompletedProcess(
             raw.args,
             raw.returncode,
-            raw.stdout.decode(encoding),
-            raw.stderr.decode(encoding).replace("\r\n", "\n").replace("\r", "\n"),
+            os.fsdecode(raw.stdout),
+            raw.stderr.decode(errors="replace")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n"),
         )
     return subprocess.run(
         cmd,

@@ -33,6 +33,7 @@ from markdown_vault_mcp.git._run import (
     git_env,
     literal_pathspec,
     run_git_capturing,
+    text_field,
 )
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 from markdown_vault_mcp.utils.fs import path_exists
@@ -123,7 +124,7 @@ def _split_z_block(block: str, field_count: int) -> tuple[list[str], list[str]] 
     paths = tokens[field_count:]
     if paths and paths[0].startswith("\n"):
         paths[0] = paths[0][1:]
-    return tokens[:field_count], paths
+    return [text_field(field) for field in tokens[:field_count]], paths
 
 
 def _truncate_diff(diff: str) -> str:
@@ -432,8 +433,7 @@ def _lineage(
     ]
     if rev_range is not None:
         cmd.append(rev_range)
-    cmd += ["--", literal_pathspec(str(path))]
-    result = run_git_capturing(git_root, *cmd, env=env, preserve_newlines=True)
+    result = run_git_capturing(git_root, *cmd, env=env, pathspecs=[str(path)])
     if result.returncode != 0:
         return _Lineage(None, False)
     shas: set[str] = set()
@@ -451,7 +451,7 @@ def _lineage(
     return _Lineage(shas, False)
 
 
-def _first_parent_records_args(cur_rel: str, revs: str | None) -> list[str]:
+def _first_parent_records_args(revs: str | None) -> list[str]:
     """Assemble Git arguments for the walk that resolves a note's names.
 
     ``-m --first-parent`` is load-bearing, not decoration: a rename performed
@@ -466,7 +466,6 @@ def _first_parent_records_args(cur_rel: str, revs: str | None) -> list[str]:
     newline survives intact and no ``core.quotePath`` unescaping is needed.
 
     Args:
-        cur_rel: The note's path, repo-relative and posix.
         revs: What to walk: a range (``"<ref>..HEAD"``) or a single revision
             to walk back from, or ``None`` for ``HEAD`` without a bound.
     """
@@ -484,7 +483,7 @@ def _first_parent_records_args(cur_rel: str, revs: str | None) -> list[str]:
     ]
     if revs is not None:
         cmd.append(revs)
-    return [*cmd, "--", literal_pathspec(cur_rel)]
+    return cmd
 
 
 class _NameSegment(NamedTuple):
@@ -535,13 +534,7 @@ _MAX_NAME_WALKS = 16
 
 def _parents(git_root: Path, sha: str, env: dict[str, str] | None) -> list[str]:
     """Return *sha*'s parents, first parent first; empty for a root commit."""
-    result = subprocess.run(
-        ["git", "-C", str(git_root), "rev-list", "--parents", "-n1", sha],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    result = run_git_capturing(git_root, "rev-list", "--parents", "-n1", sha, env=env)
     if result.returncode != 0:
         return []
     return result.stdout.split()[1:]
@@ -591,8 +584,8 @@ def _walk_one_name(
     """
     result = run_git_capturing(
         git_root,
-        *_first_parent_records_args(frontier.name, frontier.rev),
-        preserve_newlines=True,
+        *_first_parent_records_args(frontier.rev),
+        pathspecs=[frontier.name],
         env=env,
     )
     if result.returncode != 0:
@@ -765,7 +758,7 @@ def _history_log_args(
     limit: int,
     *,
     is_dir: bool,
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """Assemble the ``git log`` arguments for a history query.
 
     Args:
@@ -808,24 +801,27 @@ def _history_log_args(
     if path is None:
         # vault-wide: scope to the resolved real path so symlinked SOURCE_DIR
         # values work correctly (git compares against the real toplevel).
-        cmd += ["--name-only", "--", literal_pathspec(str(repo_path.resolve()))]
+        cmd += ["--name-only"]
+        scope = str(repo_path.resolve())
     elif is_dir:
         # directory scope: no --follow (git rejects it for anything but a
         # single file); --name-only so paths_changed carries the subtree files
         # each commit touched. git already filters the name-only output to the
         # <dir> pathspec, so no sibling paths leak in and no extra filtering is
         # needed here.
-        cmd += ["--name-only", "--", literal_pathspec(str(path))]
+        cmd += ["--name-only"]
+        scope = str(path)
     else:
         # Same threshold as every other rename-crossing query here: without it
         # this walk stopped at a rename git scored under its 50% default, and
         # listed no commit for a revision ``read`` would happily serve (#1297).
-        cmd += ["--follow", _RENAME_THRESHOLD, "--", literal_pathspec(str(path))]
-    return cmd
+        cmd += ["--follow", _RENAME_THRESHOLD]
+        scope = str(path)
+    return cmd, [scope]
 
 
 def _history_log_output(
-    git_root: Path, args: list[str], env: dict[str, str] | None
+    git_root: Path, args: list[str], pathspecs: list[str], env: dict[str, str] | None
 ) -> str:
     """Run the assembled ``git log`` command and return its raw stdout.
 
@@ -835,7 +831,7 @@ def _history_log_output(
             complaint, so a bad date never gets here.
     """
     try:
-        result = run_git_capturing(git_root, *args, preserve_newlines=True, env=env)
+        result = run_git_capturing(git_root, *args, pathspecs=pathspecs, env=env)
         result.check_returncode()
     except subprocess.CalledProcessError as exc:
         raise ValueError(f"git log failed: {(exc.stderr or '').strip()}") from exc
@@ -887,7 +883,7 @@ def _segment_shas(
     found: dict[str, str] = {}
     claims: dict[str, str] = {}
     for seg in segments:
-        cmd = ["git", "-C", str(git_root), "log", "--format=%H"]
+        cmd = ["log", "--format=%H"]
         if bounds.limit is not None:
             cmd.append(f"-n{bounds.limit}")
         if bounds.since:
@@ -895,10 +891,7 @@ def _segment_shas(
         if bounds.until:
             cmd.append(f"--until={bounds.until}")
         cmd += _segment_rev_args(seg, bounds.exclude)
-        cmd += ["--", literal_pathspec(seg.name)]
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, env=env
-        )
+        result = run_git_capturing(git_root, *cmd, pathspecs=[seg.name], env=env)
         if result.returncode != 0:
             continue
         for sha in result.stdout.split():
@@ -923,21 +916,14 @@ def _history_entries_for(
     which is what puts commits gathered from several walks into one sequence
     without this module having to compare timestamps across time zones.
     """
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(git_root),
-            "log",
-            "--no-walk",
-            "-z",
-            f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
-            *sorted(shas),
-            "--",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_git_capturing(
+        git_root,
+        "log",
+        "--no-walk",
+        "-z",
+        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
+        *sorted(shas),
+        "--",
         env=env,
     )
     if result.returncode != 0:
@@ -1134,7 +1120,9 @@ def get_file_history(
         return []
 
     limit = min(max(1, limit), 100)
-    args = _history_log_args(repo_path, path, since, until, limit, is_dir=is_dir)
+    args, pathspecs = _history_log_args(
+        repo_path, path, since, until, limit, is_dir=is_dir
+    )
 
     cur_rel = None if (path is None or is_dir) else _repo_rel(git_root, path)
     vault_prefix = _vault_prefix(git_root, repo_path)
@@ -1145,7 +1133,7 @@ def get_file_history(
     try:
         if not _has_commits(git_root, env):
             return []
-        raw = _history_log_output(git_root, args, env)
+        raw = _history_log_output(git_root, args, pathspecs, env)
         # Single-file queries only: establish which commits belong to the note
         # now at this path, so a name that was reused does not hand the caller
         # its previous occupant's commits (#1285).
@@ -1474,20 +1462,13 @@ def _canonical_order(
     module having to compare timestamps across time zones.  An invocation that
     fails returns nothing, leaving the caller with the order it already had.
     """
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(git_root),
-            "log",
-            "--no-walk",
-            "--format=%H",
-            *sorted(shas),
-            "--",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_git_capturing(
+        git_root,
+        "log",
+        "--no-walk",
+        "--format=%H",
+        *sorted(shas),
+        "--",
         env=env,
     )
     return result.stdout.split() if result.returncode == 0 else []
@@ -1497,21 +1478,14 @@ def _commit_rows_for(
     git_root: Path, shas: set[str], name: str, env: dict[str, str] | None
 ) -> list[tuple[str, ...]]:
     """Return per-commit rows for *shas*, each carrying *name* as its path."""
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(git_root),
-            "log",
-            "--no-walk",
-            "-z",
-            f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
-            *sorted(shas),
-            "--",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_git_capturing(
+        git_root,
+        "log",
+        "--no-walk",
+        "-z",
+        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
+        *sorted(shas),
+        "--",
         env=env,
     )
     if result.returncode != 0:
@@ -1599,10 +1573,10 @@ def _per_commit_rows(
     clamped_limit = None if limit is None else min(max(1, limit), 100)
     if clamped_limit is not None:
         log_cmd.append(f"-n{clamped_limit}")
-    log_cmd += [f"{ref}..HEAD", "--", literal_pathspec(path_str)]
+    log_cmd.append(f"{ref}..HEAD")
     try:
         log_result = run_git_capturing(
-            git_root, *log_cmd, preserve_newlines=True, env=env
+            git_root, *log_cmd, pathspecs=[path_str], env=env
         )
         log_result.check_returncode()
     except subprocess.CalledProcessError as exc:
@@ -1760,8 +1734,8 @@ def _revision_walk_output(
     try:
         result = run_git_capturing(
             git_root,
-            *_first_parent_records_args(cur_rel, f"{ref}..HEAD"),
-            preserve_newlines=True,
+            *_first_parent_records_args(f"{ref}..HEAD"),
+            pathspecs=[cur_rel],
             env=env,
         )
         result.check_returncode()
