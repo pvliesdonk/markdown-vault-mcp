@@ -49,6 +49,12 @@ No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
+Poll the read-only `stats` tool to monitor known sync problems and startup
+changes. Its optional `remote` field carries `state`, `reason`, `since` and
+`detail`, like write results. A successful pull does not clear a failed push;
+a successful push clears that push failure. An absent `remote` field means no
+problem is known, not that replication has been confirmed.
+
 ## Uncommitted files at startup
 
 Startup inspects the repository's working tree and staging area in both git
