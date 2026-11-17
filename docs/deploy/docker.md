@@ -269,6 +269,69 @@ The image carries the `markdown-vault-mcp` command, so you can search and read t
 
 This server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](../use/storage.md)).
 
+### Separate search data from persistent state
+
+For an opt-in separation, keep the existing `state-data` volume for the
+default file-backed KV store and FastMCP state, and put search
+data on a second local volume. This preserves the existing auth, session and
+other KV state when switching an existing deployment. The vault remains on
+its own mount. External KV or PostgreSQL embedding stores retain their own
+storage and are not reset by this recipe.
+
+Save this as `compose.search.yml` beside `compose.yml`:
+
+```yaml
+services:
+  markdown-vault-mcp:
+    volumes:
+      - search-data:/data/search
+    environment:
+      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/search/index.db
+      MARKDOWN_VAULT_MCP_STATE_PATH: /data/search/index.db.state.json
+      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/search/embeddings/embeddings
+      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/search/fastembed
+
+volumes:
+  search-data:
+```
+
+The four paths hold the SQLite index, change tracker, local embeddings and
+FastEmbed model cache, respectively. The tracker normally defaults to
+`index.db.state.json` beside the index. The overlay overrides any values for
+these paths in `.env` or `compose.yml`; adjust it if you have customised them.
+It leaves `FASTMCP_HOME` at `/data/state/fastmcp` and the default
+`MARKDOWN_VAULT_MCP_KV_STORE_URL` at `file:///data/state`. If either was
+customised, keep its persistent storage mounted and backed up separately.
+
+The normal root-started image changes ownership of root-owned directories
+under `/data`, including the new volume, before dropping privileges to
+`PUID`/`PGID`. With a Compose `user:` override, provision the new volume as
+writable by that user yourself; the entrypoint cannot fix its ownership.
+
+Start or recreate with both files explicitly, including after later changes.
+Explicit `-f` options do not load `compose.override.yml` automatically: add
+any existing overlay files before `compose.search.yml` in every command below
+to retain your deployment's settings.
+
+```bash
+docker compose -f compose.yml -f compose.search.yml up -d
+```
+
+The server rebuilds search data from the vault; model downloads and embedding
+generation can take time. The old search files remain unused in `state-data`;
+keep them until you have verified the new index. A normal reindex is the
+usual way to rebuild search; the following cold reset is for testing a fresh
+search volume. It deletes everything on `/data/search`, so use it only with
+the overlay above and no other data on that volume:
+
+```bash
+docker compose -f compose.yml -f compose.search.yml stop
+docker compose -f compose.yml -f compose.search.yml run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/search -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose -f compose.yml -f compose.search.yml up -d
+```
+
+The reset leaves `state-data` and the vault mounted, preserving their contents.
+
 ### Git
 
 The image includes `git` and `git-lfs`. For a vault that commits and pushes the changes made through the server, set the variables in [Git integration](../use/git-integration.md#managed-mode-recommended-for-containerized-deployments). An empty vault folder plus `MARKDOWN_VAULT_MCP_GIT_REPO_URL` is cloned at the first start.
