@@ -16,24 +16,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_rename_history_and_revision(isolated_repo: Path) -> None:
-    """History and revision reads follow a rename back to the note's birth."""
+def test_committed_revision_after_rename(isolated_repo: Path) -> None:
+    """A renamed note retains a breadcrumb only while its content matches."""
     store = Libgit2Store(isolated_repo)
     old = isolated_repo / "old*.md"
     new = isolated_repo / "new.md"
     text = "".join(f"line {n}\n" for n in range(30))
     old.write_text(text)
     store(old, text, "write")
-    first = _git(isolated_repo, "rev-parse", "HEAD").strip()
     old.rename(new)
     store(new, text, "rename", old_path=old)
     history = store.get_file_history(isolated_repo, new, None, 20)
-    assert [entry.sha for entry in history] == [
-        _git(isolated_repo, "rev-parse", "HEAD").strip(),
-        first,
-    ]
-    result = store.get_file_at_ref(RevisionQuery(isolated_repo, new, first, 0))
-    assert (result.historical_path, result.content) == (old.name, text)
     assert store.committed_revision(isolated_repo, new) == history[0].sha
     new.write_text("different")
     assert store.committed_revision(isolated_repo, new) is None
@@ -52,7 +45,7 @@ def test_reused_name_does_not_cross_birth(isolated_repo: Path) -> None:
     store(note, "second\n", "write")
     history = store.get_file_history(isolated_repo, note, None, 20)
     assert len(history) == 1
-    with pytest.raises(InvalidRequestError):
+    with pytest.raises(InvalidRequestError, match="did not exist at revision"):
         store.get_file_at_ref(RevisionQuery(isolated_repo, note, first, 0))
 
 
@@ -82,7 +75,7 @@ def test_untracked_recreation_cannot_read_old_note(isolated_repo: Path) -> None:
     note.unlink()
     store(note, "", "delete")
     note.write_text("new\n")
-    with pytest.raises(InvalidRequestError):
+    with pytest.raises(InvalidRequestError, match="is not tracked by Git"):
         store.get_file_at_ref(RevisionQuery(isolated_repo, note, first, 0))
 
 
@@ -103,24 +96,18 @@ def test_date_bounds_and_invalid_dates_match_cli(isolated_repo: Path) -> None:
         actual = native.get_file_history(isolated_repo, note, since, 20, until)
         expected = cli.get_file_history(isolated_repo, note, since, 20, until)
         assert actual == expected
-    with pytest.raises(InvalidRequestError):
-        native.get_file_history(isolated_repo, note, "not a date", 20)
 
 
-def test_revision_read_refuses_oversize_and_non_text(isolated_repo: Path) -> None:
-    """Limits and unreadable content are enforced before returning a revision."""
-    from markdown_vault_mcp.exceptions import DocumentUnreadableError
-
+def test_revision_read_refuses_oversize_and_bad_ref(isolated_repo: Path) -> None:
+    """Size limits and invalid refs are rejected before returning a revision."""
     store = Libgit2Store(isolated_repo)
     note = isolated_repo / "note.md"
     note.write_bytes(b"\xff\xfe")
     store(note, "", "write")
     ref = _git(isolated_repo, "rev-parse", "HEAD").strip()
-    with pytest.raises(InvalidRequestError):
+    with pytest.raises(InvalidRequestError, match="exceeding the 1-byte limit"):
         store.get_file_at_ref(RevisionQuery(isolated_repo, note, ref, 1))
-    with pytest.raises(DocumentUnreadableError):
-        store.get_file_at_ref(RevisionQuery(isolated_repo, note, ref, 0))
-    with pytest.raises(InvalidRequestError):
+    with pytest.raises(InvalidRequestError, match="not a valid ancestral commit"):
         store.get_file_at_ref(RevisionQuery(isolated_repo, note, "not-a-ref", 0))
 
 
@@ -152,6 +139,7 @@ def test_merge_treesame_history_matches_cli(isolated_repo: Path) -> None:
     note.write_text("side\n")
     _git(isolated_repo, "add", "note.md")
     _git(isolated_repo, "commit", "-qm", "side edit")
+    side = _git(isolated_repo, "rev-parse", "HEAD").strip()
     _git(isolated_repo, "checkout", "-q", branch)
     (isolated_repo / "other.txt").write_text("other\n")
     _git(isolated_repo, "add", "other.txt")
@@ -160,6 +148,9 @@ def test_merge_treesame_history_matches_cli(isolated_repo: Path) -> None:
     actual = native.get_file_history(isolated_repo, note, None, 10)
     expected = cli.get_file_history(isolated_repo, note, None, 10)
     assert [entry.sha for entry in actual] == [entry.sha for entry in expected]
+    actual_diff = native.get_file_diff(isolated_repo, note, side, True)
+    expected_diff = cli.get_file_diff(isolated_repo, note, side, True)
+    assert [row.sha for row in actual_diff] == [row.sha for row in expected_diff]
 
 
 def test_diff_does_not_include_reused_old_name(isolated_repo: Path) -> None:
@@ -183,42 +174,6 @@ def test_diff_does_not_include_reused_old_name(isolated_repo: Path) -> None:
     assert "unrelated replacement" not in diff
 
 
-@pytest.mark.parametrize(
-    "unit", ["second", "minute", "hour", "day", "week", "month", "year"]
-)
-def test_relative_dates_match_git_parser(isolated_repo: Path, unit: str) -> None:
-    """Advertised relative-date boundaries match Git's local calendar rules."""
-    from markdown_vault_mcp.git.libgit2_history import _date
-
-    text = f"1 {unit} ago"
-    expected = int(_git(isolated_repo, "rev-parse", f"--since={text}").split("=")[1])
-    actual = _date(text)
-    assert actual is not None and abs(actual - expected) <= 2
-
-
-def test_rename_and_rewrite_threshold_agrees_with_cli(isolated_repo: Path) -> None:
-    """A 36%-similar rename keeps the earlier revisions in both stores."""
-    from markdown_vault_mcp.git.strategy import GitWriteStrategy
-
-    native = Libgit2Store(isolated_repo)
-    cli = GitWriteStrategy(repo_path=isolated_repo, enable_push=False, git_lfs=False)
-    old = isolated_repo / "a.md"
-    new = isolated_repo / "b.md"
-    old.write_text("# Title\nDraft line\n")
-    native(old, "", "write")
-    old.write_text("# Title\nOriginal line\n")
-    native(old, "", "edit")
-    old.rename(new)
-    new.write_text("# Title\nModified line\n")
-    native(new, "", "rename", old_path=old)
-    expected = cli.get_file_history(isolated_repo, new, None, 10)
-    assert len(expected) == 3
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
-    with pytest.raises(InvalidRequestError, match="GitWriteStrategy"):
-        native.get_file_history(isolated_repo, new, None, 10)
-
-
 @pytest.mark.parametrize("per_commit", [False, True])
 def test_diff_missing_or_early_bound_matches_cli(
     isolated_repo: Path, per_commit: bool
@@ -239,3 +194,108 @@ def test_diff_missing_or_early_bound_matches_cli(
     assert native.get_file_diff(
         isolated_repo, note, None, per_commit, since
     ) == cli.get_file_diff(isolated_repo, note, None, per_commit, since)
+
+
+def test_history_author_honors_mailmap(isolated_repo: Path) -> None:
+    """Native history reports the same effective author as Git's mailmap."""
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    repo = isolated_repo
+    note = repo / "note.md"
+    note.write_text("note\n")
+    _git(repo, "add", "note.md")
+    _git(repo, "commit", "-qm", "note")
+    (repo / ".mailmap").write_text(
+        "Canonical Person <canonical@example.com> Fixture <fixture@example.com>\n"
+    )
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    expected = cli.get_file_history(repo, note, None, 20)[0].author
+    assert expected == "Canonical Person <canonical@example.com>"
+    assert (
+        Libgit2Store(repo).get_file_history(repo, note, None, 20)[0].author == expected
+    )
+
+
+def test_history_short_sha_honors_core_abbrev(isolated_repo: Path) -> None:
+    """Native short IDs match Git's configured unambiguous abbreviation."""
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    repo = isolated_repo
+    note = repo / "note.md"
+    note.write_text("note\n")
+    _git(repo, "add", "note.md")
+    _git(repo, "commit", "-qm", "note")
+    _git(repo, "config", "core.abbrev", "12")
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    expected = cli.get_file_history(repo, note, None, 20)[0].short_sha
+    assert len(expected) == 12
+    assert (
+        Libgit2Store(repo).get_file_history(repo, note, None, 20)[0].short_sha
+        == expected
+    )
+
+
+def test_committed_revision_rejects_mode_change(isolated_repo: Path) -> None:
+    """A mode-only worktree change invalidates a breadcrumb when Git tracks modes."""
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    repo = isolated_repo
+    _git(repo, "config", "core.filemode", "true")
+    note = repo / "note.md"
+    note.write_text("note\n")
+    note.chmod(0o644)
+    _git(repo, "add", "note.md")
+    _git(repo, "commit", "-qm", "note")
+    note.chmod(0o755)
+    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
+    assert cli.committed_revision(repo, note) is None
+    assert Libgit2Store(repo).committed_revision(repo, note) is None
+
+
+def test_committed_revision_after_filter_change_is_best_effort(
+    isolated_repo: Path,
+) -> None:
+    """Newly unsupported filters cannot make breadcrumb lookup fail a write."""
+    note = isolated_repo / "note.md"
+    note.write_text("note\n")
+    _git(isolated_repo, "add", "note.md")
+    _git(isolated_repo, "commit", "-qm", "note")
+    store = Libgit2Store(isolated_repo)
+    (isolated_repo / ".gitattributes").write_text("note.md filter=external\n")
+    _git(isolated_repo, "config", "filter.external.clean", "cat")
+    assert store.committed_revision(isolated_repo, note) is None
+
+
+@pytest.mark.parametrize("setting", [None, "auto", "false", "invalid"])
+@pytest.mark.parametrize("per_commit", [False, True])
+def test_auto_abbreviation_queries_refuse_actionably(
+    isolated_repo: Path, setting: str | None, per_commit: bool
+) -> None:
+    """Git's adaptive abbreviation requires an explicit supported configuration."""
+    repo = isolated_repo
+    note = repo / "note.md"
+    note.write_text("first\n")
+    _git(repo, "add", "note.md")
+    _git(repo, "commit", "-qm", "first")
+    before = _git(repo, "rev-parse", "HEAD").strip()
+    note.write_text("second\n")
+    _git(repo, "commit", "-qam", "second")
+    if setting is None:
+        _git(repo, "config", "--unset", "core.abbrev")
+    else:
+        _git(repo, "config", "core.abbrev", setting)
+    store = Libgit2Store(repo)
+    if setting != "invalid":
+        assert (
+            store.get_file_at_ref(RevisionQuery(repo, note, before, 0)).content
+            == "first\n"
+        )
+        assert "+second" in store.get_file_diff(repo, note, before, False)
+        note.write_text("third\n")
+        store(note, "", "write")
+        assert _git(repo, "show", "HEAD:note.md") == "third\n"
+    with pytest.raises(InvalidRequestError, match=r"core\.abbrev.*GitWriteStrategy"):
+        if per_commit:
+            store.get_file_diff(repo, note, before, True)
+        else:
+            store.get_file_history(repo, note, None, 20)

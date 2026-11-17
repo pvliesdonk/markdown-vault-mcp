@@ -45,6 +45,7 @@ def isolated_repo(
     _git(repo, "config", "core.hooksPath", ".git/hooks")
     _git(repo, "config", "user.name", "Fixture")
     _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "core.abbrev", "7")
     (repo / "unrelated.md").write_text("original\n")
     _git(repo, "add", "unrelated.md")
     _git(repo, "commit", "-qm", "initial")

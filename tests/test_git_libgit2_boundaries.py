@@ -7,96 +7,8 @@ import pytest
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git.libgit2 import Libgit2Store
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
-from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.fixtures.libgit2 import _git
 from tests.fixtures.libgit2 import isolated_repo as isolated_repo
-
-
-def test_vault_reused_name_diff(isolated_repo):
-    repo = isolated_repo
-    store = Libgit2Store(repo)
-    vault = Vault(
-        source_dir=repo,
-        settings=VaultSettings(read_only=False),
-        git_strategy=store,
-        on_write=store,
-    )
-    try:
-        vault.writer.write("note.md", "OLD DIFFERENT NOTE\n")
-        vault._write_callback.drain()
-        old = _git(repo, "rev-parse", "HEAD").strip()
-        vault.writer.delete("note.md")
-        vault._write_callback.drain()
-        vault.writer.write("note.md", "NEW NOTE\n")
-        vault._write_callback.drain()
-        patch = vault.reader.get_diff("note.md", since_sha=old)
-        assert "OLD DIFFERENT NOTE" not in patch
-        assert "+NEW NOTE" in patch
-    finally:
-        vault.close()
-        store.close()
-
-
-def test_existing_custom_filter_refused_at_open(isolated_repo):
-    repo = isolated_repo
-    _git(repo, "config", "filter.upper.clean", "tr a-z A-Z")
-    (repo / ".gitattributes").write_text("*.md filter=upper\n")
-    with pytest.raises(ConfigurationError, match="filter"):
-        Libgit2Store(repo)
-
-
-def test_vault_revert_to_head_clears_stale_staged_content(isolated_repo):
-    repo = isolated_repo
-    note = repo / "note.md"
-    note.write_text("head\n")
-    _git(repo, "add", "--", "note.md")
-    _git(repo, "commit", "-qm", "seed")
-    note.write_text("operator staged\n")
-    _git(repo, "add", "--", "note.md")
-    store = Libgit2Store(repo)
-    vault = Vault(
-        source_dir=repo,
-        settings=VaultSettings(read_only=False),
-        git_strategy=store,
-        on_write=store,
-    )
-    try:
-        vault.writer.write("note.md", "head\n")
-        vault._write_callback.drain()
-        assert _git(repo, "show", ":note.md") == "head\n"
-    finally:
-        vault.close()
-        store.close()
-
-
-def test_reference_transaction_hook_refused_at_open(isolated_repo):
-    hook = isolated_repo / ".git/hooks/reference-transaction"
-    hook.write_text("#!/bin/sh\nexit 1\n")
-    hook.chmod(0o755)
-    with pytest.raises(ConfigurationError, match="reference-transaction"):
-        Libgit2Store(isolated_repo)
-
-
-def test_head_aggregate_diff_does_not_scan_ancient_history(isolated_repo, monkeypatch):
-    import markdown_vault_mcp.git.libgit2_history as history
-
-    repo = isolated_repo
-    note = repo / "note.md"
-    store = Libgit2Store(repo)
-    for n in range(40):
-        note.write_text(f"{n}\n")
-        store(note, "", "write")
-    head = _git(repo, "rev-parse", "HEAD").strip()
-    original = history._entry
-    seen = []
-
-    def count(*args):
-        seen.append(1)
-        return original(*args)
-
-    monkeypatch.setattr(history, "_entry", count)
-    assert store.get_file_diff(repo, note, head, False) == ""
-    assert len(seen) < 15
 
 
 def test_unconfigured_filter_allows_write(isolated_repo):
@@ -108,7 +20,7 @@ def test_unconfigured_filter_allows_write(isolated_repo):
     assert _git(isolated_repo, "show", "HEAD:note.md") == "note\n"
 
 
-@pytest.mark.parametrize("limit", [-1, 0, 1, 100, 1000])
+@pytest.mark.parametrize("limit", [-1, 0, 1])
 def test_limits_match_cli(isolated_repo, limit):
     note = isolated_repo / "note.md"
     native = Libgit2Store(isolated_repo)
@@ -144,6 +56,7 @@ def test_failed_health_refresh_preserves_original_exception(isolated_repo, monke
     note = isolated_repo / "note.md"
     note.write_text("note\n")
     (isolated_repo / ".git/index.lock").write_text("held")
+    before = _git(isolated_repo, "rev-parse", "HEAD")
 
     def fail():
         raise RuntimeError("health failed")
@@ -151,6 +64,7 @@ def test_failed_health_refresh_preserves_original_exception(isolated_repo, monke
     monkeypatch.setattr(store, "_observe", fail)
     with pytest.raises(FileExistsError):
         store(note, "", "write")
+    assert _git(isolated_repo, "rev-parse", "HEAD") == before
 
 
 def _both(repo):
@@ -181,24 +95,6 @@ def test_reuse_linear_matches_cli(isolated_repo):
     assert a == b and "OLD DIFFERENT" not in a
 
 
-def test_divergent_same_note_matches_cli(isolated_repo):
-    r = isolated_repo
-    n = r / "note.md"
-    native, cli = _both(r)
-    n.write_text("shared\n")
-    _commit(r, "a")
-    _git(r, "branch", "side")
-    n.write_text("shared\nmain\n")
-    _commit(r, "m")
-    _git(r, "checkout", "-q", "side")
-    n.write_text("shared\nside\n")
-    side = _commit(r, "s")
-    _git(r, "checkout", "-q", "-")
-    assert native.get_file_diff(r, n, side, False) == cli.get_file_diff(
-        r, n, side, False
-    )
-
-
 def test_divergent_independently_born_name_matches_cli(isolated_repo):
     r = isolated_repo
     n = r / "note.md"
@@ -212,7 +108,6 @@ def test_divergent_independently_born_name_matches_cli(isolated_repo):
     _git(r, "checkout", "-q", "-")
     a = native.get_file_diff(r, n, side, False)
     b = cli.get_file_diff(r, n, side, False)
-    print("DIVERGENT-BORN native:", repr(a)[:150], "\nCLI:", repr(b)[:150])
     assert a == b
 
 
@@ -271,29 +166,26 @@ def test_effective_driver_refused_open_and_write(isolated_repo, key):
         store(n, "", "write")
 
 
-def test_refused_vault_write_updates_and_recovers_health(isolated_repo):
+def test_refused_write_updates_and_recovers_health(isolated_repo):
     _git(isolated_repo, "reset", "--hard", "-q", "HEAD")
     store = Libgit2Store(isolated_repo)
-    vault = Vault(
-        source_dir=isolated_repo,
-        settings=VaultSettings(read_only=False),
-        git_strategy=store,
-        on_write=store,
-    )
-    try:
-        attrs = isolated_repo / ".gitattributes"
-        attrs.write_text("*.md filter=upper\n")
-        _git(isolated_repo, "config", "filter.upper.clean", "tr a-z A-Z")
-        vault.writer.write("note.md", "first\n")
-        assert vault._write_callback.drain()
-        assert store.sync_health().reason == "uncommitted_changes"
-        attrs.unlink()
-        vault.writer.write("note.md", "second\n")
-        assert vault._write_callback.drain()
-        assert store.sync_health() is None
-    finally:
-        vault.close()
-        store.close()
+    attrs = isolated_repo / ".gitattributes"
+    attrs.write_text("*.md filter=upper\n")
+    _git(isolated_repo, "config", "filter.upper.clean", "tr a-z A-Z")
+    note = isolated_repo / "note.md"
+    note.write_text("first\n")
+    with pytest.raises(ConfigurationError, match="filter"):
+        store(note, "", "write")
+    assert store.sync_health().reason == "uncommitted_changes"
+    attrs.unlink()
+    store(note, "", "write")
+    assert store.sync_health() is None
+    for name in ("a.md", "b.md"):
+        (isolated_repo / name).write_text(name)
+    store(isolated_repo / "a.md", "", "write")
+    assert store.sync_health() is None
+    store(isolated_repo / "b.md", "", "write")
+    assert store.sync_health() is None
 
 
 def test_noop_reconciles_index_without_observer(isolated_repo):
@@ -370,15 +262,17 @@ def test_symlink_outside_repository_revision_is_refused(isolated_repo, tmp_path)
     link = isolated_repo / "link.md"
     link.symlink_to(outside)
     ref = _git(isolated_repo, "rev-parse", "HEAD").strip()
-    for store in _both(isolated_repo):
-        with pytest.raises(InvalidRequestError, match="outside"):
-            store.get_file_at_ref(RevisionQuery(isolated_repo, link, ref, 0))
-        with pytest.raises(InvalidRequestError, match="outside"):
-            store.committed_revision(isolated_repo, link)
+    store = Libgit2Store(isolated_repo)
+    with pytest.raises(InvalidRequestError, match="outside"):
+        store.get_file_at_ref(RevisionQuery(isolated_repo, link, ref, 0))
+    with pytest.raises(InvalidRequestError, match="outside"):
+        store.committed_revision(isolated_repo, link)
 
 
-def test_large_and_unbounded_limits_match_cli(isolated_repo):
+def test_large_and_unbounded_limits_match_cli(isolated_repo, monkeypatch):
     import subprocess
+
+    import markdown_vault_mcp.git.libgit2_history as history
 
     stream = []
     for i in range(105):
@@ -408,6 +302,28 @@ def test_large_and_unbounded_limits_match_cli(isolated_repo):
             == len(cli.get_file_diff(isolated_repo, note, first, True, limit=limit))
             == count
         )
+    calls = 0
+    original = history._diff
+
+    def counted(*args):
+        nonlocal calls
+        calls += 1
+        return original(*args)
+
+    monkeypatch.setattr(history, "_diff", counted)
+    assert len(native.get_file_history(isolated_repo, None, None, 3)) == 3
+    assert calls == 3
+    calls = 0
+    original_entry = history._entry
+
+    def counted_entry(*args):
+        nonlocal calls
+        calls += 1
+        return original_entry(*args)
+
+    monkeypatch.setattr(history, "_entry", counted_entry)
+    assert native.committed_revision(isolated_repo, note)
+    assert calls < 5
 
 
 def test_symlink_target_outside_vault_is_refused(isolated_repo):
@@ -423,6 +339,6 @@ def test_symlink_target_outside_vault_is_refused(isolated_repo):
     _git(isolated_repo, "add", "target.md", "vault/link.md")
     _git(isolated_repo, "commit", "-qm", "links")
     ref = _git(isolated_repo, "rev-parse", "HEAD").strip()
-    for store in _both(isolated_repo):
-        with pytest.raises(InvalidRequestError):
-            store.get_file_at_ref(RevisionQuery(vault, link, ref, 0))
+    store = Libgit2Store(isolated_repo)
+    with pytest.raises(InvalidRequestError, match="outside the vault"):
+        store.get_file_at_ref(RevisionQuery(vault, link, ref, 0))

@@ -175,8 +175,8 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
         return tracked
     if (
         not tracked
-        and _tree_entry(repo.index, relative) is None
         and repo.path_is_ignored(relative)
+        and relative not in pg.Index(Path(repo.path) / "index")
     ):
         return False
     _filter_guard(repo, relative)
@@ -436,19 +436,17 @@ class Libgit2Store:
         repo = self._repository(self.resolve_force_repo())
         branch = self.branch_name(self.resolve_force_repo())
         refs = (f"refs/remotes/origin/{branch}", "refs/remotes/origin/HEAD")
-        remote = next(
-            (
-                repo.references[ref].resolve().target
-                for ref in refs
-                if repo is not None and _tree_entry(repo.references, ref)
-            ),
-            None,
-        )
+        if repo is None:
+            raise OSError("No Git HEAD")
+        ref = next(filter(None, map(repo.references.get, refs)), None)
+        remote = str(ref.resolve().target) if ref else ""
+        if remote and not dry_run and remote == str(repo.head.target):
+            return PushResult(True, 0, remote, remote)
         return PushResult(
             False,
             0,
-            str(remote) if remote else "",
-            str(remote) if remote else "",
+            remote,
+            remote,
             (PUSH_REASON_DRY_RUN_UNSUPPORTED if dry_run else PUSH_REASON_PUSH_FAILED)
             if remote
             else PUSH_REASON_NO_REMOTE,

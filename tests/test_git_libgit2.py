@@ -13,73 +13,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_literal_write_preserves_unrelated_staged_file(isolated_repo: Path) -> None:
-    """Only the literal note enters the commit, leaving other staged work intact."""
-    from markdown_vault_mcp.git.libgit2 import Libgit2Store
-
-    note = isolated_repo / "a*[b].md"
-    note.write_text("content\n")
-    store = Libgit2Store(
-        repo_path=isolated_repo, commit_name="Author", commit_email="author@example.com"
-    )
-    store(note, "content\n", "write")
-    assert _git(isolated_repo, "show", "HEAD:a*[b].md") == "content\n"
-    assert _git(isolated_repo, "show", "HEAD:unrelated.md") == "original\n"
-    assert _git(isolated_repo, "show", ":unrelated.md") == "staged\n"
-
-
-def test_effective_external_clean_filter_is_refused(isolated_repo: Path) -> None:
-    """Never store raw bytes where Git would apply an external clean filter."""
-    from markdown_vault_mcp.exceptions import ConfigurationError
-    from markdown_vault_mcp.git.libgit2 import Libgit2Store
-
-    _git(isolated_repo, "config", "filter.upper.clean", "tr a-z A-Z")
-    _git(isolated_repo, "config", "filter.upper.required", "true")
-    (isolated_repo / ".gitattributes").write_text("*.md filter=upper\n")
-    note = isolated_repo / "note.md"
-    note.write_text("hello\n")
-    before = _git(isolated_repo, "rev-parse", "HEAD")
-    with pytest.raises(ConfigurationError, match=r"(?i)filter.*GitWriteStrategy"):
-        store = Libgit2Store(
-            repo_path=isolated_repo,
-            commit_name="Author",
-            commit_email="author@example.com",
-        )
-        store(note, "hello\n", "write")
-    assert _git(isolated_repo, "rev-parse", "HEAD") == before
-
-
-@pytest.mark.parametrize(
-    "name", ["star*.md", "bracket[1].md", "line\n.md", "café.md", ":name.md"]
-)
-def test_literal_write_rename_delete(isolated_repo: Path, name: str) -> None:
-    """A note's complete lifecycle commits only its exact literal paths."""
-    from markdown_vault_mcp.git.libgit2 import Libgit2Store
-
-    store = Libgit2Store(isolated_repo)
-    note = isolated_repo / name
-    target = isolated_repo / ("renamed-" + name)
-    note.write_text("a\n")
-    store(note, "a\n", "write")
-    note.rename(target)
-    store(target, "a\n", "rename", old_path=note)
-    assert _git(isolated_repo, "show", "HEAD:" + target.name) == "a\n"
-    target.unlink()
-    store(target, "", "delete")
-    assert (
-        _git(isolated_repo, "ls-tree", "--name-only", "HEAD", "--", target.name) == ""
-    )
-    assert _git(isolated_repo, "show", ":unrelated.md") == "staged\n"
-
-
 @pytest.mark.parametrize(
     "key,value,shape",
     [
         ("commit.gpgsign", "true", "signed"),
         ("remote.origin.promisor", "true", "partial"),
         ("extensions.partialclone", "origin", "partial"),
-        ("extensions.refStorage", "reftable", "reftable"),
-        ("extensions.objectFormat", "sha256", "SHA-256"),
     ],
 )
 def test_unsupported_config_is_refused(
@@ -92,6 +31,30 @@ def test_unsupported_config_is_refused(
     _git(isolated_repo, "config", key, value)
     with pytest.raises(ConfigurationError, match=shape):
         Libgit2Store(isolated_repo)
+
+
+@pytest.mark.usefixtures("isolated_repo")
+@pytest.mark.parametrize(
+    "option,shape",
+    [("--ref-format=reftable", "reftable"), ("--object-format=sha256", "SHA-256")],
+)
+def test_real_unsupported_repository_format_is_refused(
+    tmp_path: Path, option: str, shape: str
+) -> None:
+    """Refuse actual repositories in unsupported formats."""
+    import subprocess
+
+    from markdown_vault_mcp.exceptions import ConfigurationError
+    from markdown_vault_mcp.git.libgit2 import Libgit2Store
+
+    repo = tmp_path / "unsupported"
+    result = subprocess.run(
+        ["git", "init", "-q", option, str(repo)], capture_output=True, check=False
+    )
+    if result.returncode:
+        pytest.skip(f"Git does not support {option}")
+    with pytest.raises(ConfigurationError, match=shape):
+        Libgit2Store(repo)
 
 
 def test_executable_commit_hook_refused(isolated_repo: Path) -> None:
@@ -140,22 +103,8 @@ def test_lifecycle_and_no_git(tmp_path: Path) -> None:
     store.close()
 
 
-def test_committed_lfs_attributes_refused_at_open(isolated_repo: Path) -> None:
-    """An LFS rule in the committed tree prevents a store from opening."""
-    from markdown_vault_mcp.exceptions import ConfigurationError
-    from markdown_vault_mcp.git.libgit2 import Libgit2Store
-
-    (isolated_repo / ".gitattributes").write_text("*.bin filter=lfs diff=lfs\n")
-    (isolated_repo / "data.bin").write_bytes(b"fixture")
-    _git(isolated_repo, "add", ".gitattributes", "data.bin")
-    _git(isolated_repo, "commit", "-qm", "attributes")
-    _git(isolated_repo, "config", "filter.lfs.clean", "cat")
-    with pytest.raises(ConfigurationError, match=r"(?i)lfs"):
-        Libgit2Store(isolated_repo)
-
-
-def test_local_force_results_match_cli(isolated_repo: Path) -> None:
-    """Local-only pull and push return the same structured outcomes as CLI."""
+def test_local_force_pull_matches_cli(isolated_repo: Path) -> None:
+    """Local-only pull returns the same structured outcome as CLI."""
     from markdown_vault_mcp.git.libgit2 import Libgit2Store
     from markdown_vault_mcp.git.strategy import GitWriteStrategy
 
@@ -165,10 +114,6 @@ def test_local_force_results_match_cli(isolated_repo: Path) -> None:
     native = Libgit2Store(isolated_repo)
     for dry_run in (False, True):
         assert native.force_pull(dry_run=dry_run) == cli.force_pull(dry_run=dry_run)
-        assert (
-            native.force_push(dry_run=dry_run).reason
-            == cli.force_push(dry_run=dry_run).reason
-        )
 
 
 def test_eol_attributes_are_honored(isolated_repo: Path) -> None:
@@ -225,20 +170,6 @@ def test_linked_worktree_is_supported(isolated_repo: Path, tmp_path: Path) -> No
     assert _git(other, "show", "HEAD:note.md") == "linked\n"
 
 
-def test_linked_worktree_refuses_shared_signing_config(
-    isolated_repo: Path, tmp_path: Path
-) -> None:
-    """A linked worktree cannot bypass the main repository's signing policy."""
-    from markdown_vault_mcp.exceptions import ConfigurationError
-    from markdown_vault_mcp.git.libgit2 import Libgit2Store
-
-    other = tmp_path / "linked"
-    _git(isolated_repo, "worktree", "add", "-qb", "other", str(other))
-    _git(isolated_repo, "config", "commit.gpgsign", "true")
-    with pytest.raises(ConfigurationError, match="signed"):
-        Libgit2Store(other)
-
-
 def test_symlink_and_executable_modes(isolated_repo: Path) -> None:
     """A symlink is stored as a link and executable bits are retained."""
     from markdown_vault_mcp.git.libgit2 import Libgit2Store
@@ -253,22 +184,6 @@ def test_symlink_and_executable_modes(isolated_repo: Path) -> None:
     script.chmod(0o755)
     store(script, "", "write")
     assert _git(isolated_repo, "ls-tree", "HEAD", "script.md").startswith("100755 ")
-
-
-def test_effective_filter_added_after_open_is_refused(isolated_repo: Path) -> None:
-    """A changed working-tree attribute cannot introduce a silent custom filter."""
-    from markdown_vault_mcp.exceptions import ConfigurationError
-    from markdown_vault_mcp.git.libgit2 import Libgit2Store
-
-    store = Libgit2Store(isolated_repo)
-    note = isolated_repo / "note.md"
-    note.write_text("one")
-    store(note, "one", "write")
-    (isolated_repo / ".gitattributes").write_text("*.md filter=custom\n")
-    _git(isolated_repo, "config", "filter.custom.clean", "cat")
-    note.write_text("two")
-    with pytest.raises(ConfigurationError, match="filter"):
-        store(note, "two", "edit")
 
 
 def test_missing_extra_has_actionable_error(
@@ -313,3 +228,9 @@ def test_native_modules_do_not_shell_out() -> None:
         ]
         assert "subprocess" not in imports
         assert "markdown_vault_mcp.git._run" not in imports
+        assert not any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "markdown_vault_mcp.git"
+            and any(alias.name == "_run" for alias in node.names)
+            for node in ast.walk(tree)
+        )

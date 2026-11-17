@@ -64,21 +64,29 @@ succeeds. A write matching HEAD reconciles its index entries without creating a
 commit. History and per-commit diff limits are clamped between 1 and 100; an omitted
 diff limit is unbounded. Dates support ISO 8601, `N units ago` (including compound and dotted forms),
 `yesterday`, `last <weekday>`, `today`, `midnight`, and `noon`. For other expressions, use
-`GitWriteStrategy`.
+`GitWriteStrategy`. History and per-commit diff queries require a numeric
+`core.abbrev` setting; configure one or use `GitWriteStrategy` for Git’s
+adaptive default. Writes, revision reads and aggregate diffs remain available
+without a numeric setting. Full commit IDs are unchanged.
 
 Git and libgit2 may score edited renames differently. The native store refuses
 queries that require such scoring. An unambiguous exact-content rename remains
-supported, including alongside an unrelated deletion.
+supported, including alongside an unrelated deletion. A newly added note in a
+commit that deletes another file may also require uncertain matching and be
+refused.
 
 Binary diff summaries and rename diffs with
 mode changes are also refused. Use `GitWriteStrategy` for those queries.
 Committed-revision lookup examines the current path without following renames;
 an unprovable result returns no breadcrumb and an overwrite can proceed.
 Vault and directory history refuse when a merge falls within the requested
-window; a limit reached before the merge can still return results. Revision reads that need to traverse a merge also refuse.
+window; a limit reached before the merge can still return results. Single-file
+history and per-commit diffs refuse a merge that differs from every parent.
+Revision reads that need to traverse a merge also refuse.
 Repositories with `core.symlinks=false` are refused. With `core.filemode=false`,
 a regular replacement for a symlink and a new regular file use mode 100644;
-an existing regular file retains its mode.
+an existing regular file retains its mode. A local `force_push` reports success when
+the tracking ref already equals HEAD; a dry run remains unsupported.
 
 ## Migrating from 4.x
 

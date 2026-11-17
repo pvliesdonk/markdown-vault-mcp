@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 import pygit2
 
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import ConfigurationError, InvalidRequestError
+from markdown_vault_mcp.git.libgit2 import _index_path, _tree_entry
 from markdown_vault_mcp.git.libgit2 import _rel as _literal_rel
-from markdown_vault_mcp.git.libgit2 import _tree_entry
 from markdown_vault_mcp.git.query import (
     _note_text,
     _repo_relative,
@@ -73,19 +73,15 @@ def _walk(  # noqa: C901, RUF100 -- bounded lineage must handle each parent.
     """Carry each name through all parents, stopping each branch at birth."""
     if repo.head_is_unborn:
         return
-    names: dict[Any, set[str]] = defaultdict(set)
-    names[repo.head.target].add(path)
-    walker = repo.walk(
-        repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
-    )
+    names: dict[Any, set[str]] = defaultdict(set, {repo.head.target: {path}})
+    walker = repo.walk(repo.head.target, _SORT)
     if until is not None:
         for parent in until.parents:
             walker.hide(parent.id)
     for commit in walker:
         if not names:
             return
-        current_names = names.pop(commit.id, set())
-        for name in current_names:
+        for name in names.pop(commit.id, set()):
             if until is not None and commit.id == until.id:
                 yield commit, name, False, False
                 continue
@@ -105,9 +101,12 @@ def _walk(  # noqa: C901, RUF100 -- bounded lineage must handle each parent.
                 if previous_name and (previous is not None or current is None):
                     names[parent.id].add(previous_name)
             changed = all(differences) if differences else current is not None
+            if follow and changed and len(commit.parents) > 1:
+                raise _unsupported("file lineage across merge commits")
             yield commit, name, changed, born
 
 
+_SORT = pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
 _AGO = re.compile(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?")
 
 
@@ -174,13 +173,19 @@ def _timestamp(commit: Any) -> str:
     return dt.datetime.fromtimestamp(commit.author.time, zone).isoformat()
 
 
-def _history_entry(commit: Any, paths: list[str]) -> HistoryEntry:
-    sha = str(commit.id)
+def _short_id(repo: Any, commit: Any) -> str:
+    if not str(_tree_entry(repo.config, "core.abbrev")).isdigit():
+        raise _unsupported("unset, auto or non-numeric core.abbrev; set a number")
+    return str(commit.short_id)
+
+
+def _history_entry(repo: Any, commit: Any, paths: list[str]) -> HistoryEntry:
+    author = pygit2.Mailmap.from_repository(repo).resolve_signature(commit.author)
     return HistoryEntry(
-        sha,
-        sha[:7],
+        str(commit.id),
+        _short_id(repo, commit),
         _timestamp(commit),
-        f"{commit.author.name} <{commit.author.email}>",
+        f"{author.name} <{author.email}>",
         " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines()),
         paths,
     )
@@ -213,9 +218,7 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
         scope = _vault_prefix(root, path) if path is not None else prefix
 
         def scoped() -> Iterator[tuple[Any, list[str]]]:
-            for commit in repo.walk(
-                repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
-            ):
+            for commit in repo.walk(repo.head.target, _SORT):
                 if lower is not None and commit.commit_time < lower:
                     return
                 if upper is not None and commit.commit_time > upper:
@@ -237,7 +240,7 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
     return list(
         islice(
             (
-                _history_entry(c, paths)
+                _history_entry(repo, c, paths)
                 for c, paths in rows
                 if (lower is None or c.commit_time >= lower)
                 and (upper is None or c.commit_time <= upper)
@@ -321,14 +324,12 @@ def committed_revision(repo: Any, path: Path) -> str | None:
             return None
         for commit, name, changed, _ in _walk(repo, rel, follow=False):
             if changed:
-                entry = _entry(commit, name)
-                return (
-                    str(commit.id)
-                    if entry is not None
-                    and repo.create_blob_fromworkdir(rel) == entry.id
-                    else None
-                )
-    except (OSError, ValueError, KeyError, pygit2.GitError):
+                index = pygit2.Index()
+                index.read_tree(commit.tree)
+                before = index[name]
+                _index_path(repo, index, name, pygit2)
+                return str(commit.id) if before == index[name] else None
+    except (OSError, ValueError, KeyError, pygit2.GitError, ConfigurationError):
         return None
     return None
 
@@ -370,13 +371,7 @@ def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and linea
     current = _literal_rel(repo, path)
     if target is None and cutoff is not None:
         target = next(
-            (
-                c
-                for c in repo.walk(
-                    repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
-                )
-                if c.commit_time <= cutoff
-            ),
+            (c for c in repo.walk(repo.head.target, _SORT) if c.commit_time <= cutoff),
             None,
         )
         if target is None:
@@ -411,6 +406,7 @@ def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and linea
     for commit, name in islice(
         selected, None if limit is None else min(max(1, limit), 100)
     ):
+        row = _history_entry(repo, commit, [])
         parent = commit.parents[0] if commit.parents else None
         diff, old = _resolved(_diff(parent, commit), name)
         if old:
@@ -419,7 +415,6 @@ def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and linea
             patch = f"{old} => {name} (renamed, no content change)\n"
         else:
             patch = _patches(diff, {name}, summarize_binary)
-        row = _history_entry(commit, [])
         output.append(
             CommitDiff(row.sha, row.short_sha, row.timestamp, row.message, patch)
         )

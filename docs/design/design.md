@@ -7446,4 +7446,6 @@ then updates only those paths in the real index. CLI remains the default.
 Unsupported formats, partial clones, signing, commit hooks, in-progress Git
 operations and effective external clean filters are refused. Publication holds
 the index and reference locks; if the reference update fails after the index
-is published, the operation remains staged. The supporting [libgit2 reference](reference/git-libgit2.md) records the native behavior.
+is published, the operation remains staged. History and per-commit diff results
+require numeric `core.abbrev`; auto or unset settings refuse those queries. Writes,
+revision reads and aggregate diffs remain available. The supporting [libgit2 reference](reference/git-libgit2.md) records the native behavior.

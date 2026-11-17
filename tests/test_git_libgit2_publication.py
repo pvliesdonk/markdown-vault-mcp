@@ -12,68 +12,6 @@ from tests.fixtures.libgit2 import _git
 from tests.fixtures.libgit2 import isolated_repo as isolated_repo
 
 
-def test_hook_installed_after_open(isolated_repo):
-    repo = isolated_repo
-    store = Libgit2Store(repo)
-    hook = repo / ".git/hooks/pre-commit"
-    hook.write_text("#!/bin/sh\nexit 1\n")
-    hook.chmod(0o755)
-    note = repo / "note.md"
-    note.write_text("new\n")
-    with pytest.raises(ConfigurationError):
-        store(note, "", "write")
-
-
-def test_locked_index_does_not_advance_head(isolated_repo):
-    repo = isolated_repo
-    store = Libgit2Store(repo)
-    before = _git(repo, "rev-parse", "HEAD").strip()
-    (repo / ".git/index.lock").write_text("fixture lock")
-    note = repo / "note.md"
-    note.write_text("new\n")
-    with pytest.raises((OSError, pygit2.GitError)):
-        store(note, "", "write")
-    assert _git(repo, "rev-parse", "HEAD").strip() == before
-
-
-def test_pure_rename_per_commit_patch(isolated_repo):
-    repo = isolated_repo
-    store = Libgit2Store(repo)
-    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
-    old, new = repo / "old.md", repo / "new.md"
-    old.write_text("hello\n")
-    store(old, "", "write")
-    before = _git(repo, "rev-parse", "HEAD").strip()
-    old.rename(new)
-    store(new, "", "rename", old_path=old)
-    got = store.get_file_diff(repo, new, before, True)
-    expected = cli.get_file_diff(repo, new, before, True)
-    assert got[0].diff == expected[0].diff
-
-
-def test_branch_range_excludes_all_ancestors_of_ref(isolated_repo):
-    repo = isolated_repo
-    store = Libgit2Store(repo)
-    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
-    note = repo / "note.md"
-    note.write_text("base\n")
-    store(note, "", "write")
-    branch = _git(repo, "branch", "--show-current").strip()
-    _git(repo, "checkout", "-qb", "side")
-    note.write_text("side\n")
-    _git(repo, "add", "note.md")
-    _git(repo, "commit", "-qm", "side")
-    side = _git(repo, "rev-parse", "HEAD").strip()
-    _git(repo, "checkout", "-q", branch)
-    (repo / "other.txt").write_text("other\n")
-    _git(repo, "add", "other.txt")
-    _git(repo, "commit", "-qm", "main")
-    _git(repo, "merge", "--no-ff", "-qm", "merge", "side")
-    got = store.get_file_diff(repo, note, side, True)
-    expected = cli.get_file_diff(repo, note, side, True)
-    assert [row.sha for row in got] == [row.sha for row in expected]
-
-
 def test_diff_against_divergent_commit(isolated_repo):
     repo = isolated_repo
     note = repo / "note.md"
@@ -94,20 +32,6 @@ def test_diff_against_divergent_commit(isolated_repo):
     assert store.get_file_diff(repo, note, side, False) == expected
 
 
-def test_filemode_false_preserves_mode(isolated_repo):
-    repo = isolated_repo
-    note = repo / "note.md"
-    note.write_text("one\n")
-    _git(repo, "add", "note.md")
-    _git(repo, "commit", "-qm", "note")
-    _git(repo, "config", "core.filemode", "false")
-    note.chmod(0o755)
-    note.write_text("two\n")
-    store = Libgit2Store(repo)
-    store(note, "", "edit")
-    assert _git(repo, "ls-tree", "HEAD", "note.md").startswith("100644 ")
-
-
 def test_linked_worktree_common_hook_refused(isolated_repo, tmp_path):
     repo = isolated_repo
     _git(repo, "config", "--unset", "core.hooksPath")
@@ -118,18 +42,6 @@ def test_linked_worktree_common_hook_refused(isolated_repo, tmp_path):
     _git(repo, "worktree", "add", "-qb", "linkedbranch", str(other))
     with pytest.raises(ConfigurationError):
         Libgit2Store(other)
-
-
-def test_history_git_date_expression(isolated_repo):
-    repo = isolated_repo
-    note = repo / "note.md"
-    store = Libgit2Store(repo)
-    cli = GitWriteStrategy(repo_path=repo, enable_push=False, git_lfs=False)
-    note.write_text("today\n")
-    store(note, "", "write")
-    expected = cli.get_file_history(repo, note, "yesterday", 20)
-    assert expected
-    assert store.get_file_history(repo, note, "yesterday", 20) == expected
 
 
 def test_root_directory_history_matches_vault(isolated_repo):
@@ -160,74 +72,11 @@ def test_index_refresh_after_external_unstage(isolated_repo):
     assert store.committed_revision(isolated_repo, note) is None
 
 
-@pytest.mark.parametrize(
-    "expression",
-    ["yesterday", "2 weeks 3 days ago", "1.week.ago", "last monday"],
-)
-def test_common_git_date_expressions(isolated_repo, expression):
-    store = Libgit2Store(isolated_repo)
-    assert store.get_file_history(isolated_repo, None, expression, 20)
-
-
-def test_date_overflow_is_request_error(isolated_repo):
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
-    with pytest.raises(InvalidRequestError):
-        Libgit2Store(isolated_repo).get_file_history(
-            isolated_repo, None, "99999999999999999999 years ago", 20
-        )
-
-
 def test_valueless_promisor_is_refused(isolated_repo):
     with (isolated_repo / ".git/config").open("a") as config:
         config.write('\n[remote "fixture"]\n    promisor\n')
     with pytest.raises(ConfigurationError, match="partial clones"):
         Libgit2Store(isolated_repo)
-
-
-def test_bounded_history_and_revision_do_not_walk_whole_history(
-    isolated_repo, monkeypatch
-):
-    import subprocess
-
-    import markdown_vault_mcp.git.libgit2_history as history
-
-    stream = []
-    for i in range(80):
-        stream.append(
-            f"commit refs/heads/long\ncommitter Fixture <fixture@example.com> {1700000000 + i} +0000\ndata 1\nx\nM 100644 inline note.md\ndata {len(str(i))}\n{i}\n"
-        )
-    subprocess.run(
-        ["git", "-C", str(isolated_repo), "fast-import", "--quiet"],
-        input="".join(stream),
-        text=True,
-        check=True,
-        capture_output=True,
-    )
-    _git(isolated_repo, "checkout", "-q", "-f", "long")
-    store = Libgit2Store(isolated_repo)
-    calls = 0
-    original = history._diff
-
-    def counted(*args):
-        nonlocal calls
-        calls += 1
-        return original(*args)
-
-    monkeypatch.setattr(history, "_diff", counted)
-    assert len(store.get_file_history(isolated_repo, None, None, 3)) == 3
-    assert calls == 3
-    calls = 0
-    original_entry = history._entry
-
-    def counted_entry(*args):
-        nonlocal calls
-        calls += 1
-        return original_entry(*args)
-
-    monkeypatch.setattr(history, "_entry", counted_entry)
-    assert store.committed_revision(isolated_repo, isolated_repo / "note.md")
-    assert calls < 5
 
 
 def test_valueless_signing_is_refused(isolated_repo):

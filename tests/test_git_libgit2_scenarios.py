@@ -72,6 +72,8 @@ def _bounded(repo: Path, expected: set[str]) -> None:
 
 _NAMES = [
     "star*.md",
+    "a*[b].md",
+    ":name.md",
     "question?.md",
     "bracket[1].md",
     "close].md",
