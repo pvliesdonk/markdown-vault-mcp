@@ -377,13 +377,14 @@ the prefix to choose the server and infer the vault-relative path.
 
 The prefix represents the vault root: a link ending in
 `blob/main/craft/note.md` maps to `craft/note.md`. If the vault serves a
-repository subfolder, include that subfolder in the prefix. Never include a
-token in the URL: the description reaches connected clients.
+repository subfolder, include that subfolder in the prefix. Update the prefix
+if the publication branch or folder moves. Never include a token in the URL:
+the description reaches connected clients.
 
 An unset description adds nothing. Restart the server and reconnect after changing
-the value. The
-legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement suppresses the
-description; see [Server](#server) for precedence and the instruction budget.
+the value. The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement
+suppresses the description; see [Server](#server) for precedence and the
+instruction budget.
 
 ### Vault
 
