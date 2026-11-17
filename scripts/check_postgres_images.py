@@ -46,6 +46,15 @@ def lagging(
     latest_vc = _vchord_versions(
         [f"tensorchord/vchord-suite:{tag}" for tag in vchord_tags]
     )
+    for repository, pinned, latest in (
+        ("pgvector/pgvector", pinned_pg.keys(), latest_pg.keys()),
+        ("tensorchord/vchord-suite", pinned_vc.keys(), latest_vc.keys()),
+    ):
+        missing = sorted(pinned - latest)
+        if missing:
+            raise ValueError(
+                f"No comparable {repository} tags for PostgreSQL majors: {missing}"
+            )
     messages = []
     for major, (version, image) in sorted(latest_pg.items()):
         tag = image.split(":", 1)[1]
