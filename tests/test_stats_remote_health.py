@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 async def test_stats_reports_rejected_push_until_successful_push(
     git_repo_pair: GitRepoPair, managed_vault: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Report a rejected push until a later successful push clears it."""
     _seed_remote_commit(git_repo_pair, clone_name="stats_sibling")
     (managed_vault / "local.md").write_text("# local\n")
     _run_git(managed_vault, "add", "local.md")
@@ -68,6 +69,7 @@ async def test_stats_reports_rejected_push_until_successful_push(
 async def test_stats_omits_remote_for_healthy_and_unsupported_strategy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Omit the warning for healthy and unsupported Git strategies."""
     async with Client(make_server()) as client:
         assert "remote" not in _parse_tool_data(await client.call_tool("stats", {}))
         vault = domain.get_vault_singleton()
@@ -77,10 +79,12 @@ async def test_stats_omits_remote_for_healthy_and_unsupported_strategy(
 
 
 async def test_stats_omits_remote_without_git(client: Client[Any]) -> None:
+    """Omit the warning when the vault has no Git remote."""
     assert "remote" not in _parse_tool_data(await client.call_tool("stats", {}))
 
 
 async def test_stats_reports_startup_dirt(managed_vault: Path) -> None:
+    """Report uncommitted changes observed at startup."""
     (managed_vault / "leftover.md").write_text("uncommitted\n")
     async with Client(make_server()) as client:
         payload = _parse_tool_data(await client.call_tool("stats", {}))
