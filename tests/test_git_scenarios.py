@@ -118,6 +118,27 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
             repo, "commit", "-qm", "other sibling edit", "--only", "--", other_name
         )
 
+    _assert_history(repo, store, (note, renamed), first, body)
+
+    renamed.unlink()
+    store(renamed, "", "delete")
+    _bounded(repo, {renamed.name})
+    assert not renamed.exists()
+    deleted_revision = store.get_file_at_ref(
+        RevisionQuery(repo_path=repo, path=renamed, ref=first, max_bytes=0)
+    )
+    assert deleted_revision.historical_path == name
+    assert deleted_revision.content == body
+
+
+def _assert_history(
+    repo: Path,
+    store: GitWriteStrategy,
+    paths: tuple[Path, Path],
+    first: str,
+    body: str,
+) -> None:
+    note, renamed = paths
     history = store.get_file_history(repo, renamed, None, 10)
     assert len(history) == 3
     assert history[-1].sha == first
@@ -134,18 +155,8 @@ def test_literal_lifecycle_keeps_unrelated_index_entry(
     revision = store.get_file_at_ref(
         RevisionQuery(repo_path=repo, path=renamed, ref=first, max_bytes=0)
     )
-    assert revision.historical_path == name
+    assert revision.historical_path == note.name
     assert revision.content == body
-
-    renamed.unlink()
-    store(renamed, "", "delete")
-    _bounded(repo, {renamed.name})
-    assert not renamed.exists()
-    deleted_revision = store.get_file_at_ref(
-        RevisionQuery(repo_path=repo, path=renamed, ref=first, max_bytes=0)
-    )
-    assert deleted_revision.historical_path == name
-    assert deleted_revision.content == body
 
 
 def test_sync_ahead_keeps_local_commit(
@@ -164,6 +175,28 @@ def test_sync_ahead_keeps_local_commit(
     assert _run_git(local, "rev-parse", "origin/main").strip() == published
     assert _run_git(local, "rev-list", "--count", "origin/main..HEAD").strip() == "1"
     assert (local / "local.md").read_bytes() == b"local\n"
+
+
+def _assert_dirty_sync(
+    local: Path,
+    store: GitWriteStrategy,
+    mode: str,
+    caplog: pytest.LogCaptureFixture,
+    outcome: tuple[str, str, bool],
+) -> None:
+    before, remote, advanced = outcome
+    assert not advanced and _git_head(local) == before
+    assert "git_worktree_dirty" in caplog.text
+    assert _run_git(local, "rev-parse", "origin/main").strip() == remote
+    assert _run_git(local, "rev-list", "--count", "HEAD..origin/main").strip() == "1"
+    assert (local / "README.md").read_bytes() == b"uncommitted local\n"
+    if mode == "diverged_dirty":
+        assert (local / "local.md").read_bytes() == b"committed local\n"
+    _run_git(local, "stash", "push", "-qm", "preserve dirty edit")
+    assert store.sync_once(local) is True
+    _run_git(local, "merge-base", "--is-ancestor", remote, "HEAD")
+    assert (local / "README.md").read_bytes() == b"remote\n"
+    assert _run_git(local, "show", "stash@{0}:README.md") == "uncommitted local\n"
 
 
 @pytest.mark.parametrize(
@@ -199,20 +232,7 @@ def test_two_clone_divergence(
     with caplog.at_level("INFO", logger="markdown_vault_mcp.git"):
         advanced = store.sync_once(local)
     if mode in {"dirty", "diverged_dirty"}:
-        assert not advanced and _git_head(local) == before
-        assert "git_worktree_dirty" in caplog.text
-        assert _run_git(local, "rev-parse", "origin/main").strip() == remote
-        assert (
-            _run_git(local, "rev-list", "--count", "HEAD..origin/main").strip() == "1"
-        )
-        assert (local / "README.md").read_bytes() == b"uncommitted local\n"
-        if mode == "diverged_dirty":
-            assert (local / "local.md").read_bytes() == b"committed local\n"
-        _run_git(local, "stash", "push", "-qm", "preserve dirty edit")
-        assert store.sync_once(local) is True
-        _run_git(local, "merge-base", "--is-ancestor", remote, "HEAD")
-        assert (local / "README.md").read_bytes() == b"remote\n"
-        assert _run_git(local, "show", "stash@{0}:README.md") == "uncommitted local\n"
+        _assert_dirty_sync(local, store, mode, caplog, (before, remote, advanced))
     else:
         assert advanced
         _run_git(local, "merge-base", "--is-ancestor", remote, "HEAD")
