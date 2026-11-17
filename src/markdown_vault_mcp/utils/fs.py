@@ -346,6 +346,19 @@ def _open_directory_at(name: str, parent: int | None = None) -> int:
         raise
 
 
+def open_child_directory(parent: int, name: str) -> int:
+    """Open a child without following links; the caller owns the descriptor.
+
+    Args:
+        parent: Open parent directory descriptor.
+        name: Child component.
+
+    Returns:
+        An open directory descriptor.
+    """
+    return _open_directory_at(name, parent)
+
+
 def _descend_directory(descriptor: int, components: Sequence[str]) -> int:
     """Transfer descriptor ownership through no-follow components, closing on failure."""
     try:

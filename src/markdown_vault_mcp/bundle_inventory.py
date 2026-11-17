@@ -17,6 +17,7 @@ from markdown_vault_mcp.stores._legacy import matrix_sequence
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.content_kind import is_allowed_artifact, is_note
 from markdown_vault_mcp.utils.fs import (
+    open_child_directory,
     open_directory_nofollow,
     read_regular_nofollow,
 )
@@ -91,6 +92,25 @@ class BundleInspectionRequest:
 
 
 @dataclass(frozen=True)
+class BundleTreeRequest(BundleInspectionRequest):
+    """Select a subtree page, resuming after a vault-relative cursor path.
+
+    Attributes:
+        cursor: Last returned path, strictly below the selected scope.
+    """
+
+    cursor: str | None = None
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.cursor is not None:
+            scope = _components(self.root) + _components(self.directory)
+            cursor = _components(self.cursor)
+            if len(cursor) <= len(scope) or cursor[: len(scope)] != scope:
+                raise ValueError("cursor must be strictly below the selected scope")
+
+
+@dataclass(frozen=True)
 class BundleEntry:
     """A visible immediate child, without its body, metadata values or link target.
 
@@ -117,15 +137,16 @@ class BundleEntry:
 
 @dataclass(frozen=True)
 class BundleInspection:
-    """One bounded live observation; completeness never describes a whole bundle.
+    """One bounded live observation of a directory or subtree page.
 
     Attributes:
         request: Explicit selected root and relative directory.
         state: Selected directory availability under current policy.
-        enumeration: Completeness of immediate policy-visible enumeration only.
-        entries: Sorted bounded observations; a capped subset has no stable ordering promise.
+        enumeration: Completeness of policy-visible enumeration.
+        entries: Bounded observations; tree pages follow component order.
         search_state: Always ``not_evaluated``; parsing says nothing about admission.
         interpretation: Selection by the caller, without global OKF mode detection.
+        next_cursor: Last returned tree path when another page may remain.
     """
 
     request: BundleInspectionRequest
@@ -134,6 +155,7 @@ class BundleInspection:
     entries: tuple[BundleEntry, ...] = ()
     search_state: Literal["not_evaluated"] = "not_evaluated"
     interpretation: Literal["caller_selected"] = "caller_selected"
+    next_cursor: str | None = None
 
 
 def _missing(exc: OSError) -> bool:
@@ -379,11 +401,39 @@ class BundleInspector:
             ):
                 return BundleInspection(request, "unavailable")
             with open_directory_nofollow(root, parts, source_resolved=True) as parent:
+                if isinstance(request, BundleTreeRequest):
+                    return self._walk_page(parent, request, scope)
                 return self._enumerate(parent, request, scope)
         except OSError as exc:
             return BundleInspection(
                 request, "missing" if _missing(exc) else "unavailable"
             )
+
+    def _walk_page(
+        self, parent: int, request: BundleTreeRequest, scope: str
+    ) -> BundleInspection:
+        walker = _TreeWalk(self, request)
+        walker.walk(parent, scope, 1)
+        if walker.stopped and walker.enumeration == "complete":
+            walker.enumeration = "entry_limit"
+        return BundleInspection(
+            request,
+            "inspected",
+            walker.enumeration,
+            tuple(walker.entries),
+            next_cursor=walker.entries[-1].path
+            if walker.stopped and walker.entries
+            else None,
+        )
+
+    def _labelled(self, entry: BundleEntry, path: str) -> BundleEntry:
+        return replace(
+            entry,
+            visibility="index_excluded"
+            if is_path_excluded(path, self._excludes)
+            else "visible",
+            hidden_path=any(part.startswith(".") for part in path.split("/")),
+        )
 
     def _enumerate(
         self, parent: int, request: BundleInspectionRequest, scope: str
@@ -417,17 +467,7 @@ class BundleInspector:
                         continue
                     remaining -= consumed
                     if entry is not None:
-                        entries.append(
-                            replace(
-                                entry,
-                                visibility="index_excluded"
-                                if is_path_excluded(path, self._excludes)
-                                else "visible",
-                                hidden_path=any(
-                                    part.startswith(".") for part in path.split("/")
-                                ),
-                            )
-                        )
+                        entries.append(self._labelled(entry, path))
         except OSError:
             enumeration = "unavailable"
         return BundleInspection(
@@ -459,6 +499,10 @@ class BundleInspector:
     def _classify(
         self, parent: int, path: str, mode: int, remaining: int
     ) -> tuple[BundleEntry | None, int]:
+        if stat.S_ISLNK(mode):
+            if self._visible_file(path) or "." not in path.rsplit("/", 1)[-1]:
+                return BundleEntry(path, state="unavailable", reason="symlink"), 0
+            return None, 0
         if stat.S_ISDIR(mode):
             name = path.rsplit("/", 1)[-1]
             descriptor = os.open(
@@ -498,3 +542,87 @@ class BundleInspector:
             reason = "note_limit" if len(raw) > self._note_limit else "byte_budget"
             return BundleEntry(path, role, reason=reason), len(raw)
         return _parsed(path, role, raw), len(raw)
+
+
+class _TreeWalk:
+    """Hold page state while traversing descriptor-relative directories."""
+
+    def __init__(self, inspector: BundleInspector, request: BundleTreeRequest) -> None:
+        self.inspector = inspector
+        self.request = request
+        self.cursor = _components(request.cursor) if request.cursor is not None else ()
+        self.entries: list[BundleEntry] = []
+        self.remaining = 1024 * 1024
+        self.enumeration: Enumeration = "complete"
+        self.stopped = False
+
+    def walk(self, fd: int, directory: str, depth: int) -> None:
+        selected = self.inspector._absolute_source.joinpath(*_components(directory))
+        if any(
+            path.parent == selected for path in self.inspector._unavailable_policy_paths
+        ):
+            self.enumeration = "unavailable"
+        try:
+            with os.scandir(fd) as children:
+                names = sorted(child.name for child in children)
+        except OSError:
+            self.enumeration = "unavailable"
+            return
+        for name in names:
+            if self.stopped:
+                return
+            if "\\" in name:
+                self.enumeration = "unavailable"
+                continue
+            path = f"{directory}/{name}" if directory else name
+            if not self.inspector._internal(path):
+                self.visit(fd, path, depth)
+
+    def visit(self, fd: int, path: str, depth: int) -> None:
+        parts = _components(path)
+        before = bool(self.cursor) and parts <= self.cursor
+        ancestor = bool(self.cursor) and self.cursor[: len(parts)] == parts
+        if before:
+            if ancestor:
+                self.descend(fd, path, depth, resume=True)
+            return
+        if (
+            self.entries
+            and is_note(path)
+            and self.remaining < self.inspector._note_limit + 1
+        ):
+            self.stopped = True
+            return
+        try:
+            entry, consumed = self.inspector._observe(
+                fd, parts[-1], path, self.remaining
+            )
+        except OSError:
+            self.enumeration = "unavailable"
+            return
+        self.remaining -= consumed
+        if entry is None:
+            return
+        if entry.role == "directory" and depth >= 32:
+            entry = replace(entry, state="unavailable", reason="depth_limit")
+            self.enumeration = "unavailable"
+        self.entries.append(self.inspector._labelled(entry, path))
+        if len(self.entries) == self.request.entry_limit:
+            self.stopped = True
+        elif entry.role == "directory" and entry.reason == "directory":
+            self.descend(fd, path, depth, resume=False)
+
+    def descend(self, fd: int, path: str, depth: int, *, resume: bool) -> None:
+        try:
+            child = open_child_directory(fd, path.rsplit("/", 1)[-1])
+        except OSError as exc:
+            if not resume or exc.errno not in {errno.ENOENT, errno.ENOTDIR}:
+                self.enumeration = "unavailable"
+            return
+        try:
+            if depth >= 32:
+                self.enumeration = "unavailable"
+            else:
+                self.walk(child, path, depth + 1)
+        finally:
+            os.close(child)

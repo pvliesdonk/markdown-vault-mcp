@@ -3639,8 +3639,14 @@ This keeps encoding, input, resource-limit and unexpected failures separate,
 analogous to the scanner's categorized boundary without adopting its admission
 or deterministic-skip policy. Oversize or budget-limited content stays uninspected;
 invalid encoding, malformed metadata and absent/invalid/present type fields are
-separate observations. There is no recursive walk, snapshot, pagination,
-navigation synthesis, declaration discovery or search-admission claim.
+separate observations. `inspect_bundle_tree` pages a recursive pre-order walk,
+sorting each directory by component name. Its path cursor resumes after the
+last returned row; additions at or before it require a fresh walk. This is a
+live observation, not a snapshot. Pages contain at most 1000 rows and read at
+most 1 MiB; depth beyond 32 is unavailable. A full page can require an empty
+final call. Visible and suffixless symlinks are reported unavailable without
+following them. There is no navigation synthesis, declaration discovery or
+search-admission claim.
 
 #### Internal Manager Architecture
 

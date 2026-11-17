@@ -137,10 +137,30 @@ Other unexpected parser failures produce `state="unavailable"` with reason
 `unexpected_parser_error`; sibling observations remain available. Exception
 details are omitted.
 
-This is a live observation with no snapshot, pagination or stable truncated
-subset guarantee. It does not descend into child directories, evaluate search admission, detect global
+`inspect_bundle` is a live observation with no stable truncated subset guarantee.
+It does not descend into child directories, evaluate search admission, detect global
 OKF mode, serve navigation bodies or create navigation files. Unsupported
 no-follow filesystem primitives produce `unavailable`.
+
+For a subtree, pass the last page's `next_cursor` to the next request:
+
+```python { .fragment }
+from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+
+page = vault.reader.inspect_bundle_tree(BundleTreeRequest(root="knowledge", entry_limit=50))
+while page.next_cursor is not None:
+    page = vault.reader.inspect_bundle_tree(
+        BundleTreeRequest(root="knowledge", entry_limit=50, cursor=page.next_cursor)
+    )
+```
+
+Tree pages are ordered by path components, with directories before their
+children. The limit counts returned rows. The cursor is the last returned path,
+strictly below the selected directory. A full final page requires one empty
+call to establish completion. The walk is live: additions after the cursor can
+appear, while additions at or before it require a new walk. Enumeration marked
+`unavailable` is incomplete. The walk stops at depth 32 and before exceeding
+its 1 MiB page read budget; visible symlinks and those without a suffix are unavailable.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet

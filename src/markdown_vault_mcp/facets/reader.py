@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.bundle_inventory import (
         BundleInspection,
         BundleInspectionRequest,
+        BundleTreeRequest,
     )
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -90,6 +91,17 @@ class ReaderFacet:
 
         Returns:
             Live disk observations; search admission is not evaluated.
+        """
+        return self._doc_mgr.inspect_bundle(request)
+
+    def inspect_bundle_tree(self, request: BundleTreeRequest) -> BundleInspection:
+        """Inspect a page of a selected subtree independently of the index.
+
+        Args:
+            request: Selection, page limit, and optional path cursor.
+
+        Returns:
+            Live observations and an optional continuation cursor.
         """
         return self._doc_mgr.inspect_bundle(request)
 
