@@ -369,40 +369,20 @@ class WriteCallbackDispatcher:
             return
         with self._group_lock:
             group = next(
-                (
-                    group
-                    for group in self._groups.values()
-                    if group.scope.token == token
-                ),
-                None,
+                (g for g in self._groups.values() if g.scope.token == token), None
             )
-        if group is not None and self._accepts_group:
-            result = None
-            try:
+        result = None
+        try:
+            # Only a callback that opted in is ever buffered (see ``fire``),
+            # so reaching here means ``on_write_batch`` exists.
+            if group is not None:
                 result = getattr(on_write, "on_write_batch")(  # noqa: B009 -- callback opts in dynamically
                     items,
                     scope.tool_name,
                     primary_paths=frozenset(primary_paths),
                     group_subject=group.description,
                 )
-            except Exception:
-                logger.error(
-                    "write_callback_batch_failed tool=%s count=%s",
-                    scope.tool_name,
-                    len(items),
-                    exc_info=True,
-                )
-            finally:
-                group.record(
-                    result
-                    if isinstance(result, GroupCommitResult)
-                    else GroupCommitResult(None, 0, "failed")
-                )
-            return
-        try:
-            # Only a callback that opted in is ever buffered (see ``fire``),
-            # so reaching here means ``on_write_batch`` exists.
-            if self._accepts_primary_paths:
+            elif self._accepts_primary_paths:
                 primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
                 primary_batch.on_write_batch(
                     items, scope.tool_name, primary_paths=frozenset(primary_paths)
@@ -417,6 +397,13 @@ class WriteCallbackDispatcher:
                 len(items),
                 exc_info=True,
             )
+        finally:
+            if group is not None:
+                group.record(
+                    result
+                    if isinstance(result, GroupCommitResult)
+                    else GroupCommitResult(None, 0, "failed")
+                )
 
     def _flush_all_scopes(self) -> None:
         """Flush every open scope, newest last.

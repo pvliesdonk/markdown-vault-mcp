@@ -22,7 +22,6 @@ class GroupCommitResult:
     ``committed`` means a commit was made; ``no_changes`` means none was
     needed; ``failed`` means staging, commit, or reporting failed. Failure is
     sticky across flushes. An unknown path count is reported as zero.
-
     """
 
     sha: str | None
@@ -51,11 +50,11 @@ class CommitGroup:
     def record(self, result: GroupCommitResult) -> None:
         """Accumulate a flush result, preserving any failure."""
         previous = self.result
-        status = result.status
-        if previous.status == "failed" or status == "failed":
-            status = "failed"
-        elif previous.status == "committed" and status == "no_changes":
-            status = "committed"
+        status = max(
+            previous.status,
+            result.status,
+            key=("no_changes", "committed", "failed").index,
+        )
         self.result = GroupCommitResult(
             result.sha or previous.sha, previous.files + result.files, status
         )
@@ -74,18 +73,15 @@ def make_group(description: str, owner: Principal | None) -> CommitGroup:
     The subject is a single line of at most 4096 UTF-8 bytes, leaving room in
     Git's command-line argument limit for the remainder of the invocation.
     """
-    try:
-        size = len(description.encode("utf-8"))
-    except UnicodeEncodeError as exc:
-        raise CommitGroupError("Description must be valid UTF-8") from exc
     if (
         not description.strip()
         or description != description.strip()
-        or size > 4096
         or any(
             unicodedata.category(char) in {"Cc", "Cs", "Zl", "Zp"}
             for char in description
         )
+        # After the Cs test, so a lone surrogate never reaches the encoder.
+        or len(description.encode("utf-8")) > 4096
     ):
         raise CommitGroupError(
             "Description must be a single line of at most 4096 UTF-8 bytes without leading or trailing whitespace or controls"

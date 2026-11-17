@@ -509,14 +509,12 @@ class GitWriteStrategy:
         root = str(git_root)
         items = _group_final_items(root, items)
         ignored = _ignored_paths(
-            root, [p for p, op, _, _ in items if op in {"write", "edit", "append"}]
+            root, [p for p, op, _, _ in items if op in {"write", "edit"}]
         )
         scope: list[str] = []
         staged = failed = whole_repo = False
         for path, operation, old_path, _principal in items:
-            ignored_write = (
-                operation in {"write", "edit", "append"} and str(path) in ignored
-            )
+            ignored_write = operation in {"write", "edit"} and str(path) in ignored
             if ignored_write and not _is_tracked(root, path):
                 logger.debug("git_group_ignored path=%s", path)
                 continue
@@ -540,7 +538,7 @@ class GitWriteStrategy:
         _commit_staged(root, subject, identity, commit_scope)
         sha = None
         try:
-            sha = self._git(git_root, "rev-parse", "HEAD").strip()
+            sha = self.head_sha(git_root)
             paths = self._git(
                 git_root,
                 "diff-tree",
