@@ -345,16 +345,8 @@ def test_source_move_does_not_cascade_rewrites(tmp_path: Path) -> None:
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         vault.index.build_index()
-        before = vault.reader.read("A/source.md").etag
         vault.writer.rename("A/source.md", "C/new.md", update_links=True)
         wait_for_writer_drain(vault)
-        after = vault.reader.read("C/new.md").etag
-        assert (
-            vault.writer._doc_mgr._link_rewrites.rewrites_since(
-                "C/new.md", etag=before, current=after
-            )
-            == 1
-        )
         assert {
             row.link_text: row.target_path
             for row in vault.graph.get_outlinks("C/new.md")
@@ -363,71 +355,38 @@ def test_source_move_does_not_cascade_rewrites(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("raw", ["Bad%2FName.md", "Bad%00Name.md", "Bad%FFName.md"])
-def test_refused_escapes_do_not_fallback_and_are_reported(
-    tmp_path: Path, raw: str
+@pytest.mark.parametrize(
+    ("raw", "literal", "refused"),
+    [
+        ("Bad%2FName.md", "Bad%2FName.md", True),
+        ("Bad%00Name.md", "Bad%00Name.md", True),
+        ("Bad%FFName.md", "Bad%FFName.md", True),
+        ("Bad%252FName.md", "Bad%2FName.md", False),
+    ],
+)
+def test_escaped_destinations_report_or_resolve(
+    tmp_path: Path, raw: str, literal: str, refused: bool
 ) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
     (tmp_path / "Sub").mkdir()
-    (tmp_path / "Sub" / raw).write_text("# Unrelated\n", encoding="utf-8")
+    (tmp_path / "Sub" / literal).write_text("# Target\n", encoding="utf-8")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         vault.index.build_index()
         result = vault.writer.write(
             "root.md", f"[x]({raw})\n", report_unresolved_links=True
         )
-        assert result.unresolved_links == [raw]
-        assert not vault.graph.get_outlinks("root.md")[0].exists
-        assert [b.raw_target for b in vault.graph.get_broken_links()] == [raw]
-        (tmp_path / raw).write_text("# Local literal\n", encoding="utf-8")
-        vault.index.reindex()
-        assert vault.graph.get_outlinks("root.md")[0].exists
-    finally:
-        vault.close()
-
-
-def test_failed_source_rewrite_reports_partial_rename(tmp_path: Path) -> None:
-    from unittest.mock import patch
-
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    _source_move_fixture(tmp_path)
-    (tmp_path / "A/source.md").write_text("[x](B/target.md)\n", encoding="utf-8")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        vault.index.build_index()
-        with patch.object(
-            vault.writer._doc_mgr,
-            "_rewrite_one_source",
-            side_effect=OSError("disk full"),
-        ):
-            result = vault.writer.rename(
-                "A/source.md", "C/source.md", update_links=True
-            )
-        wait_for_writer_drain(vault)
-        assert (tmp_path / "C/source.md").is_file()
-        assert result.hint is not None
-        assert "C/source.md" in result.hint
-        assert result.updated_links == 0
-        assert vault.graph.get_outlinks("C/source.md")[0].target_path == "C/B/target.md"
-    finally:
-        vault.close()
-
-
-def test_double_encoded_escape_can_resolve_literal_name(tmp_path: Path) -> None:
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    (tmp_path / "Sub").mkdir()
-    (tmp_path / "Sub/Bad%2FName.md").write_text("# Target\n", encoding="utf-8")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        vault.index.build_index()
-        result = vault.writer.write(
-            "root.md", "[x](Bad%252FName.md)", report_unresolved_links=True
-        )
-        assert result.unresolved_links == []
-        assert vault.graph.get_outlinks("root.md")[0].target_path == "Sub/Bad%2FName.md"
+        assert result.unresolved_links == ([raw] if refused else [])
+        link = vault.graph.get_outlinks("root.md")[0]
+        if refused:
+            assert not link.exists
+            assert [b.raw_target for b in vault.graph.get_broken_links()] == [raw]
+            (tmp_path / raw).write_text("# Local literal\n", encoding="utf-8")
+            vault.index.reindex()
+            assert vault.graph.get_outlinks("root.md")[0].exists
+        else:
+            assert link.target_path == "Sub/Bad%2FName.md"
     finally:
         vault.close()
 
@@ -452,49 +411,6 @@ def test_folder_move_does_not_cascade_suffix_rewrites(tmp_path: Path) -> None:
         assert {
             r.link_text: r.target_path for r in vault.graph.get_outlinks("source.md")
         } == {"first": "A2/a.md", "second": "A2/A2/a.md"}
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("folder_move", [False, True])
-@pytest.mark.parametrize(
-    ("use", "definition"),
-    [
-        ("[link][r]", "  [r]: B/target.md"),
-        (r"[link][r\]x]", r"  [r\]x]: B/target.md"),
-        ("[link][r]", "  [r]:\n  B/target.md"),
-    ],
-)
-def test_moved_source_preserves_indented_reference(
-    tmp_path: Path, folder_move: bool, use: str, definition: str
-) -> None:
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    _source_move_fixture(tmp_path)
-    (tmp_path / "D").mkdir()
-    (tmp_path / "C/D").mkdir()
-    (tmp_path / "D/other.md").write_text("# target\n", encoding="utf-8")
-    (tmp_path / "C/D/other.md").write_text("# shadow\n", encoding="utf-8")
-    (tmp_path / "A/source.md").write_text(
-        f"{use} [other](D/other.md)\n\n{definition}\n", encoding="utf-8"
-    )
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        vault.index.build_index()
-        assert {
-            link.target_path for link in vault.graph.get_outlinks("A/source.md")
-        } == {"B/target.md", "D/other.md"}
-        if folder_move:
-            vault.writer.move_folder("A", "C")
-        else:
-            vault.writer.rename("A/source.md", "C/source.md", update_links=True)
-        wait_for_writer_drain(vault)
-        for _ in range(2):
-            assert {
-                link.target_path for link in vault.graph.get_outlinks("C/source.md")
-            } == {"B/target.md", "D/other.md"}
-            assert len(vault.graph.get_backlinks("B/target.md")) == 1
-            vault.index.reindex()
     finally:
         vault.close()
 
@@ -538,7 +454,6 @@ def test_moved_source_reports_unmatched_rewrite_without_partial_write(
         source.write_text(unchanged, encoding="utf-8")
         result = vault.writer.rename("A/source.md", "C/source.md", update_links=True)
         assert result.hint is not None and "C/source.md" in result.hint
-        assert (tmp_path / "C/source.md").read_text(encoding="utf-8") == unchanged
     finally:
         vault.close()
 

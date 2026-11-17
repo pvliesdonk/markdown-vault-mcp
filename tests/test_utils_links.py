@@ -217,6 +217,19 @@ class TestApplyLinkReplacement:
         ("markdown", "[a](a.md) [b](b.md)", "[a](b.md) [b](a.md)"),
         ("reference", "[a]: a.md\n[b]: b.md\n", "[a]: b.md\n[b]: a.md\n"),
         ("wikilink", "[[a.md|A]] [[b.md]]", "[[b.md|A]] [[a.md]]"),
+        ("reference", "  [r]: a.md\n", "  [r]: b.md\n"),
+        ("reference", r"  [r\]x]: a.md" + "\n", r"  [r\]x]: b.md" + "\n"),
+        ("reference", "  [r]:\n  a.md\n", "  [r]:\n  b.md\n"),
+        (
+            "reference",
+            "[r]: a.md\n`[r]: a.md`\n```md\n[r]: a.md\n```\n",
+            "[r]: b.md\n`[r]: a.md`\n```md\n[r]: a.md\n```\n",
+        ),
+        (
+            "markdown",
+            '[x](a.md "a `title` survives")\n`[x](a.md)`\n```md\n[x](a.md)\n```\n',
+            '[x](b.md "a `title` survives")\n`[x](a.md)`\n```md\n[x](a.md)\n```\n',
+        ),
     ],
 )
 def test_batch_rewrites_swap_original_destinations(
