@@ -1664,8 +1664,8 @@ class DocumentManager:
             by_source: Mapping of source path (at its *current* on-disk
                 location) to ``(target_old, backlink_row)`` pairs to rewrite
                 within that source.
-            target_map: Mapping of old target path to new target path; must
-                cover every ``target_old`` in *by_source*.
+            target_map: Mapping of moved target paths to their new paths;
+                targets absent from the map remain at their old paths.
             op_name: Caller name used as the log-message prefix.
 
         Returns:
@@ -1708,7 +1708,7 @@ class DocumentManager:
                         row["raw_target"],
                         row["fragment"],
                         target_old,
-                        target_map[target_old],
+                        target_map.get(target_old, target_old),
                     )
                     for target_old, row in items
                 ]
@@ -1800,7 +1800,6 @@ class DocumentManager:
         for target, row in outgoing:
             if target != old_path:
                 by_source[new_path].append((target, row))
-                target_map[target] = target
 
         return self._rewrite_link_sources(
             by_source, target_map, op_name="_update_backlinks"
@@ -2011,10 +2010,6 @@ class DocumentManager:
                     if target not in md_map:
                         annotated.append((target, row))
 
-            target_map = dict(md_map)
-            for target_old, _ in annotated:
-                target_map.setdefault(target_old, target_old)
-
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
             #    raised before anything moved.
@@ -2035,7 +2030,7 @@ class DocumentManager:
                 by_source[src_new].append((target_old, row))
 
             pending_callbacks, dirty_paths, failed_links = self._rewrite_link_sources(
-                by_source, target_map, op_name="move_folder"
+                by_source, md_map, op_name="move_folder"
             )
 
             # 6. Index: purge old note paths, reparse new note paths, plus the

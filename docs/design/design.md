@@ -3440,8 +3440,8 @@ for an exact vault path and then suffix matches, using the wikilink tie-break
 below. Explicit decoded `/`, `./`, and `../` prefixes keep their stated
 location. A destination whose percent decoding is refused does not use the
 vault search; its source-relative literal path remains available. Obsidian's
-precedence when both paths exist is [unverified]; this
-project chooses local-first for generic Markdown compatibility. Unlike
+precedence when both paths exist is [unverified]; local-first is proposed
+for generic Markdown compatibility. Unlike
 wikilinks, these links do not infer `.md` or match aliases.
 Every pass recomputes the source-relative path from the original destination,
 so adding or removing a target updates the graph consistently.
