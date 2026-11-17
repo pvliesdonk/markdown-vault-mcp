@@ -1,5 +1,12 @@
 # Reference research log
 
+## 2026-11-16
+
+- [MCP tool outcomes and errors](mcp-tool-outcomes-and-errors.md): checked
+  ext-apps 1.7.4's `callServerTool` result handling for #1640 and pinned the
+  `isError` result to the synthetic-host browser regression. Other claims
+  were not re-researched; the next review remains 2027-03-25.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
