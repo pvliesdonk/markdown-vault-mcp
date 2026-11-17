@@ -2334,18 +2334,25 @@ class TestEmbedTextEnrichment:
         from markdown_vault_mcp.vault import Vault
 
         provider = _CapturingProvider()
+        source = _enriched_vault(tmp_path)
+        (source / "doc.md").write_text(
+            "---\ntitle: Enriched Doc\nsummary: A crisp summary.\n---\n"
+            "# Distinct Section\nplain chunk body\n",
+            encoding="utf-8",
+        )
         vault = Vault(
-            source_dir=_enriched_vault(tmp_path),
+            source_dir=source,
             settings=VaultSettings(
                 embeddings_path=tmp_path / "embeddings", embed_context=True
             ),
             embedding_provider=provider,
+            chunk_strategy=HeadingChunker(short_doc_lines=0),
         )
         try:
             vault.index.build_index()
             assert vault.index.build_embeddings() == 1
             assert provider.texts == [
-                "Enriched Doc\n\n# Enriched Doc\n\nplain chunk body"
+                "Enriched Doc\nDistinct Section\n\nplain chunk body"
             ]
         finally:
             vault.close()
