@@ -56,6 +56,23 @@ class _BatchRecorder:
         self.batches.append((tool_name, [item[0] for item in items]))
 
 
+class _GatedRecorder(_BatchRecorder):
+    def __init__(self, on_enter: Callable[[], None] | None = None) -> None:
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self.completed = threading.Event()
+        self.on_enter = on_enter
+
+    def on_write_batch(self, items: Sequence[WriteBatchItem], tool_name: str) -> None:
+        self.entered.set()
+        if self.on_enter is not None:
+            self.on_enter()
+        assert self.release.wait(5)
+        super().on_write_batch(items, tool_name)
+        self.completed.set()
+
+
 class _PrimaryRecorder(_BatchRecorder):
     accepts_primary_paths = True
 
@@ -92,17 +109,7 @@ class _PlainRecorder:
 
 class TestScopeAcknowledgement:
     def test_wait_and_empty_scope_do_not_flush_another_scope(self) -> None:
-        entered, release = threading.Event(), threading.Event()
-
-        class Gated(_BatchRecorder):
-            def on_write_batch(
-                self, items: Sequence[WriteBatchItem], tool_name: str
-            ) -> None:
-                entered.set()
-                assert release.wait(5)
-                super().on_write_batch(items, tool_name)
-
-        recorder = Gated()
+        recorder = _GatedRecorder()
         dispatcher = WriteCallbackDispatcher(recorder)
         with bound_commit_scope("open") as open_scope:
             dispatcher.fire(Path("open.md"), "", "write")
@@ -111,14 +118,14 @@ class TestScopeAcknowledgement:
         done = dispatcher._enqueue_scope_end(scope)
         assert done is not None
         try:
-            assert entered.wait(5)
+            assert recorder.entered.wait(5)
             assert not done.done()
             assert not done.cancel()
             with bound_commit_scope("read") as empty:
                 assert dispatcher._enqueue_scope_end(empty) is None
             assert not done.done()
         finally:
-            release.set()
+            recorder.release.set()
         done.result(timeout=5)
         assert recorder.batches == [("write", [Path("note.md")])]
         open_done = dispatcher._enqueue_scope_end(open_scope)
@@ -128,25 +135,22 @@ class TestScopeAcknowledgement:
         assert recorder.batches[-1] == ("open", [Path("open.md")])
 
     def test_default_close_is_nonblocking(self) -> None:
-        entered, release = threading.Event(), threading.Event()
-
-        class Gated(_BatchRecorder):
-            def on_write_batch(
-                self, items: Sequence[WriteBatchItem], tool_name: str
-            ) -> None:
-                entered.set()
-                assert release.wait(5)
-                super().on_write_batch(items, tool_name)
-
-        dispatcher = WriteCallbackDispatcher(Gated())
+        recorder = _GatedRecorder()
+        dispatcher = WriteCallbackDispatcher(recorder)
+        returned = threading.Event()
+        with bound_commit_scope("first") as first:
+            dispatcher.fire(Path("first.md"), "", "write")
+        closer = threading.Thread(
+            target=lambda: (dispatcher.end_scope(first), returned.set())
+        )
+        closer.start()
         try:
-            with bound_commit_scope("first") as first:
-                dispatcher.fire(Path("first.md"), "", "write")
-                dispatcher.end_scope(first)
-            assert entered.wait(5)
-            assert not release.is_set()
+            assert recorder.entered.wait(2)
+            assert returned.wait(0.2), "end_scope blocked on its callback"
+            assert not recorder.release.is_set()
         finally:
-            release.set()
+            recorder.release.set()
+            closer.join(5)
             dispatcher.close()
 
     def test_callback_failure_acknowledges_and_noops(self, caplog: Any) -> None:
@@ -169,18 +173,6 @@ class TestScopeAcknowledgement:
         assert (
             WriteCallbackDispatcher(_PlainRecorder())._enqueue_scope_end(scope) is None
         )
-
-    def test_dead_worker_is_reported(self, caplog: Any) -> None:
-        dispatcher = WriteCallbackDispatcher(_BatchRecorder())
-        dead = threading.Thread(target=lambda: None)
-        dead.start()
-        dead.join()
-        with bound_commit_scope("write") as scope:
-            dispatcher._worker = dead
-            dispatcher._scopes_with_writes.add(scope.token)
-            assert dispatcher._enqueue_scope_end(scope) is None
-        assert "commit_scope_wait_dead_worker" in caplog.text
-        dispatcher.close()
 
 
 class TestScopeBinding:
@@ -417,69 +409,15 @@ class _FakeMiddlewareContext:
 
 class TestMiddleware:
     @pytest.mark.asyncio
-    async def test_waiting_commit_does_not_starve_default_executor(self) -> None:
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_scope_close_does_not_depend_on_executor(self, cancel: bool) -> None:
         from concurrent.futures import ThreadPoolExecutor
 
         loop = asyncio.get_running_loop()
-        entered = asyncio.Event()
-        release = threading.Event()
-
-        class Gated(_BatchRecorder):
-            def on_write_batch(
-                self, items: Sequence[WriteBatchItem], tool_name: str
-            ) -> None:
-                loop.call_soon_threadsafe(entered.set)
-                assert release.wait(5)
-                super().on_write_batch(items, tool_name)
-
-        dispatcher = WriteCallbackDispatcher(Gated())
-
-        class Vault:
-            _enqueue_commit_scope_end = dispatcher._enqueue_scope_end
-
-        async def write(_ctx: Any) -> str:
-            dispatcher.fire(Path("note.md"), "", "write")
-            return "ok"
-
-        pool = ThreadPoolExecutor(max_workers=1)
-        loop.set_default_executor(pool)
-        with mock.patch("markdown_vault_mcp.domain.get_vault", return_value=Vault()):
-            task = asyncio.create_task(
-                CommitScopeMiddleware().on_call_tool(
-                    _FakeMiddlewareContext("write", object()), write
-                )
-            )  # type: ignore[arg-type]
-            try:
-                await asyncio.wait_for(entered.wait(), 2)
-                assert await asyncio.wait_for(asyncio.to_thread(lambda: 42), 0.2) == 42
-            finally:
-                release.set()
-                await task
-                dispatcher.close()
-                pool.shutdown(wait=True)
-
-    @pytest.mark.asyncio
-    async def test_cancellation_cannot_prevent_scope_enqueue(self) -> None:
-        from concurrent.futures import ThreadPoolExecutor
-
-        loop = asyncio.get_running_loop()
-        occupied, release, fired = (
-            threading.Event(),
-            threading.Event(),
-            threading.Event(),
-        )
-        release_commit = threading.Event()
-        body_finished = asyncio.Event()
-
-        class Recorder(_BatchRecorder):
-            def on_write_batch(
-                self, items: Sequence[WriteBatchItem], tool_name: str
-            ) -> None:
-                assert release_commit.wait(5)
-                super().on_write_batch(items, tool_name)
-                fired.set()
-
-        dispatcher = WriteCallbackDispatcher(Recorder())
+        entered, body_finished = asyncio.Event(), asyncio.Event()
+        pool_release, occupied = threading.Event(), threading.Event()
+        recorder = _GatedRecorder(lambda: loop.call_soon_threadsafe(entered.set))
+        dispatcher = WriteCallbackDispatcher(recorder)
 
         class Vault:
             _enqueue_commit_scope_end = dispatcher._enqueue_scope_end
@@ -491,12 +429,13 @@ class TestMiddleware:
 
         def occupy() -> None:
             occupied.set()
-            release.wait(5)
+            pool_release.wait(5)
 
         pool = ThreadPoolExecutor(max_workers=1)
         loop.set_default_executor(pool)
-        pool.submit(occupy)
-        assert occupied.wait(2)
+        if cancel:
+            pool.submit(occupy)
+            assert occupied.wait(2)
         with mock.patch("markdown_vault_mcp.domain.get_vault", return_value=Vault()):
             task = asyncio.create_task(
                 CommitScopeMiddleware().on_call_tool(
@@ -505,15 +444,25 @@ class TestMiddleware:
             )  # type: ignore[arg-type]
             try:
                 await body_finished.wait()
-                task.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                    await task
-                release.set()
-                release_commit.set()
-                assert await asyncio.to_thread(fired.wait, 2)
+                if cancel:
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
+                else:
+                    await asyncio.wait_for(entered.wait(), 2)
+                    assert (
+                        await asyncio.wait_for(asyncio.to_thread(lambda: 42), 0.2) == 42
+                    )
+                pool_release.set()
+                recorder.release.set()
+                assert await asyncio.to_thread(recorder.completed.wait, 2)
+                if not cancel:
+                    assert await task == "ok"
             finally:
-                release.set()
-                release_commit.set()
+                pool_release.set()
+                recorder.release.set()
+                if not task.done():
+                    await task
                 dispatcher.close()
                 pool.shutdown(wait=True)
 
@@ -521,17 +470,8 @@ class TestMiddleware:
     async def test_timeout_allows_late_callback_completion(
         self, monkeypatch: pytest.MonkeyPatch, caplog: Any
     ) -> None:
-        release, fired = threading.Event(), threading.Event()
-
-        class Recorder(_BatchRecorder):
-            def on_write_batch(
-                self, items: Sequence[WriteBatchItem], tool_name: str
-            ) -> None:
-                assert release.wait(5)
-                super().on_write_batch(items, tool_name)
-                fired.set()
-
-        dispatcher = WriteCallbackDispatcher(Recorder())
+        recorder = _GatedRecorder()
+        dispatcher = WriteCallbackDispatcher(recorder)
 
         class Vault:
             _enqueue_commit_scope_end = dispatcher._enqueue_scope_end
@@ -552,10 +492,10 @@ class TestMiddleware:
                 )  # type: ignore[arg-type]
             assert result == "ok"
             assert "commit_scope_wait_timeout" in caplog.text
-            release.set()
-            assert await asyncio.to_thread(fired.wait, 2)
+            recorder.release.set()
+            assert await asyncio.to_thread(recorder.completed.wait, 2)
         finally:
-            release.set()
+            recorder.release.set()
             dispatcher.close()
 
     @staticmethod
@@ -672,6 +612,26 @@ def _subjects(repo: Path) -> list[str]:
         check=True,
     )
     return out.stdout.splitlines()
+
+
+def _show_head(repo: Path) -> str:
+    import subprocess
+
+    return subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "show",
+            "--format=%s",
+            "--name-status",
+            "--find-renames",
+            "HEAD",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
 
 
 def _staged_paths(repo: Path) -> set[str]:
@@ -1434,41 +1394,14 @@ class TestScopeSurvivesARealToolCall:
             finally:
                 release.set()
                 await task
-            write_status = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo),
-                    "show",
-                    "--format=%s",
-                    "--name-status",
-                    "HEAD",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
+            write_status = _show_head(repo)
             assert "write: proj/a/second.md" in write_status
             for path in ("second.md", "index.md", "log.md"):
                 assert f"A\tproj/a/{path}" in write_status
             await client.call_tool(
                 "move_folder", {"old_dir": "proj/a", "new_dir": "proj/b"}
             )
-            move_status = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo),
-                    "show",
-                    "--format=%s",
-                    "--name-status",
-                    "--find-renames",
-                    "HEAD",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
+            move_status = _show_head(repo)
             assert "R100\tproj/a/second.md\tproj/b/second.md" in move_status
 
     async def test_a_single_file_tool_call_still_names_its_path(

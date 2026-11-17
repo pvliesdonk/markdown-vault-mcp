@@ -6596,7 +6596,7 @@ Properties this depends on:
 - **A writing call waits for its callback attempt (#2128).** The server
   awaits a per-scope marker without occupying an executor thread or flushing other
   open scopes. Empty scopes return immediately. The wait is bounded at 30
-  seconds; a timeout or dead worker is logged and the result returns best
+  seconds; a timeout is logged and the result returns best
   effort, with a commit possibly landing later. Callback failure is also logged;
   completion does not guarantee Git succeeded. Concurrent calls share FIFO
   latency but are not isolated from each other's filesystem changes. Library

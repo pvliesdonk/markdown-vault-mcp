@@ -24,7 +24,7 @@ class CommitScopeMiddleware(Middleware):
 
     Opening the scope is enough for the dispatcher to group the call's writes;
     closing it makes the group commit. A writing call waits for its callback
-    attempt, bounded by the dispatcher's timeout, without blocking the loop.
+    attempt, bounded by the middleware's timeout, without blocking the loop.
     """
 
     async def on_call_tool(
@@ -68,7 +68,7 @@ class CommitScopeMiddleware(Middleware):
             if done is not None:
                 try:
                     await asyncio.wait_for(
-                        asyncio.shield(asyncio.wrap_future(done)), _SCOPE_WAIT_TIMEOUT
+                        asyncio.wrap_future(done), _SCOPE_WAIT_TIMEOUT
                     )
                 except TimeoutError:
                     logger.warning(

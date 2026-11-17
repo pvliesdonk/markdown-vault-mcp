@@ -240,22 +240,20 @@ class WriteCallbackDispatcher:
         into :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`, after
         :meth:`close`, or when the worker was never started — in each case
         nothing was buffered under this scope, so there is nothing to flush.
-        The marker is queued without waiting.
+        Never blocks: the marker is enqueued and the worker flushes it in FIFO
+        order, behind every write the scope fired.
 
         Args:
             scope: The scope to close, as returned by
                 :func:`~markdown_vault_mcp._commit_scope.bound_commit_scope`.
         """
-        self._enqueue_scope_end(scope, skip_empty=False)
+        self._enqueue_scope_end(scope)
 
-    def _enqueue_scope_end(
-        self, scope: CommitScope, *, skip_empty: bool = True
-    ) -> Future[None] | None:
+    def _enqueue_scope_end(self, scope: CommitScope) -> Future[None] | None:
         """Enqueue the scope end and return its completion without blocking.
 
         Args:
             scope: The scope to close.
-            skip_empty: Avoid queuing a marker when no writes were fired.
 
         Returns:
             A future for the callback attempt, or None when no wait is needed.
@@ -267,14 +265,7 @@ class WriteCallbackDispatcher:
             self._scopes_with_writes.discard(scope.token)
             if self._closed or self._worker is None:
                 return None
-            if skip_empty and not wrote:
-                return None
-            if skip_empty and not self._worker.is_alive():
-                logger.error(
-                    "commit_scope_wait_dead_worker tool=%s token=%s outcome=will_not_commit",
-                    scope.tool_name,
-                    scope.token,
-                )
+            if not wrote:
                 return None
             marker = _ScopeEnd(scope.token)
             self._queue.put(marker)
@@ -497,6 +488,7 @@ class WriteCallbackDispatcher:
             if self._closed:
                 return
             self._closed = True
+            self._scopes_with_writes.clear()
             worker = self._worker
         if worker is not None and worker.is_alive():
             self._queue.put(None)  # sentinel

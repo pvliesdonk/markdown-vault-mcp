@@ -1077,7 +1077,8 @@ class Vault:
 
         Called by
         :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
-        when a tool call returns. This queues the marker without blocking.
+        when a tool call returns. Never blocks: the marker is queued behind the writes
+        that call fired, and the dispatcher flushes it in order.
 
         Args:
             scope: The scope to close.
@@ -1085,14 +1086,7 @@ class Vault:
         self._write_callback.end_scope(scope)
 
     def _enqueue_commit_scope_end(self, scope: CommitScope) -> Future[None] | None:
-        """Enqueue a scope's end and return its callback-attempt future.
-
-        Args:
-            scope: The scope to close.
-
-        Returns:
-            A completion future, or None when no wait is needed.
-        """
+        """Enqueue a scope's end and return its callback-attempt future."""
         return self._write_callback._enqueue_scope_end(scope)
 
     def close(self) -> None:
