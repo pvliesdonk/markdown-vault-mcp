@@ -2,7 +2,7 @@
 type: Reference
 title: MCP tool outcomes and errors
 description: How the MCP spec, FastMCP, the MCP Python SDK, pvl-core, model vendors and published servers separate a tool's negative outcome from a tool error, on the wire and in the logs.
-subject_version: "MCP 2026-07-28 (with 2025-11-25 and 2025-06-18); FastMCP 4.0.9; mcp 2.2.0; fastmcp-pvl-core 10.0.0; ext-apps 1.7.4; vendor docs and published servers as of 2026-09-25"
+subject_version: "MCP 2026-07-28 (with 2025-11-25 and 2025-06-18); FastMCP 4.0.9; mcp 2.2.0; fastmcp-pvl-core 10.0.0; vendor docs and published servers as of 2026-09-25"
 valid_for: "MCP 2026-07-28 and FastMCP 4.x; vendor and server behaviour as of 2026-09"
 generated:
   by: process:researching-references
@@ -15,10 +15,6 @@ verified:
     at: 2026-09-25T17:00:00+02:00
 status: stable
 sources:
-  - id: ext-apps-1-7-4
-    title: MCP Apps ext-apps 1.7.4 app source (callServerTool)
-    resource: https://unpkg.com/@modelcontextprotocol/ext-apps@1.7.4/dist/src/app.js
-    accessed: 2026-11-16
   - id: mcp-schema
     title: MCP specification 2026-07-28, schema.ts (CallToolResult, ToolResultContent), commit ab3a39c1
     resource: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c1/schema/2026-07-28/schema.ts
@@ -157,10 +153,6 @@ models answer the same question is in the companion page,
   page describes, so no claim carries a pin.
 
 ## Claims
-
-### MCP Apps tool results
-
-- In ext-apps 1.7.4, `callServerTool` returns the validated `tools/call` result from `request`; a result carrying `isError: true` resolves normally, while a JSON-RPC error can reject the request. [source: ext-apps-1-7-4] [pins: tests/test_vault_apps_accessibility.py::test_context_tool_error_shows_message_and_retry_succeeds]
 
 ### What the protocol says
 

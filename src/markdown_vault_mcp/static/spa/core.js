@@ -32,7 +32,8 @@ function escHtml(s) {
 /** Extract parsed JSON from a CallToolResult ({content: [{type:'text', text:'...'}]}).
  *  Returns the parsed object, or null if no text content found.
  *  Throws Error with the server's message when the result is a tool error
- *  (isError: callServerTool resolves rather than rejects for these), and
+ *  (isError: callServerTool resolves rather than rejects for these; see
+ *  docs/design/reference/mcp-apps-tool-results.md), and
  *  with a descriptive message on malformed JSON. */
 function parseToolResult(result) {
   if (!result) return null;

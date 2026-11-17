@@ -33,6 +33,8 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   spec, FastMCP, the Python SDK, pvl-core, model vendors and published servers
   say and do about a tool's negative outcome versus a tool error, on the wire
   (`isError`) and in the logs.
+- [MCP Apps tool results](mcp-apps-tool-results.md) — how the ext-apps SDK
+  delivers a tool error result to the Vault Explorer's parser.
 - [Negative outcomes and faults outside MCP](negative-outcomes-and-faults.md) —
   how HTTP, gRPC, OpenTelemetry, GraphQL, JSON-RPC and five language error
   models separate a valid "no" from a fault; the companion to the MCP page.
