@@ -3843,10 +3843,8 @@ class TestGetFileDiff:
         fallback also fails, ``ValueError("Could not retrieve diff for commit …")``
         is raised (the nested ``exc2`` path).
 
-        Setup mirrors ``test_get_file_diff_per_commit_parent_less_falls_back_to_git_show``:
-        ``rev-parse --verify {sha}^`` returns non-zero (parent-less), so the
-        code takes the fallback branch — but then the fallback ``git show`` also
-        raises, triggering the inner ``except CalledProcessError as exc2`` re-raise.
+        The injected parent probe selects the fallback, where the injected
+        ``git show`` failure triggers the nested error handling.
         """
         from unittest.mock import patch
 
