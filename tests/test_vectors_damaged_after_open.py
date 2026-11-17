@@ -414,7 +414,7 @@ class TestAWriterJob:
                 store.close()
 
     @pytest.mark.parametrize("partial", [False, True])
-    @pytest.mark.parametrize("trigger", ["writer", "read"])
+    @pytest.mark.parametrize("trigger", ["writer", "read", "public"])
     def test_failed_recovery_can_be_rebuilt_explicitly(
         self,
         tmp_path: Path,
@@ -429,6 +429,7 @@ class TestAWriterJob:
         assert provider is not None
         original = provider.embed
         calls = 0
+        failed = threading.Event()
 
         def failing(texts: list[str]) -> list[list[float]]:
             nonlocal calls
@@ -437,6 +438,7 @@ class TestAWriterJob:
             calls += 1
             if partial and calls != 2:
                 return original(texts)
+            failed.set()
             raise RuntimeError("provider unavailable")
 
         try:
@@ -446,12 +448,26 @@ class TestAWriterJob:
                 (root / "alpha.md").write_text("# Alpha\n\nFresh kumquats.\n")
                 with pytest.raises(RuntimeError, match="build_embeddings"):
                     vault.index.reindex()
-            else:
+            elif trigger == "read":
                 vault.reader.search("apples", mode="semantic")
+            else:
+                vault.writer.write("alpha.md", "# Alpha\n\nFresh kumquats.\n")
+                assert failed.wait(5)
+                vault._coordinator.writer.submit(FlushDirtyEmbeddings()).result(
+                    timeout=5
+                )
             assert len(_aside(tmp_path)) == 1
-            assert len(metadata_by_path(vault._vectors)) == (2 if partial else 0)
+            if trigger != "public":
+                assert len(metadata_by_path(vault._vectors)) == (2 if partial else 0)
             monkeypatch.setattr(provider, "embed", original)
-            vault.index.build_embeddings()
+            if trigger == "public":
+                vault.writer.write("alpha.md", "# Alpha\n\nFresh lemons.\n")
+                assert vault._coordinator.wait_for_drain(timeout=5)
+                vault._coordinator.writer.submit(FlushDirtyEmbeddings()).result(
+                    timeout=5
+                )
+            else:
+                vault.index.build_embeddings()
             assert set(metadata_by_path(vault._vectors)) == {
                 "alpha.md",
                 "beta.md",
