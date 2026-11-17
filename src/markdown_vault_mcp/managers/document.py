@@ -1210,10 +1210,9 @@ class DocumentManager:
         content is never part of the request.  When the file does not end
         with a newline, one is inserted before *content* so the appended
         text starts on its own line; otherwise *content* is written
-        directly after the existing content.  Like every content write,
-        the file is persisted in the vault's normalized form (UTF-8, no
-        BOM, ``\\n`` line endings), so a CRLF file is normalized on its
-        first append.
+        directly after the existing content. Existing content is read as
+        UTF-8 without a BOM and with line endings normalized to ``\\n``;
+        supplied content retains its line endings when written.
 
         Args:
             path: Relative document path.

@@ -49,6 +49,8 @@ Selection count, plan, per-note counts and preview diffs.
 Preview `replace_text(pattern="old.example", replacement="new.example", folders=["guides"])`. Review every diff, then send the same arguments with `dry_run=false` and `plan` set to the returned plan. Apply refuses a stale plan. Matching covers the whole note, including frontmatter, and regex mode uses Python `re` syntax.
 
 A request selects at most 500 notes, 256 KiB per note and 8 MiB total. Patterns may be up to 4 KiB and replacements up to 64 KiB. Output is limited to 8 MiB and 10,000 matches. Preview diffs are limited to 1,048,576 characters. The worker deadline includes startup and JSON transport as well as matching. OKF provenance and folder maintenance happen during apply and are not shown in the text diffs. Maintenance runs for each written note, so hundreds of notes in one folder can take seconds. This tool does not return folder conventions or unresolved-link diagnostics; use `get_conventions` and `get_broken_links` when needed.
+
+The bulk result does not include a `previous_revision` for each note. In a git-backed vault, use [`get_history`](git.md#get_history) to find earlier revisions.
 <!-- DOMAIN-EXAMPLE-replace_text-END -->
 
 ## `write`

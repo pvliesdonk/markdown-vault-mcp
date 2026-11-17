@@ -88,6 +88,28 @@ def test_preview_then_apply_literal(
     )
 
 
+@pytest.mark.parametrize("duplicate_context", [False, True])
+def test_dense_single_note_preview_completes(
+    tmp_path: Path,
+    manager_factory: Callable[..., DocumentManager],
+    duplicate_context: bool,
+) -> None:
+    body = "".join(
+        f"{i} old\n"
+        if i % 2 == 0
+        else f"{i // 4 if duplicate_context else i} {'x' * 20}\n"
+        for i in range(13000)
+    )
+    assert len(body.encode()) < 256 * 1024
+    (tmp_path / "a.md").write_text(body, encoding="utf-8")
+    preview = BulkReplacer(manager_factory(tmp_path)).replace(
+        ReplaceRequest("old", "new", paths=("a.md",))
+    )
+    assert preview.replacements == 6500
+    assert preview.notes[0].diff.count(" old\n") == 6500
+    assert preview.notes[0].diff.count(" new\n") == 6500
+
+
 def test_large_reviewed_apply_does_not_regenerate_diffs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
