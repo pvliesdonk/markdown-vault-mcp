@@ -29,7 +29,7 @@ provenance and folder maintenance.
 |---|---|---|---|
 | `pattern` | `string` | required | Exact text or regular expression to match. |
 | `replacement` | `string` | `""` | Replacement text; regex mode accepts capture references. |
-| `paths` | `array of string \| null` | `null` | Explicit note paths; reserved index.md and log.md are allowed. |
+| `paths` | `array of string \| null` | `null` | Explicit note paths; index.md and log.md are reserved when OKF maintenance is enabled. |
 | `folders` | `array of string \| null` | `null` | Recursive folder scopes; an empty string selects the vault. Folder scopes skip reserved index.md and log.md. |
 | `regex` | `boolean` | `false` | Interpret pattern as a regular expression with inline flags such as (?i), (?m) and (?s); otherwise match exact text. |
 | `dry_run` | `boolean` | `true` | Preview complete diffs when true; apply when false. |

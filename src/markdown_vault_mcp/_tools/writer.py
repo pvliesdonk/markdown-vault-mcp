@@ -321,7 +321,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             pattern: Exact text or regular expression to match.
             replacement: Replacement text; regex mode accepts capture references.
-            paths: Explicit note paths; reserved index.md and log.md are allowed.
+            paths: Explicit note paths; index.md and log.md are reserved when
+                OKF maintenance is enabled.
             folders: Recursive folder scopes; an empty string selects the vault.
                 Folder scopes skip reserved index.md and log.md.
             regex: Interpret pattern as a regular expression with inline flags

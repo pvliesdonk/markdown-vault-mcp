@@ -348,8 +348,8 @@ class DocumentManager:
         """
         selected: dict[str, int] = {}
 
-        def add(path: str, *, explicit: bool) -> None:
-            candidate = self._replace_candidate(path, explicit=explicit)
+        def add(path: str, *, explicit: bool, scope: Path | None = None) -> None:
+            candidate = self._replace_candidate(path, explicit=explicit, scope=scope)
             if candidate is not None:
                 selected[candidate[0]] = candidate[1]
             if len(selected) > limit:
@@ -358,7 +358,11 @@ class DocumentManager:
         for path in paths:
             add(path, explicit=True)
         for folder in folders:
-            root = self._source_dir if folder == "" else self._validate_dir_path(folder)
+            root = (
+                self._source_dir.resolve()
+                if folder == ""
+                else self._validate_dir_path(folder)
+            )
             if not is_directory(root):
                 raise DocumentNotFoundError(
                     f"Folder {folder!r} does not exist; choose an existing folder."
@@ -368,25 +372,29 @@ class DocumentManager:
                 raise exc
 
             for file in iter_markdown_files(root, on_error=fail):
-                add(file.relative_to(self._source_dir).as_posix(), explicit=False)
+                add(
+                    file.relative_to(self._source_dir.resolve()).as_posix(),
+                    explicit=False,
+                    scope=root,
+                )
         return sorted(selected.items())
 
     def _replace_candidate(
-        self, path: str, *, explicit: bool
+        self, path: str, *, explicit: bool, scope: Path | None
     ) -> tuple[str, int] | None:
-        absolute = self._validate_path(path)
-        relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
-        excluded = self._is_path_excluded(relative) or self.in_submodule(relative)
-        if not explicit and (
-            excluded
-            or absolute.name in {"index.md", "log.md"}
-            or any(part.startswith(".") for part in Path(relative).parts[:-1])
-        ):
+        if not self._replace_path_allowed(path, explicit=explicit):
             return None
-        if explicit and excluded:
-            raise InvalidRequestError(
-                f"Cannot select {path!r}; choose a note outside exclusions and submodules."
-            )
+        try:
+            absolute = self._validate_path(path)
+        except InvalidRequestError:
+            if explicit:
+                raise
+            return None
+        if scope is not None and not absolute.is_relative_to(scope.resolve()):
+            return None
+        relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
+        if not self._replace_path_allowed(relative, explicit=explicit):
+            return None
         try:
             info = absolute.stat()
         except (FileNotFoundError, NotADirectoryError) as exc:
@@ -399,6 +407,19 @@ class DocumentManager:
             )
         return relative, info.st_size
 
+    def _replace_path_allowed(self, path: str, *, explicit: bool) -> bool:
+        if self._is_path_excluded(path) or self.in_submodule(path):
+            if explicit:
+                raise InvalidRequestError(
+                    f"Cannot select {path!r}; choose a note outside exclusions and submodules."
+                )
+            return False
+        parts = Path(path).parts
+        return explicit or (
+            Path(path).name not in {"index.md", "log.md"}
+            and not any(part.startswith(".") for part in parts[:-1])
+        )
+
     def read_for_replace(self, path: str, max_bytes: int) -> tuple[str, str, int]:
         """Read a bounded note snapshot and its raw-byte etag.
 
@@ -407,7 +428,7 @@ class DocumentManager:
             max_bytes: Maximum bytes to read.
 
         Returns:
-            Normalized text, raw-byte etag, and bytes read.
+            Decoded text, raw-byte etag, and bytes read.
         """
         cap = (
             min(max_bytes, self._max_note_read_bytes)
@@ -421,12 +442,27 @@ class DocumentManager:
                 "Note exceeds the replacement limit; narrow paths or folders."
             )
         try:
-            text = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
+            text = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise InvalidRequestError(
                 f"Note {path!r} is not UTF-8; narrow paths or folders."
             ) from exc
         return text, compute_etag(raw), len(raw)
+
+    def validate_for_replace(self, path: str, text: str) -> None:
+        """Preflight the existing OKF write enricher for a candidate note.
+
+        Args:
+            path: Vault-relative path for a refusal message.
+            text: Proposed full note text.
+        """
+        if self._okf_write_enrich is not None:
+            try:
+                self._okf_write_enrich(text, "write")
+            except yaml.YAMLError as exc:
+                raise InvalidRequestError(
+                    f"Cannot write {path}: its frontmatter block is not parseable; correct the replacement."
+                ) from exc
 
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.

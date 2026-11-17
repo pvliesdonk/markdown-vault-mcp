@@ -57,7 +57,7 @@ def test_regex_and_stale_selection(tmp_path: Path) -> None:
     )
     preview = replacer.replace(request)
     assert "+123-Ab" in preview.notes[0].diff
-    (tmp_path / "new.md").write_text("nothing", encoding="utf-8")
+    (tmp_path / "new.md").write_text("AB 234", encoding="utf-8")
     from dataclasses import replace
 
     with pytest.raises(ConcurrentModificationError):
@@ -298,7 +298,7 @@ def test_zero_width_and_stale_unchanged_note(
     replacer = BulkReplacer(manager)
     request = ReplaceRequest("old", "new", folders=("",))
     preview = replacer.replace(request)
-    other.write_text("changed", encoding="utf-8")
+    other.write_text("old changed", encoding="utf-8")
     with pytest.raises(ConcurrentModificationError):
         replacer.replace(replace(request, dry_run=False, plan=preview.plan))
     assert (tmp_path / "a.md").read_text() == "old"
@@ -493,8 +493,8 @@ def test_additional_limits_and_invalid_replacement(
             ReplaceRequest("a", r"\g<missing>", paths=("a.md",), regex=True)
         )
     monkeypatch.setattr(bulk_replace, "MAX_OUTPUT_BYTES", 10)
-    with pytest.raises(InvalidRequestError, match="may be too large"):
-        replacer.replace(ReplaceRequest("a", r"\1\1", paths=("a.md",), regex=True))
+    with pytest.raises(InvalidRequestError, match="output too large"):
+        replacer.replace(ReplaceRequest("(a)", r"\1" * 6, paths=("a.md",), regex=True))
     monkeypatch.setattr(bulk_replace, "MAX_OUTPUT_BYTES", 5)
     with pytest.raises(InvalidRequestError, match="output too large"):
         replacer.replace(ReplaceRequest("absent", "x", paths=("a.md",)))
@@ -579,3 +579,437 @@ def test_regex_timeout_covers_callback() -> None:
 
     with pytest.raises(TimeoutError):
         regex.sub("a", slow, "aaaa", timeout=0.001)
+
+
+def test_excluded_and_hidden_aliases_do_not_select_outside(tmp_path: Path) -> None:
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "scope" / ".hidden").mkdir(parents=True)
+    (tmp_path / "outside.md").write_text("old", encoding="utf-8")
+    (tmp_path / "scope" / ".hidden" / "alias.md").symlink_to(tmp_path / "outside.md")
+    (tmp_path / "scope" / "excluded.md").symlink_to(tmp_path / "outside.md")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+        exclude_patterns=["scope/excluded.md"],
+    )
+    result = BulkReplacer(manager).replace(
+        ReplaceRequest("old", "new", folders=("scope",))
+    )
+    assert result.notes == []
+
+
+def test_reserved_explicit_note_with_maintenance_refused(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("old", encoding="utf-8")
+    (tmp_path / "index.md").write_text("old", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    with pytest.raises(InvalidRequestError, match="reserved"):
+        BulkReplacer(manager).replace(
+            ReplaceRequest("old", "new", paths=("a.md", "index.md")),
+            maintain=lambda _: None,
+        )
+
+
+def test_callback_failure_reports_and_maintains_mutated_note(tmp_path: Path) -> None:
+    from markdown_vault_mcp.managers.bulk_replace import (
+        BulkReplacer,
+        ReplaceInterruptedError,
+        ReplaceRequest,
+    )
+
+    note = tmp_path / "a.md"
+    note.write_text("old", encoding="utf-8")
+
+    def fail(_paths: object) -> None:
+        raise OSError("index failed")
+
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+        mark_paths_dirty=fail,
+    )
+    replacer = BulkReplacer(manager)
+    request = ReplaceRequest("old", "new", paths=("a.md",))
+    preview = replacer.replace(request)
+    from dataclasses import replace
+
+    maintained: list[str] = []
+    with pytest.raises(ReplaceInterruptedError, match=r"may.*a\.md"):
+        replacer.replace(
+            replace(request, dry_run=False, plan=preview.plan),
+            maintain=maintained.append,
+        )
+    assert note.read_text() == "new"
+    assert maintained == ["a.md"]
+
+
+def test_concurrent_write_conflict_does_not_claim_or_maintain_external_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+    from markdown_vault_mcp.managers.bulk_replace import (
+        BulkReplacer,
+        ReplaceInterruptedError,
+        ReplaceRequest,
+    )
+
+    note = tmp_path / "a.md"
+    note.write_text("old", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    replacer = BulkReplacer(manager)
+    request = ReplaceRequest("old", "new", paths=("a.md",))
+    preview = replacer.replace(request)
+
+    def conflict(*_args: object, **_kwargs: object) -> None:
+        note.write_text("external", encoding="utf-8")
+        raise ConcurrentModificationError("a.md", "old", "external")
+
+    monkeypatch.setattr(manager, "write", conflict)
+    maintained: list[str] = []
+    with pytest.raises(ReplaceInterruptedError, match=r"Written: \[\]"):
+        replacer.replace(
+            replace(request, dry_run=False, plan=preview.plan),
+            maintain=maintained.append,
+        )
+    assert maintained == []
+    assert note.read_text() == "external"
+
+
+def test_unsupported_replacement_compiler_is_actionable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers import bulk_replace
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("old", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    request = ReplaceRequest("old", "new", paths=("a.md",), regex=True)
+    monkeypatch.setattr(
+        bulk_replace.importlib,
+        "import_module",
+        lambda _: SimpleNamespace(_compile_replacement_helper=lambda *_: ()),
+    )
+    with pytest.raises(InvalidRequestError, match="unsupported replacement"):
+        BulkReplacer(manager).replace(request)
+    monkeypatch.setattr(
+        bulk_replace.importlib, "import_module", lambda _: SimpleNamespace()
+    )
+    with pytest.raises(InvalidRequestError, match="cannot compile replacements"):
+        BulkReplacer(manager).replace(request)
+
+    def missing_module(_: str) -> None:
+        raise ImportError("missing")
+
+    monkeypatch.setattr(bulk_replace.importlib, "import_module", missing_module)
+    with pytest.raises(InvalidRequestError, match="cannot compile replacements"):
+        BulkReplacer(manager).replace(request)
+
+
+def test_literal_crlf_matches_raw_note(tmp_path: Path) -> None:
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    note = tmp_path / "a.md"
+    note.write_bytes(b"old\r\nnext\r\n")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    result = BulkReplacer(manager).replace(
+        ReplaceRequest("old\r\n", "new\n", paths=("a.md",))
+    )
+    assert result.replacements == 1
+
+
+def test_regex_large_match_short_literal(tmp_path: Path) -> None:
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("a" * 30000, encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    assert (
+        BulkReplacer(manager)
+        .replace(ReplaceRequest("a+", "x" * 100, paths=("a.md",), regex=True))
+        .replacements
+        == 1
+    )
+
+
+def test_plan_binds_computed_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    import regex
+
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("a b", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    replacer = BulkReplacer(manager)
+    request = ReplaceRequest("a", "x", paths=("a.md",))
+    preview = replacer.replace(request)
+    monkeypatch.setattr(replacer, "_compile", lambda _: regex.compile("b"))
+    with pytest.raises(ConcurrentModificationError):
+        replacer.replace(replace(request, dry_run=False, plan=preview.plan))
+
+
+@pytest.mark.parametrize(
+    ("pattern", "replacement"),
+    [
+        ("(" * 1000 + "a" + ")" * 1000, "x"),
+        ("a", r"\U00110000"),
+        ("z", r"\g<missing>"),
+        ("z", "\\"),
+        ("\ud800", "x"),
+        ("a", "\ud800"),
+    ],
+)
+def test_invalid_regex_and_text_are_request_errors(
+    tmp_path: Path, pattern: str, replacement: str
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("a", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    with pytest.raises(InvalidRequestError):
+        BulkReplacer(manager).replace(
+            ReplaceRequest(pattern, replacement, paths=("a.md",), regex=True)
+        )
+
+
+def test_folder_scope_under_symlinked_vault_root(tmp_path: Path) -> None:
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    root = tmp_path / "real"
+    (root / "sub").mkdir(parents=True)
+    (root / "sub" / "a.md").write_text("old", encoding="utf-8")
+    alias = tmp_path / "vault"
+    alias.symlink_to(root, target_is_directory=True)
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        alias,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    assert (
+        BulkReplacer(manager)
+        .replace(ReplaceRequest("old", "new", folders=("sub",)))
+        .replacements
+        == 1
+    )
+
+
+def test_preview_refuses_invalid_okf_frontmatter(tmp_path: Path) -> None:
+    import frontmatter
+
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("---\nname: valid\n---\nbody\n", encoding="utf-8")
+
+    def enrich(text: str, _operation: object) -> str:
+        frontmatter.loads(text)
+        return text
+
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+        okf_write_enrich=enrich,
+    )
+    with pytest.raises(InvalidRequestError, match="frontmatter"):
+        BulkReplacer(manager).replace(
+            ReplaceRequest("name: valid", "name: [", paths=("a.md",))
+        )
+
+
+def test_replace_preserves_bom_and_crlf(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    note = tmp_path / "a.md"
+    note.write_bytes(b"\xef\xbb\xbfone\r\nold\r\nthree\r\n")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    replacer = BulkReplacer(manager)
+    request = ReplaceRequest("old", "new", paths=("a.md",))
+    preview = replacer.replace(request)
+    replacer.replace(replace(request, dry_run=False, plan=preview.plan))
+    assert note.read_bytes() == b"\xef\xbb\xbfone\r\nnew\r\nthree\r\n"
+
+
+def test_explicit_excluded_alias_refused_and_reserved_alias_skipped(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "target.md").write_text("old", encoding="utf-8")
+    (tmp_path / "excluded.md").symlink_to(tmp_path / "target.md")
+    (tmp_path / "index.md").symlink_to(tmp_path / "target.md")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+        exclude_patterns=["excluded.md"],
+    )
+    replacer = BulkReplacer(manager)
+    with pytest.raises(InvalidRequestError):
+        replacer.replace(ReplaceRequest("old", "new", paths=("excluded.md",)))
+    result = replacer.replace(ReplaceRequest("old", "new", folders=("",)))
+    assert [note.path for note in result.notes] == ["target.md"]
+
+
+def test_unmatched_edits_do_not_stale_but_new_match_does(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("old", encoding="utf-8")
+    other = tmp_path / "b.md"
+    other.write_text("unrelated", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    replacer = BulkReplacer(manager)
+    request = ReplaceRequest("old", "new", folders=("",))
+    preview = replacer.replace(request)
+    other.write_text("still unrelated", encoding="utf-8")
+    # No write: the same plan is available after unrelated changes.
+    assert replacer.replace(request).plan == preview.plan
+    other.write_text("old appeared", encoding="utf-8")
+    with pytest.raises(ConcurrentModificationError):
+        replacer.replace(replace(request, dry_run=False, plan=preview.plan))
+
+
+def test_replacement_references_only_small_capture_of_large_match(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "a.md").write_text("z" * 30000 + "a", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    result = BulkReplacer(manager).replace(
+        ReplaceRequest(r"z+(?P<n>a)", r"\g<n>" * 100, paths=("a.md",), regex=True)
+    )
+    assert result.notes[0].replacements == 1
+
+
+def test_absent_path_with_maintenance_is_stale(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    note = tmp_path / "a.md"
+    note.write_text("old", encoding="utf-8")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    replacer = BulkReplacer(manager)
+    request = ReplaceRequest("old", "new", paths=("a.md",))
+    preview = replacer.replace(request, maintain=lambda _: None)
+    note.unlink()
+    with pytest.raises(ConcurrentModificationError):
+        replacer.replace(
+            replace(request, dry_run=False, plan=preview.plan), maintain=lambda _: None
+        )
+
+
+def test_reserved_alias_refused_with_maintenance(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers.bulk_replace import BulkReplacer, ReplaceRequest
+
+    (tmp_path / "target.md").write_text("old", encoding="utf-8")
+    (tmp_path / "index.md").symlink_to(tmp_path / "target.md")
+    manager = DocumentManager(
+        FTSIndex(db_path=":memory:"),
+        tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+    )
+    with pytest.raises(InvalidRequestError, match="reserved"):
+        BulkReplacer(manager).replace(
+            ReplaceRequest("old", "new", paths=("index.md",)), maintain=lambda _: None
+        )
