@@ -7,7 +7,9 @@ The managers depend on these concepts:
   :class:`RunsExactQueries` is the optional part an index implements to
   answer exact population queries (#1842), and :class:`ListsNoteStates`
   the optional part that lists live notes' build state without their
-  frontmatter (#1938).
+  frontmatter (#1938), and :class:`IteratesChunks` the optional part that
+  pages every chunk in whole-document windows for a full embedding build
+  (#1938).
 - :class:`GraphStore` — the link graph.  Distinct from search because it
   answers a different question: *structure* (what links to what) rather than
   *relevance* (what matches a query).
