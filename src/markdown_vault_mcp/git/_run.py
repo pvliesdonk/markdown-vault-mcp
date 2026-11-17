@@ -221,6 +221,8 @@ def _argv(
 ) -> list[str]:
     if pathspecs is not None and (not pathspecs or not all(pathspecs) or "--" in args):
         raise ValueError("pathspecs must be nonempty and args must not contain --")
+    if "--" in args[:-1]:
+        raise ValueError("paths must be supplied through pathspecs")
     i = 0
     while i + 1 < len(args) and args[i] == "-c":
         i += 2
@@ -239,7 +241,12 @@ def _argv(
         if pathspecs is not None
         else []
     )
-    return ["git", "-C", str(git_root), *args, *suffix]
+    config = (
+        ["-c", "core.quotePath=false"]
+        if command and command[0] in ("diff", "show")
+        else []
+    )
+    return ["git", "-C", str(git_root), *config, *args, *suffix]
 
 
 def run_git(

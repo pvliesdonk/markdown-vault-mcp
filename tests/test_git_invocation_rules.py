@@ -59,15 +59,8 @@ def test_scoped_and_legacy_argv() -> None:
             "--",
             ":(literal)b[1].md",
         ]
-        run_git_capturing(Path("/repo"), "log", "--", ":(literal)old.md")
-        assert spawn.call_args.args[0] == [
-            "git",
-            "-C",
-            "/repo",
-            "log",
-            "--",
-            ":(literal)old.md",
-        ]
+        with pytest.raises(ValueError, match="pathspecs"):
+            run_git_capturing(Path("/repo"), "log", "--", ":(literal)old.md")
         run_git(Path("/repo"), "add", "-u", whole_repo=True)
         assert spawn.call_args.args[0] == ["git", "-C", "/repo", "add", "-u"]
 
