@@ -1166,8 +1166,9 @@ Custom non-scalar metadata remains resident to preserve its original objects.
 The built-in publishers still materialize their own generation copies. The
 largest document and path bookkeeping also grow independently of the window.
 
-Convergence embeds per document, in the same bounded batches as the cold
-build (#159): a provider failure on one document's chunks (token-context
+Convergence packs missing inputs across documents in bounded requests (#1496).
+If a shared request fails, it retries each affected document separately; a
+provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
 vectors stay intact) and the rest still converge. The store write is
 guarded the same way (#935): `replace_document` refuses a vector of another

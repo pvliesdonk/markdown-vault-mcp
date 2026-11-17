@@ -8,7 +8,9 @@ re-token (the input is unchanged and only the token moved, or a legacy row
 carries no token: the stored vectors are republished, no provider call),
 embed, or remove. An embed sends the provider only the chunks whose input
 the store holds no vector for; every other chunk keeps its stored vector.
-It embeds outside any store call and publishes with the
+Missing inputs are packed across documents into bounded provider requests;
+failed shared requests fall back per document. It embeds outside any store
+call and publishes each document with the
 token it observed, so a write that crosses another writer's comes back as
 a conflict, which the caller re-queues. A path the store holds and the
 keyword index has no rows for loses its vectors only on an exclusion or a
