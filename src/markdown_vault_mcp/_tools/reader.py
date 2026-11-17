@@ -471,8 +471,8 @@ def register(mcp: FastMCP) -> None:
             - orphan_count (int): Notes with no inbound or outbound links.
               Call 'get_orphan_notes' if non-zero.
             - remote (dict, optional): Known Git sync problem, with state, reason,
-              since and detail. Its absence means no known problem, not proof of
-              successful replication.
+              since and detail describing the impact on writes. Observations reset
+              on restart; absence means no known problem, not proof of replication.
             - okf (dict, optional): Present only when the vault is an active
               OKF (Open Knowledge Format) bundle. Carries mode,
               declared_version, a per-`type` histogram plus untyped_count,

@@ -36,7 +36,7 @@ The vault's settings: read-only mode, indexed fields, exclusions, OKF state.
 
 `stats://vault` (application/json)
 
-Vault statistics: note, chunk and link counts and search capabilities.
+Vault statistics, search capabilities and known Git sync problems.
 
 ## `vault_tags`
 

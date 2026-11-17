@@ -72,13 +72,14 @@ async def attach_conventions(
 
 
 def attach_remote_health(vault: Vault, data: dict[str, Any]) -> dict[str, Any]:
-    """Add a ``remote`` warning to a write result when the clone is unsynced.
+    """Add a ``remote`` warning to write or stats results when the clone is unsynced.
 
     A git-backed vault whose pushes are failing keeps accepting writes: the
     commit lands locally and ``read`` serves it back, so nothing tells the
     caller its content cannot leave the host (#1287).  Every vault-mutating
     write tool passes its result through here so that state travels with the
-    write that is affected by it.
+    write that is affected by it. The stats tool and resource also expose it
+    for read-only monitoring.
 
     The key is **absent** whenever there is nothing to report: no git, or
     no known startup dirt or replication failure. Commit-only vaults can
@@ -91,8 +92,8 @@ def attach_remote_health(vault: Vault, data: dict[str, Any]) -> dict[str, Any]:
     broke can still answer clean; the next one warns.
 
     Args:
-        vault: The vault the write landed in.
-        data: The tool's result dict, mutated in place.
+        vault: The vault whose health is observed.
+        data: The result dict, mutated in place.
 
     Returns:
         *data*, so callers can return it directly.

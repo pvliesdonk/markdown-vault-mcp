@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from typing import TYPE_CHECKING, Any
 
@@ -10,13 +11,13 @@ from fastmcp import Client
 
 from markdown_vault_mcp import domain
 from tests.fixtures.git import _run_git
-from tests.server_factory import make_server
-from tests.test_write_remote_health import (
+from tests.fixtures.git_health import (
     _parse_tool_data,
     _seed_remote_commit,
     _strand_the_clone,
 )
-from tests.test_write_remote_health import managed_vault as managed_vault
+from tests.fixtures.git_health import managed_vault as managed_vault
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,6 +50,10 @@ async def test_stats_reports_rejected_push_until_successful_push(
         assert first["remote"] == second["remote"]
         assert first["remote"]["since"]
         assert isinstance(first_result.meta["index_stale"], bool)
+        resource = await client.read_resource_mcp("stats://vault")
+        assert json.loads(resource.contents[0].text)["remote"] == first["remote"]
+        assert resource.meta is not None
+        assert isinstance(resource.meta["index_stale"], bool)
 
         pull = _parse_tool_data(
             await client.call_tool("git_sync", {"direction": "pull"})
@@ -63,6 +68,8 @@ async def test_stats_reports_rejected_push_until_successful_push(
         )
         assert push["push"]["applied"] is True
         assert "remote" not in _parse_tool_data(await client.call_tool("stats", {}))
+        resource = await client.read_resource_mcp("stats://vault")
+        assert "remote" not in json.loads(resource.contents[0].text)
 
 
 @pytest.mark.usefixtures("managed_vault")

@@ -49,11 +49,14 @@ No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
-Poll the read-only `stats` tool to monitor known sync problems and startup
-changes. Its optional `remote` field carries `state`, `reason`, `since` and
-`detail`, like write results. A successful pull does not clear a failed push;
-a successful push clears that push failure. An absent `remote` field means no
-problem is known, not that replication has been confirmed.
+Read the read-only `stats` tool or `stats://vault` resource to monitor cached
+observations of sync problems and startup changes. Their optional `remote`
+field carries `state`, `reason`, `since` and `detail`, like write results.
+Remote health observations are process-local and reset on restart. An absent
+`remote` field means no problem is known, not that replication has been
+confirmed. A successful pull does not clear a failed push; a successful push
+clears that push failure. Startup dirt is checked again after a commit or sync, or
+on restart; see [Uncommitted files at startup](#uncommitted-files-at-startup).
 
 ## Uncommitted files at startup
 
@@ -478,7 +481,7 @@ and the rejection stands, or the histories diverged in a way the conflict
 resolver gave up on. Writes keep working (the commit lands, `read` serves it
 back), but nothing reaches the remote.
 
-Two things make that visible.
+The warning and logs make that visible.
 
 **Every write tool says so.** While the clone is not reaching its remote,
 each write result carries a `remote` object with `state`, `reason`, `since`,
@@ -492,14 +495,18 @@ resolver:
  "detail": "This vault's git clone has not reached its remote since ..."}
 ```
 
-The key is absent, not null, when there is nothing to report: no git, no
-remote, or a clone that is reaching it. It reports the sync state known when
+The key is absent, not null, when there is no known startup dirt or sync
+failure. It reports the sync state known when
 the response was built, never the fate of that particular write: the commit
 runs off the request thread and the push is deferred, so the first write
 after a break can still answer clean and the next one warns. `git_sync`
 carries no such key, because it reports the sync outcome directly. This is the signal for a client whose only route to the
 repository is this server: it says the content is committed locally only, so
 the client can keep its own copy instead of treating the note as saved.
+
+**Read-only stats expose the same warning.** The `stats` tool and
+`stats://vault` resource carry the same optional `remote` object without a
+write. Its detail describes the impact on writes.
 
 **The log records the transition, not the cycle.** Entering that state logs
 once at `ERROR`:
