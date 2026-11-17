@@ -30,9 +30,21 @@ import logging
 import queue
 import threading
 from concurrent.futures import Future
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
 
+from markdown_vault_mcp._commit_groups import (
+    COMMIT_GROUP_ATTR,
+    CommitGroup,
+    CommitGroupError,
+    GroupAwareCallback,
+    GroupCommitRequest,
+    GroupCommitResult,
+    make_group,
+)
 from markdown_vault_mcp._commit_scope import (
+    bound_commit_group,
+    current_commit_group,
     current_commit_scope,
     is_auxiliary_commit_write,
 )
@@ -45,6 +57,7 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
     from typing import Any
 
@@ -120,6 +133,9 @@ class WriteCallbackDispatcher:
                 ``rename`` dispatches (#894).
         """
         self._on_write = on_write
+        self._accepts_group = bool(getattr(on_write, COMMIT_GROUP_ATTR, False))
+        self._groups: dict[str, CommitGroup] = {}
+        self._group_lock = threading.RLock()
         # Read the opt-ins once, here, rather than per dispatch: the callback
         # is fixed for the dispatcher's lifetime, and the worker loop is on
         # the write path.
@@ -207,7 +223,9 @@ class WriteCallbackDispatcher:
         # pay for one. Attaching the scope unconditionally would buffer its
         # writes for the length of the tool call and then replay them one by
         # one — the delay and the retained state of grouping, with none of it.
-        scope = current_commit_scope() if self._accepts_batch else None
+        scope = (current_commit_group() if self._accepts_group else None) or (
+            current_commit_scope() if self._accepts_batch else None
+        )
         with self._worker_lock:
             if self._closed:
                 logger.warning(
@@ -232,6 +250,60 @@ class WriteCallbackDispatcher:
                     is_auxiliary_commit_write(),
                 )
             )
+
+    def open_group(self, description: str, principal: Principal | None) -> CommitGroup:
+        """Open a group under an opaque handle for the given principal."""
+        if current_commit_group() is not None:
+            raise CommitGroupError("Nested groups are not supported")
+        group = make_group(description, principal)
+        with self._group_lock:
+            self._groups[group.handle] = group
+        return group
+
+    def _get_group(self, handle: str, principal: Principal | None) -> CommitGroup:
+        group = self._groups.get(handle)
+        if group is None or group.closed or group.owner != principal:
+            raise CommitGroupError("Unknown or unavailable group")
+        return group
+
+    @contextmanager
+    def bind_group(self, handle: str, principal: Principal | None) -> Iterator[None]:
+        """Bind a group for writes in this context."""
+        if current_commit_group() is not None:
+            raise CommitGroupError("Nested groups are not supported")
+        with self._group_lock:
+            group = self._get_group(handle, principal)
+            group.active += 1
+        try:
+            with bound_commit_group(group.scope):
+                yield
+        finally:
+            with self._group_lock:
+                group.active -= 1
+
+    def close_group(
+        self, handle: str, principal: Principal | None
+    ) -> Future[GroupCommitResult]:
+        """Close a group and return a future for its commit result."""
+        with self._group_lock:
+            group = self._get_group(handle, principal)
+            if group.active:
+                raise CommitGroupError("Group has active writes")
+            group.closed = True
+            done = self._enqueue_scope_end(group.scope)
+        result: Future[GroupCommitResult] = Future()
+        result.set_running_or_notify_cancel()
+
+        def finish(_done: Future[None] | None = None) -> None:
+            with self._group_lock:
+                self._groups.pop(handle, None)
+            result.set_result(group.result)
+
+        if done is None:
+            finish()
+        else:
+            done.add_done_callback(finish)
+        return result
 
     def end_scope(self, scope: CommitScope) -> None:
         """Close *scope*, committing everything fired under it as one group.
@@ -283,6 +355,40 @@ class WriteCallbackDispatcher:
         scope, items, primary_paths = entry
         on_write = self._on_write
         if not items or on_write is None:
+            return
+        with self._group_lock:
+            group = next(
+                (
+                    group
+                    for group in self._groups.values()
+                    if group.scope.token == token
+                ),
+                None,
+            )
+        if group is not None and self._accepts_group:
+            reported = False
+
+            def report(result: GroupCommitResult) -> None:
+                nonlocal reported
+                reported = True
+                group.record(result)
+
+            try:
+                cast("GroupAwareCallback", on_write).on_write_batch(
+                    items,
+                    scope.tool_name,
+                    primary_paths=frozenset(primary_paths),
+                    group=GroupCommitRequest(group.description, report),
+                )
+            except Exception:
+                logger.error(
+                    "write_callback_batch_failed tool=%s count=%s",
+                    scope.tool_name,
+                    len(items),
+                    exc_info=True,
+                )
+            if not reported:
+                group.record(GroupCommitResult(None, 0, "failed"))
             return
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),

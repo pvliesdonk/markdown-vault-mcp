@@ -40,6 +40,7 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
+from markdown_vault_mcp._commit_groups import GroupCommitRequest, GroupCommitResult
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
@@ -421,12 +422,15 @@ class GitWriteStrategy:
     #: rename's backlink rewrites) share its batch.
     accepts_primary_paths: bool = True
 
+    accepts_group_commit = True
+
     def on_write_batch(
         self,
         items: Sequence[WriteBatchItem],
         tool_name: str,
         *,
         primary_paths: frozenset[Path] | None = None,
+        group: GroupCommitRequest | None = None,
     ) -> None:
         """Commit every write from one tool call as a single commit.
 
@@ -464,7 +468,7 @@ class GitWriteStrategy:
         try:
             git_root = self._git_root
             with self._lock, self._observed_commit(git_root):
-                _stage_and_commit_batch(
+                committed = _stage_and_commit_batch(
                     git_root,
                     items,
                     tool_name,
@@ -477,7 +481,23 @@ class GitWriteStrategy:
                         else None,
                     ),
                     primary_paths,
+                    group,
                 )
+                if group is not None:
+                    if committed:
+                        sha = self.head_sha(git_root)
+                        paths = self._git(
+                            git_root,
+                            "diff-tree",
+                            "--root",
+                            "--no-commit-id",
+                            "--name-only",
+                            "-r",
+                            sha,
+                        ).splitlines()
+                        group.report(GroupCommitResult(sha, len(paths), "committed"))
+                    else:
+                        group.report(GroupCommitResult(None, 0, "no_changes"))
             if self._enable_push:
                 self._push_scheduler.schedule_push()
         except subprocess.CalledProcessError as exc:
@@ -2446,7 +2466,8 @@ def _stage_and_commit_batch(
     tool_name: str,
     identity: _CommitIdentity,
     primary_paths: frozenset[Path] | None = None,
-) -> None:
+    group: GroupCommitRequest | None = None,
+) -> bool | None:
     """Stage every write from one tool call and commit them together.
 
     Staging is per item, using the same scoped rules as a single write, so a
@@ -2469,7 +2490,7 @@ def _stage_and_commit_batch(
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
     """
-    if len(items) == 1:
+    if len(items) == 1 and group is None:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps
         # its commit subject the path ("write: notes/one.md") rather than the
@@ -2485,7 +2506,7 @@ def _stage_and_commit_batch(
             author_name=identity.author_name,
             author_email=identity.author_email,
         )
-        return
+        return None
 
     root = str(git_root)
     staged = 0
@@ -2519,21 +2540,26 @@ def _stage_and_commit_batch(
         scope.extend(item_scope)
     if staged == 0:
         logger.debug("git_batch_nothing_staged tool=%s count=%s", tool_name, len(items))
-        return
+        return None
 
     # Skip commit if staging produced no diff (e.g. rewriting identical bytes).
     commit_scope = [] if whole_repo else scope
     if _index_matches_head(root, commit_scope):
         logger.debug("git_batch_no_diff tool=%s", tool_name)
-        return
+        return None
 
     noun = "file" if staged == 1 else "files"
-    subject = f"{tool_name}: {staged} {noun}"
-    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
+    subject = group.subject if group is not None else f"{tool_name}: {staged} {noun}"
+    if (
+        group is None
+        and primary_paths is not None
+        and len(primary_paths) == len(primary) == 1
+    ):
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
+    return True
 
 
 def _commit_staged(

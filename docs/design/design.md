@@ -6570,6 +6570,15 @@ the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
 subject when the call staged exactly one path.
 
+An internal commit group binds a persistent scope to an opaque, server-minted
+handle. The dispatcher buffers writes across calls and closes the group with
+its explicit description as the Git subject; its result reports the commit SHA
+and the number of paths committed. Ordinary scopes keep their per-call behavior.
+A drain still flushes open groups before a pull, so a group spanning a drain can
+produce multiple commits; F7 owns pull deferral. Writes remain immediately readable, and indexing proceeds independently of
+the commit. Non-opted-in callbacks retain per-write behavior and report no group
+commit. No group tools or arguments are registered in this slice.
+
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with
 `auxiliary_commit_writes`. The dispatcher snapshots this context beside each

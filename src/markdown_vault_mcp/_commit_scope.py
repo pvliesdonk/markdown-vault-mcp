@@ -107,3 +107,26 @@ def auxiliary_commit_writes() -> Iterator[None]:
 def is_auxiliary_commit_write() -> bool:
     """Return whether this callback is fired by secondary maintenance."""
     return _auxiliary_var.get()
+
+
+def new_commit_scope(tool_name: str) -> CommitScope:
+    """Create an unbound, process-unique scope for a persistent group."""
+    return CommitScope(token=next(_counter), tool_name=tool_name)
+
+
+_group_var: ContextVar[CommitScope | None] = ContextVar("commit_group", default=None)
+
+
+@contextmanager
+def bound_commit_group(scope: CommitScope) -> Iterator[None]:
+    """Bind a persistent group scope for the current write context."""
+    token = _group_var.set(scope)
+    try:
+        yield
+    finally:
+        _group_var.reset(token)
+
+
+def current_commit_group() -> CommitScope | None:
+    """Return the group scope bound to this context, if any."""
+    return _group_var.get()
