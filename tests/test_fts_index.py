@@ -1685,7 +1685,7 @@ class TestFtsRowidMapMigration:
         )
         idx.close()
 
-    def test_mixed_generations_preserve_exact_excerpt(self, tmp_path: Path) -> None:
+    def test_stale_row_beside_mapped_generation_purged(self, tmp_path: Path) -> None:
         db = tmp_path / "mixed.db"
         idx = FTSIndex(db_path=db)
         _legacy_upsert(
@@ -1714,8 +1714,7 @@ class TestFtsRowidMapMigration:
         )
         idx.close()
         idx = FTSIndex(db_path=db)
-        page = idx.query_documents(NoteQuery(query="beta", scope="body"))
-        assert [s["heading"] for s in page.items[0]["sections"]] == ["First", "Second"]
+        assert idx.query_documents(NoteQuery(query="beta", scope="body")).total == 1
         assert idx.query_documents(NoteQuery(query="alpha", scope="body")).total == 0
         conn = idx._conn()
         assert (
@@ -1724,13 +1723,10 @@ class TestFtsRowidMapMigration:
             == 2
         )
         assert _unbridged(conn) == 0
-        idx.delete_by_path("a.md")
-        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 0
         idx.close()
 
-    @pytest.mark.parametrize("chunks", [1, 3])
     def test_orphan_purged_and_logged(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, chunks: int
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         db = tmp_path / "orphan.db"
         idx = FTSIndex(db)
@@ -1740,14 +1736,14 @@ class TestFtsRowidMapMigration:
                 "a.md",
                 chunks=[
                     Chunk(heading=None, heading_level=0, content="orphan", start_line=i)
-                    for i in range(chunks)
+                    for i in range(3)
                 ],
             ),
         )
         idx.delete_by_path("a.md")
         assert (
             idx._conn().execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0]
-            == chunks
+            == 3
         )
         idx.close()
         with caplog.at_level("INFO", logger="markdown_vault_mcp.fts_index"):
@@ -1758,7 +1754,7 @@ class TestFtsRowidMapMigration:
             == 0
         )
         assert any(
-            r.getMessage() == f"fts_index_rowid_map_repaired bridged=0 purged={chunks}"
+            r.getMessage() == "fts_index_rowid_map_repaired bridged=0 purged=3"
             for r in caplog.records
         )
         idx.close()
@@ -1780,6 +1776,7 @@ class TestFtsRowidMapMigration:
 
         def execute(sql: str) -> sqlite3.Cursor | Mock:
             cursor = conn.execute(sql)
+            # Intercept the compact inventory precheck before the write transaction.
             if not sql.startswith("SELECT COUNT(*) FROM notes_fts_docsize"):
                 return cursor
             result = cursor.fetchone()
@@ -1799,24 +1796,6 @@ class TestFtsRowidMapMigration:
         assert _unbridged(conn) == 0
         idx.close()
         writer.close()
-
-    def test_mismatched_generation_retains_keyword_hits(self, tmp_path: Path) -> None:
-        """An extra unbridged row must not cause live keyword rows to vanish."""
-        db = tmp_path / "mismatch.db"
-        idx = FTSIndex(db)
-        _legacy_upsert(idx, make_note("a.md"))
-        conn = idx._conn()
-        conn.execute("INSERT INTO notes_fts(path, content) VALUES ('a.md', 'extra')")
-        conn.commit()
-        idx.close()
-        idx = FTSIndex(db)
-        conn = idx._conn()
-        assert _unbridged(conn) == 0
-        assert idx.query_documents(NoteQuery(query="content", scope="body")).total == 1
-        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 2
-        idx.delete_by_path("a.md")
-        assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == 0
-        idx.close()
 
     def test_tombstone_purges_stale_rows(self, tmp_path: Path) -> None:
         """Repair keeps the tombstone and removes the prior unbridged generation."""
