@@ -588,9 +588,9 @@ class ReaderFacet:
 
         Returns:
             The OKF aggregate dict (mode, declared version, type histogram,
-            status/trust breakdowns, stale count and configured/effective
-            write state when wired), or ``None`` when OKF read semantics are
-            not active.
+            status/trust breakdowns, stale count, and ``write_configured``
+            and ``write_effective`` when wired), or ``None`` when OKF read
+            semantics are not active.
         """
         section = self._search_mgr.okf_stats()
         if section is not None and self._okf_write_state is not None:
