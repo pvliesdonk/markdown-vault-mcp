@@ -215,15 +215,20 @@ def _argv(
     pathspecs: Sequence[str] | None,
     whole_repo: bool,
 ) -> list[str]:
-    if pathspecs is not None and (not pathspecs or "--" in args):
+    if pathspecs is not None and (not pathspecs or not all(pathspecs) or "--" in args):
         raise ValueError("pathspecs must be nonempty and args must not contain --")
     i = 0
     while i + 1 < len(args) and args[i] == "-c":
         i += 2
     command = args[i:]
+    if command and command[0].startswith("-"):
+        raise ValueError(f"unsupported global option: {command[0]}")
     if command and pathspecs is None and not whole_repo:
         verb = command[0]
-        if verb in ("add", "commit") or (verb == "diff" and "--cached" in command[1:]):
+        if verb in ("add", "commit") or (
+            verb == "diff"
+            and any(arg in ("--cached", "--staged") for arg in command[1:])
+        ):
             raise ValueError(f"git {verb} requires pathspecs or whole_repo=True")
     suffix = (
         ["--", *(literal_pathspec(path) for path in pathspecs)]
@@ -246,6 +251,7 @@ def run_git(
     boilerplate (capture, text mode, check=True) in one place.
 
     Raw paths supplied via ``pathspecs`` are literal and must be nonempty.
+    Only ``-c`` pairs are supported before the git subcommand.
     Index writes require paths unless ``whole_repo`` is explicitly set.
 
     Raises:
@@ -339,7 +345,8 @@ def run_git_capturing(
         env: Optional environment, typically from :func:`git_env` for
             token-bearing operations.  ``None`` inherits the parent process
             environment.
-        pathspecs: Nonempty raw paths to pass as literal pathspecs.
+        pathspecs: Nonempty raw paths to pass as literal pathspecs; each must
+            also be nonempty.
         whole_repo: Allow an index command without pathspecs.
         preserve_newlines: Capture stdout without translating CR or CRLF.
             Use for NUL-framed path streams; ordinary text stays normalized.
