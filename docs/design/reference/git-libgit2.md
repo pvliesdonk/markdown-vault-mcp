@@ -26,6 +26,14 @@ sources:
     title: libgit2 diff API
     resource: https://github.com/libgit2/libgit2/blob/v1.9.7/include/git2/diff.h
     accessed: 2026-11-16
+  - id: transaction
+    title: pygit2 reference transaction implementation
+    resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/transaction.py
+    accessed: 2026-11-16
+  - id: git-lock
+    title: Git lockfile API
+    resource: https://github.com/git/git/blob/v2.55.0/Documentation/technical/api-lockfile.adoc
+    accessed: 2026-11-16
   - id: git-date
     title: Git date parser
     resource: https://github.com/git/git/blob/v2.55.0/date.c
@@ -42,7 +50,8 @@ This reference covers local commits, attributes and history through pygit2;
 remote operations are outside its scope. The native Git store depends on it.
 
 - pygit2 1.21 supports Python 3.11–3.15 and libgit2 1.9; binary wheels include libgit2. Its own version policy allows breaking changes in a minor version. [source: install]
-- A standalone `Index` is an in-memory flat tree representation; repository index edits need `write()` to persist. [source: index]
+- An `Index` opened on a path writes to that path; a standalone index is an in-memory flat tree representation. [source: index]
+- Git uses `index.lock` to exclude competing writers. The store holds it while writing an alternate index and while a pygit2 reference transaction locks HEAD and its branch. It publishes the index first; if the ref update fails, the operation remains staged and HEAD is unchanged. This is not a crash-atomic transaction across both files. [source: git-lock] [source: transaction] [pins: tests/test_git_libgit2_review.py::test_failed_ref_publication_leaves_operation_staged]
 - Repository discovery, path ignore checks, attributes, and ancestry are exposed by pygit2. [source: repository]
 - `find_similar` computes rename scores and accepts a rename threshold; without explicitly requesting detection, configuration may disable it. [source: diff]
 - Creating a blob from the working directory reads a repository-relative path and writes to the object database. [source: blob]

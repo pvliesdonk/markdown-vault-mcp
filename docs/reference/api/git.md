@@ -49,15 +49,16 @@ from markdown_vault_mcp.git.libgit2 import Libgit2Store
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 store = Libgit2Store(repo_path=Path("/path/to/vault"))
-vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(),
+vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(read_only=False),
               git_strategy=store, on_write=store)
 ```
 
 The constructor rejects unsupported repository formats, partial clones,
-commit signing and executable commit hooks. Effective external clean filters,
+commit signing and executable commit hooks. Writes also refuse in-progress Git
+operations, such as a merge. Effective external clean filters,
 including Git LFS, are refused because libgit2 cannot run them. Use
-`GitWriteStrategy` for these repositories. Relative dates support ISO 8601
-and `N unit(s) ago`; other Git-specific date expressions are refused.
+`GitWriteStrategy` for these repositories. Dates support ISO 8601 and common
+Git expressions. For other date expressions, use `GitWriteStrategy`.
 
 ## Migrating from 4.x
 

@@ -6,6 +6,7 @@ import datetime as dt
 import re
 import time
 from collections import defaultdict
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -21,15 +22,21 @@ from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 from markdown_vault_mcp.utils.fs import path_exists
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from markdown_vault_mcp.git.types import RevisionQuery
 
 
 def _rel(repo: Any, path: Path) -> str:
-    return path.relative_to(Path(repo.workdir)).as_posix()
+    return (
+        (path.parent.resolve() / path.name)
+        .relative_to(Path(repo.workdir).resolve())
+        .as_posix()
+    )
 
 
 def _prefix(repo: Any, vault: Path) -> str:
-    rel = _rel(repo, vault)
+    rel = _rel(repo, vault.resolve())
     return "" if rel == "." else rel.rstrip("/") + "/"
 
 
@@ -66,13 +73,12 @@ def _same(a: Any | None, b: Any | None) -> bool:
     return bool(a.id == b.id and a.filemode == b.filemode)
 
 
-def _walk(repo: Any, path: str) -> list[tuple[Any, str, bool]]:
+def _walk(repo: Any, path: str) -> Iterator[tuple[Any, str, bool]]:
     """Carry each name through all parents, stopping each branch at birth."""
     if repo.head_is_unborn:
-        return []
+        return
     names: dict[Any, set[str]] = defaultdict(set)
     names[repo.head.target].add(path)
-    result = []
     for commit in repo.walk(
         repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
     ):
@@ -92,39 +98,69 @@ def _walk(repo: Any, path: str) -> list[tuple[Any, str, bool]]:
                 if previous_name and (previous is not None or current is None):
                     names[parent.id].add(previous_name)
             changed = all(differences) if differences else current is not None
-            result.append((commit, name, changed))
-    return result
+            yield commit, name, changed
 
 
 def _date(value: str | None) -> float | None:
     if value is None:
         return None
-    match = re.fullmatch(
-        r"\s*(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago\s*", value, re.I
-    )
-    if match:
-        unit = match[2].lower()
-        count = int(match[1])
-        if unit in {"month", "year"}:
-            local = list(time.localtime())
-            months = count if unit == "month" else count * 12
-            year, month = divmod(local[0] * 12 + local[1] - 1 - months, 12)
-            local[0], local[1] = year, month + 1
-            return time.mktime(time.struct_time(local))
-        seconds = {
-            "second": 1,
-            "minute": 60,
-            "hour": 3600,
-            "day": 86400,
-            "week": 604800,
-        }[unit]
-        return int(time.time()) - count * seconds
     try:
         return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-    except ValueError as exc:
-        raise InvalidRequestError(
-            f"Invalid date {value!r}; use ISO 8601 or 'N days ago'."
-        ) from exc
+    except ValueError:
+        pass
+    try:
+        text = re.sub(r"[._]", " ", value.lower()).strip()
+        now = dt.datetime.now().astimezone()
+        if text.startswith("noon "):
+            now, text = (
+                now.replace(hour=12, minute=0, second=0, microsecond=0),
+                text[5:],
+            )
+        if text == "yesterday":
+            return (now - dt.timedelta(days=1)).timestamp()
+        weekdays = (
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        )
+        if text.startswith("last ") and text[5:] in weekdays:
+            days = (now.weekday() - weekdays.index(text[5:])) % 7 or 7
+            return (now - dt.timedelta(days=days)).timestamp()
+        pairs = re.findall(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?", text)
+        if (
+            pairs
+            and re.sub(
+                r"(\d+)\s+(second|minute|hour|day|week|month|year)s?", "", text
+            ).strip()
+            == "ago"
+        ):
+            local = list(time.localtime(now.timestamp()))
+            months = sum(
+                int(n) * (12 if unit == "year" else 1)
+                for n, unit in pairs
+                if unit in {"month", "year"}
+            )
+            year, month = divmod(local[0] * 12 + local[1] - 1 - months, 12)
+            local[0], local[1] = year, month + 1
+            seconds = {
+                "second": 1,
+                "minute": 60,
+                "hour": 3600,
+                "day": 86400,
+                "week": 604800,
+            }
+            return time.mktime(time.struct_time(local)) - sum(
+                int(n) * seconds[unit] for n, unit in pairs if unit in seconds
+            )
+    except (OverflowError, OSError, ValueError):
+        pass
+    raise InvalidRequestError(
+        f"Invalid or unsupported date {value!r}; use GitWriteStrategy (the Git CLI) for other Git date expressions."
+    )
 
 
 def _timestamp(commit: Any) -> str:
@@ -139,7 +175,7 @@ def _history_entry(commit: Any, paths: list[str]) -> HistoryEntry:
         sha[:7],
         _timestamp(commit),
         f"{commit.author.name} <{commit.author.email}>",
-        (commit.message or "").split("\n", 1)[0],
+        " ".join((commit.message or "").strip().split("\n\n", 1)[0].splitlines()),
         paths,
     )
 
@@ -159,40 +195,50 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
     if repo is None or repo.head_is_unborn:
         return []
     prefix = _prefix(repo, vault)
-    rows: list[tuple[Any, list[str]]]
+    rows: Iterator[tuple[Any, list[str]]]
     if path is not None and not is_dir:
-        rows = [
+        rows = (
             (commit, [])
             for commit, _, changed in _walk(repo, _rel(repo, path))
             if changed
-        ]
+        )
     else:
-        scope = _rel(repo, path).rstrip("/") + "/" if path is not None else prefix
-        rows = []
-        for commit in repo.walk(
-            repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
-        ):
-            diff = _diff(commit.parents[0] if commit.parents else None, commit)
-            paths = [
-                d.new_file.path[len(prefix) :]
-                for d in diff.deltas
-                if d.new_file.path.startswith(scope)
-            ]
-            if paths:
-                rows.append((commit, paths))
-    return [
-        _history_entry(c, paths)
-        for c, paths in rows
-        if (lower is None or c.commit_time >= lower)
-        and (upper is None or c.commit_time <= upper)
-    ][:limit]
+        scope = _prefix(repo, path) if path is not None else prefix
+
+        def scoped() -> Iterator[tuple[Any, list[str]]]:
+            for commit in repo.walk(
+                repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
+            ):
+                diff = _diff(commit.parents[0] if commit.parents else None, commit)
+                paths = [
+                    d.new_file.path[len(prefix) :]
+                    for d in diff.deltas
+                    if d.new_file.path.startswith(scope)
+                ]
+                if paths:
+                    yield commit, [] if len(commit.parents) > 1 else paths
+
+        rows = scoped()
+    return list(
+        islice(
+            (
+                _history_entry(c, paths)
+                for c, paths in rows
+                if (lower is None or c.commit_time >= lower)
+                and (upper is None or c.commit_time <= upper)
+            ),
+            limit,
+        )
+    )
 
 
-def _commit(repo: Any, ref: str) -> Any:
+def _commit(repo: Any, ref: str, *, ancestral: bool = True) -> Any:
     try:
         obj = repo.revparse_single(ref).peel(pygit2.Commit)
-        if obj.id != repo.head.target and not repo.descendant_of(
-            repo.head.target, obj.id
+        if (
+            ancestral
+            and obj.id != repo.head.target
+            and not repo.descendant_of(repo.head.target, obj.id)
         ):
             raise InvalidRequestError(f"Revision {ref!r} is not an ancestor of HEAD.")
         return obj
@@ -217,6 +263,7 @@ def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
         )
     target = _commit(repo, query.ref)
     path = _rel(repo, query.path)
+    repo.index.read(force=True)
     if path_exists(query.path) and path not in repo.index:
         raise InvalidRequestError(f"{path!r} is not tracked by Git.")
     prefix = _prefix(repo, query.repo_path)
@@ -232,7 +279,9 @@ def get_file_at_ref(repo: Any, query: RevisionQuery) -> RevisionContent:
         raise InvalidRequestError("The historical path is not a regular file.")
     _, size = repo.odb.read_header(entry.id)
     if query.max_bytes and size > query.max_bytes:
-        raise InvalidRequestError("The historical note exceeds the read limit.")
+        raise InvalidRequestError(
+            f"The historical note is {size} bytes, exceeding the {query.max_bytes}-byte limit; use section= to read a section."
+        )
     blob = repo[entry.id]
     relative = path[len(prefix) :]
     old_relative = historical[len(prefix) :]
@@ -248,6 +297,7 @@ def committed_revision(repo: Any, path: Path) -> str | None:
         return None
     try:
         rel = _rel(repo, path)
+        repo.index.read(force=True)
         if rel not in repo.index:
             return None
         for commit, name, changed in _walk(repo, rel):
@@ -287,7 +337,7 @@ def _single_tree(repo: Any, commit: Any | None, name: str | None) -> Any:
     return repo[index.write_tree(repo)]
 
 
-def get_file_diff(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protocol.
+def get_file_diff(  # noqa: C901, PLR0913, RUF100 -- protocol and lineage range handling.
     repo: Any,
     vault: Path,
     path: Path,
@@ -304,7 +354,9 @@ def get_file_diff(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protoco
         return [] if per_commit else ""
     if ref is None and since_timestamp is None:
         raise ValueError("Either 'ref' or 'since_timestamp' must be provided")
-    target = _commit(repo, ref) if ref and since_timestamp is None else None
+    target = (
+        _commit(repo, ref, ancestral=False) if ref and since_timestamp is None else None
+    )
     cutoff = _date(since_timestamp)
     rows = _walk(repo, _rel(repo, path))
     if target is None and cutoff is not None:
@@ -322,14 +374,23 @@ def get_file_diff(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protoco
             return [] if per_commit else ""
     selected = []
     for commit, name, changed in rows:
-        if target is not None and commit.id == target.id:
-            break
+        if target is not None and (
+            commit.id == target.id or repo.descendant_of(target.id, commit.id)
+        ):
+            continue
         if changed:
             selected.append((commit, name))
     if not per_commit:
         head = repo.head.peel(pygit2.Commit)
         current_name = _rel(repo, path)
-        historical = _at_ref(repo, current_name, target) if target else None
+        historical = (
+            (
+                _at_ref(repo, current_name, target)
+                or (current_name if _entry(target, current_name) else None)
+            )
+            if target
+            else None
+        )
         old_tree = _single_tree(repo, target, historical)
         new_tree = _single_tree(repo, head, current_name)
         diff = old_tree.diff_to_tree(new_tree)
@@ -343,18 +404,20 @@ def get_file_diff(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protoco
     for commit, name in selected[:limit]:
         parent = commit.parents[0] if commit.parents else None
         old = _old_path(parent, commit, name) if parent else None
-        patch = _patches(
-            _diff(parent, commit),
-            {name, *([old] if old else [])},
-            summarize_binary,
-        )
+        diff = _diff(parent, commit)
+        diff.find_similar(flags=pygit2.enums.DiffFind.FIND_RENAMES, rename_threshold=30)
+        patch = _patches(diff, {name, *([old] if old else [])}, summarize_binary)
+        if old and _same(_entry(parent, old), _entry(commit, name)):
+            patch = f"{old} => {name} (renamed, no content change)\n"
         sha = str(commit.id)
         output.append(
             CommitDiff(
                 sha,
                 sha[:7],
                 _timestamp(commit),
-                (commit.message or "").split("\n", 1)[0],
+                " ".join(
+                    (commit.message or "").strip().split("\n\n", 1)[0].splitlines()
+                ),
                 patch,
             )
         )

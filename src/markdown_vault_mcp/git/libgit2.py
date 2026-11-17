@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
+import tempfile
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -12,19 +15,19 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git.health import SyncHealthTracker
 from markdown_vault_mcp.git.strategy import (
     GitWriteStrategy,
+    _batch_subject,
     _sanitize_git_identity,
-    _write_subject,
 )
 from markdown_vault_mcp.git.types import (
     PULL_REASON_PULL_DISABLED,
-    PUSH_REASON_NO_REMOTE,
+    PUSH_REASON_PUSH_FAILED,
     PullResult,
     PushResult,
 )
 from markdown_vault_mcp.utils.fs import is_regular_file, path_exists
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
     from contextlib import AbstractContextManager
 
     from markdown_vault_mcp._identity import Principal
@@ -62,6 +65,13 @@ def _config_value(config: Any, key: str, default: Any = None) -> Any:
         return default
 
 
+def _config_bool(config: Any, key: str, default: bool = False) -> bool:
+    try:
+        return bool(config.get_bool(key))
+    except KeyError:
+        return default
+
+
 def _probe_config(gitdir: Path, pg: Any) -> None:
     try:
         common = gitdir / "commondir"
@@ -78,19 +88,19 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
         if keys.get(key, "").lower() == value:
             raise _unsupported(shape)
     if "extensions.partialclone" in keys or any(
-        k.startswith("remote.")
-        and k.endswith(".promisor")
-        and v.lower() in {"true", "yes", "1", "on"}
-        for k, v in keys.items()
+        k.startswith("remote.") and k.endswith(".promisor") and config.get_bool(k)
+        for k in keys
     ):
         raise _unsupported("partial clones")
-    if keys.get("commit.gpgsign", "false").lower() in {"true", "yes", "1", "on"}:
-        raise _unsupported("signed commits")
 
 
 def _probe_hooks(repo: Any) -> None:
     configured = _config_value(repo.config, "core.hookspath")
-    hooks = Path(configured).expanduser() if configured else Path(repo.path) / "hooks"
+    gitdir = Path(repo.path)
+    common = gitdir / "commondir"
+    if is_regular_file(common):
+        gitdir = (gitdir / common.read_text().strip()).resolve()
+    hooks = Path(configured).expanduser() if configured else gitdir / "hooks"
     if not hooks.is_absolute():
         hooks = Path(repo.workdir) / hooks
     for name in ("pre-commit", "prepare-commit-msg", "commit-msg", "post-commit"):
@@ -112,8 +122,7 @@ def _open(path: Path, pg: Any) -> Any | None:
         repo = pg.Repository(gitdir)
         if repo.is_bare or repo.workdir is None:
             raise _unsupported("bare repositories")
-        signing = str(_config_value(repo.config, "commit.gpgsign", "false")).lower()
-        if signing in {"true", "yes", "1", "on"}:
+        if _config_bool(repo.config, "commit.gpgsign"):
             raise _unsupported("signed commits")
         _probe_hooks(repo)
         _probe_lfs(repo)
@@ -152,7 +161,8 @@ def _tree_entry(index: Any, path: str) -> Any | None:
 
 def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
     absolute = Path(repo.workdir) / relative
-    tracked = _tree_entry(index, relative) is not None
+    existing = _tree_entry(index, relative)
+    tracked = existing is not None
     try:
         mode = absolute.lstat().st_mode
     except FileNotFoundError:
@@ -174,6 +184,13 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
         )
     else:
         return False
+    if (
+        existing is not None
+        and filemode in (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
+        and str(_config_value(repo.config, "core.filemode", "true")).lower()
+        in {"false", "no", "0", "off"}
+    ):
+        filemode = existing.mode
     index.add(pg.IndexEntry(relative, oid, filemode))
     return True
 
@@ -188,7 +205,11 @@ def _stage_items(
         changed = False
         for item in (path, old_path):
             if item is not None:
-                rel = item.relative_to(root).as_posix()
+                rel = (
+                    (item.parent.resolve() / item.name)
+                    .relative_to(root.resolve())
+                    .as_posix()
+                )
                 if _index_path(repo, index, rel, pg):
                     paths.add(rel)
                     changed = True
@@ -197,21 +218,20 @@ def _stage_items(
     return paths, staged
 
 
-def _batch_subject(
-    root: Path,
-    staged: list[tuple[Path, WriteOperation, Path | None]],
-    tool_name: str,
-    primary_paths: frozenset[Path] | None,
-) -> str:
-    chosen = [
-        item
-        for item in staged
-        if primary_paths is not None and item[0] in primary_paths
-    ]
-    if len(staged) == 1 or len(chosen) == len(primary_paths or ()) == 1:
-        path, operation, old_path = (staged if len(staged) == 1 else chosen)[0]
-        return _write_subject(root, path, operation, old_path)
-    return f"{tool_name}: {len(staged)} files"
+@contextmanager
+def _locked_index(repo: Any, pg: Any) -> Iterator[tuple[Any, Path, Path]]:
+    gitdir = Path(repo.path)
+    lock = gitdir / "index.lock"
+    fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+    try:
+        os.close(fd)
+        with tempfile.TemporaryDirectory(dir=gitdir) as directory:
+            source, temporary = gitdir / "index", Path(directory) / "index"
+            if source.exists():
+                shutil.copyfile(source, temporary)
+            yield pg.Index(temporary), temporary, source
+    finally:
+        lock.unlink()
 
 
 def _update_index(real: Any, index: Any, paths: set[str]) -> None:
@@ -222,7 +242,6 @@ def _update_index(real: Any, index: Any, paths: set[str]) -> None:
                 real.remove(rel)
         else:
             real.add(entry)
-    real.write()
 
 
 class Libgit2Store:
@@ -288,7 +307,11 @@ class Libgit2Store:
     ) -> None:
         """Commit the paths touched by one write, preserving unrelated staging."""
         del content
-        self.on_write_batch([(path, operation, old_path, principal)], operation)
+        self.on_write_batch(
+            [(path, operation, old_path, principal)],
+            operation,
+            primary_paths=frozenset({path}),
+        )
 
     def on_write_batch(
         self,
@@ -304,40 +327,66 @@ class Libgit2Store:
             repo = self._repository(items[0][0])
             if repo is None:
                 return
-            root = Path(repo.workdir)
-            real = repo.index
-            real.read(force=True)
-            index = self._pg.Index()
-            parent = None if repo.head_is_unborn else repo.head.peel(self._pg.Commit)
-            if parent is not None:
-                index.read_tree(parent.tree)
-            paths, staged = _stage_items(repo, index, items, self._pg)
-            if not paths:
-                return
-            tree = index.write_tree(repo)
-            if parent is not None and tree == parent.tree_id:
-                return
-            subject = _batch_subject(root, staged, tool_name, primary_paths)
-            principal = items[0][3]
-            author = self._pg.Signature(
-                _sanitize_git_identity(
-                    (principal.display_name if principal else None) or self._name
-                ),
-                _sanitize_git_identity(
-                    (principal.email if principal else None) or self._email
-                ),
-            )
-            committer = self._pg.Signature(self._name, self._email)
-            before = str(parent.id) if parent is not None else ""
-            after = repo.create_commit(
-                "HEAD",
-                author,
-                committer,
-                subject,
-                tree,
-                [parent.id] if parent is not None else [],
-            )
-            _update_index(real, index, paths)
+            if _config_bool(repo.config, "commit.gpgsign"):
+                raise _unsupported("signed commits")
+            _probe_hooks(repo)
+            with (
+                _locked_index(repo, self._pg) as (real, temporary, destination),
+                repo.transaction() as transaction,
+            ):
+                transaction.lock_ref("HEAD")
+                head = repo.lookup_reference("HEAD")
+                refname = head.target if isinstance(head.target, str) else "HEAD"
+                if refname != "HEAD":
+                    transaction.lock_ref(refname)
+                if repo.state():
+                    raise _unsupported("in-progress Git operations")
+                root = Path(repo.workdir)
+                index = self._pg.Index()
+                parent = (
+                    None if repo.head_is_unborn else repo.head.peel(self._pg.Commit)
+                )
+                if parent is not None:
+                    index.read_tree(parent.tree)
+                paths, staged = _stage_items(repo, index, items, self._pg)
+                if not paths:
+                    return
+                tree = index.write_tree(repo)
+                if parent is not None and tree == parent.tree_id:
+                    return
+                primary = list(
+                    {
+                        item[0]: item
+                        for item in reversed(staged)
+                        if primary_paths is not None and item[0] in primary_paths
+                    }.values()
+                )
+                subject = _batch_subject(
+                    root, len(staged), tool_name, primary_paths, primary
+                )
+                principal = items[0][3]
+                author = self._pg.Signature(
+                    _sanitize_git_identity(
+                        (principal.display_name if principal else None) or self._name
+                    ),
+                    _sanitize_git_identity(
+                        (principal.email if principal else None) or self._email
+                    ),
+                )
+                committer = self._pg.Signature(self._name, self._email)
+                before = str(parent.id) if parent is not None else ""
+                after = repo.create_commit(
+                    None,
+                    author,
+                    committer,
+                    subject,
+                    tree,
+                    [parent.id] if parent is not None else [],
+                )
+                _update_index(real, index, paths)
+                real.write()
+                transaction.set_target(refname, after, message=subject)
+                temporary.replace(destination)
             self._committed(before, str(after))
 
     @property
@@ -356,15 +405,15 @@ class Libgit2Store:
     def head_sha(self, git_root: Path) -> str:
         """Return the current commit ID."""
         repo = self._repository(git_root)
-        if repo is None:
-            raise ValueError("Not a Git repository")
+        if repo is None or repo.head_is_unborn:
+            raise OSError("No Git HEAD")
         return str(repo.head.target)
 
     def branch_name(self, git_root: Path) -> str:
         """Return the branch name, or HEAD for a detached checkout."""
         repo = self._repository(git_root)
-        if repo is None:
-            raise ValueError("Not a Git repository")
+        if repo is None or repo.head_is_unborn:
+            raise OSError("No Git HEAD")
         return "HEAD" if repo.head_is_detached else repo.head.shorthand
 
     def force_pull(self, *, dry_run: bool = False) -> PullResult:
@@ -374,7 +423,7 @@ class Libgit2Store:
         return PullResult.head_unchanged_failure("", PULL_REASON_PULL_DISABLED)
 
     def force_push(self, *, dry_run: bool = False) -> PushResult:
-        """Report the absence of a remote tracking branch."""
+        """Report that this local store does not push."""
         del dry_run
         self.resolve_force_repo()
         return PushResult(
@@ -382,8 +431,8 @@ class Libgit2Store:
             0,
             "",
             "",
-            PUSH_REASON_NO_REMOTE,
-            "No remote-tracking branch (origin/<branch>) could be resolved for the current branch.  Push the branch to origin once (`git push -u origin <branch>`) so the remote-tracking ref exists.",
+            PUSH_REASON_PUSH_FAILED,
+            "This local store does not push; use GitWriteStrategy or the Git CLI.",
         )
 
     def sync_once(self, repo_path: Path) -> bool:
