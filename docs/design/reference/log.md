@@ -2,6 +2,8 @@
 
 ## 2026-11-17
 
+- Extended [libgit2](git-libgit2.md) with in-memory rebase and incoming attribute source behavior.
+
 - [Local Git operations through pygit2](git-libgit2.md): recorded Git 2.56.1 shared repository permissions, frozen-clock noon parsing and UTC author-date formatting, with synthetic parity regressions. Other claims and review deadline remain unchanged.
 - Same reference: recorded split index, case-insensitive names, warmed filter configuration and patch path quoting against Git 2.56.1 and pygit2 1.21.0. Other claims and review deadline remain unchanged.
 - Extended [libgit2](git-libgit2.md) with checkout, merge and push behavior, including a local-transport hook counterexample.

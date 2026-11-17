@@ -171,7 +171,7 @@ def _build_git_strategy(
     enable_sync: bool,
     repo_url: str | None = None,
 ) -> VersionedStore:
-    """Build a GitWriteStrategy with the kwargs shared across all three git modes.
+    """Build the configured versioned store for all three git modes.
 
     ``enable_sync`` toggles both pull and push together — every call site enables
     or disables them in lockstep.

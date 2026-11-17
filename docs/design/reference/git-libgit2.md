@@ -110,6 +110,22 @@ sources:
     title: pygit2 remote callbacks
     resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/callbacks.py
     accessed: 2026-11-17
+  - id: rebase-source
+    title: libgit2 in-memory rebase implementation
+    resource: https://github.com/libgit2/libgit2/blob/v1.9.7/src/libgit2/rebase.c
+    accessed: 2026-11-17
+  - id: rebase-python
+    title: pygit2 rebase API
+    resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/rebase.py
+    accessed: 2026-11-17
+  - id: merge-driver
+    title: libgit2 merge driver attribute lookup
+    resource: https://github.com/libgit2/libgit2/blob/v1.9.7/src/libgit2/merge_driver.c
+    accessed: 2026-11-17
+  - id: attr-file
+    title: libgit2 attribute cache
+    resource: https://github.com/libgit2/libgit2/blob/v1.9.7/src/libgit2/attr_file.c
+    accessed: 2026-11-17
   - id: remote
     title: pygit2 remote API
     resource: https://github.com/libgit2/pygit2/blob/v1.21.0/pygit2/remotes.py
@@ -152,13 +168,14 @@ through pygit2. The native Git stores depend on it.
 - libgit2 loads repository mailmap sources and resolves a signature to its canonical identity. [source: mailmap] [pins: tests/test_git_libgit2_history.py::test_history_author_honors_mailmap]
 
 - Safe checkout compares a target with the baseline, worktree and index; it updates the worktree and index without moving HEAD. The `DONT_OVERWRITE_IGNORED` option protects ignored files. [source: checkout] [pins: tests/test_git_libgit2_sync.py::test_staged_work_is_preserved, tests/test_git_libgit2_sync.py::test_incoming_file_does_not_overwrite_ignored_local_file]
-- A tree merge can detect renames and resolve file conflicts with union favor. [source: merge] [pins: tests/test_git_libgit2_sync.py::test_two_clone_sync]
-- Attribute lookup with `INDEX_ONLY | INCLUDE_COMMIT` consults index rules before commit rules. Thus an incoming `filter=demo` can be masked by an existing `-filter` in the index. Native sync refuses incoming attribute changes when the index contains an attributes file; it allows unconfigured drivers on startup and new incoming attributes where this ambiguity is absent. [source: attr-source] [observed: isolated two-clone fixture, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_incoming_attribute_override_is_checked_against_target_commit]
+- A tree merge detects renames and selects `merge=union` using attributes from the worktree before the index; it does not inspect the incoming tree directly. [source: merge-driver] [pins: tests/test_git_libgit2_sync.py::test_incoming_index_supplies_union_without_writing_staged_index]
+- Attribute `INDEX_ONLY` lookup uses the in-memory index. Loading the incoming tree there exposes its rules without writing the on-disk staged index; attribute cache freshness follows blob identity. [source: attr-source] [source: attr-file] [observed: synthetic two-clone repository, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_incoming_index_supplies_union_without_writing_staged_index]
+- In-memory rebase applies operations without changing HEAD or the checkout, skips merge commits, and returns an already-applied indication for empty steps. [source: rebase-source] [source: rebase-python] [pins: tests/test_git_libgit2_sync.py::test_inmemory_rebase_unrelated_roots_and_staged_index]
 - The HTTP transport retries authentication challenges and may invoke credential acquisition again after a 401. Native callbacks limit repeated token requests per operation. [source: http-auth] [pins: tests/test_git_libgit2_sync.py::test_credentials_stop_after_rejected_attempt]
 - pygit2 1.21 passes through SSH host keys in its default certificate callback, and does not expose the host key to the Python callback. Native sync refuses SSH; its certificate callback rejects invalid certificates. [source: callbacks] [pins: tests/test_git_libgit2_sync.py::test_certificate_callback_never_accepts_invalid_host]
 - The push callback reports per-reference rejection even when the push operation returns normally. [source: remote] [unverified] The network server callback has not been exercised against a real server hook in these fixtures.
 - A local-path push through pygit2 1.21.0 bypassed a bare repository's executable pre-receive hook. [observed: isolated bare local repository, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_remote_hook_rejection_is_not_reported_as_success]
-- A reference-update failure after a successful checkout leaves the checked-out files and index changed while HEAD remains unchanged. [observed: injected failure after safe checkout, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_ref_failure_reports_dirty_worktree]
+- A reference update can fail after checkout; the native store attempts a path-limited restore, and reports dirty state if that restore fails. [observed: injected transaction and restore failures, 2026-11-17] [pins: tests/test_git_libgit2_sync.py::test_failed_checkout_keeps_vault_search_consistent]
 
 ## Not covered
 

@@ -23,8 +23,8 @@ from markdown_vault_mcp.git.conflict import (
 from markdown_vault_mcp.git.health import push_failure_reason
 from markdown_vault_mcp.git.libgit2 import (
     Libgit2Store,
+    _common,
     _config_bool,
-    _filter_guard,
     _probe_config_hooks,
     _probe_policy,
     _pygit2,
@@ -33,7 +33,15 @@ from markdown_vault_mcp.git.libgit2 import (
 from markdown_vault_mcp.git.push_scheduler import PushBackendError, PushScheduler
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
+    PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
+    PULL_REASON_DIVERGED,
     PULL_REASON_FETCH_FAILED,
+    PULL_REASON_NO_REMOTE,
+    PULL_REASON_PULL_DISABLED,
+    PULL_REASON_REBASED,
+    PUSH_REASON_DRY_RUN_UNSUPPORTED,
+    PUSH_REASON_NO_REMOTE,
+    PUSH_REASON_PUSH_FAILED,
     PullResult,
     PushResult,
 )
@@ -88,10 +96,7 @@ def _callbacks(pg: Any, token: str | None, username: str, url: str) -> Any:
 def _extra_policy(repo: Any) -> None:
     _probe_config_hooks(repo, ("pre-push", "post-merge", "post-checkout"))
     hooks_path = _tree_entry(repo.config, "core.hookspath")
-    gitdir = Path(repo.path)
-    common = gitdir / "commondir"
-    if is_regular_file(common):
-        gitdir = (gitdir / common.read_text().strip()).resolve()
+    gitdir = _common(Path(repo.path))
     hooks = Path(hooks_path).expanduser() if hooks_path else gitdir / "hooks"
     if not hooks.is_absolute():
         hooks = Path(repo.workdir) / hooks
@@ -125,42 +130,29 @@ def _local_remote_policy(pg: Any, url: str, root: Path) -> None:
         )
 
 
-def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:  # noqa: C901, RUF100 -- attribute policy combines independent safety checks.
+def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:
     """Check effective incoming attributes before checkout."""
     pg = _pygit2()
-    flags = pg.enums.AttrCheck.INDEX_ONLY | pg.enums.AttrCheck.INCLUDE_COMMIT
-
-    def walk(tree: Any, prefix: str = "") -> Iterator[str]:
-        for entry in tree:
-            path = f"{prefix}{entry.name}"
-            if entry.type_str == "tree":
-                yield from walk(repo[entry.id], f"{path}/")
-            elif entry.type_str == "blob":
-                yield path
-
-    paths = None
-    if baseline is not None:
-        deltas = list(repo.diff(baseline.tree, commit.tree).deltas)
-        attributes_changed = any(
-            Path(d.new_file.path).name == ".gitattributes"
-            or Path(d.old_file.path).name == ".gitattributes"
+    deltas = list(repo.diff(baseline.tree, commit.tree).deltas) if baseline else []
+    changed = any(
+        Path(d.new_file.path).name == ".gitattributes"
+        or Path(d.old_file.path).name == ".gitattributes"
+        for d in deltas
+    )
+    paths = (
+        (entry.path for entry in repo.index if entry.mode != 0o160000)
+        if baseline is None or changed
+        else (
+            d.new_file.path
             for d in deltas
+            if d.new_file.id != pg.Oid(hex="0" * 40) and d.new_file.mode != 0o160000
         )
-        if attributes_changed and any(
-            Path(entry.path).name == ".gitattributes" for entry in repo.index
-        ):
-            raise ConfigurationError(
-                f"incoming attribute changes cannot be safely evaluated against the existing index. {_FALLBACK}"
-            )
-        if not attributes_changed:
-            paths = (
-                d.new_file.path
-                for d in deltas
-                if d.new_file.id != pg.Oid(hex="0" * 40) and d.new_file.mode != 0o160000
-            )
-    for path in paths if paths is not None else walk(commit.tree):
-        encoding = repo.get_attr(path, "working-tree-encoding", flags, commit.id)
-        name = repo.get_attr(path, "filter", flags, commit.id)
+    )
+    for path in paths:
+        encoding = repo.get_attr(
+            path, "working-tree-encoding", pg.enums.AttrCheck.INDEX_ONLY
+        )
+        name = repo.get_attr(path, "filter", pg.enums.AttrCheck.INDEX_ONLY)
         if isinstance(encoding, str) and encoding:
             raise ConfigurationError(
                 f"incoming working-tree-encoding is unsupported. {_FALLBACK}"
@@ -174,9 +166,8 @@ def _check_tree(repo: Any, commit: Any, baseline: Any = None) -> None:  # noqa: 
             or _config_bool(repo.config, f"filter.{name}.required")
         ):
             raise ConfigurationError(
-                f"incoming external filter {name!r} (including Git LFS) is unsupported. {_FALLBACK}"
+                f"incoming attribute changes: external filter {name!r} (including Git LFS) is unsupported. {_FALLBACK}"
             )
-        _filter_guard(repo, path)
 
 
 def _frontmatter(content: bytes, other: str, date: str) -> bytes:
@@ -258,7 +249,7 @@ class Libgit2SyncStore(Libgit2Store):
     def _clone_if_needed(self, pg: Any, url: str | None) -> None:
         if not url:
             raise ConfigurationError(f"Managed mode requires a remote URL. {_FALLBACK}")
-        self._check_transport(pg, url, self._token)
+        self._check_transport(url, self._token)
         path = self._sync_path
         if path_exists(path) and (not is_directory(path) or any(path.iterdir())):
             return
@@ -307,11 +298,15 @@ class Libgit2SyncStore(Libgit2Store):
 
     def _gate(self, repo: Any) -> None:
         _probe_policy(repo)
+        if repo.is_shallow or _config_bool(repo.config, "core.sparsecheckout"):
+            raise ConfigurationError(
+                f"Shallow or sparse repositories are unsupported. {_FALLBACK}"
+            )
         _extra_policy(repo)
         remote = self._origin()
         if remote:
             for url in (remote.url, remote.push_url or remote.url):
-                self._check_transport(self._pg, url, self._token)
+                self._check_transport(url, self._token)
             try:
                 _local_remote_policy(
                     self._pg, remote.push_url or remote.url, Path(repo.workdir)
@@ -320,7 +315,7 @@ class Libgit2SyncStore(Libgit2Store):
                 raise ConfigurationError(str(exc)) from None
 
     @staticmethod
-    def _check_transport(pg: Any, url: str, token: str | None) -> None:
+    def _check_transport(url: str, token: str | None) -> None:
         if _ssh(url):
             raise ConfigurationError(
                 f"Native SSH host key verification is unavailable. {_FALLBACK}"
@@ -329,7 +324,8 @@ class Libgit2SyncStore(Libgit2Store):
             raise ConfigurationError(
                 f"Token authentication requires HTTPS. {_FALLBACK}"
             )
-        del pg
+        if urlsplit(url).scheme.lower() not in ("", "file", "http", "https"):
+            raise ConfigurationError(f"Unsupported remote transport. {_FALLBACK}")
 
     @property
     def is_managed(self) -> bool:
@@ -354,6 +350,7 @@ class Libgit2SyncStore(Libgit2Store):
                 "HEAD" if self._repo.head_is_detached else self._repo.head.shorthand
             )
         ref = self._repo.references.get(f"refs/remotes/origin/{branch}")
+        ref = ref or self._repo.references.get("refs/remotes/origin/HEAD")
         return ref.resolve() if ref else None
 
     def _callback(self, remote: Any, *, push: bool = False) -> Any:
@@ -417,7 +414,7 @@ class Libgit2SyncStore(Libgit2Store):
 
     def _force_pull(self, *, dry_run: bool, startup: bool) -> PullResult:
         if not self._enable_sync:
-            return PullResult.head_unchanged_failure("", "pull_disabled")
+            return PullResult.head_unchanged_failure("", PULL_REASON_PULL_DISABLED)
         with self._quiesce(skip=dry_run), self._lock:
             result = self._pull(dry_run, startup=startup)
             if dry_run:
@@ -435,25 +432,25 @@ class Libgit2SyncStore(Libgit2Store):
         except Exception as exc:
             logger.warning("git_worktree_check_failed error=%s", type(exc).__name__)
 
-    def _pull(self, dry_run: bool, *, startup: bool = False) -> PullResult:  # noqa: PLR0911, RUF100 -- each sync outcome has a distinct result.
+    def _pull(self, dry_run: bool, *, startup: bool = False) -> PullResult:  # noqa: PLR0911, RUF100 -- distinct outcomes preserve result contracts.
         repo = self._repo
         before = str(repo.head.target) if repo and not repo.head_is_unborn else ""
         if not self._enable_sync:
-            return PullResult.head_unchanged_failure("", "pull_disabled")
+            return PullResult.head_unchanged_failure("", PULL_REASON_PULL_DISABLED)
         remote = self._origin()
         if remote is None or repo is None:
-            return PullResult.head_unchanged_failure(before, "no_remote")
-        reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
-        capability_check = True
+            return PullResult.head_unchanged_failure(before, PULL_REASON_NO_REMOTE)
         try:
             self._gate(repo)
-            reason = PULL_REASON_FETCH_FAILED
-            capability_check = False
-            remote.fetch(callbacks=self._callback(remote))
-            reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
+            try:
+                remote.fetch(callbacks=self._callback(remote))
+            except Exception as exc:
+                return PullResult.head_unchanged_failure(
+                    before, PULL_REASON_FETCH_FAILED, _safe(str(exc), self._token)
+                )
             tracking = self._tracking()
             if tracking is None:
-                return PullResult.head_unchanged_failure(before, "no_remote")
+                return PullResult.head_unchanged_failure(before, PULL_REASON_NO_REMOTE)
             theirs = repo[tracking.target]
             ahead, behind = (
                 repo.ahead_behind(repo.head.target, theirs.id)
@@ -462,23 +459,33 @@ class Libgit2SyncStore(Libgit2Store):
             )
             if behind == 0:
                 return PullResult(True, True, 0, before, before)
-            reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
-            capability_check = True
-            _check_tree(
-                repo, theirs, repo.head.peel(self._pg.Commit) if before else None
+            baseline = repo.head.peel(self._pg.Commit) if before else None
+            deltas = (
+                list(repo.diff(baseline.tree, theirs.tree).deltas) if baseline else []
             )
-            capability_check = False
-            if dry_run:
-                return PullResult(
-                    False,
-                    ahead == 0,
-                    behind,
-                    before,
-                    str(theirs.id),
-                    "diverged" if ahead else None,
+            overlapping_attrs = any(
+                Path(d.new_file.path).name == ".gitattributes"
+                and is_regular_file(Path(repo.workdir) / d.new_file.path)
+                for d in deltas
+            )
+            index = repo.index
+            index.read_tree(theirs.tree)
+            try:
+                _check_tree(repo, theirs, baseline)
+                if dry_run:
+                    return PullResult(
+                        False,
+                        ahead == 0,
+                        behind,
+                        before,
+                        str(theirs.id),
+                        PULL_REASON_DIVERGED if ahead else None,
+                    )
+                target, result_reason, siblings = self._merge(
+                    repo, theirs, ahead, overlapping_attrs
                 )
-            reason = PULL_REASON_CONFLICT_RESOLUTION_FAILED
-            target, result_reason, siblings = self._merge(repo, theirs, ahead)
+            finally:
+                index.read(force=True)
             self._apply(repo, before, target)
             return PullResult(
                 True,
@@ -491,17 +498,18 @@ class Libgit2SyncStore(Libgit2Store):
             )
         except ConfigurationError as exc:
             detail = _safe(str(exc), self._token)
-            if startup and capability_check:
+            if startup:
                 raise ConfigurationError(
                     detail if _FALLBACK in detail else f"{detail} {_FALLBACK}"
                 ) from None
-            return PullResult.head_unchanged_failure(before, reason, detail)
+            return PullResult.head_unchanged_failure(
+                before, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
+            )
         except Exception as exc:
-            detail = _safe(str(exc), self._token)
             return PullResult.head_unchanged_failure(
                 before,
-                reason,
-                detail,
+                PULL_REASON_CONFLICT_RESOLUTION_FAILED,
+                _safe(str(exc), self._token),
             )
 
     def _apply(self, repo: Any, before: str, target: Any) -> None:
@@ -547,161 +555,134 @@ class Libgit2SyncStore(Libgit2Store):
         except Exception:
             if changed and paths:
                 repo.checkout_tree(
-                    old_tree, strategy=self._pg.GIT_CHECKOUT_FORCE, paths=paths
+                    old_tree,
+                    strategy=self._pg.GIT_CHECKOUT_FORCE
+                    | self._pg.GIT_CHECKOUT_DISABLE_PATHSPEC_MATCH,
+                    paths=paths,
                 )
             raise
 
-    def _merge(  # noqa: C901, RUF100 -- replay and conflict preservation share the in-memory index.
-        self, repo: Any, theirs: Any, ahead: int
+    def _merge(  # noqa: C901, RUF100 -- replay must handle each conflict shape.
+        self, repo: Any, theirs: Any, ahead: int, overlapping_attrs: bool = False
     ) -> tuple[Any, str | None, list[str]]:
         if not ahead:
             return theirs.id, None, []
+        head = repo.head.peel(self._pg.Commit)
         walk = repo.walk(
-            repo.head.target, self._pg.GIT_SORT_TOPOLOGICAL | self._pg.GIT_SORT_REVERSE
+            head.id, self._pg.GIT_SORT_TOPOLOGICAL | self._pg.GIT_SORT_REVERSE
         )
         walk.hide(theirs.id)
-        commits = list(walk)
-        if any(len(commit.parent_ids) > 1 for commit in commits):
+        if any(len(commit.parent_ids) > 1 for commit in walk):
             raise ConfigurationError(
                 f"Native replay cannot preserve local merge commits. {_FALLBACK}"
             )
-        target = theirs
-        siblings: list[str] = []
-        saved: list[tuple[Any, str, str, str, bool]] = []
+        rebase = repo.rebase_init(
+            branch=head,
+            upstream=theirs,
+            onto=theirs,
+            inmemory=True,
+            flags=self._pg.enums.MergeFlag.FIND_RENAMES,
+        )
         signature = self._pg.Signature(self._name, self._email)
-        empty_tree = None
-        for commit in commits:
-            if commit.parent_ids:
-                base = repo[commit.parent_ids[0]].tree
-            else:
-                if empty_tree is None:
-                    empty_tree = repo[repo.TreeBuilder().write()]
-                base = empty_tree
-            index = repo.merge_trees(base, target.tree, commit.tree)
-            siblings.extend(
-                self._resolve_conflicts(repo, index, reverse=True, saved=saved)
-            )
-            tree = index.write_tree(repo)
-            if tree != target.tree.id:
-                oid = repo.create_commit(
-                    None, commit.author, signature, commit.message, tree, [target.id]
+        target = theirs
+        conflicts: dict[str, Any] = {}
+        for _operation in rebase:
+            index = rebase.inmemory_index
+            if index.conflicts and overlapping_attrs:
+                raise ConfigurationError(
+                    f"Incoming attributes conflict with checkout attributes. {_FALLBACK}"
                 )
-                target = repo[oid]
-        if saved:
-            index = self._pg.Index()
-            index.read_tree(target.tree)
-            for entry, path, sibling_relative, date, annotate in saved:
-                index.add(entry)
-                original = _tree_entry(index, path)
-                if original is not None and annotate:
-                    try:
-                        content = _frontmatter(
-                            repo[original.id].data, sibling_relative, date
-                        )
-                    except UnicodeDecodeError:
-                        continue
-                    index.add(
-                        self._pg.IndexEntry(
-                            path, repo.create_blob(content), original.mode
-                        )
+            for ancestor, remote, local in list(index.conflicts or []):
+                path = (local or remote or ancestor).path
+                del index.conflicts[path]
+                if local is None and remote is not None:
+                    raise RuntimeError(
+                        f"Local deletion conflicts with remote modification: {path}. Reconcile manually."
                     )
-            tree = index.write_tree(repo)
-            subject = (
-                f"conflict: saved {len(saved)} MCP version(s) for manual reconciliation"
-            )
-            target = repo[
-                repo.create_commit(
-                    None, signature, signature, subject, tree, [target.id]
-                )
-            ]
-        reason = "conflicts_resolved_with_siblings" if saved else "rebased"
-        siblings = [name for name in siblings if any(item[2] == name for item in saved)]
-        return target.id, reason, siblings
+                if remote is not None:
+                    index.add(remote)
+                if local is not None:
+                    conflicts[path] = local
+            oid = rebase.commit(signature)
+            if oid is not None:
+                target = repo[oid]
+        rebase.finish()
+        if not conflicts:
+            return target.id, PULL_REASON_REBASED, []
+        return self._save_siblings(repo, head, target, conflicts, signature)
 
-    def _resolve_conflicts(  # noqa: C901, RUF100 -- each conflict shape needs its own preservation path.
+    def _save_siblings(
         self,
         repo: Any,
-        index: Any,
-        *,
-        reverse: bool = False,
-        saved: list[tuple[Any, str, str, str, bool]] | None = None,
-    ) -> list[str]:
-        if not index.conflicts:
-            return []
-        conflicts = list(index.conflicts)
-        siblings: list[str] = []
-        now = datetime.now(UTC)
-        for ancestor, ours, theirs in conflicts:
-            if reverse:
-                ours, theirs = theirs, ours
-            path = (theirs or ours or ancestor).path
-            del index.conflicts[path]
-            if ours is None:
-                if theirs is not None:
-                    raise ConfigurationError(
-                        f"Local deletion conflicts with remote modification: {path}. {_FALLBACK}"
-                    )
-                continue
-            original = Path(path)
-            stamp = now.strftime("%Y%m%d-%H%M%S")
-            name = conflict_sibling_name(original, stamp)
+        head: Any,
+        target: Any,
+        conflicts: dict[str, Any],
+        signature: Any,
+    ) -> tuple[Any, str, list[str]]:
+        index = self._pg.Index()
+        index.read_tree(target.tree)
+        siblings = []
+        date = datetime.now(UTC)
+        head_index = self._pg.Index()
+        head_index.read_tree(head.tree)
+        for path, entry in conflicts.items():
+            local = _tree_entry(head_index, path) or entry
+            original = _tree_entry(index, path)
+            name = conflict_sibling_name(Path(path), date.strftime("%Y%m%d-%H%M%S"))
             counter = 1
-            while (
-                _tree_entry(index, name.as_posix()) is not None
-                or path_exists(Path(repo.workdir) / name)
-                or (
-                    saved is not None
-                    and any(entry.path == name.as_posix() for entry, *_ in saved)
-                )
+            while _tree_entry(index, name.as_posix()) is not None or path_exists(
+                Path(repo.workdir) / name
             ):
-                name = conflict_sibling_name(original, stamp, counter)
+                name = conflict_sibling_name(
+                    Path(path), date.strftime("%Y%m%d-%H%M%S"), counter
+                )
                 counter += 1
-            date = now.isoformat(timespec="seconds")
-            vault = self._sync_path.resolve()
             try:
-                original_relative = (
-                    (Path(repo.workdir) / original)
+                relative = (
+                    (Path(repo.workdir) / path)
                     .resolve()
-                    .relative_to(vault)
+                    .relative_to(self._sync_path.resolve())
                     .as_posix()
                 )
                 sibling_relative = (
-                    (Path(repo.workdir) / name).resolve().relative_to(vault).as_posix()
+                    (Path(repo.workdir) / name)
+                    .resolve()
+                    .relative_to(self._sync_path.resolve())
+                    .as_posix()
                 )
+                siblings.append(sibling_relative)
             except ValueError:
-                original_relative, sibling_relative = path, name.as_posix()
-                in_vault = False
-            else:
-                in_vault = True
-            ours_data, theirs_data = _conflict_contents(
-                original,
-                repo[ours.id].data,
-                repo[theirs.id].data if theirs is not None else None,
-                (original_relative, sibling_relative, date),
-            )
-            sibling_id = repo.create_blob(ours_data)
-            if theirs is not None:
-                original_id = (
-                    theirs.id if saved is not None else repo.create_blob(theirs_data)
+                relative, sibling_relative = path, name.as_posix()
+            local_data = repo[local.id].data
+            original_data = repo[original.id].data if original else None
+            if local.mode != self._pg.GIT_FILEMODE_LINK:
+                local_data, original_data = _conflict_contents(
+                    Path(path),
+                    local_data,
+                    original_data,
+                    (relative, sibling_relative, date.isoformat(timespec="seconds")),
                 )
-                index.add(self._pg.IndexEntry(path, original_id, theirs.mode))
-            sibling = self._pg.IndexEntry(name.as_posix(), sibling_id, ours.mode)
-            if saved is not None:
-                saved[:] = [item for item in saved if item[1] != path]
-                saved.append(
-                    (
-                        sibling,
-                        path,
-                        sibling_relative,
-                        date,
-                        ours_data != repo[ours.id].data,
+            index.add(
+                self._pg.IndexEntry(
+                    name.as_posix(), repo.create_blob(local_data), local.mode
+                )
+            )
+            if original is not None and original_data is not None:
+                index.add(
+                    self._pg.IndexEntry(
+                        path, repo.create_blob(original_data), original.mode
                     )
                 )
-            else:
-                index.add(sibling)
-            if in_vault:
-                siblings.append(sibling_relative)
-        return siblings
+        tree = index.write_tree(repo)
+        oid = repo.create_commit(
+            None,
+            signature,
+            signature,
+            f"conflict: saved {len(conflicts)} MCP version(s) for manual reconciliation",
+            tree,
+            [target.id],
+        )
+        return oid, PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS, siblings
 
     def _has_unpushed(self, _path: Path) -> bool:
         tracking = self._tracking()
@@ -771,7 +752,7 @@ class Libgit2SyncStore(Libgit2Store):
                     0,
                     before,
                     before,
-                    "no_remote",
+                    PUSH_REASON_NO_REMOTE,
                     "No remote-tracking branch (origin/<branch>) could be "
                     "resolved for the current branch.  Push the branch to "
                     "origin once (`git push -u origin <branch>`) so the "
@@ -783,7 +764,7 @@ class Libgit2SyncStore(Libgit2Store):
                     0,
                     before,
                     before,
-                    "dry_run_unsupported",
+                    PUSH_REASON_DRY_RUN_UNSUPPORTED,
                     "Push dry run is not supported.",
                 )
             try:
@@ -799,8 +780,10 @@ class Libgit2SyncStore(Libgit2Store):
                 return PushResult(False, 0, before, before, reason, str(exc)[:200])
             except Exception as exc:
                 detail = _safe(str(exc), self._token)
-                self._health.push_failed("push_failed", detail)
-                return PushResult(False, 0, before, before, "push_failed", detail)
+                self._health.push_failed(PUSH_REASON_PUSH_FAILED, detail)
+                return PushResult(
+                    False, 0, before, before, PUSH_REASON_PUSH_FAILED, detail
+                )
             finally:
                 self._observe_safe()
             self._health.push_succeeded()

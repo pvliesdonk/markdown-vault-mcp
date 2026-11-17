@@ -947,7 +947,7 @@ class Vault:
             yield
 
     def sync_from_remote_before_index(self) -> None:
-        """One-time git fetch + ff-only update before build_index().
+        """One-time git fetch and backend reconciliation before build_index().
 
         Intended to run during server startup before the initial index build.
         No reindex is triggered here: on a cold start build_index() will scan
