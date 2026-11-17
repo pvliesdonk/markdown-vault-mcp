@@ -121,7 +121,8 @@ of at most 1024 characters; the reader infers no provenance or Git revision.
 
 The reference has `version=1`, `namespace`, `path`, `size_bytes`, `sha256`
 (null when omitted) and `provenance` (null when omitted). Save it unchanged.
-Unsupported versions or malformed digests are refused. Paths are relative,
+The `version` field is required when restoring a saved reference; missing or
+unsupported versions and malformed digests are refused. Paths are relative,
 with slash separators and no empty, `.` or `..` components.
 
 Resolution returns the original `reference`, `status`, `detail` and optional

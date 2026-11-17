@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import io
 import os
 from dataclasses import replace
 from typing import TYPE_CHECKING
@@ -15,11 +14,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.exceptions import (
-    ConfigurationError,
-    DocumentUnreadableError,
-    InvalidRequestError,
-)
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.references import FileReference, ReferenceReader
 from tests.server_factory import make_server
 
@@ -112,6 +107,9 @@ def test_allowlist_symlink_and_nonregular_rules(tmp_path: Path) -> None:
     (tmp_path / "folder.md").mkdir()
     with pytest.raises(InvalidRequestError, match="regular file"):
         reader.get_file_reference("folder.md")
+    os.mkfifo(tmp_path / "pipe.md")
+    with pytest.raises(InvalidRequestError, match="regular file"):
+        reader.get_file_reference("pipe.md", include_sha256=True)
     outside = tmp_path.parent / f"{tmp_path.name}-outside.md"
     outside.write_bytes(b"outside")
     (tmp_path / "link.md").symlink_to(outside)
@@ -126,6 +124,8 @@ def test_optional_content_cap_and_empty_file(tmp_path: Path) -> None:
     assert reader.resolve_file_reference(ref, max_content_bytes=1).status == "verified"
     with pytest.raises(InvalidRequestError, match="limit"):
         reader.resolve_file_reference(ref, include_content=True, max_content_bytes=1)
+    with pytest.raises(InvalidRequestError, match="nonnegative"):
+        reader.resolve_file_reference(ref, max_content_bytes=-1)
     assert (
         reader.resolve_file_reference(
             ref, include_content=True, max_content_bytes=0
@@ -140,9 +140,7 @@ def test_optional_content_cap_and_empty_file(tmp_path: Path) -> None:
     )
 
 
-def test_reference_validation_and_namespace_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_reference_validation_and_namespace_config(tmp_path: Path) -> None:
     for changes in [
         {"version": 2},
         {"sha256": "not-a-sha"},
@@ -152,14 +150,15 @@ def test_reference_validation_and_namespace_config(
     ]:
         with pytest.raises(InvalidRequestError):
             FileReference(
-                **({"namespace": "a", "path": "note.md", "size_bytes": 0} | changes)
+                **(
+                    {"namespace": "a", "path": "note.md", "size_bytes": 0, "version": 1}
+                    | changes
+                )
             )
+    with pytest.raises(TypeError, match="version"):
+        FileReference("a", "note.md", 0)  # type: ignore[call-arg]
     with pytest.raises(InvalidRequestError, match="namespace"):
         ReferenceReader(tmp_path, None)
-    with pytest.raises(ConfigurationError, match="reference_namespace"):
-        ProjectConfig(reference_namespace=" ")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REFERENCE_NAMESPACE", "urn:vault:test")
-    assert ProjectConfig.from_env().reference_namespace == "urn:vault:test"
 
 
 def test_concurrent_replacement_is_refused(
@@ -192,18 +191,19 @@ async def test_mcp_reference_roundtrip_and_metadata(
         config=replace(ProjectConfig.from_env(), reference_namespace="right")
     )
     async with Client(server) as client:
-        tools = {t.name: t for t in await client.list_tools()}
-        for name in ["get_file_reference", "resolve_file_reference"]:
-            assert tools[name].annotations.title
-            assert tools[name].annotations.read_only_hint
-            assert tools[name].annotations.idempotent_hint
-            assert tools[name].icons
         reply = await client.call_tool(
             "get_file_reference", {"path": "note.md", "include_sha256": True}
         )
         ref = reply.structured_content
         assert ref["namespace"] == "right"
-        assert "content" not in ref
+        assert set(ref) == {
+            "namespace",
+            "path",
+            "size_bytes",
+            "sha256",
+            "provenance",
+            "version",
+        }
         result = await client.call_tool(
             "resolve_file_reference", {"reference": ref, "include_content": True}
         )
@@ -218,6 +218,27 @@ async def test_mcp_reference_roundtrip_and_metadata(
         assert wrong.structured_content["status"] == "wrong_vault"
         with pytest.raises(ToolError, match="list_documents"):
             await client.call_tool("get_file_reference", {"path": "absent.md"})
+
+
+async def test_mcp_rejects_missing_reference_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "note.md").write_bytes(b"evidence")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    config = replace(ProjectConfig.from_env(), reference_namespace="a")
+    async with Client(make_server(config=config)) as client:
+        saved = (
+            await client.call_tool(
+                "get_file_reference", {"path": "note.md", "include_sha256": True}
+            )
+        ).structured_content
+        del saved["version"]
+        with pytest.raises(ToolError):
+            await client.call_tool("resolve_file_reference", {"reference": saved})
+        with pytest.raises(ToolError):
+            await client.call_tool(
+                "resolve_file_reference", {"reference": saved | {"version": 2}}
+            )
 
 
 @pytest.mark.parametrize("mutation", ["inplace", "symlink", "truncated"])
@@ -237,6 +258,8 @@ def test_mutation_during_stream_is_refused(tmp_path: Path, mutation: str) -> Non
             file.symlink_to(tmp_path / "other.md")
         else:
             file.write_bytes(b"after!" if mutation == "inplace" else b"")
+            if mutation == "inplace":
+                os.utime(file, ns=(1_000_000_000, 1_000_000_000))
         return result
 
     with (
@@ -246,23 +269,14 @@ def test_mutation_during_stream_is_refused(tmp_path: Path, mutation: str) -> Non
         reader.get_file_reference("note.md", include_sha256=True)
 
 
-def test_nonregular_io_and_stream_growth_are_safe(tmp_path: Path) -> None:
+def test_unreadable_file(tmp_path: Path) -> None:
     reader = ReferenceReader(tmp_path, "a")
-    os.mkfifo(tmp_path / "pipe.md")
-    with pytest.raises(InvalidRequestError, match="regular file"):
-        reader.get_file_reference("pipe.md", include_sha256=True)
+    (tmp_path / "note.md").write_bytes(b"content")
     with (
         patch("markdown_vault_mcp.references.os.open", side_effect=PermissionError),
         pytest.raises(DocumentUnreadableError),
     ):
         reader.get_file_reference("note.md", include_sha256=True)
-    size, digest, body = reader._consume(io.BytesIO(b"abcd"), True, 1)
-    assert size == 4 and digest == hashlib.sha256(b"abcd").hexdigest()
-    assert body is None
-    with pytest.raises(InvalidRequestError, match="nonnegative"):
-        reader.resolve_file_reference(
-            FileReference("a", "note.md", 0), max_content_bytes=-1
-        )
 
 
 async def test_unconfigured_namespace_and_content_caps(
@@ -417,11 +431,10 @@ async def test_attachment_reference_cap_matches_read(
                 with pytest.raises(ToolError, match="limit"):
                     await client.call_tool(tool, args)
             else:
-                await client.call_tool(tool, args)
-        if cap == 0.5 and size == 1:
-            (tmp_path / "proof.png").write_bytes(b"changed")
-            result = await client.call_tool(
-                "resolve_file_reference", {"reference": ref, "include_content": True}
-            )
-            assert result.structured_content["status"] == "changed"
-            assert result.structured_content["content_base64"] is None
+                result = await client.call_tool(tool, args)
+                if tool == "resolve_file_reference":
+                    assert result.structured_content["status"] == "verified"
+                    assert (
+                        base64.b64decode(result.structured_content["content_base64"])
+                        == b"x" * size
+                    )

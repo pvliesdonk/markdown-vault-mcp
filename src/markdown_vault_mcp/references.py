@@ -7,7 +7,7 @@ import hashlib
 import os
 import re
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, BinaryIO, Literal
 
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
@@ -52,7 +52,7 @@ class FileReference:
         size_bytes: Complete raw-file byte count from the same read as sha256.
         sha256: Lowercase raw-file SHA-256, or None for a path-only reference.
         provenance: Optional caller label, at most 1024 characters.
-        version: Contract version; currently 1.
+        version: Required contract version; currently 1.
     """
 
     namespace: str
@@ -60,7 +60,7 @@ class FileReference:
     size_bytes: int
     sha256: str | None = None
     provenance: str | None = None
-    version: int = 1
+    version: int = field(kw_only=True)
 
     def __post_init__(self) -> None:
         """Reject malformed or unsupported saved references."""
@@ -147,14 +147,14 @@ class ReferenceReader:
             DocumentUnreadableError: File system refuses the read.
         """
         # Validate before I/O, including opt-in caller metadata.
-        FileReference(self._namespace, path, 0, provenance=provenance)
+        FileReference(self._namespace, path, 0, provenance=provenance, version=1)
         try:
             size, digest, _ = self._snapshot(path, include_sha256, None)
         except FileNotFoundError as exc:
             raise InvalidRequestError(
                 "File is missing; use list_documents to find a current path."
             ) from exc
-        return FileReference(self._namespace, path, size, digest, provenance)
+        return FileReference(self._namespace, path, size, digest, provenance, version=1)
 
     def resolve_file_reference(
         self,

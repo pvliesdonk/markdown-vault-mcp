@@ -826,11 +826,17 @@ class TestToolAnnotations:
             "get_similar",
             "get_recent",
             "get_toc",
+            "get_file_reference",
+            "resolve_file_reference",
         ):
             ann = by_name[name].annotations
             assert ann is not None, f"{name} missing annotations"
             assert ann.read_only_hint is True, f"{name} read_only_hint"
             assert ann.destructive_hint is False, f"{name} destructive_hint"
+
+        for name in ("get_file_reference", "resolve_file_reference"):
+            assert by_name[name].annotations.idempotent_hint is True
+            assert by_name[name].icons
 
         # Index management tools — not readOnly
         for name in ("reindex", "build_embeddings"):
