@@ -54,6 +54,7 @@ from markdown_vault_mcp.exceptions import (
     StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.types import (
+    FTS_COLUMNS,
     FTSResult,
     ParsedNote,
     SkippedFile,
@@ -707,7 +708,7 @@ class FTSIndex:
     SCHEMA_VERSION = 1
 
     # notes_fts column order — bm25() weight argument order must match.
-    _FTS_COLUMNS = ("path", "title", "folder", "heading", "content", "summary")
+    _FTS_COLUMNS = FTS_COLUMNS
 
     def __init__(
         self,

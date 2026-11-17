@@ -1698,23 +1698,15 @@ def test_unknown_fts_weights_column_logs_warning(
 
 
 def test_fts_column_constants_stay_in_lockstep() -> None:
-    """The two ``_FTS_COLUMNS`` copies and the live ``notes_fts`` must agree.
-
-    ``fts_index._persist_rank_config`` builds ``bm25()`` arguments positionally
-    from ``FTSIndex._FTS_COLUMNS``, and ``SearchConfig`` validates
-    ``fts_weights`` keys against its own copy in ``config_sections.search``. If
-    the two drift or fall out of the table's declared column order, weights map
-    to the wrong columns or a valid key is rejected — with nothing else
-    catching it. This pins the three-way agreement.
-    """
-    from markdown_vault_mcp.config_sections.search import _FTS_COLUMNS as _CFG_COLS
+    """The shared BM25 argument order agrees with the live table."""
+    from markdown_vault_mcp.types import FTS_COLUMNS
 
     idx = FTSIndex(db_path=":memory:")
     live = tuple(
         r[1] for r in idx._conn().execute("PRAGMA table_info(notes_fts)").fetchall()
     )
     idx.close()
-    assert FTSIndex._FTS_COLUMNS == _CFG_COLS == live
+    assert FTSIndex._FTS_COLUMNS == FTS_COLUMNS == live
 
 
 class TestPersistedRankConfig:
