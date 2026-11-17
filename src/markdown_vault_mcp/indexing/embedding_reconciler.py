@@ -194,14 +194,15 @@ class _Document:
     metadata: tuple[dict[str, Any], ...]
 
 
-@dataclass(frozen=True)
+@dataclass
 class _PendingEmbed:
     """A document's reusable vectors and inputs still needing embeddings."""
 
     doc: _Document
-    stored: list[VectorRow]
     known: dict[str, Any]
     misses: list[str]
+    fresh: list[list[float]] = field(default_factory=list)
+    done: bool = False
 
 
 @dataclass(frozen=True)
@@ -212,7 +213,7 @@ class _Pass:
     stored: dict[str, RevisionToken | None]
     result: ReconcileResult
     site: str
-    pending: list[_PendingEmbed] = field(default_factory=list)
+    pending: list[tuple[_PendingEmbed, list[str]]] = field(default_factory=list)
 
 
 def _stored_metadata(
@@ -507,31 +508,32 @@ class EmbeddingReconciler:
         """Find reusable vectors and distinct misses for one document."""
         known = self._stored_inputs(stored)
         misses = [text for text in dict.fromkeys(doc.texts) if text not in known]
-        return _PendingEmbed(doc, stored, known, misses)
+        return _PendingEmbed(doc, known, misses)
 
     def _queue(self, state: _Pass, item: _PendingEmbed) -> None:
-        """Publish reuse-only documents or pack misses into bounded requests."""
+        """Pack inputs across documents, retaining each until complete."""
         if not item.misses:
             self._publish(state, item, [])
             return
-        count = sum(len(p.misses) for p in state.pending)
-        if count + len(item.misses) > self._batch_size:
-            self._flush(state)
-            count = 0
-        state.pending.append(item)
-        if count + len(item.misses) >= self._batch_size:
-            self._flush(state)
+        offset = 0
+        while offset < len(item.misses) and not item.done:
+            count = sum(len(texts) for _, texts in state.pending)
+            end = min(offset + self._batch_size - count, len(item.misses))
+            state.pending.append((item, item.misses[offset:end]))
+            offset = end
+            if count + len(state.pending[-1][1]) == self._batch_size:
+                self._flush(state)
 
     def _flush(self, state: _Pass) -> None:
-        """Embed queued documents together, falling back to each on failure."""
+        """Embed one bounded batch; retry affected documents alone on failure."""
         pending = state.pending[:]
         state.pending.clear()
         if not pending:
             return
-        if len(pending) == 1:
-            self._embed_one(state, pending[0])
+        if len(pending) == 1 and len(pending[0][1]) == len(pending[0][0].misses):
+            self._embed_one(state, pending[0][0])
             return
-        texts = [text for item in pending for text in item.misses]
+        texts = [text for _, part in pending for text in part]
         try:
             vectors = self._provider.embed(texts)
             if len(vectors) != len(texts):
@@ -544,14 +546,18 @@ class EmbeddingReconciler:
                 len(texts),
                 exc,
             )
-            for item in pending:
+            for item, _ in pending:
                 self._embed_one(state, item)
+                item.done = True
             return
         offset = 0
-        for item in pending:
-            end = offset + len(item.misses)
-            self._publish(state, item, vectors[offset:end])
+        for item, part in pending:
+            end = offset + len(part)
+            item.fresh.extend(vectors[offset:end])
             offset = end
+            if len(item.fresh) == len(item.misses):
+                self._publish(state, item, item.fresh)
+                item.done = True
 
     def _embed_one(self, state: _Pass, item: _PendingEmbed) -> None:
         """Embed one document, keeping its old rows on provider failure."""

@@ -128,6 +128,20 @@ def test_changed_documents_share_one_request(tmp_path):
         assert list(row.vector) == pytest.approx(vector / np.linalg.norm(vector))
 
 
+def test_multi_chunk_documents_fill_shared_requests(tmp_path):
+    notes = {
+        f"{i}.md": f"# Note {i}\n\nIntro {i}.\n\n## One\n\nApple {i}.\n\n## Two\n\nBoat {i}.\n"
+        for i in range(4)
+    }
+    _, provider, store, rec = _setup(
+        tmp_path, notes, chunker=HeadingChunker(short_doc_lines=0)
+    )
+    result = rec.reconcile(store, site="flush")
+    assert result.embedded == 12
+    assert all(len(store.rows_for(path)) == 3 for path in notes)
+    assert [len(call) for call in provider.calls] == [4, 4, 4]
+
+
 def test_batch_limit_spans_documents(tmp_path):
     notes = {f"{i}.md": f"# Note {i}\n\nBody {i}.\n" for i in range(5)}
     _, provider, store, rec = _setup(tmp_path, notes)
@@ -136,7 +150,7 @@ def test_batch_limit_spans_documents(tmp_path):
     assert set(store.tokens()) == set(notes)
 
 
-def test_oversized_document_is_sliced_before_next_document(tmp_path):
+def test_oversized_document_tail_shares_next_request(tmp_path):
     notes = {
         "a.md": "# A\n\n"
         + "\n".join(f"## Section {i}\n\nContent {i}.\n" for i in range(5)),
@@ -146,9 +160,86 @@ def test_oversized_document_is_sliced_before_next_document(tmp_path):
         tmp_path, notes, chunker=HeadingChunker(short_doc_lines=0)
     )
     rec.reconcile(store, site="flush")
-    assert [len(call) for call in provider.calls] == [4, 1, 1]
-    assert "Other" in provider.calls[-1][0]
+    assert [len(call) for call in provider.calls] == [4, 2]
+    assert "Other" in provider.calls[-1][1]
     assert len(store.rows_for("a.md")) == 5
+
+
+def test_failure_across_document_boundary_keeps_whole_failed_document(
+    tmp_path, monkeypatch
+):
+    chunker = HeadingChunker(short_doc_lines=0)
+    notes = {
+        f"{c}.md": f"# {c}\n\nIntro {c}.\n\n## One\n\nApple {c}.\n\n## Two\n\nBoat {c}.\n"
+        for c in "abc"
+    }
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    old = store.rows_for("b.md")
+    for path, body in notes.items():
+        (tmp_path / path).write_text(
+            body.replace("Intro", "Changed Intro")
+            .replace("Apple", "Changed Apple")
+            .replace("Boat", "Changed Boat")
+        )
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    provider.calls.clear()
+    embed = provider.embed
+
+    def reject(texts):
+        if any("Changed Apple b" in text for text in texts):
+            provider.calls.append(list(texts))
+            raise RuntimeError("rejected b")
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", reject)
+    result = rec.reconcile(store, site="flush")
+    assert result.retry == {"b.md"}
+    assert store.rows_for("b.md") == old
+    assert all(
+        "Changed" in row.metadata["content"]
+        for p in ("a.md", "c.md")
+        for row in store.rows_for(p)
+    )
+    assert any(
+        len(call) == 4 and any("Changed Apple b" in text for text in call)
+        for call in provider.calls
+    )
+
+
+def test_cross_boundary_batch_preserves_conditional_conflict(tmp_path, monkeypatch):
+    chunker = HeadingChunker(short_doc_lines=0)
+    notes = {
+        f"{c}.md": f"# {c}\n\nIntro {c}.\n\n## One\n\nApple {c}.\n\n## Two\n\nBoat {c}.\n"
+        for c in "ab"
+    }
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    for path, body in notes.items():
+        (tmp_path / path).write_text(
+            body.replace("Intro", "New Intro")
+            .replace("Apple", "New Apple")
+            .replace("Boat", "New Boat")
+        )
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    embed = provider.embed
+    changed = []
+
+    def concurrent(texts):
+        if not changed:
+            rows = store.rows_for("b.md")
+            store.replace_document(
+                DocumentRows("b.md", "other", rows),
+                expected_token=store.tokens()["b.md"],
+            )
+            changed.append(True)
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", concurrent)
+    result = rec.reconcile(store, site="flush")
+    assert result.conflicts == {"b.md"}
+    assert store.tokens()["b.md"] == "other"
+    assert all("New" in row.metadata["content"] for row in store.rows_for("a.md"))
 
 
 @pytest.mark.parametrize("failure", ["rejected", "count"])

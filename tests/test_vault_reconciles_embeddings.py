@@ -8,6 +8,7 @@ import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.indexing import FlushDirtyEmbeddings
+from markdown_vault_mcp.scanner import HeadingChunker
 from markdown_vault_mcp.types import DocumentRows
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
@@ -75,6 +76,62 @@ def test_backlink_rewrite_flush_batches_and_checkpoints(tmp_path, monkeypatch):
         assert len(checkpoints) == 1
         for path in paths:
             assert "[[new]]" in store.rows_for(path)[0].metadata["content"]
+    finally:
+        vault.close()
+
+
+def test_multi_chunk_flush_packs_boundaries_and_checkpoints(tmp_path, monkeypatch):
+    class Capture(_Counting):
+        def __init__(self):
+            super().__init__()
+            self.sizes = []
+
+        def embed(self, texts):
+            self.sizes.append(len(texts))
+            return super().embed(texts)
+
+    provider = Capture()
+    root = tmp_path / "vault"
+    root.mkdir()
+    notes = {
+        f"{c}.md": f"# {c}\n\nIntro [[old]] {c}.\n\n## One\n\nApple [[old]] {c}.\n\n## Two\n\nBoat [[old]] {c}.\n"
+        for c in "abcd"
+    }
+    for name, text in notes.items():
+        (root / name).write_text(text)
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            index_path=tmp_path / "index.db", read_only=False, embedding_batch_size=4
+        ),
+        embedding_provider=provider,
+        chunk_strategy=HeadingChunker(short_doc_lines=0),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        for name, text in notes.items():
+            (root / name).write_text(text.replace("[[old]]", "[[new]]"))
+        paths = set(notes)
+        vault._index_mgr.process_dirty_paths(paths)
+        store = vault._vectors
+        checkpoint = store.checkpoint
+        checkpoints = []
+
+        def record():
+            checkpoints.append(True)
+            return checkpoint()
+
+        monkeypatch.setattr(store, "checkpoint", record)
+        provider.sizes.clear()
+        vault._index_mgr.flush_dirty_embeddings(paths)
+        assert provider.sizes == [4, 4, 4]
+        assert len(checkpoints) == 1
+        assert all(
+            "[[new]]" in row.metadata["content"]
+            for path in paths
+            for row in store.rows_for(path)
+        )
     finally:
         vault.close()
 
