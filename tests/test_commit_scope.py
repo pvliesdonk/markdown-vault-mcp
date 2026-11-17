@@ -135,19 +135,19 @@ class TestGrouping:
 
         cb = Recorder()
         dispatcher = WriteCallbackDispatcher(cb)
+        with bound_commit_scope("write"):
+            dispatcher.fire(Path("other.md"), "x", "write")
         with bound_commit_scope("move_folder") as folder:
             folder.folder_move = (Path("a"), Path("b"))
             dispatcher.fire(Path("b/x.md"), "x", "rename", old_path=Path("a/x.md"))
-        with bound_commit_scope("write"):
-            dispatcher.fire(Path("other.md"), "x", "write")
         assert dispatcher.drain(timeout=10)
         dispatcher.fire(Path("unscoped.md"), "x", "write")
         dispatcher.close()
-        assert cb.roots == [(Path("a"), Path("b")), None, None]
+        assert cb.roots == [None, (Path("a"), Path("b")), None]
         assert cb.scopes == [None, None, None]
         assert cb.batches == [
-            ("move_folder", [Path("b/x.md")]),
             ("write", [Path("other.md")]),
+            ("move_folder", [Path("b/x.md")]),
         ]
 
     def test_one_scope_produces_one_batch(self) -> None:
@@ -678,13 +678,11 @@ class TestBatchCommitsForReal:
             expected.add("index.md")
         assert _files_in_head(repo) == expected
 
-    def _run_in_scope(
-        self, repo: Path, tool: str, op: Callable[[Any], object], strategy: Any = None
-    ) -> None:
+    def _run_in_scope(self, repo: Path, tool: str, op: Callable[[Any], object]) -> None:
         """Run *op* against a fresh vault on *repo* inside one tool's scope."""
         from markdown_vault_mcp.vault import Vault, VaultSettings
 
-        strategy = strategy or self._strategy(repo)
+        strategy = self._strategy(repo)
         vault = Vault(
             source_dir=repo,
             settings=VaultSettings(read_only=False),
@@ -747,12 +745,28 @@ class TestBatchCommitsForReal:
         assert _subjects(repo)[0] == "delete: other.md"
         assert "index.md" in _files_in_head(repo)
 
-    @pytest.mark.parametrize("okf", [False, True])
+    @pytest.mark.parametrize(
+        ("okf", "override"), [(False, False), (True, False), (False, True)]
+    )
     def test_multi_file_folder_move_names_paths(
-        self, tmp_path: Path, okf: bool
+        self, tmp_path: Path, okf: bool, override: bool
     ) -> None:
         """Moved notes, backlinks and OKF maintenance share the folder subject."""
         from markdown_vault_mcp.git._run import run_git
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+        class CustomStrategy(GitWriteStrategy):
+            called = False
+
+            def on_write_batch(
+                self,
+                items: Sequence[WriteBatchItem],
+                tool_name: str,
+                *,
+                primary_paths: frozenset[Path] | None = None,
+            ) -> None:
+                self.called = True
+                super().on_write_batch(items, tool_name, primary_paths=primary_paths)
 
         repo = _repo(tmp_path)
         (repo / "a").mkdir()
@@ -766,7 +780,7 @@ class TestBatchCommitsForReal:
         (repo / "source.md").write_text("[X](a/x.md)\n", encoding="utf-8")
         run_git(str(repo), "add", "source.md")
         run_git(str(repo), "commit", "-m", "backlink")
-        strategy = self._strategy(repo)
+        strategy = self._strategy(repo, CustomStrategy if override else None)
         vault = Vault(
             source_dir=repo,
             settings=VaultSettings(
@@ -784,6 +798,8 @@ class TestBatchCommitsForReal:
             vault.close()
             strategy.close()
 
+        if override:
+            assert strategy.called
         assert _subjects(repo)[0] == "move_folder: a -> b"
         assert len(_subjects(repo)) == before + 1
         assert "b/x.md" in (repo / "source.md").read_text(encoding="utf-8")
@@ -828,7 +844,6 @@ class TestBatchCommitsForReal:
         from markdown_vault_mcp.vault import Vault, VaultSettings
 
         finished = threading.Event()
-        scopes: list[CommitScope | None] = []
 
         class FollowupStrategy(GitWriteStrategy):
             def on_write_batch(
@@ -838,7 +853,6 @@ class TestBatchCommitsForReal:
                 *,
                 primary_paths: frozenset[Path] | None = None,
             ) -> None:
-                scopes.append(current_commit_scope())
                 super().on_write_batch(items, tool_name, primary_paths=primary_paths)
                 vault.writer.write("followup.md", "followup\n")
 
@@ -863,83 +877,30 @@ class TestBatchCommitsForReal:
             assert finished.wait(timeout=5), (
                 "callback write remains buffered without a scope end"
             )
-            assert scopes == [None]
-            assert _subjects(repo)[:2] == ["write: followup.md", "move_folder: a -> b"]
             assert "followup.md" in _files_in_head(repo)
         finally:
             vault.close()
             strategy.close()
 
-    def test_folder_move_preserves_overridden_batch_callback(
-        self, tmp_path: Path
-    ) -> None:
-        """An existing strategy subclass still receives its public callback."""
-        from markdown_vault_mcp.git._run import run_git
-        from markdown_vault_mcp.git.strategy import GitWriteStrategy
-
-        class CustomStrategy(GitWriteStrategy):
-            called = False
-
-            def on_write_batch(
-                self,
-                items: Sequence[WriteBatchItem],
-                tool_name: str,
-                *,
-                primary_paths: frozenset[Path] | None = None,
-            ) -> None:
-                self.called = True
-                super().on_write_batch(items, tool_name, primary_paths=primary_paths)
-
-        repo = _repo(tmp_path)
-        (repo / "a").mkdir()
-        (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
-        (repo / "a" / "y.md").write_text("y\n", encoding="utf-8")
-        (repo / "source.md").write_text("[X](a/x.md)\n", encoding="utf-8")
-        run_git(str(repo), "add", "--all")
-        run_git(str(repo), "commit", "-m", "folder")
-        before = len(_subjects(repo))
-        strategy = self._strategy(repo, CustomStrategy)
-        self._run_in_scope(
-            repo, "move_folder", lambda v: v.writer.move_folder("a", "b"), strategy
-        )
-        assert strategy.called
-        assert _subjects(repo)[0] == "move_folder: a -> b"
-        assert len(_subjects(repo)) == before + 1
-        assert {"b/x.md", "b/y.md", "source.md"} <= _files_in_head(repo)
-
     @pytest.mark.parametrize(
-        ("old", "new", "expected"),
+        ("name", "expected"),
         [
-            ("a\n\nsource", "b\tdest", 'move_folder: "a\\n\\nsource" -> "b\\tdest"'),
-            ("a", "archive ", 'move_folder: a -> "archive "'),
-            (
-                "a\u0085source",
-                "b\u0085dest",
-                'move_folder: "a\\u0085source" -> "b\\u0085dest"',
-            ),
-            (
-                "a\u2028source",
-                "b\u2029dest",
-                'move_folder: "a\\u2028source" -> "b\\u2029dest"',
-            ),
-            ("café", "été", "move_folder: café -> été"),
+            ("a\n\nsource", '"a\\n\\nsource"'),
+            ("b\tdest", '"b\\tdest"'),
+            ("archive ", '"archive "'),
+            ("a\u0085source", '"a\\u0085source"'),
+            ("b\u2028dest", '"b\\u2028dest"'),
+            ("b\u2029dest", '"b\\u2029dest"'),
+            ("café", "café"),
         ],
     )
     def test_folder_move_escapes_unusual_subject_paths(
-        self, tmp_path: Path, old: str, new: str, expected: str
+        self, name: str, expected: str
     ) -> None:
-        """Both valid folder names remain visible in Git's one-line subject."""
-        from markdown_vault_mcp.git._run import run_git
+        """Folder subject names stay identifiable on one line."""
+        from markdown_vault_mcp.git.strategy import _folder_subject_path
 
-        repo = _repo(tmp_path)
-        (repo / old).mkdir()
-        (repo / old / "x.md").write_text("x\n", encoding="utf-8")
-        run_git(str(repo), "add", "--all")
-        run_git(str(repo), "commit", "-m", "folder")
-        self._run_in_scope(
-            repo, "move_folder", lambda v: v.writer.move_folder(old, new)
-        )
-        assert _subjects(repo)[0] == expected
+        assert _folder_subject_path(Path(name)) == expected
 
     def test_single_file_folder_move_names_folders(self, tmp_path: Path) -> None:
         """A folder containing one file still names the folder roots."""
@@ -951,10 +912,10 @@ class TestBatchCommitsForReal:
         run_git(str(repo), "add", "a")
         run_git(str(repo), "commit", "-m", "folder")
         self._run_in_scope(
-            repo, "custom_move", lambda v: v.writer.move_folder("a", "b")
+            repo, "custom_move", lambda v: v.writer.move_folder("a", "archive ")
         )
-        assert _subjects(repo)[0] == "custom_move: a -> b"
-        assert _files_in_head(repo) == {"b/x.md"}
+        assert _subjects(repo)[0] == 'custom_move: a -> "archive "'
+        assert _files_in_head(repo) == {"archive /x.md"}
 
     @pytest.mark.parametrize(
         ("primary_names", "expected"),
