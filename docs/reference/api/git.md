@@ -36,6 +36,29 @@ vault.close()
 strategy.close()
 ```
 
+## Local libgit2 store
+
+Library callers can install `"markdown-vault-mcp[libgit2]"` and pass one
+`Libgit2Store` as both `git_strategy` and `on_write`. This local store commits
+only paths touched by each write and provides history, diffs and revision
+reads; it does not pull or push. The server continues to use the CLI strategy.
+
+```python { .fragment }
+from pathlib import Path
+from markdown_vault_mcp.git.libgit2 import Libgit2Store
+from markdown_vault_mcp.vault import Vault, VaultSettings
+
+store = Libgit2Store(repo_path=Path("/path/to/vault"))
+vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(),
+              git_strategy=store, on_write=store)
+```
+
+The constructor rejects unsupported repository formats, partial clones,
+commit signing and executable commit hooks. Effective external clean filters,
+including Git LFS, are refused because libgit2 cannot run them. Use
+`GitWriteStrategy` for these repositories. Relative dates support ISO 8601
+and `N unit(s) ago`; other Git-specific date expressions are refused.
+
 ## Migrating from 4.x
 
 `GitWriteStrategy` no longer accepts `commit_name_claim` or `commit_email_claim`. Remove these constructor arguments. The remaining `git_lfs` and `repo_path` options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:

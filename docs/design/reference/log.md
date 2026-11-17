@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-16
+
+- New: [Local Git operations through pygit2](git-libgit2.md), covering the native index, blob and rename APIs and an external-filter counterexample. Next review: 2027-05-16.
+
 ## 2026-11-15
 
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
