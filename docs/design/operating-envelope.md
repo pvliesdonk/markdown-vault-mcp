@@ -278,6 +278,64 @@ each read (one generation publish) are unchanged and not timed here.
   vector widths, other filesystems, and other PostgreSQL images in the
   supported range (CI runs the tests on them, not the measurements).
 
+## Keyword scan payload lifetime (#1938)
+
+Keyword indexing writes each parsed note before requesting the next. It
+retains path, title, modification time and hash state, rather than completed
+chunk bodies and frontmatter. SQLite cleanup reads the same thin columns;
+it does not reload every note's frontmatter at the end of the scan.
+
+This changes the indexing consumer's payload lifetime. Paths, titles,
+hashes, skip records, scanner discovery and link-resolution bookkeeping
+still grow with the vault; the largest parsed note and SQLite's caches
+also need space. Third-party keyword stores without the optional thin
+reader retain an eager metadata fallback. Embedding preparation and
+generation publication have separate allocations, including the resident
+matrix required by NumPy. A lower keyword-stage peak does not guarantee a
+lower peak for the complete build. The October measurements above remain
+the historical envelope, rather than a new memory budget.
+
+A November 14, 2026 counterfactual compared main `c17a3808` with the two
+keyword-index source changes, in fresh Python 3.12.3 processes on Linux
+(glibc 2.39). Three pairs alternated execution order. The fixed fixtures
+used seed 1506, seven chunks per note, 1,024-dimensional synthetic vectors
+and batches of 64, without a network provider. PostgreSQL 17.8 with
+pgvector 0.8.1 ran in a separate loopback container; its server memory is
+outside client RSS. Values below are median [minimum–maximum]; MiB means
+1,048,576 bytes.
+
+| Keyword case | Main peak RSS (MiB) | Changed peak RSS (MiB) | Main time (s) | Changed time (s) |
+|---|---:|---:|---:|---:|
+| 3,252 notes, NumPy resident | 142.02 [141.75–142.09] | 123.98 [123.79–123.98] | 2.51 [2.46–2.66] | 2.72 [2.66–2.85] |
+| 3,252 notes, SQLite streamed | 141.13 [140.85–141.95] | 124.03 [123.93–124.16] | 2.52 [2.50–2.53] | 2.79 [2.77–2.82] |
+| 3,252 notes, PostgreSQL streamed | 146.53 [146.48–146.58] | 129.12 [129.06–129.14] | 2.53 [2.50–2.54] | 2.78 [2.72–2.87] |
+| 256 text-heavy notes, keyword only | 149.17 [147.56–150.95] | 119.04 [118.96–119.18] | 0.93 [0.91–0.94] | 0.93 [0.92–0.96] |
+
+The text-heavy fixture used short paths and titles, about 32 KiB of body
+and 64 KiB of summary per note. It isolates keyword indexing and is not a
+complete embedding build. At 512 fixed-shape notes, keyword RSS medians
+were 120.98–126.03 MiB on main and 118.26–123.27 MiB with the change;
+keyword time medians rose from 0.36–0.37 s to 0.40–0.41 s. At 3,252 notes,
+the keyword stage was also slower, as the table shows.
+
+Later stages erased most of the fixed-shape RSS difference: whole-window
+medians at 3,252 notes were 450.12 → 449.96 MiB for NumPy, 343.97 →
+343.94 MiB for SQLite and 363.68 → 363.62 MiB for PostgreSQL. This sampled
+window includes post-build GC, diagnostic allocator trim and close.
+Five-millisecond sampling and scalar instrumentation add overhead; these
+finite runs establish neither an asymptotic bound nor a production budget.
+The unchanged embedding stages still hold prepared text, packed vectors
+and normalized generations. NumPy's required resident matrix alone was
+93,241,344 bytes (22,764 rows × 1,024 dimensions × 4 bytes). Reported vector
+widths do not count unique allocations or measure extra copies.
+
+Allocator retention remains separate from live payloads. At 3,252 notes,
+open-store RSS after GC was 433.96 → 433.92 MiB for NumPy, 338.85 →
+329.82 MiB for SQLite and 321.98 → 313.07 MiB for PostgreSQL. Diagnostic
+`malloc_trim` then reduced those medians to 251.39 → 251.39, 157.53 →
+148.54 and 174.64 → 165.84 MiB respectively. It ran after the measured
+build, is not part of the product, and does not lower the earlier peak.
+
 ## What follows
 
 - **#1900** chose the SQLite store, searched streamed, as the default, and

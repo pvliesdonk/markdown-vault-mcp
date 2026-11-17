@@ -267,7 +267,104 @@ The image carries the `markdown-vault-mcp` command, so you can search and read t
 
 ### What `/data/state` holds
 
-This server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](../use/storage.md)).
+By default, this server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](../use/storage.md)).
+
+### Separate search data from persistent state
+
+For an opt-in separation, keep the existing `state-data` volume for the
+default file-backed KV store and FastMCP state, and put search
+data on a second local volume. This preserves the existing auth, session and
+other KV state when switching an existing deployment. The vault remains on
+its own mount. External KV or PostgreSQL embedding stores retain their own
+storage and are not reset by this recipe.
+
+Save this as `compose.override.yml` beside `compose.yml`. If that file already
+exists, merge these entries into it and keep its existing settings:
+
+```yaml
+services:
+  markdown-vault-mcp:
+    volumes:
+      - search-data:/data/search
+    environment:
+      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/search/index.db
+      MARKDOWN_VAULT_MCP_STATE_PATH: /data/search/index.db.state.json
+      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/search/embeddings/embeddings
+      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/search/fastembed
+
+volumes:
+  search-data:
+```
+
+The four paths hold the SQLite index, change tracker, local embeddings and
+FastEmbed model cache, respectively. The tracker normally defaults to
+`index.db.state.json` beside the index. The overlay overrides any values for
+these paths in `.env` or `compose.yml`; adjust it if you have customised them.
+It leaves `FASTMCP_HOME` at `/data/state/fastmcp` and the default
+`MARKDOWN_VAULT_MCP_KV_STORE_URL` at `file:///data/state`. If either was
+customised, keep its persistent storage mounted and backed up separately.
+
+The normal root-started image changes ownership of root-owned directories
+under `/data`, including the new volume, before dropping privileges to
+`PUID`/`PGID`. With a Compose `user:` override, provision the new volume as
+writable by that user yourself; the entrypoint cannot fix its ownership.
+
+With default file selection, Compose loads `compose.override.yml`
+automatically. If you select files with `COMPOSE_FILE` or `-f`, include the
+override in that selection on every command. Before starting, this recipe
+chooses a cold rebuild on an empty `search-data` volume: local vectors are
+generated again, and a metered embedding provider can charge for them again.
+The cold reset below repeats that work and cost.
+
+Start or recreate the service, including after later changes:
+
+```bash
+docker compose up -d
+```
+
+The server rebuilds search data from the vault; model downloads and embedding
+generation can take time. The old search files remain unused in `state-data`;
+keep them until you have verified the new index.
+
+Use the configured full paths above for backups. With the default SQLite
+embedding store, the file is `/data/search/embeddings/embeddings.sqlite3`.
+Stop the service before file-level copies, or use SQLite's online backup.
+Once the split is verified, resetting auth and session data on `state-data`
+leaves the active search data on `search-data` untouched.
+
+A normal reindex is the usual way to rebuild search; the following cold reset
+is for testing a fresh search volume. Before resetting, use
+`docker compose config` to confirm the `/data/search` mount and all four paths
+above. The reset
+deletes everything on `/data/search`, so use it only with the overlay above
+and no other data on that volume:
+
+```bash
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/search -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
+```
+
+The reset leaves `state-data` and the vault mounted, preserving their contents.
+
+To reset local persistent state while keeping the active search data, first
+use `docker compose config` to confirm the `/data/state` mount,
+`FASTMCP_HOME=/data/state/fastmcp`, and the `/data/search` mount and four
+search paths above. Confirm the KV URL is `file:///data/state`, or that both
+`MARKDOWN_VAULT_MCP_KV_STORE_URL` and the legacy
+`MARKDOWN_VAULT_MCP_EVENT_STORE_URL` are unset, which selects that default.
+This deletes **all**
+contents of `state-data`, including local auth, session and other KV state
+and any unused old search files. Use it only when those contents can be lost;
+custom or external KV stores are not reset by this procedure:
+
+```bash
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/state -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
+```
+
+The active index and local embeddings on `search-data` remain in place.
 
 ### Git
 

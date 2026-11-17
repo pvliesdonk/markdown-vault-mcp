@@ -102,3 +102,16 @@ The MCP tools and reader methods share these predicates; internal `order` and
 
 ::: markdown_vault_mcp.fts_index.FTSIndex.aggregate_documents
 <!-- vale on -->
+
+## Build-state listing
+
+A build's final sweep needs each live note's path, title, hash and
+modification time, not its frontmatter. A keyword index that has the
+optional `ListsNoteStates` protocol returns exactly those four fields, and
+`FTSIndex` does. A custom keyword backend without it keeps working: the build
+reads the same fields through `list_notes()`, at the cost of loading every
+note's frontmatter.
+
+<!-- vale off -->
+::: markdown_vault_mcp.interfaces.ListsNoteStates
+<!-- vale on -->

@@ -11,7 +11,16 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [Watchdog event filtering](watchdog-event-filtering.md) — mutation-only
   subscriptions, Linux native masks and the FSEvents 4.0.2 API floor. Read
   before changing `_file_watcher.py` subscriptions.
-
+- [File creation permissions and default ACLs](file-creation-permissions.md) —
+  kernel permission inheritance for atomic note and attachment writes.
+- [LEANN query-time embedding recomputation](leann.md) — the external
+  technique behind the deferred #1368 proposal; project revisit criteria
+  remain in the embedding-store design.
+- [CLI reader test logging lifetimes](cli-test-logging.md) — pytest capture
+  teardown, root handlers and separate live destinations in the reader harness.
+- [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md) —
+  initial namespace identity, process liveness and static ownership labels used
+  by the PostgreSQL fixture to recover after SIGKILL (#1952).
 - [GitHub and git behaviour behind integration branches](github-integration-branches.md) —
   up-to-date requirements, merge queue, workflow branch filters, closing
   keywords, retargeting, merge methods, knope's commit walk and git's
@@ -116,7 +125,8 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   on a new note. Read before touching the pull or conflict path in
   `git/strategy.py` / `git/conflict.py` for the other side's behaviour, or
   anything that renders or classifies commits by subject or identity.
-- [Git submodules seen from a superproject](git-submodules.md) — gitlinks and
+- [Git submodules seen from a superproject](git-submodules.md) — plain nested
+  repositories and gitfiles, silent skipped staging, gitlinks and
   `.gitmodules`, enumerating submodules, what superproject-level
   `add`/`ls-files`/`log`/`show` answer for a path inside one (`add` refuses
   it), how `clone`, `submodule update`, `fetch`, `merge --ff-only` and `pull`
