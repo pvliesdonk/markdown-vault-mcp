@@ -379,8 +379,7 @@ def run_git_capturing(
         :func:`redact` before logging or surfacing to callers.
     """
     cmd = _argv(git_root, args, pathspecs, whole_repo)
-    options = args[: args.index("--")] if "--" in args else args
-    if preserve_newlines or "-z" in options:
+    if preserve_newlines or "-z" in args:
         raw = subprocess.run(
             cmd,
             capture_output=True,
