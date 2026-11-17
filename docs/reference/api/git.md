@@ -67,15 +67,19 @@ diff limit is unbounded. Dates support ISO 8601, `N units ago` (including compou
 `noon <day>` for the supported day forms. For other expressions, use
 `GitWriteStrategy`.
 
-When a query would need to pair a deleted and added
-path with different content, the native store refuses it because Git and
-libgit2 may score the pair differently. Exact-content renames are supported
-when the match is unambiguous.
+Git and libgit2 may score edited renames differently. The native store refuses
+queries that require such scoring. An unambiguous exact-content rename remains
+supported, including alongside an unrelated deletion.
 
 Binary diff summaries and rename diffs with
 mode changes are also refused. Use `GitWriteStrategy` for those queries.
-An uncertain committed-revision lookup returns no breadcrumb, so an
-overwrite can still proceed.
+Committed-revision lookup examines the current path without following renames;
+an unprovable result returns no breadcrumb and an overwrite can proceed.
+Vault and directory history refuse when a merge falls within the requested
+window; a limit reached before the merge can still return results.
+Repositories with `core.symlinks=false` are refused. With `core.filemode=false`,
+a regular replacement for a symlink and a new regular file use mode 100644;
+an existing regular file retains its mode.
 
 ## Migrating from 4.x
 

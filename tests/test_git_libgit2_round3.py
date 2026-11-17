@@ -255,7 +255,7 @@ def test_low_similarity_possible_pair_refused(isolated_repo):
         Libgit2Store(repo).get_file_diff(repo, new, before, False)
 
 
-def test_vault_overwrite_omits_uncertain_breadcrumb(isolated_repo):
+def test_vault_overwrite_keeps_edited_rename_breadcrumb(isolated_repo):
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
     repo = isolated_repo
@@ -275,9 +275,10 @@ def test_vault_overwrite_omits_uncertain_breadcrumb(isolated_repo):
         on_write=store,
     )
     try:
-        assert store.committed_revision(repo, new) is None
+        revision = _git(repo, "rev-parse", "HEAD").strip()
+        assert store.committed_revision(repo, new) == revision
         result = vault.writer.write("new.md", "replacement\n")
-        assert result.previous_revision is None
+        assert result.previous_revision == revision
         assert vault._write_callback.drain()
         assert _git(repo, "show", "HEAD:new.md") == "replacement\n"
     finally:

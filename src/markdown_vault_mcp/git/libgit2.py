@@ -99,6 +99,8 @@ def _probe_config(gitdir: Path, pg: Any) -> None:
 def _probe_policy(repo: Any) -> None:
     if _config_bool(repo.config, "commit.gpgsign"):
         raise _unsupported("signed commits")
+    if not _config_bool(repo.config, "core.symlinks", True):
+        raise _unsupported("core.symlinks=false repositories")
     configured = _tree_entry(repo.config, "core.hookspath")
     gitdir = Path(repo.path)
     common = gitdir / "commondir"
@@ -138,7 +140,7 @@ def _open(path: Path, pg: Any) -> Any | None:
             _filter_guard(repo, entry.path)
         return repo
     except pg.GitError as exc:
-        raise _unsupported("an unopenable repository") from exc
+        raise _unsupported(f"an unopenable repository ({exc})") from exc
 
 
 def _filter_guard(repo: Any, path: str) -> None:
@@ -185,13 +187,13 @@ def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
         )
     else:
         return False
-    if (
-        existing is not None
-        and filemode in (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
-        and str(_tree_entry(repo.config, "core.filemode") or "true").lower()
-        in {"false", "no", "0", "off"}
-    ):
-        filemode = existing.mode
+    if stat.S_ISREG(mode) and not _config_bool(repo.config, "core.filemode", True):
+        filemode = (
+            existing.mode
+            if existing is not None
+            and existing.mode in (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
+            else pg.GIT_FILEMODE_BLOB
+        )
     index.add(pg.IndexEntry(relative, oid, filemode))
     return True
 
@@ -307,11 +309,7 @@ class Libgit2Store:
     ) -> None:
         """Commit the paths touched by one write, preserving unrelated staging."""
         del content
-        self.on_write_batch(
-            [(path, operation, old_path, principal)],
-            operation,
-            primary_paths=frozenset({path}),
-        )
+        self.on_write_batch([(path, operation, old_path, principal)], operation)
 
     def on_write_batch(  # noqa: C901, RUF100 -- locked publication and no-op reconciliation share one transaction.
         self,
@@ -323,6 +321,8 @@ class Libgit2Store:
         """Commit a tool call's writes together with their principal's identity."""
         if self._closed or not items:
             return
+        if len(items) == 1:
+            primary_paths = frozenset({items[0][0]})
         try:
             with self._lock:
                 repo = self._repository(items[0][0])

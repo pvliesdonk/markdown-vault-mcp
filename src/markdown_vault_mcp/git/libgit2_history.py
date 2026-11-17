@@ -52,26 +52,16 @@ def _unsupported(shape: str) -> InvalidRequestError:
 
 
 def _resolved(diff: Any, path: str) -> tuple[Any, str | None]:
-    added = [
-        d
-        for d in diff.deltas
-        if d.status == pygit2.enums.DeltaStatus.ADDED and d.new_file.path == path
-    ]
+    added = [d for d in diff.deltas if d.status == pygit2.enums.DeltaStatus.ADDED]
     deleted = [d for d in diff.deltas if d.status == pygit2.enums.DeltaStatus.DELETED]
-    if added and deleted:
-        duplicates = [
-            d
-            for d in diff.deltas
-            if d.status == pygit2.enums.DeltaStatus.ADDED
-            and d.new_file.id == added[0].new_file.id
-        ]
-        if (
-            len(deleted) != 1
-            or len(duplicates) != 1
-            or added[0].new_file.id != deleted[0].old_file.id
-        ):
+    mine = [d for d in added if d.new_file.path == path]
+    if mine and deleted:
+        oid = mine[0].new_file.id
+        exact = [d for d in deleted if d.old_file.id == oid]
+        twins = [d for d in added if d.new_file.id == oid]
+        if len(exact) != 1 or len(twins) != 1:
             raise _unsupported("inexact rename resolution")
-        return diff, deleted[0].old_file.path
+        return diff, exact[0].old_file.path
     return diff, None
 
 
@@ -81,26 +71,35 @@ def _same(a: Any | None, b: Any | None) -> bool:
     return bool(a.id == b.id and a.filemode == b.filemode)
 
 
-def _walk(repo: Any, path: str) -> Iterator[tuple[Any, str, bool, bool]]:
+def _walk(  # noqa: C901, RUF100 -- bounded lineage must handle each parent.
+    repo: Any, path: str, until: Any = None, *, follow: bool = True
+) -> Iterator[tuple[Any, str, bool, bool]]:
     """Carry each name through all parents, stopping each branch at birth."""
     if repo.head_is_unborn:
         return
     names: dict[Any, set[str]] = defaultdict(set)
     names[repo.head.target].add(path)
-    for commit in repo.walk(
+    walker = repo.walk(
         repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
-    ):
+    )
+    if until is not None:
+        for parent in until.parents:
+            walker.hide(parent.id)
+    for commit in walker:
         if not names:
             return
         current_names = names.pop(commit.id, set())
         for name in current_names:
+            if until is not None and commit.id == until.id:
+                yield commit, name, False, False
+                continue
             current = _entry(commit, name)
             differences = []
             born = current is not None
             for parent in commit.parents:
                 previous_name = name
                 previous = _entry(parent, name)
-                if current is not None and previous is None:
+                if follow and current is not None and previous is None:
                     previous_name = _resolved(_diff(parent, commit), name)[1] or ""
                     previous = _entry(parent, previous_name) if previous_name else None
                 born = born and previous is None
@@ -228,6 +227,12 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
             for commit in repo.walk(
                 repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME
             ):
+                if len(commit.parents) > 1 and (
+                    lower is None or commit.commit_time >= lower
+                ):
+                    raise _unsupported(
+                        "vault or directory history across merge commits"
+                    )
                 diff = _diff(commit.parents[0] if commit.parents else None, commit)
                 paths = [
                     d.new_file.path[len(prefix) :]
@@ -235,7 +240,7 @@ def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource prot
                     if d.new_file.path.startswith(scope)
                 ]
                 if paths:
-                    yield commit, [] if len(commit.parents) > 1 else paths
+                    yield commit, paths
 
         rows = scoped()
     return list(
@@ -268,7 +273,7 @@ def _commit(repo: Any, ref: str, *, ancestral: bool = True) -> Any:
 
 
 def _at_ref(repo: Any, path: str, target: Any) -> tuple[str | None, bool]:
-    for commit, name, _, born in _walk(repo, path):
+    for commit, name, _, born in _walk(repo, path, target):
         if commit.id == target.id:
             return (name if _entry(commit, name) is not None else None), True
         if born and not repo.descendant_of(target.id, commit.id):
@@ -321,7 +326,7 @@ def committed_revision(repo: Any, path: Path) -> str | None:
         repo.index.read(force=True)
         if rel not in repo.index:
             return None
-        for commit, name, changed, _ in _walk(repo, rel):
+        for commit, name, changed, _ in _walk(repo, rel, follow=False):
             if changed:
                 entry = _entry(commit, name)
                 return (
@@ -406,12 +411,8 @@ def get_file_diff(  # noqa: C901, PLR0912, PLR0913, RUF100 -- protocol and linea
         return _patches(old_tree.diff_to_tree(head.tree), {current}, summarize_binary)
     selected = (
         (commit, name)
-        for commit, name, changed, _ in _walk(repo, current)
+        for commit, name, changed, _ in _walk(repo, current, target)
         if changed
-        and not (
-            target is not None
-            and (commit.id == target.id or repo.descendant_of(target.id, commit.id))
-        )
     )
     output = []
     for commit, name in islice(
