@@ -8,6 +8,9 @@ from markdown_vault_mcp._kv_store import build_event_store
 from markdown_vault_mcp._pvl_core import ConfigurationError, ServerConfig
 from markdown_vault_mcp.config import ProjectConfig
 
+# NFKC-normalising host, so ``urlparse`` raises with the netloc in its message.
+_LEAKY_URL = "redis://alice:hunter2@h\u2100st"
+
 
 class TestBuildEventStore:
     """Unit tests for build_event_store() backend selection from ServerConfig."""
@@ -82,10 +85,10 @@ class TestBuildEventStore:
         """A URL ``urlparse`` rejects never reaches the message or traceback."""
         import traceback
 
+        # A constant, not an inline literal: Python 3.13+ tracebacks quote
+        # the call's source lines, which would match the secret themselves.
         with pytest.raises(ConfigurationError) as exc_info:
-            build_event_store(
-                ServerConfig(kv_store_url="redis://alice:hunter2@h\u2100st")
-            )
+            build_event_store(ServerConfig(kv_store_url=_LEAKY_URL))
         exc = exc_info.value
         rendered = "".join(
             traceback.format_exception(type(exc), exc, exc.__traceback__)
