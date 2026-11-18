@@ -8,6 +8,8 @@ kind: reference
 # Writer
 
 <!-- DOMAIN-INTRO-START -->
+Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit, append and OKF verification retain surviving fields in their existing order when serializing a header. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
+
 Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.

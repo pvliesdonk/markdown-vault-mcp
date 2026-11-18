@@ -175,6 +175,15 @@ Frontmatter is **optional by default**. Documents without frontmatter are
 indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
+Content writes serialize supplied frontmatter in caller insertion order,
+including nested mappings and mappings inside lists. Edit, append, OKF
+verification and git conflict marking retain surviving fields in their
+existing order when they serialize a header. This preserves mapping order and
+values, not comments, quoting, whitespace or arbitrary exact formatting. Every
+frontmatter dump (the document writer, the two OKF transforms and the two
+conflict-file writes in `git/conflict.py`) passes `sort_keys=False`; the pinned dependency behavior is recorded in
+[Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
+
 **The body the index reads (#2036)**: `scanner.note_body` returns
 python-frontmatter's body, which is stripped at both ends, with one repair:
 the first non-blank line keeps its leading spaces and tabs. Without it, a note
@@ -1166,6 +1175,18 @@ reusing its own rows, read them through the optional `ReadsRowsInBatches`
 protocol from such a store: 256 documents per read, the vectors sent in
 binary as float32 rather than as text (#1970).
 
+A full embedding rebuild classifies whole-document windows and stages their
+text, metadata and reused vectors beside the configured state file before any
+provider call, or under the temporary directory when there is no state file. It then embeds the ordered misses across windows and replays
+the staged generation to the publisher. The optional `IteratesChunks`
+reader pages whole documents in path order, with each page read atomically. Changes between pages can be observed or missed and convergence reconciles later edits. Read locks are held only during page fetches, not donor or provider work. A keyword index without the iterator retains the eager
+`list_chunks` grouping. Scratch stores embedding text and metadata content as well as base64-encoded
+vectors. Operating-system temporary files are removed when handles close, including at process termination; a create-then-unlink fallback has a brief interval in which termination can leave a name. An unavailable or full scratch directory fails preparation before
+publication. Compatible and owned stores retain previous vectors; an incompatible injected store is emptied before this preparation. Cleanup failures are logged without changing the build outcome.
+Custom non-scalar metadata remains resident to preserve its original objects.
+The built-in publishers still materialize their own generation copies. The
+largest document and path bookkeeping also grow independently of the window.
+
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
@@ -1487,6 +1508,26 @@ a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python
 3.13, and a pathological path raises `OSError` — the root is kept unresolved
 with a WARNING rather than dropped, degrading to the pre-resolution behavior
 (correct on inotify / ReadDirectoryChangesW) instead of crashing `start()`.
+
+Every watch, including the non-recursive floor, passes the eight concrete
+file/directory create, modify, move and delete classes to watchdog's event
+filter (#2045). On Linux this suppresses OPEN and CLOSE_NOWRITE native
+subscriptions before queueing, so read-only indexing does not generate that
+traffic; `DirModifiedEvent` retains CLOSE_WRITE and its parent notification.
+The existing handler mutation guard, hidden-path checks and debounce remain
+in place. Watchdog >=4.0.2 is required because earlier FSEvents overrides lack
+the filter keyword. The [watchdog reference](reference/watchdog-event-filtering.md)
+records the versioned evidence and backend limits. Filtering does not prevent
+overflow from genuine mutation bursts or prune excluded descendants inside
+a recursive watch.
+
+Delivered moves trigger reindexing when either endpoint is a nonempty,
+non-hidden descendant of the delivering watch root, using watchdog's
+[source and destination event paths](https://github.com/gorakhargosh/watchdog/blob/v4.0.0/src/watchdog/events.py#L114-L151).
+Each qualifying event schedules once, including moves from a hidden temporary
+file onto a visible note and moves of visible content into hidden or outside
+storage. Hidden-only and root-self noise stays ignored, including below
+intentionally watched dot-roots; other mutations consider only their source.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
@@ -4610,7 +4651,13 @@ store dimension, another dimension, a non-finite value, metadata that is
 not JSON (`NaN` and infinity included), a `NUL` character or lone
 surrogate in any string, or a path or folder too long to index raise
 `ValueError` and change nothing, so the reconciler keeps the old rows
-(SQLite would store some of these). The store's tables are taken as
+(SQLite would store some of these). A one-shot generation is validated before
+the write transaction into a private temporary file of normalized rows; all
+document keys are copied before those rows are replayed. The application keeps
+the largest document and path/token bookkeeping in memory. Scratch uses packed float32 vectors and JSON metadata in the system temporary
+directory (which can be controlled by `TMPDIR`); a memory-backed directory also consumes memory.
+Scratch, PostgreSQL storage and WAL are separate capacity costs. The temporary
+file is closed on success or failure. The store's tables are taken as
 existing only after a write publishes, so a conflict that rolled back the
 first write's `CREATE` leaves the next write to create them again. A connection lost
 during `COMMIT` (no reply, or class `08`) raises *unavailable* with
@@ -5408,6 +5455,18 @@ equivalent and stay on the native REST API: CPU-only inference
 the ``/api/show`` context-length probe, and the ``/api/tags`` reachability
 probe in ``get_embedding_provider``. ``fastembed`` (in-process, non-API)
 is unaffected.
+
+**Response order (#2050)**: the transport returns vectors in input order by
+sorting ``response.data`` on each item's ``index``, and reads a missing
+``index`` as 0, the meaning proto3 JSON gives an omitted integer. Gemini's
+compatibility endpoint leaves ``index`` out of the first item of a batch;
+the SDK builds responses without validation and reads it as ``None``, and
+comparing ``None`` with the next item's ``1`` failed every batch of two or
+more. Two items that resolve to the same index (two without one, or one
+without and one with 0) raise ``RuntimeError`` rather than pair a vector with
+the wrong input; a response with no ``index`` at all keeps its order. The
+evidence is in
+[OpenAI-compatible embedding responses](reference/openai-compatible-embeddings.md).
 
 **Voyage preset**: ``VoyageProvider`` is a third preset over the same
 transport, with ``base_url`` pinned to ``https://api.voyageai.com/v1`` and
