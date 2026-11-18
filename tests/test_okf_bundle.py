@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import os
+import shutil
 import zipfile
 from typing import TYPE_CHECKING
 
@@ -452,3 +453,43 @@ def test_default_export_omits_hidden_venv_symlink(
     assert "a.md" in _members(result.data)
     assert ".venv/bin/python3.14" not in _members(result.data)
     assert result.report.omitted["hidden"] >= 1
+
+
+@pytest.mark.parametrize("bom,newline", [(b"", b"\n"), (b"\xef\xbb\xbf", b"\r\n")])
+@pytest.mark.parametrize("body_link", [True, False])
+def test_export_preserves_frontmatter_when_converting_body(
+    source_dir: Path, bom: bytes, newline: bytes, body_link: bool
+) -> None:
+    prefix = bom + newline.join(
+        [b"---", b"type: Note", b'x-provenance: "[[b]]"', b"---", b""]
+    )
+    body = b"See [[b]]." if body_link else b"No body link."
+    original = prefix + body + newline
+    (source_dir / "source.md").write_bytes(original)
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            exported = archive.read("source.md")
+        assert (
+            exported == prefix + (b"See [b](/b.md)." if body_link else body) + newline
+        )
+        assert (source_dir / "source.md").read_bytes() == original
+    finally:
+        vault.close()
+
+
+def test_export_reads_the_inspected_vault_when_config_root_differs(
+    source_dir: Path, tmp_path: Path
+) -> None:
+    other = tmp_path / "other"
+    shutil.copytree(source_dir, other)
+    (other / "b.md").write_bytes(b"other vault secret")
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=other))
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("b.md") == b"# B\n"
+    finally:
+        vault.close()

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
+from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
 
 if TYPE_CHECKING:
@@ -141,10 +142,12 @@ def _note_bytes(raw: bytes, item: BundleEntry, vault: Vault) -> bytes:
         content = raw.decode("utf-8")
     except UnicodeDecodeError:
         return raw
-    content, _, _ = convert_wikilinks_to_markdown(
-        content, vault.graph.get_outlinks(item.path)
+    body = strip_frontmatter_block(content.removeprefix("\ufeff"))
+    prefix = content[: len(content) - len(body)]
+    body, _, _ = convert_wikilinks_to_markdown(
+        body, vault.graph.get_outlinks(item.path)
     )
-    return content.encode("utf-8")
+    return (prefix + body).encode("utf-8")
 
 
 def build_okf_bundle(
@@ -159,7 +162,7 @@ def build_okf_bundle(
 
     Args:
         vault: Live vault supplying the inventory and link graph.
-        config: Vault root and convention and template configuration.
+        config: Convention and template configuration.
         folder: Vault-relative scope root, or empty for the entire vault.
         include_index_excluded: Include paths omitted from the search index.
         include_hidden: Include dot-paths other than internal state.
@@ -208,7 +211,7 @@ def build_okf_bundle(
                     raise OSError(
                         f"Cannot export {item.path}: {item.reason or item.state}"
                     )
-                raw = _read_safe(config.source_dir, item.path)
+                raw = _read_safe(vault.source_dir, item.path)
                 if item.role == "supporting":
                     _write(zf, item.path, raw)
                     attachments += 1
