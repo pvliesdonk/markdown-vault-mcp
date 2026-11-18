@@ -85,6 +85,8 @@ def _omission_reasons(
 
 
 def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
+    if item.parse_state == "not_inspected":
+        report.uninspected[item.path] = item.reason or "not_inspected"
     if item.role != "concept_candidate":
         return
     if item.search_state == "non_admitted":
@@ -97,8 +99,6 @@ def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
         report.format_findings.append(
             FormatFinding(item.path, "missing_or_invalid_type")
         )
-    elif item.parse_state == "not_inspected":
-        report.uninspected[item.path] = item.reason or "not_inspected"
 
 
 def _scope(folder: str) -> str:

@@ -493,3 +493,22 @@ def test_export_reads_the_inspected_vault_when_config_root_differs(
             assert archive.read("b.md") == b"# B\n"
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("name", ["index.md", "log.md"])
+def test_reserved_file_with_bounded_metadata_is_reported(
+    source_dir: Path, name: str
+) -> None:
+    content = b"---\ntype: Note\n---\n" + b"x" * 70000
+    (source_dir / name).write_bytes(content)
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read(name) == content
+        assert result.report.uninspected[name] == "note_limit"
+        assert name not in result.report.local_policy.non_admitted
+        assert name not in result.report.local_policy.unknown
+        assert name not in {finding.path for finding in result.report.format_findings}
+    finally:
+        vault.close()
