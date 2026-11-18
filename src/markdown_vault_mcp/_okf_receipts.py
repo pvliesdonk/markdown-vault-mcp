@@ -135,16 +135,11 @@ class ReceiptStore:
             row
             for row in rows
             if row.get("path") == path
-            and any(
-                row.get("by") == entry["by"] and row.get("at") == entry["at"]
-                for entry in latest_entries
-            )
+            and _parse_stale_after(row.get("at")) == latest
+            and any(row.get("by") == entry["by"] for entry in latest_entries)
         ]
         if any(
-            not any(
-                row.get("by") == entry["by"] and row.get("at") == entry["at"]
-                for row in matching
-            )
+            not any(row.get("by") == entry["by"] for row in matching)
             for entry in latest_entries
         ):
             return {"state": "unavailable"}
@@ -156,7 +151,9 @@ class ReceiptStore:
             or re.fullmatch(r"[0-9a-f]{64}", baseline["digest"]) is None
         ):
             return {"state": "unavailable"}
-        return {"state": "available", "later_change_observed": baseline != snapshot}
+        if baseline == snapshot:
+            return {"state": "unavailable"}
+        return {"state": "available", "later_change_observed": True}
 
     def append(self, receipt: dict[str, Any]) -> None:
         """Record the receipt of a review already written to its note.

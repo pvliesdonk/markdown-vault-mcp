@@ -63,6 +63,8 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             Observations, scope and enumeration states, and an optional next_cursor.
+            Locally recorded removals carry presence=removed. Live entries and
+            removal probes share the 1,000-observation page budget. See [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews).
         """
         try:
             request = BundleTreeRequest(

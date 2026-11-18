@@ -376,7 +376,7 @@ class ReaderFacet:
     ) -> BundleInspection:
         if (
             not candidates
-            or page.state != "inspected"
+            or page.state == "unavailable"
             or not isinstance(page.request, BundleTreeRequest)
         ):
             return page
