@@ -3739,7 +3739,7 @@ entered. Re-select that directory relative to the same root and page again to
 inspect deeper levels; repeat for further boundary rows. Retain unavailable
 outcomes from every page, and treat unresolved boundary rows as incomplete.
 A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
-following them. There is no navigation synthesis or declaration discovery.
+following them. This inventory operation does not synthesize navigation or discover declarations.
 
 Symlinks outside the file allowlist are unavailable `hidden_symlink` rows.
 Their targets and target kinds are not returned, and they are never followed.
@@ -7716,3 +7716,8 @@ remains tied to `OKF_WRITE`.
 ### Bundle inventory surfaces
 
 The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Each call filters one bounded page of up to 1,000 observations, returning up to the requested number of candidates and a continuation when further observations may remain, including when the filtered page is empty. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. Search admission remains an observation and can be unknown without an index. The local CLI uses a usable configured index only when the selected source resolves to the configured vault. An unusable or unsupported optional index leaves search state unknown without modifying the store.
+
+
+### Folder navigation
+
+`okf_navigation` inspects one immediate folder using the inventory access policy. It reads an authored `index.md` first, independently of the bounded enumeration, preserving its body after any leading frontmatter. If absent, it synthesizes a listing from live concept and directory observations, without requiring a search index or writing files. Unreadable or internal indexes are not replaced with synthesized content. The scan visits at most `entry_limit` entries in scandir order; `enumeration="entry_limit"` indicates the synthesized listing may omit entries.

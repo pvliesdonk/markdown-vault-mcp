@@ -110,6 +110,7 @@ src/markdown_vault_mcp/
   _cli_bundle.py       -- CLI adapter for bounded OKF inventory
   bundle_inventory.py -- Bounded selected-directory and pageable subtree observations, independent of index admission (#1442)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
+  okf_navigation.py    -- authored and synthesized folder navigation
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
@@ -148,7 +149,7 @@ src/markdown_vault_mcp/
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
-    okf_inventory.py   -- bounded read-only bundle inventory tool
+    okf_inventory.py   -- bounded read-only bundle inventory and navigation tools
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
     graph.py           -- link-graph tool registrations

@@ -17,7 +17,14 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest, BundleInspector
 from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
+from markdown_vault_mcp.okf_navigation import (
+    FolderNavigation,
+    authored_body,
+    read_authored,
+    synthesize,
+)
 from markdown_vault_mcp.utils.content_kind import is_note
 
 if TYPE_CHECKING:
@@ -27,7 +34,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.bundle_inventory import (
         BundleEntry,
         BundleInspection,
-        BundleInspectionRequest,
         BundleTreeRequest,
         ParseState,
         SearchState,
@@ -129,6 +135,62 @@ class ReaderFacet:
             Live disk observations with available per-entry index state.
         """
         return self._doc_mgr.inspect_bundle(request)
+
+    def okf_navigation(
+        self, folder: str, *, entry_limit: int = 100
+    ) -> FolderNavigation:
+        """Read authored navigation or synthesize a bounded folder listing.
+
+        Args:
+            folder: Vault-relative folder, or empty for the vault root.
+            entry_limit: Maximum immediate entries visited, from 1 to 1000.
+
+        Returns:
+            Navigation body, source, scope state and enumeration observations.
+        """
+        inspection = self.inspect_bundle(
+            BundleInspectionRequest(root=folder, entry_limit=entry_limit)
+        )
+        index_path = f"{folder}/index.md" if folder else "index.md"
+        result = FolderNavigation(
+            folder,
+            inspection.state,
+            None,
+            None,
+            index_path,
+            None,
+            (),
+            inspection.enumeration,
+        )
+        if inspection.state != "inspected":
+            return result
+        manager = self._doc_mgr
+        inspector = BundleInspector(
+            manager._source_dir,
+            manager._exclude_patterns or (),
+            manager._artifacts.extensions(),
+            manager._max_note_read_bytes,
+            manager._inspection_policy,
+        )
+        try:
+            inspector._prepare_policy(manager._source_dir.resolve(strict=True))
+            if inspector._internal(index_path):
+                return replace(result, reason="internal")
+        except (OSError, RuntimeError):
+            return replace(result, reason="io_error")
+        text, reason = read_authored(
+            manager._source_dir, folder, manager._max_note_read_bytes
+        )
+        if reason is not None:
+            return replace(result, reason=reason)
+        if text is not None:
+            return replace(result, source="authored", body=authored_body(text))
+        return replace(
+            result,
+            source="synthesized",
+            body=synthesize(folder, inspection),
+            entries=inspection.entries,
+        )
 
     def inspect_bundle_tree(self, request: BundleTreeRequest) -> BundleInspection:
         """Inspect a page of a selected subtree before or after indexing.

@@ -698,6 +698,33 @@ To find untyped candidates under `knowledge`, call:
 Continue with the returned `next_cursor`, even if this page has no entries.
 <!-- DOMAIN-EXAMPLE-okf_inventory-END -->
 
+## `okf_navigation`
+
+**Read Folder Navigation.** Read-only. Idempotent.
+
+Read a folder's authored or synthesized navigation and its source.
+
+Use `okf_inventory` to page through a bundle subtree. Synthesis covers
+immediate children only.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `folder` | `string` | `""` | Vault-relative folder; empty selects the vault root. |
+| `entry_limit` | `integer` | `100` | Maximum immediate entries visited, from 1 to 1000. |
+
+**Returns**
+
+Navigation body, source, scope and enumeration observations.
+
+<!-- DOMAIN-EXAMPLE-okf_navigation-START -->
+
+For a folder named `guides`, call `okf_navigation` with `folder="guides"`. The result contains its authored index body when present; otherwise it contains a synthesized listing and an enumeration state describing its completeness.
+
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-okf_navigation-END -->
+
 ## `query_documents`
 
 **Query Notes.** Read-only. Idempotent.
