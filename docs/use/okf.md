@@ -239,4 +239,7 @@ implicit stamping. `OKF_WRITE=true` enables these capabilities and logs a deprec
 Protected paths also prevent automatic index and log upkeep. A primary write
 to an unprotected note still succeeds when upkeep is blocked. Explicit OKF
 bulk transforms finish eligible writes before reporting protected paths they
-skipped; see [protected paths](../reference/configuration.md).
+skipped. The refusal repeats until the operator converts the protected notes or
+changes the setting; see [protected paths](../reference/configuration.md).
+Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
+the client write guard.

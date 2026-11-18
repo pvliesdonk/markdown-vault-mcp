@@ -324,17 +324,19 @@ class DocumentManager:
             )
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
 
-    def is_protected(self, path: str, *, allow_protected: bool = False) -> bool:
-        """Return whether operator policy protects a vault-relative path.
+    def protection_reason(
+        self, path: str, *, allow_protected: bool = False
+    ) -> str | None:
+        """Return the reason operator policy protects a vault-relative path.
 
         Args:
             path: Vault-relative path to check.
             allow_protected: Explicit trusted library override.
 
         Returns:
-            Whether this mutation is protected.
+            The protection reason, or None if unprotected.
         """
-        return not allow_protected and bool(self._path_guard.reason(path))
+        return None if allow_protected else self._path_guard.reason(path)
 
     def refuse_protected(self, path: str, *, allow_protected: bool = False) -> None:
         """Refuse a protected path unless a trusted caller opts in.
@@ -346,9 +348,10 @@ class DocumentManager:
         Raises:
             InvalidRequestError: If the path is protected or outside the vault.
         """
-        if self.is_protected(path, allow_protected=allow_protected):
+        reason = self.protection_reason(path, allow_protected=allow_protected)
+        if reason:
             raise InvalidRequestError(
-                f"Path {path!r} is protected by MARKDOWN_VAULT_MCP_PROTECTED_PATHS. "
+                f"Path {path!r} is {reason}. "
                 "Ask the operator to edit the file or change the setting."
             )
 
@@ -1760,11 +1763,15 @@ class DocumentManager:
         failed_sources: list[str] = []
         for source_path, items in by_source.items():
             try:
-                if self.is_protected(source_path, allow_protected=allow_protected):
+                reason = self.protection_reason(
+                    source_path, allow_protected=allow_protected
+                )
+                if reason:
                     logger.info(
-                        "link_rewrite_source_skipped op=%s path=%s reason=protected",
+                        "link_rewrite_source_skipped op=%s path=%s reason=%s",
                         op_name,
                         source_path,
+                        reason,
                     )
                     failed_sources.append(source_path)
                     continue
@@ -1831,11 +1838,12 @@ class DocumentManager:
     ) -> str | None:
         """Build the protected-backlink hint without aborting a completed rename."""
         in_submodules = []
-        protected = []
+        protected: dict[str, str] = {}
         for source in unrewritten:
             try:
-                if self.is_protected(source, allow_protected=allow_protected):
-                    protected.append(source)
+                reason = self.protection_reason(source, allow_protected=allow_protected)
+                if reason:
+                    protected[source] = reason
                 elif include_submodules and self.in_submodule(source):
                     in_submodules.append(source)
             except OSError as exc:
@@ -1847,8 +1855,7 @@ class DocumentManager:
         hints = [_submodule_links_text(in_submodules)] if in_submodules else []
         if protected:
             hints.append(
-                f"Link rewrites in {', '.join(repr(p) for p in protected)} were skipped: "
-                "protected by MARKDOWN_VAULT_MCP_PROTECTED_PATHS. "
+                f"Link rewrites were skipped: {protected!r}. "
                 "Ask the operator to update them or change the setting."
             )
         return " ".join(hints) or None
@@ -1935,6 +1942,7 @@ class DocumentManager:
               every other moved file, allowlisted or not (#1238).
 
         Raises:
+            InvalidRequestError: If a removed entry or destination is protected.
             DocumentNotFoundError: If the folder contains no files.
             DocumentExistsError: If any destination file already exists.
             SubmodulePathError: If a destination lies inside a git submodule
@@ -1950,13 +1958,13 @@ class DocumentManager:
         non_note_moves: list[tuple[Path, str, Path]] = []
         # A strict walk: an unreadable subfolder is a fault, not an empty one
         # whose files would be left behind (#1625).
-        for src_abs in walk_files_strict(old_abs):
-            if not is_regular_file(src_abs):
-                continue
+        for src_abs in walk_files_strict(old_abs, include_dirs=True):
             rel_within = src_abs.relative_to(old_abs).as_posix()
             old_path = f"{old_rel}/{rel_within}"
             new_path = f"{new_rel}/{rel_within}"
             self.refuse_protected(old_path, allow_protected=allow_protected)
+            if not is_regular_file(src_abs):
+                continue
             self.refuse_protected(new_path, allow_protected=allow_protected)
             dst_abs = (self._source_dir / new_path).resolve()
             self._refuse_move_into_submodule(dst_abs, new_dir, new_path)
@@ -2112,10 +2120,11 @@ class DocumentManager:
             # 3. Capture backlinks for every moved note BEFORE the move, while
             #    the index still reflects old paths. Annotate each row with its
             #    target's old/new path so a multi-target rewrite is possible.
-            annotated: list[tuple[str, dict[str, Any]]] = []
-            for target in md_map:
-                for row in self._fts.get_backlinks(target):
-                    annotated.append((target, row))
+            annotated: list[tuple[str, dict[str, Any]]] = []  # (target_old, row)
+            for target_old in md_map:
+                for row in self._fts.get_backlinks(target_old):
+                    annotated.append((target_old, row))
+
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
             #    raised before anything moved.

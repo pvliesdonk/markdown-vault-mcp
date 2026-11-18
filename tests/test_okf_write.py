@@ -634,3 +634,25 @@ def test_ordinary_write_preserves_supplied_provenance(okf_alias_vault: Vault) ->
     text = (okf_alias_vault._source_dir / "provenance.md").read_text()
     assert list(fm.loads(text).metadata) == list(fields)
     assert fm.loads(text).metadata == fields
+
+
+async def test_protected_verify_precedes_elicitation(
+    okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = okf_alias_env / "_conventions.md"
+    path.write_text("original")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "_conventions.md")
+    calls = 0
+
+    async def accept(*_args: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await client.call_tool("okf_verify", {"path": "_conventions.md"})
+    assert calls == 0
+    assert path.read_text() == "original"

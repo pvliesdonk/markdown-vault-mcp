@@ -418,3 +418,83 @@ def test_empty_policy_folder_move_has_no_submodule_hint(
         assert result.hint is None
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling", "dirlink"])
+def test_folder_cleanup_protected_entries(tmp_path: Path, kind: str) -> None:
+    folder = tmp_path / "from"
+    folder.mkdir()
+    (folder / "note.md").write_text("note")
+    entry = folder / "protected"
+    if kind == "directory":
+        entry.mkdir()
+    elif kind == "dangling":
+        entry.symlink_to(tmp_path / "missing")
+    else:
+        (tmp_path / "target").mkdir()
+        entry.symlink_to(tmp_path / "target", target_is_directory=True)
+    calls: list[str] = []
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=["from/protected"]),
+        on_write=lambda _path, _content, operation: calls.append(operation),
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
+            vault.writer.move_folder("from", "to")
+        assert not calls
+        assert (folder / "note.md").read_text() == "note"
+        assert entry.exists() or entry.is_symlink()
+        assert not (tmp_path / "to").exists()
+        vault.writer.move_folder("from", "to", allow_protected=True)
+        assert (tmp_path / "to/note.md").read_text() == "note"
+        assert not folder.exists()
+    finally:
+        vault.close()
+
+
+def test_external_symlink_cleanup_reports_matching_policy(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "from").mkdir(parents=True)
+    (root / "from/note.md").write_text("note")
+    (tmp_path / "outside").mkdir()
+    (root / "from/protected").symlink_to(tmp_path / "outside", target_is_directory=True)
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, protected_paths=["from/protected"]),
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
+            vault.writer.move_folder("from", "to")
+        assert (root / "from/protected").is_symlink()
+        assert (root / "from/note.md").exists()
+    finally:
+        vault.close()
+
+
+def test_walk_files_strict_includes_directories_without_following_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from markdown_vault_mcp.utils.fs import walk_files_strict
+
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "target").mkdir()
+    (tmp_path / "target/file.md").write_text("file")
+    (tmp_path / "link").symlink_to(tmp_path / "target", target_is_directory=True)
+    assert walk_files_strict(tmp_path) == [tmp_path / "target/file.md"]
+    assert walk_files_strict(tmp_path, include_dirs=True) == [
+        tmp_path / "empty",
+        tmp_path / "link",
+        tmp_path / "target",
+        tmp_path / "target/file.md",
+    ]
+
+    def failing_walk(*_args: object, **kwargs: object) -> object:
+        kwargs["onerror"](PermissionError("unreadable"))  # type: ignore[operator]
+        return iter(())
+
+    monkeypatch.setattr(os, "walk", failing_walk)
+    with pytest.raises(PermissionError):
+        walk_files_strict(tmp_path, include_dirs=True)

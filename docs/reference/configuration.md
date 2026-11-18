@@ -255,7 +255,7 @@ automatic OKF upkeep. An unprotected primary write still succeeds if upkeep is
 blocked. Globs are case-insensitive; `*` crosses `/`, and `**/` requires at
 least one folder. Use `_conventions.md,**/_conventions.md` to cover both the
 root and nested convention files. A matching folder protects its contents.
-
+The root pattern `.` is rejected; use `*` to protect every path.
 
 !!! danger "Write tools default to enabled"
     Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade

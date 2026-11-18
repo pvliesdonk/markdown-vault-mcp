@@ -249,8 +249,8 @@ class VaultTransferSink:
                 download source, a disallowed attachment extension, a bundle
                 ref with OKF disabled, a bundle scope naming a folder that does
                 not exist, an upload destination inside a git submodule or
-                nested repository, or an existing upload destination when
-                overwrite protection is enabled.
+                nested repository, a protected upload destination, or an existing
+                upload destination when overwrite protection is enabled.
             ConfigurationError: When the lifespan built no vault (the
                 configured directory does not exist): a link must not be
                 minted that can only fail when followed.

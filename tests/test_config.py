@@ -2747,3 +2747,32 @@ def test_protected_paths_scalar_and_normalization(tmp_path: Path) -> None:
     assert normalize_protected_paths(
         ["./x.md", "dir//x.md", "dir/./x.md", "folder/"]
     ) == ("x.md", "dir/x.md", "dir/x.md", "folder")
+
+
+def test_protected_paths_preserves_config_positional_api() -> None:
+    defaults = ProjectConfig()
+    fields = [
+        f
+        for f in dataclasses.fields(ProjectConfig)
+        if not f.kw_only and f.name != "protected_paths"
+    ]
+    fields = fields[: next(i for i, f in enumerate(fields) if f.name == "exclude") + 1]
+    args = [
+        (["private"] if f.name == "exclude" else getattr(defaults, f.name))
+        for f in fields
+    ]
+    config = ProjectConfig(*args)
+    assert config.exclude == ("private",)
+    assert config.protected_paths is None
+    assert ProjectConfig.__dataclass_fields__["protected_paths"].kw_only
+
+
+@pytest.mark.parametrize("pattern", [".", "./", "././"])
+def test_protected_root_rejected_config(
+    pattern: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ConfigurationError, match=r"PROTECTED_PATHS.*\*"):
+        ProjectConfig(protected_paths=[pattern])
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", pattern)
+    with pytest.raises(ConfigurationError, match=r"PROTECTED_PATHS.*\*"):
+        ProjectConfig.from_env()

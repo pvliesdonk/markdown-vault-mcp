@@ -136,7 +136,7 @@ class OkfMigrationManager:
         skipped = 0
         scanned = 0
         in_submodules = 0
-        protected: list[str] = []
+        protected: dict[str, str] = {}
         # Every write a transform issues is mechanical: it must not re-stamp
         # provenance or clear a human attestation, whichever entry point
         # called it (#1401).
@@ -158,10 +158,11 @@ class OkfMigrationManager:
                 converted += n_conv
                 skipped += n_skip
                 if new_content != note_content.content:
-                    if self._doc_mgr.is_protected(
+                    reason = self._doc_mgr.protection_reason(
                         note.path, allow_protected=allow_protected
-                    ):
-                        protected.append(note.path)
+                    )
+                    if reason:
+                        protected[note.path] = reason
                         continue
                     self._doc_mgr.write(
                         note.path,
@@ -176,8 +177,8 @@ class OkfMigrationManager:
             )
         if protected:
             raise InvalidRequestError(
-                f"Converted {files_changed} notes; did not convert {protected!r}, protected by "
-                "MARKDOWN_VAULT_MCP_PROTECTED_PATHS. Ask the operator to convert them or change the setting."
+                f"Converted {files_changed} notes; did not convert {protected!r}. "
+                "Ask the operator to convert them or change the setting."
             )
         return OkfConvertResult(
             files_changed=files_changed,
@@ -233,20 +234,20 @@ class OkfMigrationManager:
             IndexUnavailableError: If the index is not built.
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
-        skipped: list[str] = []
+        skipped: dict[str, str] = {}
         result = self._generate_index(folder, skipped, allow_protected, designated)
         written = [p for p in (result.path, *result.created) if p not in skipped]
         if skipped:
             raise InvalidRequestError(
-                f"Generated indexes {written!r}; did not write {skipped!r}, protected by "
-                "MARKDOWN_VAULT_MCP_PROTECTED_PATHS. Ask the operator to generate them or change the setting."
+                f"Generated indexes {written!r}; did not write {skipped!r}. "
+                "Ask the operator to generate them or change the setting."
             )
         return result
 
     def _generate_index(
         self,
         folder: str,
-        skipped: list[str],
+        skipped: dict[str, str],
         allow_protected: bool,
         designated: Callable[[str], bool] | None,
     ) -> OkfIndexResult:
@@ -313,8 +314,11 @@ class OkfMigrationManager:
         preserved = bool(existing_fm)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
-        if self._doc_mgr.is_protected(index_path, allow_protected=allow_protected):
-            skipped.append(index_path)
+        reason = self._doc_mgr.protection_reason(
+            index_path, allow_protected=allow_protected
+        )
+        if reason:
+            skipped[index_path] = reason
         else:
             with okf_write_suppressed():
                 self._doc_mgr.write(
