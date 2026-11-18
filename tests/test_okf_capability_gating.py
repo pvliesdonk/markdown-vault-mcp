@@ -250,6 +250,28 @@ def test_guidance_follows_independent_maintenance() -> None:
     assert "update 'log.md'/'index.md'" in neither
 
 
+@pytest.mark.parametrize(
+    ("index", "log"), [(True, "off"), (False, "writes"), (True, "writes")]
+)
+def test_read_only_guidance_does_not_claim_upkeep(index: bool, log: str) -> None:
+    from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+
+    caps = ContentConfig(
+        okf_mode="on", okf_index=index, okf_log=log, okf_folders=("**",)
+    ).okf_capabilities
+    config = GuidanceConfig(read_only=True, okf_mode="on", okf_capabilities=caps)
+    text = " ".join(snippet.text for snippet in _domain_snippets(config))
+    assert "server maintains" not in text
+    assert "to the server" not in text
+    assert "maintain both" not in text
+    assert "maintain index.md yourself" not in text
+    assert "maintain log.md yourself" not in text
+    assert "update 'log.md'/'index.md'" not in text
+    assert "weigh notes by trust tier" in text
+    assert "may predate the current text" in text
+
+
 def test_nested_authored_index_survives_write_and_rename(tmp_path: Path) -> None:
     from markdown_vault_mcp.config_sections.content import ContentConfig
     from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -319,7 +341,7 @@ async def test_independent_review_is_retained_after_edit(
             "edit", {"path": "note.md", "old_text": "# Note", "new_text": "# Edited"}
         )
         await wait_for_mcp_writer_drain(client)
-    # B7 owns changing retention of a review after content changes.
+    # Independent review retains the dated claim after content changes.
     assert (
         frontmatter.loads(note.read_text()).metadata["verified"] == reviewed["verified"]
     )

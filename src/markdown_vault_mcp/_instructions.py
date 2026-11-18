@@ -186,26 +186,29 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             )
         )
     if config.okf_mode != "off":
-        # Tell the agent which files and folder scope the server maintains.
-        caps = (
-            config.okf_capabilities
-            or ContentConfig(okf_write=config.okf_write).okf_capabilities
-        )
-        index = caps.index
-        log = caps.log == "writes"
-        if index and log and caps.folders == ("**",):
-            upkeep = "Leave 'log.md'/'index.md' to the server."
-        elif not index and not log:
-            upkeep = "For edits, update 'log.md'/'index.md'."
-        else:
-            scope = ", ".join(caps.folders)
-            upkeep = (
-                f"In designated folders ({scope}) the server maintains {'index.md' if index else 'log.md'}; "
-                f"maintain {'log.md' if index else 'index.md'} yourself. "
-                "Elsewhere maintain both."
-                if index != log
-                else f"In designated folders ({scope}) leave 'log.md'/'index.md' to the server; elsewhere maintain both."
+        upkeep = ""
+        if not config.read_only:
+            # Tell the agent which files and folder scope the server maintains.
+            caps = (
+                config.okf_capabilities
+                or ContentConfig(okf_write=config.okf_write).okf_capabilities
             )
+            index = caps.index
+            log = caps.log == "writes"
+            if index and log and caps.folders == ("**",):
+                upkeep = "Leave 'log.md'/'index.md' to the server."
+            elif not index and not log:
+                upkeep = "For edits, update 'log.md'/'index.md'."
+            else:
+                scope = ", ".join(caps.folders)
+                upkeep = (
+                    f"In designated folders ({scope}) the server maintains {'index.md' if index else 'log.md'}; "
+                    f"maintain {'log.md' if index else 'index.md'} yourself. "
+                    "Elsewhere maintain both."
+                    if index != log
+                    else f"In designated folders ({scope}) leave 'log.md'/'index.md' to the server; elsewhere maintain both."
+                )
+            upkeep += " "
         snippets.append(
             Snippet(
                 "When 'stats' reports an OKF bundle, weigh notes by trust tier: "
@@ -215,7 +218,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
                 # pvl-core's 1,536-unit generated target, and an
                 # agent-authored literal space is exactly the defect #1494
                 # fixed on the server's own output.
-                f"{upkeep} Use root-relative Markdown links, "
+                f"{upkeep}Use root-relative Markdown links, "
                 "%20 for spaces.",
                 InstructionRole.INSTANCE,
             )
