@@ -20,9 +20,9 @@ throughout.
 ## What the template provides
 
 - `integration/*` branches are protected: child pull requests need a green
-  `CI Success`, and force pushes are blocked. Checks a project adds through
-  `extra_required_checks` are required only on the final pull request to
-  `main`. See
+  `CI Success`, and force pushes are blocked. Checks added to the main and release
+  rulesets' `required_status_checks` are required only on the final pull
+  request to `main`. See
   [Repository Protection](repository-protection.md).
 - `ci.yml`, `docs.yml`, `codeql.yml` and the automatic review run on pull
   requests that target an `integration/*` branch, and CI also runs on every
