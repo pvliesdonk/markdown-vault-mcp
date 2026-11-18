@@ -282,7 +282,7 @@ class VaultSettings:
     owns_index_files: bool = True
 
     def __post_init__(self) -> None:
-        """Validate protected-path policy for direct library callers."""
+        """Validate protected paths and group deadlines for library callers."""
         from markdown_vault_mcp.config_sections.git import validate_group_timeouts
 
         validate_group_timeouts(self.git_group_idle_s, self.git_group_max_age_s)

@@ -45,7 +45,7 @@ class GitConfig:
 
         Raises:
             ConfigurationError: If a sync cadence is negative or a group
-                deadline is nonpositive or nonfinite.
+                deadline is nonpositive or exceeds the timer limit.
         """
         validate_group_timeouts(self.group_idle_s, self.group_max_age_s)
         if self.push_delay_s < 0:
