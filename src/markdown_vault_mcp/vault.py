@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
 import markdown_vault_mcp.stores.sqlite_keyword
 import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
+from markdown_vault_mcp._okf_reserved_repair import ReservedFrontmatterRepair
 from markdown_vault_mcp.bundle_inventory import InspectionPolicy
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 
@@ -810,10 +811,9 @@ class Vault:
             self._doc_mgr,
             okf_migrate=self._okf_migrate,
             convention_maintainer=self._okf_convention,
-            # The overwrite breadcrumb (#1137) reads git state, so it is the
-            # git-query manager's answer — bound here rather than handing the
-            # write facet the store itself.
+            # The overwrite breadcrumb (#1137) is the git-query manager's answer.
             previous_revision=self._git_query_mgr.committed_revision,
+            reserved_repair=ReservedFrontmatterRepair(self).run,
             link_reporter=UnresolvedLinkReporter(
                 fts=self._fts,
                 source_dir=self._source_dir,

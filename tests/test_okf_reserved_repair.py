@@ -11,6 +11,38 @@ from markdown_vault_mcp.exceptions import InvalidRequestError, ReadOnlyError
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
+def test_public_writer_preview_and_apply(tmp_path: Path) -> None:
+    path = tmp_path / "log.md"
+    original = "---\ntitle: Log\n---\n# Log\n"
+    path.write_text(original)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        preview = vault.writer.okf_strip_seeded_frontmatter()
+        assert [(item.path, item.keys) for item in preview] == [("log.md", ("title",))]
+        assert path.read_text() == original
+        assert vault.writer.okf_strip_seeded_frontmatter(apply=True) == preview
+        assert path.read_text() == "# Log\n"
+        assert vault.writer.okf_strip_seeded_frontmatter() == []
+    finally:
+        vault.close()
+
+
+def test_unwired_writer_refuses_repair(tmp_path: Path) -> None:
+    from markdown_vault_mcp.facets.writer import WriterFacet
+
+    vault = Vault(source_dir=tmp_path)
+    try:
+        with pytest.raises(RuntimeError, match="repair is not configured"):
+            WriterFacet(vault._doc_mgr).okf_strip_seeded_frontmatter()
+    finally:
+        vault.close()
+
+
 def test_preview_and_apply_including_excluded_notes(tmp_path: Path) -> None:
     (tmp_path / "guides").mkdir()
     root = tmp_path / "index.md"
@@ -362,10 +394,10 @@ def test_designated_index_respects_operator_protection(tmp_path: Path) -> None:
     )
     vault = Vault(source_dir=tmp_path, settings=settings)
     try:
-        repair = ReservedFrontmatterRepair(vault)
-        assert repair.run(apply=True)[0].skip_reason
+        repair = vault.writer.okf_strip_seeded_frontmatter
+        assert repair(apply=True)[0].skip_reason
         assert "title: Index" in path.read_text()
-        assert repair.run(apply=True, allow_protected=True)[0].keys == ("title",)
+        assert repair(apply=True, allow_protected=True)[0].keys == ("title",)
         assert sorted(p.name for p in tmp_path.iterdir()) == ["index.md"]
     finally:
         vault.close()

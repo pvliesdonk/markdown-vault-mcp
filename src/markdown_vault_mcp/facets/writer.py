@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         LogRepairPreview,
         LogRepairResult,
     )
+    from markdown_vault_mcp._okf_reserved_repair import ReservedRepair
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
@@ -53,6 +54,7 @@ class WriterFacet:
         convention_maintainer: ConventionMaintainer | None = None,
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
+        reserved_repair: Callable[..., list[ReservedRepair]] | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -61,28 +63,27 @@ class WriterFacet:
             okf_migrate: The OKF migration manager (#963); ``None`` leaves
                 the ``okf_*`` migration methods unavailable.
             convention_maintainer: The OKF convention maintainer (#964);
-                ``None`` (the default, and whenever index and log maintenance
-                are off) disables ``log.md`` / ``index.md`` upkeep on
-                ``write`` / ``edit``.
+                ``None`` (the default, and when index and log maintenance are
+                off) disables ``log.md`` / ``index.md`` upkeep on writes.
             previous_revision: Resolves the revision holding a note's current
                 content, for the overwrite breadcrumb (#1137).  ``None`` (the
                 default, and on a vault without git) omits the breadcrumb.
-                Wired here rather than inside
-                :class:`~markdown_vault_mcp.managers.document.DocumentManager`
-                deliberately: that class is also the server's own maintenance
-                write path (OKF link conversion rewrites thousands of notes in
-                one call), and a git probe per file there would spend several
-                subprocesses each on a result nobody reads.
+                Wired here, not inside
+                :class:`~markdown_vault_mcp.managers.document.DocumentManager`:
+                that class is also the server's maintenance write path, where
+                a git probe per file would cost subprocesses nobody reads.
             link_reporter: Answers ``report_unresolved_links=True`` on
-                :meth:`write`, :meth:`edit` and :meth:`append` (#1725).
-                ``None`` (the default) makes such a call raise
-                :exc:`RuntimeError`.
+                :meth:`write`, :meth:`edit` and :meth:`append` (#1725);
+                ``None`` makes such a call raise :exc:`RuntimeError`.
+            reserved_repair: Runs the placeholder repair (#1438); ``None``
+                makes :meth:`okf_strip_seeded_frontmatter` raise.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
+        self._reserved_repair = reserved_repair
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]
@@ -112,6 +113,25 @@ class WriterFacet:
         if self._okf_migrate is None:
             raise RuntimeError("OKF migration manager is not configured")
         return self._okf_migrate
+
+    def okf_strip_seeded_frontmatter(
+        self, *, apply: bool = False, allow_protected: bool = False
+    ) -> list[ReservedRepair]:
+        """List, or with ``apply`` remove, historical placeholders in reserved files (#1438).
+
+        Args:
+            apply: Explicitly authorize writes; the default only inspects.
+            allow_protected: Allow a trusted caller to repair protected paths.
+
+        Returns:
+            Each reserved path and matching keys, or a reason it was skipped.
+
+        Raises:
+            RuntimeError: If the repair was not wired.
+        """
+        if self._reserved_repair is None:
+            raise RuntimeError("Reserved-file repair is not configured")
+        return self._reserved_repair(apply=apply, allow_protected=allow_protected)
 
     def okf_preview_log_repair(self, path: str) -> LogRepairPreview:
         """Preview exact candidate bytes for an operator to review.

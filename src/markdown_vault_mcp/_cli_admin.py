@@ -39,7 +39,6 @@ def strip_seeded_frontmatter(
     apply: bool = typer.Option(False, "--apply", help="Remove the listed keys."),
 ) -> None:
     """List historical placeholder fields in reserved files; apply to remove them."""
-    from markdown_vault_mcp._okf_reserved_repair import ReservedFrontmatterRepair
     from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
     from markdown_vault_mcp.exceptions import MarkdownMCPError
 
@@ -52,7 +51,7 @@ def strip_seeded_frontmatter(
             )
         )
         try:
-            items = ReservedFrontmatterRepair(built.vault).run(
+            items = built.vault.writer.okf_strip_seeded_frontmatter(
                 apply=apply, allow_protected=True
             )
             if not items:
