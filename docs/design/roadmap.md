@@ -1011,6 +1011,10 @@ package, with OKF inventory first and both tracks' first cuts directly after
 `derived` — [#2018][2018] moves with it from `028` to `023`, because #2128's PR
 is stacked on the #2018 refactor, which therefore ships in the same cut.
 
+`stated` — The owner then held #2128's fix out of the patch, because it makes
+every writing tool call wait up to 30 s for its own local commit. #2128 moves to
+`027 git-contracts`. [#2018][2018] stays in `023`, where its PR already merged.
+
 `derived` — [#2224][2224], the subdirectory `force_pull` bug from #2211, is split
 out of [#1395][1395] into `027 git-contracts`. [#1498][1498] stays under
 [#1499][1499] with no package, as § Sustainable embedding storage and search
