@@ -1,5 +1,6 @@
 """Durable observation sweeps cover the inventory rather than search scope."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -210,6 +211,32 @@ def test_removal_of_last_file_is_recorded(tmp_path: Path) -> None:
         note.unlink()
         vault.index.reindex()
         assert vault._index_mgr.observations.rows()["only.md"].presence == "removed"
+    finally:
+        vault.close()
+
+
+def test_chmod_unreadable_ledger_invalidates_cache(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    ledger_path = tmp_path / "state.observations.json"
+    vault = Vault(
+        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
+    )
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        assert "a.md" in ledger.rows()
+        mode = ledger_path.stat().st_mode & 0o777
+        try:
+            ledger_path.chmod(0)
+            if os.access(ledger_path, os.R_OK):
+                pytest.skip("current user can still read a mode-zero file")
+            with pytest.raises(PermissionError):
+                ledger.rows()
+        finally:
+            ledger_path.chmod(mode)
+        assert "a.md" in ledger.rows()
     finally:
         vault.close()
 

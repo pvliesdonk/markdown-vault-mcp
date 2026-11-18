@@ -8,6 +8,65 @@ import pytest
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
+@pytest.mark.parametrize("succeed", [0, 1, 2, 3])
+def test_interrupted_folder_move_records_completed_notes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, succeed: int
+) -> None:
+    from markdown_vault_mcp.exceptions import FolderMoveInterruptedError
+    from markdown_vault_mcp.managers import document
+
+    source = tmp_path / "vault"
+    (source / "old").mkdir(parents=True)
+    for name in ("a.md", "b.md", "c.md"):
+        (source / "old" / name).write_text(name)
+    (source / "old" / "asset.txt").write_text("asset")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        dirty: list[str] = []
+        vault._doc_mgr._mark_paths_dirty = dirty.extend
+        original_move = document.shutil.move
+        plan = vault._doc_mgr._plan_folder_move
+        completed: list[str] = []
+
+        def non_note_first(*args, **kwargs):
+            moves, md_map, others = plan(*args, **kwargs)
+            moves.sort(key=lambda pair: pair[0].suffix == ".md")
+            return moves, md_map, others
+
+        def interrupted(src: str, dst: str) -> str:
+            if len(completed) == succeed:
+                raise OSError("disk failure")
+            result = original_move(src, dst)
+            completed.append(Path(src).name)
+            return result
+
+        monkeypatch.setattr(document.shutil, "move", interrupted)
+        monkeypatch.setattr(vault._doc_mgr, "_plan_folder_move", non_note_first)
+        with pytest.raises(FolderMoveInterruptedError):
+            vault.writer.move_folder("old", "new")
+        assert set(dirty) == {
+            f"{folder}/{name}"
+            for folder in ("old", "new")
+            for name in completed
+            if name.endswith(".md")
+        }
+        vault.index.reindex()
+        rows = vault._index_mgr.observations.rows()
+        for name in ("a.md", "b.md", "c.md"):
+            old = rows[f"old/{name}"]
+            if name in completed:
+                assert old.presence == "removed"
+                assert old.moved_to == f"new/{name}"
+                assert rows[f"new/{name}"].moved_from == f"old/{name}"
+            else:
+                assert old.presence == "present"
+                assert old.moved_to is None
+                assert f"new/{name}" not in rows
+    finally:
+        vault.close()
+
+
 @pytest.mark.parametrize("link", ["[[a]]", "[self](a.md)"])
 @pytest.mark.parametrize("overlap", [False, True])
 def test_rename_own_rewrite_preserves_move(

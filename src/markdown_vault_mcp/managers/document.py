@@ -1777,6 +1777,19 @@ class DocumentManager:
                 old_path, captures[old_path], new_path, rewritten=digests.get(new_path)
             )
 
+    def _record_completed_moves(
+        self,
+        completed: set[str],
+        moves: dict[str, str],
+        captures: dict[str, _Captured | None],
+    ) -> None:
+        completed_notes = {
+            path: target for path, target in moves.items() if path in completed
+        }
+        self._record_moves(completed_notes, captures, [])
+        if completed_notes and self._mark_paths_dirty is not None:
+            self._mark_paths_dirty([*completed_notes, *completed_notes.values()])
+
     def _check_rename_etag(
         self, abs_path: Path, path: str, if_match: str | None, *, tolerate: bool
     ) -> int | None:
@@ -2247,9 +2260,9 @@ class DocumentManager:
                 being moved (e.g. a permission error, full disk, or concurrent
                 file removal). The pre-move collision gate prevents
                 destination clashes, but an OS error mid-move can leave the
-                subtree partially moved with the index unchanged; a
-                subsequent reindex reconciles the index with the on-disk
-                state. It subclasses :class:`OSError`.
+                subtree partially moved. Completed Markdown moves are queued
+                for indexing and observation; a subsequent reindex reconciles
+                the on-disk state. It subclasses :class:`OSError`.
         """
         self._check_writable()
         self.ensure_index_current()
@@ -2300,11 +2313,14 @@ class DocumentManager:
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
             #    raised before anything moved.
+            completed: set[str] = set()
             try:
                 for src_abs, dst_abs in moves:
                     dst_abs.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(src_abs), str(dst_abs))
+                    completed.add(self._vault_relative(src_abs))
             except OSError as exc:
+                self._record_completed_moves(completed, observation_map, captures)
                 raise FolderMoveInterruptedError(old_dir, new_dir) from exc
 
             # 5. Single-pass link rewrite. Group annotated rows by source,
