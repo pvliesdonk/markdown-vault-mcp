@@ -61,7 +61,7 @@ class _BlockState:
     items: list[int] = field(default_factory=list)
     depth: int = 0
     fence: tuple[str, int] | None = None
-    html: str | None = None
+    html_end: Callable[[str], bool | re.Match[str] | None] | None = None
     blank_before: bool = True
     in_code: bool = False
 
@@ -93,23 +93,19 @@ class _BlockState:
             return True
         tag = _HTML_OPEN.match(inner)
         if tag:
-            self.html = r"</" + tag.group(1) + r"\s*>"
+            self.html_end = re.compile(r"</" + tag.group(1) + r"\s*>", re.I).search
         elif inner.lstrip(" ").startswith("<!--") and "-->" not in inner:
-            self.html = r"-->"
-        if self.html:
-            if re.search(self.html, inner, re.I):
-                self.html = None
-            return True
-        return False
+            self.html_end = lambda line: "-->" in line
+        return self._active(inner)
 
     def _active(self, inner: str) -> bool:
         if self.fence:
             if _closes_fence(inner, self.fence):
                 self.fence = None
             return True
-        if self.html:
-            if re.search(self.html, inner, re.I):
-                self.html = None
+        if self.html_end:
+            if self.html_end(inner):
+                self.html_end = None
             return True
         return False
 

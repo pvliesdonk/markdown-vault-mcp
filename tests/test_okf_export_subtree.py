@@ -287,6 +287,10 @@ def test_wikilinks_in_code_remain_literal(tmp_path):
             "<pre>[x](/guides/b.md)</pre>\n\n[y](/b.md)\n",
         ),
         ("text <!-- unclosed [x](/guides/b.md)\n", "text <!-- unclosed [x](/b.md)\n"),
+        (
+            "<!--\n--!>\n[hidden](/guides/b.md)\n-->\n\n[real](/guides/b.md)\n",
+            "<!--\n--!>\n[hidden](/guides/b.md)\n-->\n\n[real](/b.md)\n",
+        ),
     ],
 )
 def test_protected_boundaries(tmp_path, body, expected):
