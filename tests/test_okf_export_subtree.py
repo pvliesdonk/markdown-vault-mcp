@@ -868,3 +868,198 @@ def test_hidden_wikilink_winner_is_selection_independent(tmp_path):
                 )
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("indexed", [False, True])
+def test_wikilink_text_in_markdown_title_is_literal(tmp_path, indexed):
+    (tmp_path / "guides").mkdir()
+    original = '[x](/guides/b.md "[[outside]]")'
+    (tmp_path / "guides/a.md").write_text(original)
+    (tmp_path / "guides/b.md").write_text("B")
+    (tmp_path / "outside.md").write_text("outside")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        if indexed:
+            vault.index.build_index()
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="guides",
+            external_base="https://example.org",
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b'[x](/b.md "[[outside]]")'
+        assert not result.report.dependencies
+        assert (tmp_path / "guides/a.md").read_text() == original
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "body, expected, members, expected_targets",
+    [
+        (
+            '[ref]\n\n[ref]: /guides/b.md "[[outside]]"\n',
+            '[ref]\n\n[ref]: /b.md "[[outside]]"\n',
+            {"guides/a.md", "guides/b.md"},
+            [],
+        ),
+        (
+            "[x](/guides/[[b]].md)",
+            "[x](/[[b]].md)",
+            {"guides/a.md", "guides/[[b]].md", "guides/b.md"},
+            [],
+        ),
+        *[
+            (body, expected, {"guides/a.md", "guides/b.md"}, targets)
+            for body, expected, targets in [
+                (
+                    '[u]: /guides/b.md "[[outside]]"\n',
+                    '[u]: /guides/b.md "[[outside]]"\n',
+                    [],
+                ),
+                (
+                    '[r]: /guides/b.md\n[r]: /x.md "[[outside]]"\n\n[r]\n',
+                    '[r]: /b.md\n[r]: /x.md "[[outside]]"\n\n[r]\n',
+                    [],
+                ),
+                ("[u]: /guides/[[outside]].md\n", "[u]: /guides/[[outside]].md\n", []),
+                (
+                    '[u]: </guides/[[outside]].md> "t"\n',
+                    '[u]: </guides/[[outside]].md> "t"\n',
+                    [],
+                ),
+                (
+                    "[x](/guides/[[outside]].md)",
+                    "[x](https://example.org/guides/%5B%5Boutside%5D%5D.md)",
+                    ["/guides/[[outside]].md"],
+                ),
+                (
+                    "[x](</guides/[[outside]] a.md>)",
+                    "[x](<https://example.org/guides/%5B%5Boutside%5D%5D%20a.md>)",
+                    ["</guides/[[outside]] a.md>"],
+                ),
+                ("[x](/guides/b.md ([[outside]]))", "[x](/b.md ([[outside]]))", []),
+                ("[x](/guides/b.md '[[outside]]')", "[x](/b.md '[[outside]]')", []),
+                (
+                    '[r]: /guides/b.md "[[outside]]"\n\n[r]\n',
+                    '[r]: /b.md "[[outside]]"\n\n[r]\n',
+                    [],
+                ),
+                ('![i](/guides/b.md "[[outside]]")', '![i](/b.md "[[outside]]")', []),
+            ]
+        ],
+        *[
+            (
+                body.replace("\n", newline),
+                expected.replace("\n", newline),
+                {"guides/a.md", "guides/b.md"},
+                [],
+            )
+            for newline in ("\n", "\r\n")
+            for body, expected in [
+                (
+                    '[u]: /guides/b.md\n  "[[outside]]"\n\n[u]\n',
+                    '[u]: /b.md\n  "[[outside]]"\n\n[u]\n',
+                ),
+                (
+                    '[u]: /guides/b.md\n  "[[outside]]"\n',
+                    '[u]: /guides/b.md\n  "[[outside]]"\n',
+                ),
+                ('[x](/guides/b.md\n"[[outside]]")', '[x](/b.md\n"[[outside]]")'),
+                ('[x](/guides/b.md "[[outside]]"\n)', '[x](/b.md "[[outside]]"\n)'),
+                ("[x](\n/guides/b.md\n)", "[x](\n/b.md\n)"),
+                ("[x](/guides/b.md\n'[[outside]]')", "[x](/b.md\n'[[outside]]')"),
+                (
+                    "para\n[x](/guides/b.md\n  ([[outside]]))",
+                    "para\n[x](/b.md\n  ([[outside]]))",
+                ),
+                (
+                    "[a](/guides/b.md\nfollowing text)",
+                    "[a](/guides/b.md\nfollowing text)",
+                ),
+                ("[a]\n(/guides/b.md)", "[a]\n(/guides/b.md)"),
+            ]
+        ],
+    ],
+)
+def test_wikilink_text_in_markdown_title_or_destination_is_literal(
+    body, expected, members, expected_targets
+):
+    paths = ExportPaths(
+        "guides", members, "https://example.org", lambda: members | {"outside.md"}
+    )
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == expected
+    assert [dependency.target for dependency in dependencies] == expected_targets
+
+
+def test_exact_selected_wikilink_needs_no_unrelated_inventory(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from markdown_vault_mcp.bundle_inventory import BundleEntry
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("[[guides/b]]")
+    (tmp_path / "guides/b.md").write_text("target")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        inspect = vault.reader.inspect_bundle_tree
+        roots = []
+
+        def unavailable_root(request):
+            roots.append(request.root)
+            page = inspect(request)
+            if not request.root:
+                denied = BundleEntry(
+                    "unrelated", role="directory", state="unavailable", reason="denied"
+                )
+                return replace(page, enumeration="unavailable", entries=(denied,))
+            return page
+
+        monkeypatch.setattr(vault.reader, "inspect_bundle_tree", unavailable_root)
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b"[[b]]"
+        assert not result.report.dependencies
+        assert roots == ["guides"]
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("target", ["outside/real.md", "guides/real.md"])
+def test_unindexed_alias_without_filename_match_remains_unresolved(tmp_path, target):
+    (tmp_path / "guides").mkdir()
+    target_path = tmp_path / target
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text("---\naliases: [Alias]\n---\n# Target\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        (tmp_path / "guides/a.md").write_text("[[Alias]] [missing](/nowhere.md)")
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="guides",
+            external_base="https://example.org",
+        )
+        vault.index.reindex()
+        wikilinks = [
+            link
+            for link in vault.graph.get_outlinks("guides/a.md")
+            if link.link_type == "wikilink"
+        ]
+        assert wikilinks[0].target_path == target
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert (
+                archive.read("a.md")
+                == b"[[Alias]] [missing](https://example.org/nowhere.md)"
+            )
+        assert [d.target for d in result.report.dependencies] == [
+            "Alias.md",
+            "/nowhere.md",
+        ]
+    finally:
+        vault.close()

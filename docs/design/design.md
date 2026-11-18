@@ -2124,8 +2124,10 @@ the spec itself says, dated and sourced, in
   ref on pvl-core's ``create_download_link`` and generates the archive at
   fetch time via ``okf_bundle.build_okf_bundle`` (searchable wikilinks use the
   potentially stale index graph; subtree exports also resolve remaining named
-  wikilinks against a lazily loaded whole-vault inventory, excluding alias-only
-  and case-insensitive matches. Invalid UTF-8 is scanned losslessly; NUL and
+  wikilinks by exact selected filename or a lazily loaded whole-vault inventory,
+  excluding alias-only and case-insensitive matches. Unmatched names stay raw
+  and are reported even with ``external_base``. Wiki-looking text inside
+  Markdown link titles and destinations is part of the enclosing link. Invalid UTF-8 is scanned losslessly; NUL and
   UTF-16 bodies are copied and reported uninspected,
   convention/template files excluded, reserved ``index.md`` / ``log.md`` kept
   unless an omission policy applies,
@@ -2136,9 +2138,9 @@ the spec itself says, dated and sourced, in
   content or metadata (including metadata of files included in the archive);
   incomplete inventory enumeration refuses export, even under default-omitted
   hidden paths. Reports and selection options
-  are library-only; the download ref exposes neither. Unindexed notes retain
-  raw links and bytes, and the report does not identify those links;
-  it does not claim conformance. Descriptor-relative no-follow raw reads protect
+  are library-only; the download ref exposes neither. Subtree links in
+  unindexed notes are handled independently of index admission; the report
+  does not claim conformance. Descriptor-relative no-follow raw reads protect
   notes and attachments after inventory (#1448, #2167).
 - **Reserved-file classification**: `okf.is_okf_reserved_file` owns the
   lexical, exact-case basename check for already scoped vault-relative POSIX

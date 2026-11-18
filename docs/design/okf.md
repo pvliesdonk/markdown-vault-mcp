@@ -743,14 +743,14 @@ model (a domain use of the primitives) expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
 
 The bundle copies live inventory independently of search admission. Subtree export uses an offset-preserving mask distinct from graph extraction so original literal bytes survive. For subtree exports, fences, indented code including list items, HTML code blocks, code spans and comments retain their bytes. Other HTML blocks are not protected, and raw HTML attributes are neither rewritten nor reported. Subtree notes with invalid UTF-8 are scanned losslessly; NUL or UTF-16 bodies are copied and reported as uninspected. Transformed paths and dependency sources use archive paths; H1 observations use vault paths. Resolvable
-wikilinks use the existing graph for searchable notes, which can be stale. Remaining subtree wikilinks are resolved by name against a lazily loaded whole-vault inventory, independently of search admission. Alias-only and case-insensitive matches are not resolved. A subtree
+wikilinks use the existing graph for searchable notes, which can be stale. Remaining subtree wikilinks are resolved by name independently of search admission. An exact selected filename needs no whole-vault scan; other names use a lazily loaded whole-vault inventory. A name without a filename match remains raw and is reported as a dependency even with `external_base`; alias-only and case-insensitive matches are not resolved. A subtree
 becomes the archive root. Body destinations to selected files are relocated
 when root-relative; relative destinations stay as written when they retain their target, and are adjusted when needed.
 Outside destinations are reported as dependencies, and a destination that would
 point to a different exported file refuses the export. Library callers can supply
 `external_base` to turn outside destinations into absolute URLs. The report
 lists files whose bytes changed. Frontmatter stays unchanged, and only the
-selected root’s own index can provide an `okf_version`. Outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
+selected root’s own index can provide an `okf_version`. Known outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Wikilink-looking text in Markdown link titles and destinations is treated as literal content of the enclosing link. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
 paths and index-excluded paths are omitted by default. Reserved `index.md` and
 `log.md` are kept unless an omission policy applies, including a matching
 configured conventions filename. Library callers can opt into hidden and

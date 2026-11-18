@@ -13,6 +13,7 @@ from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import Dependency
 from markdown_vault_mcp.scanner import (
     _RE_LINE_QUOTE_PREFIX,
+    _RE_TITLE_ONLY,
     _blank_spans,
     _blank_wikilinks,
     _closes_fence,
@@ -50,6 +51,9 @@ if TYPE_CHECKING:
 _MARKER = re.compile(r"^( *)(?:[-+*]|[0-9]{1,9}[.)])(?= |$)( *)")
 _HTML_OPEN = re.compile(r"^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)", re.I)
 _TICKS = re.compile(r"`+|<!--")
+# Line endings a link's parentheses may hold: after "(", before a title or ")".
+_LINE_END = re.compile(r"[ \t]*\n")  # a masked CRLF is a space, then a newline
+_SOFT = re.compile(r"\((?=[ \t]*\n)[ \t]*\n|\n(?=[ \t]*[\"')(])")
 
 
 @dataclass
@@ -254,21 +258,26 @@ def _definition_spans(
     return [span for key, span in first.items() if key in used], definitions
 
 
-def _inline_destinations(region: str, offset: int) -> list[tuple[int, int]]:
-    spans: list[tuple[int, int]] = []
+def _inline_parts(region: str, offset: int) -> list[tuple[int, int, int]]:
+    parts: list[tuple[int, int, int]] = []
 
     def follow(
         text: str, opener: int, closer: int
     ) -> tuple[tuple[str, int], int] | None:
         result = _follow_inline_destination(text, opener, closer)
         if result is not None:
-            (raw, start), _end = result
-            spans.append((offset + start, offset + start + len(raw)))
+            (raw, start), end = result
+            parts.append((offset + start, offset + start + len(raw), offset + end - 1))
         return result
 
-    for _ in iter_bracket_links(region, follow):
+    flat = _SOFT.sub(lambda match: match.group().replace("\n", " "), region)
+    for _ in iter_bracket_links(flat, follow):
         pass
-    return spans
+    return parts
+
+
+def _inline_destinations(region: str, offset: int) -> list[tuple[int, int]]:
+    return [(start, end) for start, end, _ in _inline_parts(region, offset)]
 
 
 def _masked_body(body: str) -> str:
@@ -289,7 +298,7 @@ def convert_body_wikilinks(body: str, outlinks: list[OutlinkInfo]) -> str:
     Returns:
         Body with eligible wikilinks converted.
     """
-    masked = _masked_body(body)
+    masked = _wiki_text(_masked_body(body))
     changes = []
     position = 0
     while (found := _find_wikilink(masked, position)) is not None:
@@ -308,6 +317,41 @@ def _destination_spans(masked: str) -> list[tuple[int, int]]:
     for offset, region in _regions(masked):
         spans.extend(_inline_destinations(region, offset))
     return sorted(spans)
+
+
+def _title_end(masked: str, end: int) -> int:
+    """End of a definition ending at *end*, past a title on the next line."""
+    line = _LINE_END.match(masked, end)
+    title = _RE_TITLE_ONLY.match(masked, line.end()) if line else None
+    if title and masked[title.end() : title.end() + 1] in {"", "\n"}:
+        return title.end()
+    return end
+
+
+def _wiki_text(masked: str) -> str:
+    """Blank every Markdown link destination and title, used or not.
+
+    A destination and its title are text, never wikilinks, so the wikilink
+    scans must not read them.
+
+    Args:
+        masked: Body with protected blocks masked.
+
+    Returns:
+        *masked* with each definition, and each inline destination with its
+        title, replaced by spaces.
+    """
+    if "[[" not in masked:
+        return masked
+    _used, defined = _definition_spans(masked)
+    spans = [(start, _title_end(masked, end)) for start, end in defined]
+    rest = _blank_spans(masked, spans)
+    spans = spans + [
+        (start, end)
+        for offset, region in _regions(rest)
+        for start, _stop, end in _inline_parts(region, offset)
+    ]
+    return _blank_spans(masked, spans)
 
 
 def _path_and_suffix(raw: str) -> tuple[str, str]:
@@ -412,15 +456,16 @@ class ExportPaths:
         )
         return replacement[:-1] + suffix + ">" if pointy else replacement + suffix
 
+    def _external_url(self, target: str) -> str:
+        base = (self.external_base or "").rstrip("/")
+        return (
+            base + "/" + quote(target.lstrip("/"), safe="/", errors="surrogateescape")
+        )
+
     def _outside(self, target: str, source: str, raw: str) -> str | None:
         path, suffix = _path_and_suffix(raw)
         if self.external_base:
-            url = (
-                self.external_base.rstrip("/")
-                + "/"
-                + quote(target.lstrip("/"), safe="/", errors="surrogateescape")
-                + suffix
-            )
+            url = self._external_url(target) + suffix
             return f"<{url}>" if is_pointy_destination(raw) else url
         apparent, _ = _resolve_link_path(path, source[len(self.scope) + 1 :])
         if f"{self.scope}/{apparent}" in self.members:
@@ -429,7 +474,7 @@ class ExportPaths:
             )
         return None
 
-    def _wiki_candidates(self, raw: str, source: str) -> set[str]:
+    def _wiki_candidates(self, raw: str, name: str, source: str) -> set[str]:
         if self._candidates is None:
             try:
                 inventory = self.inventory() if self.inventory else self.members
@@ -443,12 +488,12 @@ class ExportPaths:
                     f"Cannot resolve [[{_safe_text(raw)}]] in {_safe_text(source)}: "
                     f"vault inventory unavailable: {exc}; use an explicit path or fix permissions"
                 ) from exc
-        name = (
-            raw
-            if names_attachment(raw, self.extensions) or raw.lower().endswith(".md")
-            else raw + ".md"
-        )
         return self._candidates.get(name.rpartition("/")[2], set())
+
+    def _wiki_target(self, name: str, raw: str, source: str) -> str | None:
+        if name in self.members:
+            return name
+        return self._wiki_match(name, source, self._wiki_candidates(raw, name, source))
 
     @staticmethod
     def _wiki_match(name: str, source: str, candidates: set[str]) -> str | None:
@@ -459,24 +504,20 @@ class ExportPaths:
 
     def _wiki_outside(
         self,
-        target: str,
-        raw: str,
+        target: str | None,
+        name: str,
         source: str,
         dependencies: list[Dependency],
         collision: bool,
     ) -> str | None:
         dependencies.append(
-            Dependency(source[len(self.scope) + 1 :], _safe_text(target))
+            Dependency(source[len(self.scope) + 1 :], _safe_text(target or name))
         )
-        if self.external_base:
-            return (
-                self.external_base.rstrip("/")
-                + "/"
-                + quote(target.lstrip("/"), safe="/", errors="surrogateescape")
-            )
+        if self.external_base and target:
+            return self._external_url(target)
         if collision:
             raise ValueError(
-                f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; "
+                f"Export collision in {_safe_text(source)}: {_safe_text(name)}; "
                 "supply external_base to resolve outside destinations"
             )
         return None
@@ -495,13 +536,11 @@ class ExportPaths:
             apparent, _ = _resolve_link_path(name, archive_source)
             collision = apparent in self._archive_members
         else:
-            target = self._wiki_match(name, source, self._wiki_candidates(raw, source))
+            target = self._wiki_target(name, raw, source)
             apparent = self._wiki_match(name, archive_source, self._archive_members)
             collision = apparent is not None
         if target not in self.members:
-            return self._wiki_outside(
-                target or name, raw, source, dependencies, collision
-            )
+            return self._wiki_outside(target, name, source, dependencies, collision)
         bundle_target = target[len(self.scope) + 1 :]
         if relative and apparent == bundle_target:
             return None
@@ -534,7 +573,7 @@ class ExportPaths:
         ]
         spans.extend(
             (start, end, (opening, closing))
-            for start, end, opening, closing in _wikilink_spans(masked)
+            for start, end, opening, closing in _wikilink_spans(_wiki_text(masked))
         )
         for start, end, wiki in sorted(spans, key=lambda span: (span[0], span[1])):
             raw = body[start:end]
