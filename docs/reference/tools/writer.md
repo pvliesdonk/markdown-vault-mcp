@@ -285,6 +285,7 @@ Dict with `old_dir` (str), `new_dir` (str), `files_moved` (int) and
 
 - `failed_links` (list[str]): paths of notes whose links could not be
   rewritten; the move itself stands.
+- hint (str, optional): guidance when protected or submodule links remain.
 - remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.

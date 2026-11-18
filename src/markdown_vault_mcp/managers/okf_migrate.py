@@ -35,7 +35,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.exceptions import DocumentUnreadableError
+from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     OKF_ROOT_INDEX_TITLE,
@@ -130,28 +131,41 @@ class OkfMigrationManager:
         skipped = 0
         scanned = 0
         in_submodules = 0
-        for note in self._search_mgr.list(folder=folder, include_attachments=False):
-            if self._doc_mgr.in_submodule(note.path):
-                in_submodules += 1
-                continue
-            scanned += 1
-            outlinks = self._link_mgr.get_outlinks(note.path)
-            if not any(link.link_type == "wikilink" for link in outlinks):
-                continue
-            note_content = self._doc_mgr.read(note.path)
-            if note_content is None:  # pragma: no cover - deleted mid-scan
-                continue
-            new_content, n_conv, n_skip = convert_wikilinks_to_markdown(
-                note_content.content, outlinks
-            )
-            converted += n_conv
-            skipped += n_skip
-            if new_content != note_content.content:
-                self._doc_mgr.write(note.path, new_content, allow_overwrite=True)
-                files_changed += 1
+        protected: list[str] = []
+        # Every write a transform issues is mechanical: it must not re-stamp
+        # provenance or clear a human attestation, whichever entry point
+        # called it (#1401).
+        with okf_write_suppressed():
+            for note in self._search_mgr.list(folder=folder, include_attachments=False):
+                if self._doc_mgr.in_submodule(note.path):
+                    in_submodules += 1
+                    continue
+                scanned += 1
+                outlinks = self._link_mgr.get_outlinks(note.path)
+                if not any(link.link_type == "wikilink" for link in outlinks):
+                    continue
+                note_content = self._doc_mgr.read(note.path)
+                if note_content is None:  # pragma: no cover - deleted mid-scan
+                    continue
+                new_content, n_conv, n_skip = convert_wikilinks_to_markdown(
+                    note_content.content, outlinks
+                )
+                converted += n_conv
+                skipped += n_skip
+                if new_content != note_content.content:
+                    if self._doc_mgr.is_protected(note.path):
+                        protected.append(note.path)
+                        continue
+                    self._doc_mgr.write(note.path, new_content, allow_overwrite=True)
+                    files_changed += 1
         if in_submodules:
             logger.info(
                 "okf_convert_links_submodule_notes_skipped notes=%d", in_submodules
+            )
+        if protected:
+            raise InvalidRequestError(
+                f"Converted {files_changed} notes; did not convert {protected!r}, protected by "
+                "MARKDOWN_VAULT_MCP_PROTECTED_PATHS. Ask the operator to convert them or change the setting."
             )
         return OkfConvertResult(
             files_changed=files_changed,
@@ -200,6 +214,24 @@ class OkfMigrationManager:
             IndexUnavailableError: If the index is not built.
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
+        skipped: list[str] = []
+        written: list[str] = []
+        result = self._generate_index(folder, skipped, written, designated)
+        if skipped:
+            raise InvalidRequestError(
+                f"Generated indexes {written!r}; did not write {skipped!r}, protected by "
+                "MARKDOWN_VAULT_MCP_PROTECTED_PATHS. Ask the operator to generate them or change the setting."
+            )
+        return result
+
+    def _generate_index(
+        self,
+        folder: str,
+        skipped: list[str],
+        written: list[str],
+        designated: Callable[[str], bool] | None,
+    ) -> OkfIndexResult:
+        """Generate eligible indexes and collect protected paths."""
         self._doc_mgr.ensure_writable()
         self._doc_mgr.ensure_index_current()
         self._require_built()
@@ -240,18 +272,20 @@ class OkfMigrationManager:
                 for sub in subfolders
                 if designated(prefix + sub) or self._has_index(prefix + sub)
             }
-        # Immediate notes first, then a pointer into each subfolder's index.
-        entries = note_entries + [
-            (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
-        ]
         created: list[str] = []
+        available: list[str] = []
         for sub in sorted(subfolders):
-            # A kept submodule subfolder has an index, so it is never generated.
-            if not self._has_index(f"{prefix}{sub}"):
-                child = self.generate_index(
-                    folder=f"{prefix}{sub}", designated=designated
+            child_folder = f"{prefix}{sub}"
+            if not self._has_index(child_folder):
+                child = self._generate_index(child_folder, skipped, written, designated)
+                created += ([child.path] if child.path in written else []) + list(
+                    child.created
                 )
-                created += [child.path, *child.created]
+            if self._has_index(child_folder):
+                available.append(sub)
+        entries = note_entries + [
+            (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in available
+        ]
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         existing = self._doc_mgr.read(index_path)
@@ -259,14 +293,19 @@ class OkfMigrationManager:
         preserved = bool(existing_fm)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
-        self._doc_mgr.write(
-            index_path,
-            body,
-            frontmatter=self._reserved_frontmatter.build(
-                existing_fm if preserved else None, title=heading
-            ),
-            allow_overwrite=True,
-        )
+        if self._doc_mgr.is_protected(index_path):
+            skipped.append(index_path)
+        else:
+            with okf_write_suppressed():
+                self._doc_mgr.write(
+                    index_path,
+                    body,
+                    frontmatter=self._reserved_frontmatter.build(
+                        existing_fm if preserved else None, title=heading
+                    ),
+                    allow_overwrite=True,
+                )
+            written.append(index_path)
         return OkfIndexResult(
             path=index_path,
             entries=len(entries),

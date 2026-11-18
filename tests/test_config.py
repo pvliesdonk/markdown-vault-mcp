@@ -2710,3 +2710,40 @@ def test_the_resident_refusal_names_streamed_and_the_default(
         )
     assert "EMBEDDING_SEARCH=streamed" in str(refused.value)
     assert "leave it unset" in str(refused.value)
+
+
+def test_protected_paths_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", raising=False)
+    assert ProjectConfig.from_env().protected_paths is None
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "a, ,folder/*.md")
+    assert ProjectConfig.from_env().protected_paths == ("a", "folder/*.md")
+
+
+@pytest.mark.parametrize("pattern", ["/x.md", "../x.md", "dir/../x.md", "", 42])
+def test_protected_paths_reject_invalid(pattern: Any) -> None:
+    from markdown_vault_mcp.config_sections.vault_settings import (
+        normalize_protected_paths,
+    )
+
+    with pytest.raises(ConfigurationError, match="PROTECTED_PATHS"):
+        normalize_protected_paths([pattern])
+
+
+def test_protected_paths_scalar_and_normalization(tmp_path: Path) -> None:
+    from markdown_vault_mcp.config_sections.vault_settings import (
+        VaultSettings,
+        normalize_protected_paths,
+    )
+
+    for constructor in (
+        lambda: ProjectConfig(source_dir=tmp_path, protected_paths="x.md"),
+        lambda: VaultSettings(protected_paths="x.md"),
+    ):
+        with pytest.raises(ConfigurationError, match="PROTECTED_PATHS"):
+            constructor()
+    assert normalize_protected_paths(
+        ["./x.md", "dir//x.md", "dir/./x.md", "folder/"]
+    ) == ("x.md", "dir/x.md", "dir/x.md", "folder")

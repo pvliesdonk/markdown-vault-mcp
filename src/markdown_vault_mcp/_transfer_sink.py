@@ -267,10 +267,11 @@ class VaultTransferSink:
         else:
             destination = _validate_destination(ref, source_dir, exts)
             try:
+                await asyncio.to_thread(vault._doc_mgr.refuse_protected, ref)
                 await asyncio.to_thread(
                     vault._doc_mgr.refuse_folder_in_submodule, ref, "ref"
                 )
-            except SubmodulePathError as exc:
+            except (SubmodulePathError, InvalidRequestError) as exc:
                 raise _reject(str(exc)) from None
             if self._config.write_protect_existing and is_regular_file(destination):
                 logger.info(

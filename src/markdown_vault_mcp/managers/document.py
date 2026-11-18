@@ -28,6 +28,7 @@ import yaml
 from markdown_vault_mcp._commit_scope import (
     auxiliary_commit_writes,
     current_commit_scope,
+    is_auxiliary_commit_write,
 )
 from markdown_vault_mcp._okf_log_repair import (
     LogRepairCollision,
@@ -38,6 +39,7 @@ from markdown_vault_mcp._okf_log_repair import (
     require_reviewed,
     retain_original,
 )
+from markdown_vault_mcp._path_guard import PathGuard
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -219,6 +221,7 @@ class DocumentManager:
             :meth:`write_attachment` refuse to overwrite an existing file
             unless the caller supplies an ``if_match`` etag.
         exclude_patterns: Glob patterns for paths to exclude.
+        protected_paths: Vault-relative globs refusing ordinary mutations.
         attachment_extensions: Allowlist of attachment file extensions.
         max_note_read_bytes: Maximum bytes returned by full-document reads.
             ``0`` disables the limit (default ``262144``, i.e. 256 KB).
@@ -256,6 +259,7 @@ class DocumentManager:
         read_only: bool = True,
         write_protect_existing: bool = False,
         exclude_patterns: list[str] | None = None,
+        protected_paths: Sequence[str] | None = None,
         attachment_extensions: Sequence[str] | None = None,
         max_note_read_bytes: int = 262144,
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
@@ -271,6 +275,7 @@ class DocumentManager:
         self._read_only = read_only
         self._write_protect_existing = write_protect_existing
         self._exclude_patterns = exclude_patterns
+        self._path_guard = PathGuard(source_dir, protected_paths)
         self._max_note_read_bytes = max_note_read_bytes
         self._notifier = WriteNotifier(on_write_callback)
         self._artifacts = ArtifactStore(
@@ -319,6 +324,36 @@ class DocumentManager:
                 "Vault is read-only; write operations are not permitted."
             )
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
+
+    def is_protected(self, path: str, *, allow_protected: bool = False) -> bool:
+        """Return whether operator policy protects a vault-relative path.
+
+        Args:
+            path: Vault-relative path to check.
+            allow_protected: Explicit trusted library override.
+
+        Returns:
+            Whether this mutation is protected.
+        """
+        return not (allow_protected or is_auxiliary_commit_write()) and bool(
+            self._path_guard.reason(path)
+        )
+
+    def refuse_protected(self, path: str, *, allow_protected: bool = False) -> None:
+        """Refuse a protected path unless a trusted caller opts in.
+
+        Args:
+            path: Vault-relative path to change.
+            allow_protected: Explicit trusted library override.
+
+        Raises:
+            InvalidRequestError: If the path is protected or outside the vault.
+        """
+        if self.is_protected(path, allow_protected=allow_protected):
+            raise InvalidRequestError(
+                f"Path {path!r} is protected by MARKDOWN_VAULT_MCP_PROTECTED_PATHS. "
+                "Ask the operator to edit the file or change the setting."
+            )
 
     def _refuse_submodule(
         self, abs_path: Path, argument: str, path: str, *, holding: bool = True
@@ -967,6 +1002,7 @@ class DocumentManager:
         if_match: str | None = None,
         *,
         allow_overwrite: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -975,6 +1011,7 @@ class DocumentManager:
         including nested mappings. YAML comments and formatting are not retained.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative document path.
             content: Markdown body (excluding frontmatter).
             frontmatter: Optional frontmatter dict serialised as YAML header.
@@ -1004,6 +1041,7 @@ class DocumentManager:
         """
         self._check_writable()
         with self._file_write_lock:
+            self.refuse_protected(path, allow_protected=allow_protected)
             abs_path = self._validate_path(path)
             self._refuse_submodule(abs_path, "path", path)
             if not allow_overwrite:
@@ -1056,6 +1094,7 @@ class DocumentManager:
         if_match: str | None = None,
         *,
         create_if_missing: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Append *content* to the end of a document (#980).
 
@@ -1069,6 +1108,7 @@ class DocumentManager:
         keeps its stored bytes, BOM included (#1443).
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative document path.
             content: Text to append.  Must be non-empty.
             if_match: Optional etag from a previous :meth:`read` call.
@@ -1099,6 +1139,7 @@ class DocumentManager:
             raise InvalidRequestError("content must not be empty")
 
         with self._file_write_lock:
+            self.refuse_protected(path, allow_protected=allow_protected)
             abs_path = self._validate_path(path)
             self._refuse_submodule(abs_path, "path", path)
             existed = is_regular_file(abs_path)
@@ -1131,10 +1172,13 @@ class DocumentManager:
         path: str,
         content: bytes,
         if_match: str | None = None,
+        *,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a non-.md attachment.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative attachment path (e.g. ``"assets/diagram.pdf"``).
             content: Raw bytes to write.
             if_match: Optional etag from a previous :meth:`read_attachment`
@@ -1158,9 +1202,10 @@ class DocumentManager:
             InvalidRequestError: If the path escapes the source directory or
                 has an extension not in the allowlist.
         """
+        self.refuse_protected(path, allow_protected=allow_protected)
         return self._artifacts.write(path, content, if_match)
 
-    def edit(
+    def edit(  # noqa: PLR0913, RUF100 — existing edit modes need these parameters.
         self,
         path: str,
         old_text: str | None = None,
@@ -1168,6 +1213,8 @@ class DocumentManager:
         if_match: str | None = None,
         line_start: int | None = None,
         line_end: int | None = None,
+        *,
+        allow_protected: bool = False,
     ) -> EditResult:
         """Patch a section of a document.
 
@@ -1187,6 +1234,7 @@ class DocumentManager:
         ``match_type="normalized"`` is returned.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative document path.
             old_text: Text to replace. Required for exact-match and
                 scoped-match modes.  Must appear exactly once (in the
@@ -1240,6 +1288,7 @@ class DocumentManager:
                 )
 
         with self._file_write_lock:
+            self.refuse_protected(path, allow_protected=allow_protected)
             abs_path = self._validate_path(path)
             self._refuse_submodule(abs_path, "path", path)
             if not is_regular_file(abs_path):
@@ -1381,7 +1430,9 @@ class DocumentManager:
         diag = _find_closest_match(old_text, content)
         raise EditConflictError(f"old_text not found in {location}", **diag)
 
-    def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
+    def delete(
+        self, path: str, if_match: str | None = None, *, allow_protected: bool = False
+    ) -> DeleteResult:
         """Delete a document or attachment.
 
         Removes the file from disk.  For ``.md`` documents, also removes all
@@ -1389,6 +1440,7 @@ class DocumentManager:
         deleted (no index update).
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative document or attachment path.
             if_match: Optional etag from a previous :meth:`read` or
                 :meth:`read_attachment` call. When provided, the deletion is
@@ -1410,6 +1462,7 @@ class DocumentManager:
         """
         self._check_writable()
         with self._file_write_lock:
+            self.refuse_protected(path, allow_protected=allow_protected)
             if is_note(path):
                 abs_path = self._validate_path(path)
                 self._refuse_submodule(abs_path, "path", path)
@@ -1434,6 +1487,7 @@ class DocumentManager:
         *,
         update_links: bool = False,
         tolerate_link_rewrites: bool = False,
+        allow_protected: bool = False,
     ) -> RenameResult:
         """Rename or move a document or attachment.
 
@@ -1449,6 +1503,7 @@ class DocumentManager:
         *hint* says so instead of reporting a bare ``0`` (#1338).
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             old_path: Current relative document or attachment path.
             new_path: Target relative document or attachment path.
             if_match: Optional etag from a previous :meth:`read` or
@@ -1495,6 +1550,8 @@ class DocumentManager:
             self.ensure_index_current()
 
         with self._file_write_lock:
+            self.refuse_protected(old_path, allow_protected=allow_protected)
+            self.refuse_protected(new_path, allow_protected=allow_protected)
             if is_note(old_path):
                 old_abs = self._validate_path(old_path)
                 new_abs = self._validate_path(new_path)
@@ -1527,7 +1584,9 @@ class DocumentManager:
                 callback_content = _read_text_utf8(new_abs)
 
                 backlink_callbacks, backlink_paths, unrewritten = (
-                    self._update_backlinks(old_path, new_path, backlinks)
+                    self._update_backlinks(
+                        old_path, new_path, backlinks, allow_protected=allow_protected
+                    )
                 )
                 updated_links = len(backlink_callbacks)
                 hint = self._submodule_links_hint(unrewritten)
@@ -1666,6 +1725,7 @@ class DocumentManager:
         target_map: dict[str, str],
         *,
         op_name: str,
+        allow_protected: bool = False,
     ) -> tuple[list[tuple[Path, str]], list[str], list[str]]:
         """Rewrite link targets in each grouped source file (best effort).
 
@@ -1701,6 +1761,14 @@ class DocumentManager:
         failed_sources: list[str] = []
         for source_path, items in by_source.items():
             try:
+                if self.is_protected(source_path, allow_protected=allow_protected):
+                    logger.info(
+                        "link_rewrite_source_skipped op=%s path=%s reason=protected",
+                        op_name,
+                        source_path,
+                    )
+                    failed_sources.append(source_path)
+                    continue
                 source_abs = self._validate_path(source_path)
                 if self.in_submodule(source_path):
                     # Expected in a vault with submodules: not degraded.
@@ -1758,23 +1826,35 @@ class DocumentManager:
     def _submodule_links_hint(self, unrewritten: list[str]) -> str | None:
         """Build the protected-backlink hint without aborting a completed rename."""
         in_submodules = []
+        protected = []
         for source in unrewritten:
             try:
-                if self.in_submodule(source):
+                if self.is_protected(source):
+                    protected.append(source)
+                elif self.in_submodule(source):
                     in_submodules.append(source)
             except OSError as exc:
-                # Diagnostic inspection must not prevent index/Git notification.
                 logger.debug(
                     "submodule_hint_check_failed path=%s error=%s", source, exc
                 )
-                continue
-        return _submodule_links_text(in_submodules) if in_submodules else None
+        hints = []
+        if in_submodules:
+            hints.append(_submodule_links_text(in_submodules))
+        if protected:
+            hints.append(
+                f"Links in {', '.join(repr(p) for p in protected)} still name the old path; "
+                "they are protected by MARKDOWN_VAULT_MCP_PROTECTED_PATHS. "
+                "Ask the operator to update them or change the setting."
+            )
+        return " ".join(hints) or None
 
     def _update_backlinks(
         self,
         old_path: str,
         new_path: str,
         backlinks: list[dict[str, Any]],
+        *,
+        allow_protected: bool = False,
     ) -> tuple[list[tuple[Path, str]], list[str], list[str]]:
         """Rewrite source files that link to *old_path* to point to *new_path*.
 
@@ -1815,11 +1895,19 @@ class DocumentManager:
             by_source[new_path] = by_source.pop(old_path)
 
         return self._rewrite_link_sources(
-            by_source, {old_path: new_path}, op_name="_update_backlinks"
+            by_source,
+            {old_path: new_path},
+            op_name="_update_backlinks",
+            allow_protected=allow_protected,
         )
 
     def _plan_folder_move(
-        self, old_abs: Path, old_dir: str, new_dir: str
+        self,
+        old_abs: Path,
+        old_dir: str,
+        new_dir: str,
+        *,
+        allow_protected: bool = False,
     ) -> tuple[list[tuple[Path, Path]], dict[str, str], list[tuple[Path, str, Path]]]:
         """Enumerate the subtree under *old_abs* and gate on collisions.
 
@@ -1863,6 +1951,8 @@ class DocumentManager:
             rel_within = src_abs.relative_to(old_abs).as_posix()
             old_path = f"{old_rel}/{rel_within}"
             new_path = f"{new_rel}/{rel_within}"
+            self.refuse_protected(old_path, allow_protected=allow_protected)
+            self.refuse_protected(new_path, allow_protected=allow_protected)
             dst_abs = (self._source_dir / new_path).resolve()
             self._refuse_move_into_submodule(dst_abs, new_dir, new_path)
             moves.append((src_abs, dst_abs))
@@ -1945,7 +2035,19 @@ class DocumentManager:
                 continue
             self._notifier.fire(src_abs, src_content, "edit")
 
-    def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
+    def _folder_backlinks(
+        self, paths: Iterable[str]
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Collect backlink rows before moving any files."""
+        annotated: list[tuple[str, dict[str, Any]]] = []
+        for target in paths:
+            for row in self._fts.get_backlinks(target):
+                annotated.append((target, row))
+        return annotated
+
+    def move_folder(
+        self, old_dir: str, new_dir: str, *, allow_protected: bool = False
+    ) -> MoveFolderResult:
         """Move an entire folder subtree to a new prefix, rewriting links.
 
         Moves every file under *old_dir* (``.md`` notes, allowlisted
@@ -1960,6 +2062,7 @@ class DocumentManager:
         in :attr:`MoveFolderResult.failed_links` without aborting the move.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             old_dir: Relative source folder prefix (e.g. ``"drafts"``).
             new_dir: Relative target folder prefix (e.g. ``"archive/2026"``).
 
@@ -1991,6 +2094,8 @@ class DocumentManager:
         with self._file_write_lock:
             old_abs = self._validate_dir_path(old_dir)
             new_abs = self._validate_dir_path(new_dir)
+            self.refuse_protected(old_dir, allow_protected=allow_protected)
+            self.refuse_protected(new_dir, allow_protected=allow_protected)
             self._refuse_submodule(old_abs, "old_dir", old_dir)
             self._refuse_submodule(new_abs, "new_dir", new_dir, holding=False)
 
@@ -2008,17 +2113,13 @@ class DocumentManager:
             # 1+2. Enumerate the subtree, build the old->new path map, and
             #      gate on destination collisions before moving anything.
             moves, md_map, non_note_moves = self._plan_folder_move(
-                old_abs, old_dir, new_dir
+                old_abs, old_dir, new_dir, allow_protected=allow_protected
             )
 
             # 3. Capture backlinks for every moved note BEFORE the move, while
             #    the index still reflects old paths. Annotate each row with its
             #    target's old/new path so a multi-target rewrite is possible.
-            annotated: list[tuple[str, dict[str, Any]]] = []  # (target_old, row)
-            for target_old in md_map:
-                for row in self._fts.get_backlinks(target_old):
-                    annotated.append((target_old, row))
-
+            annotated = self._folder_backlinks(md_map)
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
             #    raised before anything moved.
@@ -2039,7 +2140,10 @@ class DocumentManager:
                 by_source[src_new].append((target_old, row))
 
             pending_callbacks, dirty_paths, failed_links = self._rewrite_link_sources(
-                by_source, md_map, op_name="move_folder"
+                by_source,
+                md_map,
+                op_name="move_folder",
+                allow_protected=allow_protected,
             )
 
             # 6. Index: purge old note paths, reparse new note paths, plus the
@@ -2080,4 +2184,5 @@ class DocumentManager:
             files_moved=len(moves),
             updated_links=len(pending_callbacks),
             failed_links=failed_links,
+            hint=self._submodule_links_hint(failed_links),
         )

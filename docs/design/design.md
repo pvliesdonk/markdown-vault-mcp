@@ -7630,3 +7630,12 @@ Later decisions (2026-10-22, #1505):
 The configuration resolves independent author, verify, index, log and folder
 capabilities. Unset capabilities grant no semantic writes. The deprecated
 `OKF_WRITE` alias supplies defaults for the resolved capabilities, including authoring; explicit settings take precedence. Ordinary writes preserve provenance and review records.
+
+
+**Protected paths.** `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` defines
+case-insensitive vault-relative globs for ordinary client mutations. A matching
+folder protects its contents, and both requested and resolved paths are checked.
+Reads remain available; library callers can opt in with `allow_protected=True`.
+Automatic OKF maintenance is exempt. A rename or folder move skips protected
+backlink rewrites and reports them; bulk OKF transforms finish eligible writes
+and report protected paths they skipped.

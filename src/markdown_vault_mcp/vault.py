@@ -696,6 +696,7 @@ class Vault:
             read_only=self._read_only,
             write_protect_existing=self._write_protect_existing,
             exclude_patterns=self._exclude_patterns,
+            protected_paths=settings.protected_paths,
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
