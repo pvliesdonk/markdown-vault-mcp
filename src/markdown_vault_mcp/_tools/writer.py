@@ -55,7 +55,6 @@ from .._okf_write import (
     resolve_verify_subject,
 )
 from ..domain import get_config, get_vault
-from ..okf import review_actor
 from ._common import attach_conventions, attach_remote_health, okf_active
 from .transactions import run_in_transaction
 
@@ -1281,7 +1280,6 @@ def register(mcp: FastMCP) -> None:
                     "Machine reviews require OKF_MACHINE_REVIEW=true.",
                     log_level=logging.INFO,
                 )
-            review_actor(principal.subject or "", check)
         elif check != "human-review":
             raise ToolError(
                 "Named machine checks require a service principal.",
