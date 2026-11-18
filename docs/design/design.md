@@ -4557,7 +4557,12 @@ its first write's transaction, so an open changes nothing. The supported
 range is PostgreSQL 15 to 18 with pgvector 0.7.0 (`MIN_PGVECTOR`) or later,
 17 with 0.7.4 and 18 with 0.8.7, the lowest built for them: `.github/workflows/postgres-range.yml` runs the PostgreSQL
 tests on one pinned image per combination, and the minimum is the lowest
-pgvector that workflow passes, so the docs state only what it runs. The same
+pgvector that workflow passes, so the docs state only what it runs. A weekly
+image currency job keeps one tracking issue (fixed title, label `ci`) open
+naming newer images, refreshes it when the list changes and closes it once the
+pins are current; a failed Docker Hub read fails the run and leaves the issue
+alone. vchord checks only the pinned deployment major. Bumps and new majors
+remain manual support decisions ([Docker Hub reference](reference/docker-hub-range-tags.md)). The same
 workflow (#1897) also runs those tests with the `postgres` extra's lowest
 declared drivers on the lowest supported Python. That run found psycopg
 3.3.0's broken named-cursor iteration, so the floor is 3.3.1; the bug was
@@ -6706,7 +6711,7 @@ under that file's own path (`write: notes/one.md`), so ordinary writes read in
 it moves one file. What remains is the bulk case, which is
 the defect #1264 reports rather than a preference to configure.
 
-`CommitScopeMiddleware` (`_commit_scope.py`) binds a `CommitScope` —
+`CommitScopeMiddleware` (`_server_commit_scope.py`) binds a `CommitScope` —
 a process-unique token plus the tool name — for the duration of each
 `on_call_tool`, and `WriteCallbackDispatcher.fire` snapshots it into the queue
 item. The worker buffers writes by token and dispatches each group once, via
@@ -6912,6 +6917,11 @@ route). `tests/test_write_remote_health.py` partitions
 Whether a warning should ever escalate to refusing the write is left to
 [#1299](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299).
 
+`GitWriteStrategy` accepts configuration through `GitWriteSettings`; legacy flat
+parameters remain supported at their present set, and non-default flat values
+cannot be mixed with settings. `repo_path` and collaborators stay direct
+keywords. Settings exclude the token from `repr`.
+
 **Strategy collaborators (#893)**: `GitWriteStrategy` composes the
 collaborators extracted from the class, following the Versioner/Syncer
 seams of the decoupling-and-layering study (#879), plus the sync-health
@@ -7050,11 +7060,11 @@ conflicting replays, or a stop that is not a conflict) keeps the local index;
 the next pull attempts the rebase again and the same history can abort it again.
 When upstream deleted an index changed locally, the pull stops as
 `conflict_resolution_failed`, keeps the local copy and needs manual resolution,
-as for any note. After regeneration, the write callback is drained before
-reconciliation returns, so a subsequent push in the same `git_sync` includes
-the commit. A callback timeout or commit failure follows the ordinary write
-path, without a commit confirmation guarantee. Reserved siblings stay indexed
-concepts until reconciled by hand. The upstream root `okf_version` wins; a
+as for any note. After regeneration, the write callback drain flushes open
+scopes before a following push in the same `git_sync`, within a bounded timeout. A callback
+timeout or commit failure follows the ordinary write path; inclusion in that
+push is not guaranteed, and the drain does not confirm commit success. Reserved
+siblings stay indexed concepts until reconciled by hand. The upstream root `okf_version` wins; a
 local-only change to it is not carried forward.
 If discovery fails, Git reports the original configured path error. `sync_once` adapts the result to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref

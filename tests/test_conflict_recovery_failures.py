@@ -180,21 +180,11 @@ def test_generated_index_refuses_path_outside_vault(git_repo_pair: GitRepoPair) 
         strategy.close()
 
 
-@pytest.mark.parametrize(
-    ("subdir", "tick", "mixed"),
-    [
-        (False, False, False),
-        (True, False, False),
-        (False, True, False),
-        (False, False, True),
-    ],
-)
-def test_local_delete_upstream_modify_generated_index_is_regenerated(
-    git_repo_pair: GitRepoPair, subdir: bool, tick: bool, mixed: bool
-) -> None:
+def _setup_deleted_generated_conflict(
+    git_repo_pair: GitRepoPair, subdir: bool, mixed: bool
+) -> tuple[Path, Path]:
     import subprocess
 
-    from tests.conftest import wait_for_writer_drain
     from tests.fixtures.git import _run_git
 
     root = git_repo_pair.local_path
@@ -238,6 +228,24 @@ def test_local_delete_upstream_modify_generated_index_is_regenerated(
     (vault_root / "local.md").write_text("# Local\n")
     _run_git(root, "add", f"{prefix}local.md")
     _run_git(root, "commit", "-m", "local delete")
+    return vault_root, index
+
+
+@pytest.mark.parametrize(
+    ("subdir", "tick", "mixed"),
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+    ],
+)
+def test_local_delete_upstream_modify_generated_index_is_regenerated(
+    git_repo_pair: GitRepoPair, subdir: bool, tick: bool, mixed: bool
+) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    vault_root, index = _setup_deleted_generated_conflict(git_repo_pair, subdir, mixed)
     strategy, vault = recovery_vault(vault_root, build=True)
     try:
         if tick:
