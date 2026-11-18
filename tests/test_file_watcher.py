@@ -174,6 +174,111 @@ def test_mutating_events_schedule(tmp_path: Path) -> None:
         assert calls == [1], f"{type(event).__name__} should schedule a reindex"
 
 
+def test_hidden_child_parent_notice_does_not_schedule(tmp_path: Path) -> None:
+    """watchdog's parent DirModifiedEvent for a hidden child is not a vault change.
+
+    Every emitter queues ``DirModifiedEvent(parent)`` right after a child is
+    created or deleted, so a hidden scratch directory in a visible folder would
+    otherwise reindex the vault through that notice.
+    """
+    parent = str(tmp_path / "a" / "sub")
+    hidden = str(tmp_path / "a" / "sub" / ".scratch")
+    handler, calls = _record_handler(tmp_path)
+    for event in (
+        DirCreatedEvent(hidden),
+        DirModifiedEvent(parent),
+        DirDeletedEvent(hidden),
+        DirModifiedEvent(parent),
+    ):
+        handler.on_any_event(event)
+    assert calls == []
+
+
+def test_hidden_move_parent_notices_do_not_schedule(tmp_path: Path) -> None:
+    """A move between hidden names notifies both visible parents; both are absorbed."""
+    src = tmp_path / "a" / ".old"
+    dest = tmp_path / "b" / ".new"
+    handler, calls = _record_handler(tmp_path)
+    for event in (
+        FileMovedEvent(str(src), str(dest)),
+        DirModifiedEvent(str(src.parent)),
+        DirModifiedEvent(str(dest.parent)),
+    ):
+        handler.on_any_event(event)
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        pytest.param(
+            [DirModifiedEvent("{p}")],
+            id="bare-dir-modified-keeps-close-write-signal",
+        ),
+        pytest.param(
+            [
+                DirCreatedEvent("{p}/.h"),
+                DirModifiedEvent("{p}"),
+                DirModifiedEvent("{p}"),
+            ],
+            id="notice-absorbed-once",
+        ),
+        pytest.param(
+            [DirCreatedEvent("{p}/.h"), DirModifiedEvent("{q}")],
+            id="other-directory-not-absorbed",
+        ),
+        pytest.param(
+            [DirCreatedEvent("{p}/.h"), FileCreatedEvent("{p}/n.md")],
+            id="visible-sibling-event",
+        ),
+        pytest.param(
+            [
+                DirCreatedEvent("{p}/.h"),
+                FileCreatedEvent("{q}/n.md"),
+                DirModifiedEvent("{p}"),
+            ],
+            id="visible-event-clears-pending-notice",
+        ),
+        pytest.param(
+            [FileMovedEvent("{p}/.h", "{p}/n.md"), DirModifiedEvent("{p}")],
+            id="hidden-to-visible-move",
+        ),
+        pytest.param(
+            [FileModifiedEvent("{p}/.h"), DirModifiedEvent("{p}")],
+            id="hidden-modify-does-not-arm-close-only-notice",
+        ),
+        pytest.param(
+            [DirModifiedEvent("{p}/.h"), DirModifiedEvent("{p}")],
+            id="hidden-dir-modify-does-not-arm-close-only-notice",
+        ),
+        pytest.param(
+            [
+                DirCreatedEvent("{p}/.h"),
+                FileModifiedEvent("{p}/.h/x"),
+                DirModifiedEvent("{p}"),
+            ],
+            id="hidden-modify-clears-pending-notice",
+        ),
+    ],
+)
+def test_real_changes_still_schedule_after_hidden_changes(
+    tmp_path: Path, events: list[FileSystemEvent]
+) -> None:
+    """Only the notice derived from a hidden change is absorbed."""
+    p, q = str(tmp_path / "a"), str(tmp_path / "b")
+    handler, calls = _record_handler(tmp_path)
+    for event in events:
+        resolved = type(event)(
+            *(
+                path.format(p=p, q=q)
+                for path in (event.src_path, getattr(event, "dest_path", None))
+                if path
+            )
+        )
+        handler.on_any_event(resolved)
+    assert calls, "a real change must schedule a reindex"
+
+
 def _capture_watch_subscriptions(
     source_dir: Path, root_floor: bool = True
 ) -> list[tuple[Path, bool, list[type[FileSystemEvent]] | None]]:
@@ -574,6 +679,31 @@ def test_nested_hidden_dir_changes_are_ignored(tmp_path: Path) -> None:
         assert not called.wait(timeout=0.4), (
             "on_change must not fire for nested hidden changes"
         )
+    finally:
+        watcher.stop()
+
+
+def test_hidden_scratch_dir_in_nested_folder_is_ignored(tmp_path: Path) -> None:
+    """Creating and removing a hidden scratch dir below a visible folder is quiet."""
+    folder = tmp_path / "a" / "sub"
+    folder.mkdir(parents=True)
+    called = threading.Event()
+    watcher = _make_watcher(tmp_path, lambda: called.set())
+    watcher.start()
+    try:
+        # FSEvents can replay the folder's own creation; let that settle first.
+        called.wait(timeout=0.5)
+        called.clear()
+        scratch = folder / ".probe-scratch"
+        scratch.mkdir()
+        (scratch / "Aé").touch()
+        (scratch / "Aé").unlink()
+        scratch.rmdir()
+        assert not called.wait(timeout=0.6), (
+            "on_change must not fire for a hidden dir created and removed in a folder"
+        )
+        (folder / "real.md").write_text("content")
+        assert called.wait(timeout=2.0), "a real note still triggers on_change"
     finally:
         watcher.stop()
 
