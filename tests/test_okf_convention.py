@@ -421,6 +421,24 @@ class TestLogUpkeep:
         finally:
             col.close()
 
+    def test_maintained_log_notifies_write(self, tmp_path: Path) -> None:
+        (tmp_path / "index.md").write_text(_ROOT_INDEX)
+        calls: list[tuple[str, str]] = []
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+            on_write=lambda path, _content, op: calls.append((path.name, op)),
+        )
+        try:
+            vault.index.build_index()
+            for name in ("a", "b"):
+                vault.writer.write(f"{name}.md", f"# {name}\n")
+                wait_for_writer_drain(vault)
+            assert vault._write_callback.drain()
+            assert [op for path, op in calls if path == "log.md"] == ["write", "write"]
+        finally:
+            vault.close()
+
     def test_repeated_writes_keep_the_log_body_only(self, tmp_path: Path) -> None:
         """Repeated writes retain all entries in a body-only log."""
         root = tmp_path / "gated_vault_thrice"
