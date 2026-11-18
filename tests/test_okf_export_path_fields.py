@@ -149,10 +149,11 @@ def test_emoji_and_long_path(tmp_path):
     assert yaml.safe_load(output.split("---")[1])["resource"] == "/" + name
 
 
-def test_deep_metadata_refused_before_collision_can_be_missed(tmp_path):
+def test_deep_metadata_copied_and_reported(tmp_path):
     text = "---\nunknown: " + "[" * 1100 + "x" + "]" * 1100 + "\nresource: /b.md\n---\n"
-    with pytest.raises(ValueError, match="inspection limits"):
-        export(tmp_path, text)
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.uninspected["guides/a.md"] == "metadata_complexity"
 
 
 def test_alias_graph_expansion_is_bounded(tmp_path):
@@ -165,12 +166,14 @@ def test_alias_graph_expansion_is_bounded(tmp_path):
     assert output == text
 
 
-def test_alias_expansion_that_exceeds_limit_is_refused(tmp_path):
+def test_alias_expansion_over_budget_is_copied(tmp_path):
     lines = ["v0: &v0 [x]"]
     lines.extend(f"v{i}: &v{i} [*v{i - 1}, *v{i - 1}]" for i in range(1, 13))
     lines += ["defaults: &d {resource: /guides/b.md, extra: *v12}", "executor: *d"]
-    with pytest.raises(ValueError, match="inspection limits"):
-        export(tmp_path, "---\n" + "\n".join(lines) + "\n---\n")
+    text = "---\n" + "\n".join(lines) + "\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.uninspected["guides/a.md"] == "metadata_complexity"
 
 
 def test_relative_path_with_suffix_and_subdirectory(tmp_path):
@@ -193,41 +196,30 @@ def test_relative_path_with_suffix_and_subdirectory(tmp_path):
         vault.close()
 
 
-def test_too_many_yaml_events_refuse(tmp_path):
-    text = (
-        "---\n"
-        + "".join(f"key{i}: value\n" for i in range(2100))
-        + "resource: /b.md\n---\n"
-    )
-    with pytest.raises(ValueError, match="inspection limits"):
-        export(tmp_path, text)
+def test_large_pathless_metadata_exports(tmp_path):
+    text = "---\ntags:\n" + "".join(f"  - tag{i}\n" for i in range(4100)) + "---\n"
+    output, _ = export(tmp_path, text)
+    assert output == text
 
 
-def test_recursive_alias_refused(tmp_path):
+def test_recursive_alias_copied_and_reported(tmp_path):
     text = "---\ndefaults: &d {resource: /guides/b.md, extra: *d}\nexecutor: *d\n---\n"
-    with pytest.raises(ValueError, match="inspection limits"):
-        export(tmp_path, text)
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.uninspected["guides/a.md"] == "metadata_complexity"
 
 
-def test_alias_expansion_depth_refused(tmp_path):
-    lines = ["v0: &v0 {resource: /guides/b.md}"]
-    lines.extend(
-        f"v{i}: &v{i} {{resource: /guides/b.md, x: *v{i - 1}}}" for i in range(1, 33)
-    )
-    lines.append("executor: *v32")
-    with pytest.raises(ValueError, match="inspection limits"):
-        export(tmp_path, "---\n" + "\n".join(lines) + "\n---\n")
-
-
-def test_recursion_error_becomes_actionable_refusal(tmp_path, monkeypatch):
+def test_recursion_error_copied_and_reported(tmp_path, monkeypatch):
     from markdown_vault_mcp import okf_export_paths
 
-    def fail(_text):
+    def fail(*_args):
         raise RecursionError
 
-    monkeypatch.setattr(okf_export_paths, "_expand_relevant_aliases", fail)
-    with pytest.raises(ValueError, match="inspection limits"):
-        export(tmp_path, "---\nresource: /guides/b.md\n---\n")
+    monkeypatch.setattr(okf_export_paths, "_isolate", fail)
+    text = "---\nresource: &p /guides/b.md\nunknown: *p\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.uninspected["guides/a.md"] == "metadata_complexity"
 
 
 def test_alias_graph_traversal_visits_nodes_linearly():
@@ -265,3 +257,161 @@ def test_alias_graph_traversal_visits_nodes_linearly():
     instrument(root)
     _relevant_nodes(root, set())
     assert visits[0] < 200
+
+
+def test_extended_yaml_delimiters_relocate(tmp_path):
+    text = "----\nresource: /guides/b.md\n----\nbody\n"
+    output, _ = export(tmp_path, text)
+    assert output == text.replace("/guides/b.md", "/b.md")
+
+
+@pytest.mark.parametrize(
+    "written", ["/guides/my%20file.md?x=1#s", "/guides/my file.md?x=1#s"]
+)
+def test_uri_selected_path_and_suffix(tmp_path, written):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/my file.md").write_text("B")
+    output, report = export(tmp_path, f'---\nresource: "{written}"\n---\n')
+    expected = "/my%20file.md?x=1#s" if "%" in written else "/my file.md?x=1#s"
+    assert expected in output
+    assert not report.dependencies
+
+
+def test_uri_external_and_collision(tmp_path):
+    text = "---\nresource: /b%2Emd?x=1#s\n---\n"
+    with pytest.raises(ValueError, match="collision"):
+        export(tmp_path, text)
+    output, report = export(tmp_path, text, external_base="https://example.org/v")
+    assert "https://example.org/v/b.md?x=1#s" in output
+    assert report.dependencies[0].target == "/b%2Emd?x=1#s"
+
+
+def test_encoded_separator_is_not_decoded(tmp_path):
+    text = "---\nresource: /guides/a%2Fb.md\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.dependencies[0].target == "/guides/a%2Fb.md"
+
+
+def test_relative_equivalent_spelling_is_unchanged(tmp_path):
+    text = "---\nresource: ./x/../b.md\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert not report.transformed
+
+
+def test_alias_copy_retains_tags_timestamps_and_order(tmp_path):
+    import yaml
+
+    text = "---\ndefaults: &d {resource: /guides/b.md, retrieved: 2026-11-17T10:00:00Z, custom: !foo thing, zzz: 1, aaa: 2}\nexecutor: *d\n---\n"
+    output, _ = export(tmp_path, text)
+    assert "2026-11-17T10:00:00Z" in output
+    assert "!foo" in output
+    root = yaml.compose(output.split("---")[1])
+    assert isinstance(root, yaml.MappingNode)
+    executor = next(v for k, v in root.value if k.value == "executor")
+    assert isinstance(executor, yaml.MappingNode)
+    assert [k.value for k, _ in executor.value] == [
+        "resource",
+        "retrieved",
+        "custom",
+        "zzz",
+        "aaa",
+    ]
+    assert executor.value[1][1].value == "2026-11-17T10:00:00Z"
+    assert executor.value[2][1].tag == "!foo"
+    assert "defaults: &d {resource: /guides/b.md" in output
+
+
+def test_collision_is_checked_before_over_budget_copy(tmp_path):
+    lines = ["v0: &v0 [x]"]
+    lines.extend(f"v{i}: &v{i} [*v{i - 1}, *v{i - 1}]" for i in range(1, 13))
+    lines += ["defaults: &d {resource: /b.md, extra: *v12}", "executor: *d"]
+    with pytest.raises(ValueError, match="collision"):
+        export(tmp_path, "---\n" + "\n".join(lines) + "\n---\n")
+
+
+def test_merge_cycle_is_copied(tmp_path):
+    text = "---\ndefaults: &d {<<: *d}\n<<: *d\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.uninspected["guides/a.md"] == "metadata_complexity"
+
+
+def test_merge_dag_with_no_change_stays_identical(tmp_path):
+    lines = ["v0: &v0 {other: value}"]
+    lines.extend(f"v{i}: &v{i} {{<<: [*v{i - 1}, *v{i - 1}]}}" for i in range(1, 16))
+    lines.append("<<: *v15")
+    text = "---\n" + "\n".join(lines) + "\n---\n"
+    output, _ = export(tmp_path, text)
+    assert output == text
+
+
+def test_double_quote_escapes_unicode_separators(tmp_path):
+    import yaml
+
+    name = "b\u2028😀.md"
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / name).write_text("B")
+    text = '---\nresource: "/guides/b\\u2028😀.md"\n---\n'
+    output, _ = export(tmp_path, text)
+    assert "\\u2028" in output
+    assert yaml.safe_load(output.split("---")[1])["resource"] == "/" + name
+
+
+def test_aliased_source_retains_timestamp_and_order(tmp_path):
+    import yaml
+
+    text = "---\nsources:\n  - &s {id: 1, retrieved: 2026-11-17T10:00:00Z, resource: /guides/b.md}\n  - *s\n---\n"
+    output, _ = export(tmp_path, text)
+    data = yaml.safe_load(output.split("---")[1])
+    assert output.count("2026-11-17T10:00:00Z") == 2
+    assert all(
+        list(source) == ["id", "retrieved", "resource"] for source in data["sources"]
+    )
+    assert [source["resource"] for source in data["sources"]] == ["/b.md", "/b.md"]
+
+
+@pytest.mark.parametrize("outside", ["/outside%20file.md", "/outside file.md"])
+def test_external_uri_escapes_once(tmp_path, outside):
+    output, report = export(
+        tmp_path,
+        f'---\nresource: "{outside}?q=1#h"\n---\n',
+        external_base="https://example.org/v",
+    )
+    assert "https://example.org/v/outside%20file.md?q=1#h" in output
+    assert report.dependencies[0].target == outside + "?q=1#h"
+
+
+def test_crlf_and_bom_frontmatter(tmp_path):
+    text = "\ufeff---\r\nresource: /guides/b.md\r\n---\r\nbody\r\n"
+    (tmp_path / "guides").mkdir()
+    original = text.encode()
+    (tmp_path / "guides/a.md").write_bytes(original)
+    (tmp_path / "guides/b.md").write_text("B")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == original.replace(b"/guides/b.md", b"/b.md")
+        assert (tmp_path / "guides/a.md").read_bytes() == original
+    finally:
+        vault.close()
+
+
+def test_malformed_yaml_is_copied(tmp_path):
+    text = "---\nresource: /guides/b.md\nbad: [\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert any(finding.path == "guides/a.md" for finding in report.format_findings)
+
+
+def test_unknown_representation_node_is_bounded():
+    from yaml.nodes import Node
+
+    from markdown_vault_mcp.okf_export_paths import _copy_node, _MetadataComplexity
+
+    with pytest.raises(_MetadataComplexity):
+        _copy_node(Node("!unknown", "value", None, None), [1], set())

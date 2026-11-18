@@ -2137,9 +2137,10 @@ the spec itself says, dated and sourced, in
   last-observed index admission, partial v0.2 format findings and uninspected
   content or metadata (including metadata of files included in the archive);
   subtree frontmatter path fields are relocated with the same outside-path rules;
-  non-slash, non-dot values are reported as ambiguous. YAML aliases and merge
-  fields are resolved without changing other values; metadata beyond bounded
-  inspection refuses subtree export.
+  non-slash, non-dot values are reported as ambiguous. field values are URI references with percent-decoded matching and preserved
+  suffixes. YAML aliases and merges used by changed paths are copied to preserve
+  other values; metadata exceeding inspection limits is copied and reported
+  uninspected.
   incomplete inventory enumeration refuses export, even under default-omitted
   hidden paths. Reports and selection options
   are library-only; the download ref exposes neither. Subtree links in
