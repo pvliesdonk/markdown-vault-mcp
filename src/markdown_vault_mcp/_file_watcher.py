@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 try:
+    import watchdog.events as _watchdog_events
     from watchdog.events import (
         EVENT_TYPE_CREATED,
         EVENT_TYPE_DELETED,
@@ -75,6 +76,13 @@ try:
         DirMovedEvent,
         FileDeletedEvent,
         DirDeletedEvent,
+    ]
+
+    # Attribute classes were added after watchdog 4.x. Keep the minimum version.
+    _ATTRIBUTE_EVENT_CLASSES = [
+        cls
+        for name in ("FileAttribEvent", "DirAttribEvent")
+        if (cls := getattr(_watchdog_events, name, None)) is not None
     ]
 
     # Only these event types represent an actual mutation of the vault.
@@ -232,8 +240,8 @@ class _WatchRoot:
 
     Attributes:
         path: Absolute directory to watch.
-        recursive: ``True`` for kept top-level children (watched recursively),
-            ``False`` for the ``source_dir`` floor watch (direct entries only).
+        recursive: Whether to watch descendants, rather than direct entries only.
+        search: Whether events from this root can trigger search reindexing.
     """
 
     path: Path
@@ -276,7 +284,8 @@ def _contains_internal_dir(child: Path, internal_dirs: frozenset[Path]) -> bool:
     ``internal_dirs`` must already be resolved. A recursive watch on a directory
     that is or contains the state / index / embeddings dir (or ``.git``) would
     deliver the writes ``reindex`` makes into those paths, re-triggering itself;
-    such a directory is skipped entirely so the loop cannot form (#830).
+    such a directory is excluded from search watches so the loop cannot form
+    (#830). Observation can still watch its readable, non-internal parts.
 
     Args:
         child: Candidate top-level watch-root directory.
@@ -389,9 +398,10 @@ def _derive_watch_roots(
     do not fully prune becomes a recursive watch root, so events deep inside a
     deliberately-watched dot-root (e.g. ``.claude/projects/x/memory/n.md``) are
     delivered. A child that is, or contains, one of ``internal_dirs`` (the
-    vault's own state / index / embeddings dir or ``.git``) is skipped so the
-    watcher does not observe the writes ``reindex`` makes into them, which would
-    close a self-feedback reindex loop (#830). When ``root_floor`` is True
+    vault's own state / index / embeddings dir or ``.git``) is skipped for
+    search to prevent a self-feedback loop (#830). With ``observe=True``,
+    excluded and internal-holding children are retained as observation-only.
+    When ``root_floor`` is True
     (default) the ``source_dir`` itself is appended last as a non-recursive
     floor watch so root-level ``*.md`` changes still trigger.
 
@@ -494,9 +504,8 @@ _MAX_LOGGED_ROOTS = 12
 def _format_root_names(roots: Sequence[_WatchRoot]) -> str:
     """Format watch-root basenames for the ``start()`` INFO line.
 
-    The non-recursive ``source_dir`` floor watch is marked ``<name>/(root)`` so
-    the "new top-level directories need a restart" limitation is observable in
-    the log. The list is truncated to the first :data:`_MAX_LOGGED_ROOTS` names
+    Non-recursive watches, including the ``source_dir`` floor and internal
+    ancestors, are marked ``<name>/(root)``. The list is truncated to the first :data:`_MAX_LOGGED_ROOTS` names
     with a ``(+N more)`` suffix when longer.
 
     Args:
@@ -614,6 +623,7 @@ class VaultFileWatcher:
         self._timer: threading.Timer | None = None
         self._search_pending = False
         self._watches: dict[Path, tuple[_WatchRoot, Any]] = {}
+        self._directory_modes: dict[str, tuple[int, int]] = {}
         self._lock = threading.Lock()
         self._stopped = False
 
@@ -678,12 +688,19 @@ class VaultFileWatcher:
             root_info=root,
             sync=self._sync if self._on_observation else None,
         )
+        handler._directory_modes = self._directory_modes
+        if str(root.path) not in self._directory_modes:
+            handler._directory_access_changed(str(root.path))
         try:
             watch = observer.schedule(
                 handler,
                 str(root.path),
                 recursive=root.recursive,
-                event_filter=_MUTATING_EVENT_CLASSES,
+                event_filter=(
+                    _MUTATING_EVENT_CLASSES + _ATTRIBUTE_EVENT_CLASSES
+                    if self._on_observation
+                    else _MUTATING_EVENT_CLASSES
+                ),
             )
         except Exception:
             logger.warning(
@@ -888,6 +905,8 @@ if _WATCHDOG_AVAILABLE:
             self._root = root_info or _WatchRoot(watch_root, True)
             self._sync = sync
             self._notices = _HiddenChangeNotices()
+            self._directory_modes: dict[str, tuple[int, int]] = {}
+            self._directory_access_changed(str(watch_root))
 
         def _concerns_vault(self, event: FileSystemEvent) -> bool:
             """Return whether a mutating event is a visible, non-derived change."""
@@ -903,6 +922,16 @@ if _WATCHDOG_AVAILABLE:
                 return False
             return not self._notices.absorbs(event)
 
+        def _directory_access_changed(self, path: str) -> bool:
+            try:
+                info = Path(path).stat()
+                mode = (info.st_mode, info.st_ctime_ns)
+            except OSError:
+                return True
+            previous = self._directory_modes.get(path)
+            self._directory_modes[path] = mode
+            return previous != mode
+
         def _observation_event(self, event: FileSystemEvent) -> bool:
             paths = _event_paths(event)
             relative: list[tuple[str, tuple[str, ...]]] = []
@@ -913,6 +942,11 @@ if _WATCHDOG_AVAILABLE:
                     )
                 except ValueError:
                     continue
+            access_changed = (
+                event.is_directory
+                and event.event_type == EVENT_TYPE_MODIFIED
+                and any(self._directory_access_changed(path) for path, _ in relative)
+            )
             if event.is_directory and self._sync is not None:
                 internal = any(
                     any(part in INTERNAL_DIRECTORY_NAMES for part in parts)
@@ -926,20 +960,49 @@ if _WATCHDOG_AVAILABLE:
                 ):
                     return self._sync(self._watch_root, True)
                 own = any(not parts for _, parts in relative)
-                if own and event.event_type in {EVENT_TYPE_DELETED, EVENT_TYPE_MOVED}:
+                if (
+                    not self._root.search
+                    and self._root.recursive
+                    and (event.event_type == "attrib" or access_changed)
+                    and not internal
+                ):
+                    self._sync(self._watch_root, True)
+                if (
+                    own
+                    and not self._root.search
+                    and event.event_type in {EVENT_TYPE_DELETED, EVENT_TYPE_MOVED}
+                ):
                     return self._sync(self._watch_root, True)
                 direct = any(len(parts) == 1 for _, parts in relative)
                 if (
                     not self._root.recursive
-                    and (own or (direct and event.event_type != EVENT_TYPE_MODIFIED))
+                    and (
+                        own
+                        or (
+                            direct
+                            and (
+                                event.event_type != EVENT_TYPE_MODIFIED
+                                or access_changed
+                            )
+                        )
+                    )
                     and self._sync(self._watch_root, False)
                 ):
                     return True
             return any(
-                parts
+                (
+                    parts
+                    or (
+                        not self._root.search
+                        and (access_changed or event.event_type == "attrib")
+                    )
+                )
                 and not any(part in INTERNAL_DIRECTORY_NAMES for part in parts)
                 and (
-                    (event.is_directory and event.event_type != EVENT_TYPE_MODIFIED)
+                    (
+                        event.is_directory
+                        and (event.event_type != EVENT_TYPE_MODIFIED or access_changed)
+                    )
                     or (not event.is_directory and is_note(path))
                 )
                 for path, parts in relative
@@ -955,9 +1018,16 @@ if _WATCHDOG_AVAILABLE:
             Args:
                 event: The filesystem event delivered under this watch root.
             """
-            if event.event_type not in _MUTATING_EVENT_TYPES:
+            if (
+                event.event_type not in _MUTATING_EVENT_TYPES
+                and event.event_type != "attrib"
+            ):
                 return
-            search = self._root.search and self._concerns_vault(event)
+            search = (
+                event.event_type in _MUTATING_EVENT_TYPES
+                and self._root.search
+                and self._concerns_vault(event)
+            )
             observe = self._observe is not None and self._observation_event(event)
             if search:
                 self._schedule()

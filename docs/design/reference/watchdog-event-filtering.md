@@ -119,7 +119,10 @@ platforms. [source: fs400] [source: fs401] [source: fs402] [source: changes]
 ## Where this project departs from the subject
 
 The project chooses eight mutation classes rather than watchdog's unfiltered
-default. One handler routes search and observation through a shared debounce.
+default. When observation is enabled, it also subscribes to attribute event
+classes where watchdog provides them, routing these events to observation only.
+Older versions deliver access changes as modification events. One handler routes
+search and observation through a shared debounce.
 Observation-only trees split around internal directories; inherited search
 roots retain their recursive subscriptions. On macOS with watchdog 7.1 and
 Python 3.14, a non-recursive floor delivered root modification notices for
