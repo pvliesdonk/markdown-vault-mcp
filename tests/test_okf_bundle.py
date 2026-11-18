@@ -8,6 +8,7 @@ scoping, and byte reproducibility. The builder never mutates the vault.
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from typing import TYPE_CHECKING
 
@@ -163,6 +164,7 @@ def test_large_note_and_symlink_are_reported(source_dir: Path, tmp_path: Path) -
     outside = tmp_path / "outside.md"
     outside.write_text("private")
     (source_dir / "escape.md").symlink_to(outside)
+    os.mkfifo(source_dir / "x.md")
     vault = Vault(
         source_dir=source_dir,
         settings=VaultSettings(read_only=False, attachment_extensions=["png"]),
@@ -176,6 +178,7 @@ def test_large_note_and_symlink_are_reported(source_dir: Path, tmp_path: Path) -
         assert result.report.uninspected["large.md"] == "note_limit"
         assert "escape.md" not in _members(result.data)
         assert result.report.uninspected["escape.md"] == "symlink"
+        assert result.report.uninspected["x.md"] == "nonregular"
     finally:
         vault.close()
 
@@ -244,6 +247,9 @@ def test_export_pages_and_read_failure(
 
     for i in range(1001):
         (source_dir / f"page-{i:04}.md").write_text("# Page\n")
+    from markdown_vault_mcp import bundle_inventory
+
+    original_inventory_read = bundle_inventory.read_regular_nofollow
     original = okf_bundle._read_safe
 
     def read(source, path):
@@ -256,6 +262,16 @@ def test_export_pages_and_read_failure(
     assert "page-0000.md" in members and "page-1000.md" in members
     monkeypatch.setattr(okf_bundle, "_read_safe", read)
     with pytest.raises(OSError, match="refused"):
+        build_okf_bundle(vault, config)
+    monkeypatch.setattr(okf_bundle, "_read_safe", original)
+
+    def fail_inventory(parent, filename, limit):
+        if filename == "page-1000.md":
+            raise OSError(5, "failed")
+        return original_inventory_read(parent, filename, limit)
+
+    monkeypatch.setattr(bundle_inventory, "read_regular_nofollow", fail_inventory)
+    with pytest.raises(OSError, match=r"page-1000\.md: io_error"):
         build_okf_bundle(vault, config)
 
 
@@ -286,5 +302,93 @@ def test_cold_index_local_policy_is_unknown(source_dir: Path) -> None:
         assert {"a.md", "b.md", "guides/one.md"} <= set(
             result.report.local_policy.unknown
         )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("error_number", [5, 2], ids=["io-error", "vanished"])
+@pytest.mark.parametrize("name", ["selected.md", "selected.png"])
+def test_inventory_selected_read_failure_refuses(
+    source_dir: Path, monkeypatch: pytest.MonkeyPatch, error_number: int, name: str
+) -> None:
+    from markdown_vault_mcp import bundle_inventory
+
+    (source_dir / name).write_bytes(b"content")
+    original = bundle_inventory.read_regular_nofollow
+
+    def fail(parent, filename, limit):
+        if filename == name:
+            raise OSError(error_number, "failed")
+        return original(parent, filename, limit)
+
+    monkeypatch.setattr(bundle_inventory, "read_regular_nofollow", fail)
+    vault = Vault(
+        source_dir=source_dir, settings=VaultSettings(attachment_extensions=["png"])
+    )
+    try:
+        with pytest.raises(OSError, match=name.replace(".", r"\.") + ": io_error"):
+            build_okf_bundle(
+                vault,
+                ProjectConfig(source_dir=source_dir, attachment_extensions=("png",)),
+            )
+    finally:
+        vault.close()
+
+
+def test_omitted_hidden_inventory_failure_and_parser_failure(
+    source_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp import bundle_inventory
+
+    (source_dir / ".hidden.md").write_text("hidden")
+    original = bundle_inventory.read_regular_nofollow
+
+    def fail(parent, filename, limit):
+        if filename == ".hidden.md":
+            raise OSError(5, "failed")
+        return original(parent, filename, limit)
+
+    monkeypatch.setattr(bundle_inventory, "read_regular_nofollow", fail)
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
+        assert result.report.omitted["hidden"] == 1
+        monkeypatch.setattr(
+            bundle_inventory,
+            "_metadata_too_complex",
+            lambda _: (_ for _ in ()).throw(RuntimeError("failure")),
+        )
+        with pytest.raises(OSError, match="unexpected_parser_error"):
+            build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("name", ["index.md", "log.md"])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"include_index_excluded": True},
+        {"include_hidden": True},
+        {"include_index_excluded": True, "include_hidden": True},
+    ],
+)
+def test_reserved_conventions_omitted_with_options(
+    source_dir: Path, name: str, options: dict[str, bool]
+) -> None:
+    (source_dir / "guides" / name).write_text("conventions")
+    config = ProjectConfig(source_dir=source_dir, conventions_file=name)
+    vault = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(
+            conventions_file=name, exclude_patterns=[name, f"guides/{name}"]
+        ),
+    )
+    try:
+        result = build_okf_bundle(vault, config, **options)
+        assert name not in _members(result.data)
+        assert f"guides/{name}" not in _members(result.data)
+        assert result.report.omitted["conventions"] == 2
     finally:
         vault.close()

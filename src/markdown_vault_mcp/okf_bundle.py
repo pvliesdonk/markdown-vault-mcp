@@ -74,7 +74,7 @@ def _omission_reasons(
         reasons.append("index_excluded")
     if item.hidden_path and not include_hidden:
         reasons.append("hidden")
-    if item.path.rsplit("/", 1)[-1] == config.content.conventions_file:
+    if config.content.conventions_file == item.path.rsplit("/", 1)[-1]:
         reasons.append("conventions")
     root = (config.content.templates_folder or "").rstrip("/")
     if root and (item.path == root or item.path.startswith(root + "/")):
@@ -125,8 +125,9 @@ def _require_complete(page: BundleInspection, folder: str) -> None:
             if failed
             else (page.state if page.state != "inspected" else page.enumeration)
         )
+        location = f"at {path}" if failed else f"under {path}"
         raise ValueError(
-            f"Cannot export scope {folder or '(root)'}: inventory unavailable at {path}: {reason}. "
+            f"Cannot export scope {folder or '(root)'}: inventory unavailable {location}: {reason}. "
             "Check entry permissions, symlinks of unknown kind, and unavailable state paths."
         )
 
@@ -195,8 +196,15 @@ def build_okf_bundle(
                         report.omitted[reason] = report.omitted.get(reason, 0) + 1
                     continue
                 if item.state in {"unavailable", "missing"}:
-                    report.uninspected[item.path] = item.reason or item.state
-                    continue
+                    if item.state == "unavailable" and item.reason in {
+                        "symlink",
+                        "nonregular",
+                    }:
+                        report.uninspected[item.path] = item.reason
+                        continue
+                    raise OSError(
+                        f"Cannot export {item.path}: {item.reason or item.state}"
+                    )
                 raw = _read_safe(config.source_dir, item.path)
                 if item.role == "supporting":
                     _write(zf, item.path, raw)
