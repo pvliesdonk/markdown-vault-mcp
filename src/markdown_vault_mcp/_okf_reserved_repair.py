@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import stat
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -36,33 +35,6 @@ class _PendingRepair:
     result: ReservedRepair
     text: str
     etag: str
-
-
-def _snapshot(vault: Vault, path: str) -> str:
-    """Read one reserved file's exact bytes for a one-off repair.
-
-    Unlike an interactive read, this applies no note-size cap and parses no
-    frontmatter, so a large log or an unusual key is repaired or skipped on its
-    own merits.
-
-    Args:
-        vault: Vault whose source directory bounds the path.
-        path: Vault-relative path of the reserved file.
-
-    Returns:
-        The file's exact text.
-
-    Raises:
-        InvalidRequestError: If the path escapes the vault, is not a regular
-            file, or is not UTF-8.
-    """
-    target = vault._doc_mgr._validate_path(path)
-    if not stat.S_ISREG(target.stat().st_mode):
-        raise InvalidRequestError(f"{path!r} is not a regular file")
-    try:
-        return target.read_bytes().decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise InvalidRequestError(f"{path!r} is not valid UTF-8") from exc
 
 
 def _strip(
@@ -210,7 +182,7 @@ class ReservedFrontmatterRepair:
                 candidate: _PendingRepair | ReservedRepair | None
                 try:
                     candidate = self._inspect_entry(entry)
-                except (MarkdownMCPError, OSError) as exc:
+                except (MarkdownMCPError, OSError, UnicodeDecodeError) as exc:
                     candidate = ReservedRepair(entry.path, (), str(exc))
                 if candidate:
                     result.append(candidate)
@@ -237,7 +209,7 @@ class ReservedFrontmatterRepair:
 
     def _one(self, path: str) -> _PendingRepair | None:
         vault = self._vault
-        original = _snapshot(vault, path)
+        original = vault._doc_mgr._validate_path(path).read_bytes().decode("utf-8")
         etag = compute_etag(original.encode("utf-8"))
         folder = path.rpartition("/")[0]
         title = (
