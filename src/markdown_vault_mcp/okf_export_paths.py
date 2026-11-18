@@ -276,10 +276,6 @@ def _inline_parts(region: str, offset: int) -> list[tuple[int, int, int]]:
     return parts
 
 
-def _inline_destinations(region: str, offset: int) -> list[tuple[int, int]]:
-    return [(start, end) for start, end, _ in _inline_parts(region, offset)]
-
-
 def _masked_body(body: str) -> str:
     masked = _mask_blocks(body)
     chars = list(masked)
@@ -315,7 +311,7 @@ def _destination_spans(masked: str) -> list[tuple[int, int]]:
     spans, definitions = _definition_spans(masked)
     masked = _blank_spans(masked, definitions)
     for offset, region in _regions(masked):
-        spans.extend(_inline_destinations(region, offset))
+        spans.extend((start, end) for start, end, _ in _inline_parts(region, offset))
     return sorted(spans)
 
 
