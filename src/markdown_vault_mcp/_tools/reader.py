@@ -227,6 +227,78 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Inspect Note Citations",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def inspect_citations(
+        path: str,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Join a note's literal footnote labels to its source records.
+
+        Use this for attribution in one known note, not navigation or evidence
+        verification. Reports unmatched labels and duplicate-ID ambiguity without
+        opening source resources; syntax coverage is limited and reported.
+
+        Args:
+            path: Exact case-sensitive .md note path from search or list_documents.
+
+        Returns:
+            Literal sources, citation IDs with occurrence counts and zero-based
+            source indices, source-shape issues, duplicate IDs, and indices of source
+            entries without IDs. Matched means one exact ID, not that the source supports a
+            claim. Unmatched labels may be ordinary footnotes. The scope and syntax
+            fields describe coverage. returned_text_sha256 hashes the LF-normalized
+            returned text encoded as UTF-8; it is not a raw-file etag, a portable
+            identity or a value to use for if_match.
+        """
+        report = await asyncio.to_thread(vault.reader.inspect_citations, path)
+        return asdict(report)
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Find Citing Notes",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    @needs_queryable()
+    async def find_citing_notes(
+        resource: str,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Find indexed notes citing an exact source resource and unresolved labels.
+
+        Args:
+            resource: Exact source resource string from a note's sources.
+            wait_for_pending_writes: Wait for pending writes to reach the index.
+
+        Returns:
+            Citing notes with labels and counts, unresolved diagnostics, and
+            unconverted_notes: indexed notes not yet re-read for citations.
+        """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "find_citing_notes"
+        )
+        gen_before = vault.index.write_generation()
+        result = await asyncio.to_thread(vault.reader.find_citing_notes, resource)
+        return _staleness_result(
+            vault, result, drained_on_request=drained, gen_before=gen_before
+        )
+
+    @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
         annotations={
             "title": "List Documents",

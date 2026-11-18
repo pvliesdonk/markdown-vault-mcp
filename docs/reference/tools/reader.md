@@ -156,6 +156,63 @@ returns
 `content` is the raw file, frontmatter included. Pass `etag` as `if_match` to `write`, `edit`, `delete` or `rename` to change the note you read.
 <!-- DOMAIN-EXAMPLE-read-END -->
 
+## `inspect_citations`
+
+**Inspect Note Citations.** Read-only. Idempotent.
+
+Join a note's literal footnote labels to its source records.
+
+Use this for attribution in one known note, not navigation or evidence
+verification. Reports unmatched labels and duplicate-ID ambiguity without
+opening source resources; syntax coverage is limited and reported.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Exact case-sensitive .md note path from search or `list_documents`. |
+
+**Returns**
+
+Literal sources, citation IDs with occurrence counts and zero-based
+source indices, source-shape issues, duplicate IDs, and indices of source
+entries without IDs. Matched means one exact ID, not that the source supports a
+claim. Unmatched labels may be ordinary footnotes. The scope and syntax
+fields describe coverage. `returned_text_sha256` hashes the LF-normalized
+returned text encoded as UTF-8; it is not a raw-file etag, a portable
+identity or a value to use for `if_match`.
+
+<!-- DOMAIN-EXAMPLE-inspect_citations-START -->
+
+Inspect one known note: `inspect_citations(path="research/note.md")`.
+For `Claim[^handbook]` and `sources: [{id: handbook, resource: team handbook}]`,
+the result reports `matched` with `source_indices: [0]`. The match records an
+exact ID join. Source support remains unchecked. See [syntax coverage](../../use/okf.md#syntax-coverage).
+
+<!-- DOMAIN-EXAMPLE-inspect_citations-END -->
+
+## `find_citing_notes`
+
+**Find Citing Notes.** Read-only. Idempotent.
+
+Find indexed notes citing an exact source resource and unresolved labels.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `resource` | `string` | required | Exact source resource string from a note's sources. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Citing notes with labels and counts, unresolved diagnostics, and
+`unconverted_notes`: indexed notes not yet re-read for citations.
+
+<!-- DOMAIN-EXAMPLE-find_citing_notes-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-find_citing_notes-END -->
+
 ## `list_documents`
 
 **List Documents.** Read-only. Idempotent.

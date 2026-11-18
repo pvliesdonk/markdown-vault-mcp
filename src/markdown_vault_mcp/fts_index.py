@@ -52,6 +52,7 @@ from markdown_vault_mcp._fts_queries import QueryExecutor, register_functions
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
+    IndexUnavailableError,
     StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.types import (
@@ -155,6 +156,7 @@ CREATE TABLE IF NOT EXISTS documents (
     modified_at REAL NOT NULL,
     chunk_count INTEGER NOT NULL DEFAULT 1,
     content_chars INTEGER NOT NULL DEFAULT 0,
+    citations_derived INTEGER NOT NULL DEFAULT 0,
     skip_category TEXT,
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -194,6 +196,16 @@ CREATE TABLE IF NOT EXISTS document_tags (
 
 CREATE INDEX IF NOT EXISTS idx_tags_kv ON document_tags(tag_key, tag_value);
 CREATE INDEX IF NOT EXISTS idx_tags_docid ON document_tags(document_id);
+
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 CREATE TABLE IF NOT EXISTS links (
     id INTEGER PRIMARY KEY,
@@ -254,6 +266,18 @@ _DELETE_NOTES_FTS_BY_DOCUMENT_SQL = (
     "DELETE FROM notes_fts WHERE rowid IN "
     "(SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?)"
 )
+
+# Citation rows of one resource: its ``declared`` rows select the notes; each
+# note contributes the labels matched to that resource and its unresolved
+# labels, stored once with resource ``""``.
+_CITATION_ROWS_SQL = """
+SELECT d.path, d.title, c.label, c.status, c.occurrences
+FROM citations x
+JOIN documents d ON d.id = x.document_id AND d.citations_derived = ?
+JOIN citations c ON c.document_id = x.document_id AND c.status != 'declared'
+ AND c.resource IN (x.resource, '')
+WHERE x.status = 'declared' AND x.resource = ?
+ORDER BY d.path, c.label"""
 
 # Key written into ``meta`` after :meth:`IndexFacet.build_index` completes
 # a full scan successfully. Warm-restart short-circuits keyed solely on
@@ -508,7 +532,8 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#1446) fills citation edges from each note snapshot.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):
@@ -875,7 +900,7 @@ class FTSIndex:
                 if "duplicate column name" not in str(exc).lower():
                     raise
                 logger.debug("fts_index_column_already_added column=content_chars")
-        self._migrate_tombstone_columns(conn, cols)
+        self._migrate_document_columns(conn, cols)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
         )
@@ -908,10 +933,10 @@ class FTSIndex:
         )
         conn.commit()
 
-    def _migrate_tombstone_columns(
+    def _migrate_document_columns(
         self, conn: sqlite3.Connection, cols: set[str]
     ) -> None:
-        """Add the skip-tombstone columns to a pre-#1129 ``documents`` table.
+        """Add derived-citation and skip-tombstone columns to older documents.
 
         Additive migration following the ``chunk_count`` / ``content_chars``
         precedent: ``ALTER TABLE ADD COLUMN`` guarded by the PRAGMA column
@@ -924,6 +949,10 @@ class FTSIndex:
             cols: The ``PRAGMA table_info(documents)`` column-name set.
         """
         for name, ddl in (
+            (
+                "citations_derived",
+                "ALTER TABLE documents ADD COLUMN citations_derived INTEGER NOT NULL DEFAULT 0",
+            ),
             ("skip_category", "ALTER TABLE documents ADD COLUMN skip_category TEXT"),
             (
                 "skip_detail",
@@ -1188,8 +1217,8 @@ class FTSIndex:
             """
             INSERT INTO documents (path, title, folder, frontmatter_json,
                                    content_hash, modified_at, chunk_count,
-                                   content_chars)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                   content_chars, citations_derived)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 note.path,
@@ -1200,6 +1229,7 @@ class FTSIndex:
                 note.modified_at,
                 len(note.chunks),
                 note.content_chars,
+                INDEX_SEMANTICS_VERSION,
             ),
         )
         if cur.lastrowid is None:
@@ -1439,6 +1469,49 @@ class FTSIndex:
                 ),
             )
 
+    def _insert_citations(
+        self, cur: sqlite3.Cursor, document_id: int, note: ParsedNote
+    ) -> None:
+        cur.executemany(
+            "INSERT INTO citations (document_id, label, status, occurrences, resource) VALUES (?, ?, ?, ?, ?)",
+            [
+                (document_id, edge.label, edge.status, edge.occurrences, edge.resource)
+                for edge in note.citations
+            ],
+        )
+
+    def get_citation_rows(self, resource: str) -> tuple[list[sqlite3.Row], int]:
+        """Return resource-keyed citation rows and unconverted live-note count.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Citation rows in path and label order and the unconverted count.
+        """
+        conn = self._conn()
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
+        citation_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(citations)")
+        }
+        if (
+            self.get_chunking_meta().semantics_version != INDEX_SEMANTICS_VERSION
+            or "citations_derived" not in columns
+            or not citation_columns
+        ):
+            raise IndexUnavailableError(
+                "Citation index needs a compatible completed build; retry after a writer rebuilds it.",
+                reason="never_built",
+            )
+        rows = conn.execute(
+            _CITATION_ROWS_SQL, (INDEX_SEMANTICS_VERSION, resource)
+        ).fetchall()
+        count = conn.execute(
+            "SELECT count(*) FROM documents_live WHERE citations_derived != ?",
+            (INDEX_SEMANTICS_VERSION,),
+        ).fetchone()[0]
+        return rows, count
+
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
         """Delete a document row (cascade deletes sections, headings, tags,
         and the notes_fts rowid bridge entries) and its notes_fts rows.
@@ -1512,6 +1585,7 @@ class FTSIndex:
                 self._insert_tags(cur, doc_id, note)
                 self._insert_aliases(cur, doc_id, note)
                 self._insert_links(cur, doc_id, note)
+                self._insert_citations(cur, doc_id, note)
                 total_chunks += len(note.chunks)
                 logger.debug(
                     "build_from_notes_indexed_note chunk_count=%d path=%s",
@@ -1545,6 +1619,7 @@ class FTSIndex:
             self._insert_tags(cur, doc_id, note)
             self._insert_aliases(cur, doc_id, note)
             self._insert_links(cur, doc_id, note)
+            self._insert_citations(cur, doc_id, note)
         logger.debug(
             "upsert_note_indexed chunk_count=%d path=%s", len(note.chunks), note.path
         )
