@@ -52,7 +52,11 @@ class PathGuard:
         if (
             not allow_designated
             and self._designated
-            and any(map(self._designated, candidates))
+            and any(
+                self._designated(candidate)
+                for candidate in candidates
+                if not (self._source_dir / candidate).is_symlink()
+            )
         ):
             return "a designated generated index; use okf_generate_index"
         return None
