@@ -9,6 +9,9 @@ Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) — tag shapes and pagination for the scheduled image check.
+- [Watchdog event filtering](watchdog-event-filtering.md) — mutation-only
+  subscriptions, Linux native masks and the FSEvents 4.0.2 API floor. Read
+  before changing `_file_watcher.py` subscriptions.
 - [File creation permissions and default ACLs](file-creation-permissions.md) —
   kernel permission inheritance for atomic note and attachment writes.
 - [LEANN query-time embedding recomputation](leann.md) — the external

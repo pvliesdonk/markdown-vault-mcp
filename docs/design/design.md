@@ -1175,6 +1175,18 @@ reusing its own rows, read them through the optional `ReadsRowsInBatches`
 protocol from such a store: 256 documents per read, the vectors sent in
 binary as float32 rather than as text (#1970).
 
+A full embedding rebuild classifies whole-document windows and stages their
+text, metadata and reused vectors beside the configured state file before any
+provider call, or under the temporary directory when there is no state file. It then embeds the ordered misses across windows and replays
+the staged generation to the publisher. The optional `IteratesChunks`
+reader pages whole documents in path order, with each page read atomically. Changes between pages can be observed or missed and convergence reconciles later edits. Read locks are held only during page fetches, not donor or provider work. A keyword index without the iterator retains the eager
+`list_chunks` grouping. Scratch stores embedding text and metadata content as well as base64-encoded
+vectors. Operating-system temporary files are removed when handles close, including at process termination; a create-then-unlink fallback has a brief interval in which termination can leave a name. An unavailable or full scratch directory fails preparation before
+publication. Compatible and owned stores retain previous vectors; an incompatible injected store is emptied before this preparation. Cleanup failures are logged without changing the build outcome.
+Custom non-scalar metadata remains resident to preserve its original objects.
+The built-in publishers still materialize their own generation copies. The
+largest document and path bookkeeping also grow independently of the window.
+
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
@@ -1496,6 +1508,18 @@ a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python
 3.13, and a pathological path raises `OSError` — the root is kept unresolved
 with a WARNING rather than dropped, degrading to the pre-resolution behavior
 (correct on inotify / ReadDirectoryChangesW) instead of crashing `start()`.
+
+Every watch, including the non-recursive floor, passes the eight concrete
+file/directory create, modify, move and delete classes to watchdog's event
+filter (#2045). On Linux this suppresses OPEN and CLOSE_NOWRITE native
+subscriptions before queueing, so read-only indexing does not generate that
+traffic; `DirModifiedEvent` retains CLOSE_WRITE and its parent notification.
+The existing handler mutation guard, hidden-path checks and debounce remain
+in place. Watchdog >=4.0.2 is required because earlier FSEvents overrides lack
+the filter keyword. The [watchdog reference](reference/watchdog-event-filtering.md)
+records the versioned evidence and backend limits. Filtering does not prevent
+overflow from genuine mutation bursts or prune excluded descendants inside
+a recursive watch.
 
 Delivered moves trigger reindexing when either endpoint is a nonempty,
 non-hidden descendant of the delivering watch root, using watchdog's

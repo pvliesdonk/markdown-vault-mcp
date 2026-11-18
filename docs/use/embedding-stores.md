@@ -5,7 +5,7 @@ kind: how-to
 
 # Choosing an embedding store
 
-With an [embedding provider](embeddings.md) configured, the server keeps one vector per section of every note so it can search by meaning. `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them, and `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH` how a search reads them. This page is for the operator deciding between them: which store suits a vault, and what each one was measured to cost at two vault sizes.
+With an [embedding provider](embeddings.md) configured, the server keeps one vector per section of every note so it can search by meaning. `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them, and `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH` how a search reads them. Use the measurements at two vault sizes to choose a store.
 
 ## Which store suits your vault
 
@@ -61,10 +61,16 @@ The figures below come from running the whole server on one host at two vault si
 How to read it:
 
 - **Memory.** A streamed store's search memory barely moves with the vault. `numpy` keeps every vector in memory, beside each section's text and metadata, so its memory grows with sections × dimensions. At the larger size that came to about 1.25 GB above the server's own memory, 0.93 GB of it vectors. The PostgreSQL service itself used about 530 MB at rest at the smaller size and 580 MB at the larger, on top of the server.
-- **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` streams too, but scores in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
+- **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` also streams; scoring happens in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
 - **Edits.** `sqlite`'s figure counts the edited note's pages and the keyword index together; `postgres` writes its WAL in the database and the keyword index locally; `numpy` rewrites the whole store on every save.
 - **Restarts.** No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; `postgres` reads what it holds for 500 notes at a time, so it comes back in a time comparable to a local store's. Its figures come from restarts measured on their own, not in a whole run, so they are not directly comparable with the other columns. A database across a network adds a round trip to each of those reads.
-- **The first build.** The measured October envelope peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). The keyword scan releases completed note bodies and frontmatter as it indexes them; path and title bookkeeping still grows with the vault. Preparing and publishing embeddings has separate memory costs, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](embeddings.md#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
+- **The first build.** The measured October envelope peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). The keyword scan releases completed note bodies and frontmatter as it indexes them; path and title bookkeeping still grows with the vault.
+
+  Completed embedding windows go to scratch disk beside the configured state file, including `/data/state` with the shipped Docker Compose configuration. Without a state file they use `TMPDIR`; a memory-backed directory counts against memory. Allow headroom for repeated section text, metadata, JSON escaping and base64-encoded vectors; actual space depends on the content. A scratch location that is full or cannot be written to fails preparation. Compatible and owned stores retain their previous vectors. An incompatible injected store is emptied before the build, so a later failure cannot preserve those vectors. Cleanup failures are logged.
+
+  Scratch uses operating-system temporary files that are removed when their handles close, including on process termination. On platforms that create a name before removing its name, a forced termination during that brief creation interval can leave a file behind.
+
+  Built-in publishers still materialize generation copies, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](embeddings.md#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.
 
