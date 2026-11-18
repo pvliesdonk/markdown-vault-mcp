@@ -43,6 +43,7 @@ from markdown_vault_mcp._commit_groups import (
 )
 from markdown_vault_mcp._commit_scope import (
     bound_commit_group,
+    bound_folder_move,
     current_commit_group,
     current_commit_scope,
     is_auxiliary_commit_write,
@@ -390,6 +391,15 @@ class WriteCallbackDispatcher:
             else:
                 batch = cast("BatchAwareWriteCallback", on_write)
                 batch.on_write_batch(items, scope.tool_name)
+            with bound_folder_move(scope.folder_move):
+                if self._accepts_primary_paths:
+                    primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
+                    primary_batch.on_write_batch(
+                        items, scope.tool_name, primary_paths=frozenset(primary_paths)
+                    )
+                else:
+                    batch = cast("BatchAwareWriteCallback", on_write)
+                    batch.on_write_batch(items, scope.tool_name)
         except Exception:
             logger.error(
                 "write_callback_batch_failed tool=%s count=%s",

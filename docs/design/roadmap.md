@@ -343,12 +343,12 @@ assessed. This check need not delay vault correctness or bundle foundations.
 `stated` — "i want a new roadmap package 030 that collects all currently open
 issues around the MCP app" (7 October 2026).
 
-`derived` — `030 mcp-app` therefore carries the refinement ([#1469][1469]) and
+`derived` — `033 mcp-app` (then `030`) therefore carries the refinement ([#1469][1469]) and
 every open issue on the app and its tools: the mobile display defect
 ([#859][859]), the runtime font dependency ([#1198][1198]), the app tools'
 error outcomes ([#1640][1640]), and the SonarCloud reliability findings in the
 SPA ([#1750][1750], [#1753][1753], [#1754][1754]). The epic itself carries no
-milestone: only its acceptance check is open, and that check is what `030`
+milestone: only its acceptance check is open, and that check is what `033`
 commits. Doing the refinement in the same cut as the fixes lets it decide
 whether [#859][859] belongs to the epic's outcome with the fix in view, rather
 than before it.
@@ -506,6 +506,10 @@ it also takes the small owner-filed fixes that need none. `023` holds bugs the
 contributors reported, which join after their issues are accepted. The order
 follows from that: the least open decision ships first.
 
+`stated` — Since `022` shipped, `023` also takes the small owner-filed fixes,
+decay, tests and docs contributed after packaging, as `022` did (17 November
+2026).
+
 `stated` — **[024 okf-evidence](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/25)**
 follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
 [#1413][1413], [#1444][1444] and [#1446][1446] (16 November 2026).
@@ -514,25 +518,79 @@ follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
 the [#1444][1444] fix: malformed review records no longer promote
 `derive_trust_tier`.
 
+`stated` — `024` also takes two breaking fixes outside OKF, because it is
+already a major (17 November 2026). [#1631][1631] accepts only a closed set of
+history date forms, and [#2205][2205] refuses degenerate or colliding search
+weight maps.
+
+`derived` — The content name `okf-evidence` no longer covers everything in the
+package. It is a label, not a scope.
+
+`stated` — **[025 contributed-features](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/26)**
+follows `024` with eight owner-filed features that have contributed PRs:
+[#1293][1293], [#1241][1241], [#1923][1923], [#875][875], [#1605][1605],
+[#1496][1496], [#2031][2031] and [#1405][1405] (17 November 2026).
+
+`derived` — **Minor intent.** Each feature still has an open design question
+for the owner, recorded in the package description. A feature's PR merges only
+after that ruling, and one left unsettled at the cut moves out rather than
+holding the release.
+
 `stated` — `020 first-class-library` is renumbered `027` and `025
 submodules-read` is renumbered `028`, so that `024` fits after `023` and the
 order is otherwise unchanged (16 November 2026). Each milestone keeps its
 identity and membership.
 
-`derived` — **[028 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
-(minor)** follows `027` (the `020` of the sections above) with the read-only submodule epic [#1561][1561], less the
+`stated` — The candidate cuts of [epic #1425][1425] and [epic #1313][1313]
+(§ Follow-up slices) are packages, OKF inventory first (18 November 2026). To
+put both tracks' first cuts directly after `025`, `027 first-class-library`
+became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
+`033`. Each milestone keeps its identity and membership:
+
+- **[026 okf-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
+  (minor): [#1610][1610], [#1442][1442], [#1606][1606], [#1438][1438],
+  [#1421][1421].
+- **[027 git-contracts](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/28)**
+  (patch; refactor and tests may need `override_version`): [#1308][1308],
+  [#1310][1310], [#1569][1569], [#2224][2224].
+- **[028 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**:
+  the `027` of the sections above.
+- **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)**:
+  the `028` of the sections above.
+- **[031 okf-storage-policy](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/29)**
+  (kind open until [#1412][1412] classifies its transition): [#1412][1412],
+  [#1432][1432], [#1411][1411].
+- **[032 git-optional-backend](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/30)**
+  (minor): [#1309][1309].
+- **[033 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**:
+  the `030` of the sections above.
+- **[034 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)**,
+  **[035 okf-authoring](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)** and
+  **[036 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
+  (minor, provisional): [#1419][1419] and [#1395][1395]; [#1422][1422];
+  [#1677][1677].
+- **[037 okf-publication](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/34)**
+  (major, provisional): [#1448][1448].
+
+`derived` — Each package follows the candidate cut of the same name in
+§ Follow-up slices, which carries its ordering argument. An open decision
+inside a package is work for that cut, not a reason to keep its issue out.
+
+`derived` — **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
+(minor)** follows `028` with the read-only submodule epic [#1561][1561], less the
 refusal that moved to `015`.
 
-`stated` — **[030 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**
+`stated` — **[033 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**
 collects the open MCP app issues as one cut (7 October 2026).
 
 `derived` — **Minor intent**, because [#1198][1198] is a feature; the rest are
-defects and decay. The owner set the ordinal, which places it after `028` and
-before `060`. § Usable vault views has the argument.
+defects and decay. The owner set the ordinal, which places it after `029` and
+before `060` (renumbered from `030` on 18 November 2026). § Usable vault views
+has the argument.
 
 `derived` — **[060 submodules-write](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/16)
 (minor, provisional)** ships the writable-submodule epic [#1562][1562] atomically,
-refined after `028` lands. § Vaults with git submodules has the argument.
+refined after `029` lands. § Vaults with git submodules has the argument.
 
 ### Follow-up slices after `020`
 
@@ -595,7 +653,7 @@ verified implementation findings.
 | Which backend compatibility cases remain unpinned? | [#1307][1307] and [refinement #1468][1468] | Learn from the shared scenarios before delivering the optional backend. |
 | What makes both file-authoritative/database-history and database-authoritative vault modes viable, and which database fits each? | [Research #1476][1476], then [refinement #1475][1475] | Resolve scope before committing database delivery; feed relevant consequences into the library and shared-interface work without an automatic blocker on `020` or libgit2. |
 | Which replication failures justify refusing writes? | [#1293][1293], then the decision in [#1299][1299] | Observe before committing refusal semantics. |
-| Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Answer inside `030`, before closing the epic. |
+| Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Answer inside `033`, before closing the epic. |
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
 | Does the built-in backend stay within a documented memory and latency envelope on every supported install route, including SQLite builds without the WAL-reset fix? | Answered by [#1899][1899]'s measurements ([operating-envelope.md](operating-envelope.md)) and the runtime policy in [#1896][1896]; no number proposed on [#1506][1506] is adopted as a budget | The owner chose streamed SQLite as the default ([#1900][1900]). The release kind of `015` follows from its commits. |
@@ -891,6 +949,82 @@ slices can land. With those moves `022` holds only closed issues and is ready
 to cut. [#2139][2139] and the flaky-test report [#2138][2138] have no package
 yet.
 
+### 17 November 2026 — package the pull requests contributed after `022`
+
+`stated` — The owner asked for packages from the triage of about fifty pull
+requests contributed on 16 and 17 November. The owner committed the small
+owner-filed work to `023`, the two breaking fixes to `024`, and the
+owner-filed features to a new minor `025`. The owner parked the epic-scale
+work.
+
+`derived` — `023` received the issues whose PR resolves them in full, is
+patch-safe and needs no other PR first: [#1729][1729], [#1955][1955],
+[#1538][1538], [#1349][1349], [#1976][1976], [#1434][1434], [#2138][2138],
+[#778][778], [#1853][1853], [#1751][1751], [#650][650], [#2139][2139],
+[#2054][2054], [#1268][1268], [#1752][1752] and [#1131][1131]. Three stayed
+out:
+
+- [#1383][1383]: its PR rebuilds every index and leaves a link-precedence
+  question open.
+- [#2128][2128]: its PR is stacked on the `027` refactor for [#2018][2018].
+- [#1310][1310]: it needs a third PR that links no issue.
+
+Six issues whose PRs resolve only part of them stay unpackaged while those
+PRs merge: [#1432][1432], [#1361][1361], [#1312][1312], [#1296][1296],
+[#871][871] and [#752][752].
+
+`stated` — For [#1631][1631] the owner chose the closed set of date forms, with
+the breaking marker. For [#871][871] the owner chose to split the weight-map
+items into [#2205][2205], which refuses rather than warns. [#871][871] stays
+open for its remaining items.
+
+`stated` — Under [epic #1313][1313], the foundation PRs for [#1307][1307] and
+[#1308][1308] merge now. Neither issue closes, because each PR covers part of
+it. The two libgit2 PRs for [#1309][1309] are parked until refinement
+[#1468][1468] and a ruling on the backend's refusal set. Under [epic
+#1425][1425], the new PRs are parked until the decisions they depend on:
+[#1610][1610], [#1438][1438], [#1412][1412], [#1421][1421]'s prerequisite and
+[#1677][1677]'s keying.
+
+`evidenced` — The parked PR bodies cite slice plans and approvals that this
+repository does not record (comments on [#1313][1313] and [#1425][1425], 17
+November 2026). The roadmap treats those plans as input to refinements
+[#1467][1467] and [#1468][1468], not as accepted designs.
+
+`derived` — The second and third slices of [#1938][1938] arrived as PRs and
+stay with [#1938][1938] in `023`. [#2124][2124] is a contributor-proposed
+feature, so it has no package until it is accepted.
+
+### 18 November 2026 — package the epic cuts by issue intent
+
+`stated` — The owner corrected the 17 November packaging. A package holds the
+issues a cut is meant to ship, solved together. An issue whose PR still waits
+on a decision, is stacked or is oversized belongs in the package it is meant for:
+the decision is work inside that package. This supersedes the 17 November
+statement that the epic work was parked with no package.
+
+`stated` — Every candidate cut of [#1425][1425] and [#1313][1313] became a
+package, with OKF inventory first and both tracks' first cuts directly after
+`025`. The existing `027`, `028` and `030` moved up to make room (§ Packages).
+[#2128][2128] joins `023`.
+
+`derived` — [#2018][2018] moves with it from `028` to `023`, because #2128's PR
+is stacked on the #2018 refactor, which therefore ships in the same cut.
+
+`stated` — The owner then held #2128's fix out of the patch, because it makes
+every writing tool call wait up to 30 s for its own local commit. #2128 moves to
+`027 git-contracts`. [#2018][2018] stays in `023`, where its PR already merged.
+
+`stated` — The owner then reopened [#2018][2018] and returned it to `028`: its
+PR delivered only the commit-scope part of the outcome. The remaining coupling,
+through pvl-core's errors and environment helpers, is [#2016][2016] and
+fastmcp-pvl-core#543.
+
+`derived` — [#2224][2224], the subdirectory `force_pull` bug from #2211, is split
+out of [#1395][1395] into `027 git-contracts`. [#1498][1498] stays under
+[#1499][1499] with no package, as § Sustainable embedding storage and search
+already argues, until its decision on reserved files and semantic search.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1001,3 +1135,42 @@ yet.
 [2121]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2121
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
+[650]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/650
+[752]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/752
+[778]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/778
+[871]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/871
+[875]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/875
+[1131]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1131
+[1241]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1241
+[1268]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1268
+[1296]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1296
+[1312]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1312
+[1349]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1349
+[1361]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1361
+[1405]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1405
+[1421]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1421
+[1432]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1432
+[1434]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1434
+[1438]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1438
+[1538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1538
+[1605]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1605
+[1631]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1631
+[1677]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1677
+[1729]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1729
+[1751]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1751
+[1752]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1752
+[1853]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1853
+[1923]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1923
+[1955]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1955
+[1976]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1976
+[2031]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031
+[2054]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2054
+[2124]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2124
+[2205]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2205
+[1395]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1395
+[1411]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1411
+[1419]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1419
+[1422]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1422
+[1448]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1448
+[1569]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1569
+[2224]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2224

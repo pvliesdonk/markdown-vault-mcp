@@ -1337,7 +1337,7 @@ class TestScopeSurvivesARealToolCall:
 
         subjects = _subjects(repo)
         assert len(subjects) == before + 1, subjects
-        assert subjects[0] == "move_folder: 3 files"
+        assert subjects[0] == "move_folder: src -> dst"
         assert _files_in_head(repo) == {f"dst/{n}.md" for n in ("a", "b", "c")}
 
     async def test_write_finishes_commit_before_sequential_folder_move(
@@ -1403,6 +1403,48 @@ class TestScopeSurvivesARealToolCall:
             )
             move_status = _show_head(repo)
             assert "R100\tproj/a/second.md\tproj/b/second.md" in move_status
+
+    async def test_move_into_explicit_git_worktree(
+        self, _git_vault_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A move into an inherited Git worktree still records its destination."""
+        import subprocess
+
+        from fastmcp import Client
+
+        from tests.server_factory import make_server
+
+        vault = _git_vault_env.resolve()
+        (vault / "a").mkdir()
+        (vault / "a" / "x.md").write_text("# X\n", encoding="utf-8")
+        worktree = vault / "working"
+        worktree.mkdir()
+        monkeypatch.setenv("GIT_DIR", str(vault / ".git"))
+        monkeypatch.setenv("GIT_WORK_TREE", str(worktree))
+
+        def git(*args: str) -> str:
+            return subprocess.run(
+                ["git", *args], capture_output=True, text=True, check=True
+            ).stdout.strip()
+
+        before = git("rev-parse", "HEAD")
+        server = make_server()
+        async with Client(server) as client:
+            await client.call_tool(
+                "move_folder", {"old_dir": "a", "new_dir": "working/b"}
+            )
+            await self._drain()
+
+        assert (worktree / "b" / "x.md").is_file()
+        assert git("rev-parse", "HEAD") != before
+        assert git("log", "-1", "--format=%s") == f"move_folder: {vault / 'a'} -> b"
+        assert (
+            "b/x.md"
+            in git(
+                "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"
+            ).splitlines()
+        )
+        assert not git("diff", "--cached", "--name-only")
 
     async def test_a_single_file_tool_call_still_names_its_path(
         self, _git_vault_env: Path
