@@ -1327,3 +1327,43 @@ def test_manager_provenance_preserves_stored_representation(
         assert fts.get_chunking_meta() == expected
     finally:
         fts.close()
+
+
+def test_citations_rebuilt_for_version_12_then_warm(tmp_path: Path) -> None:
+    """Citation rows are populated once when an old index is reopened."""
+    note = tmp_path / "citation.md"
+    note.write_text(
+        "---\nsources:\n  - id: a\n    resource: urn:source\n---\nClaim[^a]\n",
+        encoding="utf-8",
+    )
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+    conn = sqlite3.connect(db)
+    try:
+        with conn:
+            conn.execute("DELETE FROM citations")
+    finally:
+        conn.close()
+    _set_semantics_version(db, "12")
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        assert not coord._chunking_meta_matches()
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+    conn = sqlite3.connect(db)
+    try:
+        assert conn.execute("SELECT label, resource FROM citations").fetchall() == [
+            ("a", "urn:source")
+        ]
+    finally:
+        conn.close()
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        assert coord._chunking_meta_matches()
+    finally:
+        coord.close(timeout=5)

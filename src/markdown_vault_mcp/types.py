@@ -103,6 +103,7 @@ class ParsedNote:
         content_hash: SHA-256 hash of the raw file content for change detection.
         modified_at: Last-modified time as a Unix timestamp float.
         links: All links extracted from the document body.
+        citations: Literal citation edges extracted from this note snapshot.
         content_chars: Character count of the document body as parsed:
             frontmatter removed and surrounding whitespace normalised by the
             frontmatter parser, except that the first line keeps its

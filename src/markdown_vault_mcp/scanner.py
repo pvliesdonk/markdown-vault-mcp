@@ -2148,7 +2148,8 @@ def parse_note(
     """Parse a single markdown file into a ParsedNote.
 
     Reads raw bytes for hash computation, decodes as UTF-8, parses frontmatter
-    with ``python-frontmatter``, resolves title, and chunks content.
+    with ``python-frontmatter``, resolves title, chunks content, and derives
+    literal citation edges from the same snapshot.
 
     Args:
         path: Absolute path to the markdown file.
@@ -2216,7 +2217,7 @@ def parse_note(
         links=links,
         content_chars=content_chars,
         headings=headings,
-        citations=citation_edges(text),
+        citations=citation_edges(text, metadata),
     )
     logger.debug(
         "parse_note path=%s title=%r chunks=%d links=%d",

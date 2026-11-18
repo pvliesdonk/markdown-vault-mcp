@@ -83,6 +83,7 @@ class ReaderFacet:
             doc_mgr: Document and attachment reads, table-of-contents.
             git_query_mgr: Git history / diff / revision reads.
             require_built: Index-readiness gate for the bucket-3 methods.
+            citation_mgr: Reverse citation lookup manager, when wired.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
             okf_write_state: Configured and effective write-layer projection.
