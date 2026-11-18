@@ -17,6 +17,7 @@ documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import logging
 import os
@@ -100,6 +101,7 @@ class _ConflictRecovery:
     git_root: Path
     env: dict[str, str] | None
     saved: list[tuple[str, str]]
+    conflicted: set[str]
     ref: str
     from_sha: str
     rebase_in_progress: bool
@@ -1161,10 +1163,16 @@ class GitWriteStrategy:
             self._pending_generated.clear()
             return paths
 
-    def retry_generated_indexes(self, paths: list[Path]) -> None:
-        """Return failed regeneration paths to the pending set."""
-        with self._lock:
-            self._pending_generated.update(paths)
+    def _split_conflicts(
+        self, git_root: Path, conflicted: set[str], saved: list[tuple[str, str]]
+    ) -> tuple[set[str], list[tuple[str, str]]]:
+        generated = {
+            path
+            for path in conflicted
+            if self._generated_index_policy is not None
+            and self._generated_index_policy(git_root / path)
+        }
+        return generated, [item for item in saved if item[0] not in generated]
 
     def _finish_conflicts(
         self, recovery: _ConflictRecovery
@@ -1178,20 +1186,15 @@ class GitWriteStrategy:
             return PullResult.head_unchanged_failure(
                 from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
             ), []
-        generated: list[tuple[str, str]] = []
-        authored: list[tuple[str, str]] = []
-        for item in saved:
-            is_generated = (
-                self._generated_index_policy is not None
-                and self._generated_index_policy(git_root / item[0])
-            )
-            (generated if is_generated else authored).append(item)
+        generated, authored = self._split_conflicts(
+            git_root, recovery.conflicted, saved
+        )
         if rebase_in_progress:
             authored = conflict.restore_upstream_paths(
                 git_root, env, authored, ref, token=self._token
             )
         else:
-            self._pending_generated.update(git_root / p for p, _ in generated)
+            self._pending_generated.update(git_root / p for p in generated)
         if not authored:
             if (
                 generated
@@ -1285,9 +1288,18 @@ class GitWriteStrategy:
             # ``conflict.resolve_conflicts_safely`` wraps that in a defensive
             # abort so a subsequent ``force_pull`` (or any per-write commit
             # path) does not trip over the leftover ``rebase-merge`` directory.
-            saved, early_exit = conflict.resolve_conflicts_safely(
-                git_root, env, from_sha, token=self._token
-            )
+            conflicted: set[str] = set()
+            if self._generated_index_policy is None:
+                saved, early_exit = conflict.resolve_conflicts_safely(
+                    git_root, env, from_sha, token=self._token
+                )
+            else:
+                resolve_fn = functools.partial(
+                    conflict.resolve_rebase_conflicts, conflicted=conflicted
+                )
+                saved, early_exit = conflict.resolve_conflicts_safely(
+                    git_root, env, from_sha, token=self._token, resolve_fn=resolve_fn
+                )
             if early_exit is not None:
                 return early_exit
             # ``resolve_conflicts_safely`` returns ``(saved, None)`` on
@@ -1306,7 +1318,14 @@ class GitWriteStrategy:
 
             result, saved = self._finish_conflicts(
                 _ConflictRecovery(
-                    git_root, env, saved, ref, from_sha, rebase_in_progress, detail
+                    git_root,
+                    env,
+                    saved,
+                    conflicted,
+                    ref,
+                    from_sha,
+                    rebase_in_progress,
+                    detail,
                 )
             )
             if result is not None:

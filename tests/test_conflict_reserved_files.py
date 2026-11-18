@@ -78,10 +78,6 @@ def test_reserved_conflict_preserves_both_versions(
         strategy.close()
 
 
-def _fail_generation(*_args: object, **_kwargs: object) -> None:
-    raise RuntimeError("synthetic generation failure")
-
-
 @pytest.mark.parametrize(
     ("subdir", "tick"),
     [
@@ -95,7 +91,6 @@ def test_generated_index_is_recovered_after_pull(
     git_repo_pair: GitRepoPair,
     subdir: bool,
     tick: bool,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from tests.conftest import wait_for_writer_drain
 
@@ -111,13 +106,6 @@ def test_generated_index_is_recovered_after_pull(
             assert not result.conflict_files
             assert result.to_sha != result.from_sha
         assert "local.md" not in index.read_text()
-        with monkeypatch.context() as patch:
-            patch.setattr(vault._okf_migrate, "generate_index", _fail_generation)
-            assert vault.reconcile_index_with_head(source="git_sync") in (
-                "current",
-                "reindexed",
-            )
-            assert "local.md" not in index.read_text()
         if tick:
             vault._reconcile_on_tick()
         else:
@@ -210,8 +198,10 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
             local_index = index.read_text()
 
             def saved_at_rebase_head(
-                _root: Path, _env: object
+                _root: Path, _env: object, *, conflicted: set[str] | None = None
             ) -> list[tuple[str, str]]:
+                if conflicted is not None:
+                    conflicted.update(("index.md", "concept.md"))
                 return [
                     (name, _run_git(root, "show", f"REBASE_HEAD:{name}") + "\n")
                     for name in ("index.md", "concept.md")

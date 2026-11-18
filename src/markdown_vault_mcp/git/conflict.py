@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 def resolve_rebase_conflicts(
     git_root: Path,
     env: dict[str, str] | None,
+    *,
+    conflicted: set[str] | None = None,
 ) -> list[tuple[str, str]]:
     """Resolve rebase conflicts by accepting theirs and saving ours.
 
@@ -49,6 +51,11 @@ def resolve_rebase_conflicts(
     ``REBASE_HEAD``, then accepts the upstream version via
     ``git checkout --ours``.  Continues the rebase, looping if
     multiple commits conflict.
+
+    Args:
+        git_root: Working-tree root.
+        env: Optional Git environment.
+        conflicted: Optional collector for all unmerged paths.
 
     Returns:
         A list of ``(relative_path, saved_content)`` tuples for the
@@ -90,6 +97,8 @@ def resolve_rebase_conflicts(
             )
             return list(saved.items())
 
+        if conflicted is not None:
+            conflicted.update(conflicting)
         for rel_path in conflicting:
             # Save the MCP version (the commit being rebased).
             show_result = run_git_capturing(

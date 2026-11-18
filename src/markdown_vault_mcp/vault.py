@@ -1069,13 +1069,9 @@ class Vault:
         if not pending:
             return
         try:
-            failed = self._okf_convention.refresh_generated(pending)
+            self._okf_convention.refresh_generated(pending)
         except Exception:
-            logger.warning(
-                "git_pending_index_regeneration_failed action=retry", exc_info=True
-            )
-            failed = pending
-        self._git_strategy.retry_generated_indexes(failed)
+            logger.warning("git_pending_index_regeneration_failed", exc_info=True)
         self._write_callback.drain()
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:

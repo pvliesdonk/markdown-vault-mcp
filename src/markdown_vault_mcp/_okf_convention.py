@@ -224,24 +224,19 @@ class ConventionMaintainer:
         except (ValueError, InvalidRequestError):
             return False
 
-    def refresh_generated(self, paths: list[Path]) -> list[Path]:
-        """Regenerate pending index paths.
+    def refresh_generated(self, paths: list[Path]) -> None:
+        """Regenerate still-designated, existing pending index paths.
 
         Args:
             paths: Absolute paths awaiting regeneration.
-
-        Returns:
-            Paths whose regeneration failed.
         """
-        failed: list[Path] = []
         with okf_write_suppressed(), auxiliary_commit_writes():
             for path in paths:
                 if not self.generated_index(path):
                     continue
                 folder = self._canonical(str(path.parent))
-                if self._has_index(folder) and not self._refresh_index(folder):
-                    failed.append(path)
-        return failed
+                if self._has_index(folder):
+                    self._refresh_index(folder)
 
     def _may_log(self, folder: str) -> bool:
         """Whether a write into *folder* may append to its ``log.md``."""
@@ -452,16 +447,14 @@ class ConventionMaintainer:
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
-    def _refresh_index(self, folder: str) -> bool:
+    def _refresh_index(self, folder: str) -> None:
         """Regenerate the folder's ``index.md`` from the (drained) listing."""
         index_path = f"{folder}/index.md" if folder else "index.md"
         try:
             if self._sync_index is not None:
                 self._sync_index()
             self._okf_migrate.generate_index(folder=folder, designated=self._may_index)
-            return True
         except Exception:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True
             )
-            return False

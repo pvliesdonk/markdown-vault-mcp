@@ -60,19 +60,16 @@ def test_non_utf8_conflict_retains_local_bytes(
         strategy.close()
 
 
-def test_deleted_pending_index_is_not_recreated_or_retried(
-    git_repo_pair: GitRepoPair,
-) -> None:
+def test_deleted_index_is_not_recreated(git_repo_pair: GitRepoPair) -> None:
     root = git_repo_pair.local_path
     index = root / "index.md"
-    index.write_text("---\nokf_version: 1\n---\n")
+    index.write_text('---\nokf_version: "0.2"\n---\n')
     strategy, vault = recovery_vault(root, build=True)
     try:
-        strategy.retry_generated_indexes([index])
+        assert vault._okf_convention is not None
         index.unlink()
-        vault.reconcile_index_with_head(source="git_sync")
+        vault._okf_convention.refresh_generated([index])
         assert not index.exists()
-        assert strategy.take_generated_indexes() == []
     finally:
         vault.close()
         strategy.close()
@@ -87,27 +84,10 @@ def test_no_longer_designated_index_is_not_refreshed(
     strategy, vault = recovery_vault(root, authority="outside", build=True)
     try:
         assert vault._okf_convention is not None
-        assert vault._okf_convention.refresh_generated([index]) == []
+        assert vault._okf_convention.refresh_generated([index]) is None
         assert index.read_text() == "authored\n"
     finally:
         vault.close()
-        strategy.close()
-
-
-def test_new_conflict_for_same_path_survives_old_recovery(git_repo: Path) -> None:
-    strategy = GitWriteStrategy(
-        enable_pull=True, enable_push=False, repo_path=git_repo, git_lfs=False
-    )
-    index = git_repo / "index.md"
-    try:
-        strategy.retry_generated_indexes([index])
-        old_work = strategy.take_generated_indexes()
-        assert old_work == [index]
-        strategy.retry_generated_indexes([index])
-        # Successful old work has no failed paths to retry.
-        strategy.retry_generated_indexes([])
-        assert strategy.take_generated_indexes() == [index]
-    finally:
         strategy.close()
 
 
@@ -149,35 +129,36 @@ def test_local_delete_upstream_modify_concept_keeps_failure_outcome(
         strategy.close()
 
 
-def test_unexpected_refresh_failure_retries_then_empty_reconcile_noops(
-    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+def test_unexpected_refresh_failure_is_logged_and_manual_generation_heals(
+    git_repo_pair: GitRepoPair,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    from tests.conftest import wait_for_writer_drain
     from tests.fixtures.conflict_recovery import _setup_generated_conflict
 
     _root, vault_root, index = _setup_generated_conflict(git_repo_pair, False)
     strategy, vault = recovery_vault(vault_root, build=True)
     assert vault._okf_convention is not None
 
-    calls: list[list[Path]] = []
-
-    def fail(paths: list[Path]) -> list[Path]:
-        calls.append(paths)
+    def fail(_paths: list[Path]) -> None:
         raise RuntimeError("unexpected refresh error")
 
     try:
         assert strategy.force_pull().reason == "rebased"
         with monkeypatch.context() as patch:
             patch.setattr(vault._okf_convention, "refresh_generated", fail)
-            vault.reconcile_index_with_head(source="git_sync")
+            assert vault.reconcile_index_with_head(source="git_sync") in (
+                "current",
+                "reindexed",
+            )
+        assert "git_pending_index_regeneration_failed" in caplog.text
         assert "local.md" not in index.read_text()
         vault.reconcile_index_with_head(source="git_sync")
+        assert "local.md" not in index.read_text()
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
         assert "local.md" in index.read_text()
-        assert vault._write_callback.drain(timeout=5)
-        with monkeypatch.context() as patch:
-            patch.setattr(vault._okf_convention, "refresh_generated", fail)
-            vault.reconcile_index_with_head(source="git_sync")
-        assert len(calls) == 1
-        assert strategy.take_generated_indexes() == []
     finally:
         vault.close()
         strategy.close()
@@ -192,8 +173,122 @@ def test_generated_index_refuses_path_outside_vault(git_repo_pair: GitRepoPair) 
     try:
         assert vault._okf_convention is not None
         assert not vault._okf_convention.generated_index(outside)
-        assert vault._okf_convention.refresh_generated([outside]) == []
+        assert vault._okf_convention.refresh_generated([outside]) is None
         assert outside.read_text() == "authored\n"
+    finally:
+        vault.close()
+        strategy.close()
+
+
+@pytest.mark.parametrize(
+    ("subdir", "tick", "mixed"),
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+    ],
+)
+def test_local_delete_upstream_modify_generated_index_is_regenerated(
+    git_repo_pair: GitRepoPair, subdir: bool, tick: bool, mixed: bool
+) -> None:
+    import subprocess
+
+    from tests.conftest import wait_for_writer_drain
+    from tests.fixtures.git import _run_git
+
+    root = git_repo_pair.local_path
+    vault_root = root / "vault" if subdir else root
+    vault_root.mkdir(exist_ok=True)
+    prefix = "vault/" if subdir else ""
+    index = vault_root / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Base\n')
+    if mixed:
+        (vault_root / "concept.md").write_text("base concept\n")
+    _run_git(
+        root, "add", f"{prefix}index.md", *([f"{prefix}concept.md"] if mixed else [])
+    )
+    _run_git(root, "commit", "-m", "seed")
+    _run_git(root, "push", "origin", "main")
+    other = root.parent / "other"
+    subprocess.run(
+        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _run_git(other, "config", "user.name", "Other")
+    _run_git(other, "config", "user.email", "other@example.com")
+    (other / prefix / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Remote\n')
+    (other / prefix / "remote.md").write_text("# Remote\n")
+    if mixed:
+        (other / prefix / "concept.md").write_text("remote concept\n")
+    _run_git(
+        other,
+        "add",
+        f"{prefix}index.md",
+        f"{prefix}remote.md",
+        *([f"{prefix}concept.md"] if mixed else []),
+    )
+    _run_git(other, "commit", "-m", "remote")
+    _run_git(other, "push", "origin", "main")
+    _run_git(
+        root, "rm", f"{prefix}index.md", *([f"{prefix}concept.md"] if mixed else [])
+    )
+    vault_root.mkdir(exist_ok=True)
+    (vault_root / "local.md").write_text("# Local\n")
+    _run_git(root, "add", f"{prefix}local.md")
+    _run_git(root, "commit", "-m", "local delete")
+    strategy, vault = recovery_vault(vault_root, build=True)
+    try:
+        if tick:
+            assert strategy.sync_once(vault_root)
+        else:
+            result = strategy.force_pull()
+            assert result.reason == "rebased"
+            assert result.applied and not result.conflict_files
+            assert result.to_sha != result.from_sha
+        assert not list(vault_root.glob("index.conflict-mcp-*.md"))
+        if mixed:
+            assert (vault_root / "concept.md").read_text() == "remote concept\n"
+            assert not list(vault_root.glob("concept.conflict-mcp-*.md"))
+        vault.reconcile_index_with_head(source="git_sync")
+        wait_for_writer_drain(vault)
+        text = index.read_text()
+        assert "local.md" in text and "remote.md" in text and "okf_version" in text
+        assert "conflict_with" not in text and "conflict_date" not in text
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+        assert index.read_text() == text
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_generation_failure_logs_and_manual_generation_heals(
+    git_repo_pair: GitRepoPair,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from tests.conftest import wait_for_writer_drain
+    from tests.fixtures.conflict_recovery import _setup_generated_conflict
+
+    _root, vault_root, index = _setup_generated_conflict(git_repo_pair, False)
+    strategy, vault = recovery_vault(vault_root, build=True)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise OSError("synthetic generation failure")
+
+    try:
+        assert strategy.force_pull().reason == "rebased"
+        with monkeypatch.context() as patch:
+            patch.setattr(vault._okf_migrate, "generate_index", fail)
+            vault.reconcile_index_with_head(source="git_sync")
+        assert "okf_convention_index_failed" in caplog.text
+        vault.reconcile_index_with_head(source="git_sync")
+        assert "local.md" not in index.read_text()
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+        assert "local.md" in index.read_text()
     finally:
         vault.close()
         strategy.close()
