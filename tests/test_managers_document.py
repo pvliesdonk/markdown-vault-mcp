@@ -1266,62 +1266,53 @@ _JSON_HEADER = (
 
 
 @pytest.mark.parametrize(
-    ("raw", "old_text", "new_text", "expected"),
+    ("raw", "change", "expected"),
     [
         (
             _CRLF_HEADER + b"Body.\r\nTail.\r\n",
-            "Body.",
-            "Changed.",
+            ("Body.", "Changed."),
             _CRLF_HEADER + b"Changed.\nTail.\n",
         ),
         (
             b"---\rtitle: a\r---\rbody\rmore\r",
-            "body\nmore",
-            "X",
+            ("body\nmore", "X"),
             b"---\rtitle: a\r---\rX\n",
         ),
         (
             b"\xef\xbb\xbf---\rtitle: a\r---\rbody\rmore\r",
-            "body\nmore",
-            "X",
+            ("body\nmore", "X"),
             b"\xef\xbb\xbf---\rtitle: a\r---\rX\n",
         ),
         (
             b"---\r\ntitle: a\r---\nbody\r\nmore",
-            "body\nmore",
-            "X",
+            ("body\nmore", "X"),
             b"---\r\ntitle: a\r---\nX",
         ),
-        (b"body\r\nmore\r\n", "body\nmore", "X", b"X\n"),
-        (b"---\r\nbody\r\nmore\r\n", "body\nmore", "X", b"---\nX\n"),
+        (b"body\r\nmore\r\n", ("body\nmore", "X"), b"X\n"),
+        (b"---\r\nbody\r\nmore\r\n", ("body\nmore", "X"), b"---\nX\n"),
         (
             b"---\rk: 1\r---\r\rbody\rmore\r",
-            "body\nmore",
-            "X",
+            ("body\nmore", "X"),
             b"---\rk: 1\r---\r\r\nX\n",
         ),
         (
             b"---\r\nk: 1\r\n---\r\rbody\r\nmore\r\n",
-            "body\nmore",
-            "X",
+            ("body\nmore", "X"),
             b"---\r\nk: 1\r\n---\r\r\nX\n",
         ),
         (
             b"---\rk: 1\r---\r\r\rbody\rmore\r",
-            "body\nmore",
-            "X",
+            ("body\nmore", "X"),
             b"---\rk: 1\r---\r\r\n\nX\n",
         ),
         (
             b"\xef\xbb\xbf---\r\ntitle: a\r\n---\r\nBody\r\n",
-            "title: a",
-            "title: b",
+            ("title: a", "title: b"),
             b"---\ntitle: b\n---\nBody\n",
         ),
         (
             _JSON_HEADER + b"Body.\r\nTail.\r\n",
-            "Body.",
-            "Changed.",
+            ("Body.", "Changed."),
             _JSON_HEADER + b"Changed.\nTail.\n",
         ),
     ],
@@ -1343,11 +1334,11 @@ def test_read_view_edit_keeps_stored_header(
     doc_mgr: DocumentManager,
     doc_vault: Path,
     raw: bytes,
-    old_text: str,
-    new_text: str,
+    change: tuple[str, str],
     expected: bytes,
 ) -> None:
     """An edit matches the read view; an unchanged header keeps its bytes."""
+    old_text, new_text = change
     path = doc_vault / "stored.md"
     path.write_bytes(raw)
     before = path.read_text(encoding="utf-8-sig")
