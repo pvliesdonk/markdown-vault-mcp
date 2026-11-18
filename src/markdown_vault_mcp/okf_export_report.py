@@ -30,8 +30,9 @@ class OkfExportReport:
     """Omissions and partial v0.2 format observations for an export.
 
     Counts overlap when a path has more than one omission reason. Uninspected
-    paths can be omitted after a failed read, or included with metadata that
-    exceeded an inspection bound. These observations do not establish conformance.
+    paths can be omitted when inventory identifies a symlink or unavailable
+    entry, or included with metadata that exceeded an inspection bound.
+    These observations do not establish conformance.
     """
 
     omitted: dict[str, int] = field(default_factory=dict)

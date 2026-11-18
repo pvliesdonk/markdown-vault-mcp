@@ -754,8 +754,8 @@ enumeration refuses export, including denied entries, unknown-kind symlinks
 and unavailable state paths. Local policy records last-observed index state, not
 admission of current bytes; `unknown` covers candidates without a decisive index
 state. A candidate absent from both policy lists was last observed searchable.
-An uninspected entry may be included with bounded metadata or omitted after a
-read failure. A fixed zip-entry timestamp makes unchanged vaults
+An uninspected entry may be included with bounded metadata or omitted as a
+known symlink. Failure to read a selected file aborts export. A fixed zip-entry timestamp makes unchanged vaults
 reproducible. Notes are read uncapped, and export never mutates the vault. This
 is not a conformance verdict or snapshot; the report is not embedded.
 

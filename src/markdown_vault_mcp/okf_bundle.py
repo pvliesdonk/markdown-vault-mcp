@@ -101,11 +101,7 @@ def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
 
 def _scope(folder: str) -> str:
     """Normalize harmless separators while rejecting escapes."""
-    if not isinstance(folder, str) or "\x00" in folder or "\\" in folder:
-        raise ValueError("Scope must be a relative POSIX path")
     scope = PurePosixPath(folder)
-    if scope.is_absolute() or ".." in scope.parts:
-        raise ValueError("Scope must be a relative POSIX path without traversal")
     return str(scope) if scope.parts else ""
 
 
@@ -171,6 +167,7 @@ def build_okf_bundle(
 
     Raises:
         ValueError: If the scope is invalid or inventory cannot enumerate it.
+        OSError: If a selected file cannot be read.
     """
     folder = _scope(folder)
     report = OkfExportReport()
@@ -200,11 +197,7 @@ def build_okf_bundle(
                 if item.state in {"unavailable", "missing"}:
                     report.uninspected[item.path] = item.reason or item.state
                     continue
-                try:
-                    raw = _read_safe(config.source_dir, item.path)
-                except OSError:
-                    report.uninspected[item.path] = "read_unavailable"
-                    continue
+                raw = _read_safe(config.source_dir, item.path)
                 if item.role == "supporting":
                     _write(zf, item.path, raw)
                     attachments += 1

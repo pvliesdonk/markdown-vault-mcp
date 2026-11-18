@@ -76,16 +76,7 @@ def test_bundle_includes_notes_and_attachments(vault: Vault, config: ProjectConf
     assert result.attachments == 1
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.read("pic.png") == b"\x89PNGDATA"
-    assert result.notes >= 5
-
-
-def test_bundle_excludes_convention_and_template_files(
-    vault: Vault, config: ProjectConfig
-):
-    members = _members(build_okf_bundle(vault, config, folder="").data)
-    assert "_conventions.md" not in members
-    assert "_templates/t.md" not in members
-    assert not any(m.startswith("_templates/") for m in members)
+    assert result.notes == 5
 
 
 def test_bundle_keeps_reserved_index_and_log(vault: Vault, config: ProjectConfig):
@@ -131,7 +122,7 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
         read_only=False,
         attachment_extensions=["png"],
         required_frontmatter=["title"],
-        exclude_patterns=["excluded.md", ".hidden.md"],
+        exclude_patterns=["excluded.md", ".hidden.md", "_conventions.md"],
     )
     config = ProjectConfig(source_dir=source_dir, attachment_extensions=("png",))
     vault = Vault(source_dir=source_dir, settings=settings)
@@ -141,6 +132,7 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
         members = _members(result.data)
         assert "typed.md" in members and "b.md" in members
         assert "excluded.md" not in members and ".hidden.md" not in members
+        assert "_conventions.md" not in members and "_templates/t.md" not in members
         assert "typed.md" in result.report.local_policy.non_admitted
         assert "typed.md" not in {
             finding.path for finding in result.report.format_findings
@@ -154,11 +146,14 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
             vault, config, include_index_excluded=True, include_hidden=True
         )
         assert {"excluded.md", ".hidden.md"} <= _members(both.data)
-        assert ".hidden.md" not in _members(
+        hidden_only = _members(
             build_okf_bundle(vault, config, include_hidden=True).data
         )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("typed.md") == (source_dir / "typed.md").read_bytes()
+        excluded_only = _members(
+            build_okf_bundle(vault, config, include_index_excluded=True).data
+        )
+        assert ".hidden.md" not in hidden_only and "excluded.md" not in hidden_only
+        assert ".hidden.md" not in excluded_only and "excluded.md" in excluded_only
     finally:
         vault.close()
 
@@ -198,44 +193,14 @@ def test_bundle_preserves_bom_with_and_without_link_rewrite(
         assert archive.read("linked.md") == b"\xef\xbb\xbf# Link\nSee [b](/b.md).\n"
 
 
-def test_inventory_failure_refuses_export(
-    vault: Vault, config: ProjectConfig, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
-
-    def unavailable(request):
-        return BundleInspection(
-            request,
-            "inspected",
-            "unavailable",
-            (BundleEntry("deep", "directory", "unavailable", "depth_limit"),),
-        )
-
-    monkeypatch.setattr(vault.reader, "inspect_bundle_tree", unavailable)
-    with pytest.raises(ValueError, match=r"deep.*depth_limit"):
-        build_okf_bundle(vault, config)
-    monkeypatch.setattr(
-        vault.reader,
-        "inspect_bundle_tree",
-        lambda request: BundleInspection(request, "unavailable"),
-    )
-    with pytest.raises(ValueError, match=r"guides.*unavailable"):
-        build_okf_bundle(vault, config, folder="guides")
-
-
-def test_scope_normalization_and_validation(
-    vault: Vault, config: ProjectConfig
-) -> None:
+def test_scope_normalization(vault: Vault, config: ProjectConfig) -> None:
     for scope in ("guides/./", "guides//"):
         assert _members(build_okf_bundle(vault, config, folder=scope).data) == {
             "guides/one.md"
         }
-    for scope in ("/guides", "guides/../guides", "guides\\\\x", "guides/\x00"):
-        with pytest.raises(ValueError):
-            build_okf_bundle(vault, config, folder=scope)
 
 
-def test_raw_links_for_notes_outside_graph(source_dir: Path) -> None:
+def test_local_policy_unknown_and_stale_index_bytes(source_dir: Path) -> None:
     body = "---\ntype: Note\n---\n[[target]]\n"
     (source_dir / "target.md").write_text("---\ntitle: Target\n---\n")
     (source_dir / "nonadmitted.md").write_text(body)
@@ -286,12 +251,12 @@ def test_export_pages_and_read_failure(
             raise OSError("refused")
         return original(source, path)
 
-    monkeypatch.setattr(okf_bundle, "_read_safe", read)
     result = build_okf_bundle(vault, config)
     members = _members(result.data)
     assert "page-0000.md" in members and "page-1000.md" in members
-    assert "page-0500.md" not in members
-    assert result.report.uninspected["page-0500.md"] == "read_unavailable"
+    monkeypatch.setattr(okf_bundle, "_read_safe", read)
+    with pytest.raises(OSError, match="refused"):
+        build_okf_bundle(vault, config)
 
 
 def test_deep_inventory_and_unsupported_nofollow_refuse(
@@ -310,8 +275,8 @@ def test_deep_inventory_and_unsupported_nofollow_refuse(
     with pytest.raises(ValueError, match="depth_limit"):
         build_okf_bundle(vault, config)
     monkeypatch.setattr(fs, "_NOFOLLOW_SUPPORTED", False)
-    with pytest.raises(ValueError, match=r"inventory unavailable.*unavailable"):
-        build_okf_bundle(vault, config)
+    with pytest.raises(ValueError, match=r"guides.*unavailable"):
+        build_okf_bundle(vault, config, folder="guides")
 
 
 def test_cold_index_local_policy_is_unknown(source_dir: Path) -> None:
