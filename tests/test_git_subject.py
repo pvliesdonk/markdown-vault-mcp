@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from markdown_vault_mcp import __version__
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
     _resolve_subject_writer,
@@ -66,7 +67,11 @@ def test_commit_and_seed_log_preserve_attribution(repo: Path, operation: str) ->
             if operation == "surrogate"
             else f"{subject}\n\nMechanical-Subject: {mechanical}\n\n"
         )
-        assert git(repo, "log", "-1", "--format=%B") == message
+        assert git(repo, "log", "-1", "--format=%B") == message.rstrip() + (
+            ("\n\n" if operation == "surrogate" else "\n")
+            + f"Vault-Tool: {operation if operation != 'surrogate' else 'write'}\n"
+            f"Vault-Server: markdown-vault-mcp/{__version__}\n\n"
+        )
         assert (
             "rename from old.md" if operation == "rename" else "synthetic retention"
         ) in fake.calls[-1][1]
@@ -206,7 +211,8 @@ def test_batch_fallback_and_no_diff(repo: Path) -> None:
         )
         assert (
             git(repo, "log", "-1", "--format=%B")
-            == "[AI summary] Update notes\n\nMechanical-Subject: convert: 2 files\n\n"
+            == "[AI summary] Update notes\n\nMechanical-Subject: convert: 2 files\n"
+            f"Vault-Tool: convert\nVault-Server: markdown-vault-mcp/{__version__}\n\n"
         )
         assert set(
             git(repo, "show", "--format=", "--name-only", "HEAD").splitlines()
@@ -215,7 +221,8 @@ def test_batch_fallback_and_no_diff(repo: Path) -> None:
         strategy.on_write_batch([(first, "write", None, None)], "convert")
         assert (
             git(repo, "log", "-1", "--format=%B")
-            == "[AI summary] Update notes\n\nMechanical-Subject: write: a.md\n\n"
+            == "[AI summary] Update notes\n\nMechanical-Subject: write: a.md\n"
+            f"Vault-Tool: convert\nVault-Server: markdown-vault-mcp/{__version__}\n\n"
         )
         assert len(fake.calls) == 2
     finally:
@@ -305,6 +312,6 @@ def test_changed_worktree_during_generation_falls_back(repo: Path, case: str) ->
         operation = "delete" if case == "recreated" else "write"
         strategy(note, "", operation)
         assert git(repo, "show", "HEAD:race.md") == "later synthetic content"
-        assert git(repo, "log", "-1", "--format=%B") == f"{operation}: race.md\n\n"
+        assert git(repo, "log", "-1", "--format=%s").strip() == f"{operation}: race.md"
     finally:
         strategy.close()

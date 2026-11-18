@@ -4,6 +4,8 @@ Provides :class:`GitWriteStrategy`, a stateful callback that commits
 per-write and defers pushes to a background timer.  Also retains the
 legacy :func:`git_write_strategy` factory for backward compatibility.
 
+Git trailer syntax: docs/design/reference/git-staging-and-commits.md.
+
 Two collaborators are composed in (#893): repository discovery, managed
 cloning, and startup validation live in
 :class:`~markdown_vault_mcp.git.bootstrap.RepoBootstrap`; the deferred-push
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
+from markdown_vault_mcp import __version__
 from markdown_vault_mcp._commit_groups import GroupCommitResult
 from markdown_vault_mcp._commit_scope import current_folder_move
 from markdown_vault_mcp.git import conflict, query
@@ -639,7 +642,7 @@ class GitWriteStrategy:
         commit_scope = [] if whole_repo else scope
         if not staged or _index_matches_head(root, commit_scope):
             return GroupCommitResult(None, 0, "failed" if failed else "no_changes")
-        _commit_staged(root, subject, identity, commit_scope)
+        _commit_staged(root, subject, identity, commit_scope, tool_name="write_group")
         sha = None
         try:
             sha = self.head_sha(git_root)
@@ -2636,6 +2639,7 @@ def _stage_and_commit(
     *,
     old_path: Path | None = None,
     describe: Callable[[str, str, Sequence[str]], str] | None = None,
+    tool_name: str | None = None,
     commit_name: str = GitWriteStrategy.DEFAULT_COMMIT_NAME,
     commit_email: str = GitWriteStrategy.DEFAULT_COMMIT_EMAIL,
     author_name: str | None = None,
@@ -2689,6 +2693,7 @@ def _stage_and_commit(
         _CommitIdentity(commit_name, commit_email, author_name, author_email),
         scope,
         describe,
+        tool_name=tool_name or operation,
     )
 
     logger.info("git_committed path=%s operation=%s", rel_path, operation)
@@ -2804,6 +2809,7 @@ def _stage_and_commit_batch(
             operation,
             old_path=old_path,
             describe=describe,
+            tool_name=tool_name,
             commit_name=identity.commit_name,
             commit_email=identity.commit_email,
             author_name=identity.author_name,
@@ -2861,7 +2867,7 @@ def _stage_and_commit_batch(
     elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)
-    _commit_staged(root, subject, identity, commit_scope, describe)
+    _commit_staged(root, subject, identity, commit_scope, describe, tool_name=tool_name)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
 
 
@@ -2871,6 +2877,8 @@ def _commit_staged(
     identity: _CommitIdentity,
     pathspec: Sequence[str],
     describe: Callable[[str, str, Sequence[str]], str] | None = None,
+    *,
+    tool_name: str,
 ) -> None:
     """Commit the operation's own paths, under the resolved identity.
 
@@ -2911,6 +2919,11 @@ def _commit_staged(
     """
     if describe is not None:
         commit_msg = describe(root, commit_msg, pathspec)
+    separator = "\n" if "\n\n" in commit_msg else "\n\n"
+    commit_msg = (
+        f"{commit_msg.rstrip()}{separator}Vault-Tool: {tool_name}\n"
+        f"Vault-Server: markdown-vault-mcp/{__version__}"
+    )
     commit_name = identity.commit_name
     commit_email = identity.commit_email
     author_name = identity.author_name

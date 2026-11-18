@@ -47,6 +47,9 @@ def test_idle_group_commits_as_opener_and_late_close_returns_result(
         with bound_principal(refreshed), dispatcher.bind_group(group.handle, refreshed):
             dispatcher.fire(path, "note", "write")
         _wait_for_subject(git_repo, "Organize notes")
+        trailers = _run_git(git_repo, "log", "-1", "--format=%(trailers)")
+        assert "Vault-Tool: write_group" in trailers
+        assert "Vault-Server: markdown-vault-mcp/" in trailers
         result = dispatcher.close_group(group.handle, alice).result(timeout=5)
         assert result.status == "committed"
         assert (

@@ -2,6 +2,10 @@
 
 ## 2026-11-18
 
+- Added Git trailer syntax and parsing to [Git staging, commits and rebase state](git-staging-and-commits.md), sourced from the Git manual.
+
+## 2026-11-18
+
 - [Git staging and commits](git-staging-and-commits.md): checked the index stage
   records for an upstream delete during rebase against `git-ls-files(1)` and
   the real-Git recovery fixture. Other claims and review date unchanged.
