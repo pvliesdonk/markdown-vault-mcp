@@ -282,11 +282,15 @@ including an unterminated one, can use memory proportional to its length. The
 version 2 ledger preserves digest meanings across parser upgrades; changing them
 requires a new version and migration.
 
-Server writes and deletes refresh affected observations. A server rename or
-folder move records both paths; a move detected by a later scan is a removal and
+Server writes, edits, appends and deletes refresh affected observations. A server
+rename or `move_folder` records both paths; a move detected by a later scan is a removal and
 an addition. A move relation describes the latest state of each path and can
-disappear when that path changes; it is not an event history. A write is attributed to the server only when the bytes read from disk match the
-bytes it wrote. Reindex repairs missed observations after an interruption.
+clears when that row's content changes; it is not an event history. A path
+never observed has unknown history. A write is attributed to the server only
+when the bytes read from disk match the bytes it wrote. An observation failure
+in a dirty job is logged and does not block search. Once storage is repaired,
+the next sweep reconciles missed observations. Reindex also repairs missed
+observations after an interruption.
 
 A build, reindex or successful pull observes external edits, even when the Git
 HEAD does not change. The server reconciles after interactive pulls and webhooks,

@@ -577,9 +577,6 @@ class BundleInspector:
                 return "blocked"
             blocked: set[str] = set()
             with open_directory_nofollow(root, parts[:-1], source_resolved=True) as fd:
-                mode = os.stat(parts[-1], dir_fd=fd, follow_symlinks=False).st_mode
-                if not stat.S_ISREG(mode):
-                    return "blocked"
                 self._observe_note(fd, path, visit, blocked)
             return "blocked" if blocked else "present"
         except OSError as exc:

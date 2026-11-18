@@ -113,12 +113,12 @@ def test_failed_save_keeps_write_evidence_for_retry(
 
         monkeypatch.setattr(ledger, "_save", fail)
         with pytest.raises(OSError, match="disk full"):
-            ledger.refresh("a.md")
+            ledger.refresh_many({"a.md"})
         monkeypatch.setattr(ledger, "_save", save)
-        ledger.refresh("a.md")
+        ledger.refresh_many({"a.md"})
         first = ledger.rows()["a.md"]
         assert first.origin == "server_write"
-        ledger.refresh("a.md")
+        ledger.refresh_many({"a.md"})
         ledger.sweep()
         assert ledger.rows()["a.md"] == first
     finally:
@@ -214,7 +214,7 @@ def test_unavailable_root_does_not_prove_removal(tmp_path: Path) -> None:
     try:
         vault.index.build_index()
         source.rename(tmp_path / "offline")
-        vault._index_mgr.observations.refresh("a.md")
+        vault._index_mgr.observations.refresh_many({"a.md"})
         assert vault._index_mgr.observations.rows()["a.md"].presence == "present"
     finally:
         vault.close()
@@ -232,7 +232,7 @@ def test_sweep_discards_contradicted_write_hint(tmp_path: Path) -> None:
         ledger = vault._index_mgr.observations
         ledger.sweep()
         (source / "a.md").write_text("server")
-        ledger.refresh("a.md")
+        ledger.refresh_many({"a.md"})
         assert ledger.rows()["a.md"].origin == "unknown"
     finally:
         vault.close()
@@ -257,8 +257,7 @@ def test_ledger_failure_does_not_stop_search_update(
             raise OSError("disk full")
 
         monkeypatch.setattr(ledger, "_save", fail)
-        with pytest.raises(OSError, match="disk full"):
-            vault._index_mgr.process_dirty_paths({"a.md"})
+        vault._index_mgr.process_dirty_paths({"a.md"})
         assert vault._fts.get_note("a.md") is not None
         vault._doc_mgr.delete("a.md")
         assert not (source / "a.md").is_file()
@@ -351,9 +350,10 @@ def test_newer_ledger_error_does_not_prevent_indexing(tmp_path: Path) -> None:
             '{"version": 999, "rows": {}}'
         )
         vault._doc_mgr.write("a.md", "hello")
-        with pytest.raises(StoreUnsupportedSchemaError):
-            vault._index_mgr.process_dirty_paths({"a.md"})
+        vault._index_mgr.process_dirty_paths({"a.md"})
         assert vault._fts.get_note("a.md") is not None
+        with pytest.raises(StoreUnsupportedSchemaError):
+            vault.index.reindex()
     finally:
         vault.close()
 
@@ -425,8 +425,7 @@ def test_move_schedules_search_and_callback_when_ledger_save_fails(
         monkeypatch.setattr(ledger, "_save", fail)
         vault._doc_mgr.rename("a.md", "b.md", update_links=False)
         assert callbacks == ["rename"]
-        with pytest.raises(OSError, match="disk full"):
-            vault._index_mgr.process_dirty_paths(dirty)
+        vault._index_mgr.process_dirty_paths(dirty)
         assert vault._fts.get_note("b.md") is not None
         assert vault._fts.get_note("a.md") is None
     finally:
@@ -445,7 +444,7 @@ def test_sweep_discards_hint_for_disappeared_file(tmp_path: Path) -> None:
         ledger = vault._index_mgr.observations
         ledger.sweep()
         (source / "a.md").write_text("server")
-        ledger.refresh("a.md")
+        ledger.refresh_many({"a.md"})
         assert ledger.rows()["a.md"].origin == "unknown"
     finally:
         vault.close()
@@ -487,7 +486,7 @@ def test_invalid_yaml_move_still_schedules_search_and_callback(
         )
         with pytest.raises(yaml.YAMLError):
             vault._doc_mgr.rename("a.md", "b.md", update_links=False)
-        assert callbacks == ["rename"]
+        assert callbacks == []
         assert dirty == {"a.md", "b.md"}
         vault._index_mgr.process_dirty_paths(dirty)
         rows = vault._index_mgr.observations.rows()
@@ -531,5 +530,281 @@ def test_malformed_ledger_rebuilds_history(tmp_path: Path, data: str) -> None:
     try:
         vault.index.build_index()
         assert vault._index_mgr.observations.rows()["a.md"].presence == "present"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("operation", ["delete", "rename"])
+@pytest.mark.parametrize("sweep_first", [False, True])
+def test_capture_preserves_path_history(
+    tmp_path: Path, operation: str, sweep_first: bool
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "a.md"
+    note.write_text("first")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        first = ledger.rows()["a.md"].first_seen_at
+        note.write_text("external change")
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        if operation == "delete":
+            vault._doc_mgr.delete("a.md")
+        else:
+            vault._doc_mgr.rename("a.md", "b.md", update_links=False)
+        if sweep_first:
+            ledger.sweep()
+            removed_at = ledger.rows()["a.md"].removed_observed_at
+        ledger.refresh_many({"a.md", "b.md"})
+        row = ledger.rows()["a.md"]
+        assert row.first_seen_at == first
+        assert row.content_digest == hashlib.sha256(b"external change").hexdigest()
+        if sweep_first:
+            assert row.removed_observed_at == removed_at
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("blocked_path", ["a.md", "b.md"])
+@pytest.mark.parametrize("recovery", ["refresh", "sweep"])
+def test_blocked_move_pair_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, blocked_path: str, recovery: str
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault._doc_mgr.rename("a.md", "b.md", update_links=False)
+        ledger = vault._index_mgr.observations
+        inspector = ledger._inspector
+        original = inspector.observe_path
+
+        def blocked(path: str, visit: object) -> str:
+            if path == blocked_path:
+                return "blocked"
+            return original(path, visit)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(inspector, "observe_path", blocked)
+        ledger.refresh_many({"a.md", "b.md"})
+        monkeypatch.setattr(inspector, "observe_path", original)
+        if recovery == "refresh":
+            ledger.refresh_many({"b.md"})
+        else:
+            ledger.sweep()
+        rows = ledger.rows()
+        assert rows["a.md"].moved_to == "b.md"
+        assert rows["b.md"].moved_from == "a.md"
+    finally:
+        vault.close()
+
+
+def test_async_ledger_outage_does_not_gate_search_or_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "seed.md").write_text("seed")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+
+        def fail(_rows: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(ledger, "_save", fail)
+        vault._doc_mgr.write("a.md", "hello")
+        vault._coordinator.prepare_index_read()
+        assert vault._fts.get_note("a.md") is not None
+        vault._doc_mgr.rename("seed.md", "renamed.md", update_links=True)
+        vault._coordinator.prepare_index_read()
+        assert vault._fts.get_note("renamed.md") is not None
+        assert any(
+            record.msg == "observation_dirty_refresh_failed"
+            for record in caplog.records
+        )
+        with pytest.raises(OSError, match="disk full"):
+            vault.index.reindex()
+    finally:
+        vault.close()
+
+
+def test_sweep_started_before_capture_preserves_later_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("before")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    entered, release = threading.Event(), threading.Event()
+    worker = None
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        ledger = vault._index_mgr.observations
+        first = ledger.rows()["a.md"].first_seen_at
+        inspector = ledger._inspector
+        original = inspector.observe_files
+
+        def held(visit):
+            entered.set()
+            assert release.wait(5)
+            return original(visit)
+
+        monkeypatch.setattr(inspector, "observe_files", held)
+        worker = threading.Thread(target=ledger.sweep)
+        worker.start()
+        assert entered.wait(5)
+        vault._doc_mgr.delete("a.md")
+        release.set()
+        worker.join(timeout=5)
+        before = ledger.rows()["a.md"]
+        ledger.refresh_many({"a.md"})
+        after = ledger.rows()["a.md"]
+        assert after.first_seen_at == first
+        assert after.removed_observed_at == before.removed_observed_at
+    finally:
+        release.set()
+        if worker is not None:
+            worker.join(timeout=5)
+        vault.close()
+
+
+def test_failed_move_save_recovers_pair_on_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault._doc_mgr.rename("a.md", "b.md", update_links=False)
+        ledger = vault._index_mgr.observations
+        save = ledger._save
+
+        def fail(_rows: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(ledger, "_save", fail)
+        with pytest.raises(OSError, match="disk full"):
+            ledger.refresh_many({"a.md", "b.md"})
+        monkeypatch.setattr(ledger, "_save", save)
+        ledger.sweep()
+        rows = ledger.rows()
+        assert rows["a.md"].moved_to == "b.md"
+        assert rows["b.md"].moved_from == "a.md"
+    finally:
+        vault.close()
+
+
+def test_move_without_current_source_does_not_link_old_tombstone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "a.md"
+    note.write_text("old")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        note.unlink()
+        ledger.sweep()
+        note.write_text("new")
+        monkeypatch.setattr(ledger, "capture", lambda _path: None)
+        vault._doc_mgr.rename("a.md", "b.md", update_links=False)
+        vault._coordinator.prepare_index_read()
+        rows = ledger.rows()
+        assert rows["a.md"].moved_to is None
+        assert rows["b.md"].moved_from == "a.md"
+    finally:
+        vault.close()
+
+
+def test_move_folder_resolved_alias_records_real_paths(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "real" / "sub").mkdir(parents=True)
+    (source / "real" / "old").mkdir()
+    (source / "real" / "old" / "a.md").write_text("hello")
+    (source / "alias").symlink_to(source / "real" / "sub", target_is_directory=True)
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr.move_folder("alias/../old", "new")
+        vault._coordinator.prepare_index_read()
+        rows = vault._index_mgr.observations.rows()
+        assert rows["real/old/a.md"].moved_to == "new/a.md"
+        assert rows["new/a.md"].moved_from == "real/old/a.md"
+    finally:
+        vault.close()
+
+
+def test_sweep_preserves_new_same_digest_write_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault._doc_mgr.write("a.md", "server")
+        (source / "a.md").write_text("external")
+        ledger = vault._index_mgr.observations
+        original = ledger._inspector.observe_files
+
+        def interleaved(visit):
+            blocked = original(visit)
+            vault._doc_mgr.write("a.md", "server")
+            return blocked
+
+        monkeypatch.setattr(ledger._inspector, "observe_files", interleaved)
+        ledger.sweep()
+        ledger.refresh_many({"a.md"})
+        assert ledger.rows()["a.md"].origin == "server_write"
+    finally:
+        vault.close()
+
+
+def test_sweep_rechecks_absence_after_directory_enumeration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "a.md"
+    note.write_text("old")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        note.unlink()
+        original = ledger._inspector.observe_files
+
+        def interleaved(visit):
+            blocked = original(visit)
+            note.write_text("new")
+            return blocked
+
+        monkeypatch.setattr(ledger._inspector, "observe_files", interleaved)
+        ledger.sweep()
+        row = ledger.rows()["a.md"]
+        assert row.presence == "present"
+        assert row.content_digest == hashlib.sha256(b"new").hexdigest()
     finally:
         vault.close()

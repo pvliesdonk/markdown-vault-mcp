@@ -10,7 +10,6 @@ Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import itertools
 import logging
 import os
@@ -261,7 +260,7 @@ class DocumentManager:
 
     _exact_bytes = False  # see exact_byte_writes()
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, RUF100 — retain existing injected collaborators.
         self,
         fts: KeywordGraphIndex,
         source_dir: Path,
@@ -517,6 +516,9 @@ class DocumentManager:
         """
         return is_path_excluded(path, self._exclude_patterns)
 
+    def _vault_relative(self, path: Path) -> str:
+        return path.relative_to(self._source_dir.resolve()).as_posix()
+
     def _validate_path(self, path: str) -> Path:
         """Resolve a relative path and validate it is inside source_dir.
 
@@ -697,12 +699,10 @@ class DocumentManager:
                 )
                 target_attempted = True
                 atomic_write(abs_path, repaired)
-                observed_path = abs_path.relative_to(
-                    self._source_dir.resolve()
-                ).as_posix()
+                observed_path = self._vault_relative(abs_path)
                 if self._observations is not None:
                     self._observations.expect_write(
-                        observed_path, hashlib.sha256(repaired).hexdigest()
+                        observed_path, compute_etag(repaired)
                     )
                 if self._mark_paths_dirty is not None:
                     self._mark_paths_dirty([observed_path])
@@ -1193,7 +1193,7 @@ class DocumentManager:
             operation: The write operation reported to the write callback.
 
         """
-        path = abs_path.relative_to(self._source_dir.resolve()).as_posix()
+        path = self._vault_relative(abs_path)
         staged = self._staged(content)
         atomic_write(abs_path, staged)
         if self._observations is not None:
@@ -1202,7 +1202,7 @@ class DocumentManager:
                 if isinstance(staged, bytes)
                 else staged.replace("\n", os.linesep).encode("utf-8")
             )
-            self._observations.expect_write(path, hashlib.sha256(data).hexdigest())
+            self._observations.expect_write(path, compute_etag(data))
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
         self._notifier.fire(abs_path, content, operation)
@@ -1589,9 +1589,7 @@ class DocumentManager:
                 if not is_regular_file(abs_path):
                     raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
-                observed_path = abs_path.relative_to(
-                    self._source_dir.resolve()
-                ).as_posix()
+                observed_path = self._vault_relative(abs_path)
                 captured = (
                     self._observations.capture(observed_path)
                     if self._observations
@@ -1699,15 +1697,9 @@ class DocumentManager:
                     old_abs, old_path, if_match, tolerate=tolerate_link_rewrites
                 )
 
-                observed_old = old_abs.relative_to(
-                    self._source_dir.resolve()
-                ).as_posix()
-                observed_new = new_abs.relative_to(
-                    self._source_dir.resolve()
-                ).as_posix()
-                backlinks = (
-                    self._fts.get_backlinks(observed_old) if update_links else []
-                )
+                observed_old = self._vault_relative(old_abs)
+                observed_new = self._vault_relative(new_abs)
+                backlinks = self._fts.get_backlinks(old_path) if update_links else []
 
                 captured = (
                     self._observations.capture(observed_old)
@@ -1722,23 +1714,19 @@ class DocumentManager:
                     )
                 if self._mark_paths_dirty is not None:
                     self._mark_paths_dirty([observed_old, observed_new])
-                try:
-                    note = parse_note(
-                        new_abs,
-                        self._source_dir,
-                        self._chunk_strategy,
-                        title_field=self._title_field,
-                    )
-                except Exception:
-                    self._notifier.fire_rename(new_abs, "", old_abs)
-                    raise
+                parse_note(
+                    new_abs,
+                    self._source_dir,
+                    self._chunk_strategy,
+                    title_field=self._title_field,
+                )
 
                 callback_content = _read_text_utf8(new_abs)
 
                 backlink_callbacks, backlink_paths, unrewritten = (
                     self._update_backlinks(
-                        observed_old,
-                        observed_new,
+                        old_path,
+                        new_path,
                         backlinks,
                         allow_protected=allow_protected,
                     )
@@ -1748,10 +1736,8 @@ class DocumentManager:
                     unrewritten, allow_protected=allow_protected
                 )
 
-                if self._mark_paths_dirty is not None:
-                    dirty: list[str] = [old_path, note.path]
-                    dirty.extend(backlink_paths)
-                    self._mark_paths_dirty(dirty)
+                if self._mark_paths_dirty is not None and backlink_paths:
+                    self._mark_paths_dirty(backlink_paths)
             else:
                 old_abs, new_abs = self._artifacts.move(old_path, new_path, if_match)
                 callback_content = ""
@@ -1872,9 +1858,7 @@ class DocumentManager:
         encoded = content.encode("utf-8")
         atomic_write(source_abs, encoded)
         if self._observations is not None:
-            self._observations.expect_write(
-                source_path, hashlib.sha256(encoded).hexdigest()
-            )
+            self._observations.expect_write(source_path, compute_etag(encoded))
         self._link_rewrites.record(
             source_path, compute_etag(raw), compute_etag(encoded)
         )
@@ -2271,8 +2255,8 @@ class DocumentManager:
             #      gate on destination collisions before moving anything.
             moves, md_map, non_note_moves = self._plan_folder_move(
                 old_abs,
-                old_abs.relative_to(self._source_dir.resolve()).as_posix(),
-                new_abs.relative_to(self._source_dir.resolve()).as_posix(),
+                old_dir,
+                new_dir,
                 allow_protected=allow_protected,
             )
 
@@ -2284,8 +2268,14 @@ class DocumentManager:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
 
+            observation_map = {
+                self._vault_relative(
+                    old_abs / Path(path).relative_to(old_dir)
+                ): self._vault_relative(new_abs / Path(path).relative_to(old_dir))
+                for path in md_map
+            }
             captures = (
-                {path: self._observations.capture(path) for path in md_map}
+                {path: self._observations.capture(path) for path in observation_map}
                 if self._observations is not None
                 else {}
             )
@@ -2320,14 +2310,14 @@ class DocumentManager:
             #    rewritten sources. A single mark_paths_dirty batch makes the
             #    writer run resolve_vault_wikilinks() once.
             if self._observations is not None:
-                for old_path, new_path in md_map.items():
+                for old_path, new_path in observation_map.items():
                     self._observations.record_removal(
                         old_path, captures[old_path], new_path
                     )
             if self._mark_paths_dirty is not None:
                 move_dirty: list[str] = []
-                move_dirty.extend(md_map.keys())  # old paths -> purged
-                move_dirty.extend(md_map.values())  # new paths -> reparsed
+                move_dirty.extend(observation_map.keys())  # old paths -> purged
+                move_dirty.extend(observation_map.values())  # new paths -> reparsed
                 move_dirty.extend(dirty_paths)  # rewritten sources
                 self._mark_paths_dirty(move_dirty)
 

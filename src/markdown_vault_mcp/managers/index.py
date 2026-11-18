@@ -13,7 +13,6 @@ unchanged surface.
 from __future__ import annotations
 
 import logging
-import posixpath
 import sqlite3
 import time
 from dataclasses import dataclass, field, replace
@@ -22,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
+from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
 from markdown_vault_mcp.fts_index import (
     INDEX_SEMANTICS_VERSION,
     ChunkingMeta,
@@ -1373,7 +1373,6 @@ class IndexManager:
         """
         if not paths:
             return
-        paths = {posixpath.normpath(path) for path in paths}
         exempt = self._admission_snapshot()
         previous = self._memory_exempt
         if previous is None:
@@ -1396,9 +1395,8 @@ class IndexManager:
             if self.observations is not None:
                 try:
                     self.observations.refresh_many(paths)
-                except Exception as exc:
-                    if first_error is None:
-                        first_error = exc
+                except (OSError, StoreUnsupportedSchemaError):
+                    logger.warning("observation_dirty_refresh_failed", exc_info=True)
             if first_error is not None:
                 raise first_error
         except BaseException:
