@@ -18,6 +18,9 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md) —
   initial namespace identity, process liveness and static ownership labels used
   by the PostgreSQL fixture to recover after SIGKILL (#1952).
+- [Python frontmatter serialization and mapping order](python-frontmatter-pyyaml.md) —
+  pinned serializer keyword forwarding, recursive mapping order and formatting
+  boundaries used by the document writer and OKF transforms.
 - [GitHub and git behaviour behind integration branches](github-integration-branches.md) —
   up-to-date requirements, merge queue, workflow branch filters, closing
   keywords, retargeting, merge methods, knope's commit walk and git's
@@ -145,6 +148,11 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [Python Future completion and cancellation](python-futures.md) — result
   publication, callback ordering, cancellation and executor lock ownership.
   Read before changing the index build lifecycle or writer cancellation.
+- [OpenAI-compatible embedding responses](openai-compatible-embeddings.md) —
+  the per-item `index` the OpenAI shape requires, how the `openai` SDK reads
+  a field the endpoint left out (as `None`), ProtoJSON's omitted zero values,
+  and Gemini's batches whose first item has no `index` (#2050). Read before
+  changing how `providers.py` reads an embeddings response.
 - [SQLite FTS5 delete cost and shadow-table architecture](sqlite-fts5.md) — why
   a content-carrying FTS5 table full-scans on non-rowid deletes (#1535), rowid
   vs. ordinary-column query plans, the `'delete'` special command's

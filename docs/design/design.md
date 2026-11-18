@@ -175,6 +175,15 @@ Frontmatter is **optional by default**. Documents without frontmatter are
 indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
+Content writes serialize supplied frontmatter in caller insertion order,
+including nested mappings and mappings inside lists. Edit, append, OKF
+verification and git conflict marking retain surviving fields in their
+existing order when they serialize a header. This preserves mapping order and
+values, not comments, quoting, whitespace or arbitrary exact formatting. Every
+frontmatter dump (the document writer, the two OKF transforms and the two
+conflict-file writes in `git/conflict.py`) passes `sort_keys=False`; the pinned dependency behavior is recorded in
+[Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
+
 **The body the index reads (#2036)**: `scanner.note_body` returns
 python-frontmatter's body, which is stripped at both ends, with one repair:
 the first non-blank line keeps its leading spaces and tabs. Without it, a note
@@ -1493,6 +1502,14 @@ a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python
 3.13, and a pathological path raises `OSError` — the root is kept unresolved
 with a WARNING rather than dropped, degrading to the pre-resolution behavior
 (correct on inotify / ReadDirectoryChangesW) instead of crashing `start()`.
+
+Delivered moves trigger reindexing when either endpoint is a nonempty,
+non-hidden descendant of the delivering watch root, using watchdog's
+[source and destination event paths](https://github.com/gorakhargosh/watchdog/blob/v4.0.0/src/watchdog/events.py#L114-L151).
+Each qualifying event schedules once, including moves from a hidden temporary
+file onto a visible note and moves of visible content into hidden or outside
+storage. Hidden-only and root-self noise stays ignored, including below
+intentionally watched dot-roots; other mutations consider only their source.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
@@ -4621,7 +4638,13 @@ store dimension, another dimension, a non-finite value, metadata that is
 not JSON (`NaN` and infinity included), a `NUL` character or lone
 surrogate in any string, or a path or folder too long to index raise
 `ValueError` and change nothing, so the reconciler keeps the old rows
-(SQLite would store some of these). The store's tables are taken as
+(SQLite would store some of these). A one-shot generation is validated before
+the write transaction into a private temporary file of normalized rows; all
+document keys are copied before those rows are replayed. The application keeps
+the largest document and path/token bookkeeping in memory. Scratch uses packed float32 vectors and JSON metadata in the system temporary
+directory (which can be controlled by `TMPDIR`); a memory-backed directory also consumes memory.
+Scratch, PostgreSQL storage and WAL are separate capacity costs. The temporary
+file is closed on success or failure. The store's tables are taken as
 existing only after a write publishes, so a conflict that rolled back the
 first write's `CREATE` leaves the next write to create them again. A connection lost
 during `COMMIT` (no reply, or class `08`) raises *unavailable* with
@@ -5419,6 +5442,18 @@ equivalent and stay on the native REST API: CPU-only inference
 the ``/api/show`` context-length probe, and the ``/api/tags`` reachability
 probe in ``get_embedding_provider``. ``fastembed`` (in-process, non-API)
 is unaffected.
+
+**Response order (#2050)**: the transport returns vectors in input order by
+sorting ``response.data`` on each item's ``index``, and reads a missing
+``index`` as 0, the meaning proto3 JSON gives an omitted integer. Gemini's
+compatibility endpoint leaves ``index`` out of the first item of a batch;
+the SDK builds responses without validation and reads it as ``None``, and
+comparing ``None`` with the next item's ``1`` failed every batch of two or
+more. Two items that resolve to the same index (two without one, or one
+without and one with 0) raise ``RuntimeError`` rather than pair a vector with
+the wrong input; a response with no ``index`` at all keeps its order. The
+evidence is in
+[OpenAI-compatible embedding responses](reference/openai-compatible-embeddings.md).
 
 **Voyage preset**: ``VoyageProvider`` is a third preset over the same
 transport, with ``base_url`` pinned to ``https://api.voyageai.com/v1`` and

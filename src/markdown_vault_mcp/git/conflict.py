@@ -426,7 +426,9 @@ def write_conflict_files(
 
         conflict_abs = git_root / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
-        conflict_abs.write_text(frontmatter.dumps(post), encoding="utf-8")
+        conflict_abs.write_text(
+            frontmatter.dumps(post, sort_keys=False), encoding="utf-8"
+        )
 
         # --- Update original file with conflict_with frontmatter ---
         original_abs = git_root / rel_path
@@ -458,7 +460,9 @@ def write_conflict_files(
                     orig_post = frontmatter.Post(content)
                 orig_post.metadata["conflict_with"] = conflict_rel
                 orig_post.metadata["conflict_date"] = conflict_date
-                original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
+                original_abs.write_text(
+                    frontmatter.dumps(orig_post, sort_keys=False), encoding="utf-8"
+                )
                 updated_originals.append(rel_path)
             except (OSError, UnicodeDecodeError):
                 # OSError: removed/inaccessible after the existence check (TOCTOU), permission,
