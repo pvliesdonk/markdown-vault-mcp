@@ -33,6 +33,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import textwrap
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -205,12 +206,11 @@ class EmbedTextBuilder:
     def listing_pieces(
         self, title: str, frontmatter_or_json: Mapping[str, Any] | str | None
     ) -> list[str]:
-        """Split a listed concept's title and description into inputs within the cap.
+        """Split a listed concept's title and description into raw inputs within the cap.
 
-        The existing chunker splits the text, so no piece loses words and every
-        built input stays within the cap unless the v2 head alone takes half of
-        it. The chunk inputs are untouched, so this adds rows and never clips a
-        body or a configured field.
+        Each piece is embedded verbatim, with no title or heading head, so it
+        never exceeds the cap, even for one token longer than the cap. The
+        words are only re-wrapped, and none is dropped.
 
         Args:
             title: Resolved note title.
@@ -220,23 +220,32 @@ class EmbedTextBuilder:
             The non-empty pieces; empty when the note has neither.
         """
         description = fields_text(frontmatter_or_json, ("description",))
-        text = "\n".join(part for part in (title, description) if part)
-        if self.listed_limit is None:
-            return [text] if text else []
-        from markdown_vault_mcp.scanner import HeadingChunker
+        text = " ".join(part for part in (title, description) if part)
+        width = self.listed_limit or max(len(text), 1)
+        return textwrap.wrap(text, width, break_on_hyphens=False)
 
-        head = len(
-            self.build(
-                title=title,
-                heading=None,
-                content="",
-                fields_text="",
-                is_first_chunk=False,
-            )
+    def row_input(self, row: Mapping[str, Any], preamble: str) -> str:
+        """Return the embedding input of a keyword row or of its stored metadata.
+
+        A listing row (``kind == "listing"``) is embedded as its ``listing``
+        text; every other row goes through :meth:`build`.
+
+        Args:
+            row: A keyword row or the metadata stored with its vector.
+            preamble: The first-chunk preamble (empty on other chunks).
+
+        Returns:
+            The text the provider embeds.
+        """
+        if row.get("kind") == "listing" and isinstance(row.get("listing"), str):
+            return str(row["listing"])
+        return self.build(
+            title=row["title"],
+            heading=row.get("heading"),
+            content=row["content"],
+            fields_text=preamble,
+            is_first_chunk=bool(preamble),
         )
-        room = max(self.listed_limit - head, self.listed_limit // 2)
-        pieces = HeadingChunker(max_chunk_chars=room).chunk(text, {})
-        return [piece.content.strip() for piece in pieces if piece.content.strip()]
 
     def build(
         self,

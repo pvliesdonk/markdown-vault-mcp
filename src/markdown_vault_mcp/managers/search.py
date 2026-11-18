@@ -131,6 +131,33 @@ _CONTEXT_FOLDER_PEERS_LIMIT = 20
 _RankT = TypeVar("_RankT", bound=_PathScorableRow)
 
 
+def _distinct_chunks(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the best-scoring row of each source chunk.
+
+    A listed concept's metadata rows copy the source metadata of its first
+    chunk, so a hit on them is a hit on that chunk, returned once. Rows with
+    another path, heading, line or content stay apart, and rows keep their
+    first position.
+
+    Args:
+        rows: Vector-store rows.
+
+    Returns:
+        One row per ``(path, heading, start_line, content)``, the highest score.
+    """
+    best: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            row["path"],
+            row.get("heading"),
+            row.get("start_line"),
+            row.get("content"),
+        )
+        if key not in best or row.get("score", 0.0) > best[key].get("score", 0.0):
+            best[key] = row
+    return list(best.values())
+
+
 def _rrf_accumulate(
     rows: Sequence[_ChannelRow],
     *,
@@ -1026,7 +1053,7 @@ class SearchManager:
                 start_line=int(r.get("start_line", 0)),
                 section_id=0,  # vector store has no sections rowid; see dataclass
             )
-            for r in rows
+            for r in _distinct_chunks(rows)
             if r["path"] in chunk_counts
         ]
 

@@ -92,13 +92,7 @@ def stored_inputs(
         if not isinstance(title, str) or not isinstance(content, str):
             continue
         preamble = row.metadata.get("preamble") or ""
-        text = builder.build(
-            title=title,
-            heading=row.metadata.get("heading"),
-            content=content,
-            fields_text=preamble,
-            is_first_chunk=bool(preamble),
-        )
+        text = builder.row_input(row.metadata, preamble)
         known[text] = row.vector
     return known
 
@@ -117,6 +111,11 @@ _METADATA_BATCH = 500
 _ROWS_BATCH = 256
 
 _METADATA_KEYS = ("path", "title", "folder", "heading", "content", "start_line")
+
+# What a listing row stores besides its source chunk's metadata: its kind and
+# the exact input, since its vector is not of the chunk text it carries.
+_LISTING_KEYS = ("kind", "listing")
+_LISTING_ROW = {"kind": "listing", "is_first_chunk": False}
 
 
 @dataclass
@@ -240,8 +239,8 @@ def _signature(rows: Collection[dict[str, Any]]) -> Counter[tuple[Any, ...]]:
     inputs are unchanged, so their stored vectors are republished without a
     provider call. The preamble participates so an offline summary-only
     edit (content identical, searchable frontmatter changed) still
-    re-embeds; ``or ""`` normalisation keeps legacy vector rows without the
-    key equal to fresh rows under default (v1) config.
+    re-embeds, as does a listing row's text (``listing``, which a row copying
+    its chunk's metadata has no other trace of); ``or ""`` normalisation keeps legacy rows equal.
     """
     return Counter(
         (
@@ -249,7 +248,7 @@ def _signature(rows: Collection[dict[str, Any]]) -> Counter[tuple[Any, ...]]:
             r.get("heading"),
             r.get("content"),
             r.get("start_line"),
-            r.get("preamble") or "",
+            r.get("listing") or r.get("preamble") or "",
         )
         for r in rows
     )
@@ -331,9 +330,9 @@ class EmbeddingReconciler:
     def _with_listing(self, rows: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
         """Yield *rows*, then a listed concept's title and description as extra rows.
 
-        The extra rows copy the first chunk's metadata and carry each piece as
-        their content, so they pass through :meth:`_embedding_input` like any
-        chunk and are rebuilt, reused and retried the same way.
+        Each extra row keeps its first chunk's source metadata (content,
+        heading, line), so a hit on it shows that chunk, and carries the piece
+        it embeds as ``listing``; it is rebuilt, reused and retried like a chunk.
         """
         first = None
         for row in rows:
@@ -345,7 +344,7 @@ class EmbeddingReconciler:
             first["title"], first.get("frontmatter_json")
         )
         for piece in pieces:
-            yield {**first, "heading": None, "content": piece, "is_first_chunk": False}
+            yield {**first, **_LISTING_ROW, "listing": piece}
 
     def _preamble(self, row: dict[str, Any]) -> str:
         """Return a first chunk's configured-fields preamble."""
@@ -358,16 +357,11 @@ class EmbeddingReconciler:
     ) -> tuple[str, dict[str, Any]] | None:
         """Build the shared embedding text and metadata for a keyword row."""
         preamble = self._preamble(row)
-        text = self._builder.build(
-            title=row["title"],
-            heading=row["heading"],
-            content=row["content"],
-            fields_text=preamble,
-            is_first_chunk=bool(row.get("is_first_chunk")),
-        )
+        text = self._builder.row_input(row, preamble)
         if not is_embeddable(text):
             return None
-        return text, {**{k: row.get(k) for k in _METADATA_KEYS}, "preamble": preamble}
+        keys = _METADATA_KEYS + (_LISTING_KEYS if row.get("kind") else ())
+        return text, {**{k: row.get(k) for k in keys}, "preamble": preamble}
 
     def _build_documents(self) -> Generator[_Document]:
         """Stream grouped built-in rows; retain required-index fallback grouping."""

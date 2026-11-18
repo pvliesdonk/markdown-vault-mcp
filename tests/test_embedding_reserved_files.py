@@ -131,9 +131,9 @@ def test_meaning_search_reaches_authored_content_and_generated_listing_concepts(
         )
         if description_only:
             assert "luminescence" in listing
-            assert "Concept\nluminescence" in provider.texts
+            assert "Concept luminescence" in provider.texts
             assert "Cobalt" in provider.texts
-            assert "Orbit\ncitrus" in provider.texts
+            assert "Orbit citrus" in provider.texts
             assert "unrelated prose" in provider.texts
         assert "generated/index.md" not in _paths(vault)
         assert not any("[Canine](" in text for text in provider.texts)
@@ -230,7 +230,7 @@ def test_listed_identity_rebuild_reuse_and_restore(  # noqa: PLR0915, RUF100 - O
         rows = store.rows_for("generated/concept.md")
         assert set(stored_inputs(second._embed_builder, rows)) == {
             "body text",
-            "Concept\nfirst meaning",
+            "Concept first meaning",
         }
         provider.texts.clear()
         second.index.build_embeddings()
@@ -393,8 +393,7 @@ def test_listing_rows_stay_within_cap_and_chunk_inputs_are_unchanged(
     assert listed[: len(plain)] == plain
     pieces = listed[len(plain) :]
     assert len(pieces) > 1
-    assert pieces[0] == "Concept"
-    assert pieces[1].startswith("glow0 glow1")
+    assert pieces[0].startswith("Concept glow0 glow1")
     assert all(len(piece) <= 300 for piece in pieces)
     assert set(" ".join(pieces).split()) >= {f"glow{i}" for i in range(250)}
 
@@ -434,6 +433,7 @@ def test_listing_row_is_reused_across_restart_and_incremental_edit(
             vault.index.build_embeddings()
             if reindex:
                 vault.index.reindex()
+                wait_for_writer_drain(vault)
             store = vault._index_mgr._embeddings._loaded_store()
             assert store is not None
             return list(
@@ -445,7 +445,7 @@ def test_listing_row_is_reused_across_restart_and_incremental_edit(
     write("luminescence")
     first = CountingProvider()
     stored = run(first)
-    assert stored[-1] == "Concept\nluminescence"
+    assert stored[-1] == "Concept luminescence"
     assert set(stored) <= set(first.texts)
     assert max(map(len, stored)) <= 300
     restart = CountingProvider()
@@ -454,7 +454,7 @@ def test_listing_row_is_reused_across_restart_and_incremental_edit(
     write("cobalt")
     edited = CountingProvider()
     after = run(edited, reindex=True)
-    assert after[-1] == "Concept\ncobalt"
+    assert after[-1] == "Concept cobalt"
     assert edited.texts == [after[-1]]
     assert after[:-1] == stored[:-1]
 
@@ -577,3 +577,34 @@ def test_listing_rows_respect_provider_budget_for_long_metadata(
     assert plain and listed
     assert all(text in listed for text in plain)
     assert max(map(len, listed)) <= max(300, max(map(len, plain)))
+
+
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_metadata_hit_returns_the_real_chunk_once(tmp_path: Path, mode: str) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "concept.md").write_text(
+        "---\ntitle: Concept\ndescription: luminescence\n---\n\n"
+        "The actual body says orchard.\n"
+    )
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            okf_mode="on",
+            okf_capabilities=_capabilities(True, (".",)),
+            max_chunk_chars=300,
+        ),
+        embedding_provider=MeaningProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        source = vault.reader.search("orchard", mode="keyword", snippet_words=0)
+        body = [(s.heading, s.content) for s in source[0].sections]
+        assert len(body) == 1
+        hits = vault.reader.search("glowing", mode=mode, snippet_words=0)
+        assert [hit.path for hit in hits] == ["concept.md"]
+        # A hit on the listing text is a hit on the chunk it was copied from.
+        assert [(s.heading, s.content) for s in hits[0].sections] == body
+    finally:
+        vault.close()

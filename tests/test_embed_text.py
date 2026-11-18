@@ -271,31 +271,33 @@ def test_listing_pieces_hold_the_whole_title_and_description_within_the_cap() ->
     data = {"description": " ".join(f"word{i}" for i in range(100))}
     builder = EmbedTextBuilder(listed=True, listed_limit=100)
     pieces = builder.listing_pieces("Title", data)
-    assert pieces[0] == "Title"
+    assert pieces[0].startswith("Title word0 word1")
     assert all(len(piece) <= 100 for piece in pieces)
-    assert " ".join(pieces[1:]).split() == data["description"].split()
+    words = " ".join(pieces).split()
+    assert words == ["Title", *data["description"].split()]
     # A description that fits makes one piece with its title.
-    assert builder.listing_pieces("Title", {"description": "short"}) == ["Title\nshort"]
+    assert builder.listing_pieces("Title", {"description": "short"}) == ["Title short"]
     # A title alone, a description alone and neither.
     assert builder.listing_pieces("Title", {}) == ["Title"]
     assert builder.listing_pieces("", {"description": "short"}) == ["short"]
     assert builder.listing_pieces("", {}) == []
-    # No limit leaves the text whole.
+    # No limit leaves the text in one piece.
     whole = EmbedTextBuilder(listed=True).listing_pieces("T", data)
-    assert whole == ["T\n" + data["description"]]
-    # The v2 head (title, heading lines) is left room for.
-    v2 = EmbedTextBuilder(embed_context=True, listed=True, listed_limit=100)
-    inputs = [
-        v2.build(
-            title="Title",
-            heading=None,
-            content=piece,
-            fields_text="",
-            is_first_chunk=False,
-        )
-        for piece in v2.listing_pieces("Title", data)
-    ]
-    assert all(len(text) <= 100 for text in inputs)
+    assert whole == ["T " + data["description"]]
+    # One token longer than the cap is still split to the cap.
+    token = builder.listing_pieces("T", {"description": "x" * 250})
+    assert [len(piece) for piece in token] == [100, 100, 52]
+    assert "".join(token).replace("T", "", 1).strip() == "x" * 250
+
+
+def test_row_input_rebuilds_a_listing_row_from_its_stored_metadata() -> None:
+    v2 = EmbedTextBuilder(embed_context=True, listed=True)
+    chunk = {"title": "T", "heading": "H", "content": "body"}
+    assert v2.row_input(chunk, "") == "T\nH\n\nbody"
+    listing = {**chunk, "kind": "listing", "listing": "T words"}
+    # The exact input, with no title or heading head, whatever the chunk holds.
+    assert v2.row_input(listing, "") == "T words"
+    assert v2.row_input({**listing, "listing": None}, "") == "T\nH\n\nbody"
 
 
 def test_listed_scope_token_normalizes_designation_patterns() -> None:
