@@ -19,6 +19,7 @@ from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     InvalidRequestError,
+    StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.okf import (
     append_okf_verification,
@@ -104,12 +105,15 @@ class WriterFacet:
         self._link_reporter = link_reporter
         self._receipt_store = receipt_store
 
-    def okf_verify(self, path: str, review: ReviewRequest) -> dict[str, Any]:
+    def okf_verify(
+        self, path: str, subject: str, review: ReviewRequest
+    ) -> dict[str, Any]:
         """Record a review of an exact snapshot and its local receipt.
 
         Args:
             path: Vault-relative note path.
-            review: Subject, reviewed snapshot, exact etag and check.
+            subject: Non-empty human reviewer identifier.
+            review: Reviewed snapshot, exact etag and non-empty check.
 
         Returns:
             The note path, verifier and number of portable reviews.
@@ -119,6 +123,10 @@ class WriterFacet:
             InvalidRequestError: If the snapshot or note cannot be safely reviewed.
             ReceiptWriteError: If the note was written but the receipt failed.
         """
+        if not isinstance(subject, str) or not subject.strip():
+            raise InvalidRequestError("Reviewer subject must not be empty")
+        if not isinstance(review.check, str) or not review.check.strip():
+            raise InvalidRequestError("Review check must not be empty")
         note = self._doc_mgr.read(path)
         if note is None or note.etag != review.etag:
             raise ConcurrentModificationError(
@@ -128,10 +136,11 @@ class WriterFacet:
         if self._receipt_store is None:
             raise InvalidRequestError("Local review receipt storage is not configured")
         store = self._receipt_store()
+        store.prepare()
         now = datetime.now(UTC)
         text = append_okf_verification(
             note.content,
-            subject=review.subject,
+            subject=subject,
             now=now,
             reviewed_snapshot=snapshot,
             check=review.check,
@@ -142,7 +151,7 @@ class WriterFacet:
             )
         with okf_write_suppressed():
             self.write(path, text, if_match=review.etag)
-        actor = f"human:{review.subject}"
+        actor = f"human:{subject}"
         try:
             store.append(
                 {
@@ -154,7 +163,7 @@ class WriterFacet:
                     "recorded_at": okf_timestamp(datetime.now(UTC)),
                 }
             )
-        except (OSError, sqlite3.Error) as exc:
+        except (OSError, sqlite3.Error, StoreUnsupportedSchemaError) as exc:
             raise ReceiptWriteError(
                 "The note was written but its local receipt failed"
             ) from exc

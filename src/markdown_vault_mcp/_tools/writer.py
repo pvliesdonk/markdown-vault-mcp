@@ -11,7 +11,7 @@ import base64
 import contextlib
 import hashlib
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
@@ -86,14 +86,6 @@ def write_identity_scope() -> Iterator[None]:
 _FETCH_UNCAPPED_BYTES = 2**63 - 1
 
 _REVIEW_RESPONSE_KEY = "review_confirmed"
-
-
-@dataclass(frozen=True)
-class _ReviewConfirmation:
-    path: str
-    digest: str
-    check: str
-    etag: str
 
 
 async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None:
@@ -237,7 +229,7 @@ async def _require_review_elicitation(
 
 
 async def _resolve_verify_mode_subject(
-    *, mode: str, ctx: Context, review: _ReviewConfirmation
+    *, mode: str, ctx: Context, path: str, review: ReviewRequest
 ) -> str | InputRequiredResult:
     """Resolve the ``human:`` subject to stamp, enforcing *mode*'s gate.
 
@@ -265,19 +257,21 @@ async def _resolve_verify_mode_subject(
         and request_context.protocol_version in MODERN_PROTOCOL_VERSIONS
     ):
         token = hashlib.sha256(
-            f"{review.path}\0{review.digest}\0{review.check}\0{review.etag}".encode()
+            f"{path}\0{review.snapshot['digest']}\0{review.check}\0{review.etag}".encode()
         ).hexdigest()
         request = _require_modern_review(
             ctx,
-            review.path,
-            review.digest,
+            path,
+            review.snapshot["digest"],
             review.check,
             f"{_REVIEW_RESPONSE_KEY}_{token}",
         )
         if request is not None:
             return request
     else:
-        await _require_review_elicitation(ctx, review.path, review.digest, review.check)
+        await _require_review_elicitation(
+            ctx, path, review.snapshot["digest"], review.check
+        )
     return resolve_verify_subject()
 
 
@@ -1252,8 +1246,7 @@ def register(mcp: FastMCP) -> None:
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any] | InputRequiredResult:
-        """Record that a person reviewed a note, raising its Open Knowledge Format trust
-        tier to human-reviewed; returns the verifier recorded.
+        """Record a review of a note snapshot; returns the verifier recorded.
 
         The user may be asked to confirm the review.
 
@@ -1276,8 +1269,8 @@ def register(mcp: FastMCP) -> None:
 
         Raises:
             ToolError: If the mode's confirmation gate is not met, or the note
-                changed since it was read; call okf_verify again to attest the
-                current text. Under `elicit` the gate needs a client that can
+                changed since it was read; read and review the current text before
+                calling okf_verify again. Under `elicit` the gate needs a client that can
                 ask the user, and the user's confirmation; under `trust-auth`,
                 an authenticated identity.
             DocumentNotFoundError: If the note does not exist.
@@ -1294,7 +1287,8 @@ def register(mcp: FastMCP) -> None:
         subject_or_request = await _resolve_verify_mode_subject(
             mode=config.content.okf_capabilities.verify,
             ctx=ctx,
-            review=_ReviewConfirmation(path, snapshot["digest"], check, note.etag),
+            path=path,
+            review=ReviewRequest(snapshot, note.etag, check),
         )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
@@ -1307,7 +1301,8 @@ def register(mcp: FastMCP) -> None:
                     None,
                     vault.writer.okf_verify,
                     path,
-                    ReviewRequest(subject, snapshot, note.etag, check),
+                    subject,
+                    ReviewRequest(snapshot, note.etag, check),
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(

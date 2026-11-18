@@ -11,6 +11,7 @@ import logging
 import os
 import subprocess
 import threading
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 # Importing the backend module registers it; the vault then opens the index
@@ -626,6 +627,12 @@ class Vault:
             self._embeddings_path,
             self._index_path,
         )
+        if inspection_policy is not None:
+            policy = replace(
+                inspection_policy,
+                state_paths=inspection_policy.state_paths
+                + ((observation_path,) if observation_path is not None else ()),
+            )
         observations = ObservationLedger(
             observation_path,
             BundleInspector(

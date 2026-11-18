@@ -738,6 +738,9 @@ async def test_receipt_failure_reports_completed_note_write(
     snapshot = concept_snapshot(path.read_text(encoding="utf-8"))
 
     class BrokenStore:
+        def prepare(self) -> None:
+            pass
+
         def append(self, _receipt: dict[str, str]) -> None:
             raise OSError("storage unavailable")
 
@@ -756,3 +759,36 @@ async def test_receipt_failure_reports_completed_note_write(
                 "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
             )
     assert "verified:" in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_documented_review_flow_with_json_frontmatter(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import frontmatter
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    path.write_text('{\n"type": "concept",\n"ratio": 1.00\n}\nBody\n', encoding="utf-8")
+
+    async def confirm(*_args: Any) -> bool:
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=confirm
+    ) as client:
+        read = _parse_tool_data(
+            await client.call_tool("read", {"path": "guides/plain.md"})
+        )
+        snapshot = read["okf"]["snapshot"]
+        result = await client.call_tool(
+            "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
+        )
+    assert _parse_tool_data(result)["verified_count"] == 1
+    text = path.read_text(encoding="utf-8")
+    assert '"ratio": 1.00' in text
+    assert (
+        frontmatter.loads(text).metadata["x-mvmcp"]["reviews"][0]["snapshot"]
+        == snapshot
+    )

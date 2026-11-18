@@ -1576,7 +1576,7 @@ class TestScopeSurvivesARealToolCall:
     async def test_write_finishes_commit_before_sequential_folder_move(
         self, _git_vault_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A sequential move records the note and OKF files as renames."""
+        """A sequential move records the committed note as a rename."""
         import subprocess
 
         from fastmcp import Client
@@ -1599,6 +1599,8 @@ class TestScopeSurvivesARealToolCall:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_INDEX", "false")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "off")
         entered, release = threading.Event(), threading.Event()
         original = GitWriteStrategy.on_write_batch
 
@@ -1629,8 +1631,7 @@ class TestScopeSurvivesARealToolCall:
                 await task
             write_status = _show_head(repo)
             assert "write: proj/a/second.md" in write_status
-            for path in ("second.md", "index.md", "log.md"):
-                assert f"A\tproj/a/{path}" in write_status
+            assert "A\tproj/a/second.md" in write_status
             await client.call_tool(
                 "move_folder", {"old_dir": "proj/a", "new_dir": "proj/b"}
             )

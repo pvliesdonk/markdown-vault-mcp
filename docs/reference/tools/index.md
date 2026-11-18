@@ -61,7 +61,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Writer | [`okf_generate_index`](writer.md#okf_generate_index) | OKF: Generate index.md | Write a folder's Open Knowledge Format index.md: a link to each note directly in it with its description, and one to each subfolder's index.md, replacing the old listing and keeping its frontmatter. |
 | Writer | [`okf_seed_log`](writer.md#okf_seed_log) | OKF: Seed log.md | Create a folder's Open Knowledge Format log.md from the git history of the notes under it, one dated section per day, newest first. |
 | Writer | [`okf_author`](writer.md#okf_author) | OKF: Author Concept | Set selected editorial fields on an existing OKF concept. |
-| Writer | [`okf_verify`](writer.md#okf_verify) | OKF: Verify Note | Record that a person reviewed a note, raising its Open Knowledge Format trust tier to human-reviewed; returns the verifier recorded. |
+| Writer | [`okf_verify`](writer.md#okf_verify) | OKF: Verify Note | Record a review of a note snapshot; returns the verifier recorded. |
 | Git | [`get_history`](git.md#get_history) | Note History | List the commits that touched a note, an attachment, a folder or the whole vault, newest first. |
 | Git | [`get_diff`](git.md#get_diff) | Note Diff | Return how a note or attachment changed from an earlier commit to now, as one unified diff or one per commit. |
 | Git | [`git_sync`](git.md#git_sync) | Sync with Git | Pull from and push to the vault's git remote now; returns what each leg did. |

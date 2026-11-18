@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import closing
 from typing import TYPE_CHECKING
 from weakref import WeakKeyDictionary
+
+from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +28,43 @@ class ReceiptStore:
         self._rows: list[dict[str, str]] = []
         self._lock = threading.Lock()
 
+    def _check_schema(
+        self, db: sqlite3.Connection, *, allow_empty: bool = False
+    ) -> int:
+        version = int(db.execute("PRAGMA user_version").fetchone()[0])
+        if version not in (0, 1):
+            raise StoreUnsupportedSchemaError(
+                f"Unsupported receipt schema version: {version}",
+                backend="review_receipts",
+                location=str(self._path),
+            )
+        columns = [row[1] for row in db.execute("PRAGMA table_info(receipts)")]
+        if not columns and allow_empty and version == 0:
+            tables = db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+            if not tables:
+                return version
+        if columns != ["path", "actor", "at", "check_name", "digest", "recorded_at"]:
+            raise sqlite3.DatabaseError("Invalid receipt store schema")
+        return version
+
+    def prepare(self) -> None:
+        """Refuse unreadable or unsupported existing state before writing a note."""
+        if self._path is None:
+            return
+        try:
+            self._path.stat()
+        except FileNotFoundError:
+            return
+        with (
+            self._lock,
+            closing(
+                sqlite3.connect(f"{self._path.resolve().as_uri()}?mode=ro", uri=True)
+            ) as db,
+        ):
+            self._check_schema(db)
+
     def append(self, receipt: dict[str, str]) -> None:
         """Record a receipt outside the bundle."""
         with self._lock:
@@ -32,14 +72,19 @@ class ReceiptStore:
                 self._rows.append(receipt.copy())
                 return
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(self._path) as db:
+            with closing(sqlite3.connect(self._path)) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                version = self._check_schema(db, allow_empty=True)
+                if version == 0:
+                    db.execute(
+                        "CREATE TABLE IF NOT EXISTS receipts "
+                        "(path TEXT, actor TEXT, at TEXT, check_name TEXT, "
+                        "digest TEXT, recorded_at TEXT)"
+                    )
+                    db.execute("PRAGMA user_version=1")
                 db.execute(
-                    "CREATE TABLE IF NOT EXISTS receipts "
-                    "(path TEXT, actor TEXT, at TEXT, check_name TEXT, "
-                    "digest TEXT, recorded_at TEXT)"
-                )
-                db.execute(
-                    "INSERT INTO receipts VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO receipts (path, actor, at, check_name, digest, recorded_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
                     tuple(
                         receipt[k]
                         for k in ("path", "by", "at", "check", "digest", "recorded_at")
@@ -47,19 +92,18 @@ class ReceiptStore:
                 )
 
     def rows(self) -> list[dict[str, str]]:
-        """Return locally recorded receipts."""
+        """Return local receipts; unavailable state raises instead of appearing empty."""
         with self._lock:
             if self._path is None:
                 return [row.copy() for row in self._rows]
-            try:
-                with sqlite3.connect(
-                    f"{self._path.resolve().as_uri()}?mode=ro", uri=True
-                ) as db:
-                    rows = db.execute(
-                        "SELECT * FROM receipts ORDER BY rowid"
-                    ).fetchall()
-            except sqlite3.OperationalError:
-                return []
+            with closing(
+                sqlite3.connect(f"{self._path.resolve().as_uri()}?mode=ro", uri=True)
+            ) as db:
+                self._check_schema(db)
+                rows = db.execute(
+                    "SELECT path, actor, at, check_name, digest, recorded_at "
+                    "FROM receipts ORDER BY rowid"
+                ).fetchall()
             keys = ("path", "by", "at", "check", "digest", "recorded_at")
             return [dict(zip(keys, row, strict=True)) for row in rows]
 

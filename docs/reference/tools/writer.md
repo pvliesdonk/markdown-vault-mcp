@@ -554,8 +554,7 @@ Read a concept, then pass its `etag` as `if_match` and the fields to change, suc
 
 **OKF: Verify Note.** Changes state, not destructive. Tags: `okf`, `okf-enforce`, `write`.
 
-Record that a person reviewed a note, raising its Open Knowledge Format trust
-tier to human-reviewed; returns the verifier recorded.
+Record a review of a note snapshot; returns the verifier recorded.
 
 The user may be asked to confirm the review.
 
@@ -582,16 +581,11 @@ client for human confirmation. After confirmation, a dict with:
 
 **Outcomes and errors**
 
-- ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; call `okf_verify` again to attest the current text. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity.
+- ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; read and review the current text before calling `okf_verify` again. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity.
 - DocumentNotFoundError: If the note does not exist.
 - InvalidRequestError: If the path is protected.
 
 <!-- DOMAIN-EXAMPLE-okf_verify-START -->
-After the user confirms, `okf_verify(path="guides/setup.md")` returns `{"path": "guides/setup.md", "verifier": "human:alice", "verified_count": 1}`, and the note's frontmatter gains:
+Read `guides/setup.md` in full and review its content. Pass the returned `okf.snapshot` as `reviewed_snapshot` to `okf_verify(path="guides/setup.md", reviewed_snapshot=<snapshot>)`. After confirmation, the result includes the `verifier` and `verified_count`. The note gains a portable `{by, at}` entry in `verified` and a matching claim under `x-mvmcp.reviews` with the check and snapshot. The server keeps a receipt in local state outside the bundle. Reads currently report review applicability as `unbound` and do not evaluate saved binding claims.
 
-```yaml
-verified:
-- at: '2026-10-03T12:00:00Z'
-  by: human:alice
-```
 <!-- DOMAIN-EXAMPLE-okf_verify-END -->

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -128,8 +129,6 @@ def validate_reviewed_snapshot(text: str, snapshot: dict[str, str]) -> dict[str,
     Raises:
         InvalidRequestError: If the snapshot is malformed or stale.
     """
-    import re
-
     from markdown_vault_mcp.exceptions import InvalidRequestError
 
     if (
@@ -151,7 +150,73 @@ def validate_reviewed_snapshot(text: str, snapshot: dict[str, str]) -> dict[str,
 class ReviewRequest:
     """Reviewed snapshot and exact bytes to verify as one operation."""
 
-    subject: str
     snapshot: dict[str, str]
     etag: str
     check: str = "human-review"
+
+
+def _json_space(source: str, position: int) -> int:
+    tail = source[position:]
+    return position + len(tail) - len(tail.lstrip())
+
+
+def edit_json_review_header(text: str, changes: dict[str, Any]) -> str | None:
+    """Update review fields in JSON frontmatter without rewriting other values.
+
+    Args:
+        text: Complete note, including frontmatter.
+        changes: Top-level review fields to replace or add.
+
+    Returns:
+        Updated note, or None when its frontmatter is not JSON.
+    """
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    offset = len(text) - len(text.lstrip("\ufeff \t\r\n"))
+    candidate = text[offset:]
+    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    if not isinstance(handler, JSONHandler):
+        return None
+    source, _ = handler.split(candidate)
+    source_length = len(source)
+    decoder = json.JSONDecoder()
+    decoder.raw_decode(source)  # Validate delimiters before scanning individual values.
+    pos = 1
+    edits: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    while True:
+        pos = _json_space(source, pos)
+        if source[pos] == "}":
+            break
+        key, end = decoder.raw_decode(source, pos)
+        pos = _json_space(source, _json_space(source, end) + 1)
+        start = pos
+        _, pos = decoder.raw_decode(source, pos)
+        if key in changes:
+            if key in seen:
+                raise InvalidRequestError(
+                    "Duplicate review fields cannot be safely updated"
+                )
+            seen.add(key)
+            edits.append((start, pos, json.dumps(changes[key], ensure_ascii=False)))
+        pos = _json_space(source, pos)
+        pos += int(source[pos] == ",")
+    additions = [
+        f"{json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}"
+        for k, v in changes.items()
+        if k not in seen
+    ]
+    if additions:
+        separator = ", " if source[1:pos].strip() else ""
+        edits.append(
+            (
+                pos,
+                pos,
+                separator
+                + ", ".join(additions)
+                + ("\r\n" if "\r\n" in source else "\n"),
+            )
+        )
+    for start, end, replacement in sorted(edits, reverse=True):
+        source = source[:start] + replacement + source[end:]
+    return text[:offset] + source + candidate[source_length:]

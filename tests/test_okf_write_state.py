@@ -150,7 +150,7 @@ def test_capability_report_matrix(
         settings=VaultSettings(
             read_only=read_only,
             okf_write=alias,
-            okf_capabilities=OkfCapabilities(*caps),
+            okf_capabilities=OkfCapabilities(*caps[:5]),
         ),
     )
     try:
