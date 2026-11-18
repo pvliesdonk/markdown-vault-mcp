@@ -13,6 +13,7 @@ unchanged surface.
 from __future__ import annotations
 
 import logging
+import posixpath
 import sqlite3
 import time
 from dataclasses import dataclass, field, replace
@@ -1372,6 +1373,7 @@ class IndexManager:
         """
         if not paths:
             return
+        paths = {posixpath.normpath(path) for path in paths}
         exempt = self._admission_snapshot()
         previous = self._memory_exempt
         if previous is None:
@@ -1389,6 +1391,12 @@ class IndexManager:
                 except (OSError, UnicodeDecodeError, ValueError) as exc:
                     # Refresh the other notes before failing the job. The
                     # writer restores the snapshot, including failed paths.
+                    if first_error is None:
+                        first_error = exc
+            if self.observations is not None:
+                try:
+                    self.observations.refresh_many(paths)
+                except Exception as exc:
                     if first_error is None:
                         first_error = exc
             if first_error is not None:
@@ -1410,8 +1418,6 @@ class IndexManager:
     def _process_dirty_path(self, path: str, *, exempt: bool | None = None) -> None:
         """Refresh one row, propagating any failure that leaves it stale."""
         abs_path = self._source_dir / path
-        if self.observations is not None:
-            self.observations.refresh(path)
         try:
             if self._is_path_excluded(path):
                 # Excluded paths (e.g. convention files) never enter

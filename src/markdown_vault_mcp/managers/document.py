@@ -697,12 +697,15 @@ class DocumentManager:
                 )
                 target_attempted = True
                 atomic_write(abs_path, repaired)
+                observed_path = abs_path.relative_to(
+                    self._source_dir.resolve()
+                ).as_posix()
                 if self._observations is not None:
                     self._observations.expect_write(
-                        path, hashlib.sha256(repaired).hexdigest()
+                        observed_path, hashlib.sha256(repaired).hexdigest()
                     )
                 if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([path])
+                    self._mark_paths_dirty([observed_path])
                 self._notifier.fire(abs_path, repaired.decode("utf-8"), "write")
             except LogRepairCollision:
                 raise
@@ -1190,6 +1193,7 @@ class DocumentManager:
             operation: The write operation reported to the write callback.
 
         """
+        path = abs_path.relative_to(self._source_dir.resolve()).as_posix()
         staged = self._staged(content)
         atomic_write(abs_path, staged)
         if self._observations is not None:
@@ -1585,11 +1589,19 @@ class DocumentManager:
                 if not is_regular_file(abs_path):
                     raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
-                if self._observations is not None:
-                    self._observations.refresh(path)
+                observed_path = abs_path.relative_to(
+                    self._source_dir.resolve()
+                ).as_posix()
+                captured = (
+                    self._observations.capture(observed_path)
+                    if self._observations
+                    else None
+                )
                 abs_path.unlink()
+                if self._observations is not None:
+                    self._observations.record_removal(observed_path, captured)
                 if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([path])
+                    self._mark_paths_dirty([observed_path])
             else:
                 abs_path = self._artifacts.unlink(path, if_match)
 
@@ -1687,25 +1699,48 @@ class DocumentManager:
                     old_abs, old_path, if_match, tolerate=tolerate_link_rewrites
                 )
 
-                backlinks = self._fts.get_backlinks(old_path) if update_links else []
+                observed_old = old_abs.relative_to(
+                    self._source_dir.resolve()
+                ).as_posix()
+                observed_new = new_abs.relative_to(
+                    self._source_dir.resolve()
+                ).as_posix()
+                backlinks = (
+                    self._fts.get_backlinks(observed_old) if update_links else []
+                )
 
-                if self._observations is not None:
-                    self._observations.refresh(old_path)
+                captured = (
+                    self._observations.capture(observed_old)
+                    if self._observations
+                    else None
+                )
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
-
-                note = parse_note(
-                    new_abs,
-                    self._source_dir,
-                    self._chunk_strategy,
-                    title_field=self._title_field,
-                )
+                if self._observations is not None:
+                    self._observations.record_removal(
+                        observed_old, captured, observed_new
+                    )
+                if self._mark_paths_dirty is not None:
+                    self._mark_paths_dirty([observed_old, observed_new])
+                try:
+                    note = parse_note(
+                        new_abs,
+                        self._source_dir,
+                        self._chunk_strategy,
+                        title_field=self._title_field,
+                    )
+                except Exception:
+                    self._notifier.fire_rename(new_abs, "", old_abs)
+                    raise
 
                 callback_content = _read_text_utf8(new_abs)
 
                 backlink_callbacks, backlink_paths, unrewritten = (
                     self._update_backlinks(
-                        old_path, new_path, backlinks, allow_protected=allow_protected
+                        observed_old,
+                        observed_new,
+                        backlinks,
+                        allow_protected=allow_protected,
                     )
                 )
                 updated_links = len(backlink_callbacks)
@@ -1713,8 +1748,6 @@ class DocumentManager:
                     unrewritten, allow_protected=allow_protected
                 )
 
-                if self._observations is not None:
-                    self._observations.move(old_path, note.path)
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
                     dirty.extend(backlink_paths)
@@ -2171,16 +2204,6 @@ class DocumentManager:
                 continue
             self._notifier.fire(src_abs, src_content, "edit")
 
-    def _observe_folder_sources(self, paths: dict[str, str]) -> None:
-        if self._observations is not None:
-            for path in paths:
-                self._observations.refresh(path)
-
-    def _observe_folder_moves(self, paths: dict[str, str]) -> None:
-        if self._observations is not None:
-            for old_path, new_path in paths.items():
-                self._observations.move(old_path, new_path)
-
     def move_folder(  # noqa: C901, RUF100 — pre-existing branches.
         self, old_dir: str, new_dir: str, *, allow_protected: bool = False
     ) -> MoveFolderResult:
@@ -2247,7 +2270,10 @@ class DocumentManager:
             # 1+2. Enumerate the subtree, build the old->new path map, and
             #      gate on destination collisions before moving anything.
             moves, md_map, non_note_moves = self._plan_folder_move(
-                old_abs, old_dir, new_dir, allow_protected=allow_protected
+                old_abs,
+                old_abs.relative_to(self._source_dir.resolve()).as_posix(),
+                new_abs.relative_to(self._source_dir.resolve()).as_posix(),
+                allow_protected=allow_protected,
             )
 
             # 3. Capture backlinks for every moved note BEFORE the move, while
@@ -2258,7 +2284,11 @@ class DocumentManager:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
 
-            self._observe_folder_sources(md_map)
+            captures = (
+                {path: self._observations.capture(path) for path in md_map}
+                if self._observations is not None
+                else {}
+            )
 
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
@@ -2289,7 +2319,11 @@ class DocumentManager:
             # 6. Index: purge old note paths, reparse new note paths, plus the
             #    rewritten sources. A single mark_paths_dirty batch makes the
             #    writer run resolve_vault_wikilinks() once.
-            self._observe_folder_moves(md_map)
+            if self._observations is not None:
+                for old_path, new_path in md_map.items():
+                    self._observations.record_removal(
+                        old_path, captures[old_path], new_path
+                    )
             if self._mark_paths_dirty is not None:
                 move_dirty: list[str] = []
                 move_dirty.extend(md_map.keys())  # old paths -> purged

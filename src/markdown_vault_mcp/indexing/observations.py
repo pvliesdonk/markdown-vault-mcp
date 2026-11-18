@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
+import posixpath
 import re
 import tempfile
 import threading
@@ -42,6 +44,53 @@ class Observation:
     origin: str = "unknown"
     moved_from: str | None = None
     moved_to: str | None = None
+
+
+@dataclass(frozen=True)
+class _Captured:
+    role: str
+    digest: str
+    header: str | None
+    observed_at: str
+
+
+@dataclass(frozen=True)
+class _Removal:
+    captured: _Captured | None
+    destination: str | None
+
+
+def _present(
+    path: str, old: Observation | None, captured: _Captured, origin: str | None = None
+) -> Observation:
+    if (
+        old
+        and old.presence == "present"
+        and (old.content_digest, old.frontmatter_digest)
+        == (captured.digest, captured.header)
+    ):
+        return replace(
+            old, role=captured.role, origin=origin if origin is not None else old.origin
+        )
+    return Observation(
+        path,
+        captured.role,
+        captured.digest,
+        captured.header,
+        old.first_seen_at if old else captured.observed_at,
+        captured.observed_at,
+        origin=origin or "unknown",
+    )
+
+
+def _removed(old: Observation, now: str) -> Observation:
+    return replace(
+        old,
+        presence="removed",
+        removed_observed_at=now,
+        last_change_observed_at=now,
+        origin="unknown",
+    )
 
 
 def _valid_timestamp(value: object) -> bool:
@@ -106,7 +155,9 @@ class ObservationLedger:
     def __init__(self, path: Path | None, inspector: BundleInspector) -> None:
         self._path = path
         self._inspector = inspector
-        self._pending: dict[str, str] = {}
+        self._pending: dict[str, tuple[str]] = {}
+        self._removals: dict[str, _Removal] = {}
+        self._pending_lock = threading.Lock()
         self._rows: dict[str, Observation] | None = {} if path is None else None
         self._lock = (
             threading.Lock()
@@ -153,8 +204,44 @@ class ObservationLedger:
             path: Vault-relative path.
             digest: SHA-256 of the staged bytes.
         """
-        with self._lock:
-            self._pending[path] = digest
+        with self._pending_lock:
+            self._pending[posixpath.normpath(path)] = (digest,)
+
+    def capture(self, path: str) -> _Captured | None:
+        """Capture the current source incarnation without loading ledger state.
+
+        Args:
+            path: Vault-relative source path.
+
+        Returns:
+            Evidence from an accessible source, or None when it is unavailable.
+        """
+        path = posixpath.normpath(path)
+        found: list[_Captured] = []
+
+        def visit(_path: str, role: str, digest: str, header: str | None) -> None:
+            found.append(_Captured(role, digest, header, datetime.now(UTC).isoformat()))
+
+        # Policy preparation mutates the inspector; isolate it from a concurrent sweep.
+        inspector = copy.copy(self._inspector)
+        inspector.observe_path(path, visit)
+        return found[0] if found else None
+
+    def record_removal(
+        self, path: str, captured: _Captured | None, destination: str | None = None
+    ) -> None:
+        """Queue evidence for an already completed deletion or move.
+
+        Args:
+            path: Former path.
+            captured: Source evidence collected before the mutation.
+            destination: Destination when the mutation moved the source.
+        """
+        path = posixpath.normpath(path)
+        destination = posixpath.normpath(destination) if destination else None
+        with self._pending_lock:
+            self._removals[path] = _Removal(captured, destination)
+            self._pending.pop(path, None)
 
     def refresh(self, path: str) -> None:
         """Reconcile one dirty path against the inventory scope.
@@ -162,17 +249,82 @@ class ObservationLedger:
         Args:
             path: Vault-relative path.
         """
+        self.refresh_many({path})
+
+    def refresh_many(self, paths: set[str]) -> None:
+        """Reconcile a dirty batch with one ledger load and save.
+
+        Args:
+            paths: Vault-relative paths to inspect.
+        """
+        paths = {posixpath.normpath(path) for path in paths}
         with self._lock:
             rows, valid = self._load()
             previous = rows.copy()
-            expected = self._pending.get(path)
-            state = self._refresh_locked(rows, path, expected)
+            with self._pending_lock:
+                pending = {path: self._pending.get(path) for path in paths}
+                removals = {path: self._removals.get(path) for path in paths}
+            states: dict[str, str] = {}
+            for path in paths:
+                self._seed_capture(rows, path, removals[path])
+                hint = pending[path]
+                states[path] = self._refresh_locked(
+                    rows, path, hint[0] if hint else None
+                )
+            self._link_moves(rows, removals, states)
             if self._path is None:
                 self._rows = rows
             elif rows != previous or not valid:
                 self._save(rows)
-            if state != "blocked":
-                self._pending.pop(path, None)
+            with self._pending_lock:
+                for path in paths:
+                    if states[path] != "blocked":
+                        if self._pending.get(path) is pending[path]:
+                            self._pending.pop(path, None)
+                        if self._removals.get(path) is removals[path]:
+                            self._removals.pop(path, None)
+
+    @staticmethod
+    def _link_moves(
+        rows: dict[str, Observation],
+        removals: dict[str, _Removal | None],
+        states: dict[str, str],
+    ) -> None:
+        for path, removal in removals.items():
+            if (
+                removal is None
+                or removal.captured is None
+                or removal.destination is None
+            ):
+                continue
+            target = removal.destination
+            if (
+                states.get(path) == "missing"
+                and states.get(target) == "present"
+                and path in rows
+                and target in rows
+            ):
+                rows[path] = replace(rows[path], moved_to=target)
+                rows[target] = replace(rows[target], moved_from=path)
+
+    @staticmethod
+    def _seed_capture(
+        rows: dict[str, Observation], path: str, removal: _Removal | None
+    ) -> None:
+        if removal is None or removal.captured is None:
+            return
+        captured = removal.captured
+        old = rows.get(path)
+        if old and old.presence == "present" and old.content_digest == captured.digest:
+            return
+        rows[path] = Observation(
+            path,
+            captured.role,
+            captured.digest,
+            captured.header,
+            captured.observed_at,
+            captured.observed_at,
+        )
 
     def _refresh_locked(
         self, rows: dict[str, Observation], path: str, expected: str | None
@@ -181,63 +333,19 @@ class ObservationLedger:
         old = rows.get(path)
 
         def visit(name: str, role: str, digest: str, header: str | None) -> None:
-            origin = "server_write" if expected == digest else "unknown"
-            if (
-                old
-                and old.presence == "present"
-                and (old.content_digest, old.frontmatter_digest) == (digest, header)
-            ):
-                rows[name] = replace(
-                    old,
-                    role=role,
-                    origin=origin if expected is not None else old.origin,
-                )
-            else:
-                rows[name] = Observation(
-                    name,
-                    role,
-                    digest,
-                    header,
-                    old.first_seen_at if old else now,
-                    now,
-                    origin=origin,
-                )
+            origin = (
+                ("server_write" if expected == digest else "unknown")
+                if expected is not None
+                else None
+            )
+            rows[name] = _present(
+                name, old, _Captured(role, digest, header, now), origin
+            )
 
         state = self._inspector.observe_path(path, visit)
         if state == "missing" and old and old.presence == "present":
-            rows[path] = replace(
-                old,
-                presence="removed",
-                removed_observed_at=now,
-                last_change_observed_at=now,
-                origin="unknown",
-            )
+            rows[path] = _removed(old, now)
         return state
-
-    def move(self, old_path: str, new_path: str) -> None:
-        """Record both ends of a server-observed move.
-
-        Args:
-            old_path: Former vault-relative path.
-            new_path: Destination vault-relative path.
-        """
-        with self._lock:
-            rows, valid = self._load()
-            previous = rows.copy()
-            self._refresh_locked(rows, old_path, None)
-            self._refresh_locked(rows, new_path, None)
-            if (
-                old_path in rows
-                and rows[old_path].presence == "removed"
-                and new_path in rows
-                and rows[new_path].presence == "present"
-            ):
-                rows[old_path] = replace(rows[old_path], moved_to=new_path)
-                rows[new_path] = replace(rows[new_path], moved_from=old_path)
-            if self._path is None:
-                self._rows = rows
-            elif rows != previous or not valid:
-                self._save(rows)
 
     def sweep(self) -> None:
         """Reconcile a live inventory sweep; incomplete walks retain absent rows."""
@@ -246,29 +354,32 @@ class ObservationLedger:
             now = datetime.now(UTC).isoformat()
             result = previous.copy()
             found: set[str] = set()
+            with self._pending_lock:
+                pending = self._pending.copy()
 
             def visit(
                 path: str, role: str, digest: str, frontmatter: str | None
             ) -> None:
                 found.add(path)
-                old = previous.get(path)
-                result[path] = (
-                    replace(old, role=role)
-                    if old
-                    and old.presence == "present"
-                    and (old.content_digest, old.frontmatter_digest)
-                    == (digest, frontmatter)
-                    else Observation(
-                        path,
-                        role,
-                        digest,
-                        frontmatter,
-                        old.first_seen_at if old else now,
-                        now,
-                    )
+                expected = pending.get(path)
+                if expected is not None and expected[0] != digest:
+                    with self._pending_lock:
+                        if self._pending.get(path) is expected:
+                            self._pending.pop(path, None)
+                result[path] = _present(
+                    path, previous.get(path), _Captured(role, digest, frontmatter, now)
                 )
 
             blocked = self._inspector.observe_files(visit)
+            for path, expected in pending.items():
+                visible = not any(
+                    not prefix or path == prefix or path.startswith(prefix + "/")
+                    for prefix in blocked
+                )
+                if path not in found and visible:
+                    with self._pending_lock:
+                        if self._pending.get(path) is expected:
+                            self._pending.pop(path, None)
             for path in previous.keys() - found:
                 old = previous[path]
                 visible = not any(
@@ -276,13 +387,7 @@ class ObservationLedger:
                     for prefix in blocked
                 )
                 if old.presence == "present" and visible:
-                    result[path] = replace(
-                        old,
-                        presence="removed",
-                        removed_observed_at=now,
-                        last_change_observed_at=now,
-                        origin="unknown",
-                    )
+                    result[path] = _removed(old, now)
             if self._path is None:
                 self._rows = result
             elif result != previous or not valid:

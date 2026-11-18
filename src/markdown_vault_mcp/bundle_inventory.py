@@ -565,10 +565,13 @@ class BundleInspector:
             The visibility outcome; blocked paths cannot prove absence.
         """
         try:
+            root = self._source.resolve(strict=True)
+        except (OSError, RuntimeError):
+            return "blocked"
+        try:
             parts = _components(path)
             if not parts or not is_note(path):
-                return "blocked"
-            root = self._source.resolve(strict=True)
+                raise ValueError("Not an observation path")
             self._prepare_policy(root)
             if any(self._internal("/".join(parts[:i])) for i in range(len(parts) + 1)):
                 return "blocked"
