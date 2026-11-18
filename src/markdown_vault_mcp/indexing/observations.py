@@ -115,11 +115,13 @@ def _valid_digest(value: object) -> bool:
 
 def _valid_row(key: str, row: Observation) -> bool:
     try:
-        if not _components(key) or key != row.path:
-            return False
-        if any(
-            value is not None and not _components(value)
-            for value in (row.moved_from, row.moved_to)
+        if (
+            not _components(key)
+            or key != row.path
+            or any(
+                value is not None and not _components(value)
+                for value in (row.moved_from, row.moved_to)
+            )
         ):
             return False
     except (ValueError, TypeError):
@@ -128,11 +130,10 @@ def _valid_row(key: str, row: Observation) -> bool:
         row.role not in get_args(Role)
         or row.origin not in ("unknown", "server_write")
         or row.presence not in ("present", "removed")
-        or not _valid_digest(row.content_digest)
-        or (
-            row.frontmatter_digest is not None
-            and not _valid_digest(row.frontmatter_digest)
-        )
+    ):
+        return False
+    if not _valid_digest(row.content_digest) or (
+        row.frontmatter_digest is not None and not _valid_digest(row.frontmatter_digest)
     ):
         return False
     if not _valid_timestamp(row.first_seen_at) or not _valid_timestamp(
@@ -159,9 +160,6 @@ class ObservationLedger:
         self._removals: dict[str, _Removal] = {}
         self._pending_lock = threading.Lock()
         self._rows: dict[str, Observation] | None = {} if path is None else None
-        self._cache: tuple[tuple[int, int, int, int], dict[str, Observation]] | None = (
-            None
-        )
         self._lock = (
             threading.Lock()
             if path is None
@@ -172,48 +170,28 @@ class ObservationLedger:
         if self._path is None:
             return (self._rows or {}).copy(), True
         try:
-            key = self._stat_key()
-            if self._cache is not None and self._cache[0] == key:
-                return self._cache[1].copy(), True
-            self._cache = None
-            rows = self._decode(self._path.read_text(encoding="utf-8"))
-            if self._stat_key() == key:
-                self._cache = (key, rows.copy())
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+            version = data["version"]
+            if type(version) is not int:
+                raise ValueError("Invalid observation version")
+            if version > 2:
+                raise StoreUnsupportedSchemaError(
+                    f"Unsupported observation schema version: {version}. "
+                    "Upgrade the server or move the ledger aside to start new history.",
+                    backend="observations",
+                    location=str(self._path),
+                )
+            if version not in (1, 2) or not isinstance(data["rows"], dict):
+                raise ValueError("Invalid observation ledger")
+            rows = {key: Observation(**row) for key, row in data["rows"].items()}
+            if any(not _valid_row(key, row) for key, row in rows.items()):
+                raise ValueError("Invalid observation row")
             return rows, True
         except FileNotFoundError:
-            self._cache = None
             return {}, False
         except (ValueError, TypeError, KeyError, AttributeError):
-            self._cache = None
             logger.warning("observation_ledger_reset path=%s", self._path)
             return {}, False
-        except OSError:
-            self._cache = None
-            raise
-
-    def _decode(self, text: str) -> dict[str, Observation]:
-        data = json.loads(text)
-        version = data["version"]
-        if type(version) is not int:
-            raise ValueError("Invalid observation version")
-        if version > 2:
-            raise StoreUnsupportedSchemaError(
-                f"Unsupported observation schema version: {version}. "
-                "Upgrade the server or move the ledger aside to start new history.",
-                backend="observations",
-                location=str(self._path),
-            )
-        if version not in (1, 2) or not isinstance(data["rows"], dict):
-            raise ValueError("Invalid observation ledger")
-        rows = {key: Observation(**row) for key, row in data["rows"].items()}
-        if any(not _valid_row(key, row) for key, row in rows.items()):
-            raise ValueError("Invalid observation row")
-        return rows
-
-    def _stat_key(self) -> tuple[int, int, int, int]:
-        assert self._path is not None  # noqa: S101, RUF100
-        stat = self._path.stat()
-        return stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size
 
     def rows(self) -> dict[str, Observation]:
         """Return a snapshot of locally recorded observations."""
@@ -495,7 +473,6 @@ class ObservationLedger:
     def _save(self, rows: dict[str, Observation]) -> None:
         # Private type invariant for persistent ledgers, not an authorization check.
         assert self._path is not None  # noqa: S101, RUF100
-        self._cache = None
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(
             dir=self._path.parent, prefix=".observations-", suffix=".tmp"
@@ -508,12 +485,7 @@ class ObservationLedger:
                         sort_keys=True,
                     )
                 )
-                staged_inode = os.fstat(stream.fileno()).st_ino
             Path(name).replace(self._path)
-            with suppress(OSError):
-                key = self._stat_key()
-                if key[0] == staged_inode:
-                    self._cache = (key, rows.copy())
         finally:
             with suppress(FileNotFoundError):
                 Path(name).unlink()

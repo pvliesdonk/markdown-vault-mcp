@@ -215,7 +215,7 @@ def test_removal_of_last_file_is_recorded(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_chmod_unreadable_ledger_invalidates_cache(tmp_path: Path) -> None:
+def test_chmod_unreadable_ledger_propagates_error(tmp_path: Path) -> None:
     source = tmp_path / "vault"
     source.mkdir()
     (source / "a.md").write_text("hello")
@@ -261,8 +261,6 @@ def test_unreadable_ledger_is_not_reset(tmp_path: Path, monkeypatch) -> None:
                 raise PermissionError("denied")
             return original(path, *args, **kwargs)
 
-        # An external metadata change forces a fresh read rather than a cache hit.
-        ledger_path.touch()
         monkeypatch.setattr(Path, "read_text", denied)
         with pytest.raises(PermissionError, match="denied"):
             vault.index.reindex()

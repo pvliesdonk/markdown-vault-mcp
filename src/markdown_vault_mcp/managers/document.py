@@ -2332,23 +2332,19 @@ class DocumentManager:
                 src_new = md_map.get(src_old, src_old)  # remap if inside subtree
                 by_source[src_new].append((target_old, row))
 
-            pending_callbacks: list[tuple[Path, str]] = []
-            dirty_paths: list[str] = []
-            try:
-                pending_callbacks, dirty_paths, failed_links = (
-                    self._rewrite_link_sources(
-                        by_source,
-                        md_map,
-                        op_name="move_folder",
-                        allow_protected=allow_protected,
-                    )
+            pending_callbacks, dirty_paths, failed_links = self._rewrite_link_sources(
+                by_source,
+                md_map,
+                op_name="move_folder",
+                allow_protected=allow_protected,
+            )
+
+            # 6. Queue the moved paths and rewritten sources for indexing.
+            self._record_moves(observation_map, captures, pending_callbacks)
+            if self._mark_paths_dirty is not None:
+                self._mark_paths_dirty(
+                    [*observation_map, *observation_map.values(), *dirty_paths]
                 )
-            finally:
-                self._record_moves(observation_map, captures, pending_callbacks)
-                if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty(
-                        [*observation_map, *observation_map.values(), *dirty_paths]
-                    )
 
             scope = current_commit_scope()
             if scope is not None:

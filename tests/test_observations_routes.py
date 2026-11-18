@@ -348,7 +348,7 @@ def test_public_writer_refreshes_observations_async(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_persistent_cache_reloads_other_instance_and_external_replace(
+def test_persistent_ledger_reads_other_instance_and_external_replace(
     tmp_path: Path,
 ) -> None:
     import json
@@ -376,37 +376,6 @@ def test_persistent_cache_reloads_other_instance_and_external_replace(
         assert first.rows() == {}
         path.write_text("malformed")
         assert first.rows() == {}
-    finally:
-        vault.close()
-
-
-def test_save_does_not_cache_rows_for_replaced_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source = tmp_path / "vault"
-    source.mkdir()
-    (source / "a.md").write_text("one")
-    vault = Vault(
-        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
-    )
-    try:
-        vault.index.build_index()
-        ledger = vault._index_mgr.observations
-        path = tmp_path / "state.observations.json"
-        replacement = tmp_path / "external.json"
-        replacement.write_text('{"version": 2, "rows": {}}')
-        original_replace = Path.replace
-
-        def replace_then_external(staged: Path, target: Path) -> Path:
-            result = original_replace(staged, target)
-            if target == path:
-                original_replace(replacement, path)
-            return result
-
-        monkeypatch.setattr(Path, "replace", replace_then_external)
-        (source / "a.md").write_text("two")
-        ledger.refresh_many({"a.md"})
-        assert ledger.rows() == {}
     finally:
         vault.close()
 
