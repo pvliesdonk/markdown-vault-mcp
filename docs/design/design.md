@@ -7704,4 +7704,4 @@ remains tied to `OKF_WRITE`.
 
 ### Bundle inventory surfaces
 
-The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Filters select concept candidates after each bounded page; the underlying cursor and enumeration state remain intact even when the filtered page is empty. Search admission remains an observation and can be unknown without an index.
+The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Each call filters one bounded page of up to 1,000 observations, returning up to the requested number of candidates and a continuation when further observations may remain, including when the filtered page is empty. Search admission remains an observation and can be unknown without an index.

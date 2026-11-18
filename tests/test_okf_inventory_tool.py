@@ -9,19 +9,45 @@ from markdown_vault_mcp.vault import Vault
 def test_untyped_inventory_excludes_reserved_and_keeps_cursor(tmp_path):
     (tmp_path / "index.md").write_text("# index")
     (tmp_path / "log.md").write_text("# log")
-    (tmp_path / "note.md").write_text("# note")
+    for number in range(1000):
+        (tmp_path / f"typed-{number:04}.md").write_text("---\ntype: concept\n---\ntext")
+    (tmp_path / "z-note.md").write_text("# note")
     vault = Vault(source_dir=tmp_path)
     try:
         first = vault.reader.okf_inventory(
             BundleTreeRequest("", entry_limit=1), type_state="absent"
         )
         assert first.entries == ()
-        assert first.next_cursor == "index.md"
+        assert first.next_cursor is not None
         second = vault.reader.okf_inventory(
             BundleTreeRequest("", cursor=first.next_cursor), type_state="absent"
         )
-        assert [row.path for row in second.entries] == ["note.md"]
+        assert [row.path for row in second.entries] == ["z-note.md"]
         assert second.entries[0].search_state == "not_evaluated"
+    finally:
+        vault.close()
+
+
+def test_sparse_matches_and_matching_cursor(tmp_path):
+    for number in range(150):
+        (tmp_path / f"typed-{number:03}.md").write_text("---\ntype: concept\n---\ntext")
+    for name in ("z-a.md", "z-b.md", "z-c.md"):
+        (tmp_path / name).write_text("text")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        first = vault.reader.okf_inventory(
+            BundleTreeRequest("", entry_limit=2), type_state="absent"
+        )
+        assert [row.path for row in first.entries] == ["z-a.md", "z-b.md"]
+        assert first.next_cursor == "z-b.md"
+        assert first.enumeration == "entry_limit"
+        assert first.request.entry_limit == 2
+        second = vault.reader.okf_inventory(
+            BundleTreeRequest("", entry_limit=2, cursor=first.next_cursor),
+            type_state="absent",
+        )
+        assert [row.path for row in second.entries] == ["z-c.md"]
+        assert second.next_cursor is None
     finally:
         vault.close()
 
@@ -274,3 +300,27 @@ def test_cli_rejects_conflicting_options(
     result = CliRunner().invoke(app, ["okf-inventory", "", *args])
     assert result.exit_code == 1
     assert message in result.output
+
+
+def test_truncation_preserves_unavailable_outcome(tmp_path):
+    (tmp_path / "a.md").write_text("one")
+    (tmp_path / "b.md").write_text("two")
+    path = tmp_path
+    for _ in range(32):
+        path = path / "z"
+        path.mkdir()
+    vault = Vault(source_dir=tmp_path)
+    try:
+        first = vault.reader.okf_inventory(
+            BundleTreeRequest("", entry_limit=1), type_state="absent"
+        )
+        assert first.enumeration == "unavailable"
+        assert [entry.path for entry in first.entries] == ["a.md"]
+        assert first.next_cursor == "a.md"
+        next_page = vault.reader.okf_inventory(
+            BundleTreeRequest("", entry_limit=10, cursor=first.next_cursor),
+            type_state="absent",
+        )
+        assert [entry.reason for entry in next_page.entries] == [None, "depth_limit"]
+    finally:
+        vault.close()

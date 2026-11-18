@@ -681,7 +681,7 @@ select the boundary path as root to continue below it.
 | `type_state` | `not_inspected \| absent \| invalid \| present \| null` | `null` | Filter by observed type presence, such as absent. |
 | `parse_state` | `not_inspected \| valid \| invalid_encoding \| malformed_metadata \| null` | `null` | Filter by metadata parsing outcome. |
 | `search_state` | `not_evaluated \| searchable \| non_admitted \| unparseable \| index_excluded \| not_indexed_yet \| null` | `null` | Filter by observed search admission; `not_evaluated` means unknown. |
-| `entry_limit` | `integer` | `100` | Maximum observations per page, from 1 to 1000. |
+| `entry_limit` | `integer` | `100` | Maximum returned observations, from 1 to 1000; each call scans up to 1000. |
 | `cursor` | `string \| null` | `null` | Pass `next_cursor` from the previous page to continue, even if it was empty. |
 
 **Returns**

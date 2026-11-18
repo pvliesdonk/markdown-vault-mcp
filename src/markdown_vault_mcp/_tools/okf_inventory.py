@@ -58,7 +58,7 @@ def register(mcp: FastMCP) -> None:
             type_state: Filter by observed type presence, such as absent.
             parse_state: Filter by metadata parsing outcome.
             search_state: Filter by observed search admission; not_evaluated means unknown.
-            entry_limit: Maximum observations per page, from 1 to 1000.
+            entry_limit: Maximum returned observations, from 1 to 1000; each call scans up to 1000.
             cursor: Pass next_cursor from the previous page to continue, even if it was empty.
 
         Returns:

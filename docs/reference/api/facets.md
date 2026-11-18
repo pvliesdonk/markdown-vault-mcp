@@ -206,8 +206,8 @@ an inaccessible cursor ancestor makes enumeration incomplete.
 
 To select concept candidates from the same bounded observation, call
 `vault.reader.okf_inventory(BundleTreeRequest(root="knowledge"), type_state="absent")`.
-The filters apply after the page limit; continue with `next_cursor` even when
-no entries match. Parsing and search states can also be filtered.
+Each call filters up to 1,000 observations and returns at most the requested
+limit; continue with `next_cursor` even when no entries match. Parsing and search states can also be filtered.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet

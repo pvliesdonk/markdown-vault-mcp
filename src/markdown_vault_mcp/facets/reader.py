@@ -135,19 +135,29 @@ class ReaderFacet:
         """
         from dataclasses import replace
 
-        page = self.inspect_bundle_tree(request)
+        page = self.inspect_bundle_tree(replace(request, entry_limit=1000))
+        matching = tuple(
+            entry
+            for entry in page.entries
+            if (entry.role == "directory" and entry.state == "unavailable")
+            or (
+                entry.role == "concept_candidate"
+                and (type_state is None or entry.type_state == type_state)
+                and (parse_state is None or entry.parse_state == parse_state)
+                and (search_state is None or entry.search_state == search_state)
+            )
+        )
+        truncated = len(matching) > request.entry_limit
+        entries = matching[: request.entry_limit]
         return replace(
             page,
-            entries=tuple(
-                entry
-                for entry in page.entries
-                if (entry.role == "directory" and entry.state == "unavailable")
-                or (
-                    entry.role == "concept_candidate"
-                    and (type_state is None or entry.type_state == type_state)
-                    and (parse_state is None or entry.parse_state == parse_state)
-                    and (search_state is None or entry.search_state == search_state)
-                )
+            request=request,
+            entries=entries,
+            next_cursor=entries[-1].path if truncated else page.next_cursor,
+            enumeration=(
+                "entry_limit"
+                if truncated and page.enumeration != "unavailable"
+                else page.enumeration
             ),
         )
 
