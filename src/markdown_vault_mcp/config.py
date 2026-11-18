@@ -158,6 +158,14 @@ class ProjectConfig:
             "tags": ("vault", "readme"),
         },
     )
+    protected_paths: Sequence[str] | None = field(
+        default=None,
+        kw_only=True,
+        metadata={
+            "help": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder.",
+            "tags": ("vault", "readme"),
+        },
+    )
     report_unresolved_links: bool = field(
         default=False,
         metadata={
@@ -1366,6 +1374,13 @@ class ProjectConfig:
         ``object.__setattr__(self, "name", value)``.
         """
         # CONFIG-VALIDATE-START — validate domain fields below; kept across copier update
+        from markdown_vault_mcp.config_sections.vault_settings import (
+            normalize_protected_paths,
+        )
+
+        object.__setattr__(
+            self, "protected_paths", normalize_protected_paths(self.protected_paths)
+        )
         # Freeze sequence-valued flat fields into tuples for deep
         # immutability (#639); reject a bare str/bytes, which is itself a
         # Sequence[str] and would silently split into characters.
@@ -1432,6 +1447,7 @@ class ProjectConfig:
             write_protect_existing=to_bool(
                 env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=True
             ),
+            protected_paths=opt_list(env(_ENV_PREFIX, "PROTECTED_PATHS")),
             report_unresolved_links=to_bool(
                 env(_ENV_PREFIX, "REPORT_UNRESOLVED_LINKS"), default=False
             ),

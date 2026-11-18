@@ -195,7 +195,9 @@ that ran the command can read the recovery file. It is not indexed as a note.
 In a Git-backed vault both files are committed like any other write. Keep the
 recovery file until you have checked the result. The same preview and apply
 are available to library callers as `Vault.writer.okf_preview_log_repair` and
-`Vault.writer.okf_apply_log_repair`.
+`Vault.writer.okf_apply_log_repair`. The library apply call refuses if either
+the log or recovery path is protected. A trusted library caller can pass
+`allow_protected=True`; the admin CLI passes it to preserve operator repair.
 
 Any existing recovery entry blocks apply, even one with the same bytes. If
 apply stops part-way, its error says whether the log may already have
@@ -234,3 +236,11 @@ Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` 
 The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
 settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
 implicit stamping. `OKF_WRITE=true` enables these capabilities and logs a deprecation notice; explicit settings override its resolved defaults. See the [configuration reference](../reference/configuration.md).
+
+## Inspecting bundle inventory
+
+Call `okf_inventory` with a vault-relative `root` (use `""` for the vault root) to inspect concept candidates, including notes excluded from search. Set `type_state` to `absent` to find untyped candidates; `parse_state` and `search_state` filter parsing and admission observations. Reserved `index.md` and `log.md` are not concept candidates. A blank, null or non-string `type` has `type_state="invalid"`, not `absent`.
+
+Pass `next_cursor` into the next call, including after an empty filtered page. Each call scans up to 1,000 observations before filtering and returns at most the requested limit. A `not_evaluated` search state means the index was not available, not that a note is excluded. The read-only `okf-inventory` CLI command accepts the same selection and `--json` returns the structured report. Neither interface builds an index for inventory. The local CLI uses a usable configured index when the selected source resolves to the configured vault; otherwise search state is `not_evaluated`. An unusable or unsupported optional index also leaves search state `not_evaluated`; the index is not changed. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly.
+
+An unavailable directory boundary with reason `depth_limit` remains in filtered results. Select its path as the root of another inventory call to inspect deeper entries.

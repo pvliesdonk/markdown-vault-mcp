@@ -56,7 +56,7 @@ A download link's `ref` is a vault path: a note (`.md`) or an attachment with an
 
 ### Upload destinations
 
-An upload link names a vault path for a note or an allowed attachment. While `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` is on (the default), a link can be minted only for a path that doesn't exist yet. With it off, the upload replaces the file. An uploaded note goes through the normal write path: the index picks it up, and with git on it is committed. A successful upload answers `{"path": ..., "bytes": ...}`. `create_upload_link` is a write tool, so read-only mode hides it.
+An upload link names a vault path for a note or an allowed attachment. While `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` is on (the default), a link can be minted only for a path that doesn't exist yet. With it off, the upload replaces the file. An uploaded note goes through the normal write path: the index picks it up, and with git on it is committed. Protected destinations refuse link creation; an upload also refuses a destination protected after minting. A successful upload answers `{"path": ..., "bytes": ...}`. `create_upload_link` is a write tool, so read-only mode hides it.
 
 ### Statuses this server adds
 

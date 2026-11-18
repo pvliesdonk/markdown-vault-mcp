@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.exceptions import DocumentUnreadableError
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.managers.document import _head_end
 from markdown_vault_mcp.okf import (
     OKF_ROOT_INDEX_TITLE,
@@ -87,7 +87,9 @@ class OkfMigrationManager:
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
 
-    def convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
+    def convert_links(
+        self, *, folder: str | None = None, allow_protected: bool = False
+    ) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links.
 
         Notes inside a git submodule are left out, since a write there would
@@ -98,10 +100,13 @@ class OkfMigrationManager:
                 whole vault, ``""`` the bundle root only.  Folded through
                 :func:`~markdown_vault_mcp.utils.normalize_folder`.
 
+            allow_protected: Allow this library call to change protected paths.
+
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfConvertResult`.
 
         Raises:
+            InvalidRequestError: If protected paths were skipped; eligible writes remain.
             ReadOnlyError: If the vault is read-only.
             SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If a note it rewrites exists but cannot be
@@ -120,6 +125,7 @@ class OkfMigrationManager:
         skipped = 0
         scanned = 0
         in_submodules = 0
+        protected: dict[str, str] = {}
         for note in self._search_mgr.list(folder=folder, include_attachments=False):
             if self._doc_mgr.in_submodule(note.path):
                 in_submodules += 1
@@ -137,11 +143,27 @@ class OkfMigrationManager:
             converted += n_conv
             skipped += n_skip
             if new_content != note_content.content:
-                self._doc_mgr.write(note.path, new_content, allow_overwrite=True)
+                reason = self._doc_mgr.protection_reason(
+                    note.path, allow_protected=allow_protected
+                )
+                if reason:
+                    protected[note.path] = reason
+                    continue
+                self._doc_mgr.write(
+                    note.path,
+                    new_content,
+                    allow_overwrite=True,
+                    allow_protected=allow_protected,
+                )
                 files_changed += 1
         if in_submodules:
             logger.info(
                 "okf_convert_links_submodule_notes_skipped notes=%d", in_submodules
+            )
+        if protected:
+            raise InvalidRequestError(
+                f"Converted {files_changed} notes; did not convert {protected!r}. "
+                "Ask the operator to convert them or change the setting."
             )
         return OkfConvertResult(
             files_changed=files_changed,
@@ -151,7 +173,11 @@ class OkfMigrationManager:
         )
 
     def generate_index(
-        self, *, folder: str = "", designated: Callable[[str], bool] | None = None
+        self,
+        *,
+        folder: str = "",
+        allow_protected: bool = False,
+        designated: Callable[[str], bool] | None = None,
     ) -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing for *folder* from the TOC.
 
@@ -177,10 +203,13 @@ class OkfMigrationManager:
             designated: Optional predicate restricting automatically created
                 descendant indexes; omitted for the usual migration behavior.
 
+            allow_protected: Allow this library call to change protected paths.
+
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
 
         Raises:
+            InvalidRequestError: If protected paths were skipped; eligible writes remain.
             ReadOnlyError: If the vault is read-only.
             SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If the folder's ``index.md`` exists but
@@ -188,6 +217,24 @@ class OkfMigrationManager:
             IndexUnavailableError: If the index is not built.
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
+        skipped: dict[str, str] = {}
+        result = self._generate_index(folder, skipped, allow_protected, designated)
+        written = [p for p in (result.path, *result.created) if p not in skipped]
+        if skipped:
+            raise InvalidRequestError(
+                f"Generated indexes {written!r}; did not write {skipped!r}. "
+                "Ask the operator to generate them or change the setting."
+            )
+        return result
+
+    def _generate_index(
+        self,
+        folder: str,
+        skipped: dict[str, str],
+        allow_protected: bool,
+        designated: Callable[[str], bool] | None,
+    ) -> OkfIndexResult:
+        """Generate eligible indexes and collect protected paths."""
         self._doc_mgr.ensure_writable()
         self._doc_mgr.ensure_index_current()
         self._require_built()
@@ -228,18 +275,21 @@ class OkfMigrationManager:
                 for sub in subfolders
                 if designated(prefix + sub) or self._has_index(prefix + sub)
             }
-        # Immediate notes first, then a pointer into each subfolder's index.
-        entries = note_entries + [
-            (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
-        ]
         created: list[str] = []
         for sub in sorted(subfolders):
-            # A kept submodule subfolder has an index, so it is never generated.
-            if not self._has_index(f"{prefix}{sub}"):
-                child = self.generate_index(
-                    folder=f"{prefix}{sub}", designated=designated
+            child_folder = f"{prefix}{sub}"
+            if not self._has_index(child_folder):
+                child = self._generate_index(
+                    child_folder, skipped, allow_protected, designated
                 )
-                created += [child.path, *child.created]
+                created += ([child.path] if child.path not in skipped else []) + list(
+                    child.created
+                )
+        entries = note_entries + [
+            (f"{sub}/", f"/{prefix}{sub}/index.md", None)
+            for sub in sorted(subfolders)
+            if f"{prefix}{sub}/index.md" not in skipped
+        ]
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         existing = self._doc_mgr.read(index_path)
@@ -247,15 +297,31 @@ class OkfMigrationManager:
         preserved = bool(existing_fm)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
+        reason = self._doc_mgr.protection_reason(
+            index_path, allow_protected=allow_protected
+        )
+        if reason:
+            skipped[index_path] = reason
+            return OkfIndexResult(
+                path=index_path,
+                entries=len(entries),
+                frontmatter_preserved=preserved,
+                created=tuple(created),
+            )
         if existing is not None and existing.content:
             end = _head_end(existing.content)
             head = existing.content[:end]
             separator = "\n" if head and not head.endswith("\n") else ""
             self._doc_mgr.edit(
-                index_path, old_text=existing.content, new_text=head + separator + body
+                index_path,
+                old_text=existing.content,
+                new_text=head + separator + body,
+                allow_protected=allow_protected,
             )
         else:
-            self._doc_mgr.write(index_path, body, allow_overwrite=True)
+            self._doc_mgr.write(
+                index_path, body, allow_overwrite=True, allow_protected=allow_protected
+            )
         return OkfIndexResult(
             path=index_path,
             entries=len(entries),
@@ -274,7 +340,9 @@ class OkfMigrationManager:
         except DocumentUnreadableError:
             return True
 
-    def seed_log(self, *, folder: str = "", limit: int = 100) -> OkfLogResult:
+    def seed_log(
+        self, *, folder: str = "", limit: int = 100, allow_protected: bool = False
+    ) -> OkfLogResult:
         """Seed a reserved ``log.md`` for *folder* from git history.
 
         Refuses to overwrite an existing ``log.md`` — a change history is
@@ -292,10 +360,13 @@ class OkfMigrationManager:
                 :func:`~markdown_vault_mcp.utils.normalize_folder`.
             limit: Maximum commits to read (clamped to 100 by the git layer).
 
+            allow_protected: Allow this library call to change protected paths.
+
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfLogResult`.
 
         Raises:
+            InvalidRequestError: If the destination is protected.
             ReadOnlyError: If the vault is read-only.
             SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If ``log.md`` exists but cannot be read;
@@ -315,5 +386,5 @@ class OkfMigrationManager:
         # falls back to whole-vault history via path=None.
         history = self._git_query_mgr.get_history(path=folder or None, limit=limit)
         body, commits, dates = build_log_markdown(history)
-        self._doc_mgr.write(log_path, body)
+        self._doc_mgr.write(log_path, body, allow_protected=allow_protected)
         return OkfLogResult(path=log_path, commits=commits, dates=dates)

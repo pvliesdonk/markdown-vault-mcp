@@ -45,6 +45,7 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -114,9 +115,8 @@ OKF_STALE_WEIGHT = 0.75
 OKF_RESERVED_WEIGHT = 0.5
 
 #: ``filters`` keys that carry OKF semantics on an active bundle (phase 2,
-#: #961). ``type`` is deliberately absent: it is a plain indexed tag lookup
-#: with no special semantics, so the ordinary ``document_tags`` path
-#: handles it.
+#: #961). String ``type`` values use the ordinary indexed tag lookup;
+#: null ``type`` is routed separately to the missing-type post-filter.
 OKF_FILTER_KEYS: tuple[str, ...] = ("status", "stale", "trust_tier")
 
 #: Accepted spellings for the boolean ``stale`` filter value.
@@ -527,7 +527,7 @@ def parse_stale_filter(value: str) -> bool:
 
 def matches_okf_filters(
     metadata: dict[str, Any],
-    okf_filters: dict[str, str],
+    okf_filters: Mapping[str, str | None],
     *,
     now: _dt.datetime | None = None,
 ) -> bool:
@@ -536,12 +536,13 @@ def matches_okf_filters(
     Semantics (design §4): ``status`` matches the derived lifecycle value,
     so ``status=stable`` matches notes with *absent* ``status`` (the spec
     default); ``stale`` compares the derived staleness; ``trust_tier``
-    compares the derived tier. Filters compose with AND.
+    compares the derived tier. Null ``type`` matches a missing or empty type.
+    Filters compose with AND; the caller excludes reserved paths.
 
     Args:
         metadata: The note's frontmatter dict (may be empty).
         okf_filters: The OKF-dimension subset of a ``filters`` dict —
-            keys from :data:`OKF_FILTER_KEYS` only.
+            keys from :data:`OKF_FILTER_KEYS` or null ``type``.
         now: The current instant for staleness, timezone-aware; defaults to
             the server's local now.
 
@@ -553,8 +554,11 @@ def matches_okf_filters(
     """
     annotation = derive_annotation(metadata, now=now)
     for key, value in okf_filters.items():
-        if key == "stale":
-            if annotation["stale"] is not parse_stale_filter(value):
+        if key == "type" and value is None:
+            if "type" in annotation:
+                return False
+        elif key == "stale":
+            if value is None or annotation["stale"] is not parse_stale_filter(value):
                 return False
         elif annotation.get(key) != value:
             return False
