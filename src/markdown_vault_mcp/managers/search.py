@@ -1729,9 +1729,7 @@ class SearchManager:
 
         Returns:
             The aggregate dict, or ``None`` when no OKF detector is wired
-            or OKF read semantics are not active — callers omit the
-            ``okf`` key entirely in that case, keeping non-OKF payloads
-            byte-identical.
+            or OKF read semantics are not active.
         """
         if self._okf is None:
             return None

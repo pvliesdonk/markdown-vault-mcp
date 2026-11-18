@@ -1963,8 +1963,7 @@ the spec itself says, dated and sourced, in
   preserving parsed values, while compact results omit that projection.
   The exact contract and supported timestamp subset are in `okf.md` §3.
   Reads carry the full `sources` list; search hits carry `sources_count`. Section reads omit the key (no frontmatter to derive
-  from). When inactive, no payload changes at all — the non-OKF baseline
-  is byte-identical.
+  from). When inactive, these note-read payloads omit the `okf` key.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
@@ -1973,7 +1972,10 @@ the spec itself says, dated and sourced, in
   population `okf_validate` audits). Its `write_configured` reports the
   vault's configured `OKF_WRITE` flag and `write_effective` is true only
   when that flag is enabled, OKF detection is active, and the vault is not
-  read-only. The section remains absent when OKF is inactive.
+  read-only. The section always carries `capabilities`; when OKF is inactive,
+  it contains only that block. `capabilities` reports configured and effective
+  authority, reasons and folder scope, as does `config://vault` under
+  `okf_capabilities` (see `okf.md` §2).
   `config://vault` reports those same values as `okf_write_configured` and
   `okf_write_effective`, including when inactive, and reports `okf_mode` /
   `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are

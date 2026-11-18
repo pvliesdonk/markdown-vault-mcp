@@ -494,12 +494,7 @@ def register(mcp: FastMCP) -> None:
         gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(vault.reader.stats)
         payload = asdict(result)
-        okf_section = await asyncio.to_thread(vault.reader.okf_stats)
-        active = okf_section is not None
-        if okf_section is None:
-            okf_section = {}
-        okf_section["capabilities"] = vault.okf_capability_report(active=active)
-        payload["okf"] = okf_section
+        payload["okf"] = await asyncio.to_thread(vault.okf_stats_report)
         return _staleness_result(
             vault, payload, drained_on_request=drained, gen_before=gen_before
         )

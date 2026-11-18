@@ -921,6 +921,19 @@ class Vault:
         configured = self._okf_write_enrich is not None
         return configured, configured and active and not self._read_only
 
+    def okf_stats_report(self) -> dict[str, Any]:
+        """Return OKF capability reporting with any active-bundle aggregates.
+
+        Returns:
+            A capability report and, when OKF is active, its statistics.
+        """
+        section = self.reader.okf_stats()
+        active = section is not None
+        if section is None:
+            section = {}
+        section["capabilities"] = self.okf_capability_report(active=active)
+        return section
+
     def okf_capability_report(self, *, active: bool) -> dict[str, Any]:
         """Report configured and effective OKF authority for this vault.
 
