@@ -1517,6 +1517,18 @@ a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python
 with a WARNING rather than dropped, degrading to the pre-resolution behavior
 (correct on inotify / ReadDirectoryChangesW) instead of crashing `start()`.
 
+Every watch, including the non-recursive floor, passes the eight concrete
+file/directory create, modify, move and delete classes to watchdog's event
+filter (#2045). On Linux this suppresses OPEN and CLOSE_NOWRITE native
+subscriptions before queueing, so read-only indexing does not generate that
+traffic; `DirModifiedEvent` retains CLOSE_WRITE and its parent notification.
+The existing handler mutation guard, hidden-path checks and debounce remain
+in place. Watchdog >=4.0.2 is required because earlier FSEvents overrides lack
+the filter keyword. The [watchdog reference](reference/watchdog-event-filtering.md)
+records the versioned evidence and backend limits. Filtering does not prevent
+overflow from genuine mutation bursts or prune excluded descendants inside
+a recursive watch.
+
 Delivered moves trigger reindexing when either endpoint is a nonempty,
 non-hidden descendant of the delivering watch root, using watchdog's
 [source and destination event paths](https://github.com/gorakhargosh/watchdog/blob/v4.0.0/src/watchdog/events.py#L114-L151).
