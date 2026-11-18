@@ -1876,7 +1876,10 @@ class DocumentManager:
                 continue
         hints = [_submodule_links_text(in_submodules)] if in_submodules else []
         if protected:
-            hints.append(f"Link rewrites were skipped: {protected!r}.")
+            hints.append(
+                f"Link rewrites were skipped: {protected!r}. "
+                "Ask the operator to update them or change the setting."
+            )
         return " ".join(hints) or None
 
     def _update_backlinks(

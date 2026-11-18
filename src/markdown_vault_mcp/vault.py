@@ -698,8 +698,9 @@ class Vault:
         capabilities = self._okf_capabilities
 
         def designated_index(path: str) -> bool:
-            return self._okf.state().active and designated_index_path(
-                self._source_dir, path, capabilities.folders
+            return (
+                designated_index_path(self._source_dir, path, capabilities.folders)
+                and self._okf.state().active
             )
 
         self._doc_mgr = DocumentManager(

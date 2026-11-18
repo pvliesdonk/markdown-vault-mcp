@@ -32,7 +32,6 @@ class PathGuard:
         Returns:
             The reason a mutation is refused, if one applies.
         """
-
         if not self._patterns and (allow_designated or not self._designated):
             return None
 
@@ -43,7 +42,7 @@ class PathGuard:
             if resolved.is_relative_to(root):
                 yield resolved.relative_to(root).as_posix()
 
-        candidates = tuple(chain([path], resolved_candidate()))
+        candidates = tuple(dict.fromkeys(chain([path], resolved_candidate())))
         for candidate in candidates:
             parts = PurePosixPath(normalize("NFC", candidate).casefold()).parts
             for end in range(1, len(parts) + 1):
