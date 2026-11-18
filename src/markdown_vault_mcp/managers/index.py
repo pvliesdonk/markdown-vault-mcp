@@ -164,6 +164,7 @@ class IndexManager:
             ``_EMBEDDING_BATCH_SIZE``.
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
         okf_admission_active: Current effective OKF state, if applicable.
+        scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
     """
 
     def __init__(
@@ -186,6 +187,7 @@ class IndexManager:
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         vector_slot: VectorStoreSlot | None = None,
         okf_admission_active: Callable[[], bool | None] | None = None,
+        scratch_dir: Path | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -221,6 +223,7 @@ class IndexManager:
             embedding_batch_size=embedding_batch_size,
             is_path_excluded=self._is_path_excluded,
             vector_slot=vector_slot,
+            scratch_dir=scratch_dir,
         )
 
     @property
