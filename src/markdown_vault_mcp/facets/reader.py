@@ -140,8 +140,8 @@ def synthesize(folder: str, inspection: BundleInspection) -> str:
     entries: list[tuple[str, str, str | None]] = [
         (
             (name := entry.path.rsplit("/", 1)[-1]),
-            "./" + name + ("/" if entry.role == "directory" else ""),
-            None,
+            "./" + name,
+            "folder" if entry.role == "directory" else None,
         )
         for entry in inspection.entries
         if entry.role in {"concept_candidate", "directory"}
@@ -178,7 +178,7 @@ def _selected(
 class ReaderFacet:
     """Read-only queries over the shared managers."""
 
-    def __init__(  # noqa: PLR0913, RUF100 - Existing dependency injection.
+    def __init__(
         self,
         *,
         search_mgr: SearchManager,

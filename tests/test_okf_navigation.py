@@ -61,7 +61,7 @@ def test_synthesis_includes_live_candidates_and_does_not_write(tmp_path):
         assert "[untyped.md](./untyped.md)" in result.body
         assert "[bad.md](./bad.md)" in result.body
         assert "[.hidden.md](./.hidden.md)" in result.body
-        assert "[child](./child/)" in result.body
+        assert "[child](./child) - folder" in result.body
         assert {p.name: p.stat().st_mtime_ns for p in tmp_path.iterdir()} == before
         vault.index.build_index()
         indexed = vault.reader.okf_navigation("")
@@ -256,7 +256,7 @@ def test_pages_only_immediate_children_in_name_order(tmp_path):
                 assert page.enumeration == "complete"
                 break
             assert page.enumeration == "entry_limit"
-        expected = [f"- [dir-{n}](./dir-{n}/)" for n in range(3)] + [
+        expected = [f"- [dir-{n}](./dir-{n}) - folder" for n in range(3)] + [
             f"- [note-{n:02}.md](./note-{n:02}.md)" for n in range(25)
         ]
         assert lines == expected
@@ -278,10 +278,44 @@ def test_selected_bundle_destinations_resolve_from_its_index(tmp_path):
         links = dict(re.findall(r"\[([^]]+)\]\(([^)]+)\)", page.body))
         index = "https://example.invalid/index.md"
         assert urljoin(index, links["note.md"]) == "https://example.invalid/note.md"
-        assert urljoin(index, links["child"]) == "https://example.invalid/child/"
+        assert urljoin(index, links["child"]) == "https://example.invalid/child"
         assert (
             urljoin(index, links["mail:note.md"])
             == "https://example.invalid/mail:note.md"
         )
+    finally:
+        vault.close()
+
+
+def test_synthesized_walk_reaches_child_folder_and_note(tmp_path):
+    import re
+
+    from markdown_vault_mcp.utils.links import decode_link_target
+
+    folder = tmp_path / "dir [a] b"
+    folder.mkdir()
+    (folder / "n [1].md").write_text("note body")
+    vault = Vault(source_dir=tmp_path)
+    try:
+
+        def entry(body: str) -> tuple[str, str, str]:
+            label, destination, rest = re.search(
+                r"- \[(.*)\]\((\S+)\)(.*)", body
+            ).groups()
+            return re.sub(r"\\([\\\[\]])", r"\1", label), destination, rest
+
+        name, destination, rest = entry(vault.reader.okf_navigation("").body)
+        assert (name, destination, rest) == (
+            "dir [a] b",
+            "./dir%20[a]%20b",
+            " - folder",
+        )
+        assert decode_link_target(destination.removeprefix("./")) == name
+        child = vault.reader.okf_navigation(name)
+        assert (child.state, child.source) == ("inspected", "synthesized")
+        note, _, rest = entry(child.body)
+        assert (note, rest) == ("n [1].md", "")
+        read = vault.reader.read(f"{name}/{note}")
+        assert read is not None and read.content == "note body"
     finally:
         vault.close()

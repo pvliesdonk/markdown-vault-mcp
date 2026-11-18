@@ -103,8 +103,10 @@ def register(mcp: FastMCP) -> None:
         """Read a folder's authored or synthesized navigation and its source.
 
         Use okf_inventory to page through a bundle subtree. Synthesis covers
-        immediate children only. Its links are relative to folder: join them to
-        folder to read a note or list a child.
+        immediate children only. Each entry's link text is the child's name with
+        backslash, [ and ] backslash-escaped; remove those backslashes and join
+        the name to folder to read a note or list a child. A folder entry is
+        followed by the word folder.
 
         Args:
             folder: Vault-relative folder; empty selects the vault root.
