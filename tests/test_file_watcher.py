@@ -925,6 +925,92 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
     asyncio.run(_run())
 
 
+def test_lifespan_observes_excluded_external_change_without_reindex(
+    tmp_path: Path,
+) -> None:
+    """An excluded edit reaches the ledger through the real watcher alone."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    excluded = tmp_path / "excluded"
+    excluded.mkdir()
+    note = excluded / "note.md"
+    note.write_text("before")
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        read_only=False,
+        exclude=["excluded/**"],
+        file_watcher_debounce_s=0.08,
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            ledger = vault._index_mgr.observations
+            with patch.object(
+                vault.index, "reindex", wraps=vault.index.reindex
+            ) as reindex:
+                note.write_text("after")
+                expected = hashlib.sha256(b"after").hexdigest()
+                for _ in range(100):
+                    if ledger.rows()["excluded/note.md"].content_digest == expected:
+                        break
+                    await asyncio.sleep(0.05)
+                assert ledger.rows()["excluded/note.md"].content_digest == expected
+                assert reindex.call_count == 0
+
+    asyncio.run(run())
+
+
+def test_observation_handler_accepts_hidden_move_destination(tmp_path: Path) -> None:
+    """The destination of a move into a hidden path schedules observation."""
+    from markdown_vault_mcp._file_watcher import _ObservationEventHandler
+
+    calls: list[int] = []
+    handler = _ObservationEventHandler(lambda: calls.append(1), tmp_path)
+    handler.on_any_event(
+        FileMovedEvent(
+            str(tmp_path.parent / "outside"), str(tmp_path / ".notes" / "n.md")
+        )
+    )
+    handler.on_any_event(FileModifiedEvent(str(tmp_path / ".git" / "config")))
+    assert calls == [1]
+
+
+def test_lifespan_observes_hidden_external_move(tmp_path: Path) -> None:
+    """A hidden destination is read after a real external rename."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    hidden = tmp_path / ".notes" / ".nested"
+    hidden.mkdir(parents=True)
+    source = hidden / "old.md"
+    destination = hidden / "new.md"
+    source.write_text("moved")
+    config = ProjectConfig(source_dir=tmp_path, file_watcher_debounce_s=0.08)
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            ledger = ctx["vault"]._index_mgr.observations
+            source.rename(destination)
+            for _ in range(100):
+                rows = ledger.rows()
+                if ".notes/.nested/new.md" in rows:
+                    break
+                await asyncio.sleep(0.05)
+            assert (
+                rows[".notes/.nested/new.md"].content_digest
+                == hashlib.sha256(b"moved").hexdigest()
+            )
+            assert rows[".notes/.nested/old.md"].presence == "removed"
+
+    asyncio.run(run())
+
+
 def test_lifespan_passes_configured_internal_dirs_to_watcher(tmp_path: Path) -> None:
     """Explicit state/index/embeddings paths flow into the watcher's internal_dirs.
 

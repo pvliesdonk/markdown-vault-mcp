@@ -1536,6 +1536,14 @@ file onto a visible note and moves of visible content into hidden or outside
 storage. Hidden-only and root-self noise stays ignored, including below
 intentionally watched dot-roots; other mutations consider only their source.
 
+An independently debounced observation subscription uses the same protected
+roots and floor, without search exclusions. Mutations including hidden paths
+and either move endpoint trigger an inventory sweep; the inventory enforces
+its own access and internal-path boundary. This subscription never requests a
+search reindex. The existing search subscription retains its exclusions and
+hidden-path rules. The root-floor and newly-created top-level directory limits
+apply to both subscriptions.
+
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
 narrow `_file_write_lock` (a `threading.RLock` that serialises only the
@@ -7760,7 +7768,8 @@ search reconcile keeps its failed outcome while the fallback sweep observes the
 tree. A failed fallback sweep is logged and reported as failed, allowing the
 pull tick to continue to its independent pending push retry. A tick reads the full
 observation scope, normally every 600 seconds. The watcher is disabled when
-periodic pulls are active. Byte or presence changes advance the change time;
+periodic pulls or a deliverable webhook are active; external changes then wait
+for the next startup, pull or reindex sweep. Byte or presence changes advance the change time;
 a role-only refresh leaves it intact. Unchanged rows remain stable;
 inaccessible paths and their subtrees do not establish removal, but do not block
 removal elsewhere. A readable empty root records prior files as removed even

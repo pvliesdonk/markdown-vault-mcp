@@ -518,6 +518,8 @@ class VaultFileWatcher:
             dir, ``.git``) that must never be watched, so ``reindex``'s writes
             into them do not re-trigger the watcher (see
             :func:`_derive_watch_roots`).
+        on_observation: Optional callback for inventory changes, independently
+            debounced and subscribed without search exclusions.
     """
 
     def __init__(
@@ -528,6 +530,7 @@ class VaultFileWatcher:
         exclude_patterns: Sequence[str] | None = None,
         root_floor: bool = True,
         internal_dirs: Sequence[Path] = (),
+        on_observation: Callable[[], None] | None = None,
     ) -> None:
         self._source_dir = source_dir
         self._on_change = on_change
@@ -535,10 +538,36 @@ class VaultFileWatcher:
         self._exclude_patterns = exclude_patterns
         self._root_floor = root_floor
         self._internal_dirs = tuple(internal_dirs)
+        self._on_observation = on_observation
+        self._observation_timer: threading.Timer | None = None
         self._observer: Any = None
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stopped = False
+
+    def _schedule_observation(self) -> None:
+        with self._lock:
+            if self._stopped or self._on_observation is None:
+                return
+            if self._observation_timer is not None:
+                self._observation_timer.cancel()
+            self._observation_timer = threading.Timer(
+                self._debounce_s, self._fire_observation
+            )
+            self._observation_timer.daemon = True
+            self._observation_timer.start()
+
+    def _fire_observation(self) -> None:
+        with self._lock:
+            if self._stopped:
+                return
+            self._observation_timer = None
+            callback = self._on_observation
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                logger.error("file_watcher_observation_failed", exc_info=True)
 
     def _schedule(self) -> None:
         """Reset the debounce timer — no-op after stop()."""
@@ -620,6 +649,28 @@ class VaultFileWatcher:
                 self._source_dir,
             )
 
+        if self._on_observation is not None:
+            observation_roots = _derive_watch_roots(
+                self._source_dir,
+                None,
+                root_floor=self._root_floor,
+                internal_dirs=self._internal_dirs,
+            )
+            for root in observation_roots:
+                try:
+                    observer.schedule(
+                        _ObservationEventHandler(self._schedule_observation, root.path),
+                        str(root.path),
+                        recursive=root.recursive,
+                        event_filter=_MUTATING_EVENT_CLASSES,
+                    )
+                except Exception:
+                    logger.warning(
+                        "file_watcher_observation_schedule_failed root=%s",
+                        root.path,
+                        exc_info=True,
+                    )
+
         # Assign before start() so stop() can always see and stop it,
         # even if it races into the narrow window between schedule() and start().
         with self._lock:
@@ -650,8 +701,10 @@ class VaultFileWatcher:
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+            if self._observation_timer is not None:
+                self._observation_timer.cancel()
+                self._observation_timer = None
             observer, self._observer = self._observer, None
-
         if observer is not None:
             try:
                 observer.stop()
@@ -661,6 +714,29 @@ class VaultFileWatcher:
 
 
 if _WATCHDOG_AVAILABLE:
+
+    class _ObservationEventHandler(FileSystemEventHandler):
+        """Schedule inventory reconciliation for mutations, including dot paths."""
+
+        def __init__(self, schedule: Callable[[], None], root: Path) -> None:
+            super().__init__()
+            self._schedule = schedule
+            self._root = root
+
+        def on_any_event(self, event: FileSystemEvent) -> None:
+            """Schedule for either endpoint of a mutation within this root."""
+            if event.event_type not in _MUTATING_EVENT_TYPES:
+                return
+            for path in _event_paths(event):
+                try:
+                    parts = Path(path).relative_to(self._root).parts
+                except ValueError:
+                    continue
+                if parts and not any(
+                    p in {".git", ".markdown_vault_mcp"} for p in parts
+                ):
+                    self._schedule()
+                    return
 
     class _VaultEventHandler(FileSystemEventHandler):
         """Forward mutating, non-hidden filesystem events to the scheduler.

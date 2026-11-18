@@ -304,8 +304,13 @@ result. A ledger failure on a pull tick or `git_sync` is logged and reported as
 failed; the tick still retries a pending push.
 
 Each pull tick reads the full observation scope, normally every 600 seconds.
-Periodic pulls disable the file watcher. When the watcher runs, excluded
-top-level folders wait for the next sweep until its scope is expanded. A readable empty root records previously observed files as removed,
+When the watcher runs, external changes in readable hidden and search-excluded
+paths also trigger an observation sweep; excluded changes alone do not trigger
+a search reindex. When the watcher is disabled, including for periodic pulls
+or an active webhook, external changes are observed at the next startup, pull
+or reindex sweep. Watcher root-floor and internal-directory restrictions still
+apply.
+A readable empty root records previously observed files as removed,
 even if search refuses to prune its own rows for an empty root.
 
 The library's `Vault.force_pull()` sweeps after Git succeeds but does not
