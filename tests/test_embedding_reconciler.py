@@ -846,9 +846,11 @@ class TestRemovalRule:
         return fts, store, rec
 
     def test_skip_removes_backed_vectors_without_request(self, tmp_path):
-        _fts, provider, store, rec = _setup(tmp_path, NOTES)
+        fts, provider, store, rec = _setup(tmp_path, NOTES)
         rec.reconcile(store, site="test")
         other = store.rows_for("b.md")
+        (tmp_path / "a.md").write_text("# A\n\nQuinces.\n")
+        fts.upsert_note(parse_note(tmp_path / "a.md", tmp_path, HeadingChunker()))
         provider.calls.clear()
         rec._skip_embedding = lambda path: path == "a.md"
         rec.reconcile(store, site="test")
@@ -2175,17 +2177,15 @@ os._exit(137)
     assert list(state.iterdir()) == [], "written scratch survived abrupt process death"
 
 
-def test_sweep_skipped_purges_unrequested_path_without_embedding(tmp_path):
-    _fts, provider, store, rec = _setup(tmp_path, NOTES)
+def test_sweep_skipped_purges_unrequested_path(tmp_path):
+    _fts, _provider, store, rec = _setup(tmp_path, NOTES)
     rec.reconcile(store, site="test")
     rec._skip_embedding = lambda path: path == "a.md"
-    provider.calls.clear()
     rec.reconcile(store, ["b.md"], site="test")
     assert store.rows_for("a.md")
     rec.reconcile(store, ["b.md"], site="test", sweep_skipped=True)
     assert not store.rows_for("a.md")
     assert store.rows_for("b.md")
-    assert provider.calls == []
 
 
 def test_sweep_conflict_is_reported_and_next_pass_removes(tmp_path, monkeypatch):

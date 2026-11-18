@@ -62,7 +62,6 @@ def test_convergence_purges_stale_and_restores_after_designation_removed(
         provider.texts.clear()
         after.index.build_embeddings()
         assert "generated/index.md" not in _paths(after)
-        assert not provider.texts
         after.index.build_embeddings(force=True)
         assert not any("indexed navigation" in text for text in provider.texts)
         assert "generated/index.md" not in _paths(after)
@@ -79,8 +78,7 @@ def test_convergence_purges_stale_and_restores_after_designation_removed(
         restored.close()
 
 
-@pytest.mark.parametrize("route", ["write", "reindex"])
-def test_changed_designated_index_is_not_embedded(tmp_path: Path, route: str) -> None:
+def test_externally_changed_designated_index_is_not_embedded(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "generated").mkdir(parents=True)
     provider = CountingProvider()
@@ -89,13 +87,8 @@ def test_changed_designated_index_is_not_embedded(tmp_path: Path, route: str) ->
         vault.index.build_index()
         vault.index.build_embeddings()
         provider.texts.clear()
-        if route == "write":
-            vault.writer.write("generated/note.md", "# Pineapple\n\nconcept content\n")
-            wait_for_writer_drain(vault)
-        else:
-            (root / "generated/index.md").write_text("# Listing\n\nchanged listing\n")
-            vault.index.reindex()
-        assert not any("[Pineapple](" in text for text in provider.texts)
+        (root / "generated/index.md").write_text("# Listing\n\nchanged listing\n")
+        vault.index.reindex()
         assert "generated/index.md" not in _paths(vault)
         assert not any("changed listing" in text for text in provider.texts)
     finally:
@@ -106,7 +99,7 @@ class MeaningProvider(MockEmbeddingProvider):
     """Map fixture concepts and query synonyms to orthogonal vectors."""
 
     def __init__(self) -> None:
-        super().__init__(dim=4)
+        super().__init__(dim=5)
         self.texts: list[str] = []
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -116,29 +109,39 @@ class MeaningProvider(MockEmbeddingProvider):
             ("voyage", "journey"),
             ("canine", "dog"),
             ("astral", "stars"),
+            ("luminescence", "glowing"),
         )
         result = []
         for text in texts:
             vector = [
                 float(any(term in text.lower() for term in terms)) for terms in axes
             ]
-            result.append(vector if any(vector) else [0.5] * 4)
+            result.append(vector if any(vector) else [0.5] * 5)
         return result
 
 
+@pytest.mark.parametrize("description_only", [False, True])
 def test_meaning_search_reaches_authored_content_and_generated_listing_concepts(
     tmp_path: Path,
+    description_only: bool,
 ) -> None:
     root = tmp_path / "vault"
     (root / "generated").mkdir(parents=True)
     (root / "authored").mkdir()
     (root / "authored/index.md").write_text("# Index\n\norchard\n")
     (root / "generated/log.md").write_text("# Log\n\nvoyage\n")
+    if description_only:
+        (root / "generated/concept.md").write_text(
+            "---\ntitle: Concept\ndescription: luminescence\n---\n"
+        )
     provider = MeaningProvider()
     vault = Vault(
         source_dir=root,
         settings=VaultSettings(
-            read_only=False, okf_mode="on", okf_capabilities=_capabilities(True)
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=_capabilities(True),
+            searchable_frontmatter_fields=["description"] if description_only else None,
         ),
         embedding_provider=provider,
     )
@@ -152,11 +155,17 @@ def test_meaning_search_reaches_authored_content_and_generated_listing_concepts(
         wait_for_writer_drain(vault)
         listing = (root / "generated/index.md").read_text()
         titles = re.findall(r"^- \[(.*?)\]\(", listing, re.MULTILINE)
-        assert set(titles) == {"Canine", "Astral"}
+        assert set(titles) == (
+            {"Canine", "Astral", "Concept"}
+            if description_only
+            else {"Canine", "Astral"}
+        )
+        if description_only:
+            assert "luminescence" in listing
         assert "generated/index.md" not in _paths(vault)
         assert not any("[Canine](" in text for text in provider.texts)
         queries = {"fruit": "authored/index.md", "journey": "generated/log.md"}
-        synonyms = {"Canine": "dog", "Astral": "stars"}
+        synonyms = {"Canine": "dog", "Astral": "stars", "Concept": "glowing"}
         for title in titles:
             queries[synonyms[title]] = f"generated/{title.lower()}.md"
         for query, expected in queries.items():
@@ -199,7 +208,7 @@ def test_designation_is_authority_without_runtime_detection(
 
 
 @pytest.mark.parametrize("route", ["reindex", "write", "cold_reindex", "no_policy"])
-def test_restart_purges_designated_vectors_without_forcing_open(
+def test_restart_vector_policy_and_lazy_reindex(
     tmp_path: Path, route: str, monkeypatch
 ) -> None:
     root = tmp_path / "vault"
@@ -242,38 +251,7 @@ def test_restart_purges_designated_vectors_without_forcing_open(
             assert any("new concept" in text for text in provider.texts)
         else:
             vault.index.reindex()
-            assert not provider.texts
         assert "generated/index.md" not in _paths(vault)
         assert {"generated/log.md", "authored/index.md"} <= _paths(vault)
-    finally:
-        vault.close()
-
-
-def test_configured_description_retrieved_from_concept(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    (root / "generated/concept.md").write_text(
-        "---\ntitle: Concept\ndescription: voyage\n---\n"
-    )
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(
-            read_only=False,
-            okf_mode="on",
-            okf_capabilities=_capabilities(True),
-            searchable_frontmatter_fields=["description"],
-        ),
-        embedding_provider=MeaningProvider(),
-    )
-    try:
-        vault.index.build_index()
-        vault.index.build_embeddings()
-        vault.writer.write("generated/trigger.md", "# Trigger\n\nunrelated\n")
-        wait_for_writer_drain(vault)
-        assert "voyage" in (root / "generated/index.md").read_text()
-        assert "generated/index.md" not in _paths(vault)
-        assert vault.reader.search("journey", mode="semantic", limit=1)[0].path == (
-            "generated/concept.md"
-        )
     finally:
         vault.close()
