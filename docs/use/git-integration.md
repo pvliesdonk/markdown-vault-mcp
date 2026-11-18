@@ -90,6 +90,8 @@ A later `git_sync` waits only while the commit is still pending. A
 Completed automatic-close results are available to their owner by handle until
 the server restarts; an implicit sync does not inspect earlier results.
 Unauthenticated clients share the local principal and its transaction groups.
+An interactive `git_sync` pull by another principal can flush an open group,
+splitting its writes across commits.
 
 Groups close automatically after five minutes of inactivity or one hour after
 opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
