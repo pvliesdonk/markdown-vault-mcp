@@ -111,7 +111,7 @@ Enumeration is `complete`, `entry_limit`, `unavailable` or `not_inspected`.
 `complete` covers only immediate policy-visible enumeration, even if individual
 entries remain unavailable or not inspected. Paths matching index exclusions
 are labelled `index_excluded`, and dot paths have `hidden_path=true`; neither
-label prevents inspection. Non-directory filenames outside the attachment
+label prevents inspection. Non-directory, non-symlink filenames outside the attachment
 allowlist, `.git`, server-owned state directories and files, and
 permission-denied children are omitted. The change-tracker file is omitted by exact path and the keyword index
 by its own lock and journal files, so neighboring notes and other same-named

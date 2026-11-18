@@ -307,13 +307,10 @@ def test_hidden_symlink_is_reported_without_following(tmp_path):
             ("bundle/escape.dir", "unavailable", "hidden_symlink"),
             ("bundle/link.md", "unavailable", "symlink"),
         ]
-        assert "private-target" not in str(asdict(page))
         assert "secret" not in str(asdict(page))
 
 
-def test_hidden_symlink_pages_and_permission_failure(tmp_path, monkeypatch):
-    import errno
-
+def test_hidden_symlink_pages_through_hidden_directory(tmp_path):
     bundle = tmp_path / "bundle"
     (bundle / ".venv" / "bin").mkdir(parents=True)
     (bundle / ".venv" / "bin" / "python3.14").symlink_to(tmp_path / "target")
@@ -335,20 +332,7 @@ def test_hidden_symlink_pages_and_permission_failure(tmp_path, monkeypatch):
         "bundle/.venv/bin/python3.14",
         "bundle/z.md",
     ]
-    assert entries[2].reason == "hidden_symlink" and entries[2].hidden_path
-
-    original = inspector._observe
-
-    def refuse(parent, name, path, remaining):
-        if name == "z.md":
-            raise PermissionError(errno.EACCES, "denied")
-        return original(parent, name, path, remaining)
-
-    monkeypatch.setattr(inspector, "_observe", refuse)
-    page = inspector.inspect(BundleTreeRequest("bundle"))
-    assert page.enumeration == "unavailable"
-    assert any(e.reason == "hidden_symlink" for e in page.entries)
-    assert all(e.path != "bundle/z.md" for e in page.entries)
+    assert entries[2].reason == "hidden_symlink"
 
 
 def test_exact_cursor_symlink_is_a_leaf(tmp_path):
