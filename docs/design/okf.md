@@ -774,11 +774,13 @@ entries with a nonempty linked title, optionally followed by ` - ` and a
 description. Other blocks, nested lists, and extra paragraphs are findings.
 The existing index generator writes descriptions verbatim: a multi-paragraph
 description can therefore produce an index the audit reports nonconformant.
-Logs permit headings before the first date but no ungrouped entry, and require
-valid ISO dates in non-increasing order. After a date, entry content is free.
+Logs permit H1 titles before the first date and require valid ISO dates in
+non-increasing order. Entries must be flat bullet lists under a date; their
+items can contain paragraphs and fenced examples. These artifact checks are
+stricter than the live `okf_validate` checks.
 The shared frontmatter parser also rejects impossible implicit YAML dates;
 the export reports that parser failure without substituting another dialect.
-An undecodable Markdown member leaves the checks that need its text unchecked,
+An undecodable Markdown member or a parser resource failure leaves its checks unchecked,
 so the verdict is incomplete rather than asserting a format finding.
 
 ---

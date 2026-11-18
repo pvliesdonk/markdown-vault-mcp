@@ -65,30 +65,37 @@ def _index_entry_conforms(children: list[Token]) -> bool:
     return not tail or (tail[0].type == "text" and tail[0].content.startswith(" - "))
 
 
-def _log_body_conforms(body: str) -> bool:
+def _log_date(value: str, previous: date | None) -> date | None:
+    if not _DATE_ONLY_RE.fullmatch(value):
+        return None
+    try:
+        current = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return current if previous is None or current <= previous else None
+
+
+def _log_problem(body: str) -> str | None:
     tokens = _MARKDOWN.parse(body)
     previous: date | None = None
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token.type == "heading_open":
-            if token.tag == "h2":
-                value = tokens[index + 1].content
-                if not _DATE_ONLY_RE.fullmatch(value):
-                    return False
-                try:
-                    current = date.fromisoformat(value)
-                except ValueError:
-                    return False
-                if previous is not None and current > previous:
-                    return False
-                previous = current
-            index += 3
-        elif previous is None:
-            return False
-        else:
-            index += 1
-    return True
+    for index, token in enumerate(tokens):
+        if token.type in {"bullet_list_open", "ordered_list_open"}:
+            if token.level != 0 or token.type != "bullet_list_open" or previous is None:
+                return "log_entry_shape"
+        elif token.level == 0 and token.nesting == 1:
+            if token.type == "heading_open":
+                if token.tag == "h1" and previous is None:
+                    continue
+                if token.tag != "h2":
+                    return "log_heading_shape"
+                previous = _log_date(tokens[index + 1].content, previous)
+                if previous is None:
+                    return "log_heading_shape"
+            else:
+                return "log_entry_shape"
+        elif token.level == 0 and token.nesting == 0:
+            return "log_entry_shape"
+    return None
 
 
 def _inspect_concept(
@@ -115,13 +122,13 @@ def _inspect_reserved(
             report.format_findings.append(FormatFinding(path, "index_frontmatter"))
         if not _index_body_conforms(body):
             report.format_findings.append(FormatFinding(path, "index_entry_shape"))
-    elif not _log_body_conforms(body):
-        report.format_findings.append(FormatFinding(path, "log_heading_shape"))
+    elif problem := _log_problem(body):
+        report.format_findings.append(FormatFinding(path, problem))
 
 
 _ROLE_CHECKS = {
     "index.md": ["index_frontmatter", "index_entry_shape"],
-    "log.md": ["log_date_headings"],
+    "log.md": ["log_date_headings", "log_entry_shape"],
     "concept": ["yaml_frontmatter", "type"],
 }
 
@@ -162,6 +169,20 @@ def _inspect(
         _inspect_concept(path, text, body, metadata, report)
 
 
+def _audit_member(
+    archive: zipfile.ZipFile, path: str, report: OkfExportReport, links: ArtifactLinks
+) -> None:
+    try:
+        raw = archive.read(path)
+    except (OSError, zipfile.BadZipFile, RuntimeError):
+        report.unchecked[path] = _ROLE_CHECKS[_role(path)].copy()
+        return
+    try:
+        _inspect(path, raw, report, links)
+    except (RecursionError, OverflowError, MemoryError):
+        report.unchecked[path] = _ROLE_CHECKS[_role(path)].copy()
+
+
 def audit_export(
     data: bytes, report: OkfExportReport, extensions: frozenset[str]
 ) -> None:
@@ -181,12 +202,7 @@ def audit_export(
         for path in sorted(members):
             if not path.endswith(".md"):
                 continue
-            try:
-                raw = archive.read(path)
-            except (OSError, zipfile.BadZipFile, RuntimeError):
-                report.unchecked[path] = _ROLE_CHECKS[_role(path)].copy()
-                continue
-            _inspect(path, raw, report, links)
+            _audit_member(archive, path, report, links)
     report.verdict = (
         "incomplete"
         if report.unchecked

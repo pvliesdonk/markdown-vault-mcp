@@ -38,6 +38,7 @@ from markdown_vault_mcp.utils.content_kind import (
 )
 from markdown_vault_mcp.utils.links import (
     _RE_REFUSED_ESCAPE,
+    _decode_escapes_and_entities,
     _follow_inline_destination,
     _is_escaped,
     compute_new_raw_target,
@@ -364,7 +365,7 @@ def _wiki_text(masked: str) -> str:
     return _blank_spans(masked, spans)
 
 
-def _path_and_suffix(raw: str) -> tuple[str, str]:
+def _written_path(raw: str) -> tuple[str, str]:
     written = raw[1:-1] if raw.startswith("<") and raw.endswith(">") else raw
     before_fragment, _ = split_markdown_fragment(written)
     suffix = written[len(before_fragment) :]
@@ -373,7 +374,12 @@ def _path_and_suffix(raw: str) -> tuple[str, str]:
             suffix = before_fragment[index:] + suffix
             before_fragment = before_fragment[:index]
             break
-    return decode_markdown_destination(before_fragment), suffix
+    return before_fragment, suffix
+
+
+def _path_and_suffix(raw: str) -> tuple[str, str]:
+    written, suffix = _written_path(raw)
+    return decode_markdown_destination(written), suffix
 
 
 def _safe_text(text: str) -> str:
@@ -787,10 +793,12 @@ class ArtifactLinks:
 
     def _target(self, raw: str, source: str, wiki: bool) -> str | None:
         if not wiki:
-            path, _ = _path_and_suffix(raw)
-            if not path or _is_external_target(path):
+            written, _ = _written_path(raw)
+            if not written or _is_external_target(
+                _decode_escapes_and_entities(written)
+            ):
                 return None
-            return self._resolve(path, source)
+            return self._resolve(decode_markdown_destination(written), source)
         name = (
             raw
             if names_attachment(raw, self.extensions) or raw.lower().endswith(".md")

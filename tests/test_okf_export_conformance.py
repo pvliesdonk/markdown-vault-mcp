@@ -50,7 +50,11 @@ def test_index_body_checks_structure_and_ignores_fenced_examples() -> None:
 
 def test_log_checks_headings_not_fenced_examples() -> None:
     assert (
-        _audit({"log.md": b"# Log\n## 2026-01-01\n```\n## Yesterday\n```\n"}).verdict
+        _audit(
+            {
+                "log.md": b"# Log\n## 2026-01-01\n- Entry\n\n  ```\n  ## Yesterday\n  ```\n"
+            }
+        ).verdict
         == "conformant"
     )
     assert _audit({"log.md": b"# Log\n## Yesterday\n"}).verdict == "nonconformant"
@@ -172,7 +176,7 @@ def test_unreadable_archive_member_names_the_unchecked_checks(
     ("name", "checks"),
     [
         ("index.md", ["index_frontmatter", "index_entry_shape"]),
-        ("log.md", ["log_date_headings"]),
+        ("log.md", ["log_date_headings", "log_entry_shape"]),
     ],
 )
 def test_unreadable_reserved_file_names_its_checks(
@@ -347,7 +351,9 @@ def test_log_allows_entry_content_after_date_and_title_only() -> None:
     assert _audit({"log.md": b"# Log\n"}).verdict == "conformant"
     assert (
         _audit(
-            {"log.md": b"# Log\n## 2026-01-01\nEntry\n```\n## sample\n```\n"}
+            {
+                "log.md": b"# Log\n## 2026-01-01\n- Entry\n\n  More prose.\n\n  ```\n  ## sample\n  ```\n"
+            }
         ).verdict
         == "conformant"
     )
@@ -457,3 +463,83 @@ def test_unusual_root_index_key_is_a_format_finding(header: str) -> None:
     report = _audit({"index.md": f"---\n{header}\n---\n# Index\n".encode()})
     assert report.verdict == "nonconformant"
     assert [item.reason for item in report.format_findings] == ["index_frontmatter"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"## 2026-01-01\nprose\n",
+        b"## 2026-01-01\n### Heading\n",
+        b"## 2026-01-01\n- item\n  - nested\n",
+        b"## 2026-01-01\n1. item\n",
+        b"- early\n",
+    ],
+)
+def test_log_rejects_nonflat_entries(body: bytes) -> None:
+    assert _audit({"log.md": body}).verdict == "nonconformant"
+
+
+def test_encoded_colon_is_a_local_artifact_path() -> None:
+    note = b"---\ntype: T\n---\n[missing](manual%3A2026.pdf) [web](https://example.com) [escaped](https\\://example.com) [entity](https&#58;//example.com) [pointy](<https://example.com>)\n"
+    report = _audit({"note.md": note})
+    assert [item.target for item in report.broken_links] == ["manual%3A2026.pdf"]
+    assert _audit({"note.md": note, "manual:2026.pdf": b"present"}).broken_links == []
+
+
+def test_resource_failure_marks_member_unchecked_and_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp import okf_export_conformance as module
+
+    original = module._inspect
+
+    def inspect(path, raw, report, links):
+        if path == "bad.md":
+            raise MemoryError
+        original(path, raw, report, links)
+
+    monkeypatch.setattr(module, "_inspect", inspect)
+    report = _audit({"bad.md": b"", "other.md": b"missing"})
+    assert report.verdict == "incomplete"
+    assert report.unchecked["bad.md"] == ["yaml_frontmatter", "type"]
+    assert any(f.path == "other.md" for f in report.format_findings)
+
+
+@pytest.mark.parametrize(
+    ("name", "checks"),
+    [
+        ("index.md", ["index_frontmatter", "index_entry_shape"]),
+        ("log.md", ["log_date_headings", "log_entry_shape"]),
+        ("note.md", ["yaml_frontmatter", "type"]),
+    ],
+)
+@pytest.mark.parametrize("error", [OverflowError, MemoryError])
+def test_resource_failures_name_role_checks(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    checks: list[str],
+    error: type[Exception],
+) -> None:
+    from markdown_vault_mcp import okf_export_conformance as module
+
+    def fail(*_args: object) -> None:
+        raise error
+
+    monkeypatch.setattr(module, "_inspect", fail)
+    report = _audit({name: b""})
+    assert report.verdict == "incomplete"
+    assert report.unchecked[name] == checks
+
+
+def test_deep_yaml_export_is_incomplete(tmp_path: Path) -> None:
+    (tmp_path / "note.md").write_text(
+        "---\ntype: T\ndeep: " + "[" * 30000 + "]" * 30000 + "\n---\n"
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert result.data
+    assert result.report.verdict == "incomplete"
+    assert result.report.unchecked["note.md"] == ["yaml_frontmatter", "type"]
