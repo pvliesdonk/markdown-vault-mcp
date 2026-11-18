@@ -845,18 +845,13 @@ class TestRemovalRule:
         fts.delete_by_path("a.md")
         return fts, store, rec
 
-    def test_skip_removes_backed_vectors_without_request(self, tmp_path):
-        fts, provider, store, rec = _setup(tmp_path, NOTES)
-        rec.reconcile(store, site="test")
-        other = store.rows_for("b.md")
-        (tmp_path / "a.md").write_text("# A\n\nQuinces.\n")
-        fts.upsert_note(parse_note(tmp_path / "a.md", tmp_path, HeadingChunker()))
-        provider.calls.clear()
+    def test_skip_backed_document_without_request(self, tmp_path):
+        _, provider, store, rec = _setup(tmp_path, NOTES)
         rec._skip_embedding = lambda path: path == "a.md"
         rec.reconcile(store, site="test")
         assert not store.rows_for("a.md")
-        assert store.rows_for("b.md") == other
-        assert provider.calls == []
+        assert store.rows_for("b.md")
+        assert all("Apples" not in text for call in provider.calls for text in call)
 
     def test_absent_removes(self, tmp_path):
         _, store, rec = self._orphan(tmp_path, probe=_Probe({"a.md": "absent"}))

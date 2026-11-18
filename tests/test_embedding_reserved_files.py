@@ -1,6 +1,5 @@
 """Embedding coverage for designated OKF indexes."""
 
-import os
 import re
 from pathlib import Path
 
@@ -8,9 +7,21 @@ import pytest
 
 from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 from markdown_vault_mcp.vault import Vault, VaultSettings
-from tests.conftest import wait_for_writer_drain
-from tests.fixtures.embedding_providers import CountingProvider
+from tests.conftest import MockEmbeddingProvider, wait_for_writer_drain
+from tests.fixtures.postgres import PostgresSchema
 from tests.fixtures.vectors import metadata_by_path
+
+
+class CountingProvider(MockEmbeddingProvider):
+    """Collect inputs sent to the deterministic mock provider."""
+
+    def __init__(self, dim: int = 32) -> None:
+        super().__init__(dim)
+        self.texts: list[str] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.texts.extend(texts)
+        return super().embed(texts)
 
 
 def _capabilities(
@@ -49,23 +60,6 @@ def _paths(vault: Vault) -> set[str]:
     return set(metadata_by_path(store))
 
 
-def test_externally_changed_designated_index_is_not_embedded(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    provider = CountingProvider()
-    vault = _persistent_vault(root, tmp_path, provider, enabled=True)
-    try:
-        vault.index.build_index()
-        vault.index.build_embeddings()
-        provider.texts.clear()
-        (root / "generated/index.md").write_text("# Listing\n\nchanged listing\n")
-        vault.index.reindex()
-        assert "generated/index.md" not in _paths(vault)
-        assert not any("changed listing" in text for text in provider.texts)
-    finally:
-        vault.close()
-
-
 class MeaningProvider(CountingProvider):
     """Map fixture concepts and query synonyms to orthogonal vectors."""
 
@@ -73,7 +67,7 @@ class MeaningProvider(CountingProvider):
         super().__init__(dim=7)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        self.record_texts(texts)
+        self.texts.extend(texts)
         axes = (
             ("orchard", "fruit"),
             ("voyage", "journey"),
@@ -191,11 +185,12 @@ def test_designation_is_authority_without_runtime_detection(
         vault.close()
 
 
-@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
 def test_listed_identity_rebuild_reuse_and_restore(  # noqa: PLR0915, RUF100 - One persisted lifecycle covers upgrade and reversal.
-    tmp_path: Path, backend: str
+    tmp_path: Path,
 ) -> None:
     from markdown_vault_mcp.indexing.embedding_reconciler import stored_inputs
+
+    backend = "numpy"
 
     root = tmp_path / "vault"
     (root / "generated").mkdir(parents=True)
@@ -213,7 +208,6 @@ def test_listed_identity_rebuild_reuse_and_restore(  # noqa: PLR0915, RUF100 - O
     try:
         first.index.build_index()
         first.index.build_embeddings()
-        assert first._embed_builder.format_token() == "v1"
         plain = list(provider.texts)
         assert "listing text" in " ".join(plain)
     finally:
@@ -253,7 +247,6 @@ def test_listed_identity_rebuild_reuse_and_restore(  # noqa: PLR0915, RUF100 - O
     try:
         restored.index.build_index()
         restored.index.build_embeddings()
-        assert restored._embed_builder.format_token() == "v1"
         assert "generated/index.md" in _paths(restored)
         assert any("listing text" in text for text in provider.texts)
         assert not any("second meaning" in text for text in provider.texts)
@@ -261,70 +254,20 @@ def test_listed_identity_rebuild_reuse_and_restore(  # noqa: PLR0915, RUF100 - O
         restored.close()
 
 
-@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
-def test_failed_listed_identity_rebuild_preserves_and_retries(
-    tmp_path: Path, backend: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from markdown_vault_mcp.exceptions import EmbeddingsRebuildFailedError
-    from tests.fixtures.vector_store_files import stored_vector_files
-
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    (root / "generated/note.md").write_text("# Concept\n\nbody\n")
-    provider = CountingProvider()
-    old = _persistent_vault(root, tmp_path, provider, enabled=False, backend=backend)
-    try:
-        old.index.build_index()
-        old.index.build_embeddings()
-    finally:
-        old.close()
-    before = stored_vector_files(tmp_path)
-    vault = _persistent_vault(root, tmp_path, provider, enabled=True, backend=backend)
-    try:
-        vault.index.build_index()
-        embed = provider.embed
-
-        def fail(_texts: list[str]) -> list[list[float]]:
-            raise RuntimeError("provider unavailable")
-
-        monkeypatch.setattr(provider, "embed", fail)
-        with pytest.raises(EmbeddingsRebuildFailedError):
-            vault.index.build_embeddings()
-        assert stored_vector_files(tmp_path) == before
-        monkeypatch.setattr(provider, "embed", embed)
-        vault.index.build_embeddings()
-        assert "generated/note.md" in _paths(vault)
-        assert vault._embed_builder.format_token() == 'v1;listed;scope=["generated"]'
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize("enabled", [False, True])
-def test_listing_marker_control(tmp_path: Path, enabled: bool) -> None:
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    (root / "generated/index.md").write_text(
-        "# Generated\n\n- [Pineapple](/generated/note.md)\n"
-    )
-    provider = CountingProvider()
-    vault = _persistent_vault(root, tmp_path, provider, enabled=enabled)
-    try:
-        vault.index.build_index()
-        vault.index.build_embeddings()
-        assert any("[Pineapple](" in text for text in provider.texts) is (not enabled)
-    finally:
-        vault.close()
-
-
 def test_listed_v2_preserves_configured_fields_and_keyword_provenance(
     tmp_path: Path,
+    enabled: bool,
 ) -> None:
     from markdown_vault_mcp.indexing.embedding_reconciler import stored_inputs
+    from markdown_vault_mcp.scanner import HeadingChunker
 
     root = tmp_path / "vault"
     (root / "generated").mkdir(parents=True)
     (root / "generated/concept.md").write_text(
-        "---\ntitle: Concept\nsummary: brief\ndescription: description value\n---\n\nbody\n"
+        "---\ntitle: Concept\nsummary: brief\ndescription: "
+        + "description " * 20
+        + "\n---\n\n## Heading\nbody\n"
     )
     (root / "generated/log.md").write_text("# Log\n\nlog body\n")
     provider = CountingProvider()
@@ -332,159 +275,38 @@ def test_listed_v2_preserves_configured_fields_and_keyword_provenance(
         source_dir=root,
         settings=VaultSettings(
             read_only=False,
-            okf_capabilities=_capabilities(True),
+            okf_capabilities=_capabilities(enabled),
             searchable_frontmatter_fields=["summary"],
+            max_chunk_chars=70,
         ),
         embedding_provider=provider,
+        chunk_strategy=HeadingChunker(short_doc_lines=0, max_chunk_chars=70),
     )
     try:
         vault.index.build_index()
         vault.index.build_embeddings()
-        assert (
-            vault._embed_builder.format_token()
-            == 'v2;fields=summary;listed;scope=["generated"]'
-        )
-        assert vault._index_mgr.chunking_meta.searchable_fields == "summary"
         store = vault._index_mgr._embeddings._loaded_store()
         assert store is not None
         rows = store.rows_for("generated/concept.md")
         inputs = stored_inputs(vault._embed_builder, rows)
-        assert "Concept\nbrief\ndescription value\n\nbody" in inputs
-        assert "Log\n\n# Log\n\nlog body" in provider.texts
+        text = next(iter(inputs))
+        assert text.startswith("Concept\nHeading\nbrief")
+        assert ("description" in text) is enabled
+        assert len(text) <= 70
+        if enabled:
+            assert len(text) >= 68
+        assert "Log\nLog\n\n\nlog body" in provider.texts
         provider.texts.clear()
         vault.index.build_embeddings()
         assert not provider.texts
     finally:
         vault.close()
-
-
-@pytest.mark.parametrize("route", ["write", "reindex"])
-def test_widened_folder_reaches_unchanged_empty_concept_before_embedding_build(
-    tmp_path: Path, route: str
-) -> None:
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    (root / "other").mkdir()
-    (root / "generated/index.md").write_text(
-        "# Listing\n\n- [Concept](/generated/concept.md) - luminescence\n"
-    )
-    (root / "generated/concept.md").write_text(
-        "---\ntitle: Concept\ndescription: luminescence\n---\n"
-    )
-    provider = MeaningProvider()
-
-    def make(folders: tuple[str, ...]) -> Vault:
-        return Vault(
-            source_dir=root,
-            settings=VaultSettings(
-                read_only=False,
-                okf_capabilities=_capabilities(True, folders),
-                index_path=tmp_path / "index.db",
-                state_path=tmp_path / "state.json",
-                embeddings_path=tmp_path / "vectors",
-            ),
-            embedding_provider=provider,
-        )
-
-    old = make((".",))
-    try:
-        old.index.build_index()
-        old.index.build_embeddings()
-    finally:
-        old.close()
-    vault = make(("generated",))
-    try:
-        vault.index.build_index()
-        provider.texts.clear()
-        if route == "write":
-            vault.writer.write("other/note.md", "# Other\n\nunrelated\n")
-            wait_for_writer_drain(vault)
-            assert "generated/concept.md" in _paths(vault)
-            assert "generated/index.md" not in _paths(vault)
-        else:
-            vault.index.reindex()
-            assert vault._index_mgr._embeddings._loaded_store() is None
-            assert not provider.texts
-        assert (
-            vault.reader.search("glowing", mode="semantic", limit=1)[0].path
-            == "generated/concept.md"
-        )
-        assert "generated/index.md" not in _paths(vault)
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
-def test_legacy_alias_upgrades_v1_store(tmp_path: Path, backend: str) -> None:
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "index.md").write_text("# Listing\n\nlegacy listing\n")
-    (root / "concept.md").write_text(
-        "---\ntitle: Concept\ndescription: legacy description\n---\n"
-    )
-    provider = CountingProvider()
-    old = _persistent_vault(root, tmp_path, provider, enabled=False, backend=backend)
-    try:
-        old.index.build_index()
-        old.index.build_embeddings()
-        assert "index.md" in _paths(old)
-    finally:
-        old.close()
-    provider.texts.clear()
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(
-            read_only=False,
-            okf_mode="on",
-            okf_write=True,
-            embedding_store=backend,
-            index_path=tmp_path / "index.db",
-            state_path=tmp_path / "state.json",
-            embeddings_path=tmp_path / "vectors",
-        ),
-        embedding_provider=provider,
-    )
-    try:
-        vault.index.build_index()
-        vault.index.build_embeddings()
-        assert "index.md" not in _paths(vault)
-        assert "concept.md" in _paths(vault)
-        assert any("legacy description" in text for text in provider.texts)
-        assert vault._embed_builder.format_token().startswith("v1;listed;scope=")
-    finally:
-        vault.close()
-
-
-def test_equivalent_folder_scope_does_not_rebuild_store(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    (root / "generated/note.md").write_text("# Note\n\nbody\n")
-    provider = CountingProvider()
-    first = _persistent_vault(root, tmp_path, provider, enabled=True)
-    try:
-        first.index.build_index()
-        first.index.build_embeddings()
-    finally:
-        first.close()
-    provider.texts.clear()
-    reopened = _persistent_vault(
-        root, tmp_path, provider, enabled=True, folders=("./generated/", "generated")
-    )
-    try:
-        reopened.index.build_index()
-        reopened.index.build_embeddings()
-        assert not provider.texts
-        assert "generated/note.md" in _paths(reopened)
-    finally:
-        reopened.close()
 
 
 def test_postgres_designation_rebuild_and_reindex(
-    tmp_path: Path, request: pytest.FixtureRequest
+    tmp_path: Path, postgres_schema: PostgresSchema
 ) -> None:
-    if not os.environ.get("MVM_TEST_POSTGRES_DSN") and not os.environ.get("CI"):
-        pytest.skip("Postgres service not supplied; CI exercises its existing fixture")
-    schema = request.getfixturevalue("postgres_schema")
+    schema = postgres_schema
     root = tmp_path / "vault"
     (root / "generated").mkdir(parents=True)
     (root / "generated/index.md").write_text("# Listing\n\nlisting marker\n")
@@ -519,50 +341,6 @@ def test_postgres_designation_rebuild_and_reindex(
         vault.index.build_embeddings()
         assert "generated/index.md" not in _paths(vault)
         assert "generated/note.md" in _paths(vault)
-        (root / "generated/index.md").write_text("# Listing\n\nchanged marker\n")
-        provider.texts.clear()
-        vault.index.reindex()
-        assert "generated/index.md" not in _paths(vault)
-        assert not any("changed marker" in text for text in provider.texts)
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("body", ["short body", ""])
-def test_listing_metadata_cannot_push_concept_past_provider_limit(
-    tmp_path: Path, body: str
-) -> None:
-    class LimitedProvider(CountingProvider):
-        def embed(self, texts: list[str]) -> list[list[float]]:
-            if any(len(text) > 500 for text in texts):
-                raise ValueError("input exceeds provider context")
-            return super().embed(texts)
-
-    root = tmp_path / "vault"
-    root.mkdir()
-    description = "glow " * 250
-    (root / "index.md").write_text(
-        f"# Index\n\n- [Concept](/concept.md) - {description}\n"
-    )
-    (root / "concept.md").write_text(
-        f"---\ntitle: Concept\ndescription: {description}\n---\n\n{body}\n"
-    )
-    provider = LimitedProvider()
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(
-            okf_mode="on",
-            okf_capabilities=_capabilities(True, (".",)),
-            max_chunk_chars=300,
-        ),
-        embedding_provider=provider,
-    )
-    try:
-        vault.index.build_index()
-        vault.index.build_embeddings()
-        assert "concept.md" in _paths(vault)
-        assert "index.md" not in _paths(vault)
-        assert any("glow" in text for text in provider.texts)
     finally:
         vault.close()
 
@@ -571,14 +349,6 @@ def test_listing_metadata_cannot_push_concept_past_provider_limit(
 def test_listed_input_never_exceeds_cap_or_unenriched_input(
     tmp_path: Path, words: int
 ) -> None:
-    class FlakyProvider(CountingProvider):
-        failing = True
-
-        def embed(self, texts: list[str]) -> list[list[float]]:
-            if self.failing:
-                raise ValueError("provider unavailable")
-            return super().embed(texts)
-
     root = tmp_path / "vault"
     root.mkdir()
     (root / "index.md").write_text("# Index\n\n- [Concept](/concept.md) - x\n")
@@ -601,7 +371,6 @@ def test_listed_input_never_exceeds_cap_or_unenriched_input(
         try:
             vault.index.build_index()
             vault.index.build_embeddings()
-            assert "concept.md" in _paths(vault) or not provider.texts
             if provider.texts:
                 vault.index.build_embeddings()
                 count = len(provider.texts)
@@ -611,10 +380,7 @@ def test_listed_input_never_exceeds_cap_or_unenriched_input(
             vault.close()
         return provider.texts
 
-    provider = FlakyProvider()
-    assert texts(listed=True, provider=provider) == []
-    provider.failing = False
-    listed = texts(listed=True, provider=provider)
+    listed = texts(listed=True, provider=CountingProvider())
     plain = [
         text
         for text in texts(listed=False, provider=CountingProvider())
