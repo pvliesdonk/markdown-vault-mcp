@@ -240,6 +240,7 @@ def test_abort_after_union_restores_both_versions(
     import subprocess
 
     from markdown_vault_mcp.git import conflict
+    from markdown_vault_mcp.utils.fs import path_exists
     from tests.fixtures.conflict_recovery import recovery_vault
     from tests.fixtures.git import _git_clone, _git_commit, _run_git
 
@@ -280,7 +281,7 @@ def test_abort_after_union_restores_both_versions(
         result = strategy.force_pull()
         if later == "deleted":
             assert result.reason == "conflict_resolution_failed"
-            assert not (root / "log.md").exists()
+            assert not path_exists(root / "log.md")
             assert "git_conflict_mcp_version_unreadable path=log.md" in caplog.text
         else:
             assert result.reason == "conflicts_resolved_with_siblings"

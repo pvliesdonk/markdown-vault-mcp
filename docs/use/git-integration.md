@@ -410,8 +410,8 @@ commits) reports `would_apply=false`. The push leg has no safe local
 
     An authored `index.md` keeps the local bytes in a sibling without adding
     conflict metadata. A `log.md` conflict unions complete entries by date
-    when both versions have compatible frontmatter and preambles and supported
-    bullet lists. Identical complete entries under the same date are
+    when both versions have compatible frontmatter and preambles and only
+    bullet-list entries. Identical complete entries under the same date are
     deduplicated. Equal reference definitions are supported; differing definitions
     and invalid or out-of-order dates cause a fallback. Git converts the merged
     content to worktree form before staging. If the merge is unsafe or the rebase aborts, the local log
