@@ -52,8 +52,8 @@ def resolve_rebase_conflicts(
     ``REBASE_HEAD``, then accepts the upstream version via
     ``git checkout --ours``.  Continues the rebase, looping if
     multiple commits conflict.
-    An optionally designated index deleted upstream retains its local copy
-    for regeneration by the caller.
+    A designated index deleted upstream keeps its local copy for regeneration;
+    any other reserved file stays deleted, its local bytes returned as saved.
 
     Args:
         git_root: Working-tree root.
@@ -123,18 +123,7 @@ def resolve_rebase_conflicts(
                     rel_path,
                 )
 
-            # Accept upstream's version.  During rebase, --ours is the
-            # branch being rebased onto (upstream), --theirs is the
-            # commit being replayed (our local MCP commit).
-            try:
-                run_git(git_root, "checkout", "--ours", pathspecs=[rel_path], env=env)
-            except subprocess.CalledProcessError:
-                if not _upstream_deleted_generated(
-                    git_root, rel_path, env, generated_index
-                ):
-                    raise
-                run_git(git_root, "checkout", "--theirs", pathspecs=[rel_path], env=env)
-            run_git(git_root, "add", pathspecs=[rel_path], env=env)
+            _accept_upstream(git_root, rel_path, env, generated_index)
 
         # Continue the rebase.  If another commit conflicts, the loop
         # iterates again.  ``--no-edit`` avoids opening an editor for
@@ -166,6 +155,45 @@ def resolve_rebase_conflicts(
     return list(saved.items())
 
 
+def _accept_upstream(
+    git_root: Path,
+    rel_path: str,
+    env: dict[str, str] | None,
+    generated_index: collections.abc.Callable[[Path], bool] | None,
+) -> None:
+    """Take upstream's side of one conflicting path and stage the result.
+
+    During a rebase ``--ours`` is the branch being rebased onto (upstream) and
+    ``--theirs`` the commit being replayed (our local MCP commit). A reserved
+    file upstream deleted is the one exception to taking upstream: a designated
+    generated index keeps the local copy for regeneration, any other stays
+    deleted with its local bytes already saved for a sibling. A concept
+    deleted upstream still raises.
+
+    Args:
+        git_root: Working-tree root.
+        rel_path: Conflicting path, relative to *git_root*.
+        env: Optional Git environment.
+        generated_index: Optional authority check for generated indexes.
+
+    Raises:
+        subprocess.CalledProcessError: A git step failed and no exception applies.
+    """
+    try:
+        run_git(git_root, "checkout", "--ours", pathspecs=[rel_path], env=env)
+    except subprocess.CalledProcessError:
+        if _upstream_deleted_generated(git_root, rel_path, env, generated_index):
+            run_git(git_root, "checkout", "--theirs", pathspecs=[rel_path], env=env)
+        elif is_okf_reserved_file(rel_path) and _upstream_deleted(
+            git_root, rel_path, env
+        ):
+            run_git(git_root, "rm", pathspecs=[rel_path], env=env)
+            return
+        else:
+            raise
+    run_git(git_root, "add", pathspecs=[rel_path], env=env)
+
+
 def _upstream_deleted_generated(
     git_root: Path,
     rel_path: str,
@@ -173,8 +201,17 @@ def _upstream_deleted_generated(
     generated_index: collections.abc.Callable[[Path], bool] | None,
 ) -> bool:
     """Recognize a designated index with an absent upstream conflict stage."""
-    if generated_index is None or not generated_index(git_root / rel_path):
-        return False
+    return (
+        generated_index is not None
+        and generated_index(git_root / rel_path)
+        and _upstream_deleted(git_root, rel_path, env)
+    )
+
+
+def _upstream_deleted(
+    git_root: Path, rel_path: str, env: dict[str, str] | None
+) -> bool:
+    """Recognize a conflict whose upstream stage is absent and local stage present."""
     result = run_git_capturing(
         git_root, "ls-files", "--unmerged", "-z", pathspecs=[rel_path], env=env
     )

@@ -17,6 +17,7 @@ documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import json
 import logging
@@ -1271,19 +1272,52 @@ class GitWriteStrategy:
             )
         else:
             self._pending_generated.update(git_root / p for p in generated)
-        if not authored:
-            if (
-                generated
-                and not rebase_in_progress
-                and self.head_sha(git_root) != from_sha
-            ):
-                return self._build_pull_result_advanced(
-                    git_root, env, from_sha=from_sha, reason=PULL_REASON_REBASED
-                ), []
-            return PullResult.head_unchanged_failure(
-                from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
+        unsaved = recovery.conflicted - generated - {p for p, _ in saved}
+        if unsaved or not authored:
+            return self._conflicts_unrecovered(
+                recovery, generated, authored, unsaved
             ), []
         return None, authored
+
+    def _conflicts_unrecovered(
+        self,
+        recovery: _ConflictRecovery,
+        generated: set[str],
+        authored: list[tuple[str, str]],
+        unsaved: set[str],
+    ) -> PullResult:
+        """Report a pull that recovered fewer conflicts than it found.
+
+        A generated-only conflict with the rebase completed is a ``rebased``
+        success. Otherwise it is ``conflict_resolution_failed``, even when
+        *unsaved* paths (a local deletion or an unreadable local blob, so no
+        bytes were saved) accompany saved siblings: those siblings are still
+        written and reported.
+        """
+        git_root, env, from_sha = recovery.git_root, recovery.env, recovery.from_sha
+        if (
+            generated
+            and not unsaved
+            and not recovery.rebase_in_progress
+            and self.head_sha(git_root) != from_sha
+        ):
+            return self._build_pull_result_advanced(
+                git_root, env, from_sha=from_sha, reason=PULL_REASON_REBASED
+            )
+        failure = PullResult.head_unchanged_failure(
+            from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, recovery.detail
+        )
+        written = conflict.write_conflict_files(
+            git_root,
+            authored,
+            env,
+            commit_name=self._commit_name,
+            commit_email=self._commit_email,
+            token=self._token,
+        )
+        return dataclasses.replace(
+            failure, to_sha=self.head_sha(git_root), conflict_files=tuple(written or ())
+        )
 
     def _force_pull_rebase_fallback(
         self,
@@ -1365,14 +1399,10 @@ class GitWriteStrategy:
             # abort so a subsequent ``force_pull`` (or any per-write commit
             # path) does not trip over the leftover ``rebase-merge`` directory.
             conflicted: set[str] = set()
-            resolve_fn = (
-                functools.partial(
-                    conflict.resolve_rebase_conflicts,
-                    conflicted=conflicted,
-                    generated_index=self._generated_index_policy,
-                )
-                if self._generated_index_policy is not None
-                else None
+            resolve_fn = functools.partial(
+                conflict.resolve_rebase_conflicts,
+                conflicted=conflicted,
+                generated_index=self._generated_index_policy,
             )
             saved, early_exit = conflict.resolve_conflicts_safely(
                 git_root, env, from_sha, token=self._token, resolve_fn=resolve_fn

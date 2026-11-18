@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -237,7 +237,6 @@ def _setup_deleted_generated_conflict(
         (False, False, False),
         (True, False, False),
         (False, True, False),
-        (False, False, True),
     ],
 )
 def test_local_delete_upstream_modify_generated_index_is_regenerated(
@@ -267,6 +266,94 @@ def test_local_delete_upstream_modify_generated_index_is_regenerated(
         vault.writer.okf_generate_index()
         wait_for_writer_drain(vault)
         assert index.read_text() == text
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_mixed_generated_and_local_concept_deletion_reports_failure(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    vault_root, _index = _setup_deleted_generated_conflict(git_repo_pair, False, True)
+    strategy, vault = recovery_vault(vault_root, build=True)
+    try:
+        result = strategy.force_pull()
+        assert not result.applied and result.reason == "conflict_resolution_failed"
+        assert not result.conflict_files
+        assert (vault_root / "concept.md").read_text() == "remote concept\n"
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_unreadable_local_concept_is_not_masked_by_generated_index(
+    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    from markdown_vault_mcp.git import conflict
+    from tests.fixtures.conflict_recovery import _setup_multiple_conflicts
+
+    root, _index, _concept = _setup_multiple_conflicts(git_repo_pair)
+    original = conflict.run_git_capturing
+
+    def unreadable(
+        git_root: Path, *args: str, **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        if "REBASE_HEAD:concept.md" in args:
+            return subprocess.CompletedProcess(args, 1, "", "unreadable")
+        return original(git_root, *args, **kwargs)
+
+    monkeypatch.setattr(conflict, "run_git_capturing", unreadable)
+    strategy, vault = recovery_vault(root, build=True)
+    try:
+        result = strategy.force_pull()
+        assert not result.applied and result.reason == "conflict_resolution_failed"
+        assert not result.conflict_files
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_saved_sibling_does_not_mask_unsaved_concept_deletion(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    import subprocess
+
+    from tests.fixtures.git import _run_git
+
+    root = git_repo_pair.local_path
+    (root / "concept.md").write_text("base concept\n")
+    (root / "log.md").write_text("base log\n")
+    _run_git(root, "add", "concept.md", "log.md")
+    _run_git(root, "commit", "-m", "seed")
+    _run_git(root, "push", "origin", "main")
+    other = root.parent / "other"
+    subprocess.run(
+        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _run_git(other, "config", "user.name", "Other")
+    _run_git(other, "config", "user.email", "other@example.com")
+    (other / "concept.md").write_text("remote concept\n")
+    (other / "log.md").write_text("remote log\n")
+    _run_git(other, "add", "concept.md", "log.md")
+    _run_git(other, "commit", "-m", "remote")
+    _run_git(other, "push", "origin", "main")
+    _run_git(root, "rm", "concept.md")
+    (root / "log.md").write_text("local log\n")
+    _run_git(root, "add", "log.md")
+    _run_git(root, "commit", "-m", "local")
+    strategy, vault = recovery_vault(root, authority="disabled")
+    try:
+        result = strategy.force_pull()
+        assert not result.applied and result.reason == "conflict_resolution_failed"
+        siblings = list(root.glob("log.conflict-mcp-*.md"))
+        assert len(siblings) == 1 and siblings[0].read_text() == "local log\n"
+        assert result.conflict_files == (str(siblings[0].relative_to(root)),)
+        assert result.to_sha == _run_git(root, "rev-parse", "HEAD").strip()
+        assert (root / "concept.md").read_text() == "remote concept\n"
     finally:
         vault.close()
         strategy.close()
@@ -389,15 +476,24 @@ def test_upstream_deleted_authored_file_keeps_local_copy(
     _run_git(other, "rm", name)
     _run_git(other, "commit", "-m", "delete")
     _run_git(other, "push", "origin", "main")
-    path.write_text("local content\n")
+    local = b"local content\xff\n" if name != "concept.md" else b"local content\n"
+    path.write_bytes(local)
     _run_git(root, "add", name)
     _run_git(root, "commit", "-m", "local change")
     strategy, vault = recovery_vault(root, authority=authority)
     try:
         result = strategy.force_pull()
-        assert not result.applied and result.reason == "conflict_resolution_failed"
-        assert path.read_text() == "local content\n"
-        assert not list(root.glob(f"{path.stem}.conflict-mcp-*.md"))
+        if name == "concept.md":
+            assert not result.applied and result.reason == "conflict_resolution_failed"
+            assert path.read_bytes() == local
+            assert not list(root.glob("concept.conflict-mcp-*.md"))
+        else:
+            assert (
+                result.applied and result.reason == "conflicts_resolved_with_siblings"
+            )
+            assert not path.exists()
+            assert len(result.conflict_files) == 1
+            assert (root / result.conflict_files[0]).read_bytes() == local
     finally:
         vault.close()
         strategy.close()

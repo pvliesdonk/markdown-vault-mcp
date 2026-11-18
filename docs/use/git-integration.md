@@ -418,9 +418,11 @@ commits) reports `would_apply=false`. The push leg has no safe local
     `okf_generate_index` heals the listing, as it does after a restart. An
     aborted rebase (more than 50 conflicting replays, or a stop that is not a
     conflict) keeps the local index. The next pull attempts the rebase again,
-    and the same history can abort it again. For an authored index or log, an
-    upstream deletion conflicting with a local edit stops the pull and keeps the
-    local copy for manual resolution. The server drains regenerated writes before a following push in the same `git_sync`. A
+    and the same history can abort it again. If upstream deleted an authored
+    index or log, its local bytes are preserved in a sibling and the original
+    stays deleted. An unsaved non-generated conflict reports failure even when
+    other paths are regenerated or saved as siblings. The server drains
+    regenerated writes before a following push in the same `git_sync`. A
     callback timeout or commit failure follows the ordinary write path; the
     drain does not confirm commit success. Preserved siblings appear in search
     and generated listings until manually reconciled and deleted. They can also
