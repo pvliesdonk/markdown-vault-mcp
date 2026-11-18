@@ -6626,7 +6626,7 @@ ifcraftcorpus).
 
 ### Write + Git Integration
 
-Server-generated write commits carry `Vault-Tool` and `Vault-Server` Git trailers as descriptive metadata. They do not establish identity or authority. Git trailer syntax is recorded in [Git staging and commits](reference/git-staging-and-commits.md).
+Server-generated commits carry `Vault-Tool` and `Vault-Server` Git trailers as descriptive metadata. They do not establish identity or authority. Git trailer syntax is recorded in [Git staging and commits](reference/git-staging-and-commits.md).
 
 Startup validation reports `git --version` once per `RepoBootstrap` when a
 Git repository is found, using `git_runtime_version` at INFO (#1312). The

@@ -62,16 +62,15 @@ def test_commit_and_seed_log_preserve_attribution(repo: Path, operation: str) ->
             if operation == "surrogate"
             else "[AI summary] Raise retention period"
         )
-        message = (
-            f"{subject}\n\n"
-            if operation == "surrogate"
-            else f"{subject}\n\nMechanical-Subject: {mechanical}\n\n"
+        assert git(repo, "log", "-1", "--format=%s").strip() == subject
+        trailers = git(repo, "log", "-1", "--format=%(trailers)")
+        assert (
+            f"Vault-Tool: {operation if operation != 'surrogate' else 'write'}"
+            in trailers
         )
-        assert git(repo, "log", "-1", "--format=%B") == message.rstrip() + (
-            ("\n\n" if operation == "surrogate" else "\n")
-            + f"Vault-Tool: {operation if operation != 'surrogate' else 'write'}\n"
-            f"Vault-Server: markdown-vault-mcp/{__version__}\n\n"
-        )
+        assert f"Vault-Server: markdown-vault-mcp/{__version__}" in trailers
+        if operation != "surrogate":
+            assert f"Mechanical-Subject: {mechanical}" in trailers
         assert (
             "rename from old.md" if operation == "rename" else "synthetic retention"
         ) in fake.calls[-1][1]
@@ -210,20 +209,19 @@ def test_batch_fallback_and_no_diff(repo: Path) -> None:
             [(first, "write", None, None), (second, "write", None, None)], "convert"
         )
         assert (
-            git(repo, "log", "-1", "--format=%B")
-            == "[AI summary] Update notes\n\nMechanical-Subject: convert: 2 files\n"
-            f"Vault-Tool: convert\nVault-Server: markdown-vault-mcp/{__version__}\n\n"
+            git(repo, "log", "-1", "--format=%s").strip() == "[AI summary] Update notes"
         )
+        trailers = git(repo, "log", "-1", "--format=%(trailers)")
+        assert "Mechanical-Subject: convert: 2 files" in trailers
+        assert "Vault-Tool: convert" in trailers
         assert set(
             git(repo, "show", "--format=", "--name-only", "HEAD").splitlines()
         ) == {"a.md", "b.md"}
         first.write_text("changed", encoding="utf-8")
         strategy.on_write_batch([(first, "write", None, None)], "convert")
-        assert (
-            git(repo, "log", "-1", "--format=%B")
-            == "[AI summary] Update notes\n\nMechanical-Subject: write: a.md\n"
-            f"Vault-Tool: convert\nVault-Server: markdown-vault-mcp/{__version__}\n\n"
-        )
+        trailers = git(repo, "log", "-1", "--format=%(trailers)")
+        assert "Mechanical-Subject: write: a.md" in trailers
+        assert "Vault-Tool: convert" in trailers
         assert len(fake.calls) == 2
     finally:
         strategy.close()
@@ -313,5 +311,8 @@ def test_changed_worktree_during_generation_falls_back(repo: Path, case: str) ->
         strategy(note, "", operation)
         assert git(repo, "show", "HEAD:race.md") == "later synthetic content"
         assert git(repo, "log", "-1", "--format=%s").strip() == f"{operation}: race.md"
+        trailers = git(repo, "log", "-1", "--format=%(trailers)")
+        assert f"Vault-Tool: {operation}" in trailers
+        assert f"Vault-Server: markdown-vault-mcp/{__version__}" in trailers
     finally:
         strategy.close()

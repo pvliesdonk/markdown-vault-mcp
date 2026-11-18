@@ -23,7 +23,20 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+from markdown_vault_mcp import __version__
+
 logger = logging.getLogger(__name__)
+
+
+def _commit_message_with_trailers(
+    message: str, tool: str, *, existing_trailers: bool = False
+) -> str:
+    """Append descriptive server metadata to a Git commit message."""
+    separator = "\n" if existing_trailers else "\n\n"
+    return (
+        f"{message.rstrip()}{separator}Vault-Tool: {tool}\n"
+        f"Vault-Server: markdown-vault-mcp/{__version__}"
+    )
 
 
 def literal_pathspec(path: str) -> str:

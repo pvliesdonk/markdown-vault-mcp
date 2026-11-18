@@ -45,11 +45,11 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
-from markdown_vault_mcp import __version__
 from markdown_vault_mcp._commit_groups import GroupCommitResult
 from markdown_vault_mcp._commit_scope import current_folder_move
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
+    _commit_message_with_trailers,
     cleanup_git_env,
     git_env,
     redact,
@@ -2917,12 +2917,17 @@ def _commit_staged(
             the unscoped legacy rename branch produces it, and it has no
             narrower truth to offer.
     """
+    mechanical = commit_msg
     if describe is not None:
         commit_msg = describe(root, commit_msg, pathspec)
-    separator = "\n" if "\n\n" in commit_msg else "\n\n"
-    commit_msg = (
-        f"{commit_msg.rstrip()}{separator}Vault-Tool: {tool_name}\n"
-        f"Vault-Server: markdown-vault-mcp/{__version__}"
+    # The subject writer emits this one-line trailer only for a one-line subject.
+    existing_trailers = (
+        "\n" not in mechanical
+        and commit_msg.startswith("[AI summary] ")
+        and commit_msg.endswith(f"\n\nMechanical-Subject: {mechanical}")
+    )
+    commit_msg = _commit_message_with_trailers(
+        commit_msg, tool_name, existing_trailers=existing_trailers
     )
     commit_name = identity.commit_name
     commit_email = identity.commit_email

@@ -19,7 +19,11 @@ from typing import TYPE_CHECKING
 
 import frontmatter
 
-from markdown_vault_mcp.git._run import run_git, run_git_capturing
+from markdown_vault_mcp.git._run import (
+    _commit_message_with_trailers,
+    run_git,
+    run_git_capturing,
+)
 from markdown_vault_mcp.git.health import log_git_stderr
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
@@ -584,7 +588,10 @@ def write_conflict_files(
         f"user.email={commit_email}",
         "commit",
         "-m",
-        f"conflict: saved {n} MCP version(s) for manual reconciliation\n\n{file_list}",
+        _commit_message_with_trailers(
+            f"conflict: saved {n} MCP version(s) for manual reconciliation\n\n{file_list}",
+            "sync_conflict",
+        ),
         env=env,
         whole_repo=True,
     )
