@@ -175,10 +175,7 @@ def test_generated_index_is_recovered_after_pull(
             vault.index.build_index()
         with monkeypatch.context() as patch:
             patch.setattr(vault._okf_migrate, "generate_index", _fail_generation)
-            assert vault.reconcile_index_with_head(source="git_sync") in (
-                "current",
-                "reindexed",
-            )
+            assert vault.reconcile_index_with_head(source="git_sync") == "failed"
             assert marker.exists()
         if tick:
             vault._reconcile_on_tick()

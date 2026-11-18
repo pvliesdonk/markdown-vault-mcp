@@ -16,6 +16,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,7 @@ from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
 )
+from markdown_vault_mcp.managers._write_kernel import atomic_write
 from markdown_vault_mcp.okf import is_okf_reserved_file
 from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory, path_exists
@@ -101,6 +103,8 @@ def resolve_rebase_conflicts(
                 env=env,
             )
             if show_result.returncode == 0:
+                if not is_okf_reserved_file(rel_path):
+                    os.fsencode(show_result.stdout).decode("utf-8")
                 saved[rel_path] = show_result.stdout
             else:
                 logger.warning(
@@ -357,7 +361,7 @@ def restore_upstream_paths(
 def _write_reserved_sibling(git_root: Path, conflict_rel: str, content: str) -> None:
     target = git_root / conflict_rel
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(content.encode("utf-8"))
+    atomic_write(target, os.fsencode(content))
 
 
 def write_conflict_files(
@@ -534,7 +538,9 @@ def _pending_file(git_root: Path) -> Path:
     result = run_git_capturing(git_root, "rev-parse", "--absolute-git-dir")
     if result.returncode:
         raise OSError("Cannot locate git directory")
-    return Path(result.stdout.strip()) / "markdown-vault-pending-indexes.json"
+    return (
+        Path(result.stdout.removesuffix("\n")) / "markdown-vault-pending-indexes.json"
+    )
 
 
 def read_generated_indexes(git_root: Path) -> list[str]:
@@ -542,17 +548,18 @@ def read_generated_indexes(git_root: Path) -> list[str]:
     marker = _pending_file(git_root)
     try:
         data = json.loads(marker.read_text(encoding="utf-8"))
-        if not isinstance(data, list) or any(
-            not isinstance(p, str) or Path(p).is_absolute() or ".." in Path(p).parts
-            for p in data
-        ):
-            raise ValueError("invalid pending indexes")
-        return data
     except FileNotFoundError:
         return []
-    except (OSError, ValueError, UnicodeError):
-        logger.warning("git_pending_indexes_unreadable path=%s", marker, exc_info=True)
-        return []
+    if isinstance(data, dict):
+        if data.get("version") != 1:
+            raise ValueError("unsupported pending index marker version")
+        data = data.get("paths")
+    if not isinstance(data, list) or any(
+        not isinstance(p, str) or Path(p).is_absolute() or ".." in Path(p).parts
+        for p in data
+    ):
+        raise ValueError("invalid pending indexes")
+    return data
 
 
 def _write_generated_indexes(git_root: Path, paths: list[str]) -> None:
@@ -563,7 +570,14 @@ def _write_generated_indexes(git_root: Path, paths: list[str]) -> None:
     fd, name = tempfile.mkstemp(prefix=".pending-indexes-", dir=marker.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(sorted(set(paths)), stream)
+            json.dump(
+                {
+                    "version": 1,
+                    "revision": uuid.uuid4().hex,
+                    "paths": sorted(set(paths)),
+                },
+                stream,
+            )
         Path(name).replace(marker)
     finally:
         Path(name).unlink(missing_ok=True)

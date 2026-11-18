@@ -469,6 +469,65 @@ class TestGitSync:
         # The seeded file landed on disk despite the reindex blow-up.
         assert (git_repo_pair.local_path / "reindex_seed.md").exists()
 
+    async def test_both_skips_push_after_reindex_failure(
+        self,
+        git_repo_pair: GitRepoPair,
+        _git_managed_env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Failed reindex after a successful pull surfaces ``reindex_failed=True``.
+
+        Regression for ``fb524e8``: when ``IndexFacet.reindex()`` raises
+        after the pull leg has already moved HEAD, the tool must not fail —
+        the side-effect on disk is real and the agent needs to see it.
+        Instead, the bookkeeping failure is surfaced on the pull payload as
+        ``reindex_failed=True`` + ``reindex_hint`` so the caller knows the
+        FTS index is stale and can recover via the standalone ``reindex``
+        tool.
+
+        The reindex callable is monkey-patched on the singleton Vault
+        AFTER the lifespan has constructed it (the singleton accessor is
+        the only seam that exposes the live instance to tests; FastMCP's
+        ``Depends(get_vault)`` resolves through the lifespan context).
+        """
+        # Seed a remote commit so ``force_pull`` actually moves HEAD —
+        # without it the pull short-circuits as "already up to date" and
+        # the post-pull reindex branch never fires.
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_reindex_fail",
+            file_name="reindex_seed.md",
+            body="seed\n",
+        )
+
+        server = make_server()
+        async with Client(server) as client:
+            # Lifespan has set the singleton; monkey-patch reindex BEFORE
+            # the tool call so the post-pull bookkeeping path raises.
+            vault = domain.get_vault_singleton()
+
+            def _failing_reindex() -> None:
+                raise RuntimeError("simulated reindex failure")
+
+            monkeypatch.setattr(vault.index, "reindex", _failing_reindex)
+
+            result = await client.call_tool("git_sync", {"direction": "both"})
+
+        payload = _parse_tool_data(result)
+
+        # Pull side-effect is real — HEAD moved, files on disk.
+        assert payload["pull"] is not None, payload
+        assert payload["pull"]["applied"] is True, payload["pull"]
+        assert payload["pull"]["commits_pulled"] == 1, payload["pull"]
+        # And the bookkeeping failure surfaces on the same payload.
+        assert payload["pull"]["reindex_failed"] is True, payload["pull"]
+        assert "reindex_hint" in payload["pull"], payload["pull"]
+        assert "stale" in payload["pull"]["reindex_hint"].lower()
+        # The seeded file landed on disk despite the reindex blow-up.
+        assert (git_repo_pair.local_path / "reindex_seed.md").exists()
+
+        assert payload["push"] is None, payload
+
     async def test_both_direction_skips_push_when_pull_fails(
         self,
         git_repo_pair: GitRepoPair,

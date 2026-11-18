@@ -243,6 +243,7 @@ class ConventionMaintainer:
                 else p.parent.relative_to(self._source_dir.resolve()).as_posix()
             )
             for p in paths
+            if p.is_relative_to(self._source_dir.resolve())
         }
         failed = self.refresh_indexes(folders.values(), trigger_paths=())
         return [p for p, folder in folders.items() if folder in failed]

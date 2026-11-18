@@ -1153,22 +1153,49 @@ class GitWriteStrategy:
         """Set the vault's authority check for conflict recovery."""
         self._generated_index_policy = is_generated
 
-    def pending_generated_indexes(self, repo_path: Path) -> list[Path]:
-        """Return absolute index paths awaiting recovery."""
+    def pending_generated_indexes(self, repo_path: Path) -> tuple[list[Path], bytes]:
+        """Return pending paths and the marker revision read under the lock."""
         root = self._bootstrap.ensure_git_root(repo_path)
         if root is None:
-            return []
+            return [], b""
         with self._lock:
-            return [root / p for p in conflict.read_generated_indexes(root)]
+            paths = conflict.read_generated_indexes(root)
+            marker = conflict._pending_file(root)
+            return [
+                root / p for p in paths
+            ], marker.read_bytes() if marker.exists() else b""
 
-    def settle_generated_indexes(self, repo_path: Path, done: list[Path]) -> None:
-        """Settle successfully regenerated index paths."""
+    def settle_generated_indexes(
+        self,
+        repo_path: Path,
+        done: list[Path],
+        snapshot: bytes,
+        refused: list[Path] | None = None,
+    ) -> bool:
+        """Settle paths only when the marker and committed bytes still match."""
         root = self._bootstrap.ensure_git_root(repo_path)
-        if root is not None:
-            with self._lock:
-                conflict.settle_generated_indexes(
-                    root, [p.relative_to(root).as_posix() for p in done]
+        if root is None:
+            return False
+        with self._lock:
+            marker = conflict._pending_file(root)
+            if not marker.exists() or marker.read_bytes() != snapshot:
+                return False
+            committed = []
+            for path in done:
+                rel = path.relative_to(root).as_posix()
+                result = subprocess.run(
+                    ["git", "-C", str(root), "show", f"HEAD:{rel}"],
+                    capture_output=True,
+                    check=False,
                 )
+                if result.returncode == 0 and path.read_bytes() == result.stdout:
+                    committed.append(rel)
+            settled = committed + [
+                p.relative_to(root).as_posix() for p in (refused or [])
+            ]
+            if settled:
+                conflict.settle_generated_indexes(root, settled)
+            return len(committed) == len(done)
 
     def _finish_conflicts(
         self, recovery: _ConflictRecovery
@@ -1203,7 +1230,14 @@ class GitWriteStrategy:
                 git_root, env, authored, ref, token=self._token
             )
         else:
-            conflict.record_generated_indexes(git_root, [p for p, _ in generated])
+            try:
+                conflict.record_generated_indexes(git_root, [p for p, _ in generated])
+            except (OSError, ValueError):
+                logger.warning(
+                    "git_pending_indexes_record_failed action=keep_siblings",
+                    exc_info=True,
+                )
+                authored.extend(generated)
         if not authored:
             if not rebase_in_progress and self.head_sha(git_root) != from_sha:
                 return self._build_pull_result_advanced(
