@@ -717,7 +717,7 @@
       "label": "Okf Index",
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_OKF_INDEX",
-      "help": "Enable automatic index maintenance in designated folders; defaults to false.",
+      "help": "Enable automatic index maintenance in designated folders; defaults to false. Designated indexes have no vectors; changing designation rebuilds the embedding store. See the embeddings guide.",
       "advancedGroup": "Content"
     },
     {
