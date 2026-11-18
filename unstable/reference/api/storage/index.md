@@ -231,7 +231,7 @@ Remove every row and the token of *path*, with the same condition.
 
 Replace the whole store with *documents* under *identity*, in one step.
 
-A reader sees the previous generation until this returns; an interrupted publication leaves the previous generation in place.
+A reader sees the previous generation until this returns; an interrupted publication leaves the previous generation in place. *documents* is re-iterable; it does not promise a length, indexing, or a meaningful truth value.
 
 ## `EmbeddingStore`
 
@@ -617,3 +617,17 @@ A build's final sweep and exclusion purge need each live note's path, title, has
 ### `list_note_states()`
 
 Return `path`, `title`, `content_hash` and `modified_at` per live note.
+
+## Chunk traversal
+
+`IteratesChunks` optionally yields the same grouped rows in the same order as `list_chunks()`. Full embedding builds use it to release completed document windows. The built-in FTS reader reads atomic whole-document pages in path order. Concurrent changes between pages may be observed or missed; convergence reconciles later edits. Custom indexes without it retain the eager `list_chunks()` fallback. A custom index's non-scalar metadata stays resident through publication so its objects retain their types and values; this applies to both reader paths.
+
+## `IteratesChunks`
+
+Bases: `Protocol`
+
+Optional ordered, document-grouped traversal of all indexed chunks.
+
+### `iter_chunks()`
+
+Yield `list_chunks()` rows in its order, grouped by path.

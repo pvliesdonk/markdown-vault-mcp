@@ -2906,6 +2906,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#chunk-traversal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunk traversal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.IteratesChunks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IteratesChunks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="IteratesChunks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.IteratesChunks.iter_chunks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_chunks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4135,6 +4174,45 @@
     <span class="md-ellipsis">
       
         list_note_states
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunk-traversal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunk traversal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.IteratesChunks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IteratesChunks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="IteratesChunks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.IteratesChunks.iter_chunks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iter_chunks
       
     </span>
   </a>
@@ -5438,7 +5516,9 @@ source; <code>ANY_TOKEN</code> publishes whatever is stored.</p>
 
         <p>Replace the whole store with <em>documents</em> under <em>identity</em>, in one step.</p>
 <p>A reader sees the previous generation until this returns; an
-interrupted publication leaves the previous generation in place.</p>
+interrupted publication leaves the previous generation in place.
+<em>documents</em> is re-iterable; it does not promise a length, indexing,
+or a meaningful truth value.</p>
 
 
     </div>
@@ -7483,6 +7563,81 @@ through :meth:<code>KeywordIndex.list_notes</code>, frontmatter included.</p>
     <div class="doc doc-contents ">
 
         <p>Return <code>path</code>, <code>title</code>, <code>content_hash</code> and <code>modified_at</code> per live note.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><!-- vale on -->
+
+<h2 id="chunk-traversal">Chunk traversal<a class="headerlink" href="#chunk-traversal" title="Permanent link">&para;</a></h2>
+<p><code>IteratesChunks</code> optionally yields the same grouped rows in the same order as
+<code>list_chunks()</code>. Full embedding builds use it to release completed document
+windows. The built-in FTS reader reads atomic whole-document pages in path order. Concurrent changes between pages may be observed or missed; convergence reconciles later edits. Custom indexes without it retain the eager <code>list_chunks()</code> fallback.
+A custom index's non-scalar metadata stays resident through publication so its
+objects retain their types and values; this applies to both reader paths.</p>
+<!-- vale off -->
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.interfaces.IteratesChunks" class="doc doc-heading">
+            <code>IteratesChunks</code>
+
+
+<a href="#markdown_vault_mcp.interfaces.IteratesChunks" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="typing.Protocol">Protocol</span></code></p>
+
+
+
+        <p>Optional ordered, document-grouped traversal of all indexed chunks.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.interfaces.IteratesChunks.iter_chunks" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">iter_chunks</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.interfaces.IteratesChunks.iter_chunks" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Yield <code>list_chunks()</code> rows in its order, grouped by path.</p>
 
 
     </div>
