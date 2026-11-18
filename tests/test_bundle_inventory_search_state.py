@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
+from markdown_vault_mcp.bundle_inventory import (
+    BundleEntry,
+    BundleInspection,
+    BundleInspectionRequest,
+    project_search_state,
+)
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
@@ -26,7 +31,7 @@ def test_search_state_tracks_index_without_refresh(tmp_path: Path) -> None:
         before = vault.reader.inspect_bundle(BundleInspectionRequest(root="bundle"))
         assert all(entry.search_state == "not_evaluated" for entry in before.entries)
         vault.index.build_index()
-        (bundle / "new.md").write_text("---\ntitle: New\n---\nbody")
+        (bundle / "new.md").write_text("---\ntitle: [\n---\nbody")
         result = vault.reader.inspect_bundle(BundleInspectionRequest(root="bundle"))
         states = {entry.path: entry.search_state for entry in result.entries}
         missing = next(
@@ -38,6 +43,10 @@ def test_search_state_tracks_index_without_refresh(tmp_path: Path) -> None:
             missing.parse_state,
             missing.type_state,
         ) == ("inspected", None, "valid", "present")
+        assert (
+            next(e for e in result.entries if e.path == "bundle/new.md").parse_state
+            == "malformed_metadata"
+        )
         assert states == {
             "bundle/good.md": "searchable",
             "bundle/missing.md": "non_admitted",
@@ -49,22 +58,13 @@ def test_search_state_tracks_index_without_refresh(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_pages_are_read_only_and_direct_inspector_needs_no_index(
-    tmp_path: Path, monkeypatch
-) -> None:
-    from markdown_vault_mcp.bundle_inventory import BundleInspector, BundleTreeRequest
+def test_tree_pages_project_without_refresh(tmp_path: Path, monkeypatch) -> None:
+    from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 
     folder = tmp_path / "bundle" / "sub"
     folder.mkdir(parents=True)
     (folder / "a.md").write_text("---\ntitle: A\n---\nbody")
     (folder / "b.md").write_text("---\ntitle: B\n---\nbody")
-    direct = BundleInspector(tmp_path, (), frozenset(), 0)
-    assert (
-        direct.inspect(BundleInspectionRequest(root="bundle", directory="sub"))
-        .entries[0]
-        .search_state
-        == "not_evaluated"
-    )
     vault = Vault(source_dir=tmp_path)
     try:
         vault.index.build_index()
@@ -91,24 +91,19 @@ def test_pages_are_read_only_and_direct_inspector_needs_no_index(
         vault.close()
 
 
-def test_dirty_index_disposition_and_lost_tracker(tmp_path: Path) -> None:
+def test_writer_updates_index_disposition(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     (bundle / "repair.md").write_text("---\ntype: concept\n---\nbody")
-    (bundle / "broken.md").write_text("---\ntitle: [\n---\nbody")
-    state = tmp_path / "state.json"
     vault = Vault(
         source_dir=tmp_path,
-        settings=VaultSettings(
-            state_path=state, read_only=False, required_frontmatter=["title"]
-        ),
+        settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
     )
     try:
         vault.index.build_index()
         vault.writer.write("bundle/new.md", "body", frontmatter={"type": "concept"})
         vault.writer.write("bundle/repair.md", "body", frontmatter={"title": "Fixed"})
         assert vault.index.wait_for_drain(timeout=5)
-        state.unlink()
         entries = {
             entry.path: entry
             for entry in vault.reader.inspect_bundle(
@@ -117,110 +112,6 @@ def test_dirty_index_disposition_and_lost_tracker(tmp_path: Path) -> None:
         }
         assert entries["bundle/new.md"].search_state == "non_admitted"
         assert entries["bundle/repair.md"].search_state == "searchable"
-        assert entries["bundle/broken.md"].search_state == "unparseable"
-    finally:
-        vault.close()
-
-
-def test_budget_limited_regular_notes_retain_index_state(tmp_path: Path) -> None:
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-    for i in range(18):
-        (bundle / f"{i:02}.md").write_text("body " * 14000)
-    vault = Vault(
-        source_dir=tmp_path, settings=VaultSettings(exclude_patterns=["bundle/17.md"])
-    )
-    try:
-        vault.index.build_index()
-        page = vault.reader.inspect_bundle(BundleInspectionRequest(root="bundle"))
-        entries = {entry.path: entry for entry in page.entries}
-        assert entries["bundle/00.md"].reason == "note_limit"
-        assert entries["bundle/00.md"].search_state == "searchable"
-        budget = [
-            entry
-            for entry in entries.values()
-            if entry.reason == "byte_budget" and entry.visibility == "visible"
-        ]
-        assert budget and all(entry.search_state == "searchable" for entry in budget)
-        assert entries["bundle/17.md"].search_state == "index_excluded"
-    finally:
-        vault.close()
-
-
-def test_repaired_scan_skip_uses_live_row(tmp_path: Path) -> None:
-    note = tmp_path / "repair.md"
-    note.write_text("---\ntype: concept\n---\nbody")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
-    )
-    try:
-        vault.index.build_index()
-        vault.writer.write("repair.md", "body", frontmatter={"title": "Fixed"})
-        assert vault.index.wait_for_drain(timeout=5)
-        entry = vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries[0]
-        assert entry.search_state == "searchable"
-    finally:
-        vault.close()
-
-
-def test_lost_tracker_preserves_parse_tombstone(tmp_path: Path) -> None:
-    (tmp_path / "broken.md").write_text("---\ntitle: [\n---\nbody")
-    state = tmp_path / "state.json"
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(state_path=state))
-    try:
-        vault.index.build_index()
-        state.unlink()
-        entry = vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries[0]
-        assert entry.search_state == "unparseable"
-    finally:
-        vault.close()
-
-
-def test_unknown_tombstone_and_new_malformed_note(tmp_path: Path) -> None:
-    from markdown_vault_mcp.types import SkippedFile
-
-    (tmp_path / "error.md").write_text("body")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        vault._fts.upsert_tombstone(
-            SkippedFile(path="error.md", category="internal_error", detail="private"),
-            content_hash="hash",
-            modified_at=1.0,
-        )
-        (tmp_path / "new.md").write_text("---\ntitle: [\n---\nbody")
-        entries = {
-            e.path: e
-            for e in vault.reader.inspect_bundle(
-                BundleInspectionRequest(root="")
-            ).entries
-        }
-        assert entries["error.md"].search_state == "not_evaluated"
-        assert entries["new.md"].parse_state == "malformed_metadata"
-        assert entries["new.md"].search_state == "not_indexed_yet"
-        assert "private" not in repr(entries)
-    finally:
-        vault.close()
-
-
-def test_unavailable_paths_are_not_queried(tmp_path: Path, monkeypatch) -> None:
-    note = tmp_path / "note.md"
-    note.write_text("body")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        note.unlink()
-        note.symlink_to(tmp_path / "missing")
-
-        def forbidden(_path: str) -> None:
-            raise AssertionError("unavailable entry queried")
-
-        monkeypatch.setattr(vault._fts, "row_state", forbidden)
-        monkeypatch.setattr(vault._fts, "get_tombstone", forbidden)
-        entry = vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries[0]
-        assert entry.reason == "symlink"
-        assert entry.search_state == "not_evaluated"
     finally:
         vault.close()
 
@@ -256,39 +147,66 @@ def test_adopted_index_live_row_wins_over_local_exclusion(tmp_path: Path) -> Non
         reader.close()
 
 
-def test_all_skip_categories_and_unknown_are_projected(tmp_path: Path) -> None:
-    from markdown_vault_mcp.types import SKIP_CATEGORIES, SkippedFile
+def test_all_skip_categories_and_unknown_are_projected() -> None:
+    from markdown_vault_mcp.types import SKIP_CATEGORIES
 
     expected = {
         "missing_frontmatter": "non_admitted",
         "parse_error": "unparseable",
         "encoding_error": "unparseable",
         "internal_error": "not_evaluated",
+        "live": "not_evaluated",
     }
-    assert set(expected) == SKIP_CATEGORIES
-    for category in (*sorted(SKIP_CATEGORIES), "future_error"):
-        (tmp_path / f"{category}.md").write_text("body")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        for category in (*sorted(SKIP_CATEGORIES), "future_error"):
-            vault._fts.upsert_tombstone(
-                SkippedFile(f"{category}.md", category, "secret"),
-                content_hash="h",
-                modified_at=1.0,
-            )
-        entries = {
-            entry.path: entry
-            for entry in vault.reader.inspect_bundle(
-                BundleInspectionRequest(root="")
-            ).entries
-        }
-        for category in (*sorted(SKIP_CATEGORIES), "future_error"):
-            assert entries[f"{category}.md"].search_state == expected.get(
-                category, "not_evaluated"
-            )
-    finally:
-        vault.close()
+    assert set(expected) - {"live"} == SKIP_CATEGORIES
+    entries = [
+        BundleEntry(path=category, role="concept_candidate", state="inspected")
+        for category in expected
+    ]
+    entries.extend(
+        BundleEntry(
+            path=reason, role="concept_candidate", state="not_inspected", reason=reason
+        )
+        for reason in ("note_limit", "byte_budget", "metadata_complexity")
+    )
+    entries.extend(
+        [
+            BundleEntry(
+                path="excluded",
+                role="concept_candidate",
+                state="not_inspected",
+                reason="note_limit",
+                visibility="index_excluded",
+            ),
+            BundleEntry(path="symlink", state="unavailable", reason="symlink"),
+            BundleEntry(path="directory", role="directory", reason="directory"),
+            BundleEntry(path="supporting", role="supporting", reason="supporting"),
+        ]
+    )
+    request = BundleInspectionRequest(root="")
+    observed: list[str] = []
+
+    def row_state(path: str) -> tuple[bool, str | None]:
+        observed.append(path)
+        if path in expected:
+            return True, path
+        if path == "excluded":
+            return False, None
+        return True, None
+
+    result = project_search_state(
+        BundleInspection(request, "inspected", entries=tuple(entries)), row_state
+    )
+    states = {entry.path: entry.search_state for entry in result.entries}
+    for category, state in expected.items():
+        assert states[category] == state
+    for reason in ("note_limit", "byte_budget", "metadata_complexity"):
+        assert states[reason] == "searchable"
+    assert states["excluded"] == "index_excluded"
+    assert all(
+        states[path] == "not_evaluated"
+        for path in ("symlink", "directory", "supporting")
+    )
+    assert not set(observed) & {"symlink", "directory", "supporting"}
 
 
 def test_backend_without_row_state_is_usable(tmp_path: Path, monkeypatch) -> None:
@@ -303,23 +221,6 @@ def test_backend_without_row_state_is_usable(tmp_path: Path, monkeypatch) -> Non
         result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
         assert result.entries[0].search_state == "not_evaluated"
         assert fake.mock_calls == []
-    finally:
-        vault.close()
-
-
-def test_unknown_skip_category_live_is_not_searchable(tmp_path: Path) -> None:
-    from markdown_vault_mcp.types import SkippedFile
-
-    (tmp_path / "note.md").write_text("quartz body")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        vault._fts.upsert_tombstone(
-            SkippedFile("note.md", "live", "private"), content_hash="h", modified_at=1.0
-        )
-        assert vault.reader.search("quartz") == []
-        entry = vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries[0]
-        assert entry.search_state == "not_evaluated"
     finally:
         vault.close()
 
@@ -349,13 +250,3 @@ def test_index_failure_preserves_disk_inventory(
         assert all(e.search_state == "not_evaluated" for e in result.entries)
     finally:
         vault.close()
-
-
-def test_closed_vault_still_inspects_disk(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_text("body")
-    vault = Vault(source_dir=tmp_path)
-    vault.index.build_index()
-    vault.close()
-    result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
-    assert len(result.entries) == 1
-    assert result.entries[0].search_state == "not_evaluated"

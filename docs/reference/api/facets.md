@@ -144,7 +144,8 @@ It does not descend into child directories, detect global
 OKF mode, serve navigation bodies or create navigation files. Unsupported
 no-follow filesystem primitives produce `unavailable`.
 
-When the index is queryable, safely observed regular Markdown entries report `searchable`,
+When the index is queryable, safely observed regular Markdown entries report
+`searchable`,
 `non_admitted` (missing a locally required field), `unparseable`,
 `index_excluded`, or `not_indexed_yet` from current exclusion policy and the
 last index observations, even when a read limit prevented parsing. A live row
@@ -154,9 +155,9 @@ index error categories remain `not_evaluated`. Any SQLite error from the index r
 leaves all entries `not_evaluated`. Each entry is read separately, so one page
 is not a snapshot. Entries also remain unevaluated when they
 cannot be safely inspected, when the backend lacks row-state support, and before
-the index is ready. Search state reflects the last index observations and can lag disk changes
-until indexing runs. Format conformance is a separate assessment. Inspection does not
-refresh or write the index or tracker. Direct `BundleInspector` use has no
+the index is ready. Search state reflects the last index observations and can
+lag disk changes until indexing runs. Format conformance is a separate
+assessment. Inspection does not refresh or write the index or tracker. Direct `BundleInspector` use has no
 index knowledge and reports `not_evaluated`.
 
 For a subtree, page each selection and queue any depth-limit directories for a

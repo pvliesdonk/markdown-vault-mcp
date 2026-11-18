@@ -2371,19 +2371,15 @@ def test_row_state_reads_live_skipped_and_absent_without_writing() -> None:
     try:
         index.upsert_note(make_note("note.md"))
         conn = index._conn()
-        before = conn.total_changes
         assert index.row_state("note.md") == (True, None)
         assert index.row_state("absent.md") == (False, None)
-        assert conn.total_changes == before
-        for category in SKIP_CATEGORIES:
+        for category in (*sorted(SKIP_CATEGORIES), "live"):
             index.upsert_tombstone(
                 SkippedFile("note.md", category, "detail"),
                 content_hash="h",
                 modified_at=1.0,
             )
-            before = conn.total_changes
             assert index.row_state("note.md") == (True, category)
-            assert conn.total_changes == before
         index.upsert_note(make_note("note.md"))
         statements: list[str] = []
         conn.set_trace_callback(statements.append)

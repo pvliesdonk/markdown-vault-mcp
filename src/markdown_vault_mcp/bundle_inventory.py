@@ -1,4 +1,4 @@
-"""Bounded, index-independent observations of an explicitly selected bundle."""
+"""Bounded bundle observations with an optional index-state projection."""
 
 from __future__ import annotations
 

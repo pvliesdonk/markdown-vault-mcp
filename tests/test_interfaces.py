@@ -22,6 +22,7 @@ from markdown_vault_mcp.interfaces import (
     KeywordGraphIndex,
     KeywordIndex,
     ListsNoteStates,
+    ReportsRowState,
     RunsExactQueries,
 )
 from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery, PathQuery
@@ -49,8 +50,16 @@ class TestFTSIndexConformance:
             KeywordGraphIndex,
             RunsExactQueries,
             ListsNoteStates,
+            ReportsRowState,
         ],
-        ids=["keyword", "graph", "combined", "exact-queries", "note-states"],
+        ids=[
+            "keyword",
+            "graph",
+            "combined",
+            "exact-queries",
+            "note-states",
+            "row-state",
+        ],
     )
     def test_satisfies_facet(self, fts: FTSIndex, protocol: type) -> None:
         """One SQLite backend answers both concepts today."""
@@ -97,6 +106,7 @@ class TestFacetsAreIndependent:
         assert not isinstance(object(), GraphStore)
         assert not isinstance(object(), RunsExactQueries)
         assert not isinstance(object(), ListsNoteStates)
+        assert not isinstance(object(), ReportsRowState)
 
 
 class TestManagersAcceptAnyConformingStore:
@@ -175,10 +185,3 @@ def test_exact_queries_refuse_on_an_index_without_them(call: Any) -> None:
     query = NoteQuery()
     with pytest.raises(InvalidRequestError, match="does not support exact queries"):
         call(manager, query)
-
-
-def test_optional_row_state_protocol(fts: FTSIndex) -> None:
-    from markdown_vault_mcp.interfaces import ReportsRowState
-
-    assert isinstance(fts, ReportsRowState)
-    assert not isinstance(object(), ReportsRowState)

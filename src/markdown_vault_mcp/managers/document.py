@@ -262,7 +262,7 @@ class DocumentManager:
         self._link_rewrites = LinkRewriteLedger()
 
     def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
-        """Inspect one selected directory independently of index admission.
+        """Inspect a selected directory and report available index state.
 
         Args:
             request: Explicit bundle root, directory and observation cap.

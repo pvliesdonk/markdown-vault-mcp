@@ -3685,8 +3685,7 @@ entered. Re-select that directory relative to the same root and page again to
 inspect deeper levels; repeat for further boundary rows. Retain unavailable
 outcomes from every page, and treat unresolved boundary rows as incomplete.
 A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
-following them. There is no navigation synthesis, declaration discovery or
-search-admission claim.
+following them. There is no navigation synthesis or declaration discovery.
 
 Names outside the file allowlist that are symlinks remain hidden and make
 enumeration unavailable; their target kind cannot be known without following

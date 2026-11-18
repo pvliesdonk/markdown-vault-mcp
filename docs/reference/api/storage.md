@@ -116,12 +116,11 @@ note's frontmatter.
 ::: markdown_vault_mcp.interfaces.ListsNoteStates
 <!-- vale on -->
 
-
 ## Document row state
 
 An index may provide `ReportsRowState` to report row existence and its skip
-category with one read. A present row with no category is live. Bundle inspection uses this optional capability
-when the index is ready; a backend without it keeps inventory search state
+category with one read. A present row with no category is live. Bundle
+inspection uses this optional capability when the index is ready; a backend without it keeps inventory search state
 unevaluated. `FTSIndex` provides the capability without writing the index.
 
 <!-- vale off -->
