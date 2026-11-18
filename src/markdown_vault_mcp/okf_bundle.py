@@ -143,10 +143,9 @@ def _require_complete(page: BundleInspection, folder: str) -> None:
 def _note_bytes(
     raw: bytes,
     selection: tuple[BundleEntry, str],
-    vault: Vault,
     paths: ExportPaths,
     report: OkfExportReport,
-    snapshot_links: Callable[[str, str], list[OutlinkInfo]] | None = None,
+    resolver: Callable[[str, str], list[OutlinkInfo]] | None,
 ) -> bytes:
     """Convert graph links and relocate body and frontmatter paths."""
     item, name = selection
@@ -159,17 +158,8 @@ def _note_bytes(
         return raw
     body = strip_frontmatter_block(content.removeprefix("\ufeff"))
     prefix = content[: len(content) - len(body)]
-    searchable = (
-        item.search_state == "searchable"
-        if snapshot_links is None
-        else (item.visibility == "visible" and item.parse_state == "valid")
-    )
-    if searchable:
-        outlinks = (
-            snapshot_links(body, item.path)
-            if snapshot_links is not None
-            else vault.graph.get_outlinks(item.path)
-        )
+    if resolver is not None:
+        outlinks = resolver(body, item.path)
         if paths.scope:
             body = convert_body_wikilinks(body, outlinks)
         else:
@@ -365,6 +355,9 @@ def build_okf_bundle(
                     next_cursor = page.next_cursor
             return _snapshot_outlinks(body, source, snapshot_notes, extensions)
 
+        def graph_links(_body: str, source: str) -> list[OutlinkInfo]:
+            return vault.graph.get_outlinks(source)
+
         digests: dict[str, bytes] = {}
         for item in selected:
             raw = (
@@ -380,16 +373,25 @@ def build_okf_bundle(
                 attachments += 1
             else:
                 _observe_export(item, report)
+                searchable = (
+                    item.visibility == "visible" and item.parse_state == "valid"
+                    if snapshot is not None
+                    else item.search_state == "searchable"
+                )
+                resolver = (
+                    (snapshot_links if snapshot else graph_links)
+                    if searchable
+                    else None
+                )
                 _write(
                     zf,
                     name,
                     _note_bytes(
                         raw,
                         (item, name),
-                        vault,
                         paths,
                         report,
-                        snapshot_links if snapshot else None,
+                        resolver,
                     ),
                 )
                 notes += 1
