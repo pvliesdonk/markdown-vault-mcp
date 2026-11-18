@@ -14,16 +14,13 @@ from importlib.metadata import version as _pkg_version
 
 from fastmcp import FastMCP
 
+from markdown_vault_mcp._env import env
 from markdown_vault_mcp._pvl_core import (
     HealthCheck,
-    ServerConfig,  # noqa: F401  — re-exported for downstream projects' convenience
     apply_tool_visibility,
     build_auth,
-    build_event_store,  # noqa: F401  — re-exported for downstream projects' convenience
-    build_kv_store,  # noqa: F401  — re-exported for downstream projects' convenience
     configure_logging_from_env,
     configure_task_backend,
-    env,  # also used by DOMAIN-WIRING additions, so no new import is needed there
     finalize_instructions,
     get_current_auth_mode,
     instructions_for,

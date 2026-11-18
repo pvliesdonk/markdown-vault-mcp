@@ -10,15 +10,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import overload
 
-from markdown_vault_mcp._pvl_core import (
-    env as _core_env,
-)
-from markdown_vault_mcp._pvl_core import (
-    env_float as _core_env_float,
-)
-from markdown_vault_mcp._pvl_core import (
-    env_int as _core_env_int,
-)
+from markdown_vault_mcp._env import env as _core_env
+from markdown_vault_mcp._env import env_float as _core_env_float
+from markdown_vault_mcp._env import env_int as _core_env_int
 
 # Type accepted for ProjectConfig's weight-map fields: a mapping (e.g. from
 # parse_weight_map) or an already-frozen tuple of (key, weight) pairs.
@@ -125,7 +119,7 @@ def opt_list(raw: str | None) -> tuple[str, ...] | None:
     Returns ``None`` when *raw* is ``None``, empty, or parses to no items —
     the shared empty-as-unset convention for list-valued vars.
     """
-    from markdown_vault_mcp._pvl_core import parse_list
+    from markdown_vault_mcp._env import parse_list
 
     items = parse_list(raw or "")
     return tuple(items) if items else None
