@@ -539,3 +539,41 @@ def test_listed_configured_summary_respects_provider_input_budget(
     assert any("luminescence" in text for text in listed)
     assert any("orchard body content" in text for text in listed)
     assert max(map(len, listed)) <= max(300, max(map(len, plain)))
+
+
+@pytest.mark.parametrize("case", ["v2-long-title", "long-token"])
+def test_listing_rows_respect_provider_budget_for_long_metadata(
+    tmp_path: Path, case: str
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    title = "title " * 33 + "xx" if case == "v2-long-title" else "Concept"
+    description = "glow " * 100 if case == "v2-long-title" else "x" * 500
+    (root / "concept.md").write_text(
+        f"---\ntitle: {title}\ndescription: {description}\n---\n\norchard body\n"
+    )
+
+    def inputs(enabled: bool) -> list[str]:
+        provider = CountingProvider()
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                okf_mode="on",
+                okf_capabilities=_capabilities(enabled, (".",)),
+                max_chunk_chars=300,
+                embed_context=case == "v2-long-title",
+            ),
+            embedding_provider=provider,
+        )
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+            return provider.texts
+        finally:
+            vault.close()
+
+    plain = inputs(False)
+    listed = inputs(True)
+    assert plain and listed
+    assert all(text in listed for text in plain)
+    assert max(map(len, listed)) <= max(300, max(map(len, plain)))
