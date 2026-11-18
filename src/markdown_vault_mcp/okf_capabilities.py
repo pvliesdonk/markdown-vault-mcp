@@ -10,6 +10,8 @@ from functools import lru_cache, partial
 from pathlib import Path
 from unicodedata import normalize
 
+from markdown_vault_mcp.utils.fs import is_directory
+
 
 class DefaultVerify(str):
     """The legacy public default, distinguished from an explicit selection."""
@@ -130,7 +132,9 @@ def designated_index_path(root: Path, path: str, folders: tuple[str, ...]) -> bo
     note = Path(path)
     if not path or note.is_absolute() or ".." in note.parts:
         return False
-    if normalize("NFC", note.name).casefold() != "index.md" or (root / note).is_dir():
+    if normalize("NFC", note.name).casefold() != "index.md" or is_directory(
+        root / note
+    ):
         return False
     resolved_root = root.resolve()
     parent = (root / note.parent).resolve()
@@ -142,7 +146,7 @@ def designated_index_path(root: Path, path: str, folders: tuple[str, ...]) -> bo
     if note.name == "index.md" and folder_is_designated(resolved, folders):
         return True
     anchor = root / note.parent
-    while not anchor.is_dir() and anchor != root:
+    while not is_directory(anchor) and anchor != root:
         anchor = anchor.parent
     case, unicode = _probe(anchor)
     return _equivalent(note.name, "index.md", case, unicode) and folder_is_designated(
