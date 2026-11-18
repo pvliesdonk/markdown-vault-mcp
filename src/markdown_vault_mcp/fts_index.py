@@ -280,6 +280,7 @@ _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
 # searchable_fields (which only shares its value when SEARCHABLE_FIELDS is
 # left to default to INDEXED_FIELDS).
 _META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
+_META_OKF_ADMISSION_KEY = "okf_admission_active"
 # Link-extraction provenance: the attachment allowlist in force at build
 # time (#1333). The link graph is notes-only, so a reference whose target
 # carries an allowlisted extension stores no link row — which makes the
@@ -499,7 +500,9 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#1438) admits OKF reserved files without required concept fields.
+#: Version 12 shipped in v6.1.2, so existing indexes need a rebuild.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):
@@ -1844,6 +1847,37 @@ class FTSIndex:
                     "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
                     (key, value),
                 )
+
+    @_retry_on_locked
+    def set_okf_admission_meta(self, active: bool | None) -> None:
+        """Record the effective OKF admission state, or invalidate it.
+
+        Args:
+            active: State used for a complete build, or None if incomplete.
+        """
+        conn = self._conn()
+        with conn:
+            if active is None:
+                conn.execute(
+                    "DELETE FROM meta WHERE key = ?", (_META_OKF_ADMISSION_KEY,)
+                )
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
+                    (_META_OKF_ADMISSION_KEY, "1" if active else "0"),
+                )
+
+    @_retry_on_locked
+    def get_okf_admission_meta(self) -> bool | None:
+        """Return the complete build's admission state, or None if unknown."""
+        row = (
+            self._conn()
+            .execute("SELECT value FROM meta WHERE key = ?", (_META_OKF_ADMISSION_KEY,))
+            .fetchone()
+        )
+        if row is None or row[0] not in ("0", "1"):
+            return None
+        return bool(row[0] == "1")
 
     @_retry_on_locked
     def get_chunking_meta(self) -> ChunkingMeta:

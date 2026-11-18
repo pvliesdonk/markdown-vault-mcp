@@ -869,6 +869,28 @@ mentions of those ordinals describe the record at the time.
 `derived` — [#1566][1566], which a contributed PR closes, was already in
 `028` (then `025`) and stays there.
 
+### 16 November 2026 — settle `022`'s open decisions
+
+`stated` — The owner settled the three decisions `022` carried. [#1678][1678]
+reports a dirty tree at startup and does not commit it. The contributed
+first slice of [#1938][1938] is accepted as the start of its series. The
+[#1403][1403] repair is a library method and an admin CLI command, not MCP
+tools, because a one-off historical repair should not spend permanent tool
+surface.
+
+`evidenced` — All eight contributed pull requests merged on 16 November
+2026, the last as 0bf06aa7.
+
+`stated` — [#1938][1938] leaves `022` for a later package, because its
+remaining three slices are not yet contributed. The `move_folder` half of
+[#1676][1676] splits into [#2139][2139], so that [#1676][1676] closes with the
+rename half.
+
+`derived` — The later package is `023`, the next bug cut, where contributed
+slices can land. With those moves `022` holds only closed issues and is ready
+to cut. [#2139][2139] and the flaky-test report [#2138][2138] have no package
+yet.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -951,6 +973,8 @@ mentions of those ordinals describe the record at the time.
 [1678]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678
 [1755]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1755
 [1938]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938
+[2138]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2138
+[2139]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2139
 [1730]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1730
 [1733]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1733
 [1734]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1734

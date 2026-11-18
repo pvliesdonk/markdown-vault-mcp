@@ -26,6 +26,7 @@ import datetime as _dt
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 # Both halves of the library are used here, deliberately: `fm` serialises the
@@ -75,6 +76,23 @@ _HUMAN_ACTOR_PREFIX = "human:"
 #: exempt from the ``type`` rule) and ranking downweights (#965).
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
 
+
+def is_okf_reserved_file(path: str) -> bool:
+    """Classify an already scoped vault-relative POSIX path by its basename.
+
+    POSIX basename rules ignore trailing separators and dot components;
+    backslashes remain literal. This lexical check grants no detection,
+    admission, authorship, or maintenance authority.
+
+    Args:
+        path: A vault-relative POSIX path.
+
+    Returns:
+        Whether its basename is an exact-case reserved OKF filename.
+    """
+    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
+
+
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
 #: builders and the reserved-frontmatter policy so the heading a reader sees
 #: and the title the index resolves cannot drift apart.
@@ -122,11 +140,15 @@ class OkfState:
             frontmatter, or ``None`` when absent/unreadable.
         active: Whether read semantics are in effect — declared under
             ``auto``, always under ``on``, never under ``off``.
+        probe_error: Whether the root ``index.md`` could not be read under
+            ``auto`` (an ``OSError`` other than absence). In that case,
+            ``active`` is false, but admission treats it as indeterminate.
     """
 
     mode: str
     declared_version: str | None
     active: bool
+    probe_error: bool = False
 
 
 class OkfDetector:
@@ -163,7 +185,18 @@ class OkfDetector:
         """
         if self._mode == "off":
             return OkfState(mode=self._mode, declared_version=None, active=False)
-        version = self._probe_declared_version()
+        version, failed = self._probe()
+        self._warn_unknown(version)
+        active = self._mode == "on" or version is not None
+        return OkfState(
+            mode=self._mode,
+            declared_version=version,
+            active=active,
+            probe_error=failed and self._mode != "on",
+        )
+
+    def _warn_unknown(self, version: str | None) -> None:
+        """Log an unrecognised declared version once per process."""
         # Warn-once dedup is best-effort: concurrent first probes may each
         # log the warning (set membership is checked without a lock). The
         # worst case is a duplicate log line, which does not justify
@@ -179,39 +212,37 @@ class OkfDetector:
                 version,
                 ",".join(KNOWN_OKF_VERSIONS),
             )
-        active = self._mode == "on" or version is not None
-        return OkfState(mode=self._mode, declared_version=version, active=active)
 
-    def _probe_declared_version(self) -> str | None:
+    def _probe(self) -> tuple[str | None, bool]:
         """Read ``okf_version`` from the root ``index.md`` frontmatter.
 
         Returns:
-            The declared version as a string (YAML scalars are normalized,
-            so an unquoted ``0.2`` still reads as ``"0.2"``), or ``None``
-            when the file is missing, unreadable, has no parseable
-            frontmatter, or carries no usable ``okf_version``.
+            ``(version, failed)``: the declared version as a string (YAML
+            scalars are normalized, so an unquoted ``0.2`` still reads as
+            ``"0.2"``), or ``None`` when missing, unparseable or unusable;
+            and whether the read raised an ``OSError`` other than absence.
         """
         file_path = self._source_dir / _ROOT_INDEX
         try:
             raw = read_text_utf8(file_path, limit=_MAX_READ_CHARS)
         except FileNotFoundError:
-            return None
-        except (OSError, UnicodeDecodeError):
+            return None, False
+        except (OSError, UnicodeDecodeError) as exc:
             logger.debug("okf_probe_read_failed path=%s", _ROOT_INDEX, exc_info=True)
-            return None
+            return None, isinstance(exc, OSError)
         try:
             metadata = parse_frontmatter(raw).metadata
         except yaml.YAMLError:
             logger.debug(
                 "okf_probe_frontmatter_invalid path=%s", _ROOT_INDEX, exc_info=True
             )
-            return None
+            return None, False
         value = metadata.get("okf_version")
         if isinstance(value, str):
-            return value.strip() or None
+            return value.strip() or None, False
         if isinstance(value, (int, float)):
-            return str(value)
-        return None
+            return str(value), False
+        return None, False
 
 
 def verified_entries(metadata: dict[str, Any]) -> list[Any]:
@@ -393,7 +424,7 @@ def okf_downweight_factor(annotation: dict[str, Any], path: str) -> float:
         factor *= OKF_DEPRECATED_WEIGHT
     if annotation.get("stale"):
         factor *= OKF_STALE_WEIGHT
-    if path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+    if is_okf_reserved_file(path):
         factor *= OKF_RESERVED_WEIGHT
     return factor
 
@@ -632,7 +663,7 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
         acc.root_index_seen = True
     elif "okf_version" in metadata:
         acc.misplaced.add(rel)
-    if name in OKF_RESERVED_FILENAMES:
+    if is_okf_reserved_file(rel):
         if name == "log.md" and not _log_headings_conform(body):
             acc.log_shape.add(rel)
         elif name == "index.md" and not _index_frontmatter_conforms(rel, raw, metadata):
