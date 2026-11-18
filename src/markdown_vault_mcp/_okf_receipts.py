@@ -8,9 +8,8 @@ import re
 import tempfile
 import threading
 from contextlib import suppress
-from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
@@ -22,6 +21,9 @@ from markdown_vault_mcp.okf import (
     _review_recorded,
     verified_entries,
 )
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class ReceiptNotRecordedError(Exception):
@@ -119,9 +121,7 @@ class ReceiptStore:
         if not entries or snapshot is None:
             return {"state": "unavailable"}
         latest = max(
-            value
-            for entry in entries
-            if isinstance((value := _parse_stale_after(entry["at"])), datetime)
+            cast("datetime", _parse_stale_after(entry["at"])) for entry in entries
         )
         latest_entries = [
             entry for entry in entries if _parse_stale_after(entry["at"]) == latest
@@ -151,7 +151,7 @@ class ReceiptStore:
             or re.fullmatch(r"[0-9a-f]{64}", baseline["digest"]) is None
         ):
             return {"state": "unavailable"}
-        if baseline == snapshot:
+        if baseline["digest"] == snapshot.get("digest"):
             return {"state": "unavailable"}
         return {"state": "available", "later_change_observed": True}
 

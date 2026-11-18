@@ -115,7 +115,7 @@ an 'okf' dict (type, status, stale, `trust_tier`, freshness, review,
 `review_applicability`, observation, recorded, snapshot {algo, digest}, and the note's 'sources'
 list when present). Review applicability reports whether a snapshot binding is
 available, independently of freshness and recorded claims. Observation reports
-the local review comparison or unavailable; see [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews). Section reads omit
+the local review comparison or unavailable. Section reads omit
 it because they carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
 `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp),
@@ -748,7 +748,7 @@ directory boundaries remain visible so they can be selected as root.
 
 Observations, scope and enumeration states, and an optional `next_cursor`.
 Locally recorded removals carry presence=removed. Live entries and
-removal probes share the 1,000-observation page budget. See [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews).
+removal probes share the 1,000-observation page budget.
 
 <!-- DOMAIN-EXAMPLE-okf_inventory-START -->
 To find untyped candidates under `knowledge`, call:

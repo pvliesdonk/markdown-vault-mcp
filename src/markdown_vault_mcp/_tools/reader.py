@@ -195,7 +195,7 @@ def register(mcp: FastMCP) -> None:
             review_applicability, observation, recorded, snapshot {algo, digest}, and the note's 'sources'
             list when present). Review applicability reports whether a snapshot binding is
             available, independently of freshness and recorded claims. Observation reports
-            the local review comparison or unavailable; see [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews). Section reads omit
+            the local review comparison or unavailable. Section reads omit
             it because they carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),

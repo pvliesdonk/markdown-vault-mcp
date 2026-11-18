@@ -25,13 +25,13 @@ from markdown_vault_mcp.bundle_inventory import (
     BundleEntry,
     BundleInspectionRequest,
     BundleInspector,
-    BundleTreeRequest,
 )
 from markdown_vault_mcp.citations import CitationReport, inspect_citation_text
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     DocumentUnreadableError,
     InvalidRequestError,
+    StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.okf import (
     OKF_RESERVED_FILENAMES,
@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp._okf_receipts import ReceiptStore
     from markdown_vault_mcp.bundle_inventory import (
         BundleInspection,
+        BundleTreeRequest,
         Enumeration,
         ParseState,
         ScopeState,
@@ -344,7 +345,10 @@ class ReaderFacet:
             The bounded page with matching concepts and the original continuation.
         """
         ledger = self._doc_mgr._observations
-        rows = ledger.rows() if ledger else {}
+        try:
+            rows = ledger.rows() if ledger else {}
+        except (OSError, StoreUnsupportedSchemaError):
+            rows = {}
         candidates = _removed_candidates(request, rows)
         page = self._inventory_with_removals(
             self.inspect_bundle_tree(
@@ -374,11 +378,7 @@ class ReaderFacet:
     def _inventory_with_removals(
         self, page: BundleInspection, candidates: list[str]
     ) -> BundleInspection:
-        if (
-            not candidates
-            or page.state == "unavailable"
-            or not isinstance(page.request, BundleTreeRequest)
-        ):
+        if not candidates:
             return page
         manager = self._doc_mgr
         inspector = BundleInspector(

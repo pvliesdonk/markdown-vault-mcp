@@ -39,6 +39,8 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
     Returns:
         JSON-compatible native payload. Shared-index freshness remains unknown.
     """
+    from pathlib import Path
+
     from pydantic import TypeAdapter
     from pydantic_core import PydanticSerializationError
 
@@ -71,6 +73,13 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
             summarize_openai_api_key=None,
             summarize_openai_base_url=None,
         )
+    if (
+        source_dir is not None
+        and Path(source_dir).resolve() != config.source_dir.resolve()
+    ):
+        from dataclasses import replace
+
+        config = replace(config, index_path=None, state_path=None)
     configured = config.indexing.index_path
     in_memory = configured is None or str(configured) == ":memory:"
     if configured is not None and not in_memory:
@@ -109,7 +118,10 @@ def _build_reader_vault(
 ) -> _BuiltVault:
     from dataclasses import replace
     from pathlib import Path
+    from typing import cast
 
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+    from markdown_vault_mcp.bundle_inventory import InspectionPolicy
     from markdown_vault_mcp.cli import _BuiltVault, _vectors_kept
     from markdown_vault_mcp.config_sections._assembly import (
         source_dir_problem,
@@ -117,9 +129,13 @@ def _build_reader_vault(
         to_vault_settings,
     )
     from markdown_vault_mcp.exceptions import ConfigurationError
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.vault import Vault
 
     # A read uses the existing checkout: never bootstrap or sync a managed clone.
+    same_source = (
+        source_dir is None or Path(source_dir).resolve() == config.source_dir.resolve()
+    )
     config = replace(
         config,
         source_dir=Path(source_dir) if source_dir is not None else config.source_dir,
@@ -136,22 +152,56 @@ def _build_reader_vault(
     instances = to_vault_instances(config)
     try:
         settings = to_vault_settings(config, instances=instances)
+        evidence_path = (
+            (
+                inspection_policy.state_paths[0]
+                if inspection_policy is not None and inspection_policy.state_paths
+                else settings.effective_state_path(config.source_dir)
+            )
+            if same_source
+            else None
+        )
+        if in_memory and evidence_path is not None:
+            observation_path = evidence_path.with_name(
+                evidence_path.name + ".observations.json"
+            )
+            if inspection_policy is None:
+                inspection_policy = InspectionPolicy(
+                    settings.conventions_file,
+                    (evidence_path, observation_path),
+                    settings.effective_embeddings_path(),
+                    settings.index_path,
+                )
+            else:
+                inspection_policy = replace(
+                    inspection_policy,
+                    state_paths=(*inspection_policy.state_paths, observation_path),
+                )
         settings = replace(
             settings,
             owns_index_files=False,
             state_path=None if in_memory else settings.state_path,
         )
-        return _BuiltVault(
-            Vault(
-                source_dir=config.source_dir,
-                settings=settings,
-                inspection_policy=inspection_policy,
-                embedding_provider=instances.embedding_provider,
-                summarizer=instances.summarizer,
-                git_strategy=instances.git_strategy,
-            ),
-            instances,
+        vault = Vault(
+            source_dir=config.source_dir,
+            settings=settings,
+            inspection_policy=inspection_policy,
+            embedding_provider=instances.embedding_provider,
+            summarizer=instances.summarizer,
+            git_strategy=instances.git_strategy,
         )
+        if in_memory and evidence_path is not None:
+            # Index builds keep their own in-memory tracker and ledger. Only
+            # the read-facing collaborators see the matching vault's evidence.
+            ledger = cast("ObservationLedger", vault._doc_mgr._observations)
+            vault._doc_mgr._observations = ObservationLedger(
+                observation_path, ledger._inspector
+            )
+            vault.reader._receipt_store = ReceiptStore(
+                evidence_path.with_name(evidence_path.name + ".receipts.json"),
+                config.source_dir,
+            )
+        return _BuiltVault(vault, instances)
     except BaseException:
         instances.close()
         raise
