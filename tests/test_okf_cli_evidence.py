@@ -91,6 +91,8 @@ def test_read_of_explicit_other_vault_does_not_borrow_receipts(
         assert result["okf"]["observation"] == {"state": "unavailable"}
         args = {"type_state": None, "parse_state": None, "search_state": None}
         inventory = _local(args, str(copied), BundleTreeRequest(root=""))
+        assert any(e["path"] == "note.md" for e in inventory["entries"])
+        assert inventory["enumeration"] == "unavailable"
         assert not any(e["path"] == "lost.md" for e in inventory["entries"])
     finally:
         vault.close()

@@ -366,7 +366,7 @@ class ReaderFacet:
 
     def _inventory_page(self, request: BundleTreeRequest) -> BundleInspection:
         ledger = self._doc_mgr._observations
-        usable = True
+        usable = ledger is not None
         rows: dict[str, Observation] = {}
         if ledger is not None:
             try:
