@@ -67,28 +67,16 @@ jobs:
     runs-on: ubuntu-latest
     # Bound both environment setup and test execution for each interpreter.
     timeout-minutes: 20
-    continue-on-error: ${{ matrix.experimental || false }}
     permissions:
       contents: read
       statuses: write
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python-version: "3.11"
-            experimental: false
-          - python-version: "3.12"
-            experimental: false
-          - python-version: "3.13"
-            experimental: false
-          - python-version: "3.14"
-            experimental: false
-          # The newest CPython runs ahead of the claimed versions: a red leg
-          # here does not fail `CI Success`, so a dependency still missing
-          # wheels for it blocks nothing.  A template release makes it
-          # required, with its classifier; the Docker image stays on 3.14.
-          - python-version: "3.15"
-            experimental: true
+        # The newest CPython runs in python-next.yml, on a schedule, so a
+        # dependency still missing wheels for it never shows a red check
+        # here (#2250).  The Docker image stays on 3.14.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
