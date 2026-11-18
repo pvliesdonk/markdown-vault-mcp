@@ -143,13 +143,15 @@ A `verified` entry records a review claim at a time without identifying the revi
 
 With `OKF_INDEX=true` or `OKF_LOG=writes`, the server maintains the corresponding reserved files in designated folders as a side effect of writing into them. The deprecated `OKF_WRITE` alias enables both by default; explicit `OKF_INDEX` and `OKF_LOG` settings override it. `OKF_LOG=events` does not append entries for ordinary writes. `OKF_FOLDERS` defaults to the root (`.`); `**` designates every folder. Globs match full folder paths: `*`, `?` and character classes match within one path segment; a `**` segment matches recursively. Leading `./` or `/` and trailing `/` are ignored, so `docs/` and `./docs` designate `docs`. The pattern `.,*,*/*` designates the root and two folder levels. `a/**` does not include `a` itself. Designation follows the resolved vault-relative folder, including for `.` and `..` paths and symlink aliases. Automatic maintenance skips a reserved file when it points to a different file or folder; directory aliases still work. Explicit index generation remains unrestricted by this automatic maintenance scope. A write in a folder that is not designated does not trigger maintenance. After a successful `write` or `edit` on a note, it appends a dated `**Update**` bullet to that folder's `log.md` (creating the log, and the day's `## YYYY-MM-DD` section, when needed) and regenerates the folder's `index.md` listing so a new note shows up without a manual step. Index refresh traverses designated parent folders and stops at the first parent that is not designated. Eligible missing indexes are created along that contiguous path. Existing indexes in folders that are not designated are preserved and linked, while missing indexes in folders that are not designated are neither created nor linked. That covers the upkeep the advisory layer otherwise asks the agent to do by hand, on the write paths below and no others.
 
-A `delete`, `rename` or `move_folder` refreshes eligible listings in designated folders, subject to the same parent traversal boundary. After a folder move, designated indexes that moved are regenerated for their new paths. These changes add no `log.md` entry. A rename to or from `index.md` or `log.md` leaves the listings alone, so renaming a note onto a reserved name keeps its content.
+A `delete`, `rename` or `move_folder` refreshes eligible listings in designated folders, subject to the same parent traversal boundary. An ordinary folder move is refused if its source contains a designated index. After an otherwise permitted folder move, or a trusted library move with `allow_protected=True`, designated indexes that moved are regenerated for their new paths. These changes add no `log.md` entry. An allowed rename to or from `index.md` or `log.md` leaves the listings alone, so renaming a note onto a reserved name keeps its content.
 
 After a folder move, the refresh skips folders inside a git submodule or nested repository, and their descendants. It still updates ordinary containing folders and their other descendants, without attempting to rewrite those listings. The [Git integration guide](git-integration.md#submodules-and-nested-repositories-in-the-vault) explains the read-only boundary.
 
 A few boundaries keep this predictable, and they are also its limits. Maintenance runs only on an active bundle. A write whose target is itself a reserved file does not trigger it. The `okf_verify` tool and the one-shot migration transforms are exempt, so an attestation or a mechanical rewrite does not churn the reserved files. Only one listing is regenerated per write: that of the folder directly containing the note, or, when it has no `index.md`, that of the nearest folder above it with one. A folder's own listing is not otherwise refreshed when a note lands in one of its subfolders. A failure to update a reserved file is logged and skipped; it never fails or rolls back the note write that triggered it, so a listing can silently fall behind.
 
-**Do not hand-edit a maintained `index.md`.** The write itself is left alone, because the maintainer skips a write whose target is a reserved file. But the next content write into that folder regenerates the listing from the note list, and an edit you made is gone with nothing reporting it. The same applies to anyone else editing the vault. A teammate's change to a maintained `index.md` in Obsidian, or one arriving through a git pull, survives only until the next write into that folder. Put anything you want to keep in a note, not in the generated navigation. `log.md` is appended to rather than regenerated, so hand-written entries there are not overwritten, but a conflicting edit from another editor can still collide with the server's append.
+**Maintained indexes are generated.** Ordinary client mutations refuse `index.md` in designated folders while index maintenance is enabled on an active OKF vault. Use `okf_generate_index` to regenerate it. Edits made directly on disk or arriving through a git pull bypass this guard and may be replaced by later maintenance.
+
+Folder paths and designation globs are normalized to NFC before matching, even when the disk keeps differently normalized names distinct. Case and index filename variants follow the disk's identity rules. On a case-folding disk, `[!a]*` also reserves `a` because `A` matches; `[!aA]*` excludes both. For ambiguous spellings, the server briefly creates and removes a hidden scratch directory in the nearest existing folder. A reserved leaf symlink to an authored note remains editable; an alias to a designated index stays protected. If the probe cannot run, the server assumes the disk folds both case and Unicode when checking the designation. Other indexes and every `log.md` remain editable. A library caller can opt in with `allow_protected=True`. Explicit protected paths still apply to generation and automatic maintenance.
 
 One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
 
@@ -195,7 +197,9 @@ that ran the command can read the recovery file. It is not indexed as a note.
 In a Git-backed vault both files are committed like any other write. Keep the
 recovery file until you have checked the result. The same preview and apply
 are available to library callers as `Vault.writer.okf_preview_log_repair` and
-`Vault.writer.okf_apply_log_repair`.
+`Vault.writer.okf_apply_log_repair`. The library apply call refuses if either
+the log or recovery path is protected. A trusted library caller can pass
+`allow_protected=True`; the admin CLI passes it to preserve operator repair.
 
 Any existing recovery entry blocks apply, even one with the same bytes. If
 apply stops part-way, its error says whether the log may already have
@@ -234,3 +238,12 @@ Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` 
 The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
 settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
 implicit stamping. `OKF_WRITE=true` enables these capabilities and logs a deprecation notice; explicit settings override its resolved defaults. See the [configuration reference](../reference/configuration.md).
+
+
+Protected paths also prevent automatic index and log upkeep. A primary write
+to an unprotected note still succeeds when upkeep is blocked. Explicit OKF
+bulk transforms finish eligible writes before reporting protected paths they
+skipped. The refusal repeats until the operator converts the protected notes or
+changes the setting; see [protected paths](../reference/configuration.md).
+Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
+the client write guard.

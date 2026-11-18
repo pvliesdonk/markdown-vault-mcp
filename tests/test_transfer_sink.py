@@ -474,3 +474,22 @@ async def test_extension_refusal_logs_the_setting(
         "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
         for r in caplog.records
     )
+
+
+async def test_protected_download_allowed_upload_refused(tmp_path: Path) -> None:
+    (tmp_path / "guard.md").write_text("original")
+    config = ProjectConfig(source_dir=tmp_path, read_only=False)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=["guard.md"]),
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        assert await sink.validate("guard.md", "download") == "guard.md"
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await sink.validate("guard.md", "upload")
+        with pytest.raises(TransferSinkError, match="PROTECTED_PATHS"):
+            await sink.write("guard.md", b"changed")
+        assert (tmp_path / "guard.md").read_text() == "original"
+    finally:
+        vault.close()

@@ -27,6 +27,7 @@ from datetime import date
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TYPE_CHECKING
+from unicodedata import normalize
 
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
@@ -56,15 +57,22 @@ logger = logging.getLogger(__name__)
 _OPERATION_VERB: dict[str, str] = {"write": "wrote", "edit": "edited"}
 
 
-def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
+def folder_is_designated(
+    folder: str,
+    patterns: tuple[str, ...],
+    *,
+    segment_match: Callable[[str, str], bool] = fnmatchcase,
+) -> bool:
     """Return whether a folder matches the configured designation globs.
 
     ``a/**`` does not designate ``a`` itself. The empty folder is root.
     Leading ``./`` or ``/`` and trailing ``/`` in patterns are ignored.
+    Folders and patterns are normalized to NFC before matching.
 
     Args:
         folder: Vault-relative folder, or an empty string for the root.
         patterns: Configured folder globs.
+        segment_match: Matcher for a single folder segment.
 
     Returns:
         Whether any pattern matches the folder.
@@ -81,14 +89,15 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
             )
         return (
             bool(parts)
-            and fnmatchcase(parts[0], glob[0])
+            and segment_match(parts[0], glob[0])
             and matches(parts[1:], glob[1:])
         )
 
+    folder = normalize("NFC", folder)
     for pattern in patterns:
         glob = tuple(
             part
-            for part in (normalize_folder(pattern) or "").split("/")
+            for part in (normalize_folder(normalize("NFC", pattern)) or "").split("/")
             if part and part != "."
         )
         if not folder:

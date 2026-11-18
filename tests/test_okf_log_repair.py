@@ -348,3 +348,35 @@ def test_failed_retention_verification_keeps_target(
         manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert original_read(tmp_path / "log.md") == STACKED
     assert original_read(tmp_path / BACKUP) == STACKED
+
+
+@pytest.mark.parametrize("protected", ["log.md", BACKUP])
+def test_library_repair_guards_both_destinations_and_allows_override(
+    tmp_path: Path, protected: str
+) -> None:
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    log = tmp_path / "log.md"
+    backup = tmp_path / BACKUP
+    log.write_bytes(STACKED)
+    callbacks: list[str] = []
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=[protected]),
+        on_write=lambda _path, _content, operation: callbacks.append(operation),
+    )
+    try:
+        etag = vault.writer.okf_preview_log_repair("log.md").etag
+        with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
+            vault.writer.okf_apply_log_repair("log.md", etag=etag)
+        assert log.read_bytes() == STACKED
+        assert not backup.exists()
+        assert not callbacks
+        result = vault.writer.okf_apply_log_repair(
+            "log.md", etag=etag, allow_protected=True
+        )
+        assert result.recovery_path == BACKUP
+        assert log.read_bytes() == UNIT + SUFFIX
+        assert backup.read_bytes() == STACKED
+    finally:
+        vault.close()
