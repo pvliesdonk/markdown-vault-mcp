@@ -156,7 +156,8 @@ class BundleInspection:
         state: Selected directory availability under current policy.
         enumeration: Completeness of policy-visible enumeration.
         entries: Bounded observations; tree pages follow component order.
-        search_state: Always ``not_evaluated``; parsing says nothing about admission.
+        search_state: Legacy scope field, always ``not_evaluated``; per-entry
+            search results appear on each entry.
         interpretation: Selection by the caller, without global OKF mode detection.
         next_cursor: Last returned tree path when another page may remain.
     """
@@ -172,39 +173,48 @@ class BundleInspection:
 
 def project_search_state(
     inspection: BundleInspection,
-    skips: dict[str, str] | None,
+    ready: bool,
     indexed: Callable[[str], bool],
+    tombstone: Callable[[str], str | None],
 ) -> BundleInspection:
     """Project existing index observations onto inspected Markdown entries.
 
     Args:
         inspection: Bounded live inventory.
-        skips: Recorded skip categories, or None when the index is not ready.
-        indexed: Read-only membership lookup.
+        ready: Whether the index is queryable.
+        indexed: Read-only live membership lookup.
+        tombstone: Read-only lookup of the recorded skip category.
 
     Returns:
         Inventory annotated with search state; no index work is scheduled.
     """
-    if skips is None:
+    if not ready:
         return inspection
     entries = []
     for entry in inspection.entries:
         state: SearchState = "not_evaluated"
-        if entry.state == "inspected" and entry.role in {
+        safe = entry.state == "inspected" or (
+            entry.state == "not_inspected"
+            and entry.reason in {"note_limit", "byte_budget", "metadata_complexity"}
+        )
+        if safe and entry.role in {
             "navigation",
             "history",
             "concept_candidate",
             "support",
         }:
-            category = skips.get(entry.path)
             if entry.visibility == "index_excluded":
                 state = "index_excluded"
-            elif category == "missing_frontmatter":
-                state = "non_admitted"
-            elif category in {"encoding_error", "parse_error"}:
-                state = "unparseable"
-            elif category is None:
-                state = "searchable" if indexed(entry.path) else "not_indexed_yet"
+            elif indexed(entry.path):
+                state = "searchable"
+            else:
+                category = tombstone(entry.path)
+                if category == "missing_frontmatter":
+                    state = "non_admitted"
+                elif category in {"encoding_error", "parse_error"}:
+                    state = "unparseable"
+                elif category is None:
+                    state = "not_indexed_yet"
         entries.append(replace(entry, search_state=state))
     return replace(inspection, entries=tuple(entries))
 

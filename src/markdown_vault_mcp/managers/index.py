@@ -1270,17 +1270,6 @@ class IndexManager:
         """
         return self._embeddings.rebuild_after_fault()
 
-    def inventory_skip_categories(self) -> dict[str, str]:
-        """Return persisted skip categories without exposing their details.
-
-        Returns:
-            Vault-relative paths mapped to their recorded skip category.
-        """
-        return {
-            path: reason.get("category", "")
-            for path, reason in self._tracker.skip_reasons().items()
-        }
-
     def skipped_files(self) -> list[SkippedFile]:
         """Return files dropped from the index for a surfaced reason (#775).
 

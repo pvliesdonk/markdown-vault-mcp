@@ -199,7 +199,7 @@ class DocumentManager:
         submodule_guard: Refuses a write into a git submodule or nested
             repository, which would never be committed (#1564, #1949). ``None`` refuses nothing.
         inspection_policy: Configured conventions and state paths for bundle inspection.
-        inventory_skips: Read-only skip categories, or None when not ready.
+        inventory_ready: Read-only index readiness check.
     """
 
     def __init__(
@@ -222,12 +222,12 @@ class DocumentManager:
         sync_index: Callable[[], None] | None = None,
         submodule_guard: SubmoduleGuard | None = None,
         inspection_policy: InspectionPolicy | None = None,
-        inventory_skips: Callable[[], dict[str, str] | None] | None = None,
+        inventory_ready: Callable[[], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
         self._inspection_policy = inspection_policy or InspectionPolicy()
-        self._inventory_skips = inventory_skips
+        self._inventory_ready = inventory_ready
         self._file_write_lock = write_lock
         self._chunk_strategy = chunk_strategy
         self._read_only = read_only
@@ -276,9 +276,17 @@ class DocumentManager:
             self._max_note_read_bytes,
             self._inspection_policy,
         ).inspect(request)
-        skips = self._inventory_skips() if self._inventory_skips is not None else None
+
+        def category(path: str) -> str | None:
+            row = self._fts.get_tombstone(path)
+            return str(row["skip_category"]) if row is not None else None
+
+        ready = self._inventory_ready is not None and self._inventory_ready()
         return project_search_state(
-            inspection, skips, lambda path: self._fts.get_note(path) is not None
+            inspection,
+            ready,
+            lambda path: self._fts.get_note(path) is not None,
+            category,
         )
 
     # ------------------------------------------------------------------

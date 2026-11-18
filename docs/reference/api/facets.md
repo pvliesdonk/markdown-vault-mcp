@@ -88,7 +88,8 @@ backslashes and empty or dot components are rejected with `ValueError`.
 
 The frozen `BundleInspection` contains the request, sorted `BundleEntry` values,
 `state`, `enumeration`, `interpretation="caller_selected"`, and
-`search_state="not_evaluated"`. Scope states distinguish `inspected`, `missing`
+`search_state="not_evaluated"`. This legacy scope-level field is unchanged;
+each entry carries its own search state. Scope states distinguish `inspected`, `missing`
 and `unavailable`. A missing configured source is `unavailable`; only a missing
 directory within an accessible source is `missing`.
 
@@ -143,11 +144,12 @@ It does not descend into child directories, detect global
 OKF mode, serve navigation bodies or create navigation files. Unsupported
 no-follow filesystem primitives produce `unavailable`.
 
-When the index is queryable, inspected Markdown entries report `searchable`,
+When the index is queryable, safely observed regular Markdown entries report `searchable`,
 `non_admitted` (missing a locally required field), `unparseable`,
 `index_excluded`, or `not_indexed_yet` from current exclusion policy and the
-last index observations. Other entries, and all entries before the index is
-ready, report `not_evaluated`. Search state reflects the last index observations and can lag disk changes
+last index observations, even when a read limit prevented parsing. Unknown
+index error categories remain `not_evaluated`, as do other entries and all
+entries before the index is ready. Search state reflects the last index observations and can lag disk changes
 until indexing runs. Format conformance is a separate assessment. Inspection does not
 refresh or write the index or tracker. Direct `BundleInspector` use has no
 index knowledge and reports `not_evaluated`.
