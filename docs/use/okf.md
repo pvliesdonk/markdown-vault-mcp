@@ -260,13 +260,19 @@ index and no configured state path it stays in memory: a restart loses history,
 including evidence of removals during downtime. Back up persistent state to
 retain its history. If a ledger is missing or corrupt, the next sweep starts a
 new history from the files it can read. A newer schema is refused rather than
-overwritten.
+overwritten. A ledger refusal or I/O failure fails the build or reindex before
+search is updated; repair the ledger or its storage and retry. An already-warm
+index remains queryable.
 
 The ledger compares states; it does not record an event for each edit, identify
-an author, or change frontmatter or `log.md`. It hashes the full file and, separately, the parser-recognised frontmatter block
-with surrounding whitespace trimmed. The frontmatter digest is absent when the
-block is absent or unterminated. Reads use bounded chunks; memory grows with a
-candidate header, including an unterminated one. It observes external edits
+an author, or change frontmatter or `log.md`. It hashes the full file and,
+separately, the parser-recognised frontmatter block with surrounding whitespace
+trimmed. An absent, unterminated or invalid UTF-8 header has no frontmatter
+digest; invalid bytes in the body do not affect a valid header's digest. Reads
+use bounded chunks. Ordinary notes use bounded memory, while a candidate header,
+including an unterminated one, can use memory proportional to its length. The
+version 1 ledger preserves digest meanings across parser upgrades; changing them
+requires a new version and migration. It observes external edits
 at build, reindex, or post-pull reindex. A warm build also sweeps. The watcher
 triggers reindex in its watched folders; excluded top-level folders wait for the
 next sweep until watcher scope is expanded.

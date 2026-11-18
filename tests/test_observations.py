@@ -67,6 +67,11 @@ def test_reindex_compares_state_and_records_removal(tmp_path: Path) -> None:
         assert changed.first_seen_at == first.first_seen_at
         assert changed.content_digest != first.content_digest
         assert changed.frontmatter_digest == first.frontmatter_digest
+        note.write_bytes(b"---\ntitle: A\n---\n\xffbody")
+        vault.index.reindex()
+        invalid_body = vault._index_mgr.observations.rows()["a.md"]
+        assert invalid_body.frontmatter_digest == first.frontmatter_digest
+        assert invalid_body.content_digest != changed.content_digest
         note.write_text("---\ntitle: B\n---\nsecond")
         vault.index.reindex()
         assert (

@@ -79,7 +79,12 @@ def _valid_row(key: str, row: Observation) -> bool:
 
 
 class ObservationLedger:
-    """Compare complete inventory sweeps against durable local state."""
+    """Compare complete inventory sweeps against durable local state.
+
+    Version 1 writers preserve row meaning and digest vectors across parser
+    upgrades. A changed digest meaning needs a version bump and migration that
+    retains trustworthy history and marks unknowns.
+    """
 
     def __init__(self, path: Path | None, inspector: BundleInspector) -> None:
         self._path = path
@@ -169,7 +174,8 @@ class ObservationLedger:
                 self._save(result)
 
     def _save(self, rows: dict[str, Observation]) -> None:
-        assert self._path is not None
+        # Only persistent ledgers call this internal method.
+        assert self._path is not None  # noqa: S101, RUF100
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(
             dir=self._path.parent, prefix=".observations-", suffix=".tmp"

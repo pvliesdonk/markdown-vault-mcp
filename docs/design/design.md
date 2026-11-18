@@ -7755,8 +7755,14 @@ inaccessible paths and their subtrees do not establish removal, but do not block
 removal elsewhere. Inventory-denied symlinks are never followed, even when search
 admits them; an earlier row hidden by one remains unchanged. The content digest
 covers the full file. The frontmatter digest covers the parser-delimited block
-with surrounding whitespace trimmed; it is absent for missing or unterminated
-frontmatter. Reads use bounded chunks, with memory proportional to a candidate
-header, including an unterminated one. A missing or corrupt ledger starts new
-history, while a newer schema is refused. Sweep origin is unknown; observation
-does not write author metadata or log entries.
+with surrounding whitespace trimmed; it is absent for missing, unterminated or
+invalid UTF-8 headers. Invalid body bytes do not change a valid header digest.
+Reads use bounded chunks and ordinary notes use bounded memory; a candidate
+header, including an unterminated one, may use memory proportional to its length.
+Version 1 preserves row meanings and digest vectors across parser upgrades; a
+change requires a version bump and a migration preserving trustworthy history
+and marking unknowns. A missing or corrupt ledger starts new history, while a
+newer schema is refused. A ledger refusal or I/O failure fails the build or
+reindex before search is touched until repaired; an already-warm index remains
+queryable. Sweep origin is unknown; observation does not write author metadata
+or log entries.

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import codecs
 import errno
 import hashlib
 import os
 import stat
 import unicodedata
 from bisect import bisect_left
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
@@ -330,6 +332,28 @@ def _vector_sidecars(base: Path) -> set[Path]:
     return paths
 
 
+def _possible_header(prefix: bytearray, *, eof: bool) -> bool:
+    """Reject a first line that cannot become a supported opener."""
+    decoder = codecs.getincrementaldecoder("utf-8-sig")(errors="surrogateescape")
+    text = decoder.decode(prefix, final=eof).lstrip()
+    if not text:
+        return not eof
+    line, separator, _ = text.partition("\n")
+    if frontmatter.detect_format(line, frontmatter.handlers) is not None:
+        return True
+    if separator or eof or line != line.rstrip():
+        return False
+    return any(
+        delimiter
+        and (
+            delimiter.startswith(line)
+            or (set(delimiter) == {"-"} and set(line) == {"-"})
+        )
+        for handler in frontmatter.handlers
+        if (delimiter := handler.START_DELIMITER)
+    )
+
+
 def _observation_digests(stream: BinaryIO) -> tuple[str, str | None]:
     """Hash all bytes and the parser's frontmatter block in bounded reads.
 
@@ -347,20 +371,17 @@ def _observation_digests(stream: BinaryIO) -> tuple[str, str | None]:
             prefix.extend(chunk)
             content.update(chunk)
         eof = len(prefix) < size
-        cut = bytes(prefix) if eof else bytes(prefix[: prefix.rfind(b"\n") + 1])
-        try:
-            text = decode_utf8(cut)
-        except UnicodeDecodeError:
+        if not _possible_header(prefix, eof=eof):
             break
+        cut = bytes(prefix) if eof else bytes(prefix[: prefix.rfind(b"\n") + 1])
+        text = cut.decode("utf-8-sig", errors="surrogateescape")
         body = strip_frontmatter_block(text)
         if body != text:
             header = text[: len(text) - len(body)].strip()
-            header_digest = hashlib.sha256(header.encode()).hexdigest()
+            with suppress(UnicodeEncodeError):
+                header_digest = hashlib.sha256(header.encode("utf-8")).hexdigest()
             break
-        opened = (
-            frontmatter.detect_format(text.lstrip(), frontmatter.handlers) is not None
-        )
-        if eof or (text and not opened):
+        if eof:
             break
         size *= 2
     while chunk := stream.read(65536):

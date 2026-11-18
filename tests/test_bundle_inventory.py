@@ -1375,41 +1375,87 @@ def test_reader_denied_opens_do_not_consume_note_budget(
 
 
 @pytest.mark.parametrize(
-    "raw",
+    ("raw", "expected"),
     [
-        b"---\ntitle: A\n---",
-        b"---\ntitle: [\n---\nbody",
-        "---\ntitle: A\n---\u00a0\nbody".encode(),
-        b"---\ntitle: A\n" + b"-" * 65536,
-        b"---\n" + b"key: value\n" * 30000 + b"---\nbody",
-        b"---\ntitle: A\nunterminated",
-        b"plain note",
-        b"\xffbad",
-        b"\xef\xbb\xbf---\r\ntitle: A\r\n---\r\nbody",
-        b'{\n"a": 1\n}\n\nbody',
+        (
+            b"---\ntitle: A\n---",
+            "5a21b538cb4eb30cd562a2d44fa89289dfa302f8ab8912951178bf2eec81014d",
+        ),
+        (
+            b"---\ntitle: [\n---\nbody",
+            "bc9f9742cd571d939143e10bbe153b523a0ce547bf05b5e81efd8d4eafbdd5f8",
+        ),
+        (
+            "---\ntitle: A\n---\u00a0\nbody".encode(),
+            "5a21b538cb4eb30cd562a2d44fa89289dfa302f8ab8912951178bf2eec81014d",
+        ),
+        (
+            b"---\ntitle: A\n" + b"-" * 65536,
+            "da6eac1ad99fe92a67f818ea399b7c73a7fd3901214b0d668e950022082f7831",
+        ),
+        (
+            b"---\n" + b"key: value\n" * 30000 + b"---\nbody",
+            "98b9ccd17d932a3a7ad1b786daeff123d94819924911206dbd33f8d73c69a3c1",
+        ),
+        (b"---\ntitle: A\nunterminated", None),
+        (b"plain note", None),
+        (b"\xffbad", None),
+        (
+            b"\xef\xbb\xbf---\r\ntitle: A\r\n---\r\nbody",
+            "fa129686f04e013e227d827a7fb63ea7e8533260eaa507b7213df1df54233891",
+        ),
+        (
+            b'{\n"a": 1\n}\n\nbody',
+            "9c3d952771c2e9a93796f796f4b1d2fe947ff0d1f3e15063da2ff9e953871a6d",
+        ),
+        (b"+++\ntitle=1\n+++\nbody", None),
+        (
+            b"---\ntitle: A\n---\n\xff",
+            "5a21b538cb4eb30cd562a2d44fa89289dfa302f8ab8912951178bf2eec81014d",
+        ),
+        (
+            b"---\ntitle: A\n---\n" + b"x\n" * 40000 + b"\xff",
+            "5a21b538cb4eb30cd562a2d44fa89289dfa302f8ab8912951178bf2eec81014d",
+        ),
+        (b"---\ntitle: \xff\n---\nbody", None),
+        (b"---\n" + b"key: value\n" * 7000 + b"bad: \xff\n---\nbody", None),
+        (
+            b" " * 65534 + b"--" + b"-\ntitle: A\n---\nbody",
+            "5a21b538cb4eb30cd562a2d44fa89289dfa302f8ab8912951178bf2eec81014d",
+        ),
+        (
+            b"---\n" + b"a" * 65528 + b"\n---x\n---\nbody",
+            "eb15f57bb4ad4458cd6e8443532eb85882867691e7549d5210527786a77500b1",
+        ),
+        (
+            b" " * 65535 + "\u00a0".encode() + b"---\ntitle: A\n---\nbody",
+            "5a21b538cb4eb30cd562a2d44fa89289dfa302f8ab8912951178bf2eec81014d",
+        ),
+        (b"x" * (8 * 1024 * 1024), None),
     ],
 )
-def test_digest_uses_parser_boundary_and_full_content(raw: bytes) -> None:
+def test_digest_uses_parser_boundary_and_full_content(
+    raw: bytes, expected: str | None
+) -> None:
     import hashlib
     import io
+    import tracemalloc
 
     from markdown_vault_mcp.bundle_inventory import _observation_digests
-    from markdown_vault_mcp.scanner import strip_frontmatter_block
-    from markdown_vault_mcp.utils.text import decode_utf8
 
     class Limited(io.BytesIO):
         def read(self, size=-1):
             assert 0 < size <= 65536
             return super().read(size)
 
-    digest, header = _observation_digests(Limited(raw))
-    assert digest == hashlib.sha256(raw).hexdigest()
+    stream = Limited(raw)
+    tracemalloc.start()
     try:
-        text = decode_utf8(raw)
-    except UnicodeDecodeError:
-        expected = None
-    else:
-        body = strip_frontmatter_block(text)
-        block = text[: len(text) - len(body)].strip() if body != text else None
-        expected = hashlib.sha256(block.encode()).hexdigest() if block else None
+        digest, header = _observation_digests(stream)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert digest == hashlib.sha256(raw).hexdigest()
     assert header == expected
+    if len(raw) == 8 * 1024 * 1024:
+        assert peak < 2 * 1024 * 1024
