@@ -255,9 +255,10 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # would have stopped neither, so it buys the look of a guard without one.
 # Patch releases stay open; a minor bump is a deliberate edit here, paired
 # with a publisher that accepts whatever the new minor emits.  1.33 still
-# emits 2.5, which the pinned publisher's twine accepts (#839).  Downstream
-# Renovate is told to leave this line alone (renovate.json), so the minor
-# moves through a template release for every project at once.
+# emits 2.5, which the pinned publisher's twine accepts (#839).  Renovate
+# opens the bump as a pull request that never automerges (renovate.json);
+# ci.yml's publisher check runs `twine check` against it, and
+# packaging/mcpb/pyproject.toml.in follows by hand (#2259).
 requires = ["hatchling>=1.33,<1.34"]
 build-backend = "hatchling.build"
 
