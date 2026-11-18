@@ -349,6 +349,10 @@ def test_git_snapshot_caches_blob_reads(tmp_path: Path, monkeypatch) -> None:
         snapshot.close()
     assert process.poll() is not None
 
+    _postpack_reader_cleanup(tmp_path, readers)
+
+
+def _postpack_reader_cleanup(tmp_path: Path, readers: list) -> None:
     # Only the post-pack flag comparison reads this omitted oversized note.
     root = tmp_path / "only"
     root.mkdir()
