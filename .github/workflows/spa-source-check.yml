@@ -6,10 +6,10 @@
 # this check must live somewhere — and a template-owned ci.yml cannot carry a
 # domain step without re-forking on every template change.
 #
-# The job name is load-bearing: `extra_required_checks` in .copier-answers.yml
-# names "SPA source up-to-date" as a merge-blocking check context in the
-# rendered rulesets (template #454), so renaming the job here without updating
-# that answer leaves protected branches waiting forever on a check that never
+# The job name is load-bearing: the main and release rulesets under
+# .github/rulesets/ name "SPA source up-to-date" as a merge-blocking check
+# context (template #454), so renaming the job here without updating them
+# leaves protected branches waiting forever on a check that never
 # reports. No paths: filter for the same reason — a required check must report
 # on every pull request.
 name: SPA Source Check

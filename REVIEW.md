@@ -1,10 +1,8 @@
 # Review instructions
 
 <!-- DOMAIN-REVIEW-START -->
-<!-- Add project-specific review rules here. Kept across copier update. -->
+<!-- Add project-specific review rules here. -->
 <!-- DOMAIN-REVIEW-END -->
-
-<!-- ===== TEMPLATE-OWNED BELOW — DO NOT EDIT; OVERWRITTEN ON COPIER UPDATE ===== -->
 
 ## Don't reproduce CI
 

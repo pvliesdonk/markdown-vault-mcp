@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENTS_LIMIT = 40_000
 STUB = (
     "@AGENTS.md\n\nProject instructions live in `AGENTS.md` (domain content between its "
-    "`DOMAIN-START` / `DOMAIN-END` markers). This file is template-owned; do not add content here.\n"
+    "`DOMAIN-START` / `DOMAIN-END` markers). This file is only the import; put content in `AGENTS.md`.\n"
 )
 TEMPLATE_SKILLS: tuple[str, ...] = (
     "authoring-issues-prs",
@@ -55,7 +55,7 @@ def test_agents_md_within_always_loaded_budget() -> None:
 
 def test_claude_md_is_the_stub() -> None:
     assert (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8") == STUB, (
-        "CLAUDE.md is template-owned and must stay the @AGENTS.md stub; put content in AGENTS.md"
+        "CLAUDE.md must stay the @AGENTS.md stub; put content in AGENTS.md"
     )
 
 
