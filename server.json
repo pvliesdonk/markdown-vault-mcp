@@ -70,7 +70,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
-          "description": "Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. Elicit asks a human to confirm; trust-auth requires human credentials and a human-driven interface. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
+          "description": "Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. For human reviews, elicit asks for confirmation and trust-auth requires human credentials and a human-driven interface. Opted-in service machine checks work under either enabled mode. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
         },
         {
           "name": "OLLAMA_HOST",
@@ -766,7 +766,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
-          "description": "Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. Elicit asks a human to confirm; trust-auth requires human credentials and a human-driven interface. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
+          "description": "Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. For human reviews, elicit asks for confirmation and trust-auth requires human credentials and a human-driven interface. Opted-in service machine checks work under either enabled mode. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
         },
         {
           "name": "OLLAMA_HOST",

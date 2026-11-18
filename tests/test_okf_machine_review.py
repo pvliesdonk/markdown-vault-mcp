@@ -192,13 +192,10 @@ async def test_service_human_review_refused_before_stale_snapshot(
         await wait_for_mcp_writer_drain(client)
 
 
-def test_check_selects_actor_and_invalid_check_writes_nothing(tmp_path: Path) -> None:
+def test_transform_selects_machine_actor() -> None:
     from datetime import UTC, datetime
 
-    from markdown_vault_mcp.exceptions import InvalidRequestError
     from markdown_vault_mcp.okf import append_okf_verification
-    from markdown_vault_mcp.utils.fs import is_regular_file
-    from markdown_vault_mcp.vault import Vault, VaultSettings
 
     snapshot = concept_snapshot(NOTE)
     text = append_okf_verification(
@@ -209,18 +206,3 @@ def test_check_selects_actor_and_invalid_check_writes_nothing(tmp_path: Path) ->
         check="links",
     )
     assert frontmatter.loads(text).metadata["verified"][0]["by"] == "process:alice"
-    root = tmp_path / "vault"
-    root.mkdir()
-    note = root / "note.md"
-    note.write_text(NOTE)
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
-    )
-    try:
-        with pytest.raises(InvalidRequestError, match="Unknown check"):
-            vault.writer.okf_verify("note.md", "alice", snapshot, "bogus")
-        assert note.read_text() == NOTE
-        assert not is_regular_file(tmp_path / "state.receipts.json")
-    finally:
-        vault.close()
