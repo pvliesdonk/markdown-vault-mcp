@@ -68,8 +68,25 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
     Returns:
         Whether any pattern matches the folder.
     """
-    name = folder or "."
-    return any(fnmatchcase(name, pattern) for pattern in patterns)
+
+    def matches(parts: tuple[str, ...], glob: tuple[str, ...]) -> bool:
+        if not glob:
+            return not parts
+        if glob[0] == "**":
+            if not glob[1:]:
+                return bool(parts)
+            return matches(parts, glob[1:]) or (
+                bool(parts) and matches(parts[1:], glob)
+            )
+        return (
+            bool(parts)
+            and fnmatchcase(parts[0], glob[0])
+            and matches(parts[1:], glob[1:])
+        )
+
+    if not folder:
+        return "." in patterns or "**" in patterns
+    return any(matches(tuple(folder.split("/")), tuple(p.split("/"))) for p in patterns)
 
 
 class ConventionMaintainer:
@@ -339,7 +356,7 @@ class ConventionMaintainer:
         try:
             if self._sync_index is not None:
                 self._sync_index()
-            if self._capabilities is None or self._capabilities.folders == ("**",):
+            if self._capabilities is None:
                 self._okf_migrate.generate_index(folder=folder)
             else:
                 self._okf_migrate.generate_index(

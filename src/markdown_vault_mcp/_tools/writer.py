@@ -1150,7 +1150,8 @@ def register(mcp: FastMCP) -> None:
         tier to human-reviewed; returns the verifier recorded.
 
         The user may be asked to confirm the review. The record means a person looked,
-        not that the content is correct.
+        not that the content is correct. A retained review may describe an older
+        version of the note; it is not bound to the current content.
 
         Args:
             path: Path of the note the user reviewed.
@@ -1175,10 +1176,13 @@ def register(mcp: FastMCP) -> None:
                 an authenticated identity.
             DocumentNotFoundError: If the note does not exist.
         """
-        if not (await asyncio.to_thread(vault.okf.state)).active:
+        if (
+            not config.content.okf_write
+            and not (await asyncio.to_thread(vault.okf.state)).active
+        ):
             raise ToolError(
                 "OKF is not active for this vault, so okf_verify cannot record a review. "
-                "Ask the operator to enable OKF for this vault.",
+                "Ask the operator to declare the bundle or enable OKF for this vault.",
                 log_level=logging.INFO,
             )
         subject_or_request = await _resolve_verify_mode_subject(

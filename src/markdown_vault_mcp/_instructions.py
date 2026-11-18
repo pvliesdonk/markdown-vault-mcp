@@ -28,6 +28,8 @@ from markdown_vault_mcp._write_tools import gated_tool
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastmcp import FastMCP
 
+    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
+
 #: Tools the write-guidance fragment tells the model to call. Resolved
 #: through :func:`~markdown_vault_mcp._write_tools.gated_tool` at import
 #: time so a rename that updates ``WRITE_TOOL_NAMES`` fails loudly here
@@ -81,6 +83,8 @@ class GuidanceConfig:
             files, which decides whether the agent is asked to.
         boot_reindex: Whether startup reconciles changes made while no
             server ran; when it does not, the agent is told to reindex.
+        okf_capabilities: Resolved maintenance authority and folder scope;
+            ``None`` uses the legacy ``okf_write`` behavior.
     """
 
     read_only: bool
@@ -89,6 +93,7 @@ class GuidanceConfig:
     okf_mode: str = "off"
     okf_write: bool = False
     boot_reindex: bool = True
+    okf_capabilities: OkfCapabilities | None = None
 
 
 def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
@@ -129,10 +134,8 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     guidance then points at the client-side ``summarize-subtree`` prompt
     (#1035). Any ``okf_mode`` other than ``"off"`` emits the OKF sentence, on
     the same permits-rather-than-detects reasoning as the conventions one, and
-    ``okf_write`` decides which upkeep it asks for: without the enforced-write
-    layer nobody else keeps ``log.md`` / ``index.md`` current, and with it the
-    server regenerates a written folder's ``index.md``, so telling the agent
-    to edit that file invites work the next write replaces (#1431).
+    resolved capabilities decide which upkeep it asks for. The server can
+    maintain either file independently and only in designated folders.
     With ``boot_reindex`` off, files changed while no server ran stay out of
     the index until a reindex runs, and nothing else prompts the model to run
     one, so the sentence names the tool (#1542); a deployment that keeps the
@@ -182,15 +185,23 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             )
         )
     if config.okf_mode != "off":
-        # Who keeps the reserved files current decides what to tell the agent.
-        # Under OKF_WRITE the server regenerates a written folder's 'index.md'
-        # from the listing, so asking the agent to edit it invites work the
-        # next write silently replaces (#1431).
-        upkeep = (
-            "Leave 'log.md'/'index.md' to the server."
-            if config.okf_write
-            else "For edits, update 'log.md'/'index.md'."
-        )
+        # Tell the agent which files and folder scope the server maintains.
+        caps = config.okf_capabilities
+        index = caps.index if caps is not None else config.okf_write
+        log = caps.log == "writes" if caps is not None else config.okf_write
+        if index and log and (caps is None or caps.folders == ("**",)):
+            upkeep = "Leave 'log.md'/'index.md' to the server."
+        elif not index and not log:
+            upkeep = "For edits, update 'log.md'/'index.md'."
+        else:
+            scope = ", ".join(caps.folders) if caps is not None else "**"
+            upkeep = (
+                f"In designated folders ({scope}) the server maintains {'index.md' if index else 'log.md'}; "
+                f"maintain {'log.md' if index else 'index.md'} yourself. "
+                "Elsewhere maintain both."
+                if index != log
+                else f"In designated folders ({scope}) leave 'log.md'/'index.md' to the server; elsewhere maintain both."
+            )
         snippets.append(
             Snippet(
                 "When 'stats' reports an OKF bundle, weigh notes by trust tier: "

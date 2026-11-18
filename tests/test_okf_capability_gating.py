@@ -199,3 +199,161 @@ def test_explicit_generate_index_retains_recursive_behavior(tmp_path: Path) -> N
         assert (root / "a" / "b" / "index.md").exists()
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    ("folder", "patterns", "expected"),
+    [
+        ("", (".", "*"), True),
+        ("a", (".", "*"), True),
+        ("a/b", (".", "*"), False),
+        ("a/b", (".", "*", "*/*"), True),
+        ("a/b/c", (".", "*", "*/*"), False),
+        ("a/b/c", ("**",), True),
+        ("a", ("a/**",), False),
+        ("a/b/c", ("a/**",), True),
+        ("a/c", ("a/**/c",), True),
+        ("a/b/c", ("a/**/c",), True),
+        ("a/b/d", ("a/**/c",), False),
+    ],
+)
+def test_designation_glob_depth(
+    folder: str, patterns: tuple[str, ...], expected: bool
+) -> None:
+    from markdown_vault_mcp._okf_convention import folder_is_designated
+
+    assert folder_is_designated(folder, patterns) is expected
+
+
+@pytest.mark.anyio
+async def test_legacy_alias_verifies_undeclared_vault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typing import Any
+
+    async def accept(
+        _message: str, _response_type: Any, _params: Any, _context: Any
+    ) -> bool:
+        return True
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(root))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        await client.call_tool("okf_verify", {"path": "note.md"})
+    assert "verified:" in (root / "note.md").read_text()
+
+
+def test_guidance_follows_independent_maintenance() -> None:
+    from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+
+    def guidance(**settings: object) -> str:
+        caps = ContentConfig(**settings).okf_capabilities  # type: ignore[arg-type]
+        cfg = GuidanceConfig(
+            read_only=False,
+            okf_mode="on",
+            okf_write=caps.legacy_stamping,
+            okf_capabilities=caps,
+        )
+        return " ".join(item.text for item in _domain_snippets(cfg))
+
+    index_only = guidance(okf_index=True)
+    assert "index.md" in index_only and "log.md" in index_only
+    assert "designated" in index_only
+    assert "Leave 'log.md'/'index.md' to the server" not in index_only
+    log_only = guidance(okf_log="writes")
+    assert "designated" in log_only and log_only != index_only
+    neither = guidance(okf_write=True, okf_index=False, okf_log="off")
+    assert "update 'log.md'/'index.md'" in neither
+
+
+def test_nested_authored_index_survives_write_and_rename(tmp_path: Path) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.conftest import wait_for_writer_drain
+
+    root = tmp_path / "vault"
+    nested = root / "projects" / "alpha" / "private"
+    nested.mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    authored = "# Authored navigation\n"
+    (nested / "index.md").write_text(authored)
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_folders=(".", "projects/*")
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("projects/alpha/private/note.md", "# Note\n")
+        vault.writer.rename(
+            "projects/alpha/private/note.md", "projects/alpha/private/renamed.md"
+        )
+        wait_for_writer_drain(vault)
+        assert (nested / "index.md").read_text() == authored
+        vault.writer.move_folder("projects/alpha/private", "projects/alpha/moved")
+        wait_for_writer_drain(vault)
+        assert (root / "projects/alpha/moved/index.md").read_text() == authored
+    finally:
+        vault.close()
+
+
+@pytest.mark.anyio
+async def test_independent_review_is_retained_after_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typing import Any
+
+    import frontmatter
+
+    async def accept(
+        _message: str, _response_type: Any, _params: Any, _context: Any
+    ) -> bool:
+        return True
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    note = root / "note.md"
+    note.write_text("# Note\n\nBefore.\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(root))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        await wait_for_mcp_writer_drain(client)
+        await client.call_tool("okf_verify", {"path": "note.md"})
+        reviewed = frontmatter.loads(note.read_text()).metadata
+        assert reviewed.get("verified") and "generated" not in reviewed
+        await client.call_tool(
+            "edit", {"path": "note.md", "old_text": "Before.", "new_text": "After."}
+        )
+        await wait_for_mcp_writer_drain(client)
+    assert (
+        frontmatter.loads(note.read_text()).metadata["verified"] == reviewed["verified"]
+    )
+    assert not (root / "log.md").exists()
+
+
+def test_server_instructions_use_resolved_capabilities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "off")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_INDEX", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_FOLDERS", ".,projects/*")
+    text = make_server().instructions or ""
+    assert "server maintains index.md" in text
+    assert "maintain log.md yourself" in text
+    assert "projects/*" in text and "Elsewhere maintain both" in text
