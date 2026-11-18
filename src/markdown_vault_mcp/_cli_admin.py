@@ -2,8 +2,8 @@
 
 ``index``, ``reindex`` and ``embeddings import`` change the shared index or the
 stored vectors, and ``repair-log`` changes one ``log.md`` (#1403), so they live
-under ``admin``; every other command except ``serve`` only reads
-(:mod:`._cli_reader`). The names the first three shipped under stay as hidden
+under ``admin``. ``okf strip-seeded-frontmatter`` writes only with ``--apply``
+(#1438); every other command except ``serve`` only reads (:mod:`._cli_reader`). The names the first three shipped under stay as hidden
 top-level aliases that run the same command and name the new form on stderr.
 """
 

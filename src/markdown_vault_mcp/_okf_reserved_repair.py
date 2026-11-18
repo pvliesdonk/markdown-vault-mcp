@@ -66,8 +66,8 @@ def _strip(
     if remaining != {k: v for k, v in mapping.items() if k not in keys}:
         return text, ()
     if keys and not changed.strip():
-        opening = text.rfind("\n", 0, start) + 1
-        prefix = text[:opening] or ("\ufeff" if text.startswith("\ufeff") else "")
+        # The boundary helper skips only a BOM and whitespace before the fence.
+        prefix = text[: text.index("-")]
         closing = text.find("\n", end)
         output = prefix + (text[closing + 1 :] if closing >= 0 else "")
     else:

@@ -115,13 +115,28 @@ def test_custom_title_field(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_empty_header_removed_and_audit_passes(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("original", "expected"),
+    [
+        (
+            b"\xef\xbb\xbf---\ntitle: guides\ntype: null\n---\n\n# guides\n",
+            b"\xef\xbb\xbf\n# guides\n",
+        ),
+        (
+            b"\xef\xbb\xbf---\n\ntitle: guides\ntype: null\n---\n# guides\n",
+            b"\xef\xbb\xbf# guides\n",
+        ),
+    ],
+)
+def test_empty_header_removed_and_audit_passes(
+    tmp_path: Path, original: bytes, expected: bytes
+) -> None:
     from markdown_vault_mcp.okf import audit_bundle
 
     folder = tmp_path / "guides"
     folder.mkdir()
     path = folder / "index.md"
-    path.write_bytes(b"\xef\xbb\xbf---\ntitle: guides\ntype: null\n---\n\n# guides\n")
+    path.write_bytes(original)
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(
@@ -131,7 +146,7 @@ def test_empty_header_removed_and_audit_passes(tmp_path: Path) -> None:
     try:
         assert audit_bundle(tmp_path).index_frontmatter.count == 1
         assert ReservedFrontmatterRepair(vault).run(apply=True)
-        assert path.read_bytes() == b"\xef\xbb\xbf\n# guides\n"
+        assert path.read_bytes() == expected
         assert audit_bundle(tmp_path).index_frontmatter.count == 0
     finally:
         vault.close()
@@ -446,3 +461,25 @@ def test_four_dash_frontmatter_workflow(
     skipped = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
     assert skipped.exit_code == 1 and "Skipped log.md:" in skipped.stdout
     assert path.read_bytes() == unsafe
+
+
+@pytest.mark.parametrize(
+    ("original", "expected"),
+    [
+        ("---\n\ntitle: Log\n---\n# Log\n", "# Log\n"),
+        ("---\n  \ntitle: Log\n---\n# Log\n", "# Log\n"),
+        ("\ufeff---\n\ntitle: Log\n---\n# Log\n", "\ufeff# Log\n"),
+        ("\n\n---\n\ntitle: Log\n---\n# Log\n", "\n\n# Log\n"),
+        ("\ufeff\n---\n\ntitle: Log\n---\n# Log\n", "\ufeff\n# Log\n"),
+        ("  ---\n\ntitle: Log\n---\n# Log\n", "  # Log\n"),
+        ("\t---\n\ntitle: Log\n---\n# Log\n", "\t# Log\n"),
+        ("---\r\n\r\ntitle: Log\r\n---\r\n# Log\r\n", "# Log\r\n"),
+        ("----\n\ntitle: Log\n----\n# Log\n", "# Log\n"),
+        ("---\n\ntitle: Log\n---", ""),
+        ("---\n\ntitle: Log\nkeep: 1\n---\nbody\n", "---\n\nkeep: 1\n---\nbody\n"),
+    ],
+)
+def test_empty_header_removal_keeps_prefix_and_body(
+    original: str, expected: str
+) -> None:
+    assert _strip(original, ["title"], "title", "Log") == (expected, ("title",))
