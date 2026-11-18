@@ -20,7 +20,7 @@ from markdown_vault_mcp.bundle_inventory import (
     TypeState,
 )
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.config_sections._assembly import to_vault_settings
+from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.exceptions import (
     ConfigurationError,
     IndexUnavailableError,
@@ -41,7 +41,7 @@ def _local(
         summarize_openai_api_key=None,
         summarize_openai_base_url=None,
     )
-    settings = to_vault_settings(config)
+    settings = VaultSettings.from_project_config(config)
     policy = InspectionPolicy(
         settings.conventions_file,
         (state,)
