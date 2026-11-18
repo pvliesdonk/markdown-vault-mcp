@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from markdown_vault_mcp._pvl_core import (
-    ConfigurationError,
-    ServerConfig,
-    build_event_store,
-)
-from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
+from markdown_vault_mcp._kv_store import build_event_store
+from markdown_vault_mcp._pvl_core import ConfigurationError, ServerConfig
+from markdown_vault_mcp.config import ProjectConfig
+
+# NFKC-normalising host, so ``urlparse`` raises with the netloc in its message.
+_LEAKY_URL = "redis://alice:hunter2@h\u2100st"
 
 
 class TestBuildEventStore:
@@ -20,10 +20,10 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp._pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
+            "markdown_vault_mcp._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
-            store = build_event_store(_ENV_PREFIX, ServerConfig())
+            store = build_event_store(ServerConfig())
 
         assert store is not None
         assert (tmp_path / "events").is_dir()
@@ -33,10 +33,10 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp._pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
+            "markdown_vault_mcp._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
-            store = build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=""))
+            store = build_event_store(ServerConfig(event_store_url=""))
 
         assert store is not None
         assert (tmp_path / "events").is_dir()
@@ -44,25 +44,20 @@ class TestBuildEventStore:
     def test_file_url_creates_directory(self, tmp_path):
         """file:// URL creates the specified directory and uses a file backend."""
         target = tmp_path / "custom" / "events"
-        store = build_event_store(
-            _ENV_PREFIX, ServerConfig(event_store_url=f"file://{target}")
-        )
+        store = build_event_store(ServerConfig(event_store_url=f"file://{target}"))
 
         assert store is not None
         assert target.is_dir()
 
     def test_memory_url_returns_in_memory_store(self):
         """memory:// URL returns an in-memory EventStore."""
-        store = build_event_store(
-            _ENV_PREFIX, ServerConfig(event_store_url="memory://")
-        )
+        store = build_event_store(ServerConfig(event_store_url="memory://"))
         assert store is not None
 
     def test_kv_store_url_takes_priority(self, tmp_path):
         """kv_store_url is honoured over the legacy event_store_url."""
         ignored = tmp_path / "should-not-exist"
         store = build_event_store(
-            _ENV_PREFIX,
             ServerConfig(kv_store_url="memory://", event_store_url=f"file://{ignored}"),
         )
 
@@ -71,14 +66,40 @@ class TestBuildEventStore:
         assert not ignored.exists()
 
     def test_unsupported_scheme_raises(self):
-        """An unrecognised URL scheme propagates a ConfigurationError from the core factory."""
+        """An unrecognised URL scheme raises ConfigurationError."""
         with pytest.raises(ConfigurationError):
-            build_event_store(_ENV_PREFIX, ServerConfig(event_store_url="bogus://host"))
+            build_event_store(ServerConfig(event_store_url="bogus://host"))
+
+    def test_uses_events_namespace(self):
+        """The event store's collections live under the ``events`` prefix."""
+        from key_value.aio.wrappers.prefix_collections import (
+            PrefixCollectionsWrapper,
+        )
+
+        store = build_event_store(ServerConfig(kv_store_url="memory://"))
+        storage = store._storage  # type: ignore[attr-defined]
+        assert isinstance(storage, PrefixCollectionsWrapper)
+        assert storage.prefix == "events"
+
+    def test_unparseable_url_does_not_leak_credentials(self):
+        """A URL ``urlparse`` rejects never reaches the message or traceback."""
+        import traceback
+
+        # A constant, not an inline literal: Python 3.13+ tracebacks quote
+        # the call's source lines, which would match the secret themselves.
+        with pytest.raises(ConfigurationError) as exc_info:
+            build_event_store(ServerConfig(kv_store_url=_LEAKY_URL))
+        exc = exc_info.value
+        rendered = "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        )
+        assert "hunter2" not in rendered
+        assert "alice" not in rendered
 
     def test_file_url_without_path_raises(self):
-        """pvl-core rejects a path-less file:// URL (use the file:///path form)."""
+        """The factory rejects a path-less file:// URL (use the file:///path form)."""
         with pytest.raises(ConfigurationError):
-            build_event_store(_ENV_PREFIX, ServerConfig(event_store_url="file://"))
+            build_event_store(ServerConfig(event_store_url="file://"))
 
 
 class TestEventStoreConfig:
@@ -131,13 +152,13 @@ class TestFileEventStorePersistence:
         url = f"file://{store_dir}"
 
         # First store instance — write an event (None message = priming event)
-        store1 = build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=url))
+        store1 = build_event_store(ServerConfig(event_store_url=url))
         stream_id = "test-session-1"
         event_id = await store1.store_event(stream_id, None)
         assert event_id  # UUID string returned
 
         # Second store instance — same path, simulating restart
-        store2 = build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=url))
+        store2 = build_event_store(ServerConfig(event_store_url=url))
         # Verify the event is retrievable by replaying after it
         replayed_events: list = []
 

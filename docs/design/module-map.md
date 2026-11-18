@@ -133,7 +133,9 @@ src/markdown_vault_mcp/
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   _env.py              -- env/env_int/env_float/parse_bool/parse_list: every {PREFIX}_{NAME} read; imports no server stack (#2275, #2016)
+  _kv_store.py         -- build_kv_store (KV_STORE_URL backend dispatch, /data/state default) and build_event_store over it (#2279)
   _pvl_core.py         -- the only importer of fastmcp_pvl_core: re-exports the names still in use, grouped by the #2241 area that removes them (#2274)
+  _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279)
   _instructions.py     -- contribute_instructions: domain snippets added to pvl-core's instructions builder from server.py's DOMAIN-WIRING (#901)
   _server_apps.py      -- template-owned MCP Apps scaffold; its sentinels keep the template's text and call into _vault_apps / _vault_app_tools (#905)
   _vault_apps.py       -- domain helpers backing _server_apps sentinels: the app-shell AppConfig (Claude sandbox domain + CDN CSP) + GraphView→SPA wire serializer (#905)

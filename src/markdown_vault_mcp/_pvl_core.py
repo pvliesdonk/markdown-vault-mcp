@@ -30,13 +30,10 @@ from fastmcp_pvl_core import (
     TransferResourceGoneError,
     TransferSinkError,
     TransferUnavailableError,
-    _kv_store,
     apply_tool_visibility,
     build_auth,
     build_bearer_auth,
-    build_event_store,
     build_jobs,
-    build_kv_store,
     configure_logging_from_env,
     configure_task_backend,
     domain_env_suffixes,
@@ -88,11 +85,7 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "register_health_routes",
     "register_server_info_tool",
     "run_http",
-    # Event store, key-value store and task backend (#2279). ``_kv_store`` is
-    # the core module itself, so tests can patch its default directory.
-    "_kv_store",
-    "build_event_store",
-    "build_kv_store",
+    # Background-task backend (#2292).
     "configure_task_backend",
     # Tool boundary and the server-instructions builder (#2280).
     "CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16",

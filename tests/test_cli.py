@@ -361,7 +361,7 @@ def test_serve_http_reads_config_once() -> None:
     assert result.exit_code == 0, result.output
     mock_cfg.from_env.assert_called_once()
     assert mock_ms.call_args.kwargs.get("config") is mock_config
-    mock_bes.assert_called_once_with(_ENV_PREFIX, mock_config.server)
+    mock_bes.assert_called_once_with(mock_config.server)
 
 
 def test_serve_http_passes_config_to_run_http() -> None:
