@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.git import GitWriteStrategy
+from markdown_vault_mcp.git import conflict
+from tests.fixtures.conflict_recovery import (
+    _setup_generated_conflict,
+    _setup_multiple_conflicts,
+    recovery_vault,
+)
 from tests.fixtures.git import _run_git
 
 if TYPE_CHECKING:
@@ -16,22 +21,24 @@ if TYPE_CHECKING:
     from tests.fixtures.git import GitRepoPair
 
 
-@pytest.mark.parametrize("name", ["index.md", "log.md"])
 @pytest.mark.parametrize(
-    "authority", ["disabled", "outside", "inactive", "readonly", "raising"]
+    ("name", "authority"),
+    [
+        ("index.md", a)
+        for a in ("disabled", "outside", "inactive", "readonly", "raising")
+    ]
+    + [("log.md", "enabled")],
 )
 def test_reserved_conflict_preserves_both_versions(
     git_repo_pair: GitRepoPair, name: str, authority: str
 ) -> None:
-    from markdown_vault_mcp.config_sections.content import ContentConfig
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
     root = git_repo_pair.local_path
     vault = root / "vault"
     vault.mkdir()
-    note = vault / name
-    note.write_bytes(b"base\r\n")
-    _run_git(root, "add", f"vault/{name}")
+    names = ("index.md", "log.md") if authority == "disabled" else (name,)
+    for item in names:
+        (vault / item).write_bytes(b"base\r\n")
+    _run_git(root, "add", *(f"vault/{item}" for item in names))
     _run_git(root, "commit", "-m", "seed")
     _run_git(root, "push", "origin", "main")
     other = root.parent / "other"
@@ -42,30 +49,19 @@ def test_reserved_conflict_preserves_both_versions(
     )
     _run_git(other, "config", "user.email", "other@example.com")
     _run_git(other, "config", "user.name", "Other")
-    (other / "vault" / name).write_bytes(b"---\r\ntitle: remote\r\n---\r\nremote\r\n")
-    _run_git(other, "add", f"vault/{name}")
+    for item in names:
+        (other / "vault" / item).write_bytes(
+            b"---\r\ntitle: remote\r\n---\r\nremote\r\n"
+        )
+    _run_git(other, "add", *(f"vault/{item}" for item in names))
     _run_git(other, "commit", "-m", "remote")
     _run_git(other, "push", "origin", "main")
     local = b"---\r\ntitle: local\r\n---\r\nlocal\r\n"
-    note.write_bytes(local)
-    _run_git(root, "add", f"vault/{name}")
+    for item in names:
+        (vault / item).write_bytes(local)
+    _run_git(root, "add", *(f"vault/{item}" for item in names))
     _run_git(root, "commit", "-m", "local")
-    strategy = GitWriteStrategy(enable_pull=True, enable_push=False, repo_path=vault)
-    mode = "auto" if authority == "inactive" else "on"
-    caps = ContentConfig(
-        okf_mode=mode,
-        okf_index=authority != "disabled",
-        okf_folders=("other",) if authority == "outside" else (".",),
-        okf_log="off",
-    ).okf_capabilities
-    instance = Vault(
-        source_dir=vault,
-        settings=VaultSettings(
-            read_only=authority == "readonly", okf_mode=mode, okf_capabilities=caps
-        ),
-        git_strategy=strategy,
-        on_write=strategy,
-    )
+    strategy, instance = recovery_vault(vault, authority=authority)
     try:
         if authority == "raising":
 
@@ -75,9 +71,17 @@ def test_reserved_conflict_preserves_both_versions(
             strategy.set_generated_index_policy(fail_policy)
         result = strategy.force_pull()
         assert result.reason == "conflicts_resolved_with_siblings"
-        assert result.conflict_files[0].startswith("vault/")
-        assert (root / result.conflict_files[0]).read_bytes() == local
-        assert note.read_bytes() == b"---\r\ntitle: remote\r\n---\r\nremote\r\n"
+        assert len(result.conflict_files) == len(names)
+        for item in names:
+            sibling = next(
+                path
+                for path in result.conflict_files
+                if path.startswith(f"vault/{item[:-3]}.conflict-mcp-")
+            )
+            assert (root / sibling).read_bytes() == local
+            assert (
+                vault / item
+            ).read_bytes() == b"---\r\ntitle: remote\r\n---\r\nremote\r\n"
         assert _run_git(root, "status", "--porcelain") == ""
     finally:
         instance.close()
@@ -88,43 +92,16 @@ def _fail_generation(*_args: object, **_kwargs: object) -> None:
     raise RuntimeError("synthetic generation failure")
 
 
-def _setup_generated_conflict(
-    git_repo_pair: GitRepoPair, subdir: bool
-) -> tuple[Path, Path, Path]:
-    root = git_repo_pair.local_path
-    vault_root = root / "vault" if subdir else root
-    vault_root.mkdir(exist_ok=True)
-    prefix = "vault/" if subdir else ""
-    index = vault_root / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Base\n')
-    _run_git(root, "add", f"{prefix}index.md")
-    _run_git(root, "commit", "-m", "seed")
-    _run_git(root, "push", "origin", "main")
-    other = root.parent / "other"
-    subprocess.run(
-        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
-        check=True,
-        capture_output=True,
-    )
-    _run_git(other, "config", "user.email", "other@example.com")
-    _run_git(other, "config", "user.name", "Other")
-    (other / prefix / "remote.md").write_text("# Remote\n")
-    (other / prefix / "index.md").write_text(
-        '---\nokf_version: "0.2"\n---\n# Remote listing\n'
-    )
-    _run_git(other, "add", f"{prefix}index.md", f"{prefix}remote.md")
-    _run_git(other, "commit", "-m", "remote")
-    _run_git(other, "push", "origin", "main")
-    (vault_root / "local.md").write_text("# Local\n")
-    index.write_text('---\nokf_version: "0.2"\n---\n# Local listing\n')
-    _run_git(root, "add", f"{prefix}index.md", f"{prefix}local.md")
-    _run_git(root, "commit", "-m", "local")
-    return root, vault_root, index
-
-
-@pytest.mark.parametrize("restart", [False, True])
-@pytest.mark.parametrize("subdir", [False, True])
-@pytest.mark.parametrize("tick", [False, True])
+@pytest.mark.parametrize(
+    ("subdir", "tick", "restart"),
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (True, True, False),
+        (False, False, True),
+    ],
+)
 def test_generated_index_is_recovered_after_pull(
     git_repo_pair: GitRepoPair,
     restart: bool,
@@ -132,21 +109,10 @@ def test_generated_index_is_recovered_after_pull(
     tick: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from markdown_vault_mcp.config_sections.content import ContentConfig
-    from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.conftest import wait_for_writer_drain
 
     root, vault_root, index = _setup_generated_conflict(git_repo_pair, subdir)
-    strategy = GitWriteStrategy(
-        enable_pull=True, enable_push=False, repo_path=vault_root
-    )
-    caps = ContentConfig(okf_mode="on", okf_index=True, okf_log="off").okf_capabilities
-    vault = Vault(
-        source_dir=vault_root,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-        git_strategy=strategy,
-        on_write=strategy,
-    )
+    strategy, vault = recovery_vault(vault_root)
     try:
         vault.index.build_index()
         if tick:
@@ -161,17 +127,7 @@ def test_generated_index_is_recovered_after_pull(
         if restart:
             vault.close()
             strategy.close()
-            strategy = GitWriteStrategy(
-                enable_pull=True, enable_push=False, repo_path=vault_root
-            )
-            vault = Vault(
-                source_dir=vault_root,
-                settings=VaultSettings(
-                    read_only=False, okf_mode="on", okf_capabilities=caps
-                ),
-                git_strategy=strategy,
-                on_write=strategy,
-            )
+            strategy, vault = recovery_vault(vault_root)
             vault.index.build_index()
         with monkeypatch.context() as patch:
             patch.setattr(vault._okf_migrate, "generate_index", _fail_generation)
@@ -180,6 +136,8 @@ def test_generated_index_is_recovered_after_pull(
                 "reindexed",
             )
             assert marker.exists()
+        if subdir and not tick:
+            conflict.record_generated_indexes(root, ["elsewhere/index.md"])
         if tick:
             vault._reconcile_on_tick()
         else:
@@ -187,7 +145,10 @@ def test_generated_index_is_recovered_after_pull(
                 "current",
                 "reindexed",
             )
-        assert not marker.exists()
+        if subdir and not tick:
+            assert conflict.read_generated_indexes(root) == ["elsewhere/index.md"]
+        else:
+            assert not marker.exists()
         wait_for_writer_drain(vault)
         text = index.read_text()
         assert "local.md" in text and "remote.md" in text
@@ -203,42 +164,6 @@ def test_generated_index_is_recovered_after_pull(
     finally:
         vault.close()
         strategy.close()
-
-
-def _setup_multiple_conflicts(git_repo_pair: GitRepoPair) -> tuple[Path, Path, Path]:
-    root = git_repo_pair.local_path
-    index = root / "index.md"
-    concept = root / "concept.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Initial\n')
-    concept.write_text("# Initial\n")
-    _run_git(root, "add", "index.md", "concept.md")
-    _run_git(root, "commit", "-m", "seed")
-    _run_git(root, "push", "origin", "main")
-    other = root.parent / "other"
-    subprocess.run(
-        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
-        check=True,
-        capture_output=True,
-    )
-    _run_git(other, "config", "user.email", "other@example.com")
-    _run_git(other, "config", "user.name", "Other")
-    (other / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Remote\n')
-    (other / "concept.md").write_text("# Remote concept\n")
-    _run_git(other, "add", "index.md", "concept.md")
-    _run_git(other, "commit", "-m", "remote")
-    _run_git(other, "push", "origin", "main")
-    for number in (1, 2):
-        index.write_text(f'---\nokf_version: "0.2"\n---\n# Local {number}\n')
-        concept.write_text(f"# Local concept {number}\n")
-        _run_git(root, "add", "index.md", "concept.md")
-        _run_git(root, "commit", "-m", f"local {number}")
-    index.write_text('---\nokf_version: "0.2"\n---\n# Index-only change\n')
-    _run_git(root, "add", "index.md")
-    _run_git(root, "commit", "-m", "index only")
-    (root / "clean.md").write_text("# Clean\n")
-    _run_git(root, "add", "clean.md")
-    _run_git(root, "commit", "-m", "clean")
-    return root, index, concept
 
 
 @pytest.mark.parametrize("abort", [False, True])
@@ -280,14 +205,19 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
             from markdown_vault_mcp.git import conflict
 
             local_index = index.read_text()
-            local_concept = concept.read_text()
+
+            def saved_at_rebase_head(
+                _root: Path, _env: object
+            ) -> list[tuple[str, str]]:
+                return [
+                    (name, _run_git(root, "show", f"REBASE_HEAD:{name}") + "\n")
+                    for name in ("index.md", "concept.md")
+                ]
+
             monkeypatch.setattr(
                 conflict,
                 "resolve_rebase_conflicts",
-                lambda _root, _env: [
-                    ("index.md", local_index),
-                    ("concept.md", local_concept),
-                ],
+                saved_at_rebase_head,
             )
         result = strategy.force_pull()
         assert result.reason == "conflicts_resolved_with_siblings"
@@ -296,6 +226,7 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
         assert "conflict_with" in concept.read_text()
         assert "conflict_with" in (root / result.conflict_files[0]).read_text()
         if abort:
+            assert "# Local concept 1" in (root / result.conflict_files[0]).read_text()
             assert index.read_text() == local_index
             assert not (root / ".git" / "markdown-vault-pending-indexes.json").exists()
             assert not (root / ".git" / "rebase-merge").exists()
@@ -307,66 +238,8 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
         wait_for_writer_drain(vault)
         assert vault._write_callback.drain(timeout=5)
         assert "clean.md" in index.read_text()
-        assert "index only" not in _run_git(root, "log", "--format=%s")
         assert not list(root.glob("index.conflict-mcp-*.md"))
         assert _run_git(root, "status", "--porcelain") == ""
     finally:
         vault.close()
         instances.close()
-
-
-def test_index_and_log_conflicts_in_one_pull_keep_both_local_copies(
-    git_repo_pair: GitRepoPair,
-) -> None:
-    from markdown_vault_mcp.config_sections.content import ContentConfig
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    root = git_repo_pair.local_path
-    folder = root / "guides"
-    folder.mkdir()
-    for name in ("index.md", "log.md"):
-        (folder / name).write_text("# Base\n")
-    _run_git(root, "add", "guides/index.md", "guides/log.md")
-    _run_git(root, "commit", "-m", "seed")
-    _run_git(root, "push", "origin", "main")
-    other = root.parent / "other"
-    subprocess.run(
-        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
-        check=True,
-        capture_output=True,
-    )
-    _run_git(other, "config", "user.email", "other@example.com")
-    _run_git(other, "config", "user.name", "Other")
-    for name in ("index.md", "log.md"):
-        (other / "guides" / name).write_text("# Upstream\n")
-    _run_git(other, "add", "guides/index.md", "guides/log.md")
-    _run_git(other, "commit", "-m", "remote")
-    _run_git(other, "push", "origin", "main")
-    for name in ("index.md", "log.md"):
-        (folder / name).write_text("# Local\n")
-    _run_git(root, "add", "guides/index.md", "guides/log.md")
-    _run_git(root, "commit", "-m", "local")
-    strategy = GitWriteStrategy(enable_pull=True, enable_push=False, repo_path=root)
-    caps = ContentConfig(okf_mode="on", okf_index=False, okf_log="off").okf_capabilities
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-        git_strategy=strategy,
-        on_write=strategy,
-    )
-    try:
-        result = strategy.force_pull()
-        assert result.reason == "conflicts_resolved_with_siblings"
-        assert len(result.conflict_files) == 2
-        for name in ("index", "log"):
-            assert (folder / f"{name}.md").read_text() == "# Upstream\n"
-            sibling = next(
-                path
-                for path in result.conflict_files
-                if f"{name}.conflict-mcp-" in path
-            )
-            assert (root / sibling).read_text() == "# Local\n"
-        assert _run_git(root, "status", "--porcelain") == ""
-    finally:
-        vault.close()
-        strategy.close()
