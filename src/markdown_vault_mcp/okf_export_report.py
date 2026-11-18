@@ -25,6 +25,14 @@ class LocalPolicy:
     unknown: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Dependency:
+    """An unresolved body destination and its source path."""
+
+    path: str
+    target: str
+
+
 @dataclass
 class OkfExportReport:
     """Omissions and partial v0.2 format observations for an export.
@@ -35,6 +43,8 @@ class OkfExportReport:
     These observations do not establish conformance.
     """
 
+    transformed: list[str] = field(default_factory=list)
+    dependencies: list[Dependency] = field(default_factory=list)
     omitted: dict[str, int] = field(default_factory=dict)
     local_policy: LocalPolicy = field(default_factory=LocalPolicy)
     format_findings: list[FormatFinding] = field(default_factory=list)

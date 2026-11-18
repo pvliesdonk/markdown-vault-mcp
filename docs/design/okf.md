@@ -744,8 +744,15 @@ generated-bytes download the generic `create_download_link` serves unchanged.
 
 The bundle copies live inventory independently of search admission. Resolvable
 wikilinks are rewritten only for searchable notes using the existing graph,
-which can be stale; notes outside the index retain raw links and bytes. The
-report does not list unconverted links. Convention files, templates, hidden
+which can be stale; notes outside the index retain raw wikilinks. A subtree
+becomes the archive root. Body destinations to selected files are relocated
+when root-relative; relative destinations between selected files stay as written.
+Outside destinations are reported as dependencies, and a destination that would
+point to a different exported file refuses the export. Library callers can supply
+`external_base` to turn outside destinations into absolute URLs. The report
+lists files whose bytes changed. Frontmatter stays unchanged, and only the
+selected root’s own index can provide an `okf_version`. The report does not
+list unconverted wikilinks. Convention files, templates, hidden
 paths and index-excluded paths are omitted by default. Reserved `index.md` and
 `log.md` are kept unless an omission policy applies, including a matching
 configured conventions filename. Library callers can opt into hidden and

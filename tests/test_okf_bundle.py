@@ -93,7 +93,7 @@ def test_bundle_rewrites_resolvable_wikilinks(vault: Vault, config: ProjectConfi
 @pytest.mark.parametrize("scope", ["guides", "guides/./", "guides//"])
 def test_bundle_folder_scope(vault: Vault, config: ProjectConfig, scope: str):
     members = _members(build_okf_bundle(vault, config, folder=scope).data)
-    assert members == {"guides/one.md"}
+    assert members == {"one.md"}
 
 
 def test_bundle_is_byte_reproducible(vault: Vault, config: ProjectConfig):

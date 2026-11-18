@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+from markdown_vault_mcp.okf_export_paths import relocate_body
 from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
@@ -134,20 +135,32 @@ def _require_complete(page: BundleInspection, folder: str) -> None:
         )
 
 
-def _note_bytes(raw: bytes, item: BundleEntry, vault: Vault) -> bytes:
+def _note_bytes(
+    raw: bytes,
+    item: BundleEntry,
+    vault: Vault,
+    folder: str,
+    members: set[str],
+    report: OkfExportReport,
+    external_base: str | None,
+) -> bytes:
     """Convert indexed graph links while preserving every other byte."""
-    if item.search_state != "searchable":
-        return raw
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError:
         return raw
     body = strip_frontmatter_block(content.removeprefix("\ufeff"))
     prefix = content[: len(content) - len(body)]
-    body, _, _ = convert_wikilinks_to_markdown(
-        body, vault.graph.get_outlinks(item.path)
-    )
-    return (prefix + body).encode("utf-8")
+    if item.search_state == "searchable":
+        body, _, _ = convert_wikilinks_to_markdown(
+            body, vault.graph.get_outlinks(item.path)
+        )
+    body, dependencies = relocate_body(body, item.path, folder, members, external_base)
+    report.dependencies.extend(dependencies)
+    result = (prefix + body).encode("utf-8")
+    if result != raw:
+        report.transformed.append(item.path)
+    return result
 
 
 def build_okf_bundle(
@@ -157,6 +170,7 @@ def build_okf_bundle(
     folder: str = "",
     include_index_excluded: bool = False,
     include_hidden: bool = False,
+    external_base: str | None = None,
 ) -> OkfBundleResult:
     """Export the selected inventory with partial OKF v0.2 observations.
 
@@ -166,6 +180,7 @@ def build_okf_bundle(
         folder: Vault-relative scope root, or empty for the entire vault.
         include_index_excluded: Include paths omitted from the search index.
         include_hidden: Include dot-paths other than internal state.
+        external_base: URL prefix for body destinations outside the selection.
 
     Returns:
         Archive bytes, counts, and a partial report; no conformance verdict.
@@ -180,41 +195,50 @@ def build_okf_bundle(
     buf = io.BytesIO()
     notes = attachments = excluded = 0
     cursor = None
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        while True:
-            page = vault.reader.inspect_bundle_tree(
-                BundleTreeRequest(root=folder, entry_limit=1000, cursor=cursor)
+    selected = []
+    while True:
+        page = vault.reader.inspect_bundle_tree(
+            BundleTreeRequest(root=folder, entry_limit=1000, cursor=cursor)
+        )
+        _require_complete(page, folder)
+        for item in page.entries:
+            if item.role == "directory":
+                continue
+            reasons = _omission_reasons(
+                item,
+                config,
+                include_index_excluded=include_index_excluded,
+                include_hidden=include_hidden,
             )
-            _require_complete(page, folder)
-            for item in page.entries:
-                if item.role == "directory":
-                    continue
-                reasons = _omission_reasons(
-                    item,
-                    config,
-                    include_index_excluded=include_index_excluded,
-                    include_hidden=include_hidden,
+            for reason in reasons:
+                report.omitted[reason] = report.omitted.get(reason, 0) + 1
+            if reasons:
+                excluded += 1
+                continue
+            if item.state in {"unavailable", "missing"}:
+                raise OSError(f"Cannot export {item.path}: {item.reason or item.state}")
+            selected.append(item)
+        if page.next_cursor is None:
+            break
+        cursor = page.next_cursor
+    members = {item.path for item in selected}
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in selected:
+            raw = _read_safe(vault.source_dir, item.path)
+            name = item.path[len(folder) + 1 :] if folder else item.path
+            if item.role == "supporting":
+                _write(zf, name, raw)
+                attachments += 1
+            else:
+                _observe_export(item, report)
+                _write(
+                    zf,
+                    name,
+                    _note_bytes(
+                        raw, item, vault, folder, members, report, external_base
+                    ),
                 )
-                for reason in reasons:
-                    report.omitted[reason] = report.omitted.get(reason, 0) + 1
-                if reasons:
-                    excluded += 1
-                    continue
-                if item.state in {"unavailable", "missing"}:
-                    raise OSError(
-                        f"Cannot export {item.path}: {item.reason or item.state}"
-                    )
-                raw = _read_safe(vault.source_dir, item.path)
-                if item.role == "supporting":
-                    _write(zf, item.path, raw)
-                    attachments += 1
-                else:
-                    _observe_export(item, report)
-                    _write(zf, item.path, _note_bytes(raw, item, vault))
-                    notes += 1
-            if page.next_cursor is None:
-                break
-            cursor = page.next_cursor
+                notes += 1
     logger.info(
         "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d",
         folder or "(root)",
