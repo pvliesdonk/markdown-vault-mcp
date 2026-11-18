@@ -48,7 +48,7 @@ settings = GitWriteSettings(token="ghp_your_token", push_delay_s=30)
 strategy = GitWriteStrategy(settings=settings, repo_path=Path("/path/to/vault"))
 ```
 
-Legacy flat arguments remain supported. With `settings`, flat arguments must have their default values.
+Legacy flat arguments remain supported. With `settings`, flat arguments must have their default values. The settings object takes precedence over default-valued flat arguments.
 
 ## Migrating from 4.x
 

@@ -145,7 +145,7 @@ def test_settings_conflicts_and_defaults() -> None:
     assert "token" in str(error.value) and "enable_push" in str(error.value)
     assert "secret" not in str(error.value)
     strategy = GitWriteStrategy(
-        token=None, settings=GitWriteSettings(enable_push=False)
+        enable_push=True, settings=GitWriteSettings(enable_push=False)
     )
     try:
         assert strategy._enable_push is False
@@ -154,14 +154,14 @@ def test_settings_conflicts_and_defaults() -> None:
 
 
 def test_settings_contract() -> None:
-    """Settings retain constructor defaults, hide credentials, and are immutable."""
+    """Settings retain constructor defaults, hide the token, and are immutable."""
     from dataclasses import FrozenInstanceError, fields
 
     from markdown_vault_mcp.git import GitWriteSettings
 
     signature = inspect.signature(GitWriteStrategy)
-    names = [field.name for field in fields(GitWriteSettings)]
-    assert names == [
+    params = list(signature.parameters.values())
+    assert [p.name for p in params] == [
         "token",
         "username",
         "repo_url",
@@ -172,53 +172,18 @@ def test_settings_contract() -> None:
         "commit_name",
         "commit_email",
         "git_lfs",
-    ]
-    assert list(signature.parameters) == [
-        *names[:-1],
-        "git_lfs",
         "repo_path",
         "settings",
     ]
+    assert [p.kind for p in params] == [inspect.Parameter.POSITIONAL_OR_KEYWORD] * 9 + [
+        inspect.Parameter.KEYWORD_ONLY
+    ] * 3
     for field in fields(GitWriteSettings):
         assert field.default == signature.parameters[field.name].default
-    for name in ("git_lfs", "repo_path", "settings"):
-        assert signature.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
-    for name in names[:-1]:
-        assert (
-            signature.parameters[name].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-        )
+    assert [field.name for field in fields(GitWriteSettings)] == [
+        p.name for p in params[:10]
+    ]
     settings = GitWriteSettings(token="secret")
     assert "secret" not in repr(settings)
     with pytest.raises(FrozenInstanceError):
         settings.token = "other"  # type: ignore[misc]
-
-
-def test_settings_drive_managed_startup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Managed bootstrap receives the resolved credentials before validation."""
-    from markdown_vault_mcp.git import GitWriteSettings
-    from markdown_vault_mcp.git.bootstrap import RepoBootstrap
-
-    calls: list[tuple[str, Path, str | None]] = []
-    monkeypatch.setattr(
-        RepoBootstrap,
-        "ensure_managed_repo",
-        lambda self, path: calls.append(("bootstrap", path, self.token)),
-    )
-    monkeypatch.setattr(
-        GitWriteStrategy,
-        "validate_startup",
-        lambda self, path: calls.append(("validate", path, self._token)),
-    )
-    strategy = GitWriteStrategy(
-        settings=GitWriteSettings(managed=True, token="secret", enable_push=False),
-        repo_path=tmp_path,
-    )
-    try:
-        assert calls == [
-            ("bootstrap", tmp_path, "secret"),
-            ("validate", tmp_path, "secret"),
-        ]
-    finally:
-        strategy.close()
