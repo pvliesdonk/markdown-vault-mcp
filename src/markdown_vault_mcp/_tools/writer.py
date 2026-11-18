@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
-import hashlib
 import logging
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Literal
@@ -49,6 +48,7 @@ from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
 from .._identity import bound_principal, resolve_mcp_principal
+from .._okf_receipts import ReceiptNotRecordedError
 from .._okf_write import (
     resolve_human_subject,
     resolve_verify_subject,
@@ -84,6 +84,10 @@ def write_identity_scope() -> Iterator[None]:
 _FETCH_UNCAPPED_BYTES = 2**63 - 1
 
 _REVIEW_RESPONSE_KEY = "review_confirmed"
+_RECEIPT_STATE_UNUSABLE = (
+    "Local review receipt state is corrupt or from a newer server version, so "
+    "nothing was written. Ask the operator to check the server's local state."
+)
 
 
 async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None:
@@ -109,9 +113,7 @@ def _review_message(path: str, digest: str, check: str) -> str:
     )
 
 
-def _review_input_required(
-    path: str, digest: str, check: str, key: str
-) -> InputRequiredResult:
+def _review_input_required(path: str, digest: str, check: str) -> InputRequiredResult:
     """Build the modern-protocol review request for *path*."""
     request = ElicitRequest(
         method="elicitation/create",
@@ -131,12 +133,12 @@ def _review_input_required(
     )
     return InputRequiredResult(
         result_type="input_required",
-        input_requests={key: request},
+        input_requests={_REVIEW_RESPONSE_KEY: request},
     )
 
 
 def _require_modern_review(
-    ctx: Context, path: str, digest: str, check: str, key: str
+    ctx: Context, path: str, digest: str, check: str
 ) -> InputRequiredResult | None:
     """Return a review request or validate its modern-protocol response.
 
@@ -145,8 +147,8 @@ def _require_modern_review(
     """
     responses = ctx.input_responses
     if responses is None:
-        return _review_input_required(path, digest, check, key)
-    answer = responses.get(key)
+        return _review_input_required(path, digest, check)
+    answer = responses.get(_REVIEW_RESPONSE_KEY)
     if (
         isinstance(answer, ElicitResult)
         and answer.action == "accept"
@@ -254,16 +256,7 @@ async def _resolve_verify_mode_subject(
         request_context is not None
         and request_context.protocol_version in MODERN_PROTOCOL_VERSIONS
     ):
-        token = hashlib.sha256(
-            f"{path}\0{snapshot['digest']}\0{check}".encode()
-        ).hexdigest()
-        request = _require_modern_review(
-            ctx,
-            path,
-            snapshot["digest"],
-            check,
-            f"{_REVIEW_RESPONSE_KEY}_{token}",
-        )
+        request = _require_modern_review(ctx, path, snapshot["digest"], check)
         if request is not None:
             return request
     else:
@@ -1279,10 +1272,12 @@ def register(mcp: FastMCP) -> None:
             await asyncio.to_thread(
                 vault.writer.require_reviewable, path, reviewed_snapshot
             )
-        except (OSError, StoreUnsupportedSchemaError) as exc:
+        except StoreUnsupportedSchemaError as exc:
+            raise ToolError(_RECEIPT_STATE_UNUSABLE) from exc
+        except OSError as exc:
             raise ToolError(
-                "Local review receipt storage is unavailable; nothing was written. Ask the operator to check local state.",
-                log_level=logging.INFO,
+                f"Could not read note {path!r} or the local review receipt state, "
+                "so nothing was written. Ask the operator to check the server's files."
             ) from exc
         subject_or_request = await _resolve_verify_mode_subject(
             mode=config.content.okf_capabilities.verify,
@@ -1311,9 +1306,20 @@ def register(mcp: FastMCP) -> None:
                 "was written. Read and review the current text before retrying.",
                 log_level=logging.INFO,
             ) from exc
-        except (OSError, StoreUnsupportedSchemaError) as exc:
+        except StoreUnsupportedSchemaError as exc:
+            raise ToolError(_RECEIPT_STATE_UNUSABLE) from exc
+        except ReceiptNotRecordedError as exc:
             raise ToolError(
-                "Local review receipt storage is unavailable; nothing was written. Ask the operator to check local state.",
-                log_level=logging.INFO,
+                f"The review was recorded in note {path!r}, but no local receipt "
+                "was saved, so this server holds no local evidence of it. Do not "
+                "call okf_verify again for this review; ask the operator to check "
+                "the server's local state."
+            ) from exc
+        except OSError as exc:
+            raise ToolError(
+                f"Writing the review to note {path!r} failed with an I/O error; "
+                "the note may already hold it, and no local receipt was saved. "
+                "Read the note again before deciding whether to call okf_verify "
+                "again."
             ) from exc
         return attach_remote_health(vault, result)

@@ -409,28 +409,20 @@ class TestOkfVerifyTrustAuth:
     async def test_aborts_on_concurrent_modification(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # okf_verify reads then writes with if_match=note.etag. Simulate a
-        # concurrent write landing in that window by mutating the file from
-        # inside the transform (which runs after the read); the etag no longer
-        # matches, so the write is refused rather than clobbering the change.
+        # Edit after the facet's read but before the guarded note write.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         import markdown_vault_mcp.facets.writer as writer_mod
 
-        real_append = writer_mod.append_okf_verification
+        real_write = writer_mod.WriterFacet.write
 
-        calls = 0
+        def racing_write(self: Any, *args: Any, **kwargs: Any) -> Any:
+            (trust_auth_env / "guides" / "playbook.md").write_text(
+                "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
+            )
+            return real_write(self, *args, **kwargs)
 
-        def racing_append(text: str, *, subject: str, now: Any, **kwargs: Any) -> str:
-            nonlocal calls
-            calls += 1
-            if calls == 3:
-                (trust_auth_env / "guides" / "playbook.md").write_text(
-                    "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
-                )
-            return real_append(text, subject=subject, now=now, **kwargs)
-
-        monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
+        monkeypatch.setattr(writer_mod.WriterFacet, "write", racing_write)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="changed while it was being verified"):
@@ -541,6 +533,17 @@ class TestOkfVerifyElicit:
             with pytest.raises(MCPError, match="Elicitation not supported"):
                 await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
+        assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
+
+    async def test_unsupported_legacy_client_fails_closed(
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
+        async with Client(make_server(), mode="legacy") as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match=r"client.*cannot ask"):
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
         assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
 

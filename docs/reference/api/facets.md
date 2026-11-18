@@ -239,4 +239,4 @@ status.
 ::: markdown_vault_mcp.facets.index.IndexFacet
 <!-- vale on -->
 
-Snapshot-bound library reviews use `WriterFacet.okf_verify` with a `ReviewRequest` from `markdown_vault_mcp._okf_review`, carrying the reviewed snapshot and the etag from the whole-note read; pass the reviewer subject separately. The call records the claim and the local receipt, and refuses a changed etag.
+Snapshot-bound library reviews use `WriterFacet.okf_verify(path, subject, snapshot, check="human-review")`. Pass the snapshot from the whole-note read and the reviewer subject. The call checks the snapshot, writes the claim with an etag guard and records a local receipt.

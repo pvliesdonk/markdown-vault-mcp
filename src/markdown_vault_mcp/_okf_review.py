@@ -114,29 +114,6 @@ def concept_snapshot(text: str) -> dict[str, str]:
     return {"algo": "mvmcp-concept-v1", "digest": compute_etag(payload)}
 
 
-def validate_reviewed_snapshot(text: str, snapshot: dict[str, str]) -> dict[str, str]:
-    """Check that a supplied snapshot identifies the current concept.
-
-    Args:
-        text: Complete current note text.
-        snapshot: Snapshot returned by a whole-note read.
-
-    Returns:
-        The matching canonical snapshot.
-
-    Raises:
-        InvalidRequestError: If the snapshot is malformed or stale.
-    """
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
-    if concept_snapshot(text) != snapshot:
-        raise InvalidRequestError(
-            "The reviewed snapshot is invalid or no longer current. Read the full "
-            "note, review it, and pass its snapshot to okf_verify."
-        )
-    return snapshot
-
-
 def _review_sequence(source: str, node: SequenceNode, value: dict[str, Any]) -> str:
     from markdown_vault_mcp._okf_author import _render
 
@@ -171,8 +148,6 @@ def _review_nodes(node: MappingNode) -> dict[str, Any]:
             raise InvalidRequestError(
                 "Duplicate review fields cannot be safely updated"
             )
-        if value.start_mark.index < key.end_mark.index:
-            raise InvalidRequestError("Cannot safely update an aliased review field")
         result[key.value] = value
     return result
 

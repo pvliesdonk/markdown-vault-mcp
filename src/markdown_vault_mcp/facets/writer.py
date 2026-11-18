@@ -10,12 +10,15 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 
-from markdown_vault_mcp._okf_review import concept_snapshot, validate_reviewed_snapshot
+from markdown_vault_mcp._okf_receipts import ReceiptNotRecordedError
+from markdown_vault_mcp._okf_review import concept_snapshot
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
     InvalidRequestError,
+    StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.okf import (
     append_okf_verification,
@@ -101,18 +104,43 @@ class WriterFacet:
         self._link_reporter = link_reporter
         self._receipt_store = receipt_store
 
-    def require_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
-        """Read a current note and check receipt storage before confirmation."""
-        from markdown_vault_mcp.exceptions import DocumentNotFoundError
-
+    def _current_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
+        """Read *path*, refuse a stale snapshot and check receipt storage."""
         note = self._doc_mgr.read(path)
         if note is None:
             raise DocumentNotFoundError.note(path)
-        validate_reviewed_snapshot(note.content, snapshot)
+        if concept_snapshot(note.content) != snapshot:
+            raise InvalidRequestError(
+                "The reviewed snapshot is invalid or no longer current. Read the full "
+                "note, review it, and pass its snapshot to okf_verify."
+            )
         if self._receipt_store is None:
             raise InvalidRequestError("Local review receipt storage is not configured")
         self._receipt_store.check()
-        # Check format and safe edits before elicitation as well.
+        return note
+
+    def require_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
+        """Check that a review of *snapshot* can be recorded, before confirmation.
+
+        Runs the review transform on the current text without writing, so an
+        unsupported header is refused before the user is asked.
+
+        Args:
+            path: Vault-relative note path.
+            snapshot: Snapshot from the whole-note read that was reviewed.
+
+        Returns:
+            The current note.
+
+        Raises:
+            DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the snapshot is stale or malformed, receipt
+                storage is not configured or lies inside the vault, or the
+                note's header cannot take a review.
+            StoreUnsupportedSchemaError: If receipt state is corrupt or newer.
+            OSError: If the note or receipt state cannot be read.
+        """
+        note = self._current_reviewable(path, snapshot)
         append_okf_verification(
             note.content,
             subject="local",
@@ -128,12 +156,36 @@ class WriterFacet:
         snapshot: dict[str, str],
         check: str = "human-review",
     ) -> dict[str, Any]:
-        """Record a reviewed snapshot and its local receipt."""
-        if not isinstance(subject, str) or not subject.strip():
-            raise InvalidRequestError("Reviewer subject must not be empty")
-        if not isinstance(check, str) or not check.strip():
-            raise InvalidRequestError("Review check must not be empty")
-        note = self.require_reviewable(path, snapshot)
+        """Write a review of *snapshot* into the note, then its local receipt.
+
+        The receipt is evidence of a completed write, so it is appended only
+        after the guarded note write succeeds.
+
+        Args:
+            path: Vault-relative note path.
+            subject: Reviewer identity, recorded as ``human:<subject>``.
+            snapshot: Snapshot from the whole-note read that was reviewed.
+            check: Kind of review performed.
+
+        Returns:
+            The note path, the recorded verifier and the number of ``verified``
+            entries the note now holds.
+
+        Raises:
+            DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the snapshot is stale or malformed, receipt
+                storage is unusable, or the header cannot take the review
+                losslessly; nothing was written.
+            StoreUnsupportedSchemaError: If receipt state is corrupt or newer;
+                nothing was written.
+            ConcurrentModificationError: If the note changed after it was read;
+                nothing was written.
+            OSError: If writing the note, or a callback after it, failed; the
+                note may already hold the review, and no receipt was recorded.
+            ReceiptNotRecordedError: If the note holds the review but its
+                local receipt could not be saved.
+        """
+        note = self._current_reviewable(path, snapshot)
         now = datetime.now(UTC)
         text = append_okf_verification(
             note.content,
@@ -142,26 +194,22 @@ class WriterFacet:
             reviewed_snapshot=snapshot,
             check=check,
         )
-        if concept_snapshot(text) != snapshot:
-            raise InvalidRequestError(
-                "Cannot safely preserve this note while recording the review"
-            )
-        store = self._receipt_store
-        if store is None:
-            raise InvalidRequestError("Local review receipt storage is not configured")
-        actor = f"human:{subject}"
-        store.append(
-            {
-                "path": note.path,
-                "by": actor,
-                "at": okf_timestamp(now),
-                "check": check,
-                "snapshot": dict(snapshot),
-                "recorded_at": okf_timestamp(datetime.now(UTC)),
-            }
-        )
         with okf_write_suppressed():
             self.write(path, text, if_match=note.etag)
+        actor = f"human:{subject}"
+        try:
+            cast("ReceiptStore", self._receipt_store).append(
+                {
+                    "path": note.path,
+                    "by": actor,
+                    "at": okf_timestamp(now),
+                    "check": check,
+                    "snapshot": dict(snapshot),
+                    "recorded_at": okf_timestamp(datetime.now(UTC)),
+                }
+            )
+        except (OSError, StoreUnsupportedSchemaError) as exc:
+            raise ReceiptNotRecordedError(path) from exc
         return {
             "path": path,
             "verifier": actor,

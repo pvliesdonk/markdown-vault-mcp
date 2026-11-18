@@ -752,11 +752,11 @@ async def test_receipt_failure_reports_completed_note_write(
     async with Client(
         make_server(), mode="legacy", elicitation_handler=confirm
     ) as client:
-        with pytest.raises(ToolError, match="nothing was written"):
+        with pytest.raises(ToolError, match=r"recorded in note 'guides/plain\.md'"):
             await client.call_tool(
                 "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
             )
-    assert "verified:" not in path.read_text(encoding="utf-8")
+    assert "verified:" in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.usefixtures("_okf_env")

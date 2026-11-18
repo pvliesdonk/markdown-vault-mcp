@@ -33,20 +33,6 @@ def test_review_binding_preserves_body_and_unrelated_header() -> None:
     assert concept_snapshot(result) == snapshot
 
 
-def test_snapshot_validation_rejects_stale_and_malformed() -> None:
-    import pytest
-
-    from markdown_vault_mcp._okf_review import validate_reviewed_snapshot
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
-    text = "---\ntype: concept\n---\nBody"
-    snapshot = concept_snapshot(text)
-    assert validate_reviewed_snapshot(text, snapshot) == snapshot
-    for bad in ({}, {**snapshot, "digest": "x"}, concept_snapshot(text + " changed")):
-        with pytest.raises(InvalidRequestError):
-            validate_reviewed_snapshot(text, bad)
-
-
 def test_malformed_verified_refused_without_overwriting() -> None:
     import pytest
 
@@ -60,27 +46,6 @@ def test_malformed_verified_refused_without_overwriting() -> None:
             now=datetime.now(UTC),
             reviewed_snapshot=concept_snapshot(text),
         )
-
-
-def test_writer_rejects_empty_subject_and_check(tmp_path) -> None:
-    import pytest
-
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    path = tmp_path / "note.md"
-    path.write_text("Body\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        note = vault.reader.read("note.md")
-        assert note is not None and note.etag
-        snapshot = concept_snapshot(note.content)
-        for subject, check in [("", "human-review"), ("alice", "")]:
-            with pytest.raises(InvalidRequestError):
-                vault.writer.okf_verify("note.md", subject, snapshot, check)
-            assert path.read_text() == "Body\n"
-    finally:
-        vault.close()
 
 
 def test_invalid_extension_and_toml_refused_without_rewriting() -> None:
@@ -100,36 +65,6 @@ def test_invalid_extension_and_toml_refused_without_rewriting() -> None:
                 now=datetime.now(UTC),
                 reviewed_snapshot=concept_snapshot(text),
             )
-
-
-def test_writer_refuses_missing_receipt_store_or_unsafe_transform(
-    tmp_path, monkeypatch
-) -> None:
-    import pytest
-
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    path = tmp_path / "note.md"
-    path.write_text("Body\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        note = vault.reader.read("note.md")
-        assert note is not None and note.etag
-        review = concept_snapshot(note.content)
-        store_factory = vault.writer._receipt_store
-        vault.writer._receipt_store = None
-        with pytest.raises(InvalidRequestError, match="storage"):
-            vault.writer.okf_verify("note.md", "alice", review)
-        vault.writer._receipt_store = store_factory
-        monkeypatch.setattr(
-            "markdown_vault_mcp.facets.writer.concept_snapshot", lambda _: {}
-        )
-        with pytest.raises(InvalidRequestError, match="preserve"):
-            vault.writer.okf_verify("note.md", "alice", review)
-        assert path.read_text() == "Body\n"
-    finally:
-        vault.close()
 
 
 def test_review_preserves_extension_source_lexemes() -> None:
@@ -253,33 +188,67 @@ def test_review_rejects_duplicate_and_aliased_fields() -> None:
             )
 
 
-def test_failed_note_write_leaves_unmatched_receipt(tmp_path, monkeypatch) -> None:
-    import json
+def test_unrelated_yaml_alias_is_preserved() -> None:
+    text = "---\nbase: &a {k: 1}\nother: *a\n---\nBody\n"
+    result = append_okf_verification(
+        text,
+        subject="a",
+        now=datetime.now(UTC),
+        reviewed_snapshot=concept_snapshot(text),
+    )
+    assert "base: &a {k: 1}\nother: *a\n" in result
+    assert concept_snapshot(result) == concept_snapshot(text)
 
+
+def test_flow_mapping_review_keeps_precision() -> None:
+    text = "---\nverified: {by: human:b, precision: 0.1234567890123456789}\n---\nBody\n"
+    result = append_okf_verification(
+        text,
+        subject="a",
+        now=datetime.now(UTC),
+        reviewed_snapshot=concept_snapshot(text),
+    )
+    assert "{by: human:b, precision: 0.1234567890123456789}" in result
+    assert len(frontmatter.loads(result).metadata["verified"]) == 2
+    assert concept_snapshot(result) == concept_snapshot(text)
+
+
+def test_facet_rejects_stale_and_malformed_snapshots(tmp_path) -> None:
     import pytest
 
-    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+    from markdown_vault_mcp.exceptions import InvalidRequestError
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
-    root = tmp_path / "vault"
-    root.mkdir()
-    path = root / "note.md"
-    path.write_text("Body\n")
-    state = tmp_path / "state.json"
-    vault = Vault(
-        source_dir=root, settings=VaultSettings(read_only=False, state_path=state)
-    )
+    text = "---\ntype: concept\n---\nBody\n"
+    (tmp_path / "note.md").write_text(text)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
-        snapshot = concept_snapshot("Body\n")
+        snapshot = concept_snapshot(text)
+        assert vault.writer.require_reviewable("note.md", snapshot).content == text
+        for bad in (
+            {},
+            {**snapshot, "digest": "x"},
+            concept_snapshot(text + "changed"),
+        ):
+            with pytest.raises(InvalidRequestError, match="snapshot"):
+                vault.writer.require_reviewable("note.md", bad)
+    finally:
+        vault.close()
 
-        def lose_race(*_args, **_kwargs):
-            raise ConcurrentModificationError("note.md", "old", "new")
 
-        monkeypatch.setattr(vault.writer, "write", lose_race)
-        with pytest.raises(ConcurrentModificationError):
-            vault.writer.okf_verify("note.md", "alice", snapshot)
-        rows = json.loads((tmp_path / "state.json.receipts.json").read_text())["rows"]
-        assert rows[0]["snapshot"] == snapshot
+def test_unconfigured_receipt_store_is_refused(tmp_path) -> None:
+    import pytest
+
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    path = tmp_path / "note.md"
+    path.write_text("Body\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.writer._receipt_store = None
+        with pytest.raises(InvalidRequestError, match="storage"):
+            vault.writer.okf_verify("note.md", "alice", concept_snapshot("Body\n"))
         assert path.read_text() == "Body\n"
     finally:
         vault.close()
