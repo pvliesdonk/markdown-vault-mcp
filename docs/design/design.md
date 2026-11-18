@@ -7656,6 +7656,7 @@ is created in the nearest existing folder and removed immediately; if the probe
 fails, the guard assumes both case and Unicode folding when checking the policy.
 On a case-folding disk `[!a]*` also reserves `a`, because
 `A` matches; `[!aA]*` excludes both spellings. Character classes and `?` match
-the NFC-normalized folder spelling. A leaf symlink to an authored note is editable, while an alias
+the NFC-normalized folder spelling; the guard does not expand a folder into
+decomposed spellings for glob matching. A leaf symlink to an authored note is editable, while an alias
 to a designated index remains protected. Library callers retain the
 explicit `allow_protected` override. Other indexes and logs remain editable.

@@ -192,6 +192,25 @@ def test_nfc_literal_glob_protects_and_refreshes_alias(tmp_path: Path) -> None:
         vault.close()
 
 
+def test_nfc_undesignated_index_remains_editable(tmp_path: Path) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    folder = tmp_path / "é"
+    folder.mkdir()
+    index = folder / "index.md"
+    index.write_text("# authored\n")
+    vault = designated_vault(tmp_path, ("??",))
+    try:
+        vault.index.build_index()
+        vault.writer.write("é/note.md", "# note\n")
+        wait_for_writer_drain(vault)
+        assert index.read_text() == "# authored\n"
+        vault.writer.write("é/index.md", "# CLIENT\n")
+        assert "CLIENT" in index.read_text()
+    finally:
+        vault.close()
+
+
 def test_directory_named_index_is_not_reserved(tmp_path: Path) -> None:
     (tmp_path / "guides" / "index.md").mkdir(parents=True)
     (tmp_path / "guides" / "index.md" / "note.md").write_text("note")
@@ -312,8 +331,10 @@ def test_equivalent_segment_matches_original_glob(
     [
         (("a", "[!a]*"), (True, False), True),
         (("a", "[!a]*"), (False, False), False),
-        (("é", "??"), (False, True), True),
+        (("é", "??"), (False, True), False),
         (("é", "??"), (False, False), False),
+        (("é", "[!x]?"), (True, True), False),
+        (("É", "??"), (True, True), False),
         (("ff", "ﬀ"), (True, False), True),
         (("ff", "ﬀ"), (False, False), False),
         (("[]", "[]"), (True, True), True),

@@ -154,5 +154,5 @@ def designated_index_path(root: Path, path: str, folders: tuple[str, ...]) -> bo
     return _equivalent(note.name, "index.md", case, unicode) and folder_is_designated(
         resolved,
         folders,
-        segment_match=partial(_equivalent, case=case, unicode=unicode),
+        segment_match=partial(_equivalent, case=case, unicode=False),
     )
