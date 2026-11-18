@@ -104,6 +104,19 @@ _FETCH_UNCAPPED_BYTES = 2**63 - 1
 _REVIEW_RESPONSE_KEY = "review_confirmed"
 
 
+async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None:
+    """Refuse independent review when the vault is not active."""
+    if (
+        not config.content.okf_write
+        and not (await asyncio.to_thread(vault.okf.state)).active
+    ):
+        raise ToolError(
+            "OKF is not active for this vault, so okf_verify cannot record a review. "
+            "Ask the operator to declare the bundle or enable OKF for this vault.",
+            log_level=logging.INFO,
+        )
+
+
 def _review_message(path: str) -> str:
     """Build the human-review confirmation prompt for *path*."""
     return (
@@ -1165,7 +1178,8 @@ def register(mcp: FastMCP) -> None:
         tier to human-reviewed; returns the verifier recorded.
 
         The user may be asked to confirm the review. The record means a person looked,
-        not that the content is correct.
+        not that the content is correct. A retained review may describe an older
+        version of the note; it is not bound to the current content.
 
         Args:
             path: Path of the note the user reviewed.
@@ -1192,8 +1206,9 @@ def register(mcp: FastMCP) -> None:
             InvalidRequestError: If the path is protected.
         """
         await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
+        await _require_review_authority(config, vault)
         subject_or_request = await _resolve_verify_mode_subject(
-            mode=config.okf_verify, ctx=ctx, path=path
+            mode=config.content.okf_capabilities.verify, ctx=ctx, path=path
         )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
@@ -1210,6 +1225,7 @@ def register(mcp: FastMCP) -> None:
         # write/edit/delete in the window fails the attestation instead of
         # silently clobbering it or resurrecting a deleted note (#964). Suppress
         # the enricher so it does not clear the verification just added.
+        await _require_review_authority(config, vault)
         try:
             with okf_write_suppressed():
                 await asyncio.to_thread(

@@ -190,7 +190,11 @@ class OkfMigrationManager:
         )
 
     def generate_index(
-        self, *, folder: str = "", allow_protected: bool = False
+        self,
+        *,
+        folder: str = "",
+        allow_protected: bool = False,
+        designated: Callable[[str], bool] | None = None,
     ) -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing for *folder* from the TOC.
 
@@ -215,6 +219,8 @@ class OkfMigrationManager:
                 :func:`~markdown_vault_mcp.utils.normalize_folder`, so the
                 path arithmetic below is never handed a spelling with
                 surrounding slashes.
+            designated: Optional predicate restricting automatically created
+                descendant indexes; omitted for the usual migration behavior.
 
             allow_protected: Allow this library call to change protected paths.
 
@@ -231,7 +237,7 @@ class OkfMigrationManager:
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
         skipped: dict[str, str] = {}
-        result = self._generate_index(folder, skipped, allow_protected)
+        result = self._generate_index(folder, skipped, allow_protected, designated)
         written = [p for p in (result.path, *result.created) if p not in skipped]
         if skipped:
             raise InvalidRequestError(
@@ -241,7 +247,11 @@ class OkfMigrationManager:
         return result
 
     def _generate_index(
-        self, folder: str, skipped: dict[str, str], allow_protected: bool
+        self,
+        folder: str,
+        skipped: dict[str, str],
+        allow_protected: bool,
+        designated: Callable[[str], bool] | None,
     ) -> OkfIndexResult:
         """Generate eligible indexes and collect protected paths."""
         self._doc_mgr.ensure_writable()
@@ -278,11 +288,19 @@ class OkfMigrationManager:
             if not self._doc_mgr.in_submodule(prefix + sub)
             or self._has_index(prefix + sub)
         }
+        if designated is not None:
+            subfolders = {
+                sub
+                for sub in subfolders
+                if designated(prefix + sub) or self._has_index(prefix + sub)
+            }
         created: list[str] = []
         for sub in sorted(subfolders):
             child_folder = f"{prefix}{sub}"
             if not self._has_index(child_folder):
-                child = self._generate_index(child_folder, skipped, allow_protected)
+                child = self._generate_index(
+                    child_folder, skipped, allow_protected, designated
+                )
                 created += ([child.path] if child.path not in skipped else []) + list(
                     child.created
                 )

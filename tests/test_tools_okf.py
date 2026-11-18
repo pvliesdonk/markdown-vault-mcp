@@ -38,7 +38,7 @@ status: deprecated
 stale_after: 2020-01-01
 verified:
   - by: human:peter
-    at: 2026-01-01
+    at: "2026-01-01T00:00:00Z"
 sources:
   - resource: https://example.com/a
     id: a
@@ -152,9 +152,11 @@ async def _search(client: Client[Any], **kwargs: Any) -> list[dict[str, Any]]:
 
 @pytest.mark.usefixtures("_plain_env")
 class TestNonOkfBaseline:
-    """A vault without a declaration gets zero OKF payload changes."""
+    """An undeclared vault reports capabilities without note annotations."""
 
-    async def test_search_read_context_stats_carry_no_okf_key(self) -> None:
+    async def test_undeclared_notes_omit_okf_and_stats_report_capabilities(
+        self,
+    ) -> None:
         async with Client(make_server()) as client:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
@@ -163,7 +165,7 @@ class TestNonOkfBaseline:
             )
             assert "okf" not in read
             stats = _structured(await client.call_tool("stats", {}))
-            assert "okf" not in stats
+            assert set(stats["okf"]) == {"capabilities"}
             context = _structured(
                 await client.call_tool(
                     "get_context",
@@ -200,6 +202,10 @@ class TestDeclaredBundle:
         assert playbook["status"] == "deprecated"
         assert playbook["stale"] is True
         assert playbook["trust_tier"] == "human-reviewed"
+        assert playbook["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
         assert playbook["sources_count"] == 2
         assert "sources" not in playbook
         plain = by_path["guides/plain.md"]["okf"]
@@ -207,6 +213,14 @@ class TestDeclaredBundle:
             "status": "stable",
             "stale": False,
             "trust_tier": "unverified",
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {"review": "none", "basis": "no_review_supplied"},
         }
 
     async def test_read_includes_full_sources(self) -> None:
@@ -216,6 +230,10 @@ class TestDeclaredBundle:
             )
         okf = read["okf"]
         assert okf["trust_tier"] == "human-reviewed"
+        assert okf["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
         assert [s["resource"] for s in okf["sources"]] == [
             "https://example.com/a",
             "https://example.com/b",
@@ -243,6 +261,10 @@ class TestDeclaredBundle:
                 )
             )
         assert context["okf"]["type"] == "Playbook"
+        assert context["okf"]["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
 
     async def test_stats_okf_section(self) -> None:
         async with Client(make_server()) as client:
@@ -309,7 +331,7 @@ class TestModeOff:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
             stats = _structured(await client.call_tool("stats", {}))
-            assert "okf" not in stats
+            assert set(stats["okf"]) == {"capabilities"}
             assert "type" not in stats["indexed_frontmatter_fields"]
         server = make_server()
         assert server.instructions is not None

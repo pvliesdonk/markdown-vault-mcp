@@ -693,7 +693,11 @@ class Vault:
         # OKF_WRITE is on; when on, it stamps provenance and clears verification
         # for write/edit on an OKF-active vault.
         self._okf_write_enrich = build_okf_write_enrich(
-            okf_write=settings.okf_write,
+            okf_write=(
+                settings.okf_capabilities.legacy_stamping
+                if settings.okf_capabilities is not None
+                else settings.okf_write
+            ),
             detector=self._okf,
             version=package_version(),
         )
@@ -787,12 +791,19 @@ class Vault:
             require_built=self._require_built,
             reserved_frontmatter=reserved_frontmatter,
         )
-        # OKF enforced-write convention maintenance (#964, phase 5b): built only
-        # under OKF_WRITE (mirroring the enricher gating). On a successful
-        # write/edit it appends to the folder's log.md and refreshes its
-        # index.md as secondary writes; failures degrade to a WARNING.
+        # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        if settings.okf_write:
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
+        self._okf_capabilities = capabilities
+        self._okf_write_alias = settings.okf_write
+        if not settings.read_only and (
+            capabilities.index or capabilities.log == "writes"
+        ):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
 
             self._okf_convention = ConventionMaintainer(
@@ -802,6 +813,7 @@ class Vault:
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
                 source_dir=self._source_dir,
+                capabilities=capabilities,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
@@ -910,6 +922,62 @@ class Vault:
         """
         configured = self._okf_write_enrich is not None
         return configured, configured and active and not self._read_only
+
+    def okf_stats_report(self) -> dict[str, Any]:
+        """Return OKF capability reporting with any active-bundle aggregates.
+
+        Returns:
+            A capability report and, when OKF is active, its statistics.
+        """
+        section = self.reader.okf_stats()
+        active = section is not None
+        if section is None:
+            section = {}
+        section["capabilities"] = self.okf_capability_report(active=active)
+        return section
+
+    def okf_capability_report(self, *, active: bool) -> dict[str, Any]:
+        """Report configured and effective OKF authority for this vault.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Capability entries and the configured folder designation scope.
+        """
+        caps = self._okf_capabilities
+
+        def entry(name: str, configured: bool | str) -> dict[str, Any]:
+            reason = None
+            enabled = configured is True or (
+                isinstance(configured, str) and configured != "off"
+            )
+            if self._read_only:
+                reason = "read_only"
+            elif enabled:
+                if not active and not (name == "verify" and self._okf_write_alias):
+                    reason = "okf_inactive"
+                elif (
+                    name == "author"
+                    or (name == "verify" and configured not in ("elicit", "trust-auth"))
+                    or (name == "log" and configured != "writes")
+                ):
+                    reason = "not_implemented"
+                elif name in ("index", "log") and not caps.folders:
+                    reason = "not_designated"
+            return {
+                "configured": configured,
+                "effective": enabled and reason is None,
+                "reason": reason,
+            }
+
+        return {
+            "author": entry("author", caps.author),
+            "verify": entry("verify", caps.verify),
+            "index": entry("index", caps.index),
+            "log": entry("log", caps.log),
+            "folders": list(caps.folders),
+        }
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).
