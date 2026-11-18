@@ -7,7 +7,7 @@ arguments:
 tags: ["write"]
 ---
 
-You are recording a **human review** of an OKF note. The `okf_verify` tool must be enabled for the vault.
+You are recording a **human review** of an OKF note. The `okf_verify` tool must be enabled for the vault. Service principals cannot record human reviews; use a human principal or an unauthenticated connection with elicitation.
 
 How the attestation is confirmed depends on `MARKDOWN_VAULT_MCP_OKF_VERIFY`. In
 the default `elicit` mode the tool asks the **human** to confirm the review
@@ -50,6 +50,6 @@ to be written; relay that a confirmation is needed rather than trying to answer
 it yourself.
 
 Report the returned `verifier` and `verified_count` for the saved claim. If the tool refuses —
-because the human declined or the client cannot show the elicitation, or (in
+because the caller is a service principal, the human declined, the client cannot show the elicitation, or (in
 `trust-auth` mode) because the server has no authentication — say so rather than
 editing `verified` by hand.

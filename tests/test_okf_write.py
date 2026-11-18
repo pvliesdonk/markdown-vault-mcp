@@ -597,35 +597,20 @@ async def service_token(
 
 @pytest.mark.usefixtures("service_token")
 class TestServiceTokenOkf:
-    async def test_trust_auth_refuses_without_changing_note(
-        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("mode", ["elicit", "trust-auth"])
+    async def test_service_cannot_record_human_review(
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch, mode: str
     ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "trust-auth")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", mode)
         path = okf_alias_env / "guides" / "playbook.md"
         before = path.read_bytes()
-        async with Client(make_server()) as client:
+        async with Client(make_server(), elicitation_handler=_accept_review) as client:
             with pytest.raises(
                 ToolError, match="service principal cannot record human-review"
             ):
                 await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert path.read_bytes() == before
-
-    @pytest.mark.parametrize("legacy", [False, True])
-    async def test_elicit_refuses_service_human_review(
-        self, okf_alias_env: Path, legacy: bool
-    ) -> None:
-        async with Client(
-            make_server(),
-            mode="legacy" if legacy else "auto",
-            elicitation_handler=_accept_review,
-        ) as client:
-            with pytest.raises(
-                ToolError, match="service principal cannot record human-review"
-            ):
-                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
-            await wait_for_mcp_writer_drain(client)
-        assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
 
 def test_ordinary_write_preserves_supplied_provenance(okf_alias_vault: Vault) -> None:

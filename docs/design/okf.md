@@ -407,8 +407,9 @@ The operator controls explicit authoring, review, index and log maintenance inde
 
   With `OKF_MACHINE_REVIEW=true`, a service principal may instead record `schema`,
   `links`, `source-comparison`, or an `x-` named check as `process:<subject>`.
-  This uses the same snapshot guard and receipt. Machine-only entries yield
-  `machine-confirmed`; an existing human entry keeps `human-reviewed`.
+  This uses the same snapshot guard and receipt. Under the v0.2 tier rule,
+  machine-only entries yield `machine-confirmed`; an existing human entry
+  keeps `human-reviewed`.
 
   Trust caveat: `elicit` asks a human to confirm this tool’s entry, but the
   tier also classifies supplied metadata and establishes neither reviewer
@@ -699,5 +700,3 @@ phase owns.
 ### Snapshot-bound review recording
 
 `okf_verify` validates the reviewed snapshot before confirmation and again after confirmation, then uses the fresh read etag for the write. Portable `verified` entries retain `{by, at}`; `x-mvmcp.reviews` appends the check and snapshot as supplied claims. A matching instance-local receipt is stored beside the observation ledger, outside the bundle. Bound reviews require YAML frontmatter (or no frontmatter); JSON and TOML must be converted to YAML. The snapshot excludes `verified` and `x-mvmcp`. Receipts must be outside the vault, and last only for the process without a state path. A receipt failure after the note write leaves the claim without local evidence and raises an error identifying the partial outcome. Review applicability presentation remains separate work.
-
-As of 2026-11-18, [OKF v0.3](https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md) is public. This implementation retains the approved v0.2 tier semantics; adopting v0.3 is separate work.

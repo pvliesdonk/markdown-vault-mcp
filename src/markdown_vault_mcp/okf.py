@@ -1143,37 +1143,49 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
-def _validate_review_claim(actor: str, check: str) -> None:
-    """Validate explicitly attributed review evidence before recording it."""
-    if _ACTOR_RE.fullmatch(actor) is None:
-        raise InvalidRequestError(
-            "Review actor must be human:<id>, process:<id>, or <tool>/<version>."
-        )
-    if check not in {"human-review", "schema", "links", "source-comparison"} and not (
+_REVIEW_CHECKS = frozenset({"human-review", "schema", "links", "source-comparison"})
+
+
+def review_actor(subject: str, check: str) -> str:
+    """Derive the review actor from the check and reviewer subject.
+
+    Args:
+        subject: Reviewer identity without an actor prefix.
+        check: Kind of review performed.
+
+    Returns:
+        The actor to record in the note and receipt.
+
+    Raises:
+        InvalidRequestError: If the check or machine identity is invalid.
+    """
+    if check not in _REVIEW_CHECKS and not (
         check.startswith("x-")
         and len(check) > 2
         and not any(c.isspace() for c in check)
     ):
         raise InvalidRequestError(
-            "Unknown check; use schema, links, source-comparison, or x- followed by a name."
+            "Unknown check; use human-review, schema, links, source-comparison, or x- followed by a name."
         )
-    if check == "human-review" and not actor.startswith("human:"):
-        raise InvalidRequestError("A nonhuman actor cannot record human-review.")
+    actor = f"{'human' if check == 'human-review' else 'process'}:{subject}"
+    if check != "human-review" and _ACTOR_RE.fullmatch(actor) is None:
+        raise InvalidRequestError(
+            "Machine review requires a non-empty identity without whitespace."
+        )
+    return actor
 
 
-def append_okf_verification(  # noqa: PLR0913, RUF100 - optional actor preserves the public API
+def append_okf_verification(
     text: str,
     *,
     subject: str,
     now: _dt.datetime,
     reviewed_snapshot: dict[str, str] | None = None,
     check: str = "human-review",
-    actor: str | None = None,
 ) -> str:
     """Append a review actor to a note's ``verified`` list.
 
-    By default the actor is ``human:<subject>``. An explicit actor can
-    identify a machine check.
+    The check selects ``human:<subject>`` or ``process:<subject>``.
     Preserves other frontmatter values and mapping order, including nested
     mappings. A new ``verified`` field appends; an existing field retains its
     slot. The entry keeps the ``{by, at}`` shape :func:`derive_trust_tier` reads.
@@ -1181,28 +1193,25 @@ def append_okf_verification(  # noqa: PLR0913, RUF100 - optional actor preserves
 
     Args:
         text: The full note file text (frontmatter and body).
-        subject: The human verifier's subject (without the ``human:`` prefix),
-            or ``local`` for a confirmed review without human identity claims.
+        subject: Reviewer identity without a prefix, or ``local`` for a
+            confirmed human review without identity claims.
         now: The instant of the verification, timezone-aware (spelled by
             :func:`okf_timestamp`).
         reviewed_snapshot: Optional reviewed snapshot to bind in x-mvmcp.reviews.
         check: Name of the review performed.
-        actor: Explicit reviewer actor, or None to use the human subject.
-
-    Raises:
-        InvalidRequestError: If the explicit actor or check is invalid or a
-            nonhuman actor claims a human review.
 
     Returns:
         The note text with the appended verification.
+
+    Raises:
+        InvalidRequestError: If the check or machine identity is invalid.
     """
-    if actor is not None:
-        _validate_review_claim(actor, check)
+    actor = review_actor(subject, check)
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     verified = list(verified_entries(meta))
     entry = {
-        "by": actor if actor is not None else f"{_HUMAN_ACTOR_PREFIX}{subject}",
+        "by": actor,
         "at": okf_timestamp(now),
     }
     if reviewed_snapshot is None:

@@ -55,6 +55,7 @@ from .._okf_write import (
     resolve_verify_subject,
 )
 from ..domain import get_config, get_vault
+from ..okf import review_actor
 from ._common import attach_conventions, attach_remote_health, okf_active
 from .transactions import run_in_transaction
 
@@ -1268,6 +1269,24 @@ def register(mcp: FastMCP) -> None:
             DocumentNotFoundError: If the note does not exist.
             InvalidRequestError: If the path is protected.
         """
+        principal = resolve_mcp_principal()
+        if principal.kind == "service":
+            if check == "human-review":
+                raise ToolError(
+                    "A service principal cannot record human-review.",
+                    log_level=logging.INFO,
+                )
+            if not config.content.okf_machine_review:
+                raise ToolError(
+                    "Machine reviews require OKF_MACHINE_REVIEW=true.",
+                    log_level=logging.INFO,
+                )
+            review_actor(principal.subject or "", check)
+        elif check != "human-review":
+            raise ToolError(
+                "Named machine checks require a service principal.",
+                log_level=logging.INFO,
+            )
         await _require_review_authority(config, vault)
         await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
         try:
@@ -1281,33 +1300,10 @@ def register(mcp: FastMCP) -> None:
                 f"Could not read note {path!r} or the local review receipt state, "
                 "so nothing was written. Ask the operator to check the server's files."
             ) from exc
-        principal = resolve_mcp_principal()
-        actor = None
         subject_or_request: str | InputRequiredResult
         if principal.kind == "service":
-            if check == "human-review":
-                raise ToolError(
-                    "A service principal cannot record human-review.",
-                    log_level=logging.INFO,
-                )
-            if not config.content.okf_machine_review:
-                raise ToolError(
-                    "Machine reviews require OKF_MACHINE_REVIEW=true.",
-                    log_level=logging.INFO,
-                )
-            if not principal.subject or any(c.isspace() for c in principal.subject):
-                raise ToolError(
-                    "A service principal needs a usable identity to record a machine review.",
-                    log_level=logging.INFO,
-                )
-            actor = f"process:{principal.subject}"
-            subject_or_request = principal.subject
+            subject_or_request = principal.subject or ""
         else:
-            if check != "human-review":
-                raise ToolError(
-                    "Named machine checks require a service principal.",
-                    log_level=logging.INFO,
-                )
             subject_or_request = await _resolve_verify_mode_subject(
                 mode=config.content.okf_capabilities.verify,
                 ctx=ctx,
@@ -1326,7 +1322,6 @@ def register(mcp: FastMCP) -> None:
                     subject_or_request,
                     reviewed_snapshot,
                     check,
-                    actor=actor,
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(
