@@ -1004,7 +1004,7 @@ def test_observation_tree_isolates_refused_entry(tmp_path: Path) -> None:
         name = "denied"
         path = str(tmp_path / name)
 
-        def is_dir(self, *, follow_symlinks: bool) -> bool:
+        def stat(self, *, follow_symlinks: bool) -> None:
             assert follow_symlinks is False
             raise PermissionError("fixture")
 

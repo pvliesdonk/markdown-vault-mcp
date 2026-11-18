@@ -361,7 +361,7 @@ def _tree_roots(root: Path) -> list[_WatchRoot]:
                         split = True
                     else:
                         try:
-                            if entry.is_dir(follow_symlinks=False):
+                            if stat.S_ISDIR(entry.stat(follow_symlinks=False).st_mode):
                                 nested, roots = visit(Path(entry.path))
                                 split |= nested
                                 children.extend(roots)
