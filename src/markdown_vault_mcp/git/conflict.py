@@ -168,6 +168,7 @@ def _save_and_merge_log(
     )
     if result.returncode == 0:
         if not is_okf_reserved_file(rel_path):
+            # Preserve the existing failure on invalid UTF-8 in concept notes.
             os.fsencode(result.stdout).decode("utf-8")
         saved[rel_path] = result.stdout
         return (
