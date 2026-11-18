@@ -125,7 +125,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
-    from markdown_vault_mcp.indexing.observations import ObservationLedger
+    from markdown_vault_mcp.indexing.observations import ObservationLedger, _Captured
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
@@ -1708,33 +1708,39 @@ class DocumentManager:
                 )
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
-                if self._observations is not None:
-                    self._observations.record_removal(
-                        observed_old, captured, observed_new
+                backlink_paths: list[str] = []
+                try:
+                    parse_note(
+                        new_abs,
+                        self._source_dir,
+                        self._chunk_strategy,
+                        title_field=self._title_field,
                     )
-                if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([observed_old, observed_new])
-                parse_note(
-                    new_abs,
-                    self._source_dir,
-                    self._chunk_strategy,
-                    title_field=self._title_field,
-                )
 
-                callback_content = _read_text_utf8(new_abs)
+                    callback_content = _read_text_utf8(new_abs)
 
-                backlink_callbacks, backlink_paths, unrewritten = (
-                    self._update_backlinks(
-                        old_path, new_path, backlinks, allow_protected=allow_protected
+                    backlink_callbacks, backlink_paths, unrewritten = (
+                        self._update_backlinks(
+                            old_path,
+                            new_path,
+                            backlinks,
+                            allow_protected=allow_protected,
+                        )
                     )
-                )
-                updated_links = len(backlink_callbacks)
-                hint = self._submodule_links_hint(
-                    unrewritten, allow_protected=allow_protected
-                )
-
-                if self._mark_paths_dirty is not None and backlink_paths:
-                    self._mark_paths_dirty(backlink_paths)
+                    updated_links = len(backlink_callbacks)
+                    hint = self._submodule_links_hint(
+                        unrewritten, allow_protected=allow_protected
+                    )
+                finally:
+                    self._record_moves(
+                        {observed_old: observed_new},
+                        {observed_old: captured},
+                        backlink_callbacks,
+                    )
+                    if self._mark_paths_dirty is not None:
+                        self._mark_paths_dirty(
+                            [observed_old, observed_new, *backlink_paths]
+                        )
             else:
                 old_abs, new_abs = self._artifacts.move(old_path, new_path, if_match)
                 callback_content = ""
@@ -1753,6 +1759,23 @@ class DocumentManager:
             hint=hint,
             link_rewrites_since_etag=crossed,
         )
+
+    def _record_moves(
+        self,
+        moves: dict[str, str],
+        captures: dict[str, _Captured | None],
+        callbacks: list[tuple[Path, str]],
+    ) -> None:
+        if self._observations is None:
+            return
+        digests = {
+            self._vault_relative(path): compute_etag(content.encode("utf-8"))
+            for path, content in callbacks
+        }
+        for old_path, new_path in moves.items():
+            self._observations.record_removal(
+                old_path, captures[old_path], new_path, rewritten=digests.get(new_path)
+            )
 
     def _check_rename_etag(
         self, abs_path: Path, path: str, if_match: str | None, *, tolerate: bool
@@ -2293,27 +2316,23 @@ class DocumentManager:
                 src_new = md_map.get(src_old, src_old)  # remap if inside subtree
                 by_source[src_new].append((target_old, row))
 
-            pending_callbacks, dirty_paths, failed_links = self._rewrite_link_sources(
-                by_source,
-                md_map,
-                op_name="move_folder",
-                allow_protected=allow_protected,
-            )
-
-            # 6. Index: purge old note paths, reparse new note paths, plus the
-            #    rewritten sources. A single mark_paths_dirty batch makes the
-            #    writer run resolve_vault_wikilinks() once.
-            if self._observations is not None:
-                for old_path, new_path in observation_map.items():
-                    self._observations.record_removal(
-                        old_path, captures[old_path], new_path
+            pending_callbacks: list[tuple[Path, str]] = []
+            dirty_paths: list[str] = []
+            try:
+                pending_callbacks, dirty_paths, failed_links = (
+                    self._rewrite_link_sources(
+                        by_source,
+                        md_map,
+                        op_name="move_folder",
+                        allow_protected=allow_protected,
                     )
-            if self._mark_paths_dirty is not None:
-                move_dirty: list[str] = []
-                move_dirty.extend(observation_map.keys())  # old paths -> purged
-                move_dirty.extend(observation_map.values())  # new paths -> reparsed
-                move_dirty.extend(dirty_paths)  # rewritten sources
-                self._mark_paths_dirty(move_dirty)
+                )
+            finally:
+                self._record_moves(observation_map, captures, pending_callbacks)
+                if self._mark_paths_dirty is not None:
+                    self._mark_paths_dirty(
+                        [*observation_map, *observation_map.values(), *dirty_paths]
+                    )
 
             scope = current_commit_scope()
             if scope is not None:

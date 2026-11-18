@@ -8,6 +8,195 @@ import pytest
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
+@pytest.mark.parametrize("link", ["[[a]]", "[self](a.md)"])
+@pytest.mark.parametrize("overlap", [False, True])
+def test_rename_own_rewrite_preserves_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, link: str, overlap: bool
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text(f"see {link}\n")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        rewrite = vault._doc_mgr._rewrite_one_source
+
+        def interleaved(*args):
+            content = rewrite(*args)
+            if overlap:
+                vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+            return content
+
+        monkeypatch.setattr(vault._doc_mgr, "_rewrite_one_source", interleaved)
+        vault.writer.rename("a.md", "b.md", update_links=True)
+        vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to == "b.md"
+        assert rows["b.md"].moved_from == "a.md"
+        if not overlap:
+            assert rows["b.md"].origin == "server_write"
+    finally:
+        vault.close()
+
+
+def test_folder_move_own_rewrites_preserve_both_pairs(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    (source / "old").mkdir(parents=True)
+    (source / "old" / "a.md").write_text("[[old/b]]")
+    (source / "old" / "b.md").write_text("[[old/a]]")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.move_folder("old", "new")
+        vault._index_mgr.process_dirty_paths(
+            {"old/a.md", "old/b.md", "new/a.md", "new/b.md"}
+        )
+        rows = vault._index_mgr.observations.rows()
+        for name in ("a.md", "b.md"):
+            assert rows[f"old/{name}"].moved_to == f"new/{name}"
+            assert rows[f"new/{name}"].moved_from == f"old/{name}"
+            assert rows[f"new/{name}"].origin == "server_write"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("recreate", [False, True])
+def test_external_change_after_rewritten_move_breaks_relation(
+    tmp_path: Path, recreate: bool
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("[[a]]")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=True)
+        target = source / "b.md"
+        if recreate:
+            target.unlink()
+        target.write_text("external")
+        vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to is None
+        assert rows["b.md"].moved_from is None
+        assert rows["b.md"].origin == "unknown"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("external_between", [False, True])
+def test_chain_after_rewrite_retains_only_proven_links(
+    tmp_path: Path, external_between: bool
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("[[a]]")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=True)
+        if external_between:
+            (source / "b.md").write_text("external")
+        vault.writer.rename("b.md", "c.md", update_links=False)
+        vault._index_mgr.process_dirty_paths({"a.md", "b.md", "c.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to == (None if external_between else "b.md")
+        assert rows["b.md"].moved_from == (None if external_between else "a.md")
+        assert rows["b.md"].moved_to == "c.md"
+        assert rows["c.md"].moved_from == "b.md"
+    finally:
+        vault.close()
+
+
+def test_rewritten_move_uses_live_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("[[a]]")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        rewrite = vault._doc_mgr._rewrite_one_source
+
+        def interleaved(*args):
+            content = rewrite(*args)
+            mark_dirty = vault._doc_mgr._mark_paths_dirty
+            assert mark_dirty is not None
+            mark_dirty(["a.md", "b.md"])
+            vault._coordinator.prepare_index_read()
+            return content
+
+        monkeypatch.setattr(vault._doc_mgr, "_rewrite_one_source", interleaved)
+        vault.writer.rename("a.md", "b.md", update_links=True)
+        vault._coordinator.prepare_index_read()
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to == "b.md"
+        assert rows["b.md"].moved_from == "a.md"
+    finally:
+        vault.close()
+
+
+def test_failed_rewrite_does_not_claim_server_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.managers import document
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("[[a]]")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+
+        def fail_write(*_args, **_kwargs):
+            raise OSError("rewrite failed")
+
+        monkeypatch.setattr(document, "atomic_write", fail_write)
+        vault.writer.rename("a.md", "b.md", update_links=True)
+        vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to == "b.md"
+        assert rows["b.md"].moved_from == "a.md"
+        assert rows["b.md"].origin == "unknown"
+    finally:
+        vault.close()
+
+
+def test_sweep_does_not_reprobe_unchanged_tombstones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "a.md"
+    note.write_text("hello")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        note.unlink()
+        ledger.sweep()
+        removed = ledger.rows()["a.md"]
+        observe = ledger._inspector.observe_path
+        probed: list[str] = []
+
+        def record(path, visit):
+            probed.append(path)
+            return observe(path, visit)
+
+        monkeypatch.setattr(ledger._inspector, "observe_path", record)
+        ledger.sweep()
+        assert "a.md" not in probed
+        assert ledger.rows()["a.md"] == removed
+    finally:
+        vault.close()
+
+
 @pytest.mark.parametrize("drain_between", [False, True])
 @pytest.mark.parametrize("finish", ["move", "delete"])
 def test_chained_mutations_preserve_intermediate_move(

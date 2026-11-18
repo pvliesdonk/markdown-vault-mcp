@@ -7775,6 +7775,8 @@ Version 2 adds `moved_from` and `moved_to` to the version 1 rows; old rows
 load without a move. Server renames and folder moves record both ends, while a
 sweep sees only a removal and an addition. A move relation describes the latest observation of
 each path and clears when that row's content changes; it is not an event history.
+A server move is not linked if another editor changes or replaces its destination
+before observation.
 A path never observed has unknown history. Writes, edits, appends, deletes,
 renames and folder moves submit affected paths. Dirty paths are inspected in
 inventory scope and persisted as a batch. The writer retains the digest of its

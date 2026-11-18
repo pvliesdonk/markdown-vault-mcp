@@ -286,7 +286,8 @@ requires a new version and migration.
 
 Server writes, edits, appends and deletes refresh affected observations. A server
 rename or `move_folder` records both paths; a move detected by a later scan is
-a removal and an addition. A move relation describes the latest state of each
+a removal and an addition. A server move is not linked if another editor changes
+or replaces the destination before observation. A move relation describes the latest state of each
 path and clears when that row's content changes; it is not an event history. A path
 never observed has unknown history. A write is attributed to the server only
 when the bytes read from disk match the bytes it wrote. An observation failure

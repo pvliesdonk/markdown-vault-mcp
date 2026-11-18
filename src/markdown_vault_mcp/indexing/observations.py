@@ -58,6 +58,7 @@ class _Removal:
     captured: _Captured | None
     destination: str | None
     source_present: bool = False
+    rewritten: str | None = None
 
 
 @dataclass(frozen=True, eq=False)
@@ -249,7 +250,12 @@ class ObservationLedger:
         return found[0] if found else None
 
     def record_removal(
-        self, path: str, captured: _Captured | None, destination: str | None = None
+        self,
+        path: str,
+        captured: _Captured | None,
+        destination: str | None = None,
+        *,
+        rewritten: str | None = None,
     ) -> None:
         """Queue evidence for an already completed deletion or move.
 
@@ -257,9 +263,10 @@ class ObservationLedger:
             path: Former path.
             captured: Source evidence collected before the mutation.
             destination: Destination when the mutation moved the source.
+            rewritten: Digest of a successful rewrite at the destination.
         """
         with self._pending_lock:
-            self._removals[path] = _Removal(captured, destination)
+            self._removals[path] = _Removal(captured, destination, rewritten=rewritten)
             self._pending.pop(path, None)
 
     def refresh_many(self, paths: set[str]) -> None:
@@ -334,7 +341,8 @@ class ObservationLedger:
             ):
                 continue
             if removal.captured is not None and (
-                rows[target].content_digest != removal.captured.digest
+                rows[target].content_digest
+                not in (removal.captured.digest, removal.rewritten)
             ):
                 continue
             rows[target] = replace(rows[target], moved_from=source)
@@ -447,7 +455,9 @@ class ObservationLedger:
                 )
 
             blocked = self._inspector.observe_files(visit)
-            relevant = set(previous) | set(pending) | set(removals)
+            relevant = {p for p, row in previous.items() if row.presence == "present"}
+            relevant.update(pending)
+            relevant.update(removals)
             relevant.update(
                 r.destination for r in removals.values() if r.destination is not None
             )
