@@ -7,6 +7,7 @@ import re
 import zipfile
 from datetime import date
 from pathlib import PurePosixPath
+from typing import TYPE_CHECKING, Any
 
 import frontmatter
 import yaml
@@ -25,14 +26,16 @@ from markdown_vault_mcp.scanner import (
     strip_frontmatter_block,
 )
 
+if TYPE_CHECKING:
+    from markdown_it.token import Token
+
 _MARKDOWN = MarkdownIt("commonmark")
 
 
 def _index_body_conforms(body: str) -> bool:
-    tokens = _MARKDOWN.parse(body)
     in_heading = False
     in_item = False
-    for token in tokens:
+    for token in _MARKDOWN.parse(body):
         if token.type == "heading_open":
             in_heading = True
         elif token.type == "heading_close":
@@ -44,14 +47,21 @@ def _index_body_conforms(body: str) -> bool:
         elif token.type == "list_item_close":
             in_item = False
         elif token.type == "inline" and not in_heading:
-            children = token.children or []
-            if not in_item or not children or children[0].type != "link_open":
-                return False
-            if not any(child.type == "link_close" for child in children):
+            if not in_item or not _index_entry_conforms(token.children or []):
                 return False
         elif token.type in {"fence", "code_block", "html_block", "ordered_list_open"}:
             return False
     return True
+
+
+def _index_entry_conforms(children: list[Token]) -> bool:
+    if not children or children[0].type != "link_open":
+        return False
+    ends = [i for i, token in enumerate(children) if token.type == "link_close"]
+    if not ends or ends[0] < 2:
+        return False
+    tail = children[ends[0] + 1 :]
+    return not tail or (tail[0].type == "text" and tail[0].content.startswith(" - "))
 
 
 def _log_body_conforms(body: str) -> bool:
@@ -69,6 +79,32 @@ def _log_body_conforms(body: str) -> bool:
     return True
 
 
+def _inspect_concept(
+    path: str, text: str, body: str, metadata: dict[str, Any], report: OkfExportReport
+) -> None:
+    handler = frontmatter.detect_format(text.lstrip(), frontmatter.handlers)
+    if body == text or not isinstance(handler, YAMLHandler):
+        report.format_findings.append(FormatFinding(path, "missing_yaml_frontmatter"))
+    elif (
+        not isinstance(note_type := metadata.get("type"), str) or not note_type.strip()
+    ):
+        report.format_findings.append(FormatFinding(path, "missing_or_invalid_type"))
+    if not metadata.get("title") or not metadata.get("description"):
+        report.optional_metadata.append(path)
+
+
+def _inspect_reserved(
+    path: str, text: str, body: str, metadata: dict[str, Any], report: OkfExportReport
+) -> None:
+    if PurePosixPath(path).name == "index.md":
+        if not _index_frontmatter_conforms(path, text, metadata):
+            report.format_findings.append(FormatFinding(path, "index_frontmatter"))
+        if not _index_body_conforms(body):
+            report.format_findings.append(FormatFinding(path, "index_entry_shape"))
+    elif not _log_body_conforms(body):
+        report.format_findings.append(FormatFinding(path, "log_heading_shape"))
+
+
 def _inspect(path: str, raw: bytes, report: OkfExportReport, members: set[str]) -> None:
     try:
         text = raw.decode("utf-8-sig")
@@ -78,7 +114,6 @@ def _inspect(path: str, raw: bytes, report: OkfExportReport, members: set[str]) 
         return
     reserved = is_okf_reserved_file(path)
     body = strip_frontmatter_block(text)
-    has_block = body != text
     try:
         post = parse_frontmatter(text)
     except (yaml.YAMLError, ValueError):
@@ -88,28 +123,9 @@ def _inspect(path: str, raw: bytes, report: OkfExportReport, members: set[str]) 
         return
     metadata = dict(post.metadata)
     if reserved:
-        if PurePosixPath(path).name == "index.md":
-            if not _index_frontmatter_conforms(path, text, metadata):
-                report.format_findings.append(FormatFinding(path, "index_frontmatter"))
-            if not _index_body_conforms(body):
-                report.format_findings.append(FormatFinding(path, "index_entry_shape"))
-        elif not _log_body_conforms(body):
-            report.format_findings.append(FormatFinding(path, "log_heading_shape"))
+        _inspect_reserved(path, text, body, metadata, report)
     else:
-        handler = frontmatter.detect_format(text.lstrip(), frontmatter.handlers)
-        if not has_block or not isinstance(handler, YAMLHandler):
-            report.format_findings.append(
-                FormatFinding(path, "missing_yaml_frontmatter")
-            )
-        elif (
-            not isinstance(note_type := metadata.get("type"), str)
-            or not note_type.strip()
-        ):
-            report.format_findings.append(
-                FormatFinding(path, "missing_or_invalid_type")
-            )
-        if not metadata.get("title") or not metadata.get("description"):
-            report.optional_metadata.append(path)
+        _inspect_concept(path, text, body, metadata, report)
     for link in extract_links(body, path):
         if link.target_path not in members:
             report.broken_links.append(Dependency(path, link.target_path))

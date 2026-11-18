@@ -164,6 +164,7 @@ dependencies = [
     "httpx>=0.25",
     "python-frontmatter>=1.0",
     "requests>=2.33.0",
+    "markdown-it-py>=3,<5",
     # PROJECT-DEPS-END
 ]
 
