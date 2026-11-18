@@ -62,8 +62,14 @@ class _BlockState:
         text = line[len(prefix) :].rstrip("\n").expandtabs(4)
         indent = len(text) - len(text.lstrip(" "))
         marker = _MARKER.match(text)
-        while self.items and indent < self.items[-1] and (self.blank_before or marker):
+        leaving_fence = bool(self.fence and text.strip())
+        while (
+            self.items
+            and indent < self.items[-1]
+            and (leaving_fence or (not self.fence and (self.blank_before or marker)))
+        ):
             self.items.pop()
+            self.fence = None
         return text, indent, marker
 
     def _open(self, inner: str) -> bool:
@@ -130,7 +136,7 @@ def _protected_lines(lines: list[str]) -> set[int]:
 
 def _mask_blocks(body: str) -> str:
     normalized = re.sub(r"\r(?=\n)", " ", body).replace("\r", "\n")
-    lines = normalized.splitlines(keepends=True)
+    lines = re.split(r"(?<=\n)", normalized)
     protected = _protected_lines(lines)
     return "".join(
         re.sub(r"[^\n]", " ", line) if index in protected else line
@@ -184,7 +190,12 @@ def _definition_spans(
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     spans = []
     definitions = []
-    for label, tail, start, end in _iter_definition_matches(masked):
+    unquoted = re.sub(
+        re.compile(_RE_LINE_QUOTE_PREFIX.pattern, re.MULTILINE),
+        lambda match: " " * len(match.group()),
+        masked,
+    )
+    for label, tail, start, end in _iter_definition_matches(unquoted):
         if label.startswith("^"):
             continue
         # The yielded tail runs greedily to the end of the destination's line.

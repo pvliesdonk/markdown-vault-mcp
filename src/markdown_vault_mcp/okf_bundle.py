@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
 from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
 from markdown_vault_mcp.scanner import strip_frontmatter_block
@@ -150,7 +151,11 @@ def _note_bytes(
     body = strip_frontmatter_block(content.removeprefix("\ufeff"))
     prefix = content[: len(content) - len(body)]
     if item.search_state == "searchable":
-        body = convert_body_wikilinks(body, vault.graph.get_outlinks(item.path))
+        outlinks = vault.graph.get_outlinks(item.path)
+        if paths.scope:
+            body = convert_body_wikilinks(body, outlinks)
+        else:
+            body, _, _ = convert_wikilinks_to_markdown(body, outlinks)
     body, dependencies = paths.relocate(body, item.path)
     report.dependencies.extend(dependencies)
     result = (prefix + body).encode("utf-8")

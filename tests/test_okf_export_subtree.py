@@ -407,3 +407,76 @@ def test_replan_wikilinks_in_code_remain_literal(tmp_path):
 def test_replan_protected_boundaries(tmp_path, body, expected):
     output, _ = _export_body(tmp_path, body.encode())
     assert output == expected.encode()
+
+
+@pytest.mark.parametrize("prefix", [b"> ", b"> > "])
+def test_r3_quoted_definition_relocation_and_collision(tmp_path, prefix):
+    body = prefix + b'[ref]: </guides/b.md?x=1#h> "title"\r\n'
+    output, report = _export_body(tmp_path, body)
+    assert output == prefix + b'[ref]: </b.md?x=1#h> "title"\r\n'
+    assert not report.dependencies
+    assert (tmp_path / "guides/a.md").read_bytes() == body
+
+
+@pytest.mark.parametrize("base", [None, "https://example.org/vault"])
+def test_r3_quoted_definition_outside_collision(tmp_path, base):
+    body = b"> > [ref]: /b.md#part 'title'\r\n"
+    if base is None:
+        with pytest.raises(ValueError, match="collision"):
+            _export_body(tmp_path, body)
+    else:
+        output, report = _export_body(tmp_path, body, external_base=base)
+        assert output == b"> > [ref]: https://example.org/vault/b.md#part 'title'\r\n"
+        assert [d.target for d in report.dependencies] == ["/b.md#part"]
+
+
+@pytest.mark.parametrize("prefix", [b"- ", b"- item\n  - ", b"> - "])
+@pytest.mark.parametrize("target", [b"/guides/b.md", b"/b.md"])
+def test_r3_list_fence_ends_with_container(tmp_path, prefix, target):
+    quote = b"> " if prefix.startswith(b">") else b""
+    indent = b"    " if b"item" in prefix else b"  "
+    body = (
+        prefix
+        + b"```\n"
+        + quote
+        + indent
+        + b"code\n"
+        + quote
+        + b"outside [x]("
+        + target
+        + b")\n"
+    )
+    if target == b"/b.md":
+        with pytest.raises(ValueError, match="collision"):
+            _export_body(tmp_path, body)
+    else:
+        output, _ = _export_body(tmp_path, body)
+        assert output == body.replace(target, b"/b.md")
+        assert (tmp_path / "guides/a.md").read_bytes() == body
+
+
+def test_r3_unicode_separator_is_not_line_end(tmp_path):
+    body = "intro\u2028```\n[a](/guides/b.md)\n".encode()
+    output, _ = _export_body(tmp_path, body)
+    assert output == body.replace(b"/guides/b.md", b"/b.md")
+    assert (tmp_path / "guides/a.md").read_bytes() == body
+
+
+def test_r3_whole_vault_keeps_inherited_wikilink_conversion(tmp_path):
+    body = "[[b]]\n\n```\n[[b]]\n```\n"
+    (tmp_path / "a.md").write_text(body)
+    (tmp_path / "b.md").write_text("# B\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b"[b](/b.md)\n\n```\n[b](/b.md)\n```\n"
+    finally:
+        vault.close()
+
+
+def test_r3_list_fence_blank_lines_remain_literal(tmp_path):
+    body = b"- ```\n\n\n  [x](/guides/b.md)\n  ```\noutside [x](/guides/b.md)\n"
+    output, _ = _export_body(tmp_path, body)
+    assert output == body.replace(b"outside [x](/guides/b.md)", b"outside [x](/b.md)")

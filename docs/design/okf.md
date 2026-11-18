@@ -742,7 +742,7 @@ time via `okf_bundle.build_okf_bundle`. This is path 2 of pvl-core's transfer
 model (a domain use of the primitives) expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
 
-The bundle copies live inventory independently of search admission. Fences, indented code including list items, HTML code blocks, code spans and comments retain their bytes. Other HTML blocks are not protected, and raw HTML attributes are neither rewritten nor reported. Non-UTF-8 notes are copied unchanged without link reporting. Transformed paths and dependency sources use archive paths; H1 observations use vault paths. Resolvable
+The bundle copies live inventory independently of search admission. Subtree export uses an offset-preserving mask distinct from graph extraction so original literal bytes survive. For subtree exports, fences, indented code including list items, HTML code blocks, code spans and comments retain their bytes. Other HTML blocks are not protected, and raw HTML attributes are neither rewritten nor reported. Non-UTF-8 notes are copied unchanged without link reporting. Transformed paths and dependency sources use archive paths; H1 observations use vault paths. Resolvable
 wikilinks are rewritten only for searchable notes using the existing graph,
 which can be stale; notes outside the index retain raw wikilinks. A subtree
 becomes the archive root. Body destinations to selected files are relocated

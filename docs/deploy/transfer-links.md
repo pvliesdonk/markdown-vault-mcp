@@ -66,5 +66,6 @@ An upload link names a vault path for a note or an allowed attachment. While `MA
 | `410` | The file, or the bundle folder, was removed after the link was minted. |
 | `415` | The uploaded note is not UTF-8 text. The link stays usable; upload the note again as UTF-8. |
 | `422` | The destination is protected, or the vault refused the uploaded note: with [OKF](../use/okf.md) enforced writes on, its frontmatter must parse. The link stays usable for a corrected body. |
+| `500` | A folder bundle download fails with a generic server error when a note links an outside root path that matches a different exported file; the download offers no remedy until H6 adds export options and refusal reports. |
 | `503` | The vault is shutting down. Retry; the link is kept. |
 <!-- DOMAIN-TRANSFER-EXTRA-END -->
