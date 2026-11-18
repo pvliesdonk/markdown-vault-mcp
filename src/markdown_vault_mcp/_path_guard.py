@@ -28,8 +28,7 @@ class PathGuard:
             return None
         resolved = resolve_inside(path, self._source_dir)
         relative = resolved.relative_to(self._source_dir.resolve()).as_posix()
-        requested = PurePosixPath(path).as_posix()
-        for candidate in (requested, relative):
+        for candidate in (path, relative):
             parts = PurePosixPath(normalize("NFC", candidate).casefold()).parts
             for end in range(1, len(parts) + 1):
                 prefix = "/".join(parts[:end])

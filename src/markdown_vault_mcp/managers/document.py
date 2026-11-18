@@ -25,7 +25,6 @@ import yaml
 from markdown_vault_mcp._commit_scope import (
     auxiliary_commit_writes,
     current_commit_scope,
-    is_auxiliary_commit_write,
 )
 from markdown_vault_mcp._okf_log_repair import (
     LogRepairCollision,
@@ -285,9 +284,7 @@ class DocumentManager:
         Returns:
             Whether this mutation is protected.
         """
-        return not (allow_protected or is_auxiliary_commit_write()) and bool(
-            self._path_guard.reason(path)
-        )
+        return not allow_protected and bool(self._path_guard.reason(path))
 
     def refuse_protected(self, path: str, *, allow_protected: bool = False) -> None:
         """Refuse a protected path unless a trusted caller opts in.
@@ -1505,7 +1502,9 @@ class DocumentManager:
                     )
                 )
                 updated_links = len(backlink_callbacks)
-                hint = self._submodule_links_hint(unrewritten)
+                hint = self._submodule_links_hint(
+                    unrewritten, allow_protected=allow_protected
+                )
 
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
@@ -1738,27 +1737,33 @@ class DocumentManager:
                 failed_sources.append(source_path)
         return pending_callbacks, dirty_paths, failed_sources
 
-    def _submodule_links_hint(self, unrewritten: list[str]) -> str | None:
+    def _submodule_links_hint(
+        self,
+        unrewritten: list[str],
+        *,
+        allow_protected: bool = False,
+        include_submodules: bool = True,
+    ) -> str | None:
         """Build the protected-backlink hint without aborting a completed rename."""
         in_submodules = []
         protected = []
         for source in unrewritten:
             try:
-                if self.is_protected(source):
+                if self.is_protected(source, allow_protected=allow_protected):
                     protected.append(source)
-                elif self.in_submodule(source):
+                elif include_submodules and self.in_submodule(source):
                     in_submodules.append(source)
             except OSError as exc:
+                # Diagnostic inspection must not prevent index/Git notification.
                 logger.debug(
                     "submodule_hint_check_failed path=%s error=%s", source, exc
                 )
-        hints = []
-        if in_submodules:
-            hints.append(_submodule_links_text(in_submodules))
+                continue
+        hints = [_submodule_links_text(in_submodules)] if in_submodules else []
         if protected:
             hints.append(
-                f"Links in {', '.join(repr(p) for p in protected)} still name the old path; "
-                "they are protected by MARKDOWN_VAULT_MCP_PROTECTED_PATHS. "
+                f"Link rewrites in {', '.join(repr(p) for p in protected)} were skipped: "
+                "protected by MARKDOWN_VAULT_MCP_PROTECTED_PATHS. "
                 "Ask the operator to update them or change the setting."
             )
         return " ".join(hints) or None
@@ -1950,17 +1955,7 @@ class DocumentManager:
                 continue
             self._notifier.fire(src_abs, src_content, "edit")
 
-    def _folder_backlinks(
-        self, paths: Iterable[str]
-    ) -> list[tuple[str, dict[str, Any]]]:
-        """Collect backlink rows before moving any files."""
-        annotated: list[tuple[str, dict[str, Any]]] = []
-        for target in paths:
-            for row in self._fts.get_backlinks(target):
-                annotated.append((target, row))
-        return annotated
-
-    def move_folder(
+    def move_folder(  # noqa: C901, RUF100 — pre-existing branches.
         self, old_dir: str, new_dir: str, *, allow_protected: bool = False
     ) -> MoveFolderResult:
         """Move an entire folder subtree to a new prefix, rewriting links.
@@ -2009,8 +2004,6 @@ class DocumentManager:
         with self._file_write_lock:
             old_abs = self._validate_dir_path(old_dir)
             new_abs = self._validate_dir_path(new_dir)
-            self.refuse_protected(old_dir, allow_protected=allow_protected)
-            self.refuse_protected(new_dir, allow_protected=allow_protected)
             self._refuse_submodule(old_abs, "old_dir", old_dir)
             self._refuse_submodule(new_abs, "new_dir", new_dir, holding=False)
 
@@ -2034,7 +2027,10 @@ class DocumentManager:
             # 3. Capture backlinks for every moved note BEFORE the move, while
             #    the index still reflects old paths. Annotate each row with its
             #    target's old/new path so a multi-target rewrite is possible.
-            annotated = self._folder_backlinks(md_map)
+            annotated: list[tuple[str, dict[str, Any]]] = []
+            for target in md_map:
+                for row in self._fts.get_backlinks(target):
+                    annotated.append((target, row))
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
             #    raised before anything moved.
@@ -2099,5 +2095,7 @@ class DocumentManager:
             files_moved=len(moves),
             updated_links=len(pending_callbacks),
             failed_links=failed_links,
-            hint=self._submodule_links_hint(failed_links),
+            hint=self._submodule_links_hint(
+                failed_links, allow_protected=allow_protected, include_submodules=False
+            ),
         )

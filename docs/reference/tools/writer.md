@@ -65,6 +65,7 @@ does not. To check conventions *before* writing, call
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ValueError: If `content_base64` is missing/invalid for attachments, or the content exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
 - `MCPError`: If `if_match` is provided and the file has been modified, or `if_match` is supplied for a file that does not yet exist (ConcurrentModificationError). Also when the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and path already exists while no `if_match` is supplied (DocumentExistsError); use 'edit' or 'append' instead, or read the file first and pass its etag as `if_match`.
 
@@ -116,6 +117,7 @@ whitespace is used and reported as `match_type` `"normalized"`.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ValueError: If parameter combination is invalid, or line numbers are out of range.
 - EditConflictError: If `old_text` is not found or appears more than once; a not-found error may name the closest line and the first differing character.
 - DocumentNotFoundError: If no file exists at the given path.
@@ -166,6 +168,7 @@ a paragraph or section.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ValueError: If content is empty.
 - DocumentNotFoundError: If no file exists at the given path and `create_if_missing` is false.
 - `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
@@ -197,6 +200,7 @@ Dict with path (str) of the deleted file.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentNotFoundError: If no file exists at the given path.
 - `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
 
@@ -239,6 +243,7 @@ attachment, saying why nothing was rewritten.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentNotFoundError: If `old_path` does not exist.
 - DocumentExistsError: If `new_path` already exists.
 - ValueError: If the path fails traversal validation.
@@ -290,6 +295,7 @@ Dict with `old_dir` (str), `new_dir` (str), `files_moved` (int) and
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentNotFoundError: If no non-empty folder exists at `old_dir`.
 - DocumentExistsError: If any destination file already exists; nothing is moved.
 - ValueError: If a path fails traversal validation or the two paths are nested.
@@ -343,6 +349,7 @@ Dict with:
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentExistsError: If the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and *path* already exists while no *`if_match`* is supplied. The save routes through the same guarded `write` / `write_attachment` path as the write tools, so read the existing note first and pass its etag as *`if_match`* to replace it deliberately, or fetch to a fresh path.
 - InvalidRequestError: If the URL scheme is not http/https, the host is not publicly routable (private, loopback, link-local, carrier-grade NAT and reserved ranges are refused) or cannot be resolved, checked on the supplied URL and on every redirect hop, the download exceeds the size limit, or the response cannot be decoded.
 - ToolError: If the remote site answers a non-2xx status (retry later for a 5xx, check the URL otherwise; the message never names the URL) or redirects more times than the client allows.
@@ -393,6 +400,7 @@ left as it is and not counted.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a path is protected; eligible bulk writes remain.
 - TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
 - IndexUnavailableError: If the index build failed; nothing is changed.
 - DocumentUnreadableError: If a note it rewrites cannot be read; notes converted before it keep their changes.
@@ -446,6 +454,7 @@ Dict with:
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a path is protected; eligible bulk writes remain.
 - TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
 - IndexUnavailableError: If the index build failed; nothing is changed.
 - DocumentUnreadableError: If the folder's index.md exists but cannot be read; it is left untouched.
@@ -488,6 +497,7 @@ distinct days), plus:
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ToolError: If log.md already exists in the folder; nothing is written.
 - DocumentUnreadableError: If log.md exists but cannot be read; it is left untouched.
 

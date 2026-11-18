@@ -228,21 +228,29 @@ def test_backlink_external_change_and_override(
         vault.close()
 
 
-def test_maintenance_exempt_but_clients_refused(tmp_path: Path) -> None:
+def test_maintenance_respects_protection(tmp_path: Path) -> None:
     from markdown_vault_mcp._okf_write import okf_write_suppressed
 
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (tmp_path / "log.md").write_text("original log")
+    (tmp_path / "private").mkdir()
+    (tmp_path / "private/note.md").write_text("private")
+    original = (tmp_path / "index.md").read_bytes()
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(
-            read_only=False, okf_write=True, protected_paths=["index.md", "log.md"]
+            read_only=False,
+            okf_write=True,
+            protected_paths=["index.md", "log.md", "private"],
         ),
     )
     try:
         vault.index.build_index()
         vault.writer.write("new.md", "# New")
-        assert "/new.md" in (tmp_path / "index.md").read_text()
-        assert "new.md" in (tmp_path / "log.md").read_text()
+        assert (tmp_path / "new.md").exists()
+        assert (tmp_path / "index.md").read_bytes() == original
+        assert (tmp_path / "log.md").read_text() == "original log"
+        assert not (tmp_path / "private/index.md").exists()
         with (
             okf_write_suppressed(),
             pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"),
@@ -352,5 +360,115 @@ def test_protected_note_with_no_convertible_links_does_not_block(
         vault.writer.okf_convert_links()
         assert (tmp_path / "a.md").read_text() == "[z](/z.md)"
         assert (tmp_path / "policy.md").read_text() == "no links"
+    finally:
+        vault.close()
+
+
+def test_generated_child_over_read_cap_does_not_abort_parent(tmp_path: Path) -> None:
+    (tmp_path / "child").mkdir()
+    (tmp_path / "child/note.md").write_text("# A")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, max_note_read_bytes=10),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index()
+        assert "/child/index.md" in (tmp_path / "index.md").read_text()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("operation", ["convert", "index", "log"])
+def test_okf_library_override(tmp_path: Path, operation: str) -> None:
+    (tmp_path / "note.md").write_text("[[target]]")
+    (tmp_path / "target.md").write_text("# target")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, protected_paths=["note.md", "index.md", "log.md"]
+        ),
+    )
+    try:
+        vault.index.build_index()
+        if operation == "convert":
+            vault.writer.okf_convert_links(allow_protected=True)
+            assert (tmp_path / "note.md").read_text() == "[target](/target.md)"
+        elif operation == "index":
+            vault.writer.okf_generate_index(allow_protected=True)
+            assert (tmp_path / "index.md").exists()
+        else:
+            vault.writer.okf_seed_log(allow_protected=True)
+            assert (tmp_path / "log.md").exists()
+    finally:
+        vault.close()
+
+
+async def test_okf_tool_schemas_do_not_expose_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _clear_env: None
+) -> None:
+    from fastmcp import Client
+
+    from tests.server_factory import make_server
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    async with Client(make_server()) as client:
+        tools = await client.list_tools()
+    for tool in tools:
+        if tool.name in {"okf_convert_links", "okf_generate_index", "okf_seed_log"}:
+            assert "allow_protected" not in tool.input_schema.get("properties", {})
+
+
+def test_folder_hint_does_not_blame_protection_under_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=["sub"]),
+    )
+    try:
+        monkeypatch.setattr(vault._doc_mgr, "in_submodule", lambda _path: True)
+        assert (
+            vault._doc_mgr._submodule_links_hint(
+                ["sub/a.md"], allow_protected=True, include_submodules=False
+            )
+            is None
+        )
+        hint = vault._doc_mgr._submodule_links_hint(["sub/a.md"], allow_protected=True)
+        assert hint and "submodule" in hint and "PROTECTED_PATHS" not in hint
+    finally:
+        vault.close()
+
+
+def test_empty_policy_folder_move_has_no_submodule_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/note.md").write_text("# note")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        monkeypatch.setattr(
+            vault._doc_mgr,
+            "_rewrite_link_sources",
+            lambda *_args, **_kwargs: ([], [], ["sub/link.md"]),
+        )
+        monkeypatch.setattr(vault._doc_mgr, "in_submodule", lambda _path: True)
+        result = vault.writer.move_folder("src", "dst")
+        assert result.failed_links == ["sub/link.md"]
+        assert result.hint is None
+    finally:
+        vault.close()
+
+
+def test_glob_double_star_requires_folder(tmp_path: Path) -> None:
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=["**/_conventions.md"]),
+    )
+    try:
+        vault.writer.write("_conventions.md", "root allowed")
+        with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
+            vault.writer.write("folder/_conventions.md", "refused")
     finally:
         vault.close()
