@@ -369,10 +369,7 @@ class DocumentManager:
             path, allow_protected=allow_protected, allow_designated=allow_designated
         )
         if reason:
-            raise InvalidRequestError(
-                f"Path {path!r} is {reason}. "
-                "Ask the operator to edit the file or change the setting."
-            )
+            raise InvalidRequestError(f"Path {path!r} is {reason}.")
 
     def _refuse_submodule(
         self, abs_path: Path, argument: str, path: str, *, holding: bool = True

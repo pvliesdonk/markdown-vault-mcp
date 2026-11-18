@@ -66,7 +66,9 @@ def _advance(
 
 def _equivalent(name: str, pattern: str, case: bool, unicode: bool) -> bool:
     """Match an original glob against measured equivalent segment spellings."""
-    tokens = re.findall(r"\[!?\]?[^\]]*\]|.", pattern, re.S)
+    tokens = re.findall(
+        r"\[(?:!(?:\][^\]]*|[^\]]+)|\][^\]]*|[^!\]][^\]]*)\]|.", pattern, re.S
+    )
     base = normalize("NFD", name) if unicode else name
     decompositions = _witnesses(True) if unicode else {}
     cases = _witnesses(False) if case else {}

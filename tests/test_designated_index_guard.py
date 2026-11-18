@@ -129,6 +129,23 @@ def test_rename_skips_designated_backlink(tmp_path: Path) -> None:
         vault.close()
 
 
+def test_literal_bracket_folder_refuses_case_alias(tmp_path: Path) -> None:
+    folder = tmp_path / "[]"
+    folder.mkdir()
+    index = folder / "index.md"
+    index.write_text("# generated")
+    if not (folder / "INDEX.md").exists():
+        pytest.skip("requires a case-insensitive filesystem")
+    vault = designated_vault(tmp_path, ("[]",))
+    try:
+        vault.index.build_index()
+        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
+            vault.writer.write("[]/INDEX.md", "client data")
+        assert index.read_text() == "# generated"
+    finally:
+        vault.close()
+
+
 def test_directory_named_index_is_not_reserved(tmp_path: Path) -> None:
     (tmp_path / "guides" / "index.md").mkdir(parents=True)
     (tmp_path / "guides" / "index.md" / "note.md").write_text("note")
@@ -207,6 +224,12 @@ def test_filesystem_probe_and_failure(
     [
         ("a", "[!a]", True, False, True),
         ("a", "[!aA]", True, False, False),
+        ("[]", "[]", True, True, True),
+        ("[!]", "[!]", True, False, True),
+        ("[abc", "[abc", False, False, True),
+        ("]", "[]]", False, False, True),
+        ("b", "[!]a]", False, False, True),
+        ("b", "[a-c]", False, False, True),
         ("ẞ", "[ß]", True, False, True),
         ("ẞ", "[À-ÿ]", True, False, True),
         ("é", "??", False, True, True),
@@ -247,6 +270,7 @@ def test_equivalent_segment_matches_original_glob(
         (("é", "??"), (False, False), False),
         (("ff", "ﬀ"), (True, False), True),
         (("ff", "ﬀ"), (False, False), False),
+        (("[]", "[]"), (True, True), True),
     ],
 )
 def test_policy_with_simulated_folding_axes(
