@@ -58,7 +58,12 @@ logger = logging.getLogger(__name__)
 _OPERATION_VERB: dict[str, str] = {"write": "wrote", "edit": "edited"}
 
 
-def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
+def folder_is_designated(
+    folder: str,
+    patterns: tuple[str, ...],
+    *,
+    segment_match: Callable[[str, str], bool] = fnmatchcase,
+) -> bool:
     """Return whether a folder matches the configured designation globs.
 
     ``a/**`` does not designate ``a`` itself. The empty folder is root.
@@ -67,6 +72,7 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
     Args:
         folder: Vault-relative folder, or an empty string for the root.
         patterns: Configured folder globs.
+        segment_match: Matcher for a single folder segment.
 
     Returns:
         Whether any pattern matches the folder.
@@ -83,7 +89,7 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
             )
         return (
             bool(parts)
-            and fnmatchcase(parts[0], glob[0])
+            and segment_match(parts[0], glob[0])
             and matches(parts[1:], glob[1:])
         )
 

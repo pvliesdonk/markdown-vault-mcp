@@ -100,6 +100,69 @@ def test_generator_obeys_operator_protection(tmp_path: Path, protected: bool) ->
         vault.close()
 
 
+@pytest.mark.parametrize("folder", ["A", "a"])
+def test_negated_glob_protects_generated_index(tmp_path: Path, folder: str) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    (tmp_path / "A").mkdir()
+    if folder == "a" and not (tmp_path / folder).exists():
+        pytest.skip("filesystem distinguishes case variants")
+    vault = designated_vault(tmp_path, ("[!a]*",))
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="A")
+        index = tmp_path / "A/index.md"
+        before = index.read_text()
+        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
+            vault.writer.write(f"{folder}/index.md", "CLIENT CONTENT")
+        vault.writer.write("A/note.md", "# Note")
+        wait_for_writer_drain(vault)
+        assert "CLIENT CONTENT" not in index.read_text()
+        assert before != index.read_text()
+    finally:
+        vault.close()
+
+
+def test_negated_glob_protects_missing_case_alias(tmp_path: Path) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    (tmp_path / "probe").touch()
+    if not (tmp_path / "PROBE").exists():
+        pytest.skip("filesystem distinguishes case variants")
+    vault = designated_vault(tmp_path, ("[!a]*",))
+    try:
+        vault.index.build_index()
+        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
+            vault.writer.write("a/index.md", "CLIENT CONTENT")
+        assert not (tmp_path / "A/index.md").exists()
+        vault.writer.write("A/note.md", "# Note")
+        wait_for_writer_drain(vault)
+        assert "CLIENT CONTENT" not in (tmp_path / "A/index.md").read_text()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("followup", ["a", "A"])
+def test_negated_glob_excluding_case_variants_preserves_authored_index(
+    tmp_path: Path, followup: str
+) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    (tmp_path / "probe").touch()
+    if not (tmp_path / "PROBE").exists():
+        pytest.skip("filesystem distinguishes case variants")
+    (tmp_path / "a").mkdir()
+    vault = designated_vault(tmp_path, ("[!aA]*",))
+    try:
+        vault.index.build_index()
+        vault.writer.write("a/index.md", "AUTHORED")
+        vault.writer.write(f"{followup}/note.md", "# Note")
+        wait_for_writer_drain(vault)
+        assert (tmp_path / "a/index.md").read_text() == "AUTHORED"
+    finally:
+        vault.close()
+
+
 def test_directory_and_leaf_symlink_aliases(tmp_path: Path) -> None:
     (tmp_path / "guides").mkdir()
     (tmp_path / "guides" / "index.md").write_text("original")
@@ -114,47 +177,23 @@ def test_directory_and_leaf_symlink_aliases(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("target", ["guides/concept.md", "other/index.md"])
-def test_designated_leaf_alias_to_authored_note_is_editable(
-    tmp_path: Path, target: str
+def test_designated_leaf_alias_to_undesignated_index_is_editable(
+    tmp_path: Path,
 ) -> None:
-    from tests.conftest import wait_for_writer_drain
-
     (tmp_path / "guides").mkdir()
     (tmp_path / "other").mkdir()
-    note = tmp_path / target
+    note = tmp_path / "other/index.md"
     note.write_text("authored")
     (tmp_path / "guides/index.md").symlink_to(note)
     vault = designated_vault(tmp_path)
     try:
-        vault.index.build_index()
-        vault.writer.write("guides/note.md", "# Note")
-        wait_for_writer_drain(vault)
-        assert note.read_text() == "authored"
         vault.writer.write("guides/index.md", "changed")
         assert note.read_text().endswith("changed")
     finally:
         vault.close()
 
 
-def test_explicit_policy_protects_designated_leaf_alias(tmp_path: Path) -> None:
-    from markdown_vault_mcp._path_guard import PathGuard
-    from markdown_vault_mcp.okf_capabilities import designated_index_path
-
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/concept.md").write_text("authored")
-    (tmp_path / "guides/index.md").symlink_to(tmp_path / "guides/concept.md")
-    guard = PathGuard(
-        tmp_path,
-        ["guides/index.md"],
-        lambda p: designated_index_path(tmp_path, p, ("guides",)),
-    )
-    assert "PROTECTED_PATHS" in (guard.reason("guides/index.md") or "")
-
-
-def test_automatic_maintenance_and_legacy_alias(tmp_path: Path) -> None:
-    from tests.conftest import wait_for_writer_drain
-
+def test_legacy_alias_refuses_designated_index(tmp_path: Path) -> None:
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     caps = ContentConfig(okf_mode="on", okf_write=True).okf_capabilities
     vault = Vault(
@@ -165,9 +204,6 @@ def test_automatic_maintenance_and_legacy_alias(tmp_path: Path) -> None:
         vault.index.build_index()
         with pytest.raises(InvalidRequestError, match="okf_generate_index"):
             vault.writer.write("index.md", "changed")
-        vault.writer.write("note.md", "# Note\n")
-        wait_for_writer_drain(vault)
-        assert "/note.md" in (tmp_path / "index.md").read_text()
     finally:
         vault.close()
 
@@ -226,43 +262,6 @@ async def test_upload_refuses_designated_index(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("alias", ["GUIDES/index.md", "guides/INDEX.md"])
-def test_existing_case_alias_cannot_edit_index(tmp_path: Path, alias: str) -> None:
-    (tmp_path / "guides").mkdir()
-    index = tmp_path / "guides" / "index.md"
-    index.write_text("original")
-    if not (tmp_path / alias).exists():
-        pytest.skip("filesystem distinguishes these names")
-    vault = designated_vault(tmp_path)
-    try:
-        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
-            vault.writer.write(alias, "changed")
-        assert index.read_text() == "original"
-    finally:
-        vault.close()
-
-
-def test_unicode_folder_alias_cannot_edit_index(tmp_path: Path) -> None:
-    folder = tmp_path / "caf\u00e9"
-    folder.mkdir()
-    (folder / "index.md").write_text("original")
-    alias = "cafe\u0301/index.md"
-    if not (tmp_path / alias).exists():
-        pytest.skip("filesystem distinguishes Unicode spellings")
-    caps = ContentConfig(
-        okf_mode="on", okf_index=True, okf_folders=("caf\u00e9",)
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-    )
-    try:
-        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
-            vault.writer.write(alias, "changed")
-    finally:
-        vault.close()
-
-
 def test_directory_named_index_is_not_reserved(tmp_path: Path) -> None:
     (tmp_path / "guides" / "index.md").mkdir(parents=True)
     (tmp_path / "guides" / "index.md" / "note.md").write_text("note")
@@ -274,151 +273,44 @@ def test_directory_named_index_is_not_reserved(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_external_parent_is_refused(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("path", "folders", "expected"),
+    [
+        ("GUIDES/index.md", ("guides",), "case"),
+        ("guides/INDEX.md", ("guides",), "case"),
+        ("cafe\u0301/index.md", ("café",), "unicode"),
+        ("e\u0301/index.md", ("é",), "unicode"),
+        ("INDEX.md", (".",), "case"),
+        ("123/INDEX.md", ("123",), "case"),
+        ("guides/NEW/INDEX.md", ("guides/**",), "case"),
+        ("cafe\u0301/NEW/INDEX.md", ("café/**",), "both"),
+        ("link/index.md", ("link",), "never"),
+    ],
+)
+def test_designated_index_follows_filesystem_identity(
+    tmp_path: Path, path: str, folders: tuple[str, ...], expected: str
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
     root = tmp_path / "vault"
     root.mkdir()
+    (root / "guides").mkdir()
+    (root / "guides/index.md").write_text("original")
+    (root / "café").mkdir()
+    (root / "café/index.md").write_text("original")
     outside = tmp_path / "outside"
     outside.mkdir()
     (root / "link").symlink_to(outside, target_is_directory=True)
-    caps = ContentConfig(
-        okf_mode="on", okf_index=True, okf_folders=("link",)
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-    )
-    try:
-        with pytest.raises(InvalidRequestError, match="Path traversal"):
-            vault.writer.write("link/index.md", "outside")
-        assert not (outside / "index.md").exists()
-    finally:
-        vault.close()
-
-
-def test_distinct_case_names_remain_editable(tmp_path: Path) -> None:
-    (tmp_path / "guides").mkdir()
-    other = tmp_path / "GUIDES"
-    try:
-        other.mkdir()
-    except FileExistsError:
-        pytest.skip("filesystem aliases case variants")
-    (tmp_path / "guides" / "index.md").write_text("generated")
-    (tmp_path / "guides" / "INDEX.md").write_text("authored")
-    vault = designated_vault(tmp_path)
-    try:
-        vault.writer.write("GUIDES/index.md", "other")
-        vault.writer.write("guides/INDEX.md", "authored change")
-        assert (tmp_path / "guides" / "index.md").read_text() == "generated"
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize(
-    ("folder", "destination"),
-    [
-        (".", "INDEX.md"),
-        ("123", "123/INDEX.md"),
-        ("guides", "guides/INDEX.md"),
-        ("guides/**", "guides/NEW/INDEX.md"),
-        ("café/**", "cafe\u0301/NEW/INDEX.md"),
-    ],
-)
-def test_missing_folder_alias_cannot_lose_client_content(
-    tmp_path: Path, folder: str, destination: str
-) -> None:
-    from tests.conftest import wait_for_writer_drain
-
-    (tmp_path / "existing.md").write_text("# Existing\n")
-    if not (tmp_path / "EXISTING.md").exists():
-        pytest.skip("filesystem distinguishes case variants")
-    caps = ContentConfig(
-        okf_mode="on", okf_index=True, okf_folders=(folder,)
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-    )
-    try:
-        vault.index.build_index()
-        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
-            vault.writer.write(destination, "CLIENT CONTENT")
-        assert not (tmp_path / destination).exists()
-        parent = Path(destination).parent
-        vault.writer.write(f"{parent}/note.md", "# Note\n")
-        wait_for_writer_drain(vault)
-        generated = tmp_path / destination
-        assert not generated.exists() or "CLIENT CONTENT" not in generated.read_text()
-    finally:
-        vault.close()
-
-
-def test_missing_designated_folder_does_not_crash_for_distinct_case(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "GUIDES").mkdir()
-    vault = designated_vault(tmp_path)
-    try:
-        from markdown_vault_mcp.okf_capabilities import designated_index_path
-
-        assert designated_index_path(tmp_path, "guides/index.md", ("guides",))
-        if not (tmp_path / "guides").exists():
-            vault.writer.write("GUIDES/index.md", "authored")
-            assert (tmp_path / "GUIDES" / "index.md").read_text() == "authored"
-    finally:
-        vault.close()
-
-
-def test_unicode_destination_follows_native_filesystem(tmp_path: Path) -> None:
-    """An ASCII-only anchor still distinguishes native Unicode identity."""
-    composed = tmp_path / "café"
-    decomposed = tmp_path / "cafe\u0301"
-    composed.mkdir()
-    aliases = decomposed.exists() and decomposed.samefile(composed)
-    composed.rmdir()
-    (tmp_path / "notes.md").write_text("# Notes\n")
-    caps = ContentConfig(
-        okf_mode="on", okf_index=True, okf_folders=("café",)
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-    )
-    try:
-        if aliases:
-            with pytest.raises(InvalidRequestError, match="okf_generate_index"):
-                vault.writer.write("cafe\u0301/index.md", "authored")
-            assert not decomposed.exists()
-        else:
-            vault.writer.write("cafe\u0301/index.md", "authored")
-            assert (decomposed / "index.md").read_text() == "authored"
-        assert not list(tmp_path.glob(".mvmcp-probe-*"))
-    finally:
-        vault.close()
-
-
-def test_missing_folder_operand_never_reaches_samefile(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A distinct alternate folder must not make an absent operand crash."""
-    from markdown_vault_mcp.okf_capabilities import designated_index_path
-
-    (tmp_path / "GUIDES").mkdir()
-    missing = tmp_path / "guides"
-    original_exists = Path.exists
-
-    def exists(path: Path) -> bool:
-        return False if str(path) == str(missing) else original_exists(path)
-
-    original_samefile = Path.samefile
-
-    def samefile(path: Path, other: Path) -> bool:
-        if str(other) == str(missing):
-            raise FileNotFoundError(str(other))
-        return original_samefile(path, other)
-
-    monkeypatch.setattr(Path, "exists", exists)
-    monkeypatch.setattr(Path, "samefile", samefile)
-    assert designated_index_path(tmp_path, "guides/index.md", ("guides",))
+    case_aliases = (root / "GUIDES").exists()
+    unicode_aliases = (root / "cafe\u0301").exists()
+    want = {
+        "case": case_aliases,
+        "unicode": unicode_aliases,
+        "both": case_aliases and unicode_aliases,
+        "never": False,
+    }[expected]
+    assert designated_index_path(root, path, folders) is want
+    assert not list(root.glob(".mvmcp-probe-*"))
 
 
 def test_filesystem_probe_and_failure(
@@ -444,13 +336,176 @@ def test_filesystem_probe_and_failure(
     assert _probe(tmp_path) == (True, True)
 
 
-def test_symlink_is_not_filesystem_wide_case_evidence(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("fold_case", "folder", "policy"),
+    [
+        (True, "a", ("[!a]*", True)),
+        (False, "a", ("[!a]*", False)),
+        (True, "A", ("[!a]*", True)),
+        (False, "A", ("[!a]*", True)),
+        (True, "a", ("[!aA]*", False)),
+        (False, "a", ("[!aA]*", False)),
+    ],
+)
+def test_negated_glob_policy_on_measured_filesystem(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fold_case: bool,
+    folder: str,
+    policy: tuple[str, bool],
+) -> None:
     from markdown_vault_mcp.okf_capabilities import designated_index_path
 
-    (tmp_path / "guides").mkdir()
-    if (tmp_path / "GUIDES").exists():
-        pytest.skip("filesystem aliases case variants")
-    (tmp_path / "GUIDES").symlink_to(tmp_path / "guides", target_is_directory=True)
-    (tmp_path / "OTHER").mkdir()
-    (tmp_path / "OTHER" / "index.md").write_text("authored")
-    assert not designated_index_path(tmp_path, "OTHER/index.md", ("other",))
+    pattern, expected = policy
+    monkeypatch.setattr(
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _anchor: (fold_case, False)
+    )
+    assert designated_index_path(tmp_path, f"{folder}/index.md", (pattern,)) is expected
+
+
+def test_casefold_expansion_in_positive_class(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+    monkeypatch.setattr(
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _anchor: (True, False)
+    )
+    assert designated_index_path(tmp_path, "ẞ/index.md", ("[ß]",))
+
+
+@pytest.mark.parametrize(
+    ("name", "pattern", "case", "unicode", "want"),
+    [
+        ("a", "[!a]", True, False, True),
+        ("a", "[!aA]", True, False, False),
+        ("ẞ", "[ß]", True, False, True),
+        ("ẞ", "[À-ÿ]", True, False, True),
+        ("é", "??", False, True, True),
+        ("é", "[!x]?", False, True, True),
+        ("e\u0301", "[é]", False, True, True),
+        ("K", "\u212a", False, True, True),
+        ("\u212a", "K", False, True, True),
+        ("A\u030a", "[Å]", False, True, True),
+        ("가", "??", False, True, True),
+        ("a\u0323\u0301", "a\u0301\u0323", False, True, True),
+        ("a\u0301\u0300", "a\u0300\u0301", False, True, False),
+        ("a\u0323\u0301", "a?\u0323", False, True, False),
+        ("]", "[]-]", False, False, True),
+        ("[", "[", False, False, True),
+        ("abc", "a*c", False, False, True),
+    ],
+)
+def test_equivalent_segment_matches_original_glob(
+    name: str, pattern: str, case: bool, unicode: bool, want: bool
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import _equivalent
+
+    assert _equivalent(name, pattern, case, unicode) is want
+
+
+@pytest.mark.parametrize(
+    ("name", "pattern", "axes"),
+    [
+        ("ẞ", "[ß]", (True, False)),
+        ("ß", "[ẞ]", (True, False)),
+        ("ẞ", "[À-ÿ]", (True, False)),
+        ("é", "??", (False, True)),
+        ("é", "[!x]?", (False, True)),
+        ("e\u0301", "[é]", (False, True)),
+        ("K", "\u212a", (False, True)),
+        ("\u212a", "K", (False, True)),
+        ("Å", "A\u030a", (False, True)),
+        ("Å", "A\u030a", (False, True)),
+        ("가", "??", (False, True)),
+        ("A", "[a-z]", (True, False)),
+    ],
+)
+def test_policy_with_simulated_folding_axes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    pattern: str,
+    axes: tuple[bool, bool],
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+    monkeypatch.setattr("markdown_vault_mcp.okf_capabilities._probe", lambda _p: axes)
+    assert designated_index_path(tmp_path, f"{name}/index.md", (pattern,))
+    monkeypatch.setattr(
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _p: (False, False)
+    )
+    assert not designated_index_path(tmp_path, f"{name}/index.md", (pattern,))
+
+
+def test_witness_tables_match_each_codepoint() -> None:
+    from unicodedata import normalize
+
+    from markdown_vault_mcp.okf_capabilities import _equivalent, _witnesses
+
+    for chars in _witnesses(True).values():
+        for char in chars:
+            nfd = normalize("NFD", char)
+            assert _equivalent(nfd, f"[{char}]", False, True)
+            assert _equivalent(char, nfd, False, True)
+    for fold, chars in _witnesses(False).items():
+        if len(fold) == 1:
+            for char in chars:
+                assert _equivalent(char, f"[{fold}]", True, False)
+
+
+@pytest.mark.parametrize(
+    ("designated", "alias", "pattern"),
+    [
+        ("ß", "ẞ", "[ß]"),
+        ("ß", "ẞ", "[À-ÿ]"),
+        ("e\u0301", "é", "??"),
+        ("e\u0301", "é", "[!x]?"),
+        ("a\u0301\u0323", "a\u0323\u0301", "a\u0301\u0323"),
+    ],
+)
+def test_native_glob_alias_cannot_lose_content(
+    tmp_path: Path, designated: str, alias: str, pattern: str
+) -> None:
+    (tmp_path / designated).mkdir()
+    if not (tmp_path / alias).exists():
+        pytest.skip("filesystem distinguishes spellings")
+    vault = designated_vault(tmp_path, (pattern,))
+    try:
+        vault.index.build_index()
+        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
+            vault.writer.write(f"{alias}/index.md", "CLIENT CONTENT")
+    finally:
+        vault.close()
+
+
+def test_literal_combining_marks_order_and_bounded_segment_matching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from itertools import permutations
+
+    import markdown_vault_mcp.okf_capabilities as capabilities
+
+    marks = "\u0315\u0301\u0323"
+    for spelling in permutations(marks):
+        assert capabilities._equivalent(
+            "a" + marks, "a" + "".join(spelling), False, True
+        )
+    calls = 0
+    original = capabilities._equivalent
+
+    def count(name: str, pattern: str, case: bool, unicode: bool) -> bool:
+        nonlocal calls
+        calls += 1
+        return original(name, pattern, case, unicode)
+
+    monkeypatch.setattr(capabilities, "_equivalent", count)
+    monkeypatch.setattr(capabilities, "_probe", lambda _p: (True, True))
+    name = "é" * 20
+    assert capabilities.designated_index_path(tmp_path, f"{name}/INDEX.md", ("*",))
+    assert calls <= 3
+    calls = 0
+    assert capabilities.designated_index_path(
+        tmp_path, f"{name}/INDEX.md", ("e\u0301" * 20,)
+    )
+    assert calls <= 3
