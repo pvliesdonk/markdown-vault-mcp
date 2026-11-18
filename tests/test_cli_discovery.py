@@ -272,6 +272,9 @@ def test_historical_read_retains_revision_shape(
     discovery_source: Path, remote: bool
 ) -> None:
     """--revision returns historical content without a live etag or OKF annotation."""
+    (discovery_source / "index.md").write_text(
+        '---\nokf_version: "0.2"\n---\n# Index\n'
+    )
     _run_git(discovery_source, "init")
     _run_git(discovery_source, "config", "user.name", "Synthetic")
     _run_git(discovery_source, "config", "user.email", "synthetic@example.com")
@@ -282,9 +285,13 @@ def test_historical_read_retains_revision_shape(
     _run_git(discovery_source, "add", "alpha.md")
     _run_git(discovery_source, "commit", "-m", "test: change note")
     with reader_backend(remote) as connection:
-        result = CliRunner().invoke(
+        runner = CliRunner()
+        live = runner.invoke(app, ["read", "alpha.md", *connection, "--json"])
+        result = runner.invoke(
             app, ["read", "alpha.md", "--revision", revision, *connection, "--json"]
         )
+    assert live.exit_code == 0, live.output
+    assert json.loads(live.stdout)["okf"]["snapshot"]["algo"] == "mvmcp-concept-v1"
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
     assert "Details here." in data["content"]

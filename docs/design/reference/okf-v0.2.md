@@ -43,7 +43,6 @@ sources:
 
 On 2026-11-18, sections 5, 8, 9 and 11 of the public [neutral repository v0.3 draft](https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md) were rechecked. Its verification events do not bind a snapshot or check kind (§5.2). [source: neutral-v03-draft] This project retains the v0.2 baseline below; its snapshot digest is a project extension.
 
-
 What the OKF specification (`okf/SPEC.md` in
 `GoogleCloudPlatform/knowledge-catalog`) requires of a bundle and of a
 consumer, scoped to the fields and files this server reads, writes, audits
