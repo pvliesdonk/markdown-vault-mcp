@@ -22,6 +22,16 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 6.1.3 (2026-11-17)
+
+### Bug Fixes
+
+- use Bash tests for unary predicates (#2112)
+- release parsed notes during indexing (#2106)
+- retain note paths in rename subjects (#2115)
+- add an admin command to repair stacked log frontmatter (#2130)
+- report uncommitted startup changes (#2099)
+
 ## 6.1.3-rc.0 (2026-11-17)
 
 ### Bug Fixes

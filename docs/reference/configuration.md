@@ -232,8 +232,13 @@ The interaction subsections below follow the order of the variable tables after 
 
 #### Write safety {#write-safety}
 
-`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable
-servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`.
+`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool.
+
+On a read-only server, `OKF_WRITE` is valid but inactive; see the
+[OKF write layer](../use/okf.md#the-enforced-write-layer) for the startup
+diagnostic and affected operations.
+
+Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`.
 Whole-file `write` operations (notes and attachments) and `fetch` operations
 over an existing path require the matching `if_match` etag.
 Targeted `edit`, `append`, `delete`, and `rename`
