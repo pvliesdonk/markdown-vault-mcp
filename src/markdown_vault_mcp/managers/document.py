@@ -2292,17 +2292,20 @@ class DocumentManager:
             # 3. Capture backlinks for every moved note BEFORE the move, while
             #    the index still reflects old paths. Annotate each row with its
             #    target's old/new path so a multi-target rewrite is possible.
-            annotated = [(t, r) for t in md_map for r in self._fts.get_backlinks(t)]
+            annotated: list[tuple[str, dict[str, Any]]] = []  # (target_old, row)
+            for target_old in md_map:
+                for row in self._fts.get_backlinks(target_old):
+                    annotated.append((target_old, row))
 
-            observation_map = {
+            observed = {
                 self._vault_relative(
                     old_abs / Path(path).relative_to(old_dir)
                 ): self._vault_relative(new_abs / Path(path).relative_to(old_dir))
                 for path in md_map
             }
-            callers = dict(zip(observation_map, md_map.items(), strict=True))
+            callers = dict(zip(observed, md_map.items(), strict=True))
             captures = (
-                {path: self._observations.capture(path) for path in observation_map}
+                {path: self._observations.capture(path) for path in observed}
                 if self._observations is not None
                 else {}
             )
@@ -2317,9 +2320,7 @@ class DocumentManager:
                     shutil.move(str(src_abs), str(dst_abs))
                     completed.add(self._vault_relative(src_abs))
             except OSError as exc:
-                self._record_completed_moves(
-                    completed, observation_map, captures, callers
-                )
+                self._record_completed_moves(completed, observed, captures, callers)
                 raise FolderMoveInterruptedError(old_dir, new_dir) from exc
 
             # 5. Single-pass link rewrite. Group annotated rows by source,
@@ -2339,8 +2340,8 @@ class DocumentManager:
             )
 
             # 6. Queue the moved paths and rewritten sources for indexing.
-            self._record_moves(observation_map, captures, pending_callbacks)
-            moved = {**md_map, **observation_map}
+            self._record_moves(observed, captures, pending_callbacks)
+            moved = {**md_map, **observed}
             if self._mark_paths_dirty is not None:
                 self._mark_paths_dirty([*moved, *moved.values(), *dirty_paths])
 
