@@ -526,3 +526,42 @@ def test_postgres_designation_rebuild_and_reindex(
         assert not any("changed marker" in text for text in provider.texts)
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("body", ["short body", ""])
+def test_listing_metadata_cannot_push_concept_past_provider_limit(
+    tmp_path: Path, body: str
+) -> None:
+    class LimitedProvider(CountingProvider):
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            if any(len(text) > 500 for text in texts):
+                raise ValueError("input exceeds provider context")
+            return super().embed(texts)
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    description = "glow " * 250
+    (root / "index.md").write_text(
+        f"# Index\n\n- [Concept](/concept.md) - {description}\n"
+    )
+    (root / "concept.md").write_text(
+        f"---\ntitle: Concept\ndescription: {description}\n---\n\n{body}\n"
+    )
+    provider = LimitedProvider()
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            okf_mode="on",
+            okf_capabilities=_capabilities(True, (".",)),
+            max_chunk_chars=300,
+        ),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert "concept.md" in _paths(vault)
+        assert "index.md" not in _paths(vault)
+        assert any("glow" in text for text in provider.texts)
+    finally:
+        vault.close()
