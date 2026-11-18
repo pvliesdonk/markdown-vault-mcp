@@ -413,10 +413,11 @@ commits) reports `would_apply=false`. The push leg has no safe local
     when both versions have compatible frontmatter and preambles and only
     bullet-list entries. Identical complete entries under the same date are
     deduplicated. Equal reference definitions are supported; differing definitions
-    and invalid or out-of-order dates cause a fallback. Git converts the merged
-    content to worktree form before staging. If the merge is unsafe or the rebase aborts, the local log
-    is saved as a verbatim sibling. The union has no merge base, so an entry
-    edited or deleted on one side can return.
+    and invalid or out-of-order dates cause a fallback. The union reads each
+    side in working-tree form; Git applies its clean filter when staging. If the
+    merge is unsafe or the rebase aborts, the local log is saved as a verbatim
+    sibling. This two-way union does not use Git’s available merge base, so an
+    entry edited or deleted on one side can return.
     A designated generated index takes the upstream copy when present and is regenerated
     after the search index catches up. A generated-only conflict, including a
     deletion on either side, reports `rebased` with no siblings. When upstream

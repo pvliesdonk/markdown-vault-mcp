@@ -229,27 +229,24 @@ def test_later_local_entry_survives_multiple_replays(
         strategy.close()
 
 
-@pytest.mark.parametrize("later", ["none", "clean", "deleted"])
-def test_abort_after_union_restores_both_versions(
-    git_repo_pair: GitRepoPair,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    later: str,
-) -> None:
-    import subprocess
-
-    from markdown_vault_mcp.git import conflict
-    from markdown_vault_mcp.utils.fs import path_exists
-    from tests.fixtures.conflict_recovery import recovery_vault
+def _prepare_abort(
+    git_repo_pair: GitRepoPair, tmp_path: Path, case: tuple[str, bool]
+) -> tuple[Path, str, str]:
     from tests.fixtures.git import _git_clone, _git_commit, _run_git
 
+    later, filtered = case
     root = git_repo_pair.local_path
     base = "# Log\n\n## 2026-11-18\n\n- base\n"
+    if filtered:
+        _hex_filter(tmp_path, root)
+        (root / ".gitattributes").write_text("log.md filter=note\n")
+        _run_git(root, "add", ".gitattributes")
     _git_commit(root, "log.md", base, "seed")
     _git_commit(root, "other.md", "base\n", "seed other")
     _run_git(root, "push", "origin", "main")
     other = _git_clone(git_repo_pair, tmp_path)
+    if filtered:
+        _hex_filter(tmp_path, other)
     upstream = base + "- remote\n"
     _git_commit(other, "log.md", upstream, "remote")
     _git_commit(other, "other.md", "remote\n", "remote other")
@@ -263,6 +260,28 @@ def test_abort_after_union_restores_both_versions(
         _run_git(root, "rm", "log.md")
         _run_git(root, "commit", "-m", "delete log")
     _git_commit(root, "other.md", "local\n", "local other")
+    return root, upstream, latest
+
+
+@pytest.mark.parametrize(
+    "case",
+    [("none", False), ("clean", False), ("deleted", False), ("clean", True)],
+)
+def test_abort_after_union_restores_both_versions(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    case: tuple[str, bool],
+) -> None:
+    import subprocess
+
+    from markdown_vault_mcp.git import conflict
+    from markdown_vault_mcp.utils.fs import path_exists
+    from tests.fixtures.conflict_recovery import recovery_vault
+
+    later, _ = case
+    root, upstream, latest = _prepare_abort(git_repo_pair, tmp_path, case)
     original_run = subprocess.run
     calls = 0
 
@@ -334,85 +353,114 @@ def test_log_union_and_concept_conflict_only_saves_concept(
         strategy.close()
 
 
-def test_git_filter_preserves_readable_worktree(
-    git_repo_pair: GitRepoPair, tmp_path: Path
-) -> None:
+def _hex_filter(tmp_path: Path, *repos: Path) -> None:
     import shlex
     import sys
 
+    from tests.fixtures.git import _run_git
+
+    script = tmp_path / "hex_filter.py"
+    script.write_text(
+        "import sys\n"
+        "for line in sys.stdin.buffer:\n"
+        "    if sys.argv[1] == 'clean':\n"
+        "        sys.stdout.buffer.write(b'E:' + line.hex().encode() + b'\\n')\n"
+        "    else:\n"
+        "        sys.stdout.buffer.write(bytes.fromhex(line[2:].decode()) if line.startswith(b'E:') else line)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}"
+    for repo in repos:
+        for side in ("clean", "smudge"):
+            _run_git(repo, "config", f"filter.note.{side}", f"{command} {side}")
+
+
+@pytest.mark.parametrize(
+    "mode", ["union", "fallback", "local_failure", "upstream_failure"]
+)
+def test_filtered_log_resolution(
+    git_repo_pair: GitRepoPair,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    mode: str,
+) -> None:
+    import subprocess
+
+    from markdown_vault_mcp.git import conflict
     from tests.fixtures.conflict_recovery import recovery_vault
     from tests.fixtures.git import _git_clone, _git_commit, _run_git
 
     root = git_repo_pair.local_path
-    script = tmp_path / "filter.py"
-    script.write_text(
-        "import sys\ndata = sys.stdin.read()\nsys.stdout.write(data.replace(sys.argv[1], sys.argv[2]))\n"
-    )
-    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}"
-    for side in ("clean", "smudge"):
-        before, after = ("WORK", "BLOB") if side == "clean" else ("BLOB", "WORK")
-        _run_git(root, "config", f"filter.note.{side}", f"{command} {before} {after}")
+    _hex_filter(tmp_path, root)
     (root / ".gitattributes").write_text("log.md filter=note\n")
+    _run_git(root, "add", ".gitattributes")
     base = "# Log\n\n## 2026-11-18\n\n- base\n"
     _git_commit(root, "log.md", base, "seed")
-    _run_git(root, "add", ".gitattributes")
-    _run_git(root, "commit", "-m", "attributes")
     _run_git(root, "push", "origin", "main")
     other = _git_clone(git_repo_pair, tmp_path)
-    for side in ("clean", "smudge"):
-        before, after = ("WORK", "BLOB") if side == "clean" else ("BLOB", "WORK")
-        _run_git(other, "config", f"filter.note.{side}", f"{command} {before} {after}")
-    _git_commit(other, "log.md", base + "- remote WORK\n", "remote")
+    _hex_filter(tmp_path, other)
+    upstream = base + "- remote\n"
+    _git_commit(other, "log.md", upstream, "remote")
     _run_git(other, "push", "origin", "main")
-    _git_commit(root, "log.md", base + "- local WORK\n", "local")
+    local = base + ("1. ordered\n" if mode == "fallback" else "- local\n")
+    _git_commit(root, "log.md", local, "local")
+    original = conflict.run_git_capturing
+
+    def capture(repo: Path, *args: Any, **kwargs: Any) -> Any:
+        spec = "REBASE_HEAD:log.md" if mode == "local_failure" else ":2:log.md"
+        if (
+            mode.endswith("failure")
+            and args[:2] == ("cat-file", "--filters")
+            and spec in args
+        ):
+            return subprocess.CompletedProcess(args, 1, "", "forced failure")
+        return original(repo, *args, **kwargs)
+
+    monkeypatch.setattr(conflict, "run_git_capturing", capture)
     strategy, vault = recovery_vault(root)
     try:
         result = strategy.force_pull()
-        assert result.reason == "rebased"
-        content = (root / "log.md").read_text()
-        assert "- remote WORK\n" in content and "- local WORK\n" in content
-        blob = _run_git(root, "show", "HEAD:log.md")
-        assert "- remote BLOB\n" in blob and "- local BLOB\n" in blob
-        assert _run_git(root, "status", "--porcelain") == ""
+        if mode == "union":
+            assert result.reason == "rebased"
+            assert (root / "log.md").read_text() == base + "- remote\n- local\n"
+            blob = _run_git(root, "show", "HEAD:log.md")
+            assert blob.startswith("E:") and "- remote" not in blob
+            assert not result.conflict_files
+            assert _run_git(root, "status", "--porcelain") == ""
+        elif mode == "local_failure":
+            assert result.reason == "conflict_resolution_failed"
+            assert (root / "log.md").read_text() == upstream
+            assert not result.conflict_files
+            assert "git_conflict_mcp_version_unreadable path=log.md" in caplog.text
+        else:
+            assert result.reason == "conflicts_resolved_with_siblings"
+            assert (root / "log.md").read_text() == upstream
+            assert len(result.conflict_files) == 1
+            assert (root / result.conflict_files[0]).read_text() == local
     finally:
         vault.close()
         strategy.close()
 
 
-@pytest.mark.parametrize("failure", ["hash-object", "cat-file"])
-def test_worktree_conversion_failure_preserves_conflict(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    failure: str,
+def test_failed_upstream_read_leaves_conflict_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import subprocess
 
     from markdown_vault_mcp.git import conflict
 
-    upstream = "## 2026-11-18\n\n- remote\n"
-    local = "## 2026-11-18\n\n- local\n"
     target = tmp_path / "log.md"
     target.write_text("conflict markers\n")
-    commands: list[str] = []
+    commands: list[tuple[Any, ...]] = []
 
-    def capture(_root: Path, command: str, *_args: Any, **_kwargs: Any) -> Any:
-        commands.append(command)
-        output = upstream if command == "show" else "blob-id\n"
-        return subprocess.CompletedProcess(command, int(command == failure), output, "")
+    def capture(_root: Path, *args: Any, **_kwargs: Any) -> Any:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 1, "", "failure")
 
     monkeypatch.setattr(conflict, "run_git_capturing", capture)
     monkeypatch.setattr(
         conflict, "run_git", lambda *_args, **_kwargs: pytest.fail("index changed")
     )
-    assert not conflict._merge_log_conflict(tmp_path, "log.md", None, local)
+    assert not conflict._merge_log_conflict(tmp_path, "log.md", None, "local")
     assert target.read_text() == "conflict markers\n"
-    assert commands == (
-        ["show", "hash-object"]
-        if failure == "hash-object"
-        else ["show", "hash-object", "cat-file"]
-    )
-    assert (
-        "git_conflict_log_merge_fallback path=log.md reason=worktree_conversion"
-        in caplog.text
-    )
+    assert commands == [("cat-file", "--filters", ":2:log.md")]

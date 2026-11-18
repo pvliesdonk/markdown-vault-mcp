@@ -109,10 +109,11 @@ def resolve_rebase_conflicts(
         if conflicted is not None:
             conflicted.update(conflicting)
         for rel_path in conflicting:
+            is_log = Path(rel_path).name == "log.md"
             # Save the MCP version (the commit being rebased).
             show_result = run_git_capturing(
                 git_root,
-                "show",
+                *(("cat-file", "--filters") if is_log else ("show",)),
                 f"REBASE_HEAD:{rel_path}",
                 preserve_newlines=True,
                 env=env,
@@ -129,14 +130,14 @@ def resolve_rebase_conflicts(
                 )
 
             if (
-                Path(rel_path).name == "log.md"
+                is_log
                 and show_result.returncode == 0
                 and rel_path not in fallback
                 and _merge_log_conflict(git_root, rel_path, env, show_result.stdout)
             ):
                 merged.add(rel_path)
                 continue
-            if Path(rel_path).name == "log.md":
+            if is_log:
                 fallback.add(rel_path)
             _accept_upstream(git_root, rel_path, env, generated_index)
 
@@ -178,7 +179,12 @@ def _merge_log_conflict(
     git_root: Path, rel_path: str, env: dict[str, str] | None, local: str
 ) -> bool:
     upstream = run_git_capturing(
-        git_root, "show", f":2:{rel_path}", preserve_newlines=True, env=env
+        git_root,
+        "cat-file",
+        "--filters",
+        f":2:{rel_path}",
+        preserve_newlines=True,
+        env=env,
     )
     if upstream.returncode != 0:
         return False
@@ -188,36 +194,7 @@ def _merge_log_conflict(
             "git_conflict_log_merge_fallback path=%s reason=%s", rel_path, result.reason
         )
         return False
-    blob = run_git_capturing(
-        git_root,
-        "hash-object",
-        "-w",
-        "--stdin",
-        "--no-filters",
-        input=result.text,
-        preserve_newlines=True,
-        env=env,
-    )
-    if blob.returncode == 0:
-        converted = run_git_capturing(
-            git_root,
-            "cat-file",
-            "--filters",
-            f"--path={rel_path}",
-            blob.stdout.strip(),
-            preserve_newlines=True,
-            env=env,
-        )
-    else:
-        converted = blob
-    if converted.returncode != 0:
-        logger.warning(
-            "git_conflict_log_merge_fallback path=%s reason=%s",
-            rel_path,
-            "worktree_conversion",
-        )
-        return False
-    atomic_write(git_root / rel_path, os.fsencode(converted.stdout))
+    atomic_write(git_root / rel_path, os.fsencode(result.text))
     run_git(git_root, "add", pathspecs=[rel_path], env=env)
     logger.info(
         "git_conflict_log_merged path=%s entries_added=%d", rel_path, result.added
@@ -451,7 +428,7 @@ def abort_in_progress_rebase(
 def latest_log_snapshots(
     git_root: Path, env: dict[str, str] | None, saved: list[tuple[str, str]], ref: str
 ) -> list[tuple[str, str]]:
-    """Replace saved log blobs with the original branch tip after an abort.
+    """Replace saved logs with the original tip in working-tree form after an abort.
 
     Missing or unreadable blobs are omitted so the caller reports them unsaved
     instead of overwriting a local deletion with the upstream copy.
@@ -469,7 +446,12 @@ def latest_log_snapshots(
     for path, content in saved:
         if Path(path).name == "log.md":
             result = run_git_capturing(
-                git_root, "show", f"{ref}:{path}", preserve_newlines=True, env=env
+                git_root,
+                "cat-file",
+                "--filters",
+                f"{ref}:{path}",
+                preserve_newlines=True,
+                env=env,
             )
             if result.returncode != 0:
                 continue

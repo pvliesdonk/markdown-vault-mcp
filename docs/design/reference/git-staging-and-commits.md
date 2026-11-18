@@ -176,7 +176,7 @@ repositories under `/tmp/gitref/`.
 
 ### Conflicted rebase state (`conflict.py`)
 
-- `git cat-file --filters --path=<path> <blob>` applies worktree filters, including smudge and end-of-line conversion, for the given path. Git applies the clean filter on staging. [source: git-cat-file] [source: gitattributes] [pins: tests/test_okf_log_merge.py::test_git_filter_preserves_readable_worktree]
+- `git cat-file --filters --path=<path> <blob>` applies worktree filters, including smudge and end-of-line conversion, for the given path. It also accepts `<treeish>:<path>`, `:<stage>:<path>` and `REBASE_HEAD:<path>` without `--path`. Git applies the clean filter on staging. [source: git-cat-file] [source: gitattributes] [observed: git 2.56.1] [pins: tests/test_okf_log_merge.py::test_filtered_log_resolution]
 
 - `diff --name-only -z --diff-filter=U` lists unmerged paths NUL-terminated and unquoted; without `-z` a non-ASCII name renders `"n\303\266 te.md"`. [source: git-diff] (`--diff-filter`, `-z`) [observed: git 2.43.0] [pins: tests/test_git.py::TestConflictPathsAreUsable::test_a_non_ascii_conflict_is_resolved_and_saved]
 - `REBASE_HEAD` is the commit being replayed and `REBASE_HEAD:<path>` reads its version; the ref outlives a successful `--continue`, so it is no in-progress signal. [source: gitrevisions] [source: git-rebase] [observed: git 2.43.0] [pins: tests/test_git.py::TestRebaseInProgress::test_ignores_stale_rebase_head_ref]

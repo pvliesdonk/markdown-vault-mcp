@@ -7055,13 +7055,13 @@ under date headings during replay when both sides parse safely, deduplicating
 identical complete entries. The runtime uses `markdown-it-py` block spans to
 retain list items and their continuations; equal effective reference definitions
 are safe, while differing definitions fall back because resolution can change.
-Git converts the merged repository blob to worktree form before staging it.
+The union runs on each side’s working-tree text; Git’s clean filter stores the staged result.
 Decision (#1395): use the runtime `markdown-it-py` parser for CommonMark block
 spans so nested and multiline entries remain intact without a custom parser.
 Incompatible frontmatter or preambles, invalid date order and unsupported
 content also fall back to a verbatim local sibling. An aborted replay preserves
-the original branch tip as the sibling. Without a merge base, an entry
-edited or deleted on one side can return. When upstream deletes an
+the original branch tip as the sibling. This two-way entry union does not use
+the merge base Git offers during replay, so an entry edited or deleted on one side can return. When upstream deletes an
 authored index or log, the original stays deleted and the local bytes remain in
 its sibling. An unsaved non-generated conflict reports failure even when other
 paths are regenerated or saved as siblings. Designated generated indexes take
