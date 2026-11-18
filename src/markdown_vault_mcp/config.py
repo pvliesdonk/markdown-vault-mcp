@@ -1329,7 +1329,11 @@ class ProjectConfig:
     okf_folders: Sequence[str] | None = field(
         default=None,
         metadata={
-            "help": "Comma-separated designated OKF folder globs; defaults to root (.).",
+            "help": (
+                "Comma-separated designated OKF folder globs; defaults to root (.). "
+                "* matches one folder level; ** spans levels. Leading ./ or / "
+                "and trailing / are ignored."
+            ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },

@@ -263,7 +263,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
-          "description": "Comma-separated designated OKF folder globs; defaults to root (.)."
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
@@ -937,7 +937,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
-          "description": "Comma-separated designated OKF folder globs; defaults to root (.)."
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",

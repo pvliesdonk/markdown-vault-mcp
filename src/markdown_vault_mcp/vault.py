@@ -790,7 +790,9 @@ class Vault:
             settings.okf_capabilities
             or ContentConfig(okf_write=settings.okf_write).okf_capabilities
         )
-        if not settings.read_only and (capabilities.index or capabilities.log != "off"):
+        if not settings.read_only and (
+            capabilities.index or capabilities.log == "writes"
+        ):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
 
             self._okf_convention = ConventionMaintainer(

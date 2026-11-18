@@ -206,6 +206,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             Snippet(
                 "When 'stats' reports an OKF bundle, weigh notes by trust tier: "
                 "deprecated, stale and unverified ones count for less. "
+                "A human-reviewed tier records a dated review that may predate the current text. "
                 # Terse on purpose: the generated instructions stay under
                 # pvl-core's 1,536-unit generated target, and an
                 # agent-authored literal space is exactly the defect #1494

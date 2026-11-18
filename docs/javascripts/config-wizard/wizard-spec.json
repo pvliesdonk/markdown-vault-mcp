@@ -733,7 +733,7 @@
       "label": "Okf Folders",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
-      "help": "Comma-separated designated OKF folder globs; defaults to root (.).",
+      "help": "Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored.",
       "advancedGroup": "Content"
     },
     {

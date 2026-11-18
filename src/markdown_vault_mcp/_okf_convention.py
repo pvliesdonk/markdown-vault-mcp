@@ -37,7 +37,7 @@ from markdown_vault_mcp.okf import (
     is_okf_reserved_file,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
-from markdown_vault_mcp.utils import folder_of
+from markdown_vault_mcp.utils import folder_of, normalize_folder
 from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
@@ -60,6 +60,7 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
     """Return whether a folder matches the configured designation globs.
 
     ``a/**`` does not designate ``a`` itself. The empty folder is root.
+    Leading ``./`` or ``/`` and trailing ``/`` in patterns are ignored.
 
     Args:
         folder: Vault-relative folder, or an empty string for the root.
@@ -84,9 +85,18 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
             and matches(parts[1:], glob[1:])
         )
 
-    if not folder:
-        return "." in patterns or "**" in patterns
-    return any(matches(tuple(folder.split("/")), tuple(p.split("/"))) for p in patterns)
+    for pattern in patterns:
+        glob = tuple(
+            part
+            for part in (normalize_folder(pattern) or "").split("/")
+            if part and part != "."
+        )
+        if not folder:
+            if not glob or glob == ("**",):
+                return True
+        elif matches(tuple(folder.split("/")), glob):
+            return True
+    return False
 
 
 class ConventionMaintainer:
