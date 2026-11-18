@@ -134,7 +134,7 @@ async def test_mcp_author_visibility_and_identity(
                 "fields": {"title": "Other"},
             },
         )
-        await client.call_tool(
+        result = await client.call_tool(
             "okf_author",
             {
                 "path": "note.md",
@@ -143,6 +143,10 @@ async def test_mcp_author_visibility_and_identity(
                 "producer": "codex/6.1",
             },
         )
+        payload = _parse_tool_data(result)
+        assert payload["path"] == "note.md"
+        assert "previous_revision" in payload
+        assert payload["unresolved_links"] is None
     text = (tmp_path / "note.md").read_text()
     assert "secret-subject" not in text
     assert frontmatter.loads(text).metadata["generated"]["by"] == "codex/6.1"
@@ -789,3 +793,78 @@ def test_round3_flow_root_adds_producer(mapping: str) -> None:
     result = author_text(f"---\n{mapping}\n---\nBody\n", {}, "process:job")
     assert parse_frontmatter(result).metadata["generated"]["by"] == "process:job"
     assert result.endswith("---\nBody\n")
+
+
+@pytest.mark.parametrize("indicator", [">", "|", ">-", "|+", ">2-"])
+def test_round4_block_scalar_header_comment_survives(
+    tmp_path: Path, indicator: str
+) -> None:
+    path = tmp_path / "note.md"
+    original = f"---\ndescription: {indicator} # editorial context\n  original # data\n  # scalar data\nverified: [{{by: human:bob}}]\n---\nBody\n"
+    path.write_text(original)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        before = vault.reader.read("note.md")
+        assert before is not None
+        vault.writer.okf_author(
+            "note.md", if_match=before.etag, fields={"description": "New"}
+        )
+        after = vault.reader.read("note.md")
+        assert after is not None and after.frontmatter["description"] == "New"
+        result = path.read_text()
+        assert "# editorial context" in result
+        assert "# scalar data" not in result
+        assert "verified: [{by: human:bob}]\n---\nBody\n" in result
+    finally:
+        vault.close()
+
+
+def test_round4_generated_scalar_comment_and_extension_survive(tmp_path: Path) -> None:
+    path = tmp_path / "note.md"
+    path.write_text(
+        "---\ngenerated:\n  by: > # attribution\n    old/1 # data\n  extension: keep # retained\n---\nBody\n"
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        before = vault.reader.read("note.md")
+        assert before is not None
+        vault.writer.okf_author(
+            "note.md", if_match=before.etag, fields={}, producer="human:alice"
+        )
+        after = vault.reader.read("note.md")
+        assert (
+            after is not None and after.frontmatter["generated"]["by"] == "human:alice"
+        )
+        result = path.read_text()
+        assert "# attribution" in result
+        assert "  extension: keep # retained\n" in result
+        assert "# data" not in result
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("title", ["a, b", "close}", "[brackets]", "colon: space"])
+@pytest.mark.parametrize(
+    "header",
+    ["type: Guide\ntitle: Old\n", "{type: Guide, title: Old}\n", "{type: Guide}\n"],
+)
+def test_round4_title_yaml_punctuation(tmp_path: Path, title: str, header: str) -> None:
+    path = tmp_path / "note.md"
+    path.write_text(f"---\n{header}---\nBody\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        before = vault.reader.read("note.md")
+        assert before is not None
+        vault.writer.okf_author(
+            "note.md",
+            if_match=before.etag,
+            fields={"title": title, "tags": ["b, c"]},
+            producer="human:alice",
+        )
+        after = vault.reader.read("note.md")
+        assert after is not None
+        assert after.frontmatter["title"] == title
+        assert after.frontmatter["tags"] == ["b, c"]
+        assert after.frontmatter["generated"]["by"] == "human:alice"
+    finally:
+        vault.close()

@@ -524,7 +524,7 @@ Set selected editorial fields on an existing OKF concept.
 
 **Returns**
 
-The written path, creation flag, previous revision and unresolved links.
+The written path and previous revision when available.
 Read the note again to obtain a fresh etag.
 
 <!-- DOMAIN-EXAMPLE-okf_author-START -->

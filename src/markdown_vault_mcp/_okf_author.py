@@ -79,11 +79,9 @@ def _header_span(text: str) -> tuple[int, int] | None:
 
 
 def _render(value: Any) -> str:
-    return (
-        yaml.safe_dump(value, default_flow_style=True, allow_unicode=True, width=100000)
-        .removesuffix("\n...\n")
-        .rstrip("\n")
-    )
+    return yaml.safe_dump(
+        [value], default_flow_style=True, allow_unicode=True, width=100000
+    ).strip()[1:-1]
 
 
 def _flow_insertion(
@@ -134,12 +132,15 @@ def _generated_edits(
 
 
 def _comments_in_span(source: str, start: int, end: int) -> str:
-    # Scalar tokens include quoted and block scalars, where # is data.
-    scalars = [
-        (t.start_mark.index, t.end_mark.index)
-        for t in yaml.scan(source)
-        if isinstance(t, yaml.ScalarToken)
-    ]
+    # Block-scalar header comments precede its data, despite sharing a token.
+    scalars = []
+    for token in yaml.scan(source):
+        if isinstance(token, yaml.ScalarToken):
+            start_data = token.start_mark.index
+            if token.style in {"|", ">"}:
+                line_end = source.find("\n", start_data, token.end_mark.index)
+                start_data = line_end if line_end >= 0 else token.end_mark.index
+            scalars.append((start_data, token.end_mark.index))
     comments = []
     for match in re.finditer(r"(?m)(?<!\S)#[^\r\n]*", source[start:end]):
         position = start + match.start()
