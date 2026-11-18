@@ -7441,5 +7441,5 @@ Later decisions (2026-10-22, #1505):
 The configuration resolves independent author, verify, index, log and folder
 capabilities. Unset capabilities grant no semantic writes. The deprecated
 `OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
-resolved capabilities; explicit settings take precedence. Runtime write gates
-still follow `OKF_WRITE` until the subsequent transition.
+resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
+remains tied to `OKF_WRITE`.

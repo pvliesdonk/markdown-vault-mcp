@@ -447,7 +447,7 @@ Tool tags following switches: #1412.
   body also invalidate (the spec ties verification to the concept, not the
   body alone); rename does not. This is the highest-value enforcement:
   it is exactly the invariant an advisory-only setup eventually misses.
-- **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
+- **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
   The authenticated subject is *whose token* is in play, not evidence that a
@@ -457,7 +457,7 @@ Tool tags following switches: #1412.
   is the only vector for this: `derive_trust_tier` reads `verified` exclusively,
   and the write-time `generated` stamp is provenance that does not affect the
   tier. So the attestation path is operator-configurable via
-  `MARKDOWN_VAULT_MCP_OKF_VERIFY` (meaningful only when `OKF_WRITE` is on):
+  `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
 
   - **`elicit`** (default): the tool issues an MCP **elicitation** asking the
     human to confirm they personally reviewed the note, and writes the
@@ -483,8 +483,8 @@ Tool tags following switches: #1412.
   confirmed the review,"* not *"provably correct"* — a human can rubber-stamp.
   It guarantees a deliberate human act gates the tier, not diligence; downstream
   OKF consumers should calibrate to that.
-- **Convention maintenance** (gated by `OKF_MAINTAIN` once §6.0 lands;
-  today by `OKF_WRITE`): on successful writes, append a `log.md` entry
+- **Convention maintenance** (gated independently by `OKF_INDEX`, `OKF_LOG`,
+  and `OKF_FOLDERS`): on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
   refresh the affected folder's `index.md` listing. The section heading is
   the server's *local* calendar day, as §9 has it and as a reader of the

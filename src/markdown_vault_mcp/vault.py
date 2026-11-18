@@ -697,7 +697,11 @@ class Vault:
         # OKF_WRITE is on; when on, it stamps provenance and clears verification
         # for write/edit on an OKF-active vault.
         self._okf_write_enrich = build_okf_write_enrich(
-            okf_write=settings.okf_write,
+            okf_write=(
+                settings.okf_capabilities.legacy_stamping
+                if settings.okf_capabilities is not None
+                else settings.okf_write
+            ),
             detector=self._okf,
             version=package_version(),
         )
@@ -782,12 +786,15 @@ class Vault:
             require_built=self._require_built,
             reserved_frontmatter=reserved_frontmatter,
         )
-        # OKF enforced-write convention maintenance (#964, phase 5b): built only
-        # under OKF_WRITE (mirroring the enricher gating). On a successful
-        # write/edit it appends to the folder's log.md and refreshes its
-        # index.md as secondary writes; failures degrade to a WARNING.
+        # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        if settings.okf_write:
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
+        if not settings.read_only and (capabilities.index or capabilities.log != "off"):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
 
             self._okf_convention = ConventionMaintainer(
@@ -797,6 +804,7 @@ class Vault:
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
                 source_dir=self._source_dir,
+                capabilities=capabilities,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,

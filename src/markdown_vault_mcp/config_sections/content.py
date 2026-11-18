@@ -29,8 +29,8 @@ class ContentConfig:
     them without a declaration.
 
     ``okf_verify`` configures review authority independently. The current
-    runtime gates the ``okf_verify`` tool on ``okf_write`` and uses this
-    setting to determine how the tool attests a human review:
+    runtime uses this setting to gate the tool and determine how it attests
+    a human review:
     ``"elicit"`` (default) requires an affirmative MCP elicitation and fails
     closed otherwise, ``"trust-auth"`` attributes to a token's ``sub`` with no
     confirmation and refuses service principals (client-ID-only identities

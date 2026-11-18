@@ -1175,8 +1175,14 @@ def register(mcp: FastMCP) -> None:
                 an authenticated identity.
             DocumentNotFoundError: If the note does not exist.
         """
+        if not (await asyncio.to_thread(vault.okf.state)).active:
+            raise ToolError(
+                "OKF is not active for this vault, so okf_verify cannot record a review. "
+                "Ask the operator to enable OKF for this vault.",
+                log_level=logging.INFO,
+            )
         subject_or_request = await _resolve_verify_mode_subject(
-            mode=config.okf_verify, ctx=ctx, path=path
+            mode=config.content.okf_capabilities.verify, ctx=ctx, path=path
         )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request

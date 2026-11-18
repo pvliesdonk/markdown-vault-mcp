@@ -238,7 +238,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
-          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected.",
+          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and review act only when OKF semantics are active.",
           "default": "auto"
         },
         {
@@ -254,16 +254,16 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
-          "description": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+          "description": "Enable automatic index maintenance in designated folders; defaults to false.",
           "format": "boolean"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
-          "description": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting."
+          "description": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
-          "description": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting."
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.)."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
@@ -912,7 +912,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
-          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected.",
+          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and review act only when OKF semantics are active.",
           "default": "auto"
         },
         {
@@ -928,16 +928,16 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
-          "description": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+          "description": "Enable automatic index maintenance in designated folders; defaults to false.",
           "format": "boolean"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
-          "description": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting."
+          "description": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
-          "description": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting."
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.)."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
