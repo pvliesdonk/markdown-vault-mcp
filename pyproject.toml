@@ -220,7 +220,6 @@ dev = [
     # PROJECT-DEV-DEPS-START — this project's test and tooling dependencies
     # (respx, hypothesis, ...); kept across copier update.  Never published,
     # unlike an extra in PROJECT-EXTRAS.
-    "copier>=9.4",  # template-conformance gate renders the template pristinely (#899)
     # PROJECT-DEV-DEPS-END
 ]
 docs = [
@@ -363,20 +362,9 @@ ignore = ["E501"]
 "scripts/promote_release_notes.py" = ["S603", "S607"]
 # Package bookkeeping invokes gh with fixed argv and JSON on stdin, never a shell.
 "scripts/package_milestones.py" = ["S603", "S607"]
-# The copier-update migration reads the pre-update CLAUDE.md with a fixed-argv
-# `git show HEAD:CLAUDE.md` (a list, never a shell): the same S607 bare-name
-# and S603 subprocess exceptions as the stamper, and the same reason — the
-# file is template-owned, so a hit reddens the adopter's diff-gate (#524).
-"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
-# migrate_docs_nav.py reads `git show HEAD:mkdocs.yml` the same way, as a
-# list and never a shell; same exceptions, same reason (#713).
-"scripts/migrate_docs_nav.py" = ["S603", "S607"]
-"scripts/migrate_docs_pages.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
-"scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
 # The self-review hook resolves commits with fixed-argv `git rev-parse`.
 "scripts/check_self_review.py" = ["S603", "S607"]
-"scripts/check_template_conformance.py" = ["S603", "S607"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
 # Phase 1 write stubs: method signatures define the public API but bodies are
