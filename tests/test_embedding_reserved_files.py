@@ -131,9 +131,10 @@ def test_meaning_search_reaches_authored_content_and_generated_listing_concepts(
         )
         if description_only:
             assert "luminescence" in listing
-            assert "Concept\nluminescence\n\n" in provider.texts
-            assert "Cobalt\n\n" in provider.texts
-            assert any(text.startswith("Orbit\ncitrus\n\n") for text in provider.texts)
+            assert "Concept\nluminescence" in provider.texts
+            assert "Cobalt" in provider.texts
+            assert "Orbit\ncitrus" in provider.texts
+            assert "unrelated prose" in provider.texts
         assert "generated/index.md" not in _paths(vault)
         assert not any("[Canine](" in text for text in provider.texts)
         queries = {"fruit": "authored/index.md", "journey": "generated/log.md"}
@@ -227,9 +228,10 @@ def test_listed_identity_rebuild_reuse_and_restore(  # noqa: PLR0915, RUF100 - O
         store = second._index_mgr._embeddings._loaded_store()
         assert store is not None
         rows = store.rows_for("generated/concept.md")
-        assert "Concept\nfirst meaning\n\nbody text" in stored_inputs(
-            second._embed_builder, rows
-        )
+        assert set(stored_inputs(second._embed_builder, rows)) == {
+            "body text",
+            "Concept\nfirst meaning",
+        }
         provider.texts.clear()
         second.index.build_embeddings()
         assert not provider.texts
@@ -289,14 +291,12 @@ def test_listed_v2_preserves_configured_fields_and_keyword_provenance(
         assert store is not None
         rows = store.rows_for("generated/concept.md")
         inputs = stored_inputs(vault._embed_builder, rows)
-        text = next(iter(inputs))
-        assert text.startswith("Concept\nHeading\nbrief")
-        assert ("description" in text) is enabled
-        assert len(text) <= 70
-        if enabled:
-            # The description is a quarter of the cap; the body keeps its room.
-            assert text.endswith("\n\nbody")
-            assert "brief\ndescription descr\n\n" in text
+        texts = list(inputs)
+        # The chunk input is the policy-off one; the listing adds bounded rows.
+        assert texts[0] == "Concept\nHeading\nbrief\n\nbody"
+        assert (len(texts) > 1) is enabled
+        assert ("description" in "".join(texts)) is enabled
+        assert all(len(text) <= 70 for text in texts)
         assert "Log\nLog\n\n\nlog body" in provider.texts
         provider.texts.clear()
         vault.index.build_embeddings()
@@ -348,15 +348,16 @@ def test_postgres_designation_rebuild_and_reindex(
 
 
 @pytest.mark.parametrize("words", [30, 70])
-def test_listed_input_keeps_metadata_within_cap_and_other_chunks_unchanged(
+def test_listing_rows_stay_within_cap_and_chunk_inputs_are_unchanged(
     tmp_path: Path, words: int
 ) -> None:
     root = tmp_path / "vault"
     root.mkdir()
     (root / "index.md").write_text("# Index\n\n- [Concept](/concept.md) - x\n")
     body = "\n\n".join(f"paragraph {i} " + "word " * words for i in range(6))
+    words_text = " ".join(f"glow{i}" for i in range(250))
     (root / "concept.md").write_text(
-        f"---\ntitle: Concept\ndescription: {'glow ' * 250}\n---\n\n{body}\n"
+        f"---\ntitle: Concept\ndescription: {words_text}\n---\n\n{body}\n"
     )
 
     def texts(*, listed: bool, provider: CountingProvider) -> list[str]:
@@ -388,87 +389,19 @@ def test_listed_input_keeps_metadata_within_cap_and_other_chunks_unchanged(
         for text in texts(listed=False, provider=CountingProvider())
         if "/concept.md" not in text
     ]
-    assert len(listed) == len(plain)
-    head, _, body = listed[0].partition("\n\n")
-    assert head.startswith("Concept\nglow glow")
-    assert len(head) <= 75
-    assert plain[0].startswith(body)
-    for text, bare in zip(listed, plain, strict=True):
-        assert len(text) <= max(300, len(bare))
-        assert text == bare or text is listed[0]
+    # The chunk inputs are the policy-off ones; the listing adds separate rows.
+    assert listed[: len(plain)] == plain
+    pieces = listed[len(plain) :]
+    assert len(pieces) > 1
+    assert pieces[0] == "Concept"
+    assert pieces[1].startswith("glow0 glow1")
+    assert all(len(piece) <= 300 for piece in pieces)
+    assert set(" ".join(pieces).split()) >= {f"glow{i}" for i in range(250)}
 
 
-def test_full_chunk_preserves_generated_description_and_body_meaning(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "vault"
-    root.mkdir()
-    provider = MeaningProvider()
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(
-            read_only=False,
-            okf_mode="on",
-            okf_capabilities=_capabilities(True, (".",)),
-            max_chunk_chars=300,
-        ),
-        embedding_provider=provider,
-    )
-    try:
-        vault.index.build_index()
-        vault.index.build_embeddings()
-        body = "\n\n".join(f"paragraph {i} orchard " + "word " * 70 for i in range(6))
-        vault.writer.write(
-            "concept.md",
-            f"---\ntitle: Concept\ndescription: luminescence\n---\n\n{body}\n",
-        )
-        wait_for_writer_drain(vault)
-        assert "luminescence" in (root / "index.md").read_text()
-        assert "index.md" not in _paths(vault)
-        assert any("orchard" in text for text in provider.texts)
-        assert any("luminescence" in text for text in provider.texts)
-        for query in ("fruit", "glowing"):
-            assert vault.reader.search(query, mode="semantic", limit=1)[0].path == (
-                "concept.md"
-            )
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("enabled", [False, True])
-def test_full_chunk_preserves_configured_summary(tmp_path: Path, enabled: bool) -> None:
-    root = tmp_path / "vault"
-    root.mkdir()
-    body = "\n\n".join(f"paragraph {i} orchard " + "word " * 70 for i in range(6))
-    (root / "concept.md").write_text(
-        f"---\ntitle: Concept\nsummary: luminescence\n---\n\n{body}\n"
-    )
-    provider = MeaningProvider()
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(
-            okf_mode="on",
-            okf_capabilities=_capabilities(enabled, (".",)),
-            max_chunk_chars=300,
-            searchable_frontmatter_fields=["summary"],
-        ),
-        embedding_provider=provider,
-    )
-    try:
-        vault.index.build_index()
-        vault.index.build_embeddings()
-        assert any("orchard" in text for text in provider.texts)
-        assert any("luminescence" in text for text in provider.texts)
-        for query in ("fruit", "glowing"):
-            assert vault.reader.search(query, mode="semantic", limit=1)[0].path == (
-                "concept.md"
-            )
-    finally:
-        vault.close()
-
-
-def test_full_first_chunk_input_is_reused_across_restart_and_incremental_edit(
-    tmp_path: Path,
+@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
+def test_listing_row_is_reused_across_restart_and_incremental_edit(
+    tmp_path: Path, backend: str
 ) -> None:
     from markdown_vault_mcp.indexing.embedding_reconciler import stored_inputs
 
@@ -489,6 +422,7 @@ def test_full_first_chunk_input_is_reused_across_restart_and_incremental_edit(
                 okf_mode="on",
                 okf_capabilities=_capabilities(True, (".",)),
                 max_chunk_chars=300,
+                embedding_store=backend,
                 index_path=tmp_path / "index.db",
                 state_path=tmp_path / "state.json",
                 embeddings_path=tmp_path / "vectors",
@@ -511,18 +445,18 @@ def test_full_first_chunk_input_is_reused_across_restart_and_incremental_edit(
     write("luminescence")
     first = CountingProvider()
     stored = run(first)
-    assert stored[0] in first.texts
-    assert stored[0].startswith("Concept\nluminescence\n\n")
-    assert len(stored[0]) <= 300
+    assert stored[-1] == "Concept\nluminescence"
+    assert set(stored) <= set(first.texts)
+    assert max(map(len, stored)) <= 300
     restart = CountingProvider()
     assert run(restart) == stored
     assert not restart.texts
     write("cobalt")
     edited = CountingProvider()
     after = run(edited, reindex=True)
-    assert after[0].startswith("Concept\ncobalt\n\n")
-    assert edited.texts == [after[0]]
-    assert after[1:] == stored[1:]
+    assert after[-1] == "Concept\ncobalt"
+    assert edited.texts == [after[-1]]
+    assert after[:-1] == stored[:-1]
 
 
 @pytest.mark.parametrize("long_title", [True, False], ids=["title", "body-tail"])

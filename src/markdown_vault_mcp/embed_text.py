@@ -12,11 +12,11 @@ The builder has these formats:
 * **v1** — the default: :meth:`EmbedTextBuilder.build` returns the chunk
   content byte-for-byte unchanged, so default configurations are an exact
   behavioural no-op when listed-concept enrichment is disabled.
-* **v1;listed** — first chunks of designated listed concepts include title
-  and description (a quarter of the chunk character cap at most) and their
-  content is clipped to the cap's remaining room (see
-  :meth:`EmbedTextBuilder._joined`); other chunk inputs remain
-  byte-identical to v1.
+* **v1;listed** — chunk inputs stay byte-identical to v1. A designated
+  folder's listed concept gains separate inputs for its title and
+  description (:meth:`EmbedTextBuilder.listing_pieces`), each within the chunk
+  character cap, because the generated listing that carried them has no
+  vector.
 * **v2** — active when ``embed_context`` is enabled or any
   ``searchable_fields`` are configured: the chunk content is prefixed with
   the document title, the chunk heading (when present), and — on the first
@@ -33,7 +33,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.utils import normalize_folder
@@ -49,9 +49,7 @@ def is_embeddable(text: str) -> bool:
 
     A note with no body — zero-byte, frontmatter-only, or whitespace-only —
     chunks to a single chunk whose content is ``""``, and under the default
-    v1 format with the listed policy off :meth:`EmbedTextBuilder.build`
-    returns that content verbatim (a listed concept's preamble makes it
-    non-empty).
+    v1 format :meth:`EmbedTextBuilder.build` returns that content verbatim.
     Every OpenAI-compatible provider rejects an empty input string with a
     hard HTTP 400 (Voyage: ``Input cannot contain empty strings or empty
     lists``), and the rejection fails the whole *batch*, not just the
@@ -144,12 +142,11 @@ class EmbedTextBuilder:
         searchable_fields: Frontmatter keys whose scalar values form the
             first-chunk preamble (also switches to format v2 when
             non-empty).
-        listed: Include a listed concept's title and description in its first chunk.
+        listed: Embed a listed concept's title and description as separate inputs.
         listed_scope: Folder patterns that select listed concepts.
-        listed_limit: The chunk character cap a listed concept's input is
+        listed_limit: The chunk character cap each listing input is
             bounded by; ``None`` leaves it unbounded. It is not part
             of the format token, like the chunker cap it comes from.
-        listed_here: Set by :meth:`at`: the note being built is a listed concept.
     """
 
     embed_context: bool = False
@@ -157,7 +154,6 @@ class EmbedTextBuilder:
     listed: bool = False
     listed_scope: tuple[str, ...] = ()
     listed_limit: int | None = None
-    listed_here: bool = False
 
     @property
     def is_v2(self) -> bool:
@@ -206,62 +202,41 @@ class EmbedTextBuilder:
             and folder_is_designated(path.rpartition("/")[0], self.listed_scope)
         )
 
-    def at(self, path: str) -> EmbedTextBuilder:
-        """Return the builder for the note at *path*; one listed concept is flagged."""
-        return replace(self, listed_here=True) if self.is_listed(path) else self
-
-    def listed_preamble(
+    def listing_pieces(
         self, title: str, frontmatter_or_json: Mapping[str, Any] | str | None
-    ) -> str:
-        """Return the first-chunk preamble: configured fields, then a listed addition.
+    ) -> list[str]:
+        """Split a listed concept's title and description into inputs within the cap.
+
+        The existing chunker splits the text, so no piece loses words and every
+        built input stays within the cap unless the v2 head alone takes half of
+        it. The chunk inputs are untouched, so this adds rows and never clips a
+        body or a configured field.
 
         Args:
             title: Resolved note title.
             frontmatter_or_json: Parsed or JSON-encoded frontmatter.
 
         Returns:
-            The configured fields in full, as ever; a listed concept
-            (:meth:`at`) adds its clipped title (v1) and description.
+            The non-empty pieces; empty when the note has neither.
         """
-        fields = self.fields_text(frontmatter_or_json)
-        added = self._listed_addition(title, frontmatter_or_json)
-        return "\n".join(part for part in (fields, added) if part)
-
-    def _listed_addition(
-        self, title: str, frontmatter_or_json: Mapping[str, Any] | str | None
-    ) -> str:
-        """Return a listed concept's title (v1) and description, a quarter cap at most."""
-        if not self.listed_here:
-            return ""
-        extra = () if "description" in self.searchable_fields else ("description",)
-        added = fields_text(frontmatter_or_json, extra)
-        if not self.is_v2:
-            added = "\n".join(part for part in (title, added) if part)
+        description = fields_text(frontmatter_or_json, ("description",))
+        text = "\n".join(part for part in (title, description) if part)
         if self.listed_limit is None:
-            return added
-        return added[: self.listed_limit // 4].rstrip()
+            return [text] if text else []
+        from markdown_vault_mcp.scanner import HeadingChunker
 
-    def _joined(self, head: str, content: str, enriched: object) -> str:
-        """Join *head* and *content* with a blank line, bounding a listed concept.
-
-        The first chunk of a listed concept keeps the room the chunk cap leaves
-        after its head, and at least half the cap, so neither its metadata nor
-        its body meaning is lost and the input stays within the cap unless the
-        configured fields alone take half of it. Both the reconciler and the
-        stored-input rebuild call this, so reuse sees the same text.
-
-        Args:
-            head: Everything before the content.
-            content: Raw chunk content.
-            enriched: Truthy when *head* carries a first-chunk preamble.
-
-        Returns:
-            The embedding input.
-        """
-        if enriched and self.listed_here and self.listed_limit is not None:
-            room = max(self.listed_limit - len(head) - 2, self.listed_limit // 2)
-            content = content[:room]
-        return head + "\n\n" + content
+        head = len(
+            self.build(
+                title=title,
+                heading=None,
+                content="",
+                fields_text="",
+                is_first_chunk=False,
+            )
+        )
+        room = max(self.listed_limit - head, self.listed_limit // 2)
+        pieces = HeadingChunker(max_chunk_chars=room).chunk(text, {})
+        return [piece.content.strip() for piece in pieces if piece.content.strip()]
 
     def build(
         self,
@@ -283,19 +258,17 @@ class EmbedTextBuilder:
             is_first_chunk: ``True`` for the document's chunk-0 row.
 
         Returns:
-            v1: *content* unchanged unless a listed preamble is supplied.
+            v1: *content* unchanged.
             v2: the title line,
             the heading line (omitted when empty), and — first chunk only —
             the non-empty *fields_text*, followed by a blank line and the
             content.
         """
         if not self.is_v2:
-            if self.listed and is_first_chunk and fields_text:
-                return self._joined(fields_text, content, True)
             return content
         lines = [title]
         if heading:
             lines.append(heading)
         if is_first_chunk and fields_text:
             lines.append(fields_text)
-        return self._joined("\n".join(lines), content, is_first_chunk and fields_text)
+        return "\n".join(lines) + "\n\n" + content

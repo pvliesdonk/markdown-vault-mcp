@@ -92,7 +92,7 @@ def stored_inputs(
         if not isinstance(title, str) or not isinstance(content, str):
             continue
         preamble = row.metadata.get("preamble") or ""
-        text = builder.at(str(row.metadata.get("path") or "")).build(
+        text = builder.build(
             title=title,
             heading=row.metadata.get("heading"),
             content=content,
@@ -319,7 +319,7 @@ class EmbeddingReconciler:
         texts: list[str] = []
         metadata: list[dict[str, Any]] = []
         token = ""
-        for row in rows:
+        for row in self._with_listing(rows):
             token = row["content_hash"]
             item = self._embedding_input(row)
             if item is not None:
@@ -328,19 +328,37 @@ class EmbeddingReconciler:
                 metadata.append(meta)
         return _Document(path, token, tuple(texts), tuple(metadata))
 
+    def _with_listing(self, rows: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+        """Yield *rows*, then a listed concept's title and description as extra rows.
+
+        The extra rows copy the first chunk's metadata and carry each piece as
+        their content, so they pass through :meth:`_embedding_input` like any
+        chunk and are rebuilt, reused and retried the same way.
+        """
+        first = None
+        for row in rows:
+            first = first or row
+            yield row
+        if first is None or not self._builder.is_listed(first["path"]):
+            return
+        pieces = self._builder.listing_pieces(
+            first["title"], first.get("frontmatter_json")
+        )
+        for piece in pieces:
+            yield {**first, "heading": None, "content": piece, "is_first_chunk": False}
+
     def _preamble(self, row: dict[str, Any]) -> str:
-        """Return a first chunk's preamble; a listed concept's is bounded by the cap."""
+        """Return a first chunk's configured-fields preamble."""
         if not row.get("is_first_chunk"):
             return ""
-        builder = self._builder.at(row["path"])
-        return builder.listed_preamble(row["title"], row.get("frontmatter_json"))
+        return self._builder.fields_text(row.get("frontmatter_json"))
 
     def _embedding_input(
         self, row: dict[str, Any]
     ) -> tuple[str, dict[str, Any]] | None:
         """Build the shared embedding text and metadata for a keyword row."""
         preamble = self._preamble(row)
-        text = self._builder.at(row["path"]).build(
+        text = self._builder.build(
             title=row["title"],
             heading=row["heading"],
             content=row["content"],
