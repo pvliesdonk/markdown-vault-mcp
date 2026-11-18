@@ -746,7 +746,7 @@ The bundle copies live inventory independently of search admission. Resolvable
 wikilinks are rewritten only for searchable notes using the existing graph,
 which can be stale; notes outside the index retain raw wikilinks. A subtree
 becomes the archive root. Body destinations to selected files are relocated
-when root-relative; relative destinations between selected files stay as written.
+when root-relative; relative destinations stay as written when they retain their target, and are adjusted when needed.
 Outside destinations are reported as dependencies, and a destination that would
 point to a different exported file refuses the export. Library callers can supply
 `external_base` to turn outside destinations into absolute URLs. The report

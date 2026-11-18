@@ -178,7 +178,8 @@ def build_okf_bundle(
         folder: Vault-relative scope root, or empty for the entire vault.
         include_index_excluded: Include paths omitted from the search index.
         include_hidden: Include dot-paths other than internal state.
-        external_base: URL prefix for body destinations outside the selection.
+        external_base: Absolute HTTP(S) URL prefix without a query or fragment
+            for body destinations outside the selection.
 
     Returns:
         Archive bytes, counts, and a partial report; no conformance verdict.
@@ -186,7 +187,8 @@ def build_okf_bundle(
     Raises:
         ValueError: If the scope is invalid or inventory cannot enumerate it,
             including failures under otherwise omitted hidden paths, or if an
-            outside body destination collides with an exported file.
+            outside body destination collides with an exported file, or the
+            external URL prefix is invalid.
         OSError: If a selected file cannot be read.
     """
     folder = _scope(folder)
