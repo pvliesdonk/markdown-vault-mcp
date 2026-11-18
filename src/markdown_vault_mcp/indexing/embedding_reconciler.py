@@ -92,7 +92,7 @@ def stored_inputs(
         if not isinstance(title, str) or not isinstance(content, str):
             continue
         preamble = row.metadata.get("preamble") or ""
-        text = builder.build(
+        text = builder.at(str(row.metadata.get("path") or "")).build(
             title=title,
             heading=row.metadata.get("heading"),
             content=content,
@@ -268,7 +268,6 @@ class EmbeddingReconciler:
         is_excluded: Whether a path matches the vault's exclusions.
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
         skip_embedding: Identifies documents whose vectors should be removed.
-        listed_concept: Identifies concepts whose listing text belongs in their vectors.
 
     Raises:
         ValueError: If batch_size is less than one.
@@ -285,7 +284,6 @@ class EmbeddingReconciler:
         is_excluded: Callable[[str], bool],
         scratch_dir: Path | None = None,
         skip_embedding: Callable[[str], bool] | None = None,
-        listed_concept: Callable[[str], bool] | None = None,
     ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be at least 1")
@@ -297,7 +295,6 @@ class EmbeddingReconciler:
         self._source_probe = source_probe
         self._is_excluded = is_excluded
         self._skip_embedding = skip_embedding or (lambda _path: False)
-        self._listed_concept = listed_concept or (lambda _path: False)
 
     def documents(self, paths: Collection[str] | None = None) -> dict[str, _Document]:
         """Read *paths*' (or every) document's embedding inputs from the keyword index.
@@ -335,22 +332,15 @@ class EmbeddingReconciler:
         """Return a first chunk's preamble; a listed concept's is bounded by the cap."""
         if not row.get("is_first_chunk"):
             return ""
-        frontmatter = row.get("frontmatter_json")
-        if not self._listed_concept(row["path"]):
-            return self._builder.fields_text(frontmatter)
-        return self._builder.bounded_listed(
-            self._builder.listed_preamble(row["title"], frontmatter),
-            title=row["title"],
-            heading=row["heading"],
-            content=row["content"],
-        )
+        builder = self._builder.at(row["path"])
+        return builder.listed_preamble(row["title"], row.get("frontmatter_json"))
 
     def _embedding_input(
         self, row: dict[str, Any]
     ) -> tuple[str, dict[str, Any]] | None:
         """Build the shared embedding text and metadata for a keyword row."""
         preamble = self._preamble(row)
-        text = self._builder.build(
+        text = self._builder.at(row["path"]).build(
             title=row["title"],
             heading=row["heading"],
             content=row["content"],

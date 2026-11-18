@@ -245,9 +245,23 @@ def test_listed_policy_tokens_and_preambles() -> None:
     assert plain.format_token() == "v1"
     assert listed.format_token() == "v1;listed;scope=[]"
     assert v2.format_token() == "v2;fields=summary;listed;scope=[]"
-    assert listed.listed_preamble("Title", data) == "Title\nDescription"
-    assert v2.listed_preamble("Title", data) == "Summary\nDescription"
-    assert dedup.listed_preamble("Title", data) == "Description"
+    here = {"listed_scope": (".",)}
+    note = "note.md"
+    assert replace(listed, **here).at(note).listed_preamble("Title", data) == (
+        "Title\nDescription"
+    )
+    assert replace(v2, **here).at(note).listed_preamble("Title", data) == (
+        "Summary\nDescription"
+    )
+    assert replace(dedup, **here).at(note).listed_preamble("Title", data) == (
+        "Description"
+    )
+    # Only a listed concept gets the addition; others keep their configured fields.
+    assert (
+        replace(v2, **here).at("index.md").listed_preamble("Title", data) == "Summary"
+    )
+    assert replace(v2, **here).at("sub/note.md").listed_preamble("T", data) == "Summary"
+    assert listed.at(note).listed_preamble("Title", data) == ""
     assert (
         listed.build(
             title="Title",
@@ -280,44 +294,67 @@ def test_listed_policy_tokens_and_preambles() -> None:
     )
 
 
-def test_bounded_listed_input_never_exceeds_cap_or_unenriched_input() -> None:
-    listed = EmbedTextBuilder(listed=True, listed_limit=20)
-    v2 = EmbedTextBuilder(embed_context=True, listed=True, listed_limit=20)
+def test_listed_input_keeps_metadata_and_stays_within_cap() -> None:
+    here = {"listed_scope": (".",), "listed_limit": 40}
+    listed = EmbedTextBuilder(listed=True, **here).at("note.md")
+    v2 = EmbedTextBuilder(embed_context=True, listed=True, **here).at("note.md")
     meta = "Title\n" + "d" * 50
+    data = {"description": "d" * 50}
 
     def built(
-        builder: EmbedTextBuilder,
-        content: str,
-        preamble: str = meta,
-        heading: str | None = None,
+        builder: EmbedTextBuilder, content: str, heading: str | None = None
     ) -> str:
-        clipped = builder.bounded_listed(
-            preamble, title="T", heading=heading, content=content
-        )
         return builder.build(
             title="T",
             heading=heading,
             content=content,
-            fields_text=clipped,
+            fields_text=builder.listed_preamble("Title", data),
             is_first_chunk=True,
         )
 
-    # The input is the cap, including the "\n\n" separator and a v2 title line.
-    assert built(listed, "") == meta[:18] + "\n\n"
-    assert len(built(listed, "b" * 10)) == 20
-    assert built(v2, "", heading="Section") == "T\nSection\nTitle\nd\n\n"
-    # A chunk filling the cap, or past it with overlap, gets no preamble at all.
-    for size in (18, 25):
-        assert built(listed, "b" * size) == "b" * size
-    # Title-only and description-only listings fit whole; no limit changes nothing.
-    assert built(listed, "", "Title") == "Title\n\n"
-    assert built(listed, "", "desc") == "desc\n\n"
-    assert (
-        replace(listed, listed_limit=None).bounded_listed(
-            meta, title="T", heading=None, content="b"
-        )
-        == meta
+    # The addition is a quarter of the cap, the body keeps the rest, never under half.
+    assert listed.listed_preamble("Title", data) == meta[:10].rstrip()
+    assert built(listed, "b" * 100) == meta[:10] + "\n\n" + "b" * 28
+    assert len(built(listed, "b" * 100)) == 40
+    assert built(listed, "b" * 5) == meta[:10] + "\n\n" + "b" * 5
+    assert built(v2, "b" * 100, "Section").startswith("T\nSection\nddddddddd")
+    assert len(built(v2, "b" * 100, "Section")) <= 40 + 20
+    # A head that takes more than half the cap still leaves the body half the cap.
+    wide = EmbedTextBuilder(searchable_fields=("summary",), listed=True, **here).at(
+        "note.md"
     )
+    kept = wide.build(
+        title="T",
+        heading=None,
+        content="b" * 100,
+        fields_text="s" * 30,
+        is_first_chunk=True,
+    )
+    assert kept == "T\n" + "s" * 30 + "\n\n" + "b" * 20
+    # Later chunks, other notes and an unscoped builder are never clipped.
+    assert (
+        listed.build(
+            title="T",
+            heading=None,
+            content="b" * 100,
+            fields_text="",
+            is_first_chunk=False,
+        )
+        == "b" * 100
+    )
+    assert (
+        EmbedTextBuilder(listed=True, **here).build(
+            title="T",
+            heading=None,
+            content="b" * 100,
+            fields_text="Title",
+            is_first_chunk=True,
+        )
+        == "Title\n\n" + "b" * 100
+    )
+    # No limit leaves the preamble and content whole.
+    unbounded = replace(listed, listed_limit=None)
+    assert unbounded.listed_preamble("Title", data) == meta
 
 
 def test_listed_scope_token_normalizes_designation_patterns() -> None:

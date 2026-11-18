@@ -96,7 +96,6 @@ class EmbeddingsManager:
             ``source_dir`` (#1785).
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
         skip_embedding: Identifies documents whose vectors should be removed.
-        listed_concept: Identifies concepts whose listing text belongs in their vectors.
         vector_slot: Opens, rebuilds and describes the vector store. ``None``
             with a provider builds a numpy store over ``embeddings_path``
             (in memory when that is ``None``), owned by this manager and
@@ -117,7 +116,6 @@ class EmbeddingsManager:
         source_probe: SourceProbe | None = None,
         scratch_dir: Path | None = None,
         skip_embedding: Callable[[str], bool] | None = None,
-        listed_concept: Callable[[str], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -152,7 +150,6 @@ class EmbeddingsManager:
                 is_excluded=is_path_excluded,
                 scratch_dir=scratch_dir,
                 skip_embedding=skip_embedding,
-                listed_concept=listed_concept,
             )
             if embedding_provider is not None
             else None

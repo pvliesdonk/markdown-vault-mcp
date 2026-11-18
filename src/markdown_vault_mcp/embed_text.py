@@ -13,8 +13,9 @@ The builder has these formats:
   content byte-for-byte unchanged, so default configurations are an exact
   behavioural no-op when listed-concept enrichment is disabled.
 * **v1;listed** — first chunks of designated listed concepts include title
-  and description, clipped so the input stays within the chunk character cap
-  (see :meth:`EmbedTextBuilder.bounded_listed`); other chunk inputs remain
+  and description (a quarter of the chunk character cap at most) and their
+  content is clipped to the cap's remaining room (see
+  :meth:`EmbedTextBuilder._joined`); other chunk inputs remain
   byte-identical to v1.
 * **v2** — active when ``embed_context`` is enabled or any
   ``searchable_fields`` are configured: the chunk content is prefixed with
@@ -32,7 +33,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.utils import normalize_folder
@@ -146,8 +147,9 @@ class EmbedTextBuilder:
         listed: Include a listed concept's title and description in its first chunk.
         listed_scope: Folder patterns that select listed concepts.
         listed_limit: The chunk character cap a listed concept's input is
-            bounded by; ``None`` leaves the preamble unbounded. It is not part
+            bounded by; ``None`` leaves it unbounded. It is not part
             of the format token, like the chunker cap it comes from.
+        listed_here: Set by :meth:`at`: the note being built is a listed concept.
     """
 
     embed_context: bool = False
@@ -155,6 +157,7 @@ class EmbedTextBuilder:
     listed: bool = False
     listed_scope: tuple[str, ...] = ()
     listed_limit: int | None = None
+    listed_here: bool = False
 
     @property
     def is_v2(self) -> bool:
@@ -191,60 +194,74 @@ class EmbedTextBuilder:
         """
         return fields_text(frontmatter_or_json, self.searchable_fields)
 
+    def is_listed(self, path: str) -> bool:
+        """Return whether *path* is a concept that a designated folder lists."""
+        from markdown_vault_mcp._okf_convention import folder_is_designated
+        from markdown_vault_mcp.okf import is_okf_reserved_file
+
+        return (
+            self.listed
+            and bool(path)
+            and not is_okf_reserved_file(path)
+            and folder_is_designated(path.rpartition("/")[0], self.listed_scope)
+        )
+
+    def at(self, path: str) -> EmbedTextBuilder:
+        """Return the builder for the note at *path*; one listed concept is flagged."""
+        return replace(self, listed_here=True) if self.is_listed(path) else self
+
     def listed_preamble(
         self, title: str, frontmatter_or_json: Mapping[str, Any] | str | None
     ) -> str:
-        """Return the first-chunk preamble for a listed concept.
+        """Return the first-chunk preamble: configured fields, then a listed addition.
 
         Args:
             title: Resolved note title.
             frontmatter_or_json: Parsed or JSON-encoded frontmatter.
 
         Returns:
-            Title and description for v1; configured fields plus description for v2.
+            The configured fields in full, as ever; a listed concept
+            (:meth:`at`) adds its clipped title (v1) and description.
         """
-        fields = self.searchable_fields
-        if "description" not in fields:
-            fields = (*fields, "description")
-        values = fields_text(frontmatter_or_json, fields)
-        if self.is_v2:
-            return values
-        return "\n".join(part for part in (title, values) if part)
+        fields = self.fields_text(frontmatter_or_json)
+        added = self._listed_addition(title, frontmatter_or_json)
+        return "\n".join(part for part in (fields, added) if part)
 
-    def bounded_listed(
-        self, preamble: str, *, title: str, heading: str | None, content: str
+    def _listed_addition(
+        self, title: str, frontmatter_or_json: Mapping[str, Any] | str | None
     ) -> str:
-        """Clip a listed concept's *preamble* so its input stays within the cap.
+        """Return a listed concept's title (v1) and description, a quarter cap at most."""
+        if not self.listed_here:
+            return ""
+        extra = () if "description" in self.searchable_fields else ("description",)
+        added = fields_text(frontmatter_or_json, extra)
+        if not self.is_v2:
+            added = "\n".join(part for part in (title, added) if part)
+        if self.listed_limit is None:
+            return added
+        return added[: self.listed_limit // 4].rstrip()
 
-        The room is the cap less the rest of the input (title, heading, content
-        and the separator), so the input never exceeds the larger of the cap and
-        what it would be without the listed preamble. A first chunk whose rest
-        already fills the cap (an overlapped fragment may exceed it) has no room
-        and gets no preamble: its input is then the unenriched one. The title
-        leads the v1 preamble, so a clip keeps it first.
+    def _joined(self, head: str, content: str, enriched: object) -> str:
+        """Join *head* and *content* with a blank line, bounding a listed concept.
+
+        The first chunk of a listed concept keeps the room the chunk cap leaves
+        after its head, and at least half the cap, so neither its metadata nor
+        its body meaning is lost and the input stays within the cap unless the
+        configured fields alone take half of it. Both the reconciler and the
+        stored-input rebuild call this, so reuse sees the same text.
 
         Args:
-            preamble: The unbounded listed preamble.
-            title: Resolved document title.
-            heading: The chunk's heading, or ``None``/``""`` when absent.
+            head: Everything before the content.
             content: Raw chunk content.
+            enriched: Truthy when *head* carries a first-chunk preamble.
 
         Returns:
-            *preamble* unchanged when no limit is set, else its clipped prefix
-            (``""`` when the rest of the input leaves no room).
+            The embedding input.
         """
-        if self.listed_limit is None:
-            return preamble
-        rest = len(
-            self.build(
-                title=title,
-                heading=heading,
-                content=content,
-                fields_text="",
-                is_first_chunk=True,
-            )
-        )
-        return preamble[: max(self.listed_limit - rest - 2, 0)].rstrip()
+        if enriched and self.listed_here and self.listed_limit is not None:
+            room = max(self.listed_limit - len(head) - 2, self.listed_limit // 2)
+            content = content[:room]
+        return head + "\n\n" + content
 
     def build(
         self,
@@ -274,11 +291,11 @@ class EmbedTextBuilder:
         """
         if not self.is_v2:
             if self.listed and is_first_chunk and fields_text:
-                return fields_text + "\n\n" + content
+                return self._joined(fields_text, content, True)
             return content
         lines = [title]
         if heading:
             lines.append(heading)
         if is_first_chunk and fields_text:
             lines.append(fields_text)
-        return "\n".join(lines) + "\n\n" + content
+        return self._joined("\n".join(lines), content, is_first_chunk and fields_text)

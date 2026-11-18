@@ -166,7 +166,6 @@ class IndexManager:
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
         okf_admission_active: Current effective OKF state, if applicable.
         skip_embedding: Identifies documents whose vectors should be removed.
-        listed_concept: Identifies concepts whose listing text belongs in their vectors.
     """
 
     def __init__(
@@ -191,7 +190,6 @@ class IndexManager:
         scratch_dir: Path | None = None,
         okf_admission_active: Callable[[], bool | None] | None = None,
         skip_embedding: Callable[[str], bool] | None = None,
-        listed_concept: Callable[[str], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -229,7 +227,6 @@ class IndexManager:
             vector_slot=vector_slot,
             scratch_dir=scratch_dir,
             skip_embedding=skip_embedding,
-            listed_concept=listed_concept,
         )
 
     @property

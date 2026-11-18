@@ -294,7 +294,9 @@ def test_listed_v2_preserves_configured_fields_and_keyword_provenance(
         assert ("description" in text) is enabled
         assert len(text) <= 70
         if enabled:
-            assert len(text) >= 68
+            # The description is a quarter of the cap; the body keeps its room.
+            assert text.endswith("\n\nbody")
+            assert "brief\ndescription descr\n\n" in text
         assert "Log\nLog\n\n\nlog body" in provider.texts
         provider.texts.clear()
         vault.index.build_embeddings()
@@ -346,7 +348,7 @@ def test_postgres_designation_rebuild_and_reindex(
 
 
 @pytest.mark.parametrize("words", [30, 70])
-def test_listed_input_never_exceeds_cap_or_unenriched_input(
+def test_listed_input_keeps_metadata_within_cap_and_other_chunks_unchanged(
     tmp_path: Path, words: int
 ) -> None:
     root = tmp_path / "vault"
@@ -387,12 +389,13 @@ def test_listed_input_never_exceeds_cap_or_unenriched_input(
         if "/concept.md" not in text
     ]
     assert len(listed) == len(plain)
+    head, _, body = listed[0].partition("\n\n")
+    assert head.startswith("Concept\nglow glow")
+    assert len(head) <= 75
+    assert plain[0].startswith(body)
     for text, bare in zip(listed, plain, strict=True):
-        assert text.endswith(bare)
         assert len(text) <= max(300, len(bare))
-    assert any(text.startswith("Concept\nglow glow") for text in listed) == (
-        words == 30
-    )
+        assert text == bare or text is listed[0]
 
 
 def test_full_chunk_preserves_generated_description_and_body_meaning(
@@ -462,3 +465,61 @@ def test_full_chunk_preserves_configured_summary(tmp_path: Path, enabled: bool) 
             )
     finally:
         vault.close()
+
+
+def test_full_first_chunk_input_is_reused_across_restart_and_incremental_edit(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.indexing.embedding_reconciler import stored_inputs
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    body = "\n\n".join(f"paragraph {i} orchard " + "word " * 70 for i in range(6))
+    concept = root / "concept.md"
+
+    def write(description: str) -> None:
+        concept.write_text(
+            f"---\ntitle: Concept\ndescription: {description}\n---\n\n{body}\n"
+        )
+
+    def run(provider: CountingProvider, *, reindex: bool = False) -> list[str]:
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                okf_mode="on",
+                okf_capabilities=_capabilities(True, (".",)),
+                max_chunk_chars=300,
+                index_path=tmp_path / "index.db",
+                state_path=tmp_path / "state.json",
+                embeddings_path=tmp_path / "vectors",
+            ),
+            embedding_provider=provider,
+        )
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+            if reindex:
+                vault.index.reindex()
+            store = vault._index_mgr._embeddings._loaded_store()
+            assert store is not None
+            return list(
+                stored_inputs(vault._embed_builder, store.rows_for("concept.md"))
+            )
+        finally:
+            vault.close()
+
+    write("luminescence")
+    first = CountingProvider()
+    stored = run(first)
+    assert stored[0] in first.texts
+    assert stored[0].startswith("Concept\nluminescence\n\n")
+    assert len(stored[0]) <= 300
+    restart = CountingProvider()
+    assert run(restart) == stored
+    assert not restart.texts
+    write("cobalt")
+    edited = CountingProvider()
+    after = run(edited, reindex=True)
+    assert after[0].startswith("Concept\ncobalt\n\n")
+    assert edited.texts == [after[0]]
+    assert after[1:] == stored[1:]
