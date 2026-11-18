@@ -32,6 +32,7 @@ import threading
 from typing import TYPE_CHECKING, cast
 
 from markdown_vault_mcp._commit_scope import (
+    bound_folder_move,
     current_commit_scope,
     is_auxiliary_commit_write,
 )
@@ -264,14 +265,15 @@ class WriteCallbackDispatcher:
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),
             # so reaching here means ``on_write_batch`` exists.
-            if self._accepts_primary_paths:
-                primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
-                primary_batch.on_write_batch(
-                    items, scope.tool_name, primary_paths=frozenset(primary_paths)
-                )
-            else:
-                batch = cast("BatchAwareWriteCallback", on_write)
-                batch.on_write_batch(items, scope.tool_name)
+            with bound_folder_move(scope.folder_move):
+                if self._accepts_primary_paths:
+                    primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
+                    primary_batch.on_write_batch(
+                        items, scope.tool_name, primary_paths=frozenset(primary_paths)
+                    )
+                else:
+                    batch = cast("BatchAwareWriteCallback", on_write)
+                    batch.on_write_batch(items, scope.tool_name)
         except Exception:
             logger.error(
                 "write_callback_batch_failed tool=%s count=%s",

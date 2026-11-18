@@ -7,7 +7,9 @@ The managers depend on these concepts:
   :class:`RunsExactQueries` is the optional part an index implements to
   answer exact population queries (#1842), and :class:`ListsNoteStates`
   the optional part that lists live notes' build state without their
-  frontmatter (#1938).
+  frontmatter (#1938), and :class:`IteratesChunks` the optional part that
+  pages every chunk in whole-document windows for a full embedding build
+  (#1938).
 - :class:`GraphStore` — the link graph.  Distinct from search because it
   answers a different question: *structure* (what links to what) rather than
   *relevance* (what matches a query).
@@ -48,7 +50,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Sequence
+    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.fts_index import ChunkingMeta
@@ -80,6 +82,7 @@ __all__ = [
     "DescribesStore",
     "EmbeddingStore",
     "GraphStore",
+    "IteratesChunks",
     "KeywordGraphIndex",
     "KeywordIndex",
     "ReadsMetadataInBatches",
@@ -96,6 +99,15 @@ __all__ = [
 ]
 
 StoreT_co = TypeVar("StoreT_co", covariant=True)
+
+
+@runtime_checkable
+class IteratesChunks(Protocol):
+    """Optional ordered, document-grouped traversal of all indexed chunks."""
+
+    def iter_chunks(self) -> Iterator[dict[str, Any]]:
+        """Yield ``list_chunks()`` rows in its order, grouped by path."""
+        ...
 
 
 @runtime_checkable
@@ -679,6 +691,8 @@ class VectorPublisher(Protocol):
 
         A reader sees the previous generation until this returns; an
         interrupted publication leaves the previous generation in place.
+        *documents* is re-iterable; it does not promise a length, indexing,
+        or a meaningful truth value.
         """
         ...
 
