@@ -109,7 +109,29 @@ _WORKTREE_RETRY_S = 60.0
 
 @dataclass(frozen=True, kw_only=True)
 class GitWriteSettings:
-    """Configuration for a GitWriteStrategy; the token is hidden from repr."""
+    """Grouped configuration for a :class:`GitWriteStrategy`.
+
+    Each field mirrors the :class:`GitWriteStrategy` constructor argument of
+    the same name and has the same default. The instance is frozen and its
+    ``repr`` omits ``token``.
+
+    Attributes:
+        token: PAT for HTTPS push via ``GIT_ASKPASS``.  ``None`` uses SSH or
+            pre-configured credentials.
+        username: Username used with token auth (GitHub-compatible default).
+        repo_url: Remote URL expected in managed mode.
+        managed: When ``True``, the strategy clones into an empty
+            ``repo_path`` or validates ``origin`` on an existing repository.
+        enable_pull: Enable fetch + ff-only sync methods.
+        enable_push: Enable deferred push behavior.
+        push_delay_s: Seconds of idle before pushing.  ``0`` disables the
+            timer (push only on close).
+        commit_name: Git committer name; ``None`` or empty falls back to
+            :attr:`GitWriteStrategy.DEFAULT_COMMIT_NAME`.
+        commit_email: Git committer email; ``None`` or empty falls back to
+            :attr:`GitWriteStrategy.DEFAULT_COMMIT_EMAIL`.
+        git_lfs: Run ``git lfs pull`` during lazy initialisation.
+    """
 
     token: str | None = field(default=None, repr=False)
     username: str = "x-access-token"
@@ -166,11 +188,18 @@ class GitWriteStrategy:
             lazy initialisation so LFS pointers are resolved before the
             first write is committed.  Requires ``git-lfs`` to be on
             ``PATH``; failures are logged at ERROR and never propagated.
-        settings: Preferred grouped configuration.
         repo_path: Optional repository path used for startup validation and
             reporting uncommitted files without modifying them. When set together with ``token``, startup raises
             :class:`~markdown_vault_mcp.exceptions.ConfigurationError`
             if ``origin`` uses SSH transport instead of HTTPS.
+        settings: Preferred grouped configuration.  When given, it replaces
+            every flat configuration argument above except ``repo_path``,
+            and those flat arguments must stay at their defaults.
+
+    Raises:
+        ValueError: ``settings`` is given together with a flat configuration
+            argument that differs from its default; the message names the
+            arguments, not their values.
 
     Prefer ``settings`` for configuration. Flat parameters remain for compatibility;
     future settings are added only to :class:`GitWriteSettings`. Non-default flat
