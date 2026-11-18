@@ -939,7 +939,8 @@ class GitWriteStrategy:
                 to_sha="",
                 reason=PULL_REASON_PULL_DISABLED,
             )
-        git_root = self.resolve_force_repo()
+        repo_path = self.resolve_force_repo()
+        git_root = self._ensure_git_root(repo_path) or repo_path
         return self._pull_pipeline(git_root, dry_run=dry_run)
 
     def _pull_pipeline(

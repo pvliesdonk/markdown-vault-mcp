@@ -6874,7 +6874,10 @@ points over one implementation, `GitWriteStrategy._pull_pipeline` (quiesce +
 lock → `git fetch origin` → resolve tracking ref → classify divergence →
 ff-only merge → rebase →
 Syncthing-style sibling conflict resolution → LFS pull). `force_pull` returns
-the pipeline's structured `PullResult` directly; `sync_once` adapts it to its
+the pipeline's structured `PullResult` directly. It resolves the enclosing
+Git working-tree root first, so repository-relative conflict paths work when
+the vault is a subdirectory; if discovery fails, Git reports the original
+configured path error. `sync_once` adapts the result to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
 so a remoteless checkout skips quietly at INFO level, and maps
 `FileNotFoundError` / `CalledProcessError` to the loop's log-and-return-False
