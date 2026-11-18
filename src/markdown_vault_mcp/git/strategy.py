@@ -1138,6 +1138,11 @@ class GitWriteStrategy:
         with self._automatic_pull_lock, self._group_pull_guard() as open_groups:
             if open_groups and self._pull_deferrals < 3:
                 self._pull_deferrals += 1
+                logger.info(
+                    "git_pull_deferred reason=%s deferrals=%d",
+                    PULL_REASON_GROUP_OPEN,
+                    self._pull_deferrals,
+                )
                 return PullResult(
                     False, False, 0, "", "", reason=PULL_REASON_GROUP_OPEN
                 )

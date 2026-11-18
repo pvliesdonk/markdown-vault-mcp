@@ -284,6 +284,9 @@ class WriteCallbackDispatcher:
     def guard_open_groups(self) -> Iterator[bool]:
         """Prevent groups opening while an automatic pull is decided and run.
 
+        The gate precedes the file-write lock; callers must not open a group
+        while holding that lock.
+
         Yields:
             Whether a group is open.
         """
@@ -296,8 +299,8 @@ class WriteCallbackDispatcher:
         """Open a group under an opaque handle for the given principal."""
         if current_commit_group() is not None:
             raise CommitGroupError("Nested groups are not supported")
-        group = make_group(description, principal)
         with self._group_pull_gate, self._group_lock:
+            group = make_group(description, principal)
             if self._groups_closed:
                 raise CommitGroupError("Dispatcher is closed")
             self._schedule_group(group)

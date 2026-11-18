@@ -54,6 +54,7 @@ from markdown_vault_mcp._webhooks import (
 )
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git import PullResult
+from markdown_vault_mcp.git.types import PULL_REASON_GROUP_OPEN
 from markdown_vault_mcp.vault import Vault
 
 SECRET = "test-webhook-secret-xyz"
@@ -258,6 +259,23 @@ def test_webhook_push_triggers_pull_and_reindex():
     col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
 
 
+def test_webhook_uses_automatic_deferral() -> None:
+    """A deferred delivery does not reconcile or masquerade as a failed pull."""
+    result = PullResult(False, False, 0, "", "", reason=PULL_REASON_GROUP_OPEN)
+    col = _mock_vault(pull_result=result)
+    client = _make_client()
+    body = _push_body()
+    with patch("markdown_vault_mcp._webhooks.get_vault_singleton", return_value=col):
+        resp = client.post(
+            "/github-webhook",
+            content=body,
+            headers={"X-Hub-Signature-256": _sign(body), "X-GitHub-Event": "push"},
+        )
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "pull deferred", "reason": "group_open"}
+    col.reconcile_index_with_head.assert_not_called()
+
+
 def test_webhook_push_reconciles_when_already_up_to_date():
     """Nothing to pull still reconciles: a reindex an earlier pull lost is retried.
 
@@ -355,7 +373,7 @@ def test_webhook_push_returns_503_when_singleton_not_initialized():
 
 
 def test_webhook_push_no_git_strategy_returns_200():
-    """Vault has no git strategy — force_pull returns None; graceful no-op."""
+    """Vault has no git strategy — automatic pull returns None; graceful no-op."""
     col = _mock_vault()
     col._automatic_pull.return_value = None  # no git strategy
     client = _make_client()
