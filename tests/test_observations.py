@@ -556,15 +556,14 @@ def test_pull_reconcile_outcomes_and_failure(
         pending.set_result(None)
         monkeypatch.setattr(vault._head_reconciler, "reconcile", lambda **_: "failed")
         assert vault.reconcile_index_with_head(source="test") == "failed"
-        assert len(calls) == 2
+        assert len(calls) == 3
 
         def fail():
             raise PermissionError("ledger denied")
 
         monkeypatch.setattr(ledger, "sweep", fail)
         monkeypatch.setattr(vault._head_reconciler, "reconcile", lambda **_: "current")
-        with pytest.raises(PermissionError, match="ledger denied"):
-            vault.reconcile_index_with_head(source="test")
+        assert vault.reconcile_index_with_head(source="test") == "failed"
     finally:
         vault.close()
 
@@ -818,3 +817,123 @@ def test_shared_vault_ledgers_serialize_sweeps(  # noqa: PLR0915, RUF100
             thread.join(10)
         b.close()
         a.close()
+
+
+def test_pull_observes_when_search_reindex_fails_before_scan(
+    tmp_path: Path, git_repo_pair, monkeypatch
+) -> None:
+    import asyncio
+
+    from markdown_vault_mcp._tools.git import _run_pull_leg
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from tests.fixtures.git import _run_git
+
+    source = git_repo_pair.local_path
+    strategy = GitWriteStrategy(
+        token=None, push_delay_s=0, git_lfs=False, repo_path=source
+    )
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(state_path=tmp_path / "state"),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        vault.index.build_index()
+        assert vault.reconcile_index_with_head(source="fixture") == "reindexed"
+        other = tmp_path / "other"
+        _run_git(tmp_path, "clone", str(git_repo_pair.remote_path), str(other))
+        _run_git(other, "config", "user.email", "fixture@example.invalid")
+        _run_git(other, "config", "user.name", "Fixture")
+        (other / "incoming.md").write_text("arrived")
+        _run_git(other, "add", "incoming.md")
+        _run_git(other, "commit", "-m", "fixture")
+        _run_git(other, "push")
+
+        def fail_reindex():
+            raise OSError("search writer unavailable")
+
+        monkeypatch.setattr(vault._head_reconciler, "_reindex", fail_reindex)
+        result = asyncio.run(_run_pull_leg(strategy, vault, dry_run=False))
+        assert result["applied"] and result["reindex_failed"]
+        assert (source / "incoming.md").read_text() == "arrived"
+        assert "incoming.md" in vault._index_mgr.observations.rows()
+    finally:
+        vault.close()
+
+
+def test_failed_tick_observation_still_retries_push_and_reports_failure(
+    tmp_path: Path, git_repo_pair, monkeypatch
+) -> None:
+    import asyncio
+
+    from markdown_vault_mcp._tools.git import _run_pull_leg
+    from markdown_vault_mcp.git import GitWriteStrategy
+
+    source = git_repo_pair.local_path
+    strategy = GitWriteStrategy(
+        token=None, push_delay_s=0, git_lfs=False, repo_path=source
+    )
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(state_path=tmp_path / "state"),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        vault.index.build_index()
+        monkeypatch.setattr(
+            vault._head_reconciler, "reconcile", lambda **_kwargs: "current"
+        )
+
+        def fail_sweep():
+            raise PermissionError("ledger denied")
+
+        monkeypatch.setattr(vault._index_mgr.observations, "sweep", fail_sweep)
+        strategy._pull_repo_path = source
+        strategy._on_tick = vault._reconcile_on_tick
+        strategy._enable_push = True
+        monkeypatch.setattr(strategy, "sync_once", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr(strategy._pull_stop, "wait", lambda **_kwargs: True)
+        pushes = []
+        monkeypatch.setattr(
+            strategy._push_scheduler,
+            "do_push_safe",
+            lambda **kwargs: pushes.append(kwargs),
+        )
+        strategy._pull_loop()
+        assert pushes == [{"retry": True}]
+        assert vault.reconcile_index_with_head(source="test") == "failed"
+        result = asyncio.run(_run_pull_leg(strategy, vault, dry_run=False))
+        assert result["applied"] and result["reindex_failed"]
+    finally:
+        vault.close()
+
+
+def test_role_reclassification_preserves_byte_change_time(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "rules.md").write_text("same bytes")
+    state = tmp_path / "state"
+    first_vault = Vault(source_dir=source, settings=VaultSettings(state_path=state))
+    try:
+        first_vault.index.build_index()
+        before = first_vault._index_mgr.observations.rows()["rules.md"]
+    finally:
+        first_vault.close()
+    second_vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(state_path=state, conventions_file="rules.md"),
+    )
+    try:
+        second_vault.index.build_index()
+        after = second_vault._index_mgr.observations.rows()["rules.md"]
+        assert before.role == "concept_candidate"
+        assert after.role == "support"
+        assert after.content_digest == before.content_digest
+        assert after.frontmatter_digest == before.frontmatter_digest
+        assert after.presence == before.presence
+        assert after.first_seen_at == before.first_seen_at
+        assert after.last_change_observed_at == before.last_change_observed_at
+    finally:
+        second_vault.close()

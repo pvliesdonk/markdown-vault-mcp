@@ -1055,8 +1055,9 @@ class Vault:
         building, a writer error, a pull reported as not applied although
         HEAD advanced) is retried by the next call instead of waiting for the
         next pull that moves HEAD.  Called by the pull loop on every tick, by
-        webhook deliveries and by the ``git_sync`` tool. A current or deferred
-        reconciliation also sweeps the observation ledger.
+        webhook deliveries and by the ``git_sync`` tool. Unless the reindex ran
+        (and swept), the observation ledger is swept too, even after a failed
+        search reconcile. A failed sweep is logged and reported as ``"failed"``.
 
         Args:
             source: Which caller asked, for the log line.
@@ -1067,12 +1068,20 @@ class Vault:
         if self._head_reconciler is None:
             return "current"
         outcome = self._head_reconciler.reconcile(source=source)
-        if (
-            outcome in ("current", "deferred")
-            and self._index_mgr.observations is not None
-        ):
-            self._index_mgr.observations.sweep()
+        if outcome != "reindexed" and not self._sweep_observations(source):
+            return "failed"
         return outcome
+
+    def _sweep_observations(self, source: str) -> bool:
+        """Sweep the ledger outside a reindex; report failure without raising."""
+        if self._index_mgr.observations is None:
+            return True
+        try:
+            self._index_mgr.observations.sweep()
+        except Exception:
+            logger.error("observation_sweep_failed source=%s", source, exc_info=True)
+            return False
+        return True
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.

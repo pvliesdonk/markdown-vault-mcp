@@ -144,20 +144,20 @@ class ObservationLedger:
             ) -> None:
                 found.add(path)
                 old = previous.get(path)
-                if old and (
-                    old.role,
-                    old.content_digest,
-                    old.frontmatter_digest,
-                    old.presence,
-                ) == (role, digest, frontmatter, "present"):
-                    return
-                result[path] = Observation(
-                    path,
-                    role,
-                    digest,
-                    frontmatter,
-                    old.first_seen_at if old else now,
-                    now,
+                result[path] = (
+                    replace(old, role=role)
+                    if old
+                    and old.presence == "present"
+                    and (old.content_digest, old.frontmatter_digest)
+                    == (digest, frontmatter)
+                    else Observation(
+                        path,
+                        role,
+                        digest,
+                        frontmatter,
+                        old.first_seen_at if old else now,
+                        now,
+                    )
                 )
 
             blocked = self._inspector.observe_files(visit)

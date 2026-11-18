@@ -270,7 +270,10 @@ sweep leaves an already-warm index queryable in the current process. A forced
 rebuild may make it unavailable in that process.
 
 The ledger compares states; it does not record an event for each edit, identify
-an author, or change frontmatter or `log.md`. It hashes the full file and,
+an author, or change frontmatter or `log.md`. `last_change_observed_at` moves
+when the file's bytes or presence change. A role that changes with
+configuration, such as a new conventions file, is refreshed in place without
+moving it. It hashes the full file and,
 separately, the parser-recognised frontmatter block with surrounding whitespace
 trimmed. An absent, unterminated or invalid UTF-8 header has no frontmatter
 digest; invalid bytes in the body do not affect a valid header's digest. Reads
@@ -281,7 +284,10 @@ requires a new version and migration.
 
 A build, reindex or successful pull observes external edits, even when the Git
 HEAD does not change. The server reconciles after interactive pulls and webhooks,
-as well as on periodic pull ticks. A webhook can sweep twice.
+as well as on periodic pull ticks. A webhook can sweep twice. When search
+fails to reconcile, the server still sweeps the ledger and keeps the failed
+result. A ledger failure on a pull tick or `git_sync` is logged and reported as
+failed; the tick still retries a pending push.
 
 Each pull tick reads the full observation scope, normally every 600 seconds.
 Periodic pulls disable the file watcher. When the watcher runs, excluded

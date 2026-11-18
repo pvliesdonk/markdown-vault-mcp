@@ -7754,10 +7754,14 @@ reindexes and successful pulls reconcile state, including unchanged-HEAD pulls.
 Persistent ledger sweeps for the same resolved path share a process-local lock.
 Shared persistent state has one owning process; independent indexes must not
 share tracker or ledger state.
-The server's pull tick and post-pull reconciliation also sweep on current or
-deferred search state; webhook delivery may sweep twice. A tick reads the full
+The server's pull tick and post-pull reconciliation also sweep on current,
+deferred or failed search state; webhook delivery may sweep twice. A failed
+search reconcile keeps its failed outcome while the fallback sweep observes the
+tree. A failed fallback sweep is logged and reported as failed, allowing the
+pull tick to continue to its independent pending push retry. A tick reads the full
 observation scope, normally every 600 seconds. The watcher is disabled when
-periodic pulls are active. Unchanged rows remain stable;
+periodic pulls are active. Byte or presence changes advance the change time;
+a role-only refresh leaves it intact. Unchanged rows remain stable;
 inaccessible paths and their subtrees do not establish removal, but do not block
 removal elsewhere. A readable empty root records prior files as removed even
 when search refuses to prune its own rows. Inventory-denied symlinks are never followed, even when search
