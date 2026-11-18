@@ -334,6 +334,11 @@ class GitWriteStrategy:
             Callable[[], contextlib.AbstractContextManager[None]] | None
         ) = None
         self._drain_writes: Callable[[], bool] | None = None
+        self._group_pull_guard: Callable[
+            [], contextlib.AbstractContextManager[bool]
+        ] = lambda: contextlib.nullcontext(False)
+        self._automatic_pull_lock = threading.Lock()
+        self._pull_deferrals = 0
         self._on_pull: Callable[[], object] | None = None
         self._on_tick: Callable[[], object] | None = None
         self._commit_observer: Callable[[str, str], None] | None = None
@@ -1105,6 +1110,37 @@ class GitWriteStrategy:
         git_root = self._ensure_git_root(repo_path) or repo_path
         return self._pull_pipeline(git_root, dry_run=dry_run)
 
+    def set_group_pull_guard(
+        self, guard: Callable[[], contextlib.AbstractContextManager[bool]]
+    ) -> None:
+        """Wire the dispatcher guard used to defer automatic pulls.
+
+        Args:
+            guard: Context manager yielding whether a group is open.
+        """
+        self._group_pull_guard = guard
+
+    def automatic_pull(self) -> PullResult:
+        """Pull for a webhook, deferring briefly while a group is open.
+
+        Returns:
+            The pull result, or a deferred result when a group is open.
+        """
+        if not self._enable_pull:
+            return self.force_pull()
+        repo_path = self.resolve_force_repo()
+        git_root = self._ensure_git_root(repo_path) or repo_path
+        return self._automatic_pull(git_root, _INTERACTIVE_PULL)
+
+    def _automatic_pull(self, git_root: Path, entry: _PullEntry) -> PullResult:
+        """Serialize automatic attempts and bound consecutive deferrals."""
+        with self._automatic_pull_lock, self._group_pull_guard() as open_groups:
+            if open_groups and self._pull_deferrals < 3:
+                self._pull_deferrals += 1
+                return PullResult(False, False, 0, "", "", reason="group_open")
+            self._pull_deferrals = 0
+            return self._pull_pipeline(git_root, entry=entry)
+
     def _pull_pipeline(
         self,
         git_root: Path,
@@ -1862,8 +1898,10 @@ class GitWriteStrategy:
                     "git_tracking_ref_unresolved context=sync_once action=skip_fetch"
                 )
                 return False
-            result = self._pull_pipeline(
-                git_root, entry=_LOOP_PULL if timer_driven else _STARTUP_PULL
+            result = (
+                self._automatic_pull(git_root, _LOOP_PULL)
+                if timer_driven
+                else self._pull_pipeline(git_root, entry=_STARTUP_PULL)
             )
         except FileNotFoundError:
             logger.info(

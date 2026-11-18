@@ -685,6 +685,10 @@ class Vault:
         # so the interactive force_pull is covered even when the periodic pull
         # loop is disabled. drain is late-bound to the dispatcher just built.
         if self._git_strategy is not None:
+            if isinstance(self._git_strategy, GitWriteStrategy):
+                self._git_strategy.set_group_pull_guard(
+                    self._write_callback.guard_open_groups
+                )
             self._git_strategy.set_write_quiescer(
                 pause_writes=self.pause_writes,
                 drain_writes=self._write_callback.drain,
@@ -1126,6 +1130,14 @@ class Vault:
             return None
         # The strategy now self-quiesces (pause + drain) around the merge (#571),
         # so the previous outer pause_writes() wrap here is redundant.
+        return self._git_strategy.force_pull()
+
+    def _automatic_pull(self) -> PullResult | None:
+        """Run a webhook pull with the automatic group deferral policy."""
+        if self._git_strategy is None:
+            return None
+        if isinstance(self._git_strategy, GitWriteStrategy):
+            return self._git_strategy.automatic_pull()
         return self._git_strategy.force_pull()
 
     def stop(self) -> None:

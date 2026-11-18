@@ -82,6 +82,13 @@ already bound to the group can continue; later callbacks use the ordinary
 per-call commit path under the opener's identity. Git stages current on-disk
 content, which can include a write whose callback is still pending.
 
+Timer and webhook pulls defer while any group remains open. After three
+consecutive deferrals, the fourth automatic attempt pulls and drains pending
+writes, which can split an open group into multiple commits. Once groups close,
+the next normal timer or webhook trigger retries the pull. Explicit `git_sync`
+and force pulls continue immediately and can also split a group. A deferred
+webhook returns HTTP 503 so the sender can retry.
+
 ## Uncommitted files at startup
 
 Startup inspects the repository's working tree and staging area in both git

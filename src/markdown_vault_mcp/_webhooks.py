@@ -1,7 +1,7 @@
 """Push-event webhook handlers for GitHub (#530) and GitLab (#1178).
 
 Both hosts notify the same thing — "the remote moved" — and the response is
-identical: ``force_pull`` then a reconcile of the index with HEAD (#1532). Only the envelope
+identical: an automatic pull then a reconcile of the index with HEAD (#1532). Only the envelope
 differs, so :class:`WebhookProvider` holds the per-host parts (how a delivery
 authenticates, which header names the event and the delivery id) and
 :func:`make_webhook_handler` holds the one shared body.
@@ -435,7 +435,7 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
     classify the event) stay separate from the git-shaped ones, and so each
     stays inside the project's complexity budget.
 
-    ``force_pull`` runs regardless of ``is_queryable()``: it is a pure git
+    The automatic pull runs regardless of ``is_queryable()``: it is a pure git
     operation with no FTS or vector-index dependency, so blocking on a cold
     index would exhaust the host's retry budget (GitHub: ~5 s + ~25 s + ~90 s
     ≈ 2 min) before a large vault finishes its initial build, permanently
@@ -455,7 +455,7 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         when a retry might succeed.
     """
     try:
-        pull_result = await asyncio.to_thread(vault.force_pull)
+        pull_result = await asyncio.to_thread(vault._automatic_pull)
     except Exception:
         # The handler's contract is 401 / 200 / 503; an exception escaping
         # here would surface as an unhandled 500 with a traceback (#1128).
@@ -484,6 +484,11 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
             "webhook_pull_disabled kind=%s delivery_id=%s", name, delivery_id
         )
         return JSONResponse({"ok": True, "message": "pull disabled"})
+
+    if pull_result.reason == "group_open":
+        return JSONResponse(
+            {"error": "pull deferred", "reason": "group_open"}, status_code=503
+        )
 
     await asyncio.to_thread(_reconcile_after_pull, vault, name)
 

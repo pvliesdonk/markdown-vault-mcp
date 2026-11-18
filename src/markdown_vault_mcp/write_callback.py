@@ -144,6 +144,7 @@ class WriteCallbackDispatcher:
         self._on_write = on_write
         self._groups: dict[str, CommitGroup] = {}
         self._group_lock = threading.RLock()
+        self._group_pull_gate = threading.Lock()
         self._groups_closed = False
         self._group_idle_s = group_idle_s
         self._group_max_age_s = group_max_age_s
@@ -279,12 +280,24 @@ class WriteCallbackDispatcher:
                     )
                 )
 
+    @contextmanager
+    def guard_open_groups(self) -> Iterator[bool]:
+        """Prevent groups opening while an automatic pull is decided and run.
+
+        Yields:
+            Whether a group is open.
+        """
+        with self._group_pull_gate:
+            with self._group_lock:
+                open_groups = any(not group.closed for group in self._groups.values())
+            yield open_groups
+
     def open_group(self, description: str, principal: Principal | None) -> CommitGroup:
         """Open a group under an opaque handle for the given principal."""
         if current_commit_group() is not None:
             raise CommitGroupError("Nested groups are not supported")
         group = make_group(description, principal)
-        with self._group_lock:
+        with self._group_pull_gate, self._group_lock:
             if self._groups_closed:
                 raise CommitGroupError("Dispatcher is closed")
             self._schedule_group(group)

@@ -1,0 +1,176 @@
+"""Automatic pulls respect open commit groups."""
+
+from contextlib import nullcontext
+from pathlib import Path
+from unittest.mock import patch
+
+from markdown_vault_mcp.git.strategy import GitWriteStrategy
+from markdown_vault_mcp.git.types import PullResult
+from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+
+
+def test_timer_defers_an_open_group(git_repo: Path) -> None:
+    strategy = GitWriteStrategy(
+        token=None, repo_url=None, managed=False, repo_path=git_repo
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    group = dispatcher.open_group("Group", None)
+    strategy.set_write_quiescer(nullcontext, dispatcher.drain)
+    # A real Vault supplies this same registry to its git strategy.
+    strategy.set_group_pull_guard(dispatcher.guard_open_groups)
+    try:
+        with (
+            patch.object(strategy, "_tracking_ref", return_value="origin/main"),
+            patch.object(
+                strategy,
+                "_pull_locked",
+                return_value=PullResult(True, True, 0, "a", "a"),
+            ) as pull,
+        ):
+            assert not strategy.sync_once(git_repo, timer_driven=True)
+            pull.assert_not_called()
+    finally:
+        dispatcher.close_group(group.handle, None).result(timeout=5)
+        dispatcher.close()
+        strategy.close()
+
+
+def test_bounded_deferrals_split_and_reset(git_repo: Path) -> None:
+    strategy = GitWriteStrategy(
+        token=None, repo_url=None, managed=False, repo_path=git_repo
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    strategy.set_write_quiescer(nullcontext, dispatcher.drain)
+    strategy.set_group_pull_guard(dispatcher.guard_open_groups)
+    group = dispatcher.open_group("Group", None)
+    note = git_repo / "note.md"
+    note.write_text("one", encoding="utf-8")
+    with dispatcher.bind_group(group.handle, None):
+        dispatcher.fire(note, "one", "write")
+    result = PullResult(True, True, 0, "a", "a")
+    try:
+        with patch.object(strategy, "_pull_locked", return_value=result) as pull:
+            for _ in range(3):
+                assert strategy.automatic_pull().reason == "group_open"
+            pull.assert_not_called()
+            assert strategy.automatic_pull() == result
+            assert pull.call_count == 1
+            from tests.fixtures.git import _run_git
+
+            assert _run_git(git_repo, "log", "-1", "--format=%s").strip() == "Group"
+            assert strategy.automatic_pull().reason == "group_open"
+            dispatcher.close_group(group.handle, None).result(timeout=5)
+            assert strategy.automatic_pull() == result
+            second = dispatcher.open_group("Second", None)
+            assert strategy.automatic_pull().reason == "group_open"
+            dispatcher.close_group(second.handle, None).result(timeout=5)
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_explicit_pull_does_not_defer(git_repo: Path) -> None:
+    strategy = GitWriteStrategy(
+        token=None, repo_url=None, managed=False, repo_path=git_repo
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    strategy.set_write_quiescer(nullcontext, dispatcher.drain)
+    strategy.set_group_pull_guard(dispatcher.guard_open_groups)
+    group = dispatcher.open_group("Group", None)
+    try:
+        with patch.object(
+            strategy, "_pull_locked", return_value=PullResult(True, True, 0, "a", "a")
+        ) as pull:
+            assert strategy.force_pull().applied
+            pull.assert_called_once()
+    finally:
+        dispatcher.close_group(group.handle, None).result(timeout=5)
+        dispatcher.close()
+        strategy.close()
+
+
+def test_auto_closed_group_does_not_defer(git_repo: Path) -> None:
+    strategy = GitWriteStrategy(
+        token=None, repo_url=None, managed=False, repo_path=git_repo
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    strategy.set_group_pull_guard(dispatcher.guard_open_groups)
+    group = dispatcher.open_group("Group", None)
+    try:
+        dispatcher.close_group(group.handle, None, _automatic=True).result(timeout=5)
+        with patch.object(
+            strategy, "_pull_locked", return_value=PullResult(True, True, 0, "a", "a")
+        ) as pull:
+            assert strategy.automatic_pull().applied
+            pull.assert_called_once()
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+async def test_webhook_uses_automatic_deferral(git_repo: Path) -> None:
+    from types import SimpleNamespace
+
+    from markdown_vault_mcp._webhooks import _process_push
+
+    strategy = GitWriteStrategy(
+        token=None, repo_url=None, managed=False, repo_path=git_repo
+    )
+    dispatcher = WriteCallbackDispatcher(strategy)
+    strategy.set_group_pull_guard(dispatcher.guard_open_groups)
+    group = dispatcher.open_group("Group", None)
+    try:
+        vault = SimpleNamespace(_automatic_pull=strategy.automatic_pull)
+        response = await _process_push(vault, "github", "delivery")
+        assert response.status_code == 503
+        assert b'"group_open"' in response.body
+    finally:
+        dispatcher.close_group(group.handle, None).result(timeout=5)
+        dispatcher.close()
+        strategy.close()
+
+
+def test_vault_wires_group_guard_and_webhook_pull(git_repo: Path) -> None:
+    from markdown_vault_mcp.vault import Vault
+
+    strategy = GitWriteStrategy(
+        token=None, repo_url=None, managed=False, repo_path=git_repo
+    )
+    vault = Vault(source_dir=git_repo, git_strategy=strategy)
+    group = vault._write_callback.open_group("Group", None)
+    try:
+        assert vault._automatic_pull().reason == "group_open"
+        vault._write_callback.close_group(group.handle, None).result(timeout=5)
+        with patch.object(
+            strategy, "_pull_locked", return_value=PullResult(True, True, 0, "a", "a")
+        ):
+            assert vault._automatic_pull().applied
+    finally:
+        vault.close()
+
+
+def test_vault_automatic_pull_without_git_and_with_other_store(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from markdown_vault_mcp.vault import Vault
+
+    vault = Vault(source_dir=tmp_path)
+    try:
+        assert vault._automatic_pull() is None
+        store = MagicMock()
+        result = PullResult(True, True, 0, "a", "a")
+        store.force_pull.return_value = result
+        vault._git_strategy = store
+        assert vault._automatic_pull() == result
+    finally:
+        vault.close()
+
+
+def test_automatic_pull_respects_disabled_pulls(git_repo: Path) -> None:
+    strategy = GitWriteStrategy(
+        token=None, repo_url=None, managed=False, enable_pull=False, repo_path=git_repo
+    )
+    try:
+        assert strategy.automatic_pull().reason == "pull_disabled"
+    finally:
+        strategy.close()
