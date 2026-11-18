@@ -360,6 +360,8 @@ def register(mcp: FastMCP) -> None:
         """Pull from and push to the vault's git remote now; returns what each leg did.
 
         With direction "both" the pull runs first, and a failed pull skips the push.
+        A real sync waits up to 30 seconds for your open or pending transaction
+        commits. If one is pending or failed, no sync leg runs.
 
         Args:
             direction: `pull`, `push` or `both` (default).
@@ -367,8 +369,8 @@ def register(mcp: FastMCP) -> None:
                 leg reports applied false without contacting the remote.
 
             transaction: Handle to validate and close before syncing. Real sync
-                closes all your open transactions even when omitted. Omit for dry_run;
-                previews leave transactions open.
+                closes your open transactions and waits for pending closes even
+                when omitted. Omit for dry_run; previews leave transactions open.
 
         Returns:
             Dict with the following fields:

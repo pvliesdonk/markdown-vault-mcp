@@ -164,6 +164,45 @@ def test_owner_group_settlement_preflights_active_and_keeps_auto_result() -> Non
         dispatcher.close()
 
 
+def test_owner_settlement_selects_pending_closes_by_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from concurrent.futures import Future
+
+    from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+
+    alice = Principal("alice", None, None, "human")
+    bob = Principal("bob", None, None, "human")
+    dispatcher = WriteCallbackDispatcher(None)
+    completions: list[Future[None]] = []
+
+    def enqueue(_scope: object) -> Future[None]:
+        future: Future[None] = Future()
+        completions.append(future)
+        return future
+
+    monkeypatch.setattr(dispatcher, "_enqueue_scope_end", enqueue)
+    try:
+        manual = dispatcher.open_group("Manual", alice)
+        automatic = dispatcher.open_group("Automatic", alice)
+        other = dispatcher.open_group("Other", bob)
+        manual_result = dispatcher.close_group(manual.handle, alice)
+        auto_result = dispatcher.close_group(automatic.handle, alice, _automatic=True)
+        other_result = dispatcher.close_group(other.handle, bob, _automatic=True)
+        assert set(dispatcher.close_owner_groups(alice)) == {manual_result, auto_result}
+        assert dispatcher.close_group(manual.handle, alice) is manual_result
+        completions[0].set_result(None)
+        completions[1].set_result(None)
+        assert dispatcher.close_owner_groups(alice) == []
+        assert dispatcher.close_owner_groups(alice, automatic.handle) == [auto_result]
+        assert dispatcher.close_owner_groups(bob) == [other_result]
+    finally:
+        for future in completions:
+            if not future.done():
+                future.set_result(None)
+        dispatcher.close()
+
+
 async def test_sync_explicit_closed_and_auto_closed_handles(
     git_repo_pair: GitRepoPair, _git_managed_env: Path
 ) -> None:
@@ -199,7 +238,9 @@ async def test_sync_explicit_closed_and_auto_closed_handles(
 
 
 @pytest.mark.usefixtures("_mcp_env")
-async def test_no_git_result_reports_no_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_no_git_result_reports_failed_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     async with Client(make_server()) as client:
         handle = (
@@ -209,7 +250,7 @@ async def test_no_git_result_reports_no_commit(monkeypatch: pytest.MonkeyPatch) 
             "write", {"path": "new.md", "content": "text", "transaction": handle}
         )
         result = await client.call_tool("end_transaction", {"handle": handle})
-        assert result.data == {"status": "no_changes", "sha": None, "files": 0}
+        assert result.data == {"status": "failed", "sha": None, "files": 0}
         assert (await client.call_tool("read", {"path": "new.md"})).data[
             "content"
         ] == "text"
@@ -250,3 +291,190 @@ async def test_group_includes_attachment_and_explicit_auto_failure_blocks_sync(
             _run_git(git_repo_pair.remote_path, "log", "-1", "--format=%s").strip()
             == "initial"
         )
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("fail", [False, True])
+async def test_sync_waits_for_pending_automatic_close(
+    git_repo_pair: GitRepoPair,
+    _git_managed_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    explicit: bool,
+    fail: bool,
+) -> None:
+    import asyncio
+    import threading
+
+    from markdown_vault_mcp import domain
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    if fail:
+        hook = git_repo_pair.local_path / ".git/hooks/pre-commit"
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
+    entered, release = threading.Event(), threading.Event()
+    original = GitWriteStrategy.on_write_batch
+
+    def gated(strategy, items, tool_name, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return original(strategy, items, tool_name, **kwargs)
+
+    monkeypatch.setattr(GitWriteStrategy, "on_write_batch", gated)
+    async with Client(make_server()) as client:
+        handle = (
+            await client.call_tool("begin_transaction", {"description": "Pending auto"})
+        ).data["handle"]
+        await client.call_tool(
+            "write", {"path": "pending.md", "content": "x", "transaction": handle}
+        )
+        vault = domain.get_vault_singleton()
+        assert vault is not None
+        future = vault._write_callback.close_group(handle, None, _automatic=True)
+        task = None
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            args = {"direction": "push"}
+            if explicit:
+                args["transaction"] = handle
+            task = asyncio.create_task(client.call_tool("git_sync", args))
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(task), 0.2)
+            assert (
+                _run_git(git_repo_pair.remote_path, "log", "-1", "--format=%s").strip()
+                == "initial"
+            )
+        finally:
+            release.set()
+        assert task is not None
+        if fail:
+            with pytest.raises(ToolError, match="commit failed"):
+                await task
+        else:
+            await task
+        assert (await asyncio.wrap_future(future)).status == (
+            "failed" if fail else "committed"
+        )
+        assert _run_git(
+            git_repo_pair.remote_path, "log", "-1", "--format=%s"
+        ).strip() == ("initial" if fail else "Pending auto")
+
+
+async def test_end_transaction_bounds_pending_commit(
+    git_repo_pair: GitRepoPair, _git_managed_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    import threading
+
+    from markdown_vault_mcp import domain
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    entered, release = threading.Event(), threading.Event()
+    original = GitWriteStrategy.on_write_batch
+
+    def gated(strategy, items, tool_name, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return original(strategy, items, tool_name, **kwargs)
+
+    monkeypatch.setattr(GitWriteStrategy, "on_write_batch", gated)
+    monkeypatch.setattr(
+        "markdown_vault_mcp._server_commit_scope._SCOPE_WAIT_TIMEOUT", 0.1
+    )
+    async with Client(make_server()) as client:
+        handle = (
+            await client.call_tool("begin_transaction", {"description": "Bounded"})
+        ).data["handle"]
+        await client.call_tool(
+            "write", {"path": "bounded.md", "content": "x", "transaction": handle}
+        )
+        task = asyncio.create_task(
+            client.call_tool("end_transaction", {"handle": handle})
+        )
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            with pytest.raises(ToolError, match="pending"):
+                await asyncio.wait_for(asyncio.shield(task), 0.8)
+            vault = domain.get_vault_singleton()
+            assert vault is not None
+            future = vault._write_callback._finished_groups[handle][1]
+            assert not future.cancelled() and not future.done()
+            with pytest.raises(ToolError, match="pending"):
+                await asyncio.wait_for(
+                    client.call_tool("git_sync", {"direction": "push"}), 0.8
+                )
+            assert not future.cancelled() and not future.done()
+            assert (
+                _run_git(git_repo_pair.remote_path, "log", "-1", "--format=%s").strip()
+                == "initial"
+            )
+        finally:
+            release.set()
+            if not task.done():
+                await task
+        assert (await asyncio.wrap_future(future)).status == "committed"
+        assert (await client.call_tool("git_sync", {"direction": "push"})).data["push"][
+            "applied"
+        ]
+        assert (
+            _run_git(git_repo_pair.remote_path, "log", "-1", "--format=%s").strip()
+            == "Bounded"
+        )
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_sync_joins_pending_manual_close_and_second_end(
+    git_repo_pair: GitRepoPair,
+    _git_managed_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    explicit: bool,
+) -> None:
+    import asyncio
+    import threading
+
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    entered, release = threading.Event(), threading.Event()
+    original = GitWriteStrategy.on_write_batch
+
+    def gated(strategy, items, tool_name, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return original(strategy, items, tool_name, **kwargs)
+
+    monkeypatch.setattr(GitWriteStrategy, "on_write_batch", gated)
+    async with Client(make_server()) as client:
+        handle = (
+            await client.call_tool("begin_transaction", {"description": "Manual"})
+        ).data["handle"]
+        await client.call_tool(
+            "write", {"path": "manual.md", "content": "x", "transaction": handle}
+        )
+        first = asyncio.create_task(
+            client.call_tool("end_transaction", {"handle": handle})
+        )
+        second = sync = None
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            second = asyncio.create_task(
+                client.call_tool("end_transaction", {"handle": handle})
+            )
+            args = {"direction": "push"}
+            if explicit:
+                args["transaction"] = handle
+            sync = asyncio.create_task(client.call_tool("git_sync", args))
+            for task in (second, sync):
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(task), 0.1)
+        finally:
+            release.set()
+        assert second is not None and sync is not None
+        assert (await first).data["status"] == "committed"
+        assert (await second).data["status"] == "committed"
+        assert (await sync).data["push"]["applied"]
+        assert (
+            _run_git(git_repo_pair.remote_path, "log", "-1", "--format=%s").strip()
+            == "Manual"
+        )
+        with pytest.raises(ToolError, match="Unknown"):
+            await client.call_tool("end_transaction", {"handle": handle})

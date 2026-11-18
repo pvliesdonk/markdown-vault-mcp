@@ -66,43 +66,62 @@ async def test_all_write_operations_accept_transaction(
 ) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(git_repo))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    for name in ("edit.md", "append.md", "delete.md", "rename.md", "folder/move.md"):
+        path = git_repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("original\n")
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(
+            ["git", "-C", str(git_repo), *args], text=True
+        ).strip()
+
+    git("add", ".")
+    git("commit", "-m", "seed")
+    before = int(git("rev-list", "--count", "HEAD"))
     async with Client(make_server()) as client:
         handle = (
             await client.call_tool(
                 "begin_transaction", {"description": "Mixed operations"}
             )
         ).data["handle"]
-        await client.call_tool(
-            "write", {"path": "folder/a.md", "content": "first", "transaction": handle}
-        )
-        await client.call_tool(
-            "edit",
-            {
-                "path": "folder/a.md",
-                "old_text": "first",
-                "new_text": "second",
-                "transaction": handle,
-            },
-        )
-        await client.call_tool(
-            "append", {"path": "folder/a.md", "content": "third", "transaction": handle}
-        )
-        await client.call_tool(
-            "rename",
-            {
-                "old_path": "folder/a.md",
-                "new_path": "folder/b.md",
-                "transaction": handle,
-            },
-        )
-        await client.call_tool(
-            "move_folder",
-            {"old_dir": "folder", "new_dir": "moved", "transaction": handle},
-        )
-        await client.call_tool("delete", {"path": "moved/b.md", "transaction": handle})
+        calls = [
+            ("write", {"path": "new.md", "content": "new"}),
+            (
+                "edit",
+                {"path": "edit.md", "old_text": "original", "new_text": "changed"},
+            ),
+            ("append", {"path": "append.md", "content": "more"}),
+            ("delete", {"path": "delete.md"}),
+            ("rename", {"old_path": "rename.md", "new_path": "renamed.md"}),
+            ("move_folder", {"old_dir": "folder", "new_dir": "moved"}),
+        ]
+        for name, arguments in calls:
+            await client.call_tool(name, {**arguments, "transaction": handle})
+            assert int(git("rev-list", "--count", "HEAD")) == before
         result = await client.call_tool("end_transaction", {"handle": handle})
-        assert result.data["status"] == "no_changes"
-        with pytest.raises(ToolError, match="begin_transaction"):
+        assert result.data["status"] == "committed"
+        assert int(git("rev-list", "--count", "HEAD")) == before + 1
+        assert set(
+            git(
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "--no-renames",
+                "-r",
+                "HEAD",
+            ).splitlines()
+        ) == {
+            "new.md",
+            "edit.md",
+            "append.md",
+            "delete.md",
+            "rename.md",
+            "renamed.md",
+            "folder/move.md",
+            "moved/move.md",
+        }
+        with pytest.raises(ToolError, match="begin_transaction") as error:
             await client.call_tool(
                 "append",
                 {
@@ -112,4 +131,4 @@ async def test_all_write_operations_accept_transaction(
                     "transaction": "unknown",
                 },
             )
-        assert not (git_repo / "missing.md").is_file()
+        assert "active writes" not in str(error.value)

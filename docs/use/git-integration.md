@@ -69,18 +69,34 @@ No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
-## Write group deadlines
+## Group writes into one commit
 
-The internal write group API closes groups automatically after five minutes of
-inactivity or one hour after opening. The public transaction tools are planned
-for a later slice. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
+Call `begin_transaction` with a commit description, pass its handle as
+`transaction` to each `write`, `edit`, `append`, `delete`, `rename` or
+`move_folder`, then call `end_transaction`. The files change immediately and
+are not rolled back. A write without the handle commits separately. Uploads,
+`fetch` and OKF tools do not accept a handle and stay outside the group.
+
+`end_transaction` returns `committed`, `no_changes` or `failed` with a SHA
+when available and a file count. Without Git commit support, a group with writes
+returns `failed`; the files remain written. An empty group returns `no_changes`.
+A real `git_sync` closes the caller's open
+groups and waits for their commits already under way. A failed commit stops
+sync; inspect the Git index to recover staged work. Both tools wait up to 30
+seconds; if a commit is still pending, it continues in the background and no
+sync leg runs. Retry `git_sync` to wait for it and check the server log. A
+`git_sync` dry run leaves groups open; omit the transaction handle for a preview.
+Completed automatic-close results are available to their owner by handle until
+the server restarts; an implicit sync does not inspect earlier results.
+
+Groups close automatically after five minutes of inactivity or one hour after
+opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
 `MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
 bounds. A group can close while a write is active. New attempts to bind an
-automatically closed group are refused; the owner can retrieve its result for
-the lifetime of the server process. Results do not survive a restart. A write
-already bound to the group can continue; later callbacks use the ordinary
-per-call commit path under the opener's identity. Git stages current on-disk
-content, which can include a write whose callback is still pending.
+closed group are refused. A write already bound to the group can continue; later
+callbacks use the ordinary per-call commit path under the opener's identity.
+Git stages current on-disk content, which can include a write whose callback is
+still pending.
 
 ## Uncommitted files at startup
 

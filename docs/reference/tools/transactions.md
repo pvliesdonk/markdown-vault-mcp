@@ -46,6 +46,9 @@ Pass its returned `handle` as `transaction` to each supported write:
 
 Close a transaction and return its commit status, SHA and file count.
 
+If the commit is still pending after 30 seconds, it continues in the
+background. Call `git_sync` to wait for it and check the server log.
+
 **Parameters**
 
 | Name | Type | Default | Description |
@@ -56,7 +59,8 @@ Close a transaction and return its commit status, SHA and file count.
 
 Dict with status (committed, `no_changes` or failed), `sha` (str or null),
 and files (number of committed paths; zero if unknown). Without Git
-commit support, `no_changes` reports that no commit was made.
+commit support, a group with writes reports failed; the files remain
+written. An empty group reports `no_changes`.
 
 <!-- DOMAIN-EXAMPLE-end_transaction-START -->
 After those writes, call `end_transaction({"handle": "<handle>"})`. A result such

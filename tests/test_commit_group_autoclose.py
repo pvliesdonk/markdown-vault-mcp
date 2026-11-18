@@ -148,7 +148,7 @@ def test_max_age_commits_during_active_binding_and_later_write_is_not_lost(
             thread = threading.Thread(target=bind_again)
             thread.start()
             thread.join(timeout=2)
-            assert len(errors) == 1 and "automatically" in str(errors[0])
+            assert len(errors) == 1 and "already closed" in str(errors[0])
             second.write_text("second", encoding="utf-8")
             dispatcher.fire(second, "second", "write")
         _wait_for_subject(git_repo, "write: second.md")
@@ -176,7 +176,7 @@ def test_expired_idle_cannot_be_revived_by_delayed_timer() -> None:
         with dispatcher._group_lock:
             time.sleep(0.08)
             with (
-                pytest.raises(CommitGroupError, match="automatically"),
+                pytest.raises(CommitGroupError, match="already closed"),
                 dispatcher.bind_group(group.handle, None),
             ):
                 pass

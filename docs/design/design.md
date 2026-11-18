@@ -6846,11 +6846,12 @@ immediately readable, and indexing proceeds independently of the commit.
 Callbacks that do not opt into groups flush ordinary batches or individual
 writes and report `no_changes`. MCP clients open a group with `begin_transaction`,
 pass its handle to supported write calls, and close it with `end_transaction`.
-A real `git_sync` closes all open groups owned by its caller before syncing.
-A supplied handle is validated, including a retained auto-close result; a failed
-commit stops the sync. Omitted handles do not scan earlier auto-close results.
-A dry run leaves
-groups open and refuses a supplied handle. Other write tools, including uploads,
+A real `git_sync` closes its caller's open groups and waits for pending closes,
+including manual and automatic ones. A supplied handle is validated, including a
+retained auto-close result; a failed commit stops the sync. Omitted handles do
+not scan completed historical auto-close results. End and sync wait up to 30
+seconds; a timeout leaves the commit running and no sync leg runs. A dry run
+leaves groups open and refuses a supplied handle. Other write tools, including uploads,
 stay outside the group. Group subjects are limited to 4096 UTF-8 bytes so they fit safely
 in a Git command argument.
 

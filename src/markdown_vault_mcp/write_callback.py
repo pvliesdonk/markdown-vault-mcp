@@ -282,11 +282,15 @@ class WriteCallbackDispatcher:
     def open_group(self, description: str, principal: Principal | None) -> CommitGroup:
         """Open a group under an opaque handle for the given principal."""
         if current_commit_group() is not None:
-            raise CommitGroupError("Nested groups are not supported")
+            raise CommitGroupError(
+                "Nested groups are not supported; finish the current write first"
+            )
         group = make_group(description, principal)
         with self._group_lock:
             if self._groups_closed:
-                raise CommitGroupError("Dispatcher is closed")
+                raise CommitGroupError(
+                    "Dispatcher is closed; ask the operator to restart the server"
+                )
             self._schedule_group(group)
             self._groups[group.handle] = group
         return group
@@ -294,30 +298,36 @@ class WriteCallbackDispatcher:
     def _get_group(self, handle: str, principal: Principal | None) -> CommitGroup:
         group = self._groups.get(handle)
         if group is None or group.closed or group.owner != owner_key(principal):
-            raise CommitGroupError("Unknown or unavailable group")
+            raise CommitGroupError(
+                "Unknown or unavailable group; use the handle begin_transaction returned"
+            )
         return group
 
     @contextmanager
     def bind_group(self, handle: str, principal: Principal | None) -> Iterator[None]:
         """Bind a group for writes in this context."""
         if current_commit_group() is not None:
-            raise CommitGroupError("Nested groups are not supported")
+            raise CommitGroupError(
+                "Nested groups are not supported; finish the current write first"
+            )
         with self._group_lock:
             finished = self._finished_groups.get(handle)
             if finished is not None and finished[0] == owner_key(principal):
                 raise CommitGroupError(
-                    "Group closed automatically; call end for the result"
+                    "Group already closed; call end_transaction for the result"
                 )
             group = self._get_group(handle, principal)
             now = time.monotonic()
             if self._groups_closed:
-                raise CommitGroupError("Dispatcher is closed")
+                raise CommitGroupError(
+                    "Dispatcher is closed; ask the operator to restart the server"
+                )
             if now >= group.created + self._group_max_age_s or (
                 not group.active and now >= group.touched + self._group_idle_s
             ):
                 self.close_group(handle, group.principal, _automatic=True)
                 raise CommitGroupError(
-                    "Group closed automatically; call end for the result"
+                    "Group already closed; call end_transaction for the result"
                 )
             group.active += 1
             group.touched = time.monotonic()
@@ -357,7 +367,9 @@ class WriteCallbackDispatcher:
                 return finished[1]
             group = self._get_group(handle, principal)
             if group.active and not _automatic:
-                raise CommitGroupError("Group has active writes")
+                raise CommitGroupError(
+                    "Group has active writes; wait for them to finish and retry"
+                )
             done = self._enqueue_scope_end(group.scope)
             with self._worker_lock:
                 if (
@@ -367,22 +379,21 @@ class WriteCallbackDispatcher:
                     and self._worker.is_alive()
                 ):
                     raise CommitGroupError(
-                        "Group result unavailable while dispatcher is closing"
+                        "Group result unavailable while dispatcher is closing; ask the operator to check the server"
                     )
+            result: Future[GroupCommitResult] = Future()
+            result.set_running_or_notify_cancel()
+            self._finished_groups[handle] = (group.owner, result)
             group.closed = True
             timer = self._group_timers.pop(handle, None)
             if timer is not None:
                 timer.cancel()
-        result: Future[GroupCommitResult] = Future()
-        result.set_running_or_notify_cancel()
-
-        if _automatic:
-            with self._group_lock:
-                self._finished_groups[handle] = (group.owner, result)
 
         def finish(_done: Future[None] | None = None) -> None:
             with self._group_lock:
                 result.set_result(group.result)
+                if not _automatic:
+                    self._finished_groups.pop(handle, None)
                 if not group.active:
                     self._groups.pop(handle, None)
 
@@ -409,23 +420,30 @@ class WriteCallbackDispatcher:
         """
         with self._group_lock:
             owner = owner_key(principal)
-            handles = [
-                group.handle
-                for group in self._groups.values()
-                if group.owner == owner and not group.closed
+            groups = [
+                g for g in self._groups.values() if g.owner == owner and not g.closed
             ]
-            if handle is not None and handle not in handles:
-                finished = self._finished_groups.get(handle)
-                if finished is None or finished[0] != owner:
-                    raise CommitGroupError("Unknown or unavailable group")
-                handles.append(handle)
-            if any(
-                self._groups[h].active
-                for h in handles
-                if h in self._groups and not self._groups[h].closed
+            pending = {
+                h: future
+                for h, (key, future) in self._finished_groups.items()
+                if key == owner and (not future.done() or h == handle)
+            }
+            if (
+                handle is not None
+                and handle not in pending
+                and all(g.handle != handle for g in groups)
             ):
-                raise CommitGroupError("Group has active writes")
-            return [self.close_group(h, principal) for h in handles]
+                raise CommitGroupError(
+                    "Unknown or unavailable group; use the handle begin_transaction returned"
+                )
+            if any(g.active for g in groups):
+                raise CommitGroupError(
+                    "Group has active writes; wait for them to finish and retry"
+                )
+            pending.update(
+                {g.handle: self.close_group(g.handle, principal) for g in groups}
+            )
+            return list(pending.values())
 
     def _schedule_group(self, group: CommitGroup) -> None:
         old = self._group_timers.get(group.handle)

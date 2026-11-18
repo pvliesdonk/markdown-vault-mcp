@@ -779,10 +779,12 @@ class TestToolManifest:
         assert names == [
             "aggregate_documents",
             "append",
+            "begin_transaction",
             "count_documents",
             "delete",
             "edit",
             "embeddings_status",
+            "end_transaction",
             "fetch",
             "get_backlinks",
             "get_broken_links",
