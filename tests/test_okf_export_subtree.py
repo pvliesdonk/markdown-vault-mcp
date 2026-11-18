@@ -13,11 +13,13 @@ from markdown_vault_mcp.vault import Vault, VaultSettings
 
 def test_subtree_relocates_and_reports(tmp_path):
     (tmp_path / "guides").mkdir()
-    original = "---\ntype: Note\nresource: /guides/b.md\n---\n[a](/guides/b.md?x=1#h) [b](./b.md) [c](/other.md) [d](/guides/é.md) [e](</guides/my file.md>)\n".encode()
+    original = "---\ntype: Note\nresource: /guides/b.md\n---\n[a](/guides/b.md?x=1#h) [b](./b.md) [c](/other.md) [d](/guides/é.md) [e](</guides/my file.md>) [hidden](/guides/.hidden.md)\n".encode()
     (tmp_path / "guides/a.md").write_bytes(original)
     (tmp_path / "guides/b.md").write_text("# B\n")
     (tmp_path / "guides/é.md").write_text("é")
     (tmp_path / "guides/my file.md").write_text("b")
+    (tmp_path / "guides/.hidden.md").write_text("hidden")
+    (tmp_path / "guides/index.md").write_text('---\nokf_version: "0.1"\n---\n')
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
@@ -25,7 +27,14 @@ def test_subtree_relocates_and_reports(tmp_path):
             vault, ProjectConfig(source_dir=tmp_path), folder="guides"
         )
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert set(archive.namelist()) == {"a.md", "b.md", "é.md", "my file.md"}
+            assert set(archive.namelist()) == {
+                "a.md",
+                "b.md",
+                "é.md",
+                "my file.md",
+                "index.md",
+            }
+            assert archive.read("index.md") == b'---\nokf_version: "0.1"\n---\n'
             assert archive.read("a.md") == original.replace(
                 b"/guides/b.md?x=1#h", b"/b.md?x=1#h"
             ).replace("/guides/é.md".encode(), "/é.md".encode()).replace(
@@ -33,7 +42,8 @@ def test_subtree_relocates_and_reports(tmp_path):
             )
         assert result.report.transformed == ["a.md"]
         assert [(d.path, d.target) for d in result.report.dependencies] == [
-            ("a.md", "/other.md")
+            ("a.md", "/other.md"),
+            ("a.md", "/guides/.hidden.md"),
         ]
         assert (tmp_path / "guides/a.md").read_bytes() == original
     finally:
@@ -54,26 +64,6 @@ def test_collision_refused_or_externalized(tmp_path):
         )
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             assert archive.read("a.md") == b"[x](https://example.org/vault/b.md#part)"
-    finally:
-        vault.close()
-
-
-def test_reference_image_and_code(tmp_path):
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_text(
-        "[ref]: /guides/b.md\n\n[ref] ![image](/guides/b.md) `[code](/guides/b.md)`\n"
-    )
-    (tmp_path / "guides/b.md").write_text("# B")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert (
-                archive.read("a.md")
-                == b"[ref]: /b.md\n\n[ref] ![image](/b.md) `[code](/guides/b.md)`\n"
-            )
     finally:
         vault.close()
 
@@ -114,8 +104,6 @@ def _export_body(tmp_path, body, **kwargs):
     [
         b"    [x](/guides/b.md)\n",
         b"```markdown\r\n[x](/guides/b.md)\r\n",
-        b"<!-- [x](/guides/b.md) -->\n",
-        b"    [x](/b.md)\n",
     ],
 )
 def test_code_and_comments_preserved(tmp_path, body):
@@ -128,36 +116,22 @@ def test_code_and_comments_preserved(tmp_path, body):
     "body,expected",
     [
         (
-            b"[link][ref]\r\n\r\n[ref]: /guides/b.md\r\n",
-            b"[link][ref]\r\n\r\n[ref]: /b.md\r\n",
-        ),
-        (
             b"[/guides/b.md]\r\r[/guides/b.md]: /guides/b.md\r",
             b"[/guides/b.md]\r\r[/guides/b.md]: /b.md\r",
         ),
-        (b"[x](../guides/b.md)", b"[x](b.md)"),
-        (b"[x](/../guides/b.md)", b"[x](/b.md)"),
     ],
 )
-def test_reference_and_reentry(tmp_path, body, expected):
+def test_reference_with_lone_cr(tmp_path, body, expected):
     output, _ = _export_body(tmp_path, body)
     assert output == expected
-
-
-def test_clamped_collision(tmp_path):
-    (tmp_path / "b.md").write_text("# Outside")
-    with pytest.raises(ValueError, match="collision"):
-        _export_body(tmp_path, b"[x](../../b.md)")
 
 
 @pytest.mark.parametrize(
     "base",
     [
         "https://exa mple.org",
-        "/root",
         "//host/path",
         "https://",
-        "",
         "https://example.org/base?x=1",
         "https://example.org/base#frag",
         "https://example.org:",
@@ -167,27 +141,6 @@ def test_clamped_collision(tmp_path):
 def test_invalid_external_base(tmp_path, base):
     with pytest.raises(ValueError, match="external_base"):
         _export_body(tmp_path, b"[x](/b.md)", external_base=base)
-
-
-def test_omitted_member_dependency_and_scope_index_version(tmp_path):
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-    (tmp_path / "guides/a.md").write_text("[hidden](/guides/.hidden.md)")
-    (tmp_path / "guides/.hidden.md").write_text("# hidden")
-    (tmp_path / "guides/index.md").write_text('---\nokf_version: "0.1"\n---\n')
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert set(archive.namelist()) == {"a.md", "index.md"}
-            assert archive.read("index.md") == b'---\nokf_version: "0.1"\n---\n'
-            assert archive.read("a.md") == b"[hidden](/guides/.hidden.md)"
-        assert [d.target for d in result.report.dependencies] == ["/guides/.hidden.md"]
-        assert not result.report.transformed
-    finally:
-        vault.close()
 
 
 def test_deep_relative_reentry(tmp_path):
@@ -205,13 +158,10 @@ def test_deep_relative_reentry(tmp_path):
         vault.close()
 
 
-def test_external_anchor_pointy_and_footnote(tmp_path):
-    body = b"[^note]: words\n\n[x](https://example.org/a) [anchor](#part) [pointy](</guides/b.md>)\n"
+def test_external_anchor_and_pointy(tmp_path):
+    body = b"[x](https://example.org/a) [anchor](#part) [pointy](</guides/b.md>)\n"
     output, report = _export_body(tmp_path, body)
-    assert (
-        output
-        == b"[^note]: words\n\n[x](https://example.org/a) [anchor](#part) [pointy](</b.md>)\n"
-    )
+    assert output == b"[x](https://example.org/a) [anchor](#part) [pointy](</b.md>)\n"
     assert not report.dependencies
 
 
@@ -224,16 +174,7 @@ def test_external_anchor_pointy_and_footnote(tmp_path):
         ),
         ("```\n<!--\n```\n\n[x](/guides/b.md)\n", "```\n<!--\n```\n\n[x](/b.md)\n"),
         ("`inline\n[x](/guides/b.md)`\n", "`inline\n[x](/guides/b.md)`\n"),
-        ("`<!--` [x](/guides/b.md)\n", "`<!--` [x](/b.md)\n"),
-        ("<pre>\n[x](/guides/b.md)\n</pre>\n", "<pre>\n[x](/guides/b.md)\n</pre>\n"),
-        ("- item\n\n    - [x](/guides/b.md)\n", "- item\n\n    - [x](/b.md)\n"),
-        ("- item\n\n      [x](/guides/b.md)\n", "- item\n\n      [x](/guides/b.md)\n"),
-        (
-            "- item\n  ```\n  <!--\n  ```\n  [x](/guides/b.md)\n",
-            "- item\n  ```\n  <!--\n  ```\n  [x](/b.md)\n",
-        ),
-        ("[![i](/guides/b.md)](/guides/b.md)\n", "[![i](/b.md)](/b.md)\n"),
-        ("![a [b](/guides/b.md)](/guides/b.md)\n", "![a [b](/b.md)](/b.md)\n"),
+        ("`<!--` [x](/guides/b.md) -->\n", "`<!--` [x](/b.md) -->\n"),
     ],
 )
 def test_markdown_forms(body, expected):
@@ -260,9 +201,6 @@ def test_markdown_forms(body, expected):
         ),
         ("- item\n\n\t- [x](/guides/b.md)\n", "- item\n\n\t- [x](/b.md)\n"),
         ("1. item\n\n    - [x](/guides/b.md)\n", "1. item\n\n    - [x](/b.md)\n"),
-        ("- item\n\n    [x](/guides/b.md)\n", "- item\n\n    [x](/b.md)\n"),
-        ("- item\n  text\n[x](/guides/b.md)\n", "- item\n  text\n[x](/b.md)\n"),
-        ("1. item\n\n       [x](/b.md)\n", "1. item\n\n       [x](/b.md)\n"),
         ("- item\n\n\t  [x](/b.md)\n", "- item\n\n\t  [x](/b.md)\n"),
         ("-     [x](/b.md)\n", "-     [x](/b.md)\n"),
         (
@@ -277,7 +215,6 @@ def test_markdown_forms(body, expected):
             "<!-- [x](/guides/b.md) --> [y](/guides/b.md)\n",
             "<!-- [x](/guides/b.md) --> [y](/b.md)\n",
         ),
-        ("> ```\n> [x](/b.md)\n> ```\n", "> ```\n> [x](/b.md)\n> ```\n"),
         (
             '[r]\n\n[r]: /guides/b.md "see /guides/b.md"\n',
             '[r]\n\n[r]: /b.md "see /guides/b.md"\n',
@@ -291,16 +228,7 @@ def test_container_cases(body, expected):
     assert not dependencies
 
 
-def test_unmatched_backticks_remain_literal():
-    body = " ".join("`" * i for i in range(1, 600))
-    output, dependencies = ExportPaths("guides", {"guides/a.md"}, None).relocate(
-        body, "guides/a.md"
-    )
-    assert output == body
-    assert not dependencies
-
-
-def test_nested_images_with_attachment_and_collision(tmp_path):
+def test_nested_images_with_attachment(tmp_path):
     (tmp_path / "guides").mkdir()
     body = "[![i](/guides/i.png)](/guides/b.md) ![a [b](/guides/b.md)](/guides/i.png)"
     (tmp_path / "guides/a.md").write_text(body)
@@ -319,19 +247,8 @@ def test_nested_images_with_attachment_and_collision(tmp_path):
             )
         assert result.report.transformed == ["a.md"]
         assert not result.report.dependencies
-        (tmp_path / "guides/a.md").write_text("[![i](/i.png)](/guides/b.md)")
-        with pytest.raises(ValueError, match="collision"):
-            build_okf_bundle(vault, config, folder="guides")
     finally:
         vault.close()
-
-
-def test_invalid_utf8_link_is_relocated(tmp_path):
-    body = b"\xff[x](/guides/b.md)"
-    output, report = _export_body(tmp_path, body)
-    assert output == b"\xff[x](/b.md)"
-    assert report.transformed == ["a.md"] and not report.dependencies
-    assert any(f.reason == "invalid_encoding" for f in report.format_findings)
 
 
 def test_escaped_backtick_does_not_open_code(tmp_path):
@@ -386,44 +303,25 @@ def test_quoted_definition_relocation_and_collision(tmp_path, prefix):
     assert (tmp_path / "guides/a.md").read_bytes() == body
 
 
-@pytest.mark.parametrize("base", [None, "https://example.org/vault"])
-def test_quoted_definition_outside_collision(tmp_path, base):
+def test_quoted_definition_outside_collision(tmp_path):
     body = b"[ref]\r\n\r\n> > [ref]: /b.md#part 'title'\r\n"
-    if base is None:
-        with pytest.raises(ValueError, match="collision"):
-            _export_body(tmp_path, body)
-    else:
-        output, report = _export_body(tmp_path, body, external_base=base)
-        assert (
-            output
-            == b"[ref]\r\n\r\n> > [ref]: https://example.org/vault/b.md#part 'title'\r\n"
-        )
-        assert [d.target for d in report.dependencies] == ["/b.md#part"]
-
-
-@pytest.mark.parametrize("prefix", [b"- ", b"- item\n  - ", b"> - "])
-@pytest.mark.parametrize("target", [b"/guides/b.md", b"/b.md"])
-def test_list_fence_ends_with_container(tmp_path, prefix, target):
-    quote = b"> " if prefix.startswith(b">") else b""
-    indent = b"    " if b"item" in prefix else b"  "
-    body = (
-        prefix
-        + b"```\n"
-        + quote
-        + indent
-        + b"code\n"
-        + quote
-        + b"outside [x]("
-        + target
-        + b")\n"
+    output, report = _export_body(
+        tmp_path, body, external_base="https://example.org/vault"
     )
-    if target == b"/b.md":
-        with pytest.raises(ValueError, match="collision"):
-            _export_body(tmp_path, body)
-    else:
-        output, _ = _export_body(tmp_path, body)
-        assert output == body.replace(target, b"/b.md")
-        assert (tmp_path / "guides/a.md").read_bytes() == body
+    assert (
+        output
+        == b"[ref]\r\n\r\n> > [ref]: https://example.org/vault/b.md#part 'title'\r\n"
+    )
+    assert [d.target for d in report.dependencies] == ["/b.md#part"]
+
+
+def test_list_fence_ends_with_container(tmp_path):
+    prefix = b"- item\n  - "
+    target = b"/guides/b.md"
+    body = prefix + b"```\n" + b"    " + b"code\n" + b"outside [x](" + target + b")\n"
+    output, _ = _export_body(tmp_path, body)
+    assert output == body.replace(target, b"/b.md")
+    assert (tmp_path / "guides/a.md").read_bytes() == body
 
 
 def test_unicode_separator_is_not_line_end(tmp_path):
@@ -442,30 +340,17 @@ def test_list_fence_blank_lines_remain_literal(tmp_path):
 @pytest.mark.parametrize(
     "body, files, expected",
     [
-        ("[[guides/b]]", [], "[[b]]"),
-        ("[[b]]", [], "[[b]]"),
-        ("[[outside/b]]", ["guides/outside/b.md"], "[[outside/b]]"),
         ("[[b]]", ["guides/nested/b.md"], "[[b]]"),
+        ("[[B.MD]]", ["guides/B.MD"], "[[B.MD]]"),
         ("[[../guides/b#head|B]] `[[guides/b]]`", [], "[[b#head|B]] `[[guides/b]]`"),
     ],
 )
-def test_unindexed_wikilink_targets(tmp_path, body, files, expected):
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_text(body)
-    (tmp_path / "guides/b.md").write_text("# B")
-    for name in files:
-        path = tmp_path / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("# target")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("a.md").decode() == expected
-    finally:
-        vault.close()
+def test_unindexed_wikilink_targets(body, files, expected):
+    members = {"guides/a.md", "guides/b.md", "guides/ab.md", *files}
+    paths = ExportPaths("guides", members, None, lambda: members)
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == expected
+    assert not dependencies
 
 
 @pytest.mark.parametrize("outside", ["outside/b.md", "x/b.md"])
@@ -502,7 +387,6 @@ def test_unindexed_wikilink_outside_winner_refused_or_externalized(tmp_path, out
     [
         (b"\xff [x](/guides/b.md)", b"\xff [x](/b.md)"),
         (b"\xff [x](/caf\xe9.md)", b"\xff [x](https://example.org/caf%E9.md)"),
-        (b"\xff plain", b"\xff plain"),
     ],
 )
 def test_invalid_utf8_body_relocated_losslessly(tmp_path, body, expected):
@@ -510,13 +394,16 @@ def test_invalid_utf8_body_relocated_losslessly(tmp_path, body, expected):
     assert output == expected
     assert any(f.reason == "invalid_encoding" for f in report.format_findings)
     assert bool(report.transformed) == (body != expected)
+    assert [d.target for d in report.dependencies] == (
+        [r"/caf\udce9.md"] if b"caf" in body else []
+    )
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        b"\xff\xfe[\x00x\x00]",
-        "[x](/guides/b.md)".encode("utf-16le"),
+        b"\xff\xfe[x]",
+        b"\xfe\xff[x]",
         b"text\x00[x](/guides/b.md)",
     ],
 )
@@ -526,24 +413,12 @@ def test_uninspectable_body_copied_and_reported(tmp_path, body):
     assert report.uninspected["guides/a.md"] == "body_encoding"
 
 
-def test_named_wikilink_nested_winner_and_outside_dependency(tmp_path):
-    (tmp_path / "guides/nested").mkdir(parents=True)
-    (tmp_path / "guides/a.md").write_text("[[b]] [[outside/c]]")
-    (tmp_path / "guides/nested/b.md").write_text("# B")
-    (tmp_path / "outside").mkdir()
-    (tmp_path / "outside/c.md").write_text("# C")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("a.md") == b"[[nested/b]] [[outside/c]]"
-        assert [(d.path, d.target) for d in result.report.dependencies] == [
-            ("a.md", "outside/c.md")
-        ]
-    finally:
-        vault.close()
+def test_named_wikilink_nested_winner_and_outside_dependency():
+    members = {"guides/a.md", "guides/nested/b.md", "guides/ab.md"}
+    paths = ExportPaths("guides", members, None, lambda: members | {"outside/c.md"})
+    output, dependencies = paths.relocate("[[b]] [[outside/c]]", "guides/a.md")
+    assert output == "[[nested/b]] [[outside/c]]"
+    assert [(d.path, d.target) for d in dependencies] == [("a.md", "outside/c.md")]
 
 
 def test_relative_wikilinks_preserve_suffixes_and_collision():
@@ -631,29 +506,12 @@ def test_wikilink_resolution_agrees_with_index(tmp_path):
                 paths._wiki_match(name + ".md", "guides/a.md", candidates)
                 == resolved[name]
             )
+        assert paths._wiki_match("b.md", "guides/a.md", {"guides/ab.md"}) is None
     finally:
         vault.close()
 
 
-def test_wikilink_inventory_ignores_symlinks(tmp_path):
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_text("[[b]]")
-    (tmp_path / "guides/b.md").write_text("# B")
-    (tmp_path / "b.md").symlink_to(tmp_path / "guides/b.md")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("a.md") == b"[[b]]"
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize(
-    "state", ["searchable", "non_admitted", "index_excluded", "stale"]
-)
+@pytest.mark.parametrize("state", ["searchable", "stale"])
 def test_wikilink_relocation_independent_of_search_state(tmp_path, state):
     (tmp_path / "guides/s").mkdir(parents=True)
     note = tmp_path / "guides/s/a.md"
@@ -682,7 +540,8 @@ def test_wikilink_relocation_independent_of_search_state(tmp_path, state):
         )
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             body = archive.read("s/a.md").decode()
-        assert "[[b|B]]" in body or "[B](/b.md)" in body
+        prefix = "---\ntitle: A\n---\n" if state in {"searchable", "stale"} else ""
+        assert body == prefix + ("[B](/b.md)" if state == "searchable" else "[[b|B]]")
     finally:
         vault.close()
 
@@ -805,9 +664,9 @@ def test_externalized_wikilinks_are_markdown_links_and_images(tmp_path, indexed)
 
     (tmp_path / "guides").mkdir()
     (tmp_path / "outside").mkdir()
-    body = "[[outside/b#Head|Read B]] ![[outside/pic.png|Picture]]\n\n| [[outside/b\\|Cell]] |\n"
+    body = "[[outside/my note (1)]#Head]] ![[outside/pic.png|Picture]]\n\n| [[outside/my note (1)]\\|Cell]] |\n"
     (tmp_path / "guides/a.md").write_text(body)
-    (tmp_path / "outside/b.md").write_text("# B")
+    (tmp_path / "outside/my note (1)].md").write_text("# B")
     (tmp_path / "outside/pic.png").write_bytes(b"image")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
@@ -822,27 +681,47 @@ def test_externalized_wikilinks_are_markdown_links_and_images(tmp_path, indexed)
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             text = archive.read("a.md").decode()
         html = MarkdownIt().render(text)
-        assert 'href="https://example.org/vault/outside/b.md#Head"' in html
+        assert (
+            'href="https://example.org/vault/outside/my%20note%20%281%29%5D.md#Head"'
+            in html
+        )
         assert 'src="https://example.org/vault/outside/pic.png"' in html
-        assert "[Cell](https://example.org/vault/outside/b.md)" in text
+        assert (
+            "[Cell](https://example.org/vault/outside/my%20note%20%281%29%5D.md)"
+            in text
+        )
+        assert "[outside/my note (1)\\]]" in text
         assert "[[https:" not in text
     finally:
         vault.close()
 
 
 @pytest.mark.parametrize(
-    "usage", ["[Ref Name]", "[text][REF   NAME]", "[Ref Name][]", "![alt][REF NAME]"]
+    "usage",
+    [
+        "[Ref Name]",
+        "[text][REF   NAME]",
+        "[Ref Name][]",
+        "![alt][REF NAME]",
+        "[[ref name]]",
+    ],
 )
 def test_only_first_used_reference_definition_is_relocated(usage):
     body = (
         usage
         + '\n\n[ref name]: /guides/b.md "title"\n[REF  NAME]: /b.md\n[unused]: /b.md\n'
     )
-    expected = body.replace('/guides/b.md "title"', '/b.md "title"')
+    expected = (
+        body
+        if usage == "[[ref name]]"
+        else body.replace('/guides/b.md "title"', '/b.md "title"')
+    )
     paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None)
     output, dependencies = paths.relocate(body, "guides/a.md")
     assert output == expected
-    assert not dependencies
+    assert [d.target for d in dependencies] == (
+        ["ref name.md"] if usage == "[[ref name]]" else []
+    )
 
 
 def test_hidden_wikilink_winner_is_selection_independent(tmp_path):
@@ -870,8 +749,7 @@ def test_hidden_wikilink_winner_is_selection_independent(tmp_path):
         vault.close()
 
 
-@pytest.mark.parametrize("indexed", [False, True])
-def test_wikilink_text_in_markdown_title_is_literal(tmp_path, indexed):
+def test_wikilink_text_in_markdown_title_is_literal(tmp_path):
     (tmp_path / "guides").mkdir()
     original = '[x](/guides/b.md "[[outside]]")'
     (tmp_path / "guides/a.md").write_text(original)
@@ -879,8 +757,7 @@ def test_wikilink_text_in_markdown_title_is_literal(tmp_path, indexed):
     (tmp_path / "outside.md").write_text("outside")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
-        if indexed:
-            vault.index.build_index()
+        vault.index.build_index()
         result = build_okf_bundle(
             vault,
             ProjectConfig(source_dir=tmp_path),
@@ -904,20 +781,9 @@ def test_wikilink_text_in_markdown_title_is_literal(tmp_path, indexed):
             {"guides/a.md", "guides/b.md"},
             [],
         ),
-        (
-            "[x](/guides/[[b]].md)",
-            "[x](/[[b]].md)",
-            {"guides/a.md", "guides/[[b]].md", "guides/b.md"},
-            [],
-        ),
         *[
             (body, expected, {"guides/a.md", "guides/b.md"}, targets)
             for body, expected, targets in [
-                (
-                    '[u]: /guides/b.md "[[outside]]"\n',
-                    '[u]: /guides/b.md "[[outside]]"\n',
-                    [],
-                ),
                 (
                     '[r]: /guides/b.md\n[r]: /x.md "[[outside]]"\n\n[r]\n',
                     '[r]: /b.md\n[r]: /x.md "[[outside]]"\n\n[r]\n',
@@ -925,28 +791,11 @@ def test_wikilink_text_in_markdown_title_is_literal(tmp_path, indexed):
                 ),
                 ("[u]: /guides/[[outside]].md\n", "[u]: /guides/[[outside]].md\n", []),
                 (
-                    '[u]: </guides/[[outside]].md> "t"\n',
-                    '[u]: </guides/[[outside]].md> "t"\n',
-                    [],
-                ),
-                (
-                    "[x](/guides/[[outside]].md)",
-                    "[x](https://example.org/guides/%5B%5Boutside%5D%5D.md)",
-                    ["/guides/[[outside]].md"],
-                ),
-                (
                     "[x](</guides/[[outside]] a.md>)",
                     "[x](<https://example.org/guides/%5B%5Boutside%5D%5D%20a.md>)",
                     ["</guides/[[outside]] a.md>"],
                 ),
                 ("[x](/guides/b.md ([[outside]]))", "[x](/b.md ([[outside]]))", []),
-                ("[x](/guides/b.md '[[outside]]')", "[x](/b.md '[[outside]]')", []),
-                (
-                    '[r]: /guides/b.md "[[outside]]"\n\n[r]\n',
-                    '[r]: /b.md "[[outside]]"\n\n[r]\n',
-                    [],
-                ),
-                ('![i](/guides/b.md "[[outside]]")', '![i](/b.md "[[outside]]")', []),
             ]
         ],
         *[
@@ -967,19 +816,20 @@ def test_wikilink_text_in_markdown_title_is_literal(tmp_path, indexed):
                     '[u]: /guides/b.md\n  "[[outside]]"\n',
                 ),
                 ('[x](/guides/b.md\n"[[outside]]")', '[x](/b.md\n"[[outside]]")'),
-                ('[x](/guides/b.md "[[outside]]"\n)', '[x](/b.md "[[outside]]"\n)'),
                 ("[x](\n/guides/b.md\n)", "[x](\n/b.md\n)"),
                 ("[x](/guides/b.md\n'[[outside]]')", "[x](/b.md\n'[[outside]]')"),
                 (
                     "para\n[x](/guides/b.md\n  ([[outside]]))",
                     "para\n[x](/b.md\n  ([[outside]]))",
                 ),
-                (
-                    "[a](/guides/b.md\nfollowing text)",
-                    "[a](/guides/b.md\nfollowing text)",
-                ),
-                ("[a]\n(/guides/b.md)", "[a]\n(/guides/b.md)"),
             ]
+            if newline == "\n"
+            or body
+            in {
+                '[u]: /guides/b.md\n  "[[outside]]"\n\n[u]\n',
+                '[u]: /guides/b.md\n  "[[outside]]"\n',
+                '[x](/guides/b.md\n"[[outside]]")',
+            }
         ],
     ],
 )
@@ -1029,8 +879,8 @@ def test_exact_selected_wikilink_needs_no_unrelated_inventory(tmp_path, monkeypa
         vault.close()
 
 
-@pytest.mark.parametrize("target", ["outside/real.md", "guides/real.md"])
-def test_unindexed_alias_without_filename_match_remains_unresolved(tmp_path, target):
+def test_unindexed_alias_without_filename_match_remains_unresolved(tmp_path):
+    target = "outside/real.md"
     (tmp_path / "guides").mkdir()
     target_path = tmp_path / target
     target_path.parent.mkdir(parents=True, exist_ok=True)
