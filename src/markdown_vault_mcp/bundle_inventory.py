@@ -121,6 +121,18 @@ class BundleTreeRequest(BundleInspectionRequest):
 
 
 @dataclass(frozen=True)
+class BundleChildrenRequest(BundleTreeRequest):
+    """Select one folder's immediate children, paged by cursor."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.cursor is not None:
+            scope = _components(self.root) + _components(self.directory)
+            if len(_components(self.cursor)) != len(scope) + 1:
+                raise ValueError("cursor must name an immediate child")
+
+
+@dataclass(frozen=True)
 class BundleEntry:
     """A visible immediate child, without its body, metadata values or link target.
 
@@ -613,6 +625,7 @@ class _TreeWalk:
 
     def __init__(self, inspector: BundleInspector, request: BundleTreeRequest) -> None:
         self.inspector = inspector
+        self.children_only = isinstance(request, BundleChildrenRequest)
         self.request = request
         self.cursor = _components(request.cursor) if request.cursor is not None else ()
         self.entries: list[BundleEntry] = []
@@ -689,6 +702,8 @@ class _TreeWalk:
             return False
 
     def descend(self, fd: int, path: str, depth: int, *, resume: bool) -> None:
+        if self.children_only:
+            return
         try:
             child = open_child_directory(fd, path.rsplit("/", 1)[-1])
         except OSError as exc:

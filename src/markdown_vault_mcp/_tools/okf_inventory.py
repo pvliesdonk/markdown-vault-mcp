@@ -97,6 +97,7 @@ def register(mcp: FastMCP) -> None:
     async def okf_navigation(
         folder: str = "",
         entry_limit: int = 100,
+        cursor: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Read a folder's authored or synthesized navigation and its source.
@@ -106,18 +107,22 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             folder: Vault-relative folder; empty selects the vault root.
-            entry_limit: Maximum immediate entries visited, from 1 to 1000.
+            entry_limit: Maximum entries observed per page, from 1 to 1000; some may not render (index, log, attachments).
+            cursor: Pass next_cursor from the previous page with the same folder to continue, even if that page was empty.
 
         Returns:
             Navigation body, source, scope and enumeration observations.
         """
         try:
             result = await asyncio.to_thread(
-                vault.reader.okf_navigation, folder, entry_limit=entry_limit
+                vault.reader.okf_navigation,
+                folder,
+                entry_limit=entry_limit,
+                cursor=cursor,
             )
         except ValueError:
             raise ToolError(
-                'Invalid navigation selection. Call okf_navigation with folder="" for the root or a relative folder of plain components (no . or ..), and entry_limit from 1 to 1000.',
+                'Invalid navigation selection. Call okf_navigation with folder="" for the root or a relative folder of plain components (no . or ..), entry_limit from 1 to 1000, and a cursor only as returned by okf_navigation for the same folder.',
                 log_level=logging.INFO,
             ) from None
         return asdict(result)

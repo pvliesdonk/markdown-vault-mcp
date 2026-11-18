@@ -712,7 +712,8 @@ immediate children only.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `folder` | `string` | `""` | Vault-relative folder; empty selects the vault root. |
-| `entry_limit` | `integer` | `100` | Maximum immediate entries visited, from 1 to 1000. |
+| `entry_limit` | `integer` | `100` | Maximum entries observed per page, from 1 to 1000; some may not render (index, log, attachments). |
+| `cursor` | `string \| null` | `null` | Pass `next_cursor` from the previous page with the same folder to continue, even if that page was empty. |
 
 **Returns**
 
@@ -720,7 +721,7 @@ Navigation body, source, scope and enumeration observations.
 
 <!-- DOMAIN-EXAMPLE-okf_navigation-START -->
 
-For a folder named `guides`, call `okf_navigation` with `folder="guides"`. The result contains its authored index body when present; otherwise it contains a synthesized listing and an enumeration state describing its completeness.
+For a folder named `guides`, call `okf_navigation` with `folder="guides"`. The result contains its authored index body when present; otherwise it contains a synthesized page and an enumeration state. Repeat the call with the returned `next_cursor` as `cursor` until it is null, even if a page is empty.
 
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-okf_navigation-END -->

@@ -145,6 +145,23 @@ async def test_navigation_tool(tmp_path, monkeypatch):
                 )
             ).structured_content
             assert payload == expected
+            assert payload["next_cursor"] == "guides/a.md"
+            continued = (
+                await client.call_tool(
+                    "okf_navigation",
+                    {
+                        "folder": "guides",
+                        "entry_limit": 1,
+                        "cursor": payload["next_cursor"],
+                    },
+                )
+            ).structured_content
+            assert "[b.md](/guides/b.md)" in continued["body"]
+            with pytest.raises(ToolError, match="cursor"):
+                await client.call_tool(
+                    "okf_navigation",
+                    {"folder": "guides", "cursor": "guides/a/nested.md"},
+                )
             with pytest.raises(ToolError) as error:
                 await client.call_tool("okf_navigation", {"folder": "."})
             message = str(error.value)
@@ -161,6 +178,7 @@ def test_partial_synthesis(tmp_path):
         result = vault.reader.okf_navigation("", entry_limit=1)
         assert result.source == "synthesized"
         assert result.enumeration == "entry_limit"
+        assert result.next_cursor is not None
         assert result.body.count("- [") == 1
     finally:
         vault.close()
@@ -168,11 +186,11 @@ def test_partial_synthesis(tmp_path):
 
 @pytest.mark.parametrize("failure", ["read", "policy"])
 def test_io_error_refuses_index(tmp_path, monkeypatch, failure):
-    from markdown_vault_mcp import okf_navigation
     from markdown_vault_mcp.bundle_inventory import (
         BundleInspectionRequest,
         BundleInspector,
     )
+    from markdown_vault_mcp.facets import reader
 
     (tmp_path / "index.md").write_text("secret")
     vault = Vault(source_dir=tmp_path)
@@ -184,7 +202,7 @@ def test_io_error_refuses_index(tmp_path, monkeypatch, failure):
             )
             target, name = BundleInspector, "_prepare_policy"
         else:
-            target, name = okf_navigation, "read_regular_nofollow"
+            target, name = reader, "read_regular_nofollow"
 
         def fail(*_args):
             raise PermissionError(errno.EACCES, "denied")
@@ -216,5 +234,92 @@ def test_authored_full_note_limit(tmp_path, limit, size, expected):
         assert result.source == expected
         assert result.body == ("x" * size if expected else None)
         assert result.reason == (None if expected else "note_limit")
+    finally:
+        vault.close()
+
+
+def test_navigation_pages_more_than_thousand_children(tmp_path):
+    for number in range(1010):
+        (tmp_path / f"note-{number:04}.md").write_text("note")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        first = vault.reader.okf_navigation("", entry_limit=1000)
+        second = vault.reader.okf_navigation(
+            "", entry_limit=1000, cursor=first.next_cursor
+        )
+        assert first.next_cursor is not None
+        assert second.next_cursor is None
+        assert sum(page.body.count("- [") for page in (first, second)) == 1010
+        assert "[note-1009.md](/note-1009.md)" in second.body
+    finally:
+        vault.close()
+
+
+def test_pages_only_immediate_children_in_name_order(tmp_path):
+    from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+
+    folder = tmp_path / "bundle"
+    folder.mkdir()
+    for number in range(25):
+        (folder / f"note-{number:02}.md").write_text("untyped")
+    for number in range(3):
+        child = folder / f"dir-{number}"
+        child.mkdir()
+        for nested in range(20):
+            (child / f"nested-{nested}.md").write_text("nested")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        cursor = None
+        lines = []
+        while True:
+            page = vault.reader.okf_navigation("bundle", entry_limit=4, cursor=cursor)
+            lines.extend(
+                line for line in page.body.splitlines() if line.startswith("- [")
+            )
+            cursor = page.next_cursor
+            if cursor is None:
+                assert page.enumeration == "complete"
+                break
+            assert page.enumeration == "entry_limit"
+        expected = [f"- [dir-{n}](/bundle/dir-{n}/)" for n in range(3)] + [
+            f"- [note-{n:02}.md](/bundle/note-{n:02}.md)" for n in range(25)
+        ]
+        assert lines == expected
+    finally:
+        vault.close()
+
+
+def test_cursor_directory_and_exact_boundary_at_root(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "nested.md").write_text("nested")
+    (tmp_path / "b.md").write_text("b")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        first = vault.reader.okf_navigation("", entry_limit=1)
+        assert first.next_cursor == "a"
+        second = vault.reader.okf_navigation(
+            "", entry_limit=1, cursor=first.next_cursor
+        )
+        assert "[b.md](/b.md)" in second.body
+        assert second.next_cursor == "b.md"
+        last = vault.reader.okf_navigation("", entry_limit=1, cursor=second.next_cursor)
+        assert last.body == "# Index\n\n"
+        assert (last.enumeration, last.next_cursor) == ("complete", None)
+    finally:
+        vault.close()
+
+
+def test_authored_index_with_cursor_ignores_listing(tmp_path):
+    (tmp_path / "index.md").write_text("# Authored\n")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        result = vault.reader.okf_navigation("", cursor="stale.md")
+        assert (result.source, result.body, result.next_cursor) == (
+            "authored",
+            "# Authored\n",
+            None,
+        )
     finally:
         vault.close()

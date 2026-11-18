@@ -395,3 +395,27 @@ def test_cursor_stat_race(tmp_path, monkeypatch):
     page = inspector.inspect(BundleTreeRequest("bundle", cursor="bundle/a.md"))
     assert page.enumeration == "unavailable"
     assert [entry.path for entry in page.entries] == ["bundle/z.md"]
+
+
+def test_children_pages_never_descend_and_validate_cursor(tmp_path):
+    import pytest
+
+    from markdown_vault_mcp.bundle_inventory import BundleChildrenRequest
+
+    bundle = tmp_path / "bundle"
+    (bundle / "a").mkdir(parents=True)
+    (bundle / "a" / "nested.md").write_text("nested")
+    (bundle / "z.md").write_text("z")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    first = inspector.inspect(BundleChildrenRequest("bundle", entry_limit=1))
+    assert [entry.path for entry in first.entries] == ["bundle/a"]
+    second = inspector.inspect(
+        BundleChildrenRequest("bundle", cursor=first.next_cursor)
+    )
+    assert [entry.path for entry in second.entries] == ["bundle/z.md"]
+    assert [
+        entry.path for entry in inspector.inspect(BundleTreeRequest("bundle")).entries
+    ] == ["bundle/a", "bundle/a/nested.md", "bundle/z.md"]
+    for cursor in ("bundle/a/nested.md", "other/a"):
+        with pytest.raises(ValueError):
+            BundleChildrenRequest("bundle", cursor=cursor)
