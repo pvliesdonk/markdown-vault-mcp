@@ -598,22 +598,31 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 
 ### Generated reserved files and the index gate
 
-The generated `index.md` / `log.md` are subject to the same
-`required_frontmatter` gate as any other note, so a body-only reserved file is
-a deterministic `missing_frontmatter` skip on a vault that configures one — the
-server generating a file its own indexer then rejects (#1174, #1175). Two
-second-order effects follow: the bundle's change history disappears from
-`search` and `list_documents` while staying readable from disk, and a folder
-whose only indexed file would have been its generated `index.md` loses its
-pointer in the parent listing, because `generate_index` synthesises sub-folder
-pointers from index entries.
+In an active OKF vault, `index.md` and `log.md` bypass the
+`required_frontmatter` gate. Concept notes and all notes outside an active
+OKF vault remain subject to it. Full builds, incremental scans and dirty-path
+refreshes use the same admission rule (#1438). A root index change also
+reconciles the other reserved files on the next indexing pass. After a dirty
+refresh changes the scope, the admission marker stays unknown until a reindex
+also reconciles tracker state. Successful dirty refreshes remember the reconciled
+scope in process, so later writes only refresh their own paths until the scope
+changes again. Warm reopen compares the effective state
+recorded with a complete build. An upgrade from older index semantics rebuilds
+the index once. Keyword backends without the optional OKF
+admission provenance capability rebuild conservatively on reopen. An unread
+build candidate is retried on the next reindex; the version 13 rebuild also
+clears old tracker-only skips left by version 12. Reopening before a reindex
+after a dirty scope change triggers one conservative rebuild. If reading the
+root `index.md` fails with an I/O error, admission keeps its last confirmed
+state when available and logs `okf_scope_probe_failed`; without a confirmed
+state the indexing pass fails for retry before changing rows. A missing declaration still deactivates auto mode,
+and forced-on mode is unaffected.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
 carry. Both generators and the `OKF_WRITE` maintainer write through it:
 
-- **Conditional, not unconditional.** With no required fields configured a
-  reserved file needs no frontmatter to be indexed, and the policy returns
-  `None` so the generators keep emitting the body-only files existing bundles
+- **Conditional, not unconditional.** With no required fields configured,
+  the policy returns `None` so the generators keep emitting the body-only files existing bundles
   already have on disk. Closing the defect costs an unaffected vault no churn
   — and, on a git vault, no commits.
 - **Existing keys win.** A hand-authored title and the root `index.md`'s
@@ -629,8 +638,7 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
 The audit does not exempt these files. A key the policy seeds into an
 `index.md` is an `index_frontmatter` finding like any hand-written one
 (#1396): the finding describes the file against §8, not who wrote it, and
-changes neither what the policy seeds nor what the gate admits. Whether the
-gate should reach generated reserved files at all is open (#1438).
+changes neither what the policy seeds nor what the gate admits.
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a

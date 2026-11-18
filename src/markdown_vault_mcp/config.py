@@ -339,8 +339,9 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "Comma-separated frontmatter fields required on every "
-                "document; documents missing any are excluded from the index."
+                "Comma-separated required frontmatter fields; documents missing any "
+                "are excluded from the index, except index.md and log.md "
+                "in an active OKF vault."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},

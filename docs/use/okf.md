@@ -74,7 +74,7 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 
 Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
-The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
+The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server currently writes the required fields into them. Existing fields are preserved; reserved files remain indexed in an active OKF vault even without them. A declaration change reaches reserved files on the next indexing pass, and upgrading an older index rebuilds it once.
 
 ### 2. Declare
 
@@ -99,7 +99,7 @@ Three tools handle the changes you should not make by hand. They are write tools
 
 ### Reserved files on a vault with required fields
 
-If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, documents missing any listed field are excluded from the index. The generated `index.md` and `log.md` are ordinary documents to the indexer, so the generators give them the fields your vault requires. Your title field is filled in from the file's heading; any other required field is written as `null`, for you to fill in. Without this the bundle's own listing and change history would be absent from `search` and `list_documents` while still opening through `read`.
+If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any listed field are excluded from the index. In an active OKF vault, reserved `index.md` and `log.md` files are indexed without those fields. The generators currently give new reserved files the required fields: the title comes from the heading and other fields are written as `null`. If the root declaration cannot be read and no confirmed admission state is available, indexing fails safely; retry after the read error is resolved.
 
 Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.
 
