@@ -152,9 +152,11 @@ async def _search(client: Client[Any], **kwargs: Any) -> list[dict[str, Any]]:
 
 @pytest.mark.usefixtures("_plain_env")
 class TestNonOkfBaseline:
-    """A vault without a declaration gets zero OKF payload changes."""
+    """An undeclared vault reports capabilities without note annotations."""
 
-    async def test_search_read_context_stats_carry_no_okf_key(self) -> None:
+    async def test_undeclared_notes_omit_okf_and_stats_report_capabilities(
+        self,
+    ) -> None:
         async with Client(make_server()) as client:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)

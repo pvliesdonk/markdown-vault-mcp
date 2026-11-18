@@ -39,11 +39,14 @@ def test_write_state_uses_vault_settings(
         state = vault.okf.state()
         assert state.active is declared
         assert vault.okf_write_state(active=state.active) == (write, effective)
+        section = vault.reader.okf_stats()
         if declared:
-            section = vault.reader.okf_stats()
             assert section is not None
+            assert "capabilities" not in section
             assert section["write_configured"] is write
             assert section["write_effective"] is effective
+        else:
+            assert section is None
     finally:
         vault.close()
 
@@ -121,7 +124,7 @@ async def test_mcp_reports_write_state(
         ),
         (
             (True, True, False),
-            (False, "prompt", True, "write", (), False),
+            (False, "off", True, "writes", ("guides",), False),
             [(False, "read_only")] * 4,
         ),
         (
@@ -161,24 +164,6 @@ def test_capability_report_matrix(
                 "effective": effective,
                 "reason": reason,
             }
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("declared", [False, True])
-def test_library_okf_stats_preserves_original_shape(
-    tmp_path: Path, declared: bool
-) -> None:
-    if declared:
-        (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        section = vault.reader.okf_stats()
-        if not declared:
-            assert section is None
-        else:
-            assert section is not None
-            assert "capabilities" not in section
     finally:
         vault.close()
 
