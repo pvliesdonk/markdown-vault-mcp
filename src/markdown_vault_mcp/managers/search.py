@@ -1769,7 +1769,7 @@ class SearchManager:
         Returns:
             List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
             by descending file score (max of section scores).  Empty list
-            when the document has no stored vectors yet.
+            when the document has no stored vectors.
 
         Raises:
             DocumentNotFoundError: If no document exists at the given path.

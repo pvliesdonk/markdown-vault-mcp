@@ -1,5 +1,6 @@
 """Embedding coverage for designated OKF indexes."""
 
+import os
 import re
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 
 from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 from markdown_vault_mcp.vault import Vault, VaultSettings
-from tests.conftest import MockEmbeddingProvider, wait_for_writer_drain
+from tests.conftest import wait_for_writer_drain
 from tests.fixtures.embedding_providers import CountingProvider
 from tests.fixtures.vectors import metadata_by_path
 
@@ -102,15 +103,14 @@ def test_externally_changed_designated_index_is_not_embedded(tmp_path: Path) -> 
         vault.close()
 
 
-class MeaningProvider(MockEmbeddingProvider):
+class MeaningProvider(CountingProvider):
     """Map fixture concepts and query synonyms to orthogonal vectors."""
 
     def __init__(self) -> None:
         super().__init__(dim=7)
-        self.texts: list[str] = []
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        self.texts.extend(texts)
+        self.record_texts(texts)
         axes = (
             ("orchard", "fruit"),
             ("voyage", "journey"),
@@ -491,17 +491,21 @@ def test_widened_folder_reaches_unchanged_empty_concept_before_embedding_build(
     vault = make(("generated",))
     try:
         vault.index.build_index()
-        vault.reader.search("glowing", mode="semantic")
+        provider.texts.clear()
         if route == "write":
             vault.writer.write("other/note.md", "# Other\n\nunrelated\n")
             wait_for_writer_drain(vault)
+            assert "generated/concept.md" in _paths(vault)
+            assert "generated/index.md" not in _paths(vault)
         else:
             vault.index.reindex()
-        assert "generated/index.md" not in _paths(vault)
+            assert vault._index_mgr._embeddings._loaded_store() is None
+            assert not provider.texts
         assert (
             vault.reader.search("glowing", mode="semantic", limit=1)[0].path
             == "generated/concept.md"
         )
+        assert "generated/index.md" not in _paths(vault)
     finally:
         vault.close()
 
@@ -543,5 +547,78 @@ def test_legacy_alias_upgrades_v1_store(tmp_path: Path, backend: str) -> None:
         assert "concept.md" in _paths(vault)
         assert any("legacy description" in text for text in provider.texts)
         assert vault._embed_builder.format_token().startswith("v1;listed;scope=")
+    finally:
+        vault.close()
+
+
+def test_equivalent_folder_scope_does_not_rebuild_store(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "generated").mkdir(parents=True)
+    (root / "generated/note.md").write_text("# Note\n\nbody\n")
+    provider = CountingProvider()
+    first = _persistent_vault(root, tmp_path, provider, enabled=True)
+    try:
+        first.index.build_index()
+        first.index.build_embeddings()
+    finally:
+        first.close()
+    provider.texts.clear()
+    reopened = _persistent_vault(
+        root, tmp_path, provider, enabled=True, folders=("./generated/", "generated")
+    )
+    try:
+        reopened.index.build_index()
+        reopened.index.build_embeddings()
+        assert not provider.texts
+        assert "generated/note.md" in _paths(reopened)
+    finally:
+        reopened.close()
+
+
+def test_postgres_designation_rebuild_and_reindex(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    if not os.environ.get("MVM_TEST_POSTGRES_DSN") and not os.environ.get("CI"):
+        pytest.skip("Postgres service not supplied; CI exercises its existing fixture")
+    schema = request.getfixturevalue("postgres_schema")
+    root = tmp_path / "vault"
+    (root / "generated").mkdir(parents=True)
+    (root / "generated/index.md").write_text("# Listing\n\nlisting marker\n")
+    (root / "generated/note.md").write_text("# Note\n\nconcept marker\n")
+    provider = CountingProvider()
+
+    def make(enabled: bool) -> Vault:
+        return Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                read_only=False,
+                okf_capabilities=_capabilities(enabled),
+                embedding_store="postgres",
+                embedding_postgres_dsn=schema.dsn,
+                embedding_postgres_schema=schema.name,
+                index_path=tmp_path / "index.db",
+                state_path=tmp_path / "state.json",
+            ),
+            embedding_provider=provider,
+        )
+
+    old = make(False)
+    try:
+        old.index.build_index()
+        old.index.build_embeddings()
+        assert "generated/index.md" in _paths(old)
+    finally:
+        old.close()
+    vault = make(True)
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert "generated/index.md" not in _paths(vault)
+        assert "generated/note.md" in _paths(vault)
+        (root / "generated/index.md").write_text("# Listing\n\nchanged marker\n")
+        provider.texts.clear()
+        vault.index.reindex()
+        assert "generated/index.md" not in _paths(vault)
+        assert not any("changed marker" in text for text in provider.texts)
     finally:
         vault.close()

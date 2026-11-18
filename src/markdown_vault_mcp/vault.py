@@ -558,10 +558,8 @@ class Vault:
         from markdown_vault_mcp._okf_convention import folder_is_designated
 
         parent, _, name = path.rpartition("/")
-        return (
-            self._okf_capabilities.index
-            and name == "index.md"
-            and folder_is_designated(parent, self._okf_capabilities.folders)
+        return name == "index.md" and folder_is_designated(
+            parent, self._okf_capabilities.folders
         )
 
     def _is_listed_concept(self, path: str) -> bool:

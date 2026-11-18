@@ -277,3 +277,14 @@ def test_listed_policy_tokens_and_preambles() -> None:
         )
         == "later"
     )
+
+
+def test_listed_scope_token_normalizes_designation_patterns() -> None:
+    def token(*patterns: str) -> str:
+        return EmbedTextBuilder(listed=True, listed_scope=patterns).format_token()
+
+    assert token("docs", "other") == token("/other/", "./docs/", "docs")
+    assert token("./a//./b/") == token("a/b")
+    assert token(".") == token("/")
+    assert token("docs") != token("docs/**")
+    assert token("docs") != token("other")

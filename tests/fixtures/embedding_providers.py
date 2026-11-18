@@ -10,7 +10,11 @@ class CountingProvider(MockEmbeddingProvider):
         super().__init__(dim)
         self.texts: list[str] = []
 
+    def record_texts(self, texts: list[str]) -> None:
+        """Record inputs submitted to the provider."""
+        self.texts.extend(texts)
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Record texts and return the mock vectors."""
-        self.texts.extend(texts)
+        self.record_texts(texts)
         return super().embed(texts)

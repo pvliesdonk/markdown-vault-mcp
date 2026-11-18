@@ -33,6 +33,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from markdown_vault_mcp.utils import normalize_folder
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -148,7 +150,7 @@ class EmbedTextBuilder:
 
     @property
     def is_v2(self) -> bool:
-        """``True`` when enrichment is active (any knob set)."""
+        """``True`` when the v2 context or field format is active."""
         return self.embed_context or bool(self.searchable_fields)
 
     def format_token(self) -> str:
@@ -161,9 +163,17 @@ class EmbedTextBuilder:
         """
         token = "v2;fields=" + ",".join(self.searchable_fields) if self.is_v2 else "v1"
         if self.listed:
-            token += ";listed;scope=" + json.dumps(
-                self.listed_scope, separators=(",", ":")
+            scope = sorted(
+                {
+                    "/".join(
+                        part
+                        for part in (normalize_folder(pattern) or "").split("/")
+                        if part and part != "."
+                    )
+                    for pattern in self.listed_scope
+                }
             )
+            token += ";listed;scope=" + json.dumps(scope, separators=(",", ":"))
         return token
 
     def fields_text(self, frontmatter_or_json: Mapping[str, Any] | str | None) -> str:
