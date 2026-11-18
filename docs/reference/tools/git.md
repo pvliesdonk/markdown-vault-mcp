@@ -158,6 +158,9 @@ Dict with the following fields:
   - `conflict_files` (list[str], optional): repository-relative paths
     of the `.conflict-mcp-*` siblings written to resolve conflicts.
     Strip the repository-to-vault prefix before using vault tools.
+    If the prefix is unknown, locate the sibling with `list_documents`
+    or search. A sibling outside the vault requires access to the
+    repository checkout; vault tools cannot read or delete it.
   - `would_apply` (bool, dry run only): true when a real pull
     would change HEAD.
   - `reindex_failed` (bool, optional) and `reindex_hint` (str,

@@ -398,7 +398,9 @@ commits) reports `would_apply=false`. The push leg has no safe local
     the repository-to-vault prefix from these paths before passing them to
     vault read or delete tools. For example, use `note.conflict-mcp-….md`
     for a returned path of `vault/note.conflict-mcp-….md` when the vault is
-    `vault/`.
+    `vault/`. If the prefix is unknown, locate the sibling in the vault with
+    `list_documents` or `search`. A sibling outside the vault requires access
+    to the repository checkout; vault tools cannot read or delete it.
 
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is
