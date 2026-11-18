@@ -57,6 +57,7 @@ from markdown_vault_mcp.exceptions import (
     SubmodulePathError,
 )
 from markdown_vault_mcp.hashing import compute_etag
+from markdown_vault_mcp.interfaces import ReportsRowState
 from markdown_vault_mcp.managers._rewrite_ledger import LinkRewriteLedger
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
 from markdown_vault_mcp.managers._write_notifier import (
@@ -277,17 +278,13 @@ class DocumentManager:
             self._inspection_policy,
         ).inspect(request)
 
-        def category(path: str) -> str | None:
-            row = self._fts.get_tombstone(path)
-            return str(row["skip_category"]) if row is not None else None
-
-        ready = self._inventory_ready is not None and self._inventory_ready()
-        return project_search_state(
-            inspection,
-            ready,
-            lambda path: self._fts.get_note(path) is not None,
-            category,
-        )
+        if (
+            self._inventory_ready is not None
+            and self._inventory_ready()
+            and isinstance(self._fts, ReportsRowState)
+        ):
+            return project_search_state(inspection, self._fts.row_state)
+        return inspection
 
     # ------------------------------------------------------------------
     # Validation helpers

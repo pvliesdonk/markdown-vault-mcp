@@ -171,52 +171,51 @@ class BundleInspection:
     next_cursor: str | None = None
 
 
+_SKIP_STATE: dict[str, SearchState] = {
+    "missing_frontmatter": "non_admitted",
+    "parse_error": "unparseable",
+    "encoding_error": "unparseable",
+    "internal_error": "not_evaluated",
+}
+
+
+def _search_state(
+    entry: BundleEntry, row_state: Callable[[str], str | None]
+) -> SearchState:
+    if entry.state != "inspected" and not (
+        entry.state == "not_inspected"
+        and entry.reason in {"note_limit", "byte_budget", "metadata_complexity"}
+    ):
+        return "not_evaluated"
+    state = row_state(entry.path)
+    if state == "live":
+        return "searchable"
+    if state is not None:
+        return _SKIP_STATE.get(state, "not_evaluated")
+    return (
+        "index_excluded" if entry.visibility == "index_excluded" else "not_indexed_yet"
+    )
+
+
 def project_search_state(
-    inspection: BundleInspection,
-    ready: bool,
-    indexed: Callable[[str], bool],
-    tombstone: Callable[[str], str | None],
+    inspection: BundleInspection, row_state: Callable[[str], str | None]
 ) -> BundleInspection:
-    """Project existing index observations onto inspected Markdown entries.
+    """Project read-only index observations onto safely observed entries.
 
     Args:
         inspection: Bounded live inventory.
-        ready: Whether the index is queryable.
-        indexed: Read-only live membership lookup.
-        tombstone: Read-only lookup of the recorded skip category.
+        row_state: Single-read index disposition lookup.
 
     Returns:
         Inventory annotated with search state; no index work is scheduled.
     """
-    if not ready:
-        return inspection
-    entries = []
-    for entry in inspection.entries:
-        state: SearchState = "not_evaluated"
-        safe = entry.state == "inspected" or (
-            entry.state == "not_inspected"
-            and entry.reason in {"note_limit", "byte_budget", "metadata_complexity"}
-        )
-        if safe and entry.role in {
-            "navigation",
-            "history",
-            "concept_candidate",
-            "support",
-        }:
-            if entry.visibility == "index_excluded":
-                state = "index_excluded"
-            elif indexed(entry.path):
-                state = "searchable"
-            else:
-                category = tombstone(entry.path)
-                if category == "missing_frontmatter":
-                    state = "non_admitted"
-                elif category in {"encoding_error", "parse_error"}:
-                    state = "unparseable"
-                elif category is None:
-                    state = "not_indexed_yet"
-        entries.append(replace(entry, search_state=state))
-    return replace(inspection, entries=tuple(entries))
+    return replace(
+        inspection,
+        entries=tuple(
+            replace(entry, search_state=_search_state(entry, row_state))
+            for entry in inspection.entries
+        ),
+    )
 
 
 def _missing(exc: OSError) -> bool:

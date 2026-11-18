@@ -26,6 +26,15 @@ def test_search_state_tracks_index_without_refresh(tmp_path: Path) -> None:
         (bundle / "new.md").write_text("---\ntitle: New\n---\nbody")
         result = vault.reader.inspect_bundle(BundleInspectionRequest(root="bundle"))
         states = {entry.path: entry.search_state for entry in result.entries}
+        missing = next(
+            entry for entry in result.entries if entry.path == "bundle/missing.md"
+        )
+        assert (
+            missing.state,
+            missing.reason,
+            missing.parse_state,
+            missing.type_state,
+        ) == ("inspected", None, "valid", "present")
         assert states == {
             "bundle/good.md": "searchable",
             "bundle/missing.md": "non_admitted",
@@ -204,10 +213,92 @@ def test_unavailable_paths_are_not_queried(tmp_path: Path, monkeypatch) -> None:
         def forbidden(_path: str) -> None:
             raise AssertionError("unavailable entry queried")
 
-        monkeypatch.setattr(vault._fts, "get_note", forbidden)
+        monkeypatch.setattr(vault._fts, "row_state", forbidden)
         monkeypatch.setattr(vault._fts, "get_tombstone", forbidden)
         entry = vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries[0]
         assert entry.reason == "symlink"
         assert entry.search_state == "not_evaluated"
+    finally:
+        vault.close()
+
+
+def test_adopted_index_live_row_wins_over_local_exclusion(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Findable\n\nquartz content")
+    db = tmp_path / "index.db"
+    state = tmp_path / "state.json"
+    owner = Vault(
+        source_dir=root, settings=VaultSettings(index_path=db, state_path=state)
+    )
+    try:
+        owner.index.build_index()
+    finally:
+        owner.close()
+    reader = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            index_path=db, state_path=state, exclude_patterns=["note.md"]
+        ),
+    )
+    try:
+        reader.index.use_existing_index()
+        assert reader.reader.search("quartz")[0].path == "note.md"
+        entry = reader.reader.inspect_bundle(BundleInspectionRequest(root="")).entries[
+            0
+        ]
+        assert entry.visibility == "index_excluded"
+        assert entry.search_state == "searchable"
+    finally:
+        reader.close()
+
+
+def test_all_skip_categories_and_unknown_are_projected(tmp_path: Path) -> None:
+    from markdown_vault_mcp.types import SKIP_CATEGORIES, SkippedFile
+
+    expected = {
+        "missing_frontmatter": "non_admitted",
+        "parse_error": "unparseable",
+        "encoding_error": "unparseable",
+        "internal_error": "not_evaluated",
+    }
+    assert set(expected) == SKIP_CATEGORIES
+    for category in (*sorted(SKIP_CATEGORIES), "future_error"):
+        (tmp_path / f"{category}.md").write_text("body")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        for category in (*sorted(SKIP_CATEGORIES), "future_error"):
+            vault._fts.upsert_tombstone(
+                SkippedFile(f"{category}.md", category, "secret"),
+                content_hash="h",
+                modified_at=1.0,
+            )
+        entries = {
+            entry.path: entry
+            for entry in vault.reader.inspect_bundle(
+                BundleInspectionRequest(root="")
+            ).entries
+        }
+        for category in (*sorted(SKIP_CATEGORIES), "future_error"):
+            assert entries[f"{category}.md"].search_state == expected.get(
+                category, "not_evaluated"
+            )
+    finally:
+        vault.close()
+
+
+def test_backend_without_row_state_is_usable(tmp_path: Path, monkeypatch) -> None:
+    from unittest.mock import Mock
+
+    (tmp_path / "note.md").write_text("body")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        fake = Mock(spec=[])
+        monkeypatch.setattr(vault._doc_mgr, "_fts", fake)
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert result.entries[0].search_state == "not_evaluated"
+        assert fake.mock_calls == []
     finally:
         vault.close()

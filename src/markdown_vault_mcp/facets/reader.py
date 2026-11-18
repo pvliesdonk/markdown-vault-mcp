@@ -94,12 +94,12 @@ class ReaderFacet:
             request: Explicit bundle root, relative directory and bounded entry limit.
 
         Returns:
-            Live disk observations; search admission is not evaluated.
+            Live disk observations with available per-entry index state.
         """
         return self._doc_mgr.inspect_bundle(request)
 
     def inspect_bundle_tree(self, request: BundleTreeRequest) -> BundleInspection:
-        """Inspect a page of a selected subtree independently of the index.
+        """Inspect a page of a selected subtree before or after indexing.
 
         Args:
             request: Selection, page limit, and optional path cursor.

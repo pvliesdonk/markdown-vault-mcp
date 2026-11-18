@@ -175,3 +175,10 @@ def test_exact_queries_refuse_on_an_index_without_them(call: Any) -> None:
     query = NoteQuery()
     with pytest.raises(InvalidRequestError, match="does not support exact queries"):
         call(manager, query)
+
+
+def test_optional_row_state_protocol(fts: FTSIndex) -> None:
+    from markdown_vault_mcp.interfaces import ReportsRowState
+
+    assert isinstance(fts, ReportsRowState)
+    assert not isinstance(object(), ReportsRowState)

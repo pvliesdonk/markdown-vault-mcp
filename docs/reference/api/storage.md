@@ -115,3 +115,15 @@ note's frontmatter.
 <!-- vale off -->
 ::: markdown_vault_mcp.interfaces.ListsNoteStates
 <!-- vale on -->
+
+
+## Document row state
+
+An index may provide `ReportsRowState` to report a live row, a skip category,
+or an absent row with one read. Bundle inspection uses this optional capability
+when the index is ready; a backend without it keeps inventory search state
+unevaluated. `FTSIndex` provides the capability without writing the index.
+
+<!-- vale off -->
+::: markdown_vault_mcp.interfaces.ReportsRowState
+<!-- vale on -->
