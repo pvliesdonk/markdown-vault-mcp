@@ -868,7 +868,6 @@ class TestToolAnnotations:
         for name in (
             "delete",
             "move_folder",
-            "okf_author",
             "okf_convert_links",
             "okf_generate_index",
         ):

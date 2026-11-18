@@ -520,7 +520,7 @@ Set selected editorial fields on an existing OKF concept.
 | `path` | `string` | required | Concept path in the vault. |
 | `if_match` | `string` | required | Etag from a recent read of the concept. |
 | `fields` | `object` | required | Non-empty type, title and description strings; tags as a list of strings; status as draft, stable or deprecated; `stale_after` as an ISO date or offset datetime; sources as a list of mappings with a non-empty resource string. Omitted fields are preserved. |
-| `producer` | `string \| null` | `null` | Explicit producer actor, such as codex/6.1 or human:alex; omit to leave generation metadata unchanged. |
+| `producer` | `string \| null` | `null` | Explicit producer actor: <producer>/<version>, process:<id> or human:<id>, such as codex/6.1 or process:importer; omit to leave generation metadata unchanged. |
 
 **Returns**
 

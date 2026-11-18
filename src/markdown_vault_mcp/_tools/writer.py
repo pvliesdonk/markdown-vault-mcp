@@ -1170,8 +1170,9 @@ def register(mcp: FastMCP) -> None:
                 of strings; status as draft, stable or deprecated; stale_after
                 as an ISO date or offset datetime; sources as a list of mappings
                 with a non-empty resource string. Omitted fields are preserved.
-            producer: Explicit producer actor, such as codex/6.1 or human:alex;
-                omit to leave generation metadata unchanged.
+            producer: Explicit producer actor: <producer>/<version>, process:<id>
+                or human:<id>, such as codex/6.1 or process:importer; omit to
+                leave generation metadata unchanged.
 
         Returns:
             The written path and previous revision when available.

@@ -445,6 +445,10 @@ Tool tags following switches: #1412.
   body also invalidate (the spec ties verification to the concept, not the
   body alone); rename does not. This is the highest-value enforcement:
   it is exactly the invariant an advisory-only setup eventually misses.
+- **`okf_author` tool** (gated by `OKF_AUTHOR`): updates selected editorial
+  fields under an etag and records a producer only when supplied. It preserves
+  omitted metadata, reviews and body bytes, and suppresses legacy stamping for
+  its own write while retaining the authenticated commit principal.
 - **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 

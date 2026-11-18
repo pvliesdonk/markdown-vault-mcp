@@ -205,7 +205,7 @@ class WriterFacet:
                     "Cannot author a reserved OKF file as a concept"
                 )
             content = author_text(original, fields, producer)
-            with okf_write_suppressed():
+            with okf_write_suppressed(), self._doc_mgr.exact_byte_writes():
                 result = self.write(canonical, content, if_match=if_match)
             if self._convention_maintainer is not None:
                 self._convention_maintainer.maintain(canonical, "write")

@@ -1929,6 +1929,10 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Explicit OKF concept authoring
+
+`WriterFacet.okf_author` and the `okf_author` MCP tool apply named editorial fields to an existing concept under a required etag. The caller may supply an OKF producer actor; only that explicit actor sets `generated.by`, with the server supplying the UTC timestamp. Other frontmatter, including verification and omitted sources, and the body survive with their line endings. The authoring splice is parsed and checked against the requested values before writing; it refuses edits to aliases or anchors that the edit would replace. The MCP tool requires an active writable bundle and effective `OKF_AUTHOR`; ordinary writes retain their existing semantics. The operation suppresses legacy stamping only for its own write while retaining the request principal for commit attribution; enabled index and log maintenance runs after suppression ends.
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)
@@ -7536,8 +7540,3 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 `OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
 resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
 remains tied to `OKF_WRITE`.
-
-
-### Explicit OKF concept authoring
-
-`WriterFacet.okf_author` and the `okf_author` MCP tool apply named editorial fields to an existing concept under a required etag. The caller may supply an OKF producer actor; only that explicit actor sets `generated.by`, with the server supplying the UTC timestamp. Other frontmatter, including verification and omitted sources, and the body survive with their line endings. The authoring splice is parsed and checked against the requested values before writing; it refuses edits to aliases or anchors that the edit would replace. The MCP tool requires an active writable bundle and effective `OKF_AUTHOR`; ordinary writes retain their existing semantics. The operation suppresses legacy stamping only for its own write while retaining the request principal for commit attribution; enabled index and log maintenance runs after suppression ends.

@@ -191,6 +191,8 @@ class DocumentManager:
             repository, which would never be committed (#1564, #1949). ``None`` refuses nothing.
     """
 
+    _exact_bytes = False  # see exact_byte_writes()
+
     def __init__(
         self,
         fts: KeywordGraphIndex,
@@ -325,6 +327,26 @@ class DocumentManager:
         with self._file_write_lock:
             yield
 
+    @contextlib.contextmanager
+    def exact_byte_writes(self) -> Iterator[None]:
+        """Persist content writes as UTF-8 bytes, with no newline translation.
+
+        Held under the write lock, so no other write sees the mode.  For a
+        caller that splices text it read byte for byte (OKF authoring) and
+        must not have a platform's text-mode staging rewrite its line endings.
+        Ordinary writes keep their text-mode staging.
+        """
+        with self._file_write_lock:
+            self._exact_bytes = True
+            try:
+                yield
+            finally:
+                self._exact_bytes = False
+
+    def _staged(self, content: str) -> str | bytes:
+        """Return *content* in the form the current write mode stages."""
+        return content.encode("utf-8") if self._exact_bytes else content
+
     def ensure_writable(self) -> None:
         """Raise :exc:`ReadOnlyError` if the vault is read-only.
 
@@ -362,11 +384,29 @@ class DocumentManager:
         """
         return validate_path(path, self._source_dir)
 
+    def _read_authorable(self, path: str) -> NoteContent | None:
+        """Read *path*, refusing unparseable frontmatter instead of faulting.
+
+        A note whose frontmatter is not valid YAML is a problem with the note,
+        not the server: the caller must repair it, so it is an
+        :exc:`InvalidRequestError` rather than the fault :meth:`read` reports.
+        Every other read failure propagates unchanged.
+        """
+        try:
+            return self.read(path)
+        except DocumentUnreadableError as exc:
+            if not isinstance(exc.__cause__, yaml.YAMLError):
+                raise
+            raise InvalidRequestError(
+                f"Cannot author {path}: its frontmatter is not valid YAML "
+                "and must be repaired first."
+            ) from exc
+
     def _okf_author_snapshot(self, path: str) -> tuple[str, str]:
         """Read exact note bytes and its resolved vault-relative identity under write_scope."""
         target = self._validate_path(path)
         canonical = target.relative_to(self._source_dir.resolve()).as_posix()
-        if self.read(path) is None:
+        if self._read_authorable(path) is None:
             raise DocumentNotFoundError.note(path)
         try:
             return canonical, target.read_bytes().decode("utf-8")
@@ -979,7 +1019,7 @@ class DocumentManager:
                     f"parseable, so the OKF enforced-write layer cannot stamp "
                     f"provenance on it — {exc}"
                 ) from exc
-        atomic_write(abs_path, content)
+        atomic_write(abs_path, self._staged(content))
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
         self._notifier.fire(abs_path, content, operation)

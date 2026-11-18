@@ -270,5 +270,5 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
         if parsed.metadata != expected or parsed.content != original.content:
             raise InvalidRequestError("Cannot safely apply authoring changes")
         return result
-    except (yaml.YAMLError, ValueError, TypeError) as exc:
+    except (yaml.YAMLError, TypeError) as exc:
         raise InvalidRequestError("Cannot safely apply authoring changes") from exc
