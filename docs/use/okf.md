@@ -121,6 +121,8 @@ Anything already in the file wins, so a title you wrote yourself and the root `i
 
 Ordinary writes preserve supplied `generated` and `verified` fields. Body-only edits and appends preserve the frontmatter bytes, including comments and line endings. A caller's credentials do not establish who authored a note. Use [`okf_author`](../reference/tools/writer.md#okf_author) with an explicit producer to record authorship. The deprecated `OKF_WRITE` alias enables authoring, review, index and log maintenance; explicit individual settings override it. See the [migration guide](okf-provenance-migration.md).
 
+Enabling `OKF_WRITE` on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Authoring, review and reserved-file upkeep are inactive there; OKF read semantics remain available. Startup logs `okf_write_inert` at INFO. The `config://vault` resource reports the alias as `okf_write_configured` and `okf_write_effective`, which is true when the alias is set, OKF is active and the vault is writable. When OKF is active, the `stats` tool's `okf` section reports the same values as `write_configured` and `write_effective`. An effective alias stamps nothing.
+
 ### Recording a human review
 
 Enabling review with `MARKDOWN_VAULT_MCP_OKF_VERIFY=elicit` or `trust-auth` exposes the [`okf_verify`](../reference/tools/writer.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry (`at` a UTC instant) to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. Independent review requires an active bundle; the legacy alias also permits review of an undeclared vault in auto mode.

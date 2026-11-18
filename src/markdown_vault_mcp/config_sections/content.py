@@ -141,9 +141,9 @@ class ContentConfig:
             raise ConfigurationError(
                 f"okf_mode must be one of auto/off/on, got {self.okf_mode!r}"
             )
-        # The enforced write layer changes bytes / write outcomes; it is
-        # meaningless without read semantics, so it cannot combine with
-        # okf_mode=off (design §2 trust model / §6).
+        # The alias enables OKF write capabilities, which are meaningless
+        # without read semantics, so it cannot combine with okf_mode=off
+        # (design §2 trust model / §6).
         if self.okf_write and self.okf_mode == "off":
             raise ConfigurationError(
                 "okf_write=true requires okf_mode to be auto or on, not off"

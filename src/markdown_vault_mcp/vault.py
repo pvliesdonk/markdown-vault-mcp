@@ -890,7 +890,8 @@ class Vault:
     def okf_write_state(self, *, active: bool) -> tuple[bool, bool]:
         """Return configured and effective state of the ``OKF_WRITE`` alias.
 
-        The alias enables ``OKF_AUTHOR`` and stamps nothing (#1443).
+        The alias defaults ``OKF_AUTHOR`` to enabled unless explicitly
+        overridden, and stamps nothing (#1443).
 
         Args:
             active: The current OKF detection result.

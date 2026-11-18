@@ -179,7 +179,11 @@ def _keep_head(raw: str, view: str, new: str) -> str:
         return raw + new[n:]
     lines = view.count("\n", 0, n)
     fence = next(itertools.islice(_EOL.finditer(raw), lines - 1, None))
-    return raw[: fence.end()] + new[n:]
+    tail = new[n:]
+    if fence.group() == "\r" and tail.startswith("\n"):
+        # A bare CR fence then LF would read back as one CRLF line break.
+        tail = "\r" + tail
+    return raw[: fence.end()] + tail
 
 
 def _submodule_links_text(sources: list[str]) -> str:
@@ -1611,8 +1615,8 @@ class DocumentManager:
             old target, and saying otherwise is what made #1521 silent.
         """
         # One read, hashed as is: a second read could see an external edit
-        # the ledger would then vouch for (#1492). Links are rewritten in the
-        # read view, as edit matches; the stored frontmatter block is kept.
+        # the ledger would then vouch for (#1492). Newlines are normalised
+        # as Path.read_text would, which the rewrite has always relied on.
         raw = source_abs.read_bytes()
         stored = raw.decode("utf-8")
         original = _read_view(stored)

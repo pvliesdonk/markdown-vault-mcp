@@ -193,7 +193,8 @@ class VaultSettings:
             scalar keys (``type`` / ``status`` / ``stale_after``) extend the
             effective *indexed_frontmatter_fields* set. See
             :attr:`~markdown_vault_mcp.vault.Vault.okf`.
-        okf_write: Enable the OKF enforced-write layer.
+        okf_write: The deprecated ``OKF_WRITE`` alias; it enables authoring,
+            review and maintenance defaults and stamps nothing (#1443).
         okf_capabilities: Resolved OKF authority, or ``None`` for the legacy
             library construction behavior controlled by ``okf_write``.
     """

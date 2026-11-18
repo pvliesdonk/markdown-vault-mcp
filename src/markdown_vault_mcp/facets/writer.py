@@ -60,10 +60,10 @@ class WriterFacet:
             doc_mgr: The shared :class:`DocumentManager` owned by the root.
             okf_migrate: The OKF migration manager (#963); ``None`` leaves
                 the ``okf_*`` migration methods unavailable.
-            convention_maintainer: The OKF enforced-write convention
-                maintainer (#964); ``None`` (the default, and whenever
-                ``OKF_WRITE`` is off) disables ``log.md`` / ``index.md``
-                upkeep on ``write`` / ``edit``.
+            convention_maintainer: The OKF convention maintainer (#964);
+                ``None`` (the default, and whenever index and log maintenance
+                are off) disables ``log.md`` / ``index.md`` upkeep on
+                ``write`` / ``edit``.
             previous_revision: Resolves the revision holding a note's current
                 content, for the overwrite breadcrumb (#1137).  ``None`` (the
                 default, and on a vault without git) omits the breadcrumb.

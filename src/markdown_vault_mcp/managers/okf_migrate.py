@@ -24,12 +24,11 @@ enforcement. The index-dependent transforms refresh prior queued writes
 before reading their inputs (#1464); a refresh error refuses the transform.
 
 Every write they issue is entered under
-:func:`~markdown_vault_mcp._okf_write.okf_write_suppressed`, so on a vault
-that *does* run the enforced-write layer a mechanical rewrite neither stamps
-``generated`` nor clears ``verified``. That belongs here rather than in the
-MCP tool handlers, where it used to live: being mechanical is a property of
-the transform, and a library caller of ``vault.writer.okf_*`` gets the same
-rewrite the tool does (#1401).
+:func:`~markdown_vault_mcp._okf_write.okf_write_suppressed`, so a mechanical
+rewrite triggers no ``log.md`` / ``index.md`` maintenance. That belongs here
+rather than in the MCP tool handlers, where it used to live: being mechanical
+is a property of the transform, and a library caller of ``vault.writer.okf_*``
+gets the same rewrite the tool does (#1401).
 """
 
 from __future__ import annotations
@@ -133,9 +132,8 @@ class OkfMigrationManager:
         skipped = 0
         scanned = 0
         in_submodules = 0
-        # Every write a transform issues is mechanical: it must not re-stamp
-        # provenance or clear a human attestation, whichever entry point
-        # called it (#1401).
+        # Every write a transform issues is mechanical: it must not trigger
+        # convention maintenance, whichever entry point called it (#1401).
         with okf_write_suppressed():
             for note in self._search_mgr.list(folder=folder, include_attachments=False):
                 if self._doc_mgr.in_submodule(note.path):

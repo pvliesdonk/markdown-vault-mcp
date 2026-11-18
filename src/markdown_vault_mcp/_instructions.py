@@ -80,8 +80,8 @@ class GuidanceConfig:
         summarize_note_limit: The configured summarize note limit, or ``None``
             when the summarize tool is not configured.
         okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
-        okf_write: Whether the enforced-write layer maintains the reserved
-            files, which decides whether the agent is asked to.
+        okf_write: Whether the deprecated alias enables reserved-file
+            maintenance, which decides whether the agent is asked to.
         boot_reindex: Whether startup reconciles changes made while no
             server ran; when it does not, the agent is told to reindex.
         okf_capabilities: Resolved maintenance authority and folder scope;

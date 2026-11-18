@@ -789,26 +789,56 @@ def test_duplicate_across_mixed_endings_is_refused(enforced_vault: Vault) -> Non
         (b"---\r\ntitle: a\r---\nbody\r\nmore", b"---\r\ntitle: a\r---\nX"),
         (b"body\r\nmore\r\n", b"X\n"),
         (b"---\r\nbody\r\nmore\r\n", b"---\nX\n"),
+        (b"---\rk: 1\r---\r\rbody\rmore\r", b"---\rk: 1\r---\r\r\nX\n"),
+        (
+            b"---\r\nk: 1\r\n---\r\rbody\r\nmore\r\n",
+            b"---\r\nk: 1\r\n---\r\r\nX\n",
+        ),
+        (b"---\rk: 1\r---\r\r\rbody\rmore\r", b"---\rk: 1\r---\r\r\n\nX\n"),
     ],
-    ids=["cr-only", "bom-cr-only", "mixed", "no-header", "unclosed"],
+    ids=[
+        "cr-only",
+        "bom-cr-only",
+        "mixed",
+        "no-header",
+        "unclosed",
+        "cr-fence-blank",
+        "crlf-cr-fence-blank",
+        "cr-fence-two-blank",
+    ],
 )
 def test_read_view_edit_keeps_stored_header(
     enforced_vault: Vault, raw: bytes, expected: bytes
 ) -> None:
     path = enforced_vault.source_dir / "cr.md"
     path.write_bytes(raw)
+    before = path.read_text(encoding="utf-8-sig")
     note = enforced_vault.reader.read("cr.md")
     assert note is not None
     assert "body\nmore" in note.content
     enforced_vault.writer.edit("cr.md", old_text="body\nmore", new_text="X")
     assert path.read_bytes() == expected
+    assert path.read_text(encoding="utf-8-sig") == before.replace("body\nmore", "X")
 
 
-def test_append_to_header_at_end_of_file(enforced_vault: Vault) -> None:
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (b"---\r\ntitle: a\r\n---", b"---\r\ntitle: a\r\n---\nBody\n"),
+        (b"---\rtitle: a\r---\r\r", b"---\rtitle: a\r---\r\r\nBody\n"),
+    ],
+    ids=["header-at-eof", "cr-fence-blank"],
+)
+def test_append_keeps_stored_header(
+    enforced_vault: Vault, raw: bytes, expected: bytes
+) -> None:
     path = enforced_vault.source_dir / "eof.md"
-    path.write_bytes(b"---\r\ntitle: a\r\n---")
+    path.write_bytes(raw)
+    before = path.read_text(encoding="utf-8-sig")
     enforced_vault.writer.append("eof.md", "Body\n")
-    assert path.read_bytes() == b"---\r\ntitle: a\r\n---\nBody\n"
+    assert path.read_bytes() == expected
+    after = path.read_text(encoding="utf-8-sig")
+    assert after == before + ("" if before.endswith("\n") else "\n") + "Body\n"
 
 
 def test_edit_that_changes_the_header_writes_the_read_view(
@@ -849,6 +879,20 @@ def test_rename_rewrites_link_without_changing_provenance_bytes(tmp_path: Path) 
         vault.index.build_index()
         vault.writer.rename("target.md", "new.md", update_links=True)
         assert (tmp_path / "ref.md").read_bytes() == _CRLF_HEADER + b"See [[new]].\n"
+    finally:
+        vault.close()
+
+
+def test_rename_rewrite_keeps_blank_line_after_cr_fence(tmp_path: Path) -> None:
+    (tmp_path / "target.md").write_text("# Target\n", encoding="utf-8")
+    (tmp_path / "ref.md").write_bytes(b"---\rk: 1\r---\r\rSee [[target]].\r")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault.writer.rename("target.md", "new.md", update_links=True)
+        assert (tmp_path / "ref.md").read_bytes() == (
+            b"---\rk: 1\r---\r\r\nSee [[new]].\n"
+        )
     finally:
         vault.close()
 
