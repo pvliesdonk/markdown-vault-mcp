@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pytest
 from fastmcp import Client
 
-from tests.conftest import _CLEAR_VARS, _parse_tool_data, wait_for_mcp_writer_drain
+from tests.conftest import _parse_tool_data, wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
 
@@ -24,8 +24,6 @@ async def test_missing_type_filter(
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
     async with Client(make_server()) as client:

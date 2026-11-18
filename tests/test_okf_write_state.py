@@ -116,6 +116,31 @@ async def test_mcp_reports_write_state(
         ),
         (
             (True, False, False),
+            (False, "prompt", False, "off", (".",), False),
+            [(False, None), (False, "not_implemented"), (False, None), (False, None)],
+        ),
+        (
+            (True, False, False),
+            (False, "off", False, "write", (".",), False),
+            [(False, None), (False, None), (False, None), (False, "not_implemented")],
+        ),
+        (
+            (False, False, False),
+            (False, "prompt", False, "write", (".",), False),
+            [
+                (False, None),
+                (False, "okf_inactive"),
+                (False, None),
+                (False, "okf_inactive"),
+            ],
+        ),
+        (
+            (True, True, False),
+            (False, "prompt", False, "write", (".",), False),
+            [(False, "read_only")] * 4,
+        ),
+        (
+            (True, False, False),
             (False, "off", True, "writes", ("guides",), False),
             [(False, None), (False, None), (True, None), (True, None)],
         ),
