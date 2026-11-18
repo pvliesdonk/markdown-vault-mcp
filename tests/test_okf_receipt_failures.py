@@ -24,6 +24,8 @@ from markdown_vault_mcp.exceptions import (
 )
 from markdown_vault_mcp.utils.fs import is_regular_file
 from markdown_vault_mcp.vault import Vault
+from tests.fixtures.okf_machine_review import NOTE as _NOTE
+from tests.fixtures.okf_machine_review import vault_root as vault_root
 from tests.server_factory import make_server
 
 from .conftest import wait_for_mcp_writer_drain
@@ -32,22 +34,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-_NOTE = "---\ntype: concept\n---\nBody\n"
-
 
 def _rows(path: Path) -> list[dict[str, Any]]:
     return json.loads(path.read_text(encoding="utf-8"))["rows"]
-
-
-@pytest.fixture
-def vault_root(tmp_path: Path) -> Path:
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "note.md").write_text(_NOTE, encoding="utf-8")
-    (root / "index.md").write_text(
-        '---\nokf_version: "0.2"\n---\n# Bundle\n', encoding="utf-8"
-    )
-    return root
 
 
 @pytest.fixture

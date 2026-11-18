@@ -11,6 +11,7 @@ from markdown_vault_mcp.okf import derive_trust_tier
 from tests.conftest import _parse_tool_data, wait_for_mcp_writer_drain
 from tests.fixtures.okf_machine_review import NOTE
 from tests.fixtures.okf_machine_review import machine_review_env as machine_review_env
+from tests.fixtures.okf_machine_review import vault_root as vault_root
 from tests.server_factory import make_server
 
 
