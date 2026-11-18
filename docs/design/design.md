@@ -4627,7 +4627,13 @@ store dimension, another dimension, a non-finite value, metadata that is
 not JSON (`NaN` and infinity included), a `NUL` character or lone
 surrogate in any string, or a path or folder too long to index raise
 `ValueError` and change nothing, so the reconciler keeps the old rows
-(SQLite would store some of these). The store's tables are taken as
+(SQLite would store some of these). A one-shot generation is validated before
+the write transaction into a private temporary file of normalized rows; all
+document keys are copied before those rows are replayed. The application keeps
+the largest document and path/token bookkeeping in memory. Scratch uses packed float32 vectors and JSON metadata in the system temporary
+directory (which can be controlled by `TMPDIR`); a memory-backed directory also consumes memory.
+Scratch, PostgreSQL storage and WAL are separate capacity costs. The temporary
+file is closed on success or failure. The store's tables are taken as
 existing only after a write publishes, so a conflict that rolled back the
 first write's `CREATE` leaves the next write to create them again. A connection lost
 during `COMMIT` (no reply, or class `08`) raises *unavailable* with
