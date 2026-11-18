@@ -313,3 +313,60 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
     finally:
         vault.close()
         instances.close()
+
+
+def test_index_and_log_conflicts_in_one_pull_keep_both_local_copies(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    root = git_repo_pair.local_path
+    folder = root / "guides"
+    folder.mkdir()
+    for name in ("index.md", "log.md"):
+        (folder / name).write_text("# Base\n")
+    _run_git(root, "add", "guides/index.md", "guides/log.md")
+    _run_git(root, "commit", "-m", "seed")
+    _run_git(root, "push", "origin", "main")
+    other = root.parent / "other"
+    subprocess.run(
+        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _run_git(other, "config", "user.email", "other@example.com")
+    _run_git(other, "config", "user.name", "Other")
+    for name in ("index.md", "log.md"):
+        (other / "guides" / name).write_text("# Upstream\n")
+    _run_git(other, "add", "guides/index.md", "guides/log.md")
+    _run_git(other, "commit", "-m", "remote")
+    _run_git(other, "push", "origin", "main")
+    for name in ("index.md", "log.md"):
+        (folder / name).write_text("# Local\n")
+    _run_git(root, "add", "guides/index.md", "guides/log.md")
+    _run_git(root, "commit", "-m", "local")
+    strategy = GitWriteStrategy(enable_pull=True, enable_push=False, repo_path=root)
+    caps = ContentConfig(okf_mode="on", okf_index=False, okf_log="off").okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        result = strategy.force_pull()
+        assert result.reason == "conflicts_resolved_with_siblings"
+        assert len(result.conflict_files) == 2
+        for name in ("index", "log"):
+            assert (folder / f"{name}.md").read_text() == "# Upstream\n"
+            sibling = next(
+                path
+                for path in result.conflict_files
+                if f"{name}.conflict-mcp-" in path
+            )
+            assert (root / sibling).read_text() == "# Local\n"
+        assert _run_git(root, "status", "--porcelain") == ""
+    finally:
+        vault.close()
+        strategy.close()
