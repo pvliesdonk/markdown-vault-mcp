@@ -7751,6 +7751,11 @@ Markdown to an instance-local, versioned ledger beside the tracker. It stores
 path, role, content and frontmatter digests, first and last change observation
 times, presence, removal time and origin. Builds (including warm builds),
 reindexes and post-pull reindexes reconcile state. Unchanged rows remain stable;
-incomplete traversal and policy-hidden paths do not establish removal. A missing
-or corrupt ledger starts new history, while a newer schema is refused. Sweep
+inaccessible paths and their subtrees do not establish removal, but do not block
+removal elsewhere. Inventory-denied symlinks are never followed, even when search
+admits them; an earlier row hidden by one remains unchanged. Content digests
+stream in bounded chunks. The frontmatter digest covers exact bytes from the
+start (including an optional UTF-8 BOM) through the closing delimiter, excluding
+its following newline and body. A missing or corrupt ledger starts new history,
+while a newer schema is refused. Sweep
 origin is unknown; observation does not write author metadata or log entries.

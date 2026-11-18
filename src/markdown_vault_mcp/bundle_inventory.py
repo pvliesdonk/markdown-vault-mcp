@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import os
 import stat
 import unicodedata
@@ -27,6 +28,7 @@ from markdown_vault_mcp.utils.text import decode_utf8
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
+    from typing import BinaryIO
 
 ScopeState = Literal["inspected", "missing", "unavailable"]
 EntryState = Literal["inspected", "missing", "not_inspected", "unavailable"]
@@ -327,6 +329,96 @@ def _vector_sidecars(base: Path) -> set[Path]:
     return paths
 
 
+class _Delimiter:
+    """Classify one line without retaining its contents."""
+
+    def __init__(self, *, leading: bool = False) -> None:
+        self.leading = leading
+        self.seen = False
+        self.dashes = 0
+        self.spaces = False
+        self.yaml = True
+        self.json = bytearray()
+
+    def feed(self, part: bytes) -> None:
+        if self.leading:
+            part = part.lstrip(b" \t\v\f\r")
+            if not part:
+                return
+            self.leading = False
+        self.seen = self.seen or bool(part)
+        if len(self.json) <= 1:
+            self.json.extend(part[: 2 - len(self.json)])
+        if not self.yaml:
+            return
+        if not self.spaces:
+            rest = part.lstrip(b"-")
+            self.dashes += len(part) - len(rest)
+            if rest:
+                self.spaces = True
+                part = rest
+            else:
+                return
+        if part.strip(b" \t"):
+            self.yaml = False
+
+    def kind(self) -> str | None:
+        if self.yaml and self.dashes >= 3:
+            return "yaml"
+        if bytes(self.json) in (b"{", b"}"):
+            return self.json.decode("ascii")
+        return None
+
+
+def _observation_digests(stream: BinaryIO) -> tuple[str, str | None]:
+    """Hash file and exact leading header in bounded chunks."""
+    content = hashlib.sha256()
+    header = hashlib.sha256()
+    delimiter = _Delimiter(leading=True)
+    header_kind: str | None = None
+    header_digest: str | None = None
+    active = True
+    first_line = True
+    file_start = True
+    carry = b""
+    while True:
+        chunk = stream.readline(65536)
+        if not chunk and not carry:
+            break
+        content.update(chunk)
+        if not active:
+            carry = b""
+            continue
+        part = carry + chunk
+        carry = b""
+        ends_line = part.endswith(b"\n")
+        complete_line = ends_line or len(chunk) < 65536
+        if not complete_line and part.endswith(b"\r"):
+            part, carry = part[:-1], b"\r"
+        ending = 2 if part.endswith(b"\r\n") else int(ends_line)
+        body = part[:-ending] if ending else part
+        candidate = body
+        if file_start and candidate.startswith(b"\xef\xbb\xbf"):
+            candidate = candidate[3:]
+        file_start = False
+        delimiter.feed(candidate)
+        header.update(body)
+        before_newline = header.copy()
+        if ending:
+            header.update(part[-ending:])
+        if complete_line:
+            kind = delimiter.kind()
+            if first_line and delimiter.seen:
+                header_kind = kind if kind in {"yaml", "{"} else None
+                active = header_kind is not None
+                first_line = False
+            elif not first_line and kind == ("yaml" if header_kind == "yaml" else "}"):
+                header_digest = before_newline.hexdigest()
+                active = False
+            delimiter = _Delimiter(leading=first_line)
+    return content.hexdigest(), header_digest
+
+
 class BundleInspector:
     """Inspect only disk state using the document manager's effective policy.
 
@@ -470,23 +562,26 @@ class BundleInspector:
                 request, "missing" if _missing(exc) else "unavailable"
             )
 
-    def observe_files(self, visit: Callable[[str, Role, bytes], None]) -> bool:
-        """Visit readable Markdown files within the inventory boundary.
+    def observe_files(
+        self, visit: Callable[[str, Role, str, str | None], None]
+    ) -> set[str]:
+        """Visit readable Markdown files and return paths with unknown visibility.
 
         Args:
-            visit: Consume each file's path, role and bytes before the next read.
+            visit: Consume each path, role, content digest and header digest.
 
         Returns:
-            Whether the entire scope was visible.
+            Blocked paths or subtrees; an empty string denotes the root.
         """
+        blocked: set[str] = set()
         try:
             root = self._source.resolve(strict=True)
             self._prepare_policy(root)
             with open_directory_nofollow(root, (), source_resolved=True) as fd:
-                complete = self._observe_tree(fd, "", visit)
+                self._observe_tree(fd, "", visit, blocked)
         except (OSError, RuntimeError):
-            return False
-        return complete
+            blocked.add("")
+        return blocked
 
     def is_internal_path(self, path: str) -> bool:
         """Check the last prepared policy for a vault-relative path.
@@ -503,50 +598,78 @@ class BundleInspector:
         )
 
     def _observe_tree(
-        self, fd: int, directory: str, visit: Callable[[str, Role, bytes], None]
-    ) -> bool:
-        if len(_components(directory)) >= 32:
-            return False
-        complete = True
+        self,
+        fd: int,
+        directory: str,
+        visit: Callable[[str, Role, str, str | None], None],
+        blocked: set[str],
+    ) -> None:
         selected = self._absolute_source.joinpath(*_components(directory))
-        if any(path.parent == selected for path in self._unavailable_policy_paths):
-            complete = False
+        for policy_path in self._unavailable_policy_paths:
+            if policy_path.parent == selected:
+                blocked.add(policy_path.relative_to(self._absolute_source).as_posix())
         try:
             with os.scandir(fd) as children:
                 names = [child.name for child in children]
         except OSError:
-            return False
+            blocked.add(directory)
+            return
         for name in names:
-            if "\\" in name:
-                complete = False
-                continue
             path = f"{directory}/{name}" if directory else name
-            if self._internal(path):
-                continue
-            try:
-                complete = self._observe_child(fd, path, visit) and complete
-            except OSError:
-                complete = False
-        return complete
+            if "\\" in name:
+                blocked.add(path)
+            elif not self._internal(path):
+                try:
+                    self._observe_child(fd, path, visit, blocked)
+                except OSError:
+                    blocked.add(path)
 
     def _observe_child(
-        self, fd: int, path: str, visit: Callable[[str, Role, bytes], None]
-    ) -> bool:
+        self,
+        fd: int,
+        path: str,
+        visit: Callable[[str, Role, str, str | None], None],
+        blocked: set[str],
+    ) -> None:
         name = path.rsplit("/", 1)[-1]
         info = os.stat(name, dir_fd=fd, follow_symlinks=False)
         if stat.S_ISDIR(info.st_mode):
             child = open_child_directory(fd, name)
             try:
-                return self._observe_tree(child, path, visit)
+                self._observe_tree(child, path, visit, blocked)
             finally:
                 os.close(child)
-        if stat.S_ISREG(info.st_mode) and is_note(path):
-            raw = read_regular_nofollow(fd, name, info.st_size + 1)
-            if len(raw) > info.st_size:
-                return False
-            visit(path, _role(name, self._policy.conventions_file), raw)
-            return True
-        return not (stat.S_ISLNK(info.st_mode) or is_note(path))
+        elif stat.S_ISREG(info.st_mode) and is_note(path):
+            self._observe_note(fd, path, visit, blocked)
+        elif stat.S_ISLNK(info.st_mode) or is_note(path):
+            blocked.add(path)
+
+    def _observe_note(
+        self,
+        fd: int,
+        path: str,
+        visit: Callable[[str, Role, str, str | None], None],
+        blocked: set[str],
+    ) -> None:
+        name = path.rsplit("/", 1)[-1]
+        descriptor = os.open(
+            name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd
+        )
+        with os.fdopen(descriptor, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                blocked.add(path)
+                return
+            digest, frontmatter = _observation_digests(stream)
+            after = os.fstat(stream.fileno())
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ):
+            blocked.add(path)
+            return
+        visit(path, _role(name, self._policy.conventions_file), digest, frontmatter)
 
     def _walk_page(
         self, parent: int, request: BundleTreeRequest, scope: str

@@ -121,18 +121,11 @@ class BuildLifecycle:
             attempt = BuildAttempt()
             self._latest = attempt
             attempt.future.add_done_callback(lambda _: self._on_cancelled(attempt))
+            warm = False
             try:
                 warm = not active and not force and self._is_warm()
-                manager = getattr(writer._ctx, "index_manager", None)
-                if warm and getattr(manager, "observations", None) is None:
-                    stats = IndexStats(
-                        documents_indexed=self._fts.count_documents(),
-                        chunks_indexed=0,
-                        skipped=0,
-                    )
-                    attempt.future.set_running_or_notify_cancel()
-                    self._finish(attempt, _Succeeded(stats))
-                    return attempt.future
+                if warm:
+                    self._readiness.mark_built()
                 if not warm:
                     self._readiness.begin_sync_build()
                 self._pending.add(attempt)
@@ -146,7 +139,8 @@ class BuildLifecycle:
                 )
             except BaseException as exc:
                 self._pending.discard(attempt)
-                self._readiness.begin_sync_build()
+                if not warm:
+                    self._readiness.begin_sync_build()
                 attempt.future.set_running_or_notify_cancel()
                 self._finish(attempt, _Unsuccessful("failed", exc))
                 raise

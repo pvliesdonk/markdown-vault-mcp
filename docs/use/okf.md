@@ -253,13 +253,19 @@ the client write guard.
 A build or reindex records the latest observed state of Markdown files in the
 inventory scope, including readable hidden paths and files excluded from search.
 Internal server state, Git directories and inaccessible paths are outside that
-scope. The ledger is instance-local state beside the change tracker; with an
-in-memory index and no configured state path it stays in memory. Back it up to
-retain its observation history. If it is missing or corrupt, the next sweep
-starts a new history from the files it can read. A newer ledger schema is
-refused rather than overwritten.
+scope. Symlinks are not followed, even when search can read their targets; a
+previous observation hidden by a symlink or an inaccessible subtree is retained.
+The ledger is instance-local state beside the change tracker. With an in-memory
+index and no configured state path it stays in memory: a restart loses history,
+including evidence of removals during downtime. Back up persistent state to
+retain its history. If a ledger is missing or corrupt, the next sweep starts a
+new history from the files it can read. A newer schema is refused rather than
+overwritten.
 
 The ledger compares states; it does not record an event for each edit, identify
-an author, or change frontmatter or `log.md`. In this release, external edits
-are observed at the next build, reindex, or post-pull reindex. A warm build also
-sweeps; the file watcher does not yet update this ledger on every save.
+an author, or change frontmatter or `log.md`. It hashes exact header bytes from
+the start of a file (including an optional UTF-8 BOM) through the closing
+delimiter, excluding its following newline and body. It observes external edits
+at build, reindex, or post-pull reindex. A warm build also sweeps. The watcher
+triggers reindex in its watched folders; excluded top-level folders wait for the
+next sweep until watcher scope is expanded.

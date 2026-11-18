@@ -82,7 +82,11 @@ def test_corrupt_ledger_rebuilds_and_newer_version_is_refused(tmp_path: Path) ->
         ledger.write_text('{"version": 999, "rows": {}}')
         import pytest
 
-        with pytest.raises(RuntimeError, match="Unsupported observation schema"):
+        from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
+
+        with pytest.raises(
+            StoreUnsupportedSchemaError, match="Unsupported observation schema"
+        ):
             vault.index.reindex()
         assert ledger.read_text() == '{"version": 999, "rows": {}}'
     finally:
@@ -98,7 +102,7 @@ def test_incomplete_scope_does_not_create_removals(tmp_path: Path, monkeypatch) 
         vault.index.build_index()
         ledger = vault._index_mgr.observations
         first = ledger.rows()["a.md"]
-        monkeypatch.setattr(ledger._inspector, "observe_files", lambda _visit: False)
+        monkeypatch.setattr(ledger._inspector, "observe_files", lambda _visit: {""})
         vault.index.reindex()
         assert ledger.rows()["a.md"] == first
     finally:
@@ -271,3 +275,212 @@ def test_denied_directory_does_not_make_removal(tmp_path: Path, monkeypatch) -> 
         assert ledger.rows()["private/a.md"] == before
     finally:
         vault.close()
+
+
+def test_unrelated_symlink_and_denied_subtree_do_not_hide_removal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from markdown_vault_mcp import bundle_inventory
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "private").mkdir()
+    (source / "private" / "kept.md").write_text("kept")
+    gone = source / "gone.md"
+    gone.write_text("gone")
+    (source / "other.png").symlink_to("nonexistent")
+    (source / "alias.md").symlink_to("gone.md")
+    vault = Vault(source_dir=source)
+    try:
+        vault.index.build_index()
+        gone.unlink()
+        original = bundle_inventory.open_child_directory
+
+        def denied(fd, name):
+            if name == "private":
+                raise PermissionError("denied")
+            return original(fd, name)
+
+        monkeypatch.setattr(bundle_inventory, "open_child_directory", denied)
+        vault._index_mgr.observations.sweep()
+        rows = vault._index_mgr.observations.rows()
+        assert rows["gone.md"].presence == "removed"
+        assert rows["private/kept.md"].presence == "present"
+        assert "alias.md" not in rows
+    finally:
+        vault.close()
+
+
+def test_deep_observable_note(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    folder = source
+    for _ in range(40):
+        folder = folder / "d"
+        folder.mkdir()
+    (folder / "deep.md").write_text("deep")
+    vault = Vault(source_dir=source)
+    try:
+        vault.index.build_index()
+        assert (
+            "/".join(["d"] * 40 + ["deep.md"]) in vault._index_mgr.observations.rows()
+        )
+    finally:
+        vault.close()
+
+
+def test_frontmatter_digest_is_exact_header_bytes(tmp_path: Path) -> None:
+    import hashlib
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "a.md"
+    header = b"\xef\xbb\xbf---\r\ntitle: A\r\n---"
+    note.write_bytes(header + b"\r\nbody")
+    vault = Vault(source_dir=source)
+    try:
+        vault.index.build_index()
+        first = vault._index_mgr.observations.rows()["a.md"].frontmatter_digest
+        assert first == hashlib.sha256(header).hexdigest()
+        note.write_bytes(header + b"\r\n\r\nbody")
+        vault.index.reindex()
+        assert vault._index_mgr.observations.rows()["a.md"].frontmatter_digest == first
+    finally:
+        vault.close()
+
+
+def test_unchanged_ledger_needs_no_replace(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    vault = Vault(
+        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
+    )
+    try:
+        vault.index.build_index()
+
+        def no_save(_rows):
+            raise AssertionError("unchanged ledger was rewritten")
+
+        monkeypatch.setattr(vault._index_mgr.observations, "_save", no_save)
+        vault.index.build_index()
+    finally:
+        vault.close()
+
+
+def test_warm_ledger_failure_preserves_search_readiness(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import pytest
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    vault = Vault(
+        source_dir=source, settings=VaultSettings(index_path=tmp_path / "index.sqlite")
+    )
+    try:
+        vault.index.build_index()
+        vault.close()
+        vault = Vault(
+            source_dir=source,
+            settings=VaultSettings(index_path=tmp_path / "index.sqlite"),
+        )
+
+        def fail():
+            raise PermissionError("ledger denied")
+
+        monkeypatch.setattr(vault._index_mgr.observations, "sweep", fail)
+        with pytest.raises(PermissionError, match="ledger denied"):
+            vault.index.build_index()
+        assert vault.index.is_queryable()
+    finally:
+        vault.close()
+
+
+def test_symlink_replacement_retains_old_row_without_blocking_other_removal(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    first = source / "first.md"
+    first.write_text("first")
+    second = source / "second.md"
+    second.write_text("second")
+    vault = Vault(source_dir=source)
+    try:
+        vault.index.build_index()
+        first.unlink()
+        first.symlink_to("second.md")
+        second.unlink()
+        vault._index_mgr.observations.sweep()
+        rows = vault._index_mgr.observations.rows()
+        assert rows["first.md"].presence == "present"
+        assert rows["second.md"].presence == "removed"
+    finally:
+        vault.close()
+
+
+def test_empty_missing_or_corrupt_ledger_is_recreated(tmp_path: Path) -> None:
+    from markdown_vault_mcp.bundle_inventory import BundleInspector, InspectionPolicy
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(
+        path, BundleInspector(source, (), frozenset(), 0, InspectionPolicy())
+    )
+    ledger.sweep()
+    assert '"version": 1' in path.read_text()
+    path.write_text("corrupt")
+    ledger.sweep()
+    assert '"version": 1' in path.read_text()
+
+
+def test_stream_hash_handles_long_header_and_split_crlf() -> None:
+    import hashlib
+    import io
+
+    from markdown_vault_mcp.bundle_inventory import _observation_digests
+
+    class Limited(io.BytesIO):
+        def readline(self, size=-1):
+            assert 0 < size <= 65536
+            return super().readline(size)
+
+    header = b"---\r\nkey: " + b"x" * 65530 + b"\r\n---"
+    content = header + b"\r\n\r\nbody"
+    full, frontmatter = _observation_digests(Limited(content))
+    assert full == hashlib.sha256(content).hexdigest()
+    assert frontmatter == hashlib.sha256(header).hexdigest()
+    header = b"---\nkey: x\n" + b"-" * 65535
+    full, frontmatter = _observation_digests(Limited(header + b"\r\nbody"))
+    assert frontmatter == hashlib.sha256(header).hexdigest()
+
+
+def test_header_digest_handles_empty_body_json_and_missing_closer() -> None:
+    import hashlib
+    import io
+
+    from markdown_vault_mcp.bundle_inventory import _observation_digests
+
+    for content, header in [
+        (b"---\na: b\n---", b"---\na: b\n---"),
+        (b'{\n"a": 1\n}\n\nbody', b'{\n"a": 1\n}'),
+        (b"---\na: b\n", None),
+    ]:
+        digest, frontmatter = _observation_digests(io.BytesIO(content))
+        assert digest == hashlib.sha256(content).hexdigest()
+        assert frontmatter == (hashlib.sha256(header).hexdigest() if header else None)
+
+
+def test_frontmatter_hash_includes_leading_whitespace_recognized_by_scanner() -> None:
+    import hashlib
+    import io
+
+    from markdown_vault_mcp.bundle_inventory import _observation_digests
+
+    header = b"\n  ---\ntitle: A\n---"
+    _, digest = _observation_digests(io.BytesIO(header + b"\nbody"))
+    assert digest == hashlib.sha256(header).hexdigest()

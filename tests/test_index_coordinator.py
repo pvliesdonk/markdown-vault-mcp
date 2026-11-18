@@ -153,8 +153,8 @@ def test_build_index_async_warm_restart_short_circuits(tmp_path: Path) -> None:
     coord = make_coordinator(tmp_path)
     try:
         coord.build_index()  # populate + set sentinel
-        fut = coord.build_index_async()  # warm: already-resolved, no new job
-        assert fut.done()
+        fut = coord.build_index_async()  # warm: no FTS rebuild
+        fut.result(timeout=5)
         assert coord.is_queryable() is True
     finally:
         coord.close(timeout=5)

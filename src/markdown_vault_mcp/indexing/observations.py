@@ -12,9 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.scanner import strip_frontmatter_block
-from markdown_vault_mcp.utils.text import decode_utf8
+from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.bundle_inventory import BundleInspector
@@ -33,17 +31,6 @@ class Observation:
     presence: str = "present"
     removed_observed_at: str | None = None
     origin: str = "unknown"
-
-
-def _frontmatter_digest(raw: bytes) -> str | None:
-    try:
-        text = decode_utf8(raw)
-    except UnicodeDecodeError:
-        return None
-    body = strip_frontmatter_block(text)
-    if body == text or not text.endswith(body):
-        return None
-    return compute_etag(text[: len(text) - len(body)].encode("utf-8"))
 
 
 def _valid_row(key: str, row: Observation) -> bool:
@@ -79,45 +66,50 @@ class ObservationLedger:
     def __init__(self, path: Path | None, inspector: BundleInspector) -> None:
         self._path = path
         self._inspector = inspector
-        self._rows: dict[str, Observation] = {}
+        self._rows: dict[str, Observation] | None = {} if path is None else None
         self._lock = threading.Lock()
 
-    def _load(self) -> dict[str, Observation]:
+    def _load(self) -> tuple[dict[str, Observation], bool]:
         if self._path is None:
-            return self._rows.copy()
+            return (self._rows or {}).copy(), True
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             version = data["version"]
             if type(version) is not int:
                 raise ValueError("Invalid observation version")
             if version > 1:
-                raise RuntimeError(f"Unsupported observation schema version: {version}")
+                raise StoreUnsupportedSchemaError(
+                    f"Unsupported observation schema version: {version}. "
+                    "Upgrade the server or move the ledger aside to start new history.",
+                    backend="observations",
+                    location=str(self._path),
+                )
             if version != 1 or not isinstance(data["rows"], dict):
                 raise ValueError("Invalid observation ledger")
             rows = {key: Observation(**row) for key, row in data["rows"].items()}
             if any(not _valid_row(key, row) for key, row in rows.items()):
                 raise ValueError("Invalid observation row")
-            return rows
+            return rows, True
         except (FileNotFoundError, ValueError, TypeError, KeyError, AttributeError):
-            return {}
+            return {}, False
 
     def rows(self) -> dict[str, Observation]:
         """Return a snapshot of locally recorded observations."""
         with self._lock:
-            return self._load()
+            return self._load()[0]
 
     def sweep(self) -> None:
         """Reconcile a live inventory sweep; incomplete walks retain absent rows."""
         with self._lock:
-            previous = self._load()
+            previous, valid = self._load()
             now = datetime.now(UTC).isoformat()
             result = previous.copy()
             found: set[str] = set()
 
-            def visit(path: str, role: str, raw: bytes) -> None:
+            def visit(
+                path: str, role: str, digest: str, frontmatter: str | None
+            ) -> None:
                 found.add(path)
-                digest = compute_etag(raw)
-                frontmatter = _frontmatter_digest(raw)
                 old = previous.get(path)
                 if old and (
                     old.role,
@@ -135,24 +127,29 @@ class ObservationLedger:
                     now,
                 )
 
-            complete = self._inspector.observe_files(visit)
-            if complete:
-                for path in previous.keys() - found:
-                    old = previous[path]
-                    if (
-                        old.presence == "present"
-                        and not self._inspector.is_internal_path(path)
-                    ):
-                        result[path] = replace(
-                            old,
-                            presence="removed",
-                            removed_observed_at=now,
-                            last_change_observed_at=now,
-                            origin="unknown",
-                        )
-            if result != previous or self._path is not None:
+            blocked = self._inspector.observe_files(visit)
+            for path in previous.keys() - found:
+                old = previous[path]
+                visible = not any(
+                    not prefix or path == prefix or path.startswith(prefix + "/")
+                    for prefix in blocked
+                )
+                if (
+                    old.presence == "present"
+                    and visible
+                    and not self._inspector.is_internal_path(path)
+                ):
+                    result[path] = replace(
+                        old,
+                        presence="removed",
+                        removed_observed_at=now,
+                        last_change_observed_at=now,
+                        origin="unknown",
+                    )
+            if self._path is None:
+                self._rows = result
+            elif result != previous or not valid:
                 self._save(result)
-            self._rows = result
 
     def _save(self, rows: dict[str, Observation]) -> None:
         if self._path is None:

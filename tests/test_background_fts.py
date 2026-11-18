@@ -1015,36 +1015,31 @@ def test_synchronous_build_index_clears_prior_background_error(
     col.close()
 
 
-def test_build_index_async_warm_restart_short_circuit(tmp_path: Path) -> None:
-    """build_index_async returns an already-resolved Future on warm restart (#559).
-
-    The async path must mirror the synchronous build_index() short-circuit: a
-    populated FTS + the persisted completeness sentinel must yield an
-    already-resolved Future carrying the existing document count without
-    submitting a job to the writer queue.
-    """
+def test_build_index_async_warm_restart_short_circuit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Warm builds reuse FTS while the writer completes an observation sweep."""
     vault = _vault(tmp_path)
     _seed(vault)
     index_path = tmp_path / "fts.db"
 
-    # Phase 1: pre-build to set the sentinel and FTS rows.
     pre = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     pre.index.build_index()
     pre.close()
 
-    # Phase 2: fresh Vault sees the warm sentinel; async submission
-    # must short-circuit.
     col = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
-    future = col.index.build_index_async()
-    assert future.done(), "warm-restart short-circuit must return resolved Future"
-    stats = future.result(timeout=0.1)
-    assert stats.documents_indexed >= 1
-    # Writer should NOT be processing a BuildIndex job.
-    assert col._coordinator.writer.get_status()["in_flight"] is None
-    # Vault is queryable and the background-build event is set.
-    assert col.index.is_queryable() is True
-    assert col._coordinator._readiness._done.is_set()
-    col.close()
+    try:
+
+        def no_rebuild(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("warm build must reuse FTS")
+
+        monkeypatch.setattr(col._index_mgr, "build_index", no_rebuild)
+        stats = col.index.build_index_async().result(timeout=5)
+        assert stats.documents_indexed >= 1
+        assert col.index.is_queryable() is True
+        assert col._coordinator._readiness._done.is_set()
+    finally:
+        col.close()
 
 
 def test_build_index_async_submit_failure_unblocks_waiters(tmp_path: Path) -> None:
