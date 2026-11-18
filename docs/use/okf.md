@@ -263,9 +263,10 @@ new history from the files it can read. A newer schema is refused rather than
 overwritten.
 
 The ledger compares states; it does not record an event for each edit, identify
-an author, or change frontmatter or `log.md`. It hashes exact header bytes from
-the start of a file (including an optional UTF-8 BOM) through the closing
-delimiter, excluding its following newline and body. It observes external edits
+an author, or change frontmatter or `log.md`. It hashes the full file and, separately, the parser-recognised frontmatter block
+with surrounding whitespace trimmed. The frontmatter digest is absent when the
+block is absent or unterminated. Reads use bounded chunks; memory grows with a
+candidate header, including an unterminated one. It observes external edits
 at build, reindex, or post-pull reindex. A warm build also sweeps. The watcher
 triggers reindex in its watched folders; excluded top-level folders wait for the
 next sweep until watcher scope is expanded.

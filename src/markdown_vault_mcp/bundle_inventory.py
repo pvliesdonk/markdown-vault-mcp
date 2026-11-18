@@ -11,10 +11,11 @@ from bisect import bisect_left
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
+import frontmatter
 import yaml
 from frontmatter.default_handlers import YAMLHandler
 
-from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
 from markdown_vault_mcp.stores._legacy import matrix_sequence
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.content_kind import is_allowed_artifact, is_note
@@ -329,93 +330,41 @@ def _vector_sidecars(base: Path) -> set[Path]:
     return paths
 
 
-class _Delimiter:
-    """Classify one line without retaining its contents."""
-
-    def __init__(self, *, leading: bool = False) -> None:
-        self.leading = leading
-        self.seen = False
-        self.dashes = 0
-        self.spaces = False
-        self.yaml = True
-        self.json = bytearray()
-
-    def feed(self, part: bytes) -> None:
-        if self.leading:
-            part = part.lstrip(b" \t\v\f\r")
-            if not part:
-                return
-            self.leading = False
-        self.seen = self.seen or bool(part)
-        if len(self.json) <= 1:
-            self.json.extend(part[: 2 - len(self.json)])
-        if not self.yaml:
-            return
-        if not self.spaces:
-            rest = part.lstrip(b"-")
-            self.dashes += len(part) - len(rest)
-            if rest:
-                self.spaces = True
-                part = rest
-            else:
-                return
-        if part.strip(b" \t"):
-            self.yaml = False
-
-    def kind(self) -> str | None:
-        if self.yaml and self.dashes >= 3:
-            return "yaml"
-        if bytes(self.json) in (b"{", b"}"):
-            return self.json.decode("ascii")
-        return None
-
-
 def _observation_digests(stream: BinaryIO) -> tuple[str, str | None]:
-    """Hash file and exact leading header in bounded chunks."""
+    """Hash all bytes and the parser's frontmatter block in bounded reads.
+
+    Memory grows with a candidate header, including an unterminated one.
+    """
     content = hashlib.sha256()
-    header = hashlib.sha256()
-    delimiter = _Delimiter(leading=True)
-    header_kind: str | None = None
-    header_digest: str | None = None
-    active = True
-    first_line = True
-    file_start = True
-    carry = b""
+    prefix = bytearray()
+    size = 65536
+    header_digest = None
     while True:
-        chunk = stream.readline(65536)
-        if not chunk and not carry:
+        while len(prefix) < size:
+            chunk = stream.read(min(65536, size - len(prefix)))
+            if not chunk:
+                break
+            prefix.extend(chunk)
+            content.update(chunk)
+        eof = len(prefix) < size
+        cut = bytes(prefix) if eof else bytes(prefix[: prefix.rfind(b"\n") + 1])
+        try:
+            text = decode_utf8(cut)
+        except UnicodeDecodeError:
             break
+        body = strip_frontmatter_block(text)
+        if body != text:
+            header = text[: len(text) - len(body)].strip()
+            header_digest = hashlib.sha256(header.encode()).hexdigest()
+            break
+        opened = (
+            frontmatter.detect_format(text.lstrip(), frontmatter.handlers) is not None
+        )
+        if eof or (text and not opened):
+            break
+        size *= 2
+    while chunk := stream.read(65536):
         content.update(chunk)
-        if not active:
-            carry = b""
-            continue
-        part = carry + chunk
-        carry = b""
-        ends_line = part.endswith(b"\n")
-        complete_line = ends_line or len(chunk) < 65536
-        if not complete_line and part.endswith(b"\r"):
-            part, carry = part[:-1], b"\r"
-        ending = 2 if part.endswith(b"\r\n") else int(ends_line)
-        body = part[:-ending] if ending else part
-        candidate = body
-        if file_start and candidate.startswith(b"\xef\xbb\xbf"):
-            candidate = candidate[3:]
-        file_start = False
-        delimiter.feed(candidate)
-        header.update(body)
-        before_newline = header.copy()
-        if ending:
-            header.update(part[-ending:])
-        if complete_line:
-            kind = delimiter.kind()
-            if first_line and delimiter.seen:
-                header_kind = kind if kind in {"yaml", "{"} else None
-                active = header_kind is not None
-                first_line = False
-            elif not first_line and kind == ("yaml" if header_kind == "yaml" else "}"):
-                header_digest = before_newline.hexdigest()
-                active = False
-            delimiter = _Delimiter(leading=first_line)
     return content.hexdigest(), header_digest
 
 

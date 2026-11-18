@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
@@ -329,22 +331,21 @@ def test_deep_observable_note(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_frontmatter_digest_is_exact_header_bytes(tmp_path: Path) -> None:
-    import hashlib
-
+def test_frontmatter_digest_ignores_body_edits(tmp_path: Path) -> None:
     source = tmp_path / "vault"
     source.mkdir()
     note = source / "a.md"
-    header = b"\xef\xbb\xbf---\r\ntitle: A\r\n---"
-    note.write_bytes(header + b"\r\nbody")
+    note.write_text("---\ntitle: A\n---\nbody")
     vault = Vault(source_dir=source)
     try:
         vault.index.build_index()
         first = vault._index_mgr.observations.rows()["a.md"].frontmatter_digest
-        assert first == hashlib.sha256(header).hexdigest()
-        note.write_bytes(header + b"\r\n\r\nbody")
+        note.write_text("---\ntitle: A\n---\n\nchanged body")
         vault.index.reindex()
         assert vault._index_mgr.observations.rows()["a.md"].frontmatter_digest == first
+        note.write_text("---\ntitle: B\n---\nbody")
+        vault.index.reindex()
+        assert vault._index_mgr.observations.rows()["a.md"].frontmatter_digest != first
     finally:
         vault.close()
 
@@ -438,49 +439,156 @@ def test_empty_missing_or_corrupt_ledger_is_recreated(tmp_path: Path) -> None:
     assert '"version": 1' in path.read_text()
 
 
-def test_stream_hash_handles_long_header_and_split_crlf() -> None:
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"---\ntitle: A\n---",
+        b"---\ntitle: [\n---\nbody",
+        "---\ntitle: A\n---\u00a0\nbody".encode(),
+        b"---\ntitle: A\n" + b"-" * 65536,
+        b"---\n" + b"key: value\n" * 30000 + b"---\nbody",
+        b"---\ntitle: A\nunterminated",
+        b"plain note",
+        b"\xffbad",
+        b"\xef\xbb\xbf---\r\ntitle: A\r\n---\r\nbody",
+        b'{\n"a": 1\n}\n\nbody',
+    ],
+)
+def test_digest_uses_parser_boundary_and_full_content(raw: bytes) -> None:
     import hashlib
     import io
 
     from markdown_vault_mcp.bundle_inventory import _observation_digests
+    from markdown_vault_mcp.scanner import strip_frontmatter_block
+    from markdown_vault_mcp.utils.text import decode_utf8
 
     class Limited(io.BytesIO):
-        def readline(self, size=-1):
+        def read(self, size=-1):
             assert 0 < size <= 65536
-            return super().readline(size)
+            return super().read(size)
 
-    header = b"---\r\nkey: " + b"x" * 65530 + b"\r\n---"
-    content = header + b"\r\n\r\nbody"
-    full, frontmatter = _observation_digests(Limited(content))
-    assert full == hashlib.sha256(content).hexdigest()
-    assert frontmatter == hashlib.sha256(header).hexdigest()
-    header = b"---\nkey: x\n" + b"-" * 65535
-    full, frontmatter = _observation_digests(Limited(header + b"\r\nbody"))
-    assert frontmatter == hashlib.sha256(header).hexdigest()
-
-
-def test_header_digest_handles_empty_body_json_and_missing_closer() -> None:
-    import hashlib
-    import io
-
-    from markdown_vault_mcp.bundle_inventory import _observation_digests
-
-    for content, header in [
-        (b"---\na: b\n---", b"---\na: b\n---"),
-        (b'{\n"a": 1\n}\n\nbody', b'{\n"a": 1\n}'),
-        (b"---\na: b\n", None),
-    ]:
-        digest, frontmatter = _observation_digests(io.BytesIO(content))
-        assert digest == hashlib.sha256(content).hexdigest()
-        assert frontmatter == (hashlib.sha256(header).hexdigest() if header else None)
+    digest, header = _observation_digests(Limited(raw))
+    assert digest == hashlib.sha256(raw).hexdigest()
+    try:
+        text = decode_utf8(raw)
+    except UnicodeDecodeError:
+        expected = None
+    else:
+        body = strip_frontmatter_block(text)
+        block = text[: len(text) - len(body)].strip() if body != text else None
+        expected = hashlib.sha256(block.encode()).hexdigest() if block else None
+    assert header == expected
 
 
-def test_frontmatter_hash_includes_leading_whitespace_recognized_by_scanner() -> None:
-    import hashlib
-    import io
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("path", "../bad.md"),
+        ("path", "/bad.md"),
+        ("path", "bad\\name.md"),
+        ("path", ""),
+        ("path", "bad\x00.md"),
+        ("path", "a//b.md"),
+        ("first_seen_at", "nonsense"),
+        ("first_seen_at", "2020-01-01T00:00:00"),
+        ("last_change_observed_at", "2020-01-01T00:00:00+99:00"),
+        ("removed_observed_at", "nonsense"),
+        ("removed_observed_at", "2020-01-01"),
+        ("content_digest", None),
+        ("content_digest", "a" * 63),
+        ("content_digest", "G" * 64),
+        ("frontmatter_digest", "A" * 64),
+        ("frontmatter_digest", []),
+        ("role", "invented"),
+        ("role", []),
+        ("origin", "invented"),
+        ("origin", []),
+        ("presence", "invented"),
+        ("presence", "removed"),
+        ("presence", []),
+        ("removed_observed_at", "2020-01-01T00:00:00+00:00"),
+    ],
+)
+def test_invalid_evidence_resets_entire_ledger(
+    tmp_path: Path, caplog, field, value
+) -> None:
+    import json
 
-    from markdown_vault_mcp.bundle_inventory import _observation_digests
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("a")
+    (source / "b.md").write_text("b")
+    path = tmp_path / "state.observations.json"
+    vault = Vault(
+        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
+    )
+    try:
+        vault.index.build_index()
+        data = json.loads(path.read_text())
+        data["rows"]["b.md"]["first_seen_at"] = "2000-01-01T00:00:00+00:00"
+        row = data["rows"]["a.md"]
+        row[field] = value
+        if field == "removed_observed_at" and value != "2020-01-01T00:00:00+00:00":
+            row["presence"] = "removed"
+        if field == "path":
+            data["rows"][value] = data["rows"].pop("a.md")
+        path.write_text(json.dumps(data))
+        vault._index_mgr.observations.sweep()
+        rows = vault._index_mgr.observations.rows()
+        assert set(rows) == {"a.md", "b.md"}
+        assert rows["b.md"].first_seen_at != "2000-01-01T00:00:00+00:00"
+        assert "observation_ledger_reset" in caplog.text
+    finally:
+        vault.close()
 
-    header = b"\n  ---\ntitle: A\n---"
-    _, digest = _observation_digests(io.BytesIO(header + b"\nbody"))
-    assert digest == hashlib.sha256(header).hexdigest()
+
+def test_valid_aware_evidence_is_preserved_without_write(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import json
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("a")
+    path = tmp_path / "state.observations.json"
+    vault = Vault(
+        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
+    )
+    try:
+        vault.index.build_index()
+        data = json.loads(path.read_text())
+        row = data["rows"]["a.md"]
+        row.update(
+            first_seen_at="2000-01-01T00:00:00Z",
+            last_change_observed_at="2000-01-02T00:00:00-07:00",
+            origin="server_write",
+        )
+        path.write_text(json.dumps(data))
+        ledger = vault._index_mgr.observations
+        monkeypatch.setattr(
+            ledger, "_save", lambda _: pytest.fail("unchanged ledger saved")
+        )
+        ledger.sweep()
+        assert ledger.rows()["a.md"].origin == "server_write"
+        assert ledger.rows()["a.md"].first_seen_at == "2000-01-01T00:00:00Z"
+    finally:
+        vault.close()
+
+
+def test_missing_ledger_is_quiet_and_corrupt_ledger_warns(
+    tmp_path: Path, caplog
+) -> None:
+    from markdown_vault_mcp.bundle_inventory import BundleInspector, InspectionPolicy
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(
+        path, BundleInspector(source, (), frozenset(), 0, InspectionPolicy())
+    )
+    ledger.sweep()
+    assert "observation_ledger_reset" not in caplog.text
+    path.write_text("not json")
+    ledger.sweep()
+    assert "observation_ledger_reset" in caplog.text

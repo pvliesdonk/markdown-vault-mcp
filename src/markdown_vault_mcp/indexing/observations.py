@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 import tempfile
 import threading
 from contextlib import suppress
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
+from markdown_vault_mcp.bundle_inventory import Role, _components
 from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.bundle_inventory import BundleInspector
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -33,31 +39,43 @@ class Observation:
     origin: str = "unknown"
 
 
+def _valid_timestamp(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value)
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+    except (ValueError, OverflowError):
+        return False
+
+
+def _valid_digest(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
 def _valid_row(key: str, row: Observation) -> bool:
-    if not all(
-        isinstance(value, str) and value
-        for value in (
-            key,
-            row.path,
-            row.role,
-            row.content_digest,
-            row.first_seen_at,
-            row.last_change_observed_at,
-            row.origin,
-        )
+    try:
+        if not _components(key) or key != row.path:
+            return False
+    except ValueError:
+        return False
+    if (
+        row.role not in get_args(Role)
+        or row.origin not in ("unknown", "server_write")
+        or row.presence not in ("present", "removed")
     ):
         return False
-    if key != row.path or row.presence not in {"present", "removed"}:
-        return False
-    if row.frontmatter_digest is not None and not isinstance(
-        row.frontmatter_digest, str
+    if not _valid_digest(row.content_digest) or (
+        row.frontmatter_digest is not None and not _valid_digest(row.frontmatter_digest)
     ):
         return False
-    if row.removed_observed_at is not None and not isinstance(
-        row.removed_observed_at, str
+    if not _valid_timestamp(row.first_seen_at) or not _valid_timestamp(
+        row.last_change_observed_at
     ):
         return False
-    return (row.presence == "removed") == (row.removed_observed_at is not None)
+    return (row.presence == "removed") == (row.removed_observed_at is not None) and (
+        row.removed_observed_at is None or _valid_timestamp(row.removed_observed_at)
+    )
 
 
 class ObservationLedger:
@@ -90,7 +108,10 @@ class ObservationLedger:
             if any(not _valid_row(key, row) for key, row in rows.items()):
                 raise ValueError("Invalid observation row")
             return rows, True
-        except (FileNotFoundError, ValueError, TypeError, KeyError, AttributeError):
+        except FileNotFoundError:
+            return {}, False
+        except (ValueError, TypeError, KeyError, AttributeError):
+            logger.warning("observation_ledger_reset path=%s", self._path)
             return {}, False
 
     def rows(self) -> dict[str, Observation]:
