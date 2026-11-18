@@ -417,6 +417,10 @@ class TestFromProjectConfig:
         assert settings.folder_weights == {"notes": 2.0}
         assert settings.fts_weights == {"title": 3.0}
 
+    def test_protected_paths_mapping(self, tmp_path: Path) -> None:
+        config = ProjectConfig(source_dir=tmp_path, protected_paths=["./a.md"])
+        assert VaultSettings.from_project_config(config).protected_paths == ("a.md",)
+
     def test_chunk_char_cap_derivation(self) -> None:
         config = ProjectConfig(source_dir=Path("/tmp/vault"))
         # No provider context: bounded ceiling fallback (#790).

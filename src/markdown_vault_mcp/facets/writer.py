@@ -180,6 +180,7 @@ class WriterFacet:
         if_match: str | None = None,
         *,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -187,6 +188,7 @@ class WriterFacet:
         provided, it is serialised as a YAML header at the top of the file.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative document path (e.g. ``"notes/topic.md"``).
             content: Markdown body (excluding frontmatter).
             frontmatter: Optional frontmatter dict serialised as a YAML header.
@@ -225,7 +227,11 @@ class WriterFacet:
             with self._doc_mgr.write_scope():
                 breadcrumb = self._breadcrumb_for(path)
                 result = self._doc_mgr.write(
-                    path, content, frontmatter=frontmatter, if_match=if_match
+                    path,
+                    content,
+                    frontmatter=frontmatter,
+                    if_match=if_match,
+                    allow_protected=allow_protected,
                 )
                 if not result.created:
                     result.previous_revision = breadcrumb
@@ -264,6 +270,7 @@ class WriterFacet:
         line_end: int | None = None,
         *,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> EditResult:
         """Patch a section of a document.
 
@@ -272,6 +279,7 @@ class WriterFacet:
         are given instead.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative document path.
             old_text: Exact text to replace (must occur exactly once).
                 Mutually exclusive with *line_start* / *line_end*.
@@ -307,6 +315,7 @@ class WriterFacet:
                 if_match=if_match,
                 line_start=line_start,
                 line_end=line_end,
+                allow_protected=allow_protected,
             ),
         )
         if self._convention_maintainer is not None:
@@ -321,6 +330,7 @@ class WriterFacet:
         *,
         create_if_missing: bool = False,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Append text to the end of a document without reading it first (#980).
 
@@ -328,6 +338,7 @@ class WriterFacet:
         when the file does not already end with one.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative document path.
             content: Text to append (must be non-empty).
             if_match: Optional etag for optimistic concurrency; see
@@ -360,19 +371,23 @@ class WriterFacet:
                 content,
                 if_match=if_match,
                 create_if_missing=create_if_missing,
+                allow_protected=allow_protected,
             ),
         )
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "edit")
         return result
 
-    def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
+    def delete(
+        self, path: str, if_match: str | None = None, *, allow_protected: bool = False
+    ) -> DeleteResult:
         """Delete a document or attachment.
 
         Removes the file from disk and purges its entries from the FTS and
         vector indices.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             path: Relative path of the document or attachment to remove.
             if_match: Optional etag for optimistic concurrency; see
                 :meth:`WriterFacet.write`.
@@ -388,7 +403,9 @@ class WriterFacet:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        result = self._doc_mgr.delete(path, if_match=if_match)
+        result = self._doc_mgr.delete(
+            path, if_match=if_match, allow_protected=allow_protected
+        )
         if self._convention_maintainer is not None and is_note(path):
             # The folder's listing still names the deleted note (#1609).
             self._convention_maintainer.refresh_indexes(
@@ -404,6 +421,7 @@ class WriterFacet:
         *,
         update_links: bool = False,
         tolerate_link_rewrites: bool = False,
+        allow_protected: bool = False,
     ) -> RenameResult:
         """Rename or move a document or attachment.
 
@@ -414,6 +432,7 @@ class WriterFacet:
         tracked as links) and the result's ``hint`` says so.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             old_path: Current relative path of the document or attachment.
             new_path: Desired relative path after the move.
             if_match: Optional etag for optimistic concurrency; see
@@ -446,6 +465,7 @@ class WriterFacet:
             if_match=if_match,
             update_links=update_links,
             tolerate_link_rewrites=tolerate_link_rewrites,
+            allow_protected=allow_protected,
         )
         if (
             self._convention_maintainer is not None
@@ -467,7 +487,9 @@ class WriterFacet:
             )
         return result
 
-    def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
+    def move_folder(
+        self, old_dir: str, new_dir: str, *, allow_protected: bool = False
+    ) -> MoveFolderResult:
         """Move a folder subtree to a new prefix, rewriting links vault-wide.
 
         Moves every file under *old_dir* (notes, attachments, and other
@@ -479,6 +501,7 @@ class WriterFacet:
         before anything moves); link rewrites are best-effort.
 
         Args:
+            allow_protected: Allow this library call to change protected paths.
             old_dir: Relative source folder prefix (e.g. ``"drafts"``).
             new_dir: Relative target folder prefix (e.g. ``"archive/2026"``).
 
@@ -500,7 +523,9 @@ class WriterFacet:
                 destination clashes, but a mid-move OS error leaves the subtree
                 partially moved with the index unchanged; reindex recovers.
         """
-        result = self._doc_mgr.move_folder(old_dir, new_dir)
+        result = self._doc_mgr.move_folder(
+            old_dir, new_dir, allow_protected=allow_protected
+        )
         if self._convention_maintainer is not None:
             # The moved index.md files still list the old paths, and the old
             # parent still points at a subfolder that is gone (#1609). The
@@ -523,6 +548,8 @@ class WriterFacet:
         path: str,
         content: bytes,
         if_match: str | None = None,
+        *,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a non-.md attachment.
 
@@ -543,4 +570,6 @@ class WriterFacet:
             InvalidRequestError: If the path escapes the source directory or
                 has an extension not in the allowlist.
         """
-        return self._doc_mgr.write_attachment(path, content, if_match=if_match)
+        return self._doc_mgr.write_attachment(
+            path, content, if_match=if_match, allow_protected=allow_protected
+        )

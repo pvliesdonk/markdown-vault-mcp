@@ -741,6 +741,7 @@ def register(mcp: FastMCP) -> None:
 
             - failed_links (list[str]): paths of notes whose links could not be
               rewritten; the move itself stands.
+            - hint (str, optional): guidance when protected or submodule links remain.
             - remote (dict, optional): present only while the vault's git clone
               cannot reach its remote, with state, reason, since and detail; the
               change is committed locally only.
@@ -780,7 +781,10 @@ def register(mcp: FastMCP) -> None:
                     "request was fine: call reindex so search matches the files, "
                     "then tell the user."
                 ) from exc
-        return attach_remote_health(vault, asdict(result))
+        payload = asdict(result)
+        if payload["hint"] is None:
+            del payload["hint"]
+        return attach_remote_health(vault, payload)
 
     @mcp.tool(
         tags={"write"},
