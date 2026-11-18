@@ -321,6 +321,7 @@ def test_okf_read_sources_context_conventions_and_stats(
         context.output,
         stats.output,
     )
+    assert json.loads(note.stdout)["okf"]["snapshot"]["algo"] == "mvmcp-concept-v1"
     assert json.loads(note.stdout)["okf"]["sources"] == [
         {"resource": "https://example.com/source"}
     ]

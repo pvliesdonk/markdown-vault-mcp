@@ -227,6 +227,8 @@ class TestDeclaredBundle:
                 await client.call_tool("read", {"path": "guides/playbook.md"})
             )
         okf = read["okf"]
+        assert okf["snapshot"]["algo"] == "mvmcp-concept-v1"
+        assert len(okf["snapshot"]["digest"]) == 64
         assert okf["trust_tier"] == "human-reviewed"
         assert okf["review_applicability"] == {
             "snapshot": "unbound",

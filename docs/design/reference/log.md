@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-18
+
+- Rechecked the [OKF reference](okf-v0.2.md) against the neutral repository v0.3 draft; retained the v0.2 baseline.
+
 ## 2026-11-17
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the

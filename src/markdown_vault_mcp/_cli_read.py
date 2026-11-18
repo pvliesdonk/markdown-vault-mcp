@@ -258,6 +258,9 @@ def read_payload(
     data = asdict(note)
     if section is None and vault.okf.state().active:
         data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
+        from markdown_vault_mcp._okf_review import concept_snapshot
+
+        data["okf"]["snapshot"] = concept_snapshot(note.content)
     return data
 
 

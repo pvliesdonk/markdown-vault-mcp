@@ -2022,6 +2022,10 @@ records the current source/footnote distinction.
 
 Each MCP tool listing checks the live bundle state for authoring visibility, so a declaration added or removed during a session takes effect on the next listing. Invocation checks the state again to cover changes after discovery.
 
+### Concept snapshot identity (#1445)
+
+Whole-note OKF reads expose `mvmcp-concept-v1` as SHA-256 of UTF-8 canonical JSON `[metadata, body]`. The body has LF line endings and the frontmatter block removed. Metadata excludes top-level `verified` and `x-mvmcp`; values use tagged JSON arrays to distinguish YAML types, with mappings and sets sorted by their compact ASCII JSON encodings. Scalars use decimal integers, Python hexadecimal floats, ISO dates and datetimes, and base64 bytes. JSON uses ASCII escapes and compact separators. This identifies content, not a review binding.
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)

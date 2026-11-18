@@ -13,6 +13,8 @@ kind: how-to
 !!! tip "Example pack"
     The [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) directory ships a declaration index, typed note templates (`Concept`, `Capture`), and a prompt pack (author a concept, verify a note, triage stale content, migrate a vault) that you can copy into your vault and prompt folders.
 
+Whole-note reads in an active bundle include `okf.snapshot` with algorithm `mvmcp-concept-v1` and a SHA-256 digest. It identifies the body and frontmatter except `verified` and `x-mvmcp`; it does not itself bind a review or prove who recorded one. Section reads and search hits omit it.
+
 ## How the server recognises a bundle
 
 The server treats a vault as an OKF bundle when the root `index.md` declares a version in its frontmatter:
