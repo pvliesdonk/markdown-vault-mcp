@@ -221,3 +221,24 @@ def test_full_read_accepts_reader_c_loader_syntax(tmp_path: Path) -> None:
         )
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    "root", ["[a, b]", "hello", "true", "42", "!!omap [{a: b}]", "!!set {a: null}"]
+)
+def test_full_read_ignores_non_mapping_yaml_root(tmp_path: Path, root: str) -> None:
+    from markdown_vault_mcp._cli_read import read_payload
+    from markdown_vault_mcp.vault import Vault
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
+    note = tmp_path / "note.md"
+    note.write_text("Body\n")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        plain = read_payload(vault, "note.md")
+        note.write_text(f"---\n{root}\n---\nBody\n")
+        ignored = read_payload(vault, "note.md")
+        assert ignored["frontmatter"] == plain["frontmatter"] == {}
+        assert ignored["okf"]["snapshot"] == plain["okf"]["snapshot"]
+    finally:
+        vault.close()

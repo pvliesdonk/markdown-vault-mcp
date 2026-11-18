@@ -11,6 +11,7 @@ import yaml
 from frontmatter.default_handlers import JSONHandler, SafeLoader, YAMLHandler
 from yaml.constructor import SafeConstructor
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
+from yaml.resolver import BaseResolver
 
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.managers.document import _head_end, _read_view
@@ -70,9 +71,9 @@ def _json_value(value: Any, *, root: bool = False) -> Any:
 def _metadata(handler: Any, source: str) -> Any:
     if isinstance(handler, YAMLHandler):
         node = yaml.compose(source, Loader=SafeLoader)
-        if node is None or (
-            isinstance(node, ScalarNode)
-            and not SafeConstructor().construct_object(node)
+        if (
+            not isinstance(node, MappingNode)
+            or node.tag != BaseResolver.DEFAULT_MAPPING_TAG
         ):
             return ["map", []]
         return _yaml_node(node, root=True)

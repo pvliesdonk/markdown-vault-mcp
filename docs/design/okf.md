@@ -226,7 +226,9 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
    Whole reads also carry `recorded` with supplied `stale_after` and
    `verified` values as parsed, including null/malformed values and extensions;
    missing keys stay absent. Compact results omit these potentially large
-   records. Values use the existing metadata serialization, not original YAML
+   records. Live whole-note structured reads also carry `snapshot` with its
+   algorithm and digest; section, historical, search and context results omit it.
+   Values use the existing metadata serialization, not original YAML
    spelling. `sources` are surfaced on `read` (full) and counted on search hits
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
