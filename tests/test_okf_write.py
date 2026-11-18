@@ -43,7 +43,6 @@ from markdown_vault_mcp.okf import (
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import (
-    _CLEAR_VARS,
     _parse_tool_data,
     wait_for_mcp_writer_drain,
     wait_for_writer_drain,
@@ -522,7 +521,9 @@ _PLAIN_NOTE = "# Plain\n\nSee [[playbook]].\n"
 
 
 @pytest.fixture
-def enforced_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def enforced_env(
+    _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
     """Env for a writable, OKF-declared vault with the enforced-write layer on."""
     vault = tmp_path / "vault"
     (vault / "guides").mkdir(parents=True)
@@ -530,8 +531,6 @@ def enforced_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (vault / "guides" / "playbook.md").write_text(
         "---\ntitle: Playbook\n---\n# Playbook\n", encoding="utf-8"
     )
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")

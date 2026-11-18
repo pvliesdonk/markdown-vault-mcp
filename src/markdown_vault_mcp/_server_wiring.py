@@ -189,10 +189,16 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
 
 
 def _hide_by_mode(mcp: FastMCP, config: ProjectConfig) -> None:
-    """Hide write tools on a read-only vault and git_sync outside managed git."""
+    """Hide tools by mode and report inert OKF writes on a read-only vault."""
     # --- Visibility: hide write-tagged components in read-only mode ---
     if config.read_only:
         mcp.disable(tags={"write"})
+        # Shared writable and read-only configurations remain valid (#1434).
+        if config.content.okf_write:
+            logger.info(
+                "okf_write_inert reason=read_only okf_verify=%s",
+                config.content.okf_verify,
+            )
 
     # Hide git-managed tools (e.g. git_sync) when not in managed git mode.
     # The two disable passes compose: a tool tagged {"write", "git-managed"}

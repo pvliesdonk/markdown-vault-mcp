@@ -24,8 +24,12 @@ from tests.fixtures.cli_graph import graph_source  # noqa: F401
 # F811 redefinition check on the parameter shadowing).
 from tests.fixtures.cli_http import cli_client_profile  # noqa: F401
 from tests.fixtures.cli_paths import path_source  # noqa: F401
-from tests.fixtures.git import git_repo, git_repo_pair  # noqa: F401
+from tests.fixtures.git import git_repo, git_repo_pair, isolated_git  # noqa: F401
 from tests.fixtures.logging import isolated_root_logging  # noqa: F401
+from tests.fixtures.permissions import (  # noqa: F401
+    acl_directory,
+    minimal_acl_directory,
+)
 from tests.fixtures.postgres import postgres_schema, postgres_server  # noqa: F401
 
 
@@ -256,33 +260,6 @@ async def get_app_html() -> str:
     async with Client(server) as client:
         resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
         return resource[0].text if hasattr(resource[0], "text") else str(resource[0])
-
-
-# Shared env-var hygiene for MCP Apps tests — keep make_server() reads
-# deterministic by stripping host-leaked configuration.
-_CLEAR_VARS = (
-    "MARKDOWN_VAULT_MCP_INDEX_PATH",
-    "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-    "MARKDOWN_VAULT_MCP_STATE_PATH",
-    "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
-    "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-    "MARKDOWN_VAULT_MCP_EXCLUDE",
-    "MARKDOWN_VAULT_MCP_GIT_TOKEN",
-    "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
-    "MARKDOWN_VAULT_MCP_SERVER_NAME",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
-    "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
-    "MARKDOWN_VAULT_MCP_AUTH_MODE",
-    "MARKDOWN_VAULT_MCP_BASE_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
-    "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
-    "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
-    "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
-    "MARKDOWN_VAULT_MCP_APP_DOMAIN",
-)
 
 
 @pytest.fixture
