@@ -52,6 +52,8 @@ def resolve_rebase_conflicts(
     ``REBASE_HEAD``, then accepts the upstream version via
     ``git checkout --ours``.  Continues the rebase, looping if
     multiple commits conflict.
+    An optionally designated index deleted upstream retains its local copy
+    for regeneration by the caller.
 
     Args:
         git_root: Working-tree root.

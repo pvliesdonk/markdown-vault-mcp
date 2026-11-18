@@ -408,7 +408,7 @@ def test_upstream_deleted_authored_file_keeps_local_copy(
     [
         (1, ""),
         (0, "100644 abc 2\tindex.md\0"),
-        (0, "100644 abc 2\tindex.md\0100644 def 3\tindex.md\0"),
+        (0, "100644 abc 2\tindex.md\x00100644 def 3\tindex.md\0"),
     ],
 )
 def test_upstream_deletion_check_refuses_git_error_and_other_stages(
