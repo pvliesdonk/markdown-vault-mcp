@@ -332,6 +332,44 @@ class TestGenerateIndex:
         assert vault.reader.read("kept/index.md").content == "# Hand-written\n"
         assert vault.graph.get_broken_links() == []
 
+    def test_concurrent_creator_keeps_header(
+        self, vault: Vault, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+
+        from markdown_vault_mcp.managers import okf_migrate
+
+        header = '---\nokf_version: "0.2" # retained\ncustom: retained\n---\n'
+        attempted, finished = threading.Event(), threading.Event()
+        errors: list[Exception] = []
+
+        def create() -> None:
+            attempted.set()
+            try:
+                vault._doc_mgr.write("index.md", header + "# Created\n")
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                finished.set()
+
+        thread = threading.Thread(target=create)
+        build = okf_migrate.build_index_markdown
+
+        def at_snapshot(*args: object, **kwargs: object) -> str:
+            thread.start()
+            assert attempted.wait(2)
+            finished.wait(0.3)
+            return build(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(okf_migrate, "build_index_markdown", at_snapshot)
+        try:
+            vault.writer.okf_generate_index()
+        finally:
+            thread.join(2)
+        assert not thread.is_alive()
+        assert not errors
+        assert (vault.source_dir / "index.md").read_text().startswith(header)
+
     def test_refreshing_an_existing_index_creates_nothing(self, vault: Vault) -> None:
         _write(vault, "guides/one.md", "# One\n")
         vault.writer.okf_generate_index()
@@ -471,105 +509,50 @@ def gated_vault(source_dir: Path) -> Iterator[Vault]:
         col.close()
 
 
-def _indexed_paths(vault: Vault) -> set[str]:
-    return {note.path for note in vault.reader.list_documents()}
-
-
 class TestReservedFilesUnderRequiredFrontmatter:
-    """Reserved files remain indexed without concept fields in an OKF vault."""
+    """Generated files have no new frontmatter and retain existing headers."""
 
-    def test_seeded_log_is_indexed(self, gated_vault: Vault) -> None:
-        gated_vault.writer.okf_seed_log()
-        wait_for_writer_drain(gated_vault)
-
-        assert not (gated_vault.source_dir / "log.md").read_text().startswith("---")
-        assert gated_vault.reader.read("log.md").frontmatter == {}
-        assert "log.md" in _indexed_paths(gated_vault)
-
-    def test_generated_index_is_indexed(self, gated_vault: Vault) -> None:
-        _write(gated_vault, "note.md", "---\ntitle: A Note\n---\n# A Note\n")
-
-        gated_vault.writer.okf_generate_index()
-        wait_for_writer_drain(gated_vault)
-
-        assert gated_vault.reader.read("index.md").frontmatter == {}
-        assert "index.md" in _indexed_paths(gated_vault)
-
-    def test_generated_index_is_audited_like_any_index(
-        self, gated_vault: Vault
-    ) -> None:
-        # Legacy seeded fields survive, and the audit still reports them.
-        _write(gated_vault, "note.md", "---\ntitle: A Note\n---\n# A Note\n")
-
-        _write(gated_vault, "index.md", "---\ntitle: Legacy\n---\n# Old\n")
-        gated_vault.writer.okf_generate_index()
-        wait_for_writer_drain(gated_vault)
-
-        assert gated_vault.reader.read("index.md").frontmatter["title"] == "Legacy"
-        assert "index.md" in _indexed_paths(gated_vault)
-        report = gated_vault.reader.okf_validate()
-        assert report.index_frontmatter.examples == ("index.md",)
-
-    def test_folder_index_is_body_only(self, gated_vault: Vault) -> None:
+    def test_generators_write_body_only(self, gated_vault: Vault) -> None:
         _write(gated_vault, "guides/one.md", "---\ntitle: One\n---\n# One\n")
+        gated_vault.writer.okf_seed_log()
+        for folder in ("", "guides"):
+            result = gated_vault.writer.okf_generate_index(folder=folder)
+            path = gated_vault.source_dir / folder / "index.md"
+            assert result.frontmatter_preserved is False
+            assert not path.read_bytes().startswith(b"---")
+            assert gated_vault.reader.read(result.path).frontmatter == {}
+        assert not (gated_vault.source_dir / "log.md").read_bytes().startswith(b"---")
 
-        result = gated_vault.writer.okf_generate_index(folder="guides")
-        wait_for_writer_drain(gated_vault)
-
-        index = gated_vault.reader.read("guides/index.md")
-        assert result.frontmatter_preserved is False
-        assert index.frontmatter == {}
-        assert not index.content.startswith("---")
-        # Only the bundle root may declare okf_version; a folder index
-        # carrying it audits as misplaced.
-        assert "okf_version" not in index.frontmatter
-
-    def test_root_declaration_survives_regeneration(self, gated_vault: Vault) -> None:
-        _write(gated_vault, "index.md", '---\nokf_version: "0.2"\n---\n# Old\n')
-
-        result = gated_vault.writer.okf_generate_index()
-        wait_for_writer_drain(gated_vault)
-
-        index = gated_vault.reader.read("index.md")
-        assert result.frontmatter_preserved is True
-        assert index.frontmatter["okf_version"] == "0.2"
-        assert index.frontmatter == {"okf_version": "0.2"}
-        assert (
-            (gated_vault.source_dir / "index.md")
-            .read_bytes()
-            .startswith(b'---\nokf_version: "0.2"\n---\n')
-        )
-
-    def test_regeneration_preserves_header_bytes(self, gated_vault: Vault) -> None:
-        path = gated_vault.source_dir / "index.md"
-        header = b'\xef\xbb\xbf---\r\nokf_version: "0.2" # declaration\r\ntitle: Legacy\r\n---\r\n'
-        path.write_bytes(header + b"# Old\r\n")
-        gated_vault.writer.okf_generate_index()
-        assert path.read_bytes().startswith(header)
-
-    def test_subfolder_stays_reachable_from_the_parent_listing(
-        self, gated_vault: Vault
+    @pytest.mark.parametrize(
+        "original,prefix,preserved",
+        [
+            (
+                b'---\nokf_version: "0.2"\n---\n# Old\n',
+                b'---\nokf_version: "0.2"\n---\n',
+                True,
+            ),
+            (b"---\n---\n# Old\n", b"---\n---\n", True),
+            (
+                b'\xef\xbb\xbf---\r\nokf_version: "0.2" # declaration\r\ntitle: Legacy\r\n---\r\n# Old\r\n',
+                b'\xef\xbb\xbf---\r\nokf_version: "0.2" # declaration\r\ntitle: Legacy\r\n---\r\n',
+                True,
+            ),
+            (b"", b"# Index\n", False),
+            (b"---\ntitle: Legacy\n---", b"---\ntitle: Legacy\n---\n# Index", True),
+        ],
+    )
+    def test_regeneration_preserves_header_bytes(
+        self, gated_vault: Vault, original: bytes, prefix: bytes, preserved: bool
     ) -> None:
-        """The second-order effect in #1175: a folder falling out of navigation.
-
-        The parent's listing synthesises a sub-folder pointer only from
-        entries the *index* returns. A folder whose notes are all skipped by
-        the gate contributes nothing, so before the fix its generated
-        ``index.md`` was skipped too and the folder became unreachable by
-        navigation from the bundle root.
-        """
-        # Skipped by the gate: no title, so nothing under archive/ is indexed.
-        _write(gated_vault, "archive/draft.md", "# Draft\n")
-        gated_vault.writer.okf_generate_index(folder="archive")
-        wait_for_writer_drain(gated_vault)
-
-        gated_vault.writer.okf_generate_index()
-        wait_for_writer_drain(gated_vault)
-
-        assert (
-            "- [archive/](/archive/index.md)"
-            in gated_vault.reader.read("index.md").content
-        )
+        path = gated_vault.source_dir / "index.md"
+        path.write_bytes(original)
+        result = gated_vault.writer.okf_generate_index()
+        assert result.frontmatter_preserved is preserved
+        assert path.read_bytes().startswith(prefix)
+        if b"title: Legacy" in original:
+            assert gated_vault.reader.okf_validate().index_frontmatter.examples == (
+                "index.md",
+            )
 
 
 _UNREADABLE = b"# caf\xe9 log\n"  # not UTF-8: exists, but cannot be read

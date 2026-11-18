@@ -96,7 +96,7 @@ async def test_mcp_reports_write_state(
             (True, False, False),
             (True, "trust-auth", True, "events", ("guides",)),
             [
-                (False, "not_implemented"),
+                (True, None),
                 (True, None),
                 (True, None),
                 (False, "not_implemented"),

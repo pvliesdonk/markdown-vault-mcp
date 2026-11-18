@@ -269,6 +269,7 @@ class DocumentManager:
         write_protect_existing: bool = False,
         exclude_patterns: list[str] | None = None,
         protected_paths: Sequence[str] | None = None,
+        designated_index: Callable[[str], bool] | None = None,
         attachment_extensions: Sequence[str] | None = None,
         max_note_read_bytes: int = 262144,
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
@@ -288,7 +289,7 @@ class DocumentManager:
         self._read_only = read_only
         self._write_protect_existing = write_protect_existing
         self._exclude_patterns = exclude_patterns
-        self._path_guard = PathGuard(source_dir, protected_paths)
+        self._path_guard = PathGuard(source_dir, protected_paths, designated_index)
         self._max_note_read_bytes = max_note_read_bytes
         self._notifier = WriteNotifier(on_write_callback)
         self._artifacts = ArtifactStore(
@@ -368,35 +369,50 @@ class DocumentManager:
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
 
     def protection_reason(
-        self, path: str, *, allow_protected: bool = False
+        self,
+        path: str,
+        *,
+        allow_protected: bool = False,
+        allow_designated: bool = False,
     ) -> str | None:
         """Return the reason operator policy protects a vault-relative path.
 
         Args:
             path: Vault-relative path to check.
             allow_protected: Explicit trusted library override.
+            allow_designated: Permit generated indexes only.
 
         Returns:
             The protection reason, or None if unprotected.
         """
-        return None if allow_protected else self._path_guard.reason(path)
+        return (
+            None
+            if allow_protected
+            else self._path_guard.reason(path, allow_designated=allow_designated)
+        )
 
-    def refuse_protected(self, path: str, *, allow_protected: bool = False) -> None:
+    def refuse_protected(
+        self,
+        path: str,
+        *,
+        allow_protected: bool = False,
+        allow_designated: bool = False,
+    ) -> None:
         """Refuse a protected path unless a trusted caller opts in.
 
         Args:
             path: Vault-relative path to change.
             allow_protected: Explicit trusted library override.
+            allow_designated: Permit generated indexes only.
 
         Raises:
             InvalidRequestError: If the path is protected or contains a NUL byte.
         """
-        reason = self.protection_reason(path, allow_protected=allow_protected)
+        reason = self.protection_reason(
+            path, allow_protected=allow_protected, allow_designated=allow_designated
+        )
         if reason:
-            raise InvalidRequestError(
-                f"Path {path!r} is {reason}. "
-                "Ask the operator to edit the file or change the setting."
-            )
+            raise InvalidRequestError(f"Path {path!r} is {reason}.")
 
     def _refuse_submodule(
         self, abs_path: Path, argument: str, path: str, *, holding: bool = True
@@ -1045,6 +1061,7 @@ class DocumentManager:
         *,
         allow_overwrite: bool = False,
         allow_protected: bool = False,
+        allow_designated: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -1054,6 +1071,7 @@ class DocumentManager:
 
         Args:
             allow_protected: Allow this library call to change protected paths.
+            allow_designated: Permit generated indexes only.
             path: Relative document path.
             content: Markdown body (excluding frontmatter).
             frontmatter: Optional frontmatter dict serialised as YAML header.
@@ -1083,7 +1101,9 @@ class DocumentManager:
         """
         self._check_writable()
         with self._file_write_lock:
-            self.refuse_protected(path, allow_protected=allow_protected)
+            self.refuse_protected(
+                path, allow_protected=allow_protected, allow_designated=allow_designated
+            )
             abs_path = self._validate_path(path)
             self._refuse_submodule(abs_path, "path", path)
             if not allow_overwrite:
@@ -1103,6 +1123,48 @@ class DocumentManager:
             result = WriteResult(path=path, created=created)
 
         return result
+
+    def replace_body(
+        self,
+        path: str,
+        original: str | None,
+        body: str,
+        *,
+        allow_protected: bool = False,
+        allow_designated: bool = False,
+    ) -> bool:
+        """Replace a note body while preserving an existing header's bytes.
+
+        Args:
+            path: Relative document path.
+            original: Content returned by a preceding read, or None for a new file.
+            body: Replacement Markdown body.
+            allow_protected: Allow changes to operator-protected paths.
+            allow_designated: Permit generated indexes only.
+
+        Returns:
+            Whether an existing frontmatter block was preserved.
+        """
+        if not original:
+            self.write(
+                path,
+                body,
+                allow_overwrite=True,
+                allow_protected=allow_protected,
+                allow_designated=allow_designated,
+            )
+            return False
+        end = _head_end(original)
+        head = original[:end]
+        separator = "\n" if head and not head.endswith("\n") else ""
+        self.edit(
+            path,
+            old_text=original,
+            new_text=head + separator + body,
+            allow_protected=allow_protected,
+            allow_designated=allow_designated,
+        )
+        return bool(end)
 
     def _finalize_content_write(
         self,
@@ -1257,6 +1319,7 @@ class DocumentManager:
         line_end: int | None = None,
         *,
         allow_protected: bool = False,
+        allow_designated: bool = False,
     ) -> EditResult:
         """Patch a section of a document.
 
@@ -1277,6 +1340,7 @@ class DocumentManager:
 
         Args:
             allow_protected: Allow this library call to change protected paths.
+            allow_designated: Permit generated indexes only.
             path: Relative document path.
             old_text: Text to replace. Required for exact-match and
                 scoped-match modes.  Must appear exactly once (in the
@@ -1330,7 +1394,9 @@ class DocumentManager:
                 )
 
         with self._file_write_lock:
-            self.refuse_protected(path, allow_protected=allow_protected)
+            self.refuse_protected(
+                path, allow_protected=allow_protected, allow_designated=allow_designated
+            )
             abs_path = self._validate_path(path)
             self._refuse_submodule(abs_path, "path", path)
             if not is_regular_file(abs_path):
@@ -1896,10 +1962,7 @@ class DocumentManager:
                 continue
         hints = [_submodule_links_text(in_submodules)] if in_submodules else []
         if protected:
-            hints.append(
-                f"Link rewrites were skipped: {protected!r}. "
-                "Ask the operator to update them or change the setting."
-            )
+            hints.append(f"Link rewrites were skipped: {protected!r}.")
         return " ".join(hints) or None
 
     def _update_backlinks(

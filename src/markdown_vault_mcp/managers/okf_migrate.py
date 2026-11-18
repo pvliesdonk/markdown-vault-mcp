@@ -32,8 +32,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
-from markdown_vault_mcp.managers.document import _head_end
 from markdown_vault_mcp.okf import (
     OKF_ROOT_INDEX_TITLE,
     OkfConvertResult,
@@ -126,36 +126,40 @@ class OkfMigrationManager:
         scanned = 0
         in_submodules = 0
         protected: dict[str, str] = {}
-        for note in self._search_mgr.list(folder=folder, include_attachments=False):
-            if self._doc_mgr.in_submodule(note.path):
-                in_submodules += 1
-                continue
-            scanned += 1
-            outlinks = self._link_mgr.get_outlinks(note.path)
-            if not any(link.link_type == "wikilink" for link in outlinks):
-                continue
-            note_content = self._doc_mgr.read(note.path)
-            if note_content is None:  # pragma: no cover - deleted mid-scan
-                continue
-            new_content, n_conv, n_skip = convert_wikilinks_to_markdown(
-                note_content.content, outlinks
-            )
-            converted += n_conv
-            skipped += n_skip
-            if new_content != note_content.content:
-                reason = self._doc_mgr.protection_reason(
-                    note.path, allow_protected=allow_protected
-                )
-                if reason:
-                    protected[note.path] = reason
+        # Every write a transform issues is mechanical: it must not re-stamp
+        # provenance or clear a human attestation, whichever entry point
+        # called it (#1401).
+        with okf_write_suppressed():
+            for note in self._search_mgr.list(folder=folder, include_attachments=False):
+                if self._doc_mgr.in_submodule(note.path):
+                    in_submodules += 1
                     continue
-                self._doc_mgr.write(
-                    note.path,
-                    new_content,
-                    allow_overwrite=True,
-                    allow_protected=allow_protected,
+                scanned += 1
+                outlinks = self._link_mgr.get_outlinks(note.path)
+                if not any(link.link_type == "wikilink" for link in outlinks):
+                    continue
+                note_content = self._doc_mgr.read(note.path)
+                if note_content is None:  # pragma: no cover - deleted mid-scan
+                    continue
+                new_content, n_conv, n_skip = convert_wikilinks_to_markdown(
+                    note_content.content, outlinks
                 )
-                files_changed += 1
+                converted += n_conv
+                skipped += n_skip
+                if new_content != note_content.content:
+                    reason = self._doc_mgr.protection_reason(
+                        note.path, allow_protected=allow_protected
+                    )
+                    if reason:
+                        protected[note.path] = reason
+                        continue
+                    self._doc_mgr.write(
+                        note.path,
+                        new_content,
+                        allow_overwrite=True,
+                        allow_protected=allow_protected,
+                    )
+                    files_changed += 1
         if in_submodules:
             logger.info(
                 "okf_convert_links_submodule_notes_skipped notes=%d", in_submodules
@@ -292,36 +296,25 @@ class OkfMigrationManager:
         ]
 
         index_path = f"{folder}/index.md" if folder else "index.md"
-        existing = self._doc_mgr.read(index_path)
-        existing_fm = existing.frontmatter if existing is not None else None
-        preserved = bool(existing_fm)
-        heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
-        body = build_index_markdown(heading, entries)
-        reason = self._doc_mgr.protection_reason(
-            index_path, allow_protected=allow_protected
-        )
-        if reason:
-            skipped[index_path] = reason
-            return OkfIndexResult(
-                path=index_path,
-                entries=len(entries),
-                frontmatter_preserved=preserved,
-                created=tuple(created),
+        with self._doc_mgr.write_scope():
+            existing = self._doc_mgr.read(index_path)
+            heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
+            body = build_index_markdown(heading, entries)
+            reason = self._doc_mgr.protection_reason(
+                index_path, allow_protected=allow_protected, allow_designated=True
             )
-        if existing is not None and existing.content:
-            end = _head_end(existing.content)
-            head = existing.content[:end]
-            separator = "\n" if head and not head.endswith("\n") else ""
-            self._doc_mgr.edit(
-                index_path,
-                old_text=existing.content,
-                new_text=head + separator + body,
-                allow_protected=allow_protected,
-            )
-        else:
-            self._doc_mgr.write(
-                index_path, body, allow_overwrite=True, allow_protected=allow_protected
-            )
+            preserved = False
+            if reason:
+                skipped[index_path] = reason
+            else:
+                with okf_write_suppressed():
+                    preserved = self._doc_mgr.replace_body(
+                        index_path,
+                        existing.content if existing is not None else None,
+                        body,
+                        allow_protected=allow_protected,
+                        allow_designated=True,
+                    )
         return OkfIndexResult(
             path=index_path,
             entries=len(entries),
@@ -386,5 +379,6 @@ class OkfMigrationManager:
         # falls back to whole-vault history via path=None.
         history = self._git_query_mgr.get_history(path=folder or None, limit=limit)
         body, commits, dates = build_log_markdown(history)
-        self._doc_mgr.write(log_path, body, allow_protected=allow_protected)
+        with okf_write_suppressed():
+            self._doc_mgr.write(log_path, body, allow_protected=allow_protected)
         return OkfLogResult(path=log_path, commits=commits, dates=dates)

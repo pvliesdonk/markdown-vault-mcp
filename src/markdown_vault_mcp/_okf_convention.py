@@ -27,12 +27,12 @@ from datetime import date
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TYPE_CHECKING
+from unicodedata import normalize
 
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.managers.document import _head_end
 from markdown_vault_mcp.okf import (
     append_okf_log_entry,
     is_okf_reserved_file,
@@ -57,15 +57,22 @@ logger = logging.getLogger(__name__)
 _OPERATION_VERB: dict[str, str] = {"write": "wrote", "edit": "edited"}
 
 
-def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
+def folder_is_designated(
+    folder: str,
+    patterns: tuple[str, ...],
+    *,
+    segment_match: Callable[[str, str], bool] = fnmatchcase,
+) -> bool:
     """Return whether a folder matches the configured designation globs.
 
     ``a/**`` does not designate ``a`` itself. The empty folder is root.
     Leading ``./`` or ``/`` and trailing ``/`` in patterns are ignored.
+    Folders and patterns are normalized to NFC before matching.
 
     Args:
         folder: Vault-relative folder, or an empty string for the root.
         patterns: Configured folder globs.
+        segment_match: Matcher for a single folder segment.
 
     Returns:
         Whether any pattern matches the folder.
@@ -82,14 +89,15 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
             )
         return (
             bool(parts)
-            and fnmatchcase(parts[0], glob[0])
+            and segment_match(parts[0], glob[0])
             and matches(parts[1:], glob[1:])
         )
 
+    folder = normalize("NFC", folder)
     for pattern in patterns:
         glob = tuple(
             part
-            for part in (normalize_folder(pattern) or "").split("/")
+            for part in (normalize_folder(normalize("NFC", pattern)) or "").split("/")
             if part and part != "."
         )
         if not folder:
@@ -386,16 +394,11 @@ class ConventionMaintainer:
                 new_text = append_okf_log_entry(
                     body, date=self._today().isoformat(), summary=summary
                 )
-                if existing is not None and existing.content:
-                    head = existing.content[: _head_end(existing.content)]
-                    separator = "\n" if head and not head.endswith("\n") else ""
-                    self._doc_mgr.edit(
-                        log_path,
-                        old_text=existing.content,
-                        new_text=head + separator + new_text,
-                    )
-                else:
-                    self._doc_mgr.write(log_path, new_text, allow_overwrite=True)
+                self._doc_mgr.replace_body(
+                    log_path,
+                    existing.content if existing is not None else None,
+                    new_text,
+                )
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
