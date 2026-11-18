@@ -261,8 +261,10 @@ including evidence of removals during downtime. Back up persistent state to
 retain its history. One process must own a shared persistent state file;
 independent indexes must not share a tracker or ledger. If a ledger is missing
 or corrupt, the next sweep starts a new history from the files it can read. A
-newer schema is refused rather than
-overwritten. A ledger refusal or I/O failure fails the build or reindex before
+newer schema is refused rather than overwritten.
+
+When downgrading to a version 1 reader, move the version 2 ledger aside to start
+new observation history. A ledger refusal or I/O failure fails the build or reindex before
 search is updated; repair the ledger or its storage and retry. A failed build
 leaves the on-disk completion marker intact if the ledger sweep failed; after
 repair, a restart can reuse the index. An unforced warm build that fails its
@@ -283,9 +285,9 @@ version 2 ledger preserves digest meanings across parser upgrades; changing them
 requires a new version and migration.
 
 Server writes, edits, appends and deletes refresh affected observations. A server
-rename or `move_folder` records both paths; a move detected by a later scan is a removal and
-an addition. A move relation describes the latest state of each path and can
-clears when that row's content changes; it is not an event history. A path
+rename or `move_folder` records both paths; a move detected by a later scan is
+a removal and an addition. A move relation describes the latest state of each
+path and clears when that row's content changes; it is not an event history. A path
 never observed has unknown history. A write is attributed to the server only
 when the bytes read from disk match the bytes it wrote. An observation failure
 in a dirty job is logged and does not block search. Once storage is repaired,

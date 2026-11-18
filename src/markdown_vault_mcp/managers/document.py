@@ -1725,10 +1725,7 @@ class DocumentManager:
 
                 backlink_callbacks, backlink_paths, unrewritten = (
                     self._update_backlinks(
-                        old_path,
-                        new_path,
-                        backlinks,
-                        allow_protected=allow_protected,
+                        old_path, new_path, backlinks, allow_protected=allow_protected
                     )
                 )
                 updated_links = len(backlink_callbacks)
@@ -2254,10 +2251,7 @@ class DocumentManager:
             # 1+2. Enumerate the subtree, build the old->new path map, and
             #      gate on destination collisions before moving anything.
             moves, md_map, non_note_moves = self._plan_folder_move(
-                old_abs,
-                old_dir,
-                new_dir,
-                allow_protected=allow_protected,
+                old_abs, old_dir, new_dir, allow_protected=allow_protected
             )
 
             # 3. Capture backlinks for every moved note BEFORE the move, while

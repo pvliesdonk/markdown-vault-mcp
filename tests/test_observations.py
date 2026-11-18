@@ -234,6 +234,8 @@ def test_unreadable_ledger_is_not_reset(tmp_path: Path, monkeypatch) -> None:
                 raise PermissionError("denied")
             return original(path, *args, **kwargs)
 
+        # An external metadata change forces a fresh read rather than a cache hit.
+        ledger_path.touch()
         monkeypatch.setattr(Path, "read_text", denied)
         with pytest.raises(PermissionError, match="denied"):
             vault.index.reindex()

@@ -7772,12 +7772,13 @@ invalid UTF-8 headers. Invalid body bytes do not change a valid header digest.
 Reads use bounded chunks and ordinary notes use bounded memory; a candidate
 header, including an unterminated one, may use memory proportional to its length.
 Version 2 adds `moved_from` and `moved_to` to the version 1 rows; old rows
-load without a move. Server renames and folder moves record both ends, while a sweep sees only
-a removal and an addition. A move relation describes the latest observation of
+load without a move. Server renames and folder moves record both ends, while a
+sweep sees only a removal and an addition. A move relation describes the latest observation of
 each path and clears when that row's content changes; it is not an event history.
 A path never observed has unknown history. Writes, edits, appends, deletes,
-renames and folder moves submit affected paths. Dirty paths are inspected in inventory scope and persisted as a batch. The
-writer retains the digest of its staged bytes until processing;
+renames and folder moves submit affected paths. Dirty paths are inspected in
+inventory scope and persisted as a batch. The writer retains the digest of its
+staged bytes until processing;
 only a matching disk digest records `server_write`. A dirty-job ledger I/O or
 schema failure is logged and leaves search usable; once storage is repaired,
 the next sweep reconciles it. Reindex repairs changes missed after a crash,
@@ -7785,7 +7786,8 @@ without guessing their origin. Version 2 preserves row
 meanings and digest vectors across parser upgrades; a
 change requires a version bump and a migration preserving trustworthy history
 and marking unknowns. A missing or corrupt ledger starts new history, while a
-newer schema is refused. A ledger refusal or I/O failure fails the build or
+newer schema is refused. A downgrade to a version 1 reader requires moving the
+version 2 ledger aside and starting new observation history. A ledger refusal or I/O failure fails the build or
 reindex before search is touched; on a build the completion marker remains
 intact until observation succeeds. A repaired restart can reuse it. An unforced
 warm build retains in-process queryability after a sweep failure; a forced build

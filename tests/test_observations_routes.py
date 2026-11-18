@@ -8,6 +8,161 @@ import pytest
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
+@pytest.mark.parametrize("drain_between", [False, True])
+@pytest.mark.parametrize("finish", ["move", "delete"])
+def test_chained_mutations_preserve_intermediate_move(
+    tmp_path: Path, drain_between: bool, finish: str
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        if drain_between:
+            vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+        if finish == "move":
+            vault.writer.rename("b.md", "c.md", update_links=False)
+        else:
+            vault.writer.delete("b.md")
+        vault._index_mgr.process_dirty_paths({"a.md", "b.md", "c.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to == "b.md"
+        assert rows["b.md"].moved_from == "a.md"
+        assert rows["b.md"].moved_to == ("c.md" if finish == "move" else None)
+        if finish == "move":
+            assert rows["c.md"].moved_from == "b.md"
+    finally:
+        vault.close()
+
+
+def test_recreated_move_destination_does_not_inherit_relation(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("original")
+    (source / "anchor.md").write_text("anchor")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        vault.writer.delete("b.md")
+        vault.writer.write("b.md", "replacement")
+        vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to is None
+        assert rows["b.md"].moved_from is None
+    finally:
+        vault.close()
+
+
+def test_recreated_source_and_rename_back_use_latest_state(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("original")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        vault.writer.rename("b.md", "a.md", update_links=False)
+        vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_from == "b.md"
+        assert rows["a.md"].moved_to is None
+        assert rows["b.md"].moved_to == "a.md"
+        vault.writer.write("b.md", "replacement")
+        vault._index_mgr.process_dirty_paths({"b.md"})
+        rows = vault._index_mgr.observations.rows()
+        assert rows["b.md"].moved_to is None
+        assert rows["b.md"].moved_from is None
+    finally:
+        vault.close()
+
+
+def test_public_writer_refreshes_observations_async(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault.writer.write("a.md", "hello")
+        vault._coordinator.prepare_index_read()
+        assert vault._index_mgr.observations.rows()["a.md"].origin == "server_write"
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        vault._coordinator.prepare_index_read()
+        rows = vault._index_mgr.observations.rows()
+        assert rows["a.md"].moved_to == "b.md"
+        assert rows["b.md"].moved_from == "a.md"
+    finally:
+        vault.close()
+
+
+def test_persistent_cache_reloads_other_instance_and_external_replace(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("one")
+    vault = Vault(
+        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
+    )
+    try:
+        vault.index.build_index()
+        first = vault._index_mgr.observations
+        path = tmp_path / "state.observations.json"
+        second = ObservationLedger(path, first._inspector)
+        original = first.rows()["a.md"]
+        (source / "a.md").write_text("two")
+        second.refresh_many({"a.md"})
+        assert first.rows()["a.md"].content_digest != original.content_digest
+        replacement = tmp_path / "replacement.json"
+        replacement.write_text(json.dumps({"version": 2, "rows": {}}))
+        replacement.replace(path)
+        assert first.rows() == {}
+        path.write_text("malformed")
+        assert first.rows() == {}
+    finally:
+        vault.close()
+
+
+def test_save_does_not_cache_rows_for_replaced_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("one")
+    vault = Vault(
+        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
+    )
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        path = tmp_path / "state.observations.json"
+        replacement = tmp_path / "external.json"
+        replacement.write_text('{"version": 2, "rows": {}}')
+        original_replace = Path.replace
+
+        def replace_then_external(staged: Path, target: Path) -> Path:
+            result = original_replace(staged, target)
+            if target == path:
+                original_replace(replacement, path)
+            return result
+
+        monkeypatch.setattr(Path, "replace", replace_then_external)
+        (source / "a.md").write_text("two")
+        ledger.refresh_many({"a.md"})
+        assert ledger.rows() == {}
+    finally:
+        vault.close()
+
+
 def test_write_and_delete_update_observations(tmp_path: Path) -> None:
     source = tmp_path / "vault"
     source.mkdir()
