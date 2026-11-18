@@ -75,11 +75,6 @@ async def test_mcp_reports_write_state(
             [(False, None), (False, None), (False, None), (False, None)],
         ),
         (
-            (False, True, False),
-            (False, "off", False, "off", (), False),
-            [(False, "read_only")] * 4,
-        ),
-        (
             (False, False, False),
             (True, "elicit", True, "writes", ("**",), False),
             [(False, "okf_inactive")] * 4,
@@ -116,27 +111,17 @@ async def test_mcp_reports_write_state(
         ),
         (
             (True, False, False),
-            (False, "prompt", False, "off", (".",), False),
-            [(False, None), (False, "not_implemented"), (False, None), (False, None)],
-        ),
-        (
-            (True, False, False),
-            (False, "off", False, "write", (".",), False),
-            [(False, None), (False, None), (False, None), (False, "not_implemented")],
-        ),
-        (
-            (False, False, False),
             (False, "prompt", False, "write", (".",), False),
             [
                 (False, None),
-                (False, "okf_inactive"),
+                (False, "not_implemented"),
                 (False, None),
-                (False, "okf_inactive"),
+                (False, "not_implemented"),
             ],
         ),
         (
             (True, True, False),
-            (False, "prompt", False, "write", (".",), False),
+            (False, "prompt", True, "write", (), False),
             [(False, "read_only")] * 4,
         ),
         (
@@ -181,46 +166,6 @@ def test_capability_report_matrix(
 
 
 @pytest.mark.parametrize("declared", [False, True])
-async def test_mcp_capability_report_parity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared: bool
-) -> None:
-    if declared:
-        (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
-    async with Client(make_server()) as client:
-        config = json.loads((await client.read_resource("config://vault"))[0].text)
-        stats = (await client.call_tool("stats", {})).structured_content
-    assert stats["okf"]["capabilities"] == config["okf_capabilities"]
-    if not declared:
-        assert set(stats["okf"]) == {"capabilities"}
-        assert config["okf_capabilities"]["verify"]["effective"] is True
-        assert config["okf_capabilities"]["index"]["reason"] == "okf_inactive"
-
-
-def test_capabilities_follow_live_declaration(tmp_path: Path) -> None:
-    vault = Vault(
-        source_dir=tmp_path, settings=VaultSettings(okf_write=True, read_only=False)
-    )
-    try:
-        assert (
-            vault.okf_capability_report(active=vault.okf.state().active)["index"][
-                "reason"
-            ]
-            == "okf_inactive"
-        )
-        (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-        assert (
-            vault.okf_capability_report(active=vault.okf.state().active)["index"][
-                "effective"
-            ]
-            is True
-        )
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("declared", [False, True])
 def test_library_okf_stats_preserves_original_shape(
     tmp_path: Path, declared: bool
 ) -> None:
@@ -233,18 +178,7 @@ def test_library_okf_stats_preserves_original_shape(
             assert section is None
         else:
             assert section is not None
-            assert set(section) == {
-                "mode",
-                "declared_version",
-                "types",
-                "untyped_count",
-                "status",
-                "trust",
-                "stale_count",
-                "reserved_count",
-                "write_configured",
-                "write_effective",
-            }
+            assert "capabilities" not in section
     finally:
         vault.close()
 

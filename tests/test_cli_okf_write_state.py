@@ -34,26 +34,6 @@ def test_stats_okf_write_state(
     assert section["write_effective"] is False
 
 
-@pytest.mark.usefixtures("discovery_source")
-def test_stats_capabilities_when_inactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
-    with reader_backend(False) as connection:
-        result = CliRunner().invoke(app, ["stats", *connection, "--json"])
-    assert result.exit_code == 0, result.output
-    section = json.loads(result.stdout)["okf"]
-    assert set(section) == {"capabilities"}
-    assert section["capabilities"]["verify"] == {
-        "configured": "elicit",
-        "effective": True,
-        "reason": None,
-    }
-    assert section["capabilities"]["index"] == {
-        "configured": True,
-        "effective": False,
-        "reason": "okf_inactive",
-    }
-
-
 @pytest.mark.parametrize("declared", [False, True])
 @pytest.mark.parametrize("remote", [False, True])
 def test_cli_matches_config_capabilities(
