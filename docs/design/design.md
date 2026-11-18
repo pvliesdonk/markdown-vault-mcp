@@ -6750,8 +6750,8 @@ timer and webhook pulls defer for up to three consecutive attempts while any
 group is open; the fourth drains and proceeds, potentially splitting the group.
 The next normal trigger after closure pulls normally. Explicit pulls remain
 immediate and can split the group. Deferred timer ticks and webhooks still
-reconcile search with HEAD; generated-index repair waits until no group is
-open. The result carries the last SHA and summed path counts. Writes remain
+reconcile search with HEAD; their generated-index repair waits until no group
+is open. Explicit sync repairs immediately. The result carries the last SHA and summed path counts. Writes remain
 immediately readable, and indexing proceeds independently of the commit.
 Callbacks that do not opt into groups flush ordinary batches or individual
 writes and report `no_changes`. No group tools or arguments are registered in

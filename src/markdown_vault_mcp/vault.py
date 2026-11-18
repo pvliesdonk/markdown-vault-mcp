@@ -1030,7 +1030,7 @@ class Vault:
 
     def _reconcile_on_tick(self) -> None:
         """Pull-loop hook: reconcile the index with HEAD after every tick."""
-        self.reconcile_index_with_head(source="pull_loop")
+        self.reconcile_index_with_head(source="pull_loop", defer_group_recovery=True)
 
     def git_head(self) -> str | None:
         """Return the working tree's current git HEAD.
@@ -1047,7 +1047,9 @@ class Vault:
             logger.debug("git_head_unreadable path=%s", self._source_dir, exc_info=True)
             return None
 
-    def reconcile_index_with_head(self, *, source: str) -> ReconcileOutcome:
+    def reconcile_index_with_head(
+        self, *, source: str, defer_group_recovery: bool = False
+    ) -> ReconcileOutcome:
         """Reindex when the index does not yet reflect the current git HEAD.
 
         Level-triggered (#1532): a reindex lost after a pull (the index still
@@ -1058,6 +1060,8 @@ class Vault:
 
         Args:
             source: Which caller asked, for the log line.
+            defer_group_recovery: Leave generated-index repair pending while
+                a group is open; automatic triggers use this policy.
 
         Returns:
             What happened; ``"current"`` without a git strategy.
@@ -1066,16 +1070,23 @@ class Vault:
             return "current"
         outcome = self._head_reconciler.reconcile(source=source)
         if outcome in ("current", "reindexed"):
-            self._regenerate_recovered_indexes()
+            self._regenerate_recovered_indexes(
+                defer_group_recovery=defer_group_recovery
+            )
         return outcome
 
-    def _regenerate_recovered_indexes(self) -> None:
-        """Repair recovered indexes, leaving them pending while a group is open."""
+    def _regenerate_recovered_indexes(self, *, defer_group_recovery: bool) -> None:
+        """Repair recovered indexes, deferring for open groups when requested."""
         if self._okf_convention is None or not isinstance(
             self._git_strategy, GitWriteStrategy
         ):
             return
-        with self._write_callback.guard_open_groups() as open_groups:
+        guard = (
+            self._write_callback.guard_open_groups()
+            if defer_group_recovery
+            else contextlib.nullcontext(False)
+        )
+        with guard as open_groups:
             if open_groups:
                 return
             pending = self._git_strategy.take_generated_indexes()

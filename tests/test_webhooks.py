@@ -256,7 +256,9 @@ def test_webhook_push_triggers_pull_and_reindex():
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     col._automatic_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_uses_automatic_deferral() -> None:
@@ -273,7 +275,9 @@ def test_webhook_uses_automatic_deferral() -> None:
         )
     assert resp.status_code == 503
     assert resp.json() == {"error": "pull deferred", "reason": "group_open"}
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_reconciles_when_already_up_to_date():
@@ -297,7 +301,9 @@ def test_webhook_push_reconciles_when_already_up_to_date():
         )
     assert resp.status_code == 200
     col._automatic_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_returns_503_when_pull_fails():
@@ -323,7 +329,9 @@ def test_webhook_push_returns_503_when_pull_fails():
         )
     assert resp.status_code == 503
     assert "error" in resp.json()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_runs_pull_and_reconciles_when_not_queryable():
@@ -348,7 +356,9 @@ def test_webhook_push_runs_pull_and_reconciles_when_not_queryable():
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     col._automatic_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_returns_503_when_singleton_not_initialized():
@@ -863,7 +873,9 @@ def test_gitlab_push_hook_pulls_and_reindexes() -> None:
     assert response.status_code == 200
     assert response.json()["commits_pulled"] == 1
     col._automatic_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="gitlab_webhook")
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="gitlab_webhook", defer_group_recovery=True
+    )
 
 
 def test_gitlab_non_push_event_is_ignored() -> None:

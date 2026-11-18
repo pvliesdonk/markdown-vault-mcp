@@ -307,3 +307,39 @@ async def test_pending_generated_recovery_waits_for_group_close(
     finally:
         vault.close()
         strategy.close()
+
+
+async def test_explicit_sync_repairs_generated_index_with_group_open(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    from markdown_vault_mcp._tools.git import _reconcile_after_pull
+    from tests.fixtures.conflict_recovery import (
+        _setup_generated_conflict,
+        recovery_vault,
+    )
+    from tests.fixtures.git import _run_git
+
+    root, vault_root, index = _setup_generated_conflict(git_repo_pair, False)
+    strategy, vault = recovery_vault(vault_root, build=True)
+    try:
+        group = vault._write_callback.open_group("Grouped", None)
+        note = vault_root / "grouped.md"
+        note.write_text("# Grouped\n")
+        with vault._write_callback.bind_group(group.handle, None):
+            vault._write_callback.fire(note, "# Grouped\n", "write")
+        result = vault.force_pull()
+        assert result is not None and result.reason == "rebased"
+        assert index in strategy._pending_generated
+        await _reconcile_after_pull(vault, {})
+        assert index not in strategy._pending_generated
+        assert "local.md" in index.read_text()
+        assert (
+            "index.md"
+            in _run_git(root, "show", "--format=", "--name-only", "HEAD").splitlines()
+        )
+        with vault._write_callback.bind_group(group.handle, None):
+            assert not group.closed
+        vault._write_callback.close_group(group.handle, None).result(timeout=5)
+    finally:
+        vault.close()
+        strategy.close()

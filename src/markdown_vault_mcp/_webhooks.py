@@ -420,7 +420,7 @@ def _reconcile_after_pull(vault: Any, provider_name: str) -> None:
         provider_name: Log prefix identifying the host.
     """
     try:
-        vault.reconcile_index_with_head(source=provider_name)
+        vault.reconcile_index_with_head(source=provider_name, defer_group_recovery=True)
     except Exception:
         # The next reconcile (pull-loop tick, delivery, git_sync) retries.
         logger.error(
