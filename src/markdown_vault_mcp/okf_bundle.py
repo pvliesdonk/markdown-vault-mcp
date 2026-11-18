@@ -1,4 +1,4 @@
-"""Build an OKF bundle from a policy-visible live inventory."""
+"""Build an OKF bundle from a Git commit or policy-visible live inventory."""
 
 from __future__ import annotations
 
@@ -254,7 +254,7 @@ def build_okf_bundle(
     """Export the selected inventory and assess the final OKF v0.2 artifact.
 
     Args:
-        vault: Live vault supplying the inventory and link graph.
+        vault: Vault supplying the source and, without Git, the live link graph.
         config: Convention and template configuration.
         folder: Vault-relative scope root, or empty for the entire vault.
         include_index_excluded: Include paths omitted from the search index.
@@ -269,7 +269,8 @@ def build_okf_bundle(
         ValueError: If the scope is invalid or inventory cannot enumerate it,
             including failures under otherwise omitted hidden paths, or if an
             outside body or frontmatter destination collides with an exported
-            file or directory, or the external URL prefix is invalid.
+            file or directory, the external URL prefix is invalid, or the Git
+            snapshot cannot be read.
         OSError: If a selected file cannot be read.
     """
     folder = _scope(folder)
@@ -289,8 +290,7 @@ def build_okf_bundle(
                 )
             )
             _require_complete(page, folder)
-            if cursor is None:
-                report.snapshot.uncommitted_paths.extend(page.uncommitted)
+            report.snapshot.uncommitted_paths.extend(page.uncommitted)
             for item in page.entries:
                 if item.role == "directory":
                     continue
@@ -314,25 +314,33 @@ def build_okf_bundle(
                 break
             cursor = page.next_cursor
 
-        def inventory() -> set[str]:
-            cursor = None
-            candidates: set[str] = set()
-            while True:
-                page = vault.reader.inspect_bundle_tree(
-                    BundleTreeRequest(
-                        root="", entry_limit=1000, cursor=cursor, snapshot=snapshot
+        root_entries: list[BundleEntry] | None = None
+
+        def root_inventory() -> list[BundleEntry]:
+            nonlocal root_entries
+            if root_entries is None:
+                root_entries = []
+                cursor = None
+                while True:
+                    page = vault.reader.inspect_bundle_tree(
+                        BundleTreeRequest(
+                            root="", entry_limit=1000, cursor=cursor, snapshot=snapshot
+                        )
                     )
-                )
-                _require_complete(page, "")
-                candidates.update(
-                    item.path
-                    for item in page.entries
-                    if item.role not in {"directory", "unknown"}
-                    and item.state not in {"unavailable", "missing"}
-                )
-                if page.next_cursor is None:
-                    return candidates
-                cursor = page.next_cursor
+                    _require_complete(page, "")
+                    root_entries.extend(page.entries)
+                    if page.next_cursor is None:
+                        break
+                    cursor = page.next_cursor
+            return root_entries
+
+        def inventory() -> set[str]:
+            return {
+                item.path
+                for item in root_inventory()
+                if item.role not in {"directory", "unknown"}
+                and item.state not in {"unavailable", "missing"}
+            }
 
         extensions = effective_attachment_extensions(config.attachment_extensions)
         paths = ExportPaths(
@@ -349,32 +357,15 @@ def build_okf_bundle(
             if "[[" not in body:
                 return []
             if snapshot_index is None:
-                snapshot_notes: dict[str, bytes] = {}
-                next_cursor = None
-                while True:
-                    page = vault.reader.inspect_bundle_tree(
-                        BundleTreeRequest(
-                            root="",
-                            entry_limit=1000,
-                            cursor=next_cursor,
-                            snapshot=snapshot,
-                        )
-                    )
-                    _require_complete(page, "")
-                    for entry in page.entries:
-                        if (
-                            entry.path.endswith(".md")
-                            and entry.visibility == "visible"
-                            and entry.parse_state == "valid"
-                        ):
-                            if snapshot is None:
-                                raise ValueError(
-                                    "Snapshot links require a Git snapshot"
-                                )
-                            snapshot_notes[entry.path] = snapshot.read(entry.path)
-                    if page.next_cursor is None:
-                        break
-                    next_cursor = page.next_cursor
+                if snapshot is None:
+                    raise ValueError("Snapshot links require a Git snapshot")
+                snapshot_notes = {
+                    entry.path: snapshot.read(entry.path)
+                    for entry in root_inventory()
+                    if entry.path.endswith(".md")
+                    and entry.visibility == "visible"
+                    and entry.parse_state == "valid"
+                }
                 snapshot_index = _snapshot_link_index(snapshot_notes)
             return _snapshot_outlinks(body, source, snapshot_index, extensions)
 

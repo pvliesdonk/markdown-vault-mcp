@@ -402,13 +402,12 @@ def test_git_snapshot_parses_aliases_once(tmp_path: Path, monkeypatch) -> None:
     assert calls <= 8
 
 
-def test_git_snapshot_bounded_reads_and_cache(tmp_path: Path, monkeypatch) -> None:
+def test_git_snapshot_caches_blob_reads(tmp_path: Path, monkeypatch) -> None:
     from markdown_vault_mcp.managers import git_query
 
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / "large.md").write_bytes(b"x" * 200000)
     (tmp_path / "small.md").write_bytes(b"small")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "initial")
@@ -422,8 +421,6 @@ def test_git_snapshot_bounded_reads_and_cache(tmp_path: Path, monkeypatch) -> No
         return original(root, *args, **kwargs)
 
     monkeypatch.setattr(git_query, "_export_git", count)
-    assert snapshot.read("large.md", 12) == b"x" * 12
-    assert not calls
     assert snapshot.read("small.md") == b"small"
     assert snapshot.read("small.md") == b"small"
     assert len(calls) == 1

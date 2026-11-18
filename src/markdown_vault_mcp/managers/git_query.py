@@ -62,36 +62,15 @@ class GitExportSnapshot:
     sizes: dict[str, int]
     _cache: dict[str, bytes] = field(default_factory=dict, repr=False, compare=False)
 
-    def read(self, path: str, limit: int = 0) -> bytes:
+    def read(self, path: str) -> bytes:
         """Read a selected tree blob without interpreting its path as a revision."""
         oid = self.entries[path][1]
         raw = self._cache.get(oid)
-        if raw is None and limit and self.sizes[path] > limit:
-            return self._read_prefix(oid, limit)
         if raw is None:
             raw = _export_git(self.root, "cat-file", "blob", oid).stdout
             if len(raw) <= 1024 * 1024:
                 self._cache[oid] = raw
-        return raw[:limit] if limit else raw
-
-    def _read_prefix(self, oid: str, limit: int) -> bytes:
-        # Only an internally obtained object ID reaches this argument vector.
-        process = subprocess.Popen(  # noqa: S603, RUF100
-            ["git", "-C", str(self.root), "cat-file", "blob", oid],  # noqa: S607, RUF100
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        try:
-            if process.stdout is None:
-                raise OSError("Git blob stream unavailable")
-            raw = process.stdout.read(limit)
-            if len(raw) != limit:
-                raise OSError("Git blob stream ended early")
-            return raw
-        finally:
-            if process.stdout is not None:
-                process.stdout.close()
-            process.wait()
+        return raw
 
 
 def _export_git(

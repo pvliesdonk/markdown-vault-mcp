@@ -487,7 +487,7 @@ class BundleInspector:
             ):
                 return BundleInspection(request, "unavailable")
             if isinstance(request, BundleTreeRequest) and request.snapshot is not None:
-                return self._snapshot_page(request, scope)
+                return self._snapshot_page(request, scope, request.snapshot)
             with open_directory_nofollow(root, parts, source_resolved=True) as parent:
                 if isinstance(request, BundleTreeRequest):
                     return self._walk_page(parent, request, scope)
@@ -498,11 +498,8 @@ class BundleInspector:
             )
 
     def _snapshot_page(
-        self, request: BundleTreeRequest, scope: str
+        self, request: BundleTreeRequest, scope: str, snapshot: GitExportSnapshot
     ) -> BundleInspection:
-        snapshot = request.snapshot
-        if snapshot is None:
-            raise ValueError("Snapshot page requires a snapshot")
         if scope and not any(path.startswith(scope + "/") for path in snapshot.entries):
             return BundleInspection(request, "missing")
         entries: list[BundleEntry] = []
@@ -558,7 +555,7 @@ class BundleInspector:
         size = snapshot.sizes[path]
         if size > self._note_limit:
             return BundleEntry(path, role, reason="note_limit"), min(size, limit)
-        raw = snapshot.read(path, limit)
+        raw = snapshot.read(path)
         return _parsed(path, role, raw), len(raw)
 
     def _snapshot_dirty(self, changed: set[str], scope: str) -> tuple[str, ...]:
