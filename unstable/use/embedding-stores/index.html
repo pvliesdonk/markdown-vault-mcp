@@ -2905,6 +2905,12 @@
 <li><code>postgres</code> keeps them in the schema <code>MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA</code> names.</li>
 </ul>
 <p>A streamed search reads the vectors from the database in batches of <code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB</code> (1 MiB by default) instead of holding them all. The workspace bounds one batch of a search, not the server's memory. <code>postgres</code> is always streamed and scores in the database; <code>numpy</code> is always resident. <code>numpy</code> with <code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed</code>, or <code>postgres</code> with <code>resident</code>, refuses to start. The <code>embeddings_status</code> tool reports the mode the store runs in, its workspace, the size of its files (<code>stored_bytes</code>) and the bytes of vectors it holds in memory (<code>resident_vector_bytes</code>). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.</p>
+<p>When <code>postgres</code> publishes a whole generation, it first writes the validated
+rows to a private temporary file and then copies them into the database. Allow
+space in the system temporary directory, independently of the database and
+its write-ahead log. <code>TMPDIR</code> can select that directory. The scratch file contains packed float32 vectors plus metadata; a memory-backed
+temporary directory also uses memory. The file is
+removed when publication finishes or fails.</p>
 <h2 id="what-each-store-costs">What each store costs<a class="headerlink" href="#what-each-store-costs" title="Permanent link">&para;</a></h2>
 <p>The figures below come from running the whole server on one host at two vault sizes, twice each (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899">#1899</a>); <code>numpy</code>'s peak memory at the larger size is from a later run, after <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936">#1936</a> stopped it copying its vectors when it opens, and <code>postgres</code>'s restart is from a later measurement too, after <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1937">#1937</a> stopped it reading every note's vectors at each start. Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.</p>
 <table>

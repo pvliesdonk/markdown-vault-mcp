@@ -2430,6 +2430,8 @@ At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAU
 
 A streamed search reads the vectors from the database in batches of `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB` (1 MiB by default) instead of holding them all. The workspace bounds one batch of a search, not the server's memory. `postgres` is always streamed and scores in the database; `numpy` is always resident. `numpy` with `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed`, or `postgres` with `resident`, refuses to start. The `embeddings_status` tool reports the mode the store runs in, its workspace, the size of its files (`stored_bytes`) and the bytes of vectors it holds in memory (`resident_vector_bytes`). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.
 
+When `postgres` publishes a whole generation, it first writes the validated rows to a private temporary file and then copies them into the database. Allow space in the system temporary directory, independently of the database and its write-ahead log. `TMPDIR` can select that directory. The scratch file contains packed float32 vectors plus metadata; a memory-backed temporary directory also uses memory. The file is removed when publication finishes or fails.
+
 ## What each store costs
 
 The figures below come from running the whole server on one host at two vault sizes, twice each ([#1899](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1899)); `numpy`'s peak memory at the larger size is from a later run, after [#1936](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1936) stopped it copying its vectors when it opens, and `postgres`'s restart is from a later measurement too, after [#1937](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1937) stopped it reading every note's vectors at each start. Where the two runs differed at the precision shown, both are given as a range. The vectors had 1,024 dimensions; memory is in decimal MB.
@@ -6451,6 +6453,8 @@ On inline completion, a dict with `"status": "completed"` and `chunks_embedded` 
 - ToolError: If a forced rebuild kept the existing embeddings because some embedding requests failed; retry later.
 
 # Writer
+
+Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit, append and OKF verification retain surviving fields in their existing order when serializing a header. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
 
 Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/security-model/index.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
 
