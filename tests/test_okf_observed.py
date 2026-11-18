@@ -254,6 +254,11 @@ def test_latest_receipt_is_used_for_matching_identity(tmp_path: Path) -> None:
         "state": "available",
         "later_change_observed": True,
     }
+    unknown_algorithm = {"algo": "future-concept-v2", "digest": "c" * 64}
+    store.append({"path": "note.md", **review, "snapshot": unknown_algorithm})
+    assert store.review_observation("note.md", {"verified": review}, first) == {
+        "state": "unavailable"
+    }
     assert store.review_observation("note.md", {}, first) == {"state": "unavailable"}
 
 
