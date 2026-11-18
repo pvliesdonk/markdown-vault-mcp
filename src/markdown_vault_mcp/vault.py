@@ -531,6 +531,20 @@ class Vault:
             store=self._injected_vector_store,
         )
 
+    def _reserved_exempt(self) -> bool | None:
+        """Return whether reserved files skip the field gate, or ``None`` if no gate.
+
+        Raises:
+            OSError: When the OKF scope could not be read, so the caller keeps
+                its last confirmed admission instead of treating it as inactive.
+        """
+        if not self._required_frontmatter:
+            return None
+        state = self._okf.state()
+        if state.probe_error:
+            raise OSError("OKF scope probe failed")
+        return state.active
+
     def _build_managers(self, settings: VaultSettings) -> None:
         """Construct the index/tracker sub-modules and the manager layer.
 
@@ -585,6 +599,7 @@ class Vault:
         #    see one store.  No write_lock — the IndexWriter thread is the
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
+
         self._index_mgr = IndexManager(
             fts=self._fts,
             tracker=self._tracker,
@@ -594,6 +609,7 @@ class Vault:
             chunk_strategy=self._chunk_strategy,
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
+            okf_admission_active=self._reserved_exempt,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
@@ -676,7 +692,11 @@ class Vault:
         # OKF_WRITE is on; when on, it stamps provenance and clears verification
         # for write/edit on an OKF-active vault.
         self._okf_write_enrich = build_okf_write_enrich(
-            okf_write=settings.okf_write,
+            okf_write=(
+                settings.okf_capabilities.legacy_stamping
+                if settings.okf_capabilities is not None
+                else settings.okf_write
+            ),
             detector=self._okf,
             version=package_version(),
         )
@@ -763,12 +783,17 @@ class Vault:
             require_built=self._require_built,
             reserved_frontmatter=reserved_frontmatter,
         )
-        # OKF enforced-write convention maintenance (#964, phase 5b): built only
-        # under OKF_WRITE (mirroring the enricher gating). On a successful
-        # write/edit it appends to the folder's log.md and refreshes its
-        # index.md as secondary writes; failures degrade to a WARNING.
+        # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        if settings.okf_write:
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
+        if not settings.read_only and (
+            capabilities.index or capabilities.log == "writes"
+        ):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
 
             self._okf_convention = ConventionMaintainer(
@@ -778,6 +803,7 @@ class Vault:
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
                 source_dir=self._source_dir,
+                capabilities=capabilities,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
