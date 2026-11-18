@@ -23,12 +23,11 @@ These are write tools gated on read-only mode only, not on a future
 enforcement. The index-dependent transforms refresh prior queued writes
 before reading their inputs (#1464); a refresh error refuses the transform.
 
-Every write they issue is entered under
-:func:`~markdown_vault_mcp._okf_write.okf_write_suppressed`, so a mechanical
-rewrite triggers no ``log.md`` / ``index.md`` maintenance. That belongs here
-rather than in the MCP tool handlers, where it used to live: being mechanical
-is a property of the transform, and a library caller of ``vault.writer.okf_*``
-gets the same rewrite the tool does (#1401).
+Every write they issue goes straight to
+:class:`~markdown_vault_mcp.managers.document.DocumentManager`, below the
+writer facet that runs ``log.md`` / ``index.md`` maintenance, so a mechanical
+rewrite triggers none, and a library caller of ``vault.writer.okf_*`` gets the
+same rewrite the tool does (#1401).
 """
 
 from __future__ import annotations
@@ -36,7 +35,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import DocumentUnreadableError
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
@@ -132,28 +130,25 @@ class OkfMigrationManager:
         skipped = 0
         scanned = 0
         in_submodules = 0
-        # Every write a transform issues is mechanical: it must not trigger
-        # convention maintenance, whichever entry point called it (#1401).
-        with okf_write_suppressed():
-            for note in self._search_mgr.list(folder=folder, include_attachments=False):
-                if self._doc_mgr.in_submodule(note.path):
-                    in_submodules += 1
-                    continue
-                scanned += 1
-                outlinks = self._link_mgr.get_outlinks(note.path)
-                if not any(link.link_type == "wikilink" for link in outlinks):
-                    continue
-                note_content = self._doc_mgr.read(note.path)
-                if note_content is None:  # pragma: no cover - deleted mid-scan
-                    continue
-                new_content, n_conv, n_skip = convert_wikilinks_to_markdown(
-                    note_content.content, outlinks
-                )
-                converted += n_conv
-                skipped += n_skip
-                if new_content != note_content.content:
-                    self._doc_mgr.write(note.path, new_content, allow_overwrite=True)
-                    files_changed += 1
+        for note in self._search_mgr.list(folder=folder, include_attachments=False):
+            if self._doc_mgr.in_submodule(note.path):
+                in_submodules += 1
+                continue
+            scanned += 1
+            outlinks = self._link_mgr.get_outlinks(note.path)
+            if not any(link.link_type == "wikilink" for link in outlinks):
+                continue
+            note_content = self._doc_mgr.read(note.path)
+            if note_content is None:  # pragma: no cover - deleted mid-scan
+                continue
+            new_content, n_conv, n_skip = convert_wikilinks_to_markdown(
+                note_content.content, outlinks
+            )
+            converted += n_conv
+            skipped += n_skip
+            if new_content != note_content.content:
+                self._doc_mgr.write(note.path, new_content, allow_overwrite=True)
+                files_changed += 1
         if in_submodules:
             logger.info(
                 "okf_convert_links_submodule_notes_skipped notes=%d", in_submodules
@@ -264,15 +259,14 @@ class OkfMigrationManager:
         preserved = bool(existing_fm)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
-        with okf_write_suppressed():
-            self._doc_mgr.write(
-                index_path,
-                body,
-                frontmatter=self._reserved_frontmatter.build(
-                    existing_fm if preserved else None, title=heading
-                ),
-                allow_overwrite=True,
-            )
+        self._doc_mgr.write(
+            index_path,
+            body,
+            frontmatter=self._reserved_frontmatter.build(
+                existing_fm if preserved else None, title=heading
+            ),
+            allow_overwrite=True,
+        )
         return OkfIndexResult(
             path=index_path,
             entries=len(entries),
@@ -336,10 +330,9 @@ class OkfMigrationManager:
         # falls back to whole-vault history via path=None.
         history = self._git_query_mgr.get_history(path=folder or None, limit=limit)
         body, commits, dates = build_log_markdown(history)
-        with okf_write_suppressed():
-            self._doc_mgr.write(
-                log_path,
-                body,
-                frontmatter=self._reserved_frontmatter.build(None, title=OKF_LOG_TITLE),
-            )
+        self._doc_mgr.write(
+            log_path,
+            body,
+            frontmatter=self._reserved_frontmatter.build(None, title=OKF_LOG_TITLE),
+        )
         return OkfLogResult(path=log_path, commits=commits, dates=dates)

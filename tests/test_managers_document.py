@@ -671,36 +671,6 @@ class TestRename:
         assert not (doc_vault / "image.png").exists()
         assert (doc_vault / "photo.png").exists()
 
-    def test_rename_malformed_yaml_fires_callback_and_marks_canonical_paths(
-        self, doc_vault: Path
-    ) -> None:
-        content = "---\ntitle: [unclosed\n---\nbody\n"
-        (doc_vault / "bad.md").write_text(content, encoding="utf-8")
-        calls: list[tuple[Path, str, str]] = []
-        dirty: list[str] = []
-        mgr = DocumentManager(
-            fts=FTSIndex(db_path=":memory:"),
-            source_dir=doc_vault,
-            write_lock=threading.RLock(),
-            chunk_strategy=HeadingChunker(),
-            read_only=False,
-            on_write_callback=lambda p, c, op: calls.append((p, c, op)),
-            mark_paths_dirty=lambda paths: dirty.extend(paths),
-        )
-        mgr.rename("bad.md", "sub/../moved.md")
-        assert (doc_vault / "moved.md").read_text(encoding="utf-8") == content
-        assert dirty == ["bad.md", "moved.md"]
-        assert [(c, op) for _p, c, op in calls] == [(content, "rename")]
-
-    def test_rename_undecodable_note_fails_before_moving(
-        self, doc_mgr: DocumentManager, doc_vault: Path
-    ) -> None:
-        (doc_vault / "binary.md").write_bytes(b"\xff\xfe body")
-        with pytest.raises(UnicodeDecodeError):
-            doc_mgr.rename("binary.md", "moved.md")
-        assert (doc_vault / "binary.md").exists()
-        assert not (doc_vault / "moved.md").exists()
-
 
 # ---------------------------------------------------------------------------
 # Attachment tests

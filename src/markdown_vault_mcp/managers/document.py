@@ -1513,12 +1513,18 @@ class DocumentManager:
                 )
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
-                # Read before moving, so an undecodable note fails in place.
-                callback_content = _read_text_utf8(old_abs)
-                canonical = new_abs.relative_to(self._source_dir.resolve()).as_posix()
 
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
+
+                note = parse_note(
+                    new_abs,
+                    self._source_dir,
+                    self._chunk_strategy,
+                    title_field=self._title_field,
+                )
+
+                callback_content = _read_text_utf8(new_abs)
 
                 backlink_callbacks, backlink_paths, unrewritten = (
                     self._update_backlinks(old_path, new_path, backlinks)
@@ -1527,7 +1533,7 @@ class DocumentManager:
                 hint = self._submodule_links_hint(unrewritten)
 
                 if self._mark_paths_dirty is not None:
-                    dirty: list[str] = [old_path, canonical]
+                    dirty: list[str] = [old_path, note.path]
                     dirty.extend(backlink_paths)
                     self._mark_paths_dirty(dirty)
             else:
