@@ -462,3 +462,32 @@ def test_same_second_first_observation_is_not_rounded_before_review() -> None:
         "2021-01-01T00:00:00+00:00",
     )
     assert review_observation(metadata, row, "a" * 64) == {"state": "unavailable"}
+
+
+@pytest.mark.parametrize(
+    ("extension", "snapshot"),
+    [
+        (None, {"algo": "mvmcp-concept-v1", "digest": "b" * 64}),
+        ({"reviews": "invalid"}, {"algo": "mvmcp-concept-v1", "digest": "b" * 64}),
+        ({"reviews": []}, None),
+    ],
+)
+def test_observed_change_without_usable_binding_is_unknown(extension, snapshot) -> None:
+    from markdown_vault_mcp._okf_observed import review_observation
+    from markdown_vault_mcp.indexing.observations import Observation
+
+    metadata = {
+        "verified": [{"by": "human:a", "at": "2020-01-01T00:00:00Z"}],
+        "x-mvmcp": extension,
+    }
+    row = Observation(
+        "note.md",
+        "concept_candidate",
+        "a" * 64,
+        None,
+        "2019-01-01T00:00:00+00:00",
+        "2021-01-01T00:00:00+00:00",
+    )
+    assert review_observation(metadata, row, "a" * 64, snapshot) == {
+        "state": "unavailable"
+    }
