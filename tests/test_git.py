@@ -1553,6 +1553,13 @@ class TestGitSyncOnce:
         assert orig_post.metadata["title"] == "Obsidian Note"
         assert orig_post.metadata["tags"] == ["vault"]
         assert "conflict_with" in orig_post.metadata
+        # Existing fields keep their order; the conflict fields append (#2029).
+        assert list(orig_post.metadata) == [
+            "title",
+            "tags",
+            "conflict_with",
+            "conflict_date",
+        ]
 
         # Conflict file: MCP frontmatter preserved + conflict fields added.
         conflict_files = list(work.glob("note.conflict-mcp-*.md"))
@@ -1561,6 +1568,12 @@ class TestGitSyncOnce:
         assert conflict_post.metadata["title"] == "MCP Note"
         assert conflict_post.metadata["tags"] == ["test"]
         assert conflict_post.metadata["conflict_with"] == "note.md"
+        assert list(conflict_post.metadata) == [
+            "title",
+            "tags",
+            "conflict_with",
+            "conflict_date",
+        ]
 
     def test_sync_once_conflict_non_conflicting_files_preserved(
         self,
