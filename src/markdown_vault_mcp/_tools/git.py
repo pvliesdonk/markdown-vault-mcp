@@ -11,7 +11,7 @@ from fastmcp.dependencies import Depends
 from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._tools._outcomes import library_outcomes
-from markdown_vault_mcp._tools.transactions import close_transaction
+from markdown_vault_mcp._tools.transactions import settle_transactions
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import PullResult, PushResult, Syncer
 from markdown_vault_mcp.vault import Vault
@@ -366,7 +366,9 @@ def register(mcp: FastMCP) -> None:
             dry_run: Report what a pull would do without changing anything; the push
                 leg reports applied false without contacting the remote.
 
-            transaction: Handle to close before syncing; omit for no transaction.
+            transaction: Handle to validate and close before syncing. Real sync
+                closes all your open transactions even when omitted. Omit for dry_run;
+                previews leave transactions open.
 
         Returns:
             Dict with the following fields:
@@ -416,8 +418,12 @@ def register(mcp: FastMCP) -> None:
                 git_sync has nothing to do.
         """
         strategy = _resolve_managed_strategy(vault)
-        if transaction is not None:
-            await close_transaction(vault, transaction)
+        if dry_run and transaction is not None:
+            raise InvalidRequestError(
+                "Omit transaction for a dry-run preview; it leaves transactions open."
+            )
+        if not dry_run:
+            await settle_transactions(vault, transaction)
         git_root = strategy.resolve_force_repo()
 
         result: dict[str, Any] = {

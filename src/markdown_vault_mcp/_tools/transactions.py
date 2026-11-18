@@ -35,7 +35,7 @@ def transaction_scope(vault: Vault, handle: str | None) -> Iterator[None]:
             yield
     except CommitGroupError as exc:
         raise ToolError(
-            f"{exc}. Use an open handle from begin_transaction, or start a new transaction.",
+            f"{exc}. Check the handle from begin_transaction and transaction state; wait for active writes to finish.",
             log_level=logging.INFO,
         ) from None
 
@@ -46,11 +46,32 @@ async def close_transaction(vault: Vault, handle: str) -> dict[str, Any]:
         future = vault._write_callback.close_group(handle, resolve_mcp_principal())
     except CommitGroupError as exc:
         raise ToolError(
-            f"{exc}. Use a handle from begin_transaction; start a new transaction if needed.",
+            f"{exc}. Check the handle from begin_transaction and transaction state; wait for active writes to finish.",
             log_level=logging.INFO,
         ) from None
     result: GroupCommitResult = await asyncio.wrap_future(future)
     return asdict(result)
+
+
+async def settle_transactions(vault: Vault, handle: str | None) -> None:
+    """Close the caller's groups before sync, refusing failed commits."""
+    try:
+        futures = vault._write_callback.close_owner_groups(
+            resolve_mcp_principal(), handle
+        )
+    except CommitGroupError as exc:
+        raise ToolError(
+            f"{exc}. Check the handle from begin_transaction and transaction state; wait for active writes to finish.",
+            log_level=logging.INFO,
+        ) from None
+    for future in futures:
+        result = await asyncio.wrap_future(future)
+        if result.status == "failed":
+            raise ToolError(
+                "Transaction commit failed; sync was not run. Changes may remain staged. "
+                "Ask the operator to inspect the Git index and resolve the commit failure.",
+                log_level=logging.ERROR,
+            )
 
 
 def register(mcp: FastMCP) -> None:
@@ -75,10 +96,16 @@ def register(mcp: FastMCP) -> None:
 
         Pass the returned handle as transaction to write, edit, append, delete,
         rename or move_folder, then call end_transaction. Writes are visible
-        immediately; this groups commits and does not roll back changes.
+        immediately; this groups commits and does not roll back changes. Omitting
+        the handle commits that call alone. Fetch, uploads and OKF tools do not
+        accept a handle and stay outside the group. Without Git commit support,
+        writes still occur but no grouped commit is made.
 
         Args:
             description: Single-line commit subject for the group.
+
+        Returns:
+            Dict with handle (str), to pass to supported writes and end_transaction.
         """
         try:
             group = vault._write_callback.open_group(
@@ -107,5 +134,10 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             handle: Handle returned by begin_transaction.
+
+        Returns:
+            Dict with status (committed, no_changes or failed), `sha` (str or null),
+            and files (number of committed paths; zero if unknown). Without Git
+            commit support, no_changes reports that no commit was made.
         """
         return await close_transaction(vault, handle)

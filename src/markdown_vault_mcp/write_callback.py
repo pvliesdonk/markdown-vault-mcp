@@ -392,6 +392,41 @@ class WriteCallbackDispatcher:
             done.add_done_callback(finish)
         return result
 
+    def close_owner_groups(
+        self, principal: Principal | None, handle: str | None = None
+    ) -> list[Future[GroupCommitResult]]:
+        """Close the caller's open groups and any explicitly named auto-closed group.
+
+        Args:
+            principal: Calling identity, used to select and validate groups.
+            handle: Optional handle to validate, including an auto-closed group.
+
+        Returns:
+            Futures for each group's commit result.
+
+        Raises:
+            CommitGroupError: If the handle is unavailable or a group is active.
+        """
+        with self._group_lock:
+            owner = owner_key(principal)
+            handles = [
+                group.handle
+                for group in self._groups.values()
+                if group.owner == owner and not group.closed
+            ]
+            if handle is not None and handle not in handles:
+                finished = self._finished_groups.get(handle)
+                if finished is None or finished[0] != owner:
+                    raise CommitGroupError("Unknown or unavailable group")
+                handles.append(handle)
+            if any(
+                self._groups[h].active
+                for h in handles
+                if h in self._groups and not self._groups[h].closed
+            ):
+                raise CommitGroupError("Group has active writes")
+            return [self.close_group(h, principal) for h in handles]
+
     def _schedule_group(self, group: CommitGroup) -> None:
         old = self._group_timers.get(group.handle)
         deadline = group.created + self._group_max_age_s

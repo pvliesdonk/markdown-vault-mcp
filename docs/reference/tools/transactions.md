@@ -19,7 +19,10 @@ Open a group of writes for one Git commit.
 
 Pass the returned handle as transaction to write, edit, append, delete,
 rename or `move_folder`, then call `end_transaction`. Writes are visible
-immediately; this groups commits and does not roll back changes.
+immediately; this groups commits and does not roll back changes. Omitting
+the handle commits that call alone. Fetch, uploads and OKF tools do not
+accept a handle and stay outside the group. Without Git commit support,
+writes still occur but no grouped commit is made.
 
 **Parameters**
 
@@ -29,10 +32,12 @@ immediately; this groups commits and does not roll back changes.
 
 **Returns**
 
-`object`
+Dict with handle (str), to pass to supported writes and `end_transaction`.
 
 <!-- DOMAIN-EXAMPLE-begin_transaction-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+Open a group with `begin_transaction({"description": "Revise onboarding"})`.
+Pass its returned `handle` as `transaction` to each supported write:
+`write({"path": "guide.md", "content": "First draft", "transaction": "<handle>"})`.
 <!-- DOMAIN-EXAMPLE-begin_transaction-END -->
 
 ## `end_transaction`
@@ -49,8 +54,12 @@ Close a transaction and return its commit status, SHA and file count.
 
 **Returns**
 
-`object`
+Dict with status (committed, `no_changes` or failed), `sha` (str or null),
+and files (number of committed paths; zero if unknown). Without Git
+commit support, `no_changes` reports that no commit was made.
 
 <!-- DOMAIN-EXAMPLE-end_transaction-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+After those writes, call `end_transaction({"handle": "<handle>"})`. A result such
+as `{"status": "committed", "sha": "<commit SHA>", "files": 1}` reports the
+commit. If `status` is `failed`, inspect the Git index and resolve the failure.
 <!-- DOMAIN-EXAMPLE-end_transaction-END -->
