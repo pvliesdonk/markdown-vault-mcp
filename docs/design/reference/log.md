@@ -52,6 +52,18 @@
   a natural pytest capture closing beneath a retained handler and the real
   index writer contaminating a later command capture. Historical handler
   attribution remains unknown. Next review: 2027-05-14.
+- New: [Python frontmatter serialization and mapping order](python-frontmatter-pyyaml.md),
+  for #2029. Read and refuted the lockfile-matched python-frontmatter 1.3.0 and
+  PyYAML 6.0.3 source distributions: keyword forwarding, default sorting,
+  recursive mapping representation, loading order and formatting boundaries.
+  Next review: 2027-05-14, or when either pinned dependency changes.
+- New: [OpenAI-compatible embedding responses](openai-compatible-embeddings.md),
+  for bug #2050. Sources: the OpenAI OpenAPI spec's `Embedding` and
+  `CreateEmbeddingResponse` schemas, openai-python's `Embedding` type and
+  `BaseModel.construct`, the ProtoJSON format's default-value rule and
+  Google's OpenAI compatibility page, all read 2026-11-14. Observations: raw
+  Gemini batch responses and per-text comparisons from #2050 and a rerun on
+  `gemini-embedding-2`. Next review: 2027-05-14.
 
 ## 2026-11-07
 
