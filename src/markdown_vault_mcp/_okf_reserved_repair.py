@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import yaml
 from yaml.nodes import MappingNode, ScalarNode
 
+from markdown_vault_mcp._okf_author import _header_span
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
 from markdown_vault_mcp.hashing import compute_etag
@@ -18,9 +18,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.bundle_inventory import BundleEntry
     from markdown_vault_mcp.vault import Vault
 
-_HEADER = re.compile(
-    r"\A(?P<bom>\ufeff?)---\r?\n(?P<header>.*?)(?m:^---[ \t]*\r?$)(?:\n|$)", re.DOTALL
-)
 _PROTECTED = frozenset({"okf_version", "conflict_with"})
 
 
@@ -43,10 +40,11 @@ class _PendingRepair:
 def _strip(
     text: str, required: list[str], title_field: str, title: str
 ) -> tuple[str, tuple[str, ...]]:
-    match = _HEADER.match(text)
-    if match is None:
+    span = _header_span(text)
+    if span is None:
         return text, ()
-    header = match["header"]
+    start, end = span
+    header = text[start:end]
     try:
         mapping = yaml.safe_load(header)
         node = yaml.compose(header)
@@ -58,8 +56,8 @@ def _strip(
         raise InvalidRequestError("flow-style frontmatter needs manual inspection")
     edits = _candidate_edits(header, node, mapping, required, (title_field, title))
     changed = header
-    for start, end, _ in reversed(edits):
-        changed = changed[:start] + changed[end:]
+    for edit_start, edit_end, _ in reversed(edits):
+        changed = changed[:edit_start] + changed[edit_end:]
     try:
         remaining = yaml.safe_load(changed) or {}
     except (yaml.YAMLError, ValueError):
@@ -67,11 +65,13 @@ def _strip(
     keys = tuple(item[2] for item in edits)
     if remaining != {k: v for k, v in mapping.items() if k not in keys}:
         return text, ()
-    output = (
-        match["bom"] + text[match.end() :]
-        if keys and not changed.strip()
-        else text[: match.start("header")] + changed + text[match.end("header") :]
-    )
+    if keys and not changed.strip():
+        opening = text.rfind("\n", 0, start) + 1
+        prefix = text[:opening] or ("\ufeff" if text.startswith("\ufeff") else "")
+        closing = text.find("\n", end)
+        output = prefix + (text[closing + 1 :] if closing >= 0 else "")
+    else:
+        output = text[:start] + changed + text[end:]
     return output, keys
 
 

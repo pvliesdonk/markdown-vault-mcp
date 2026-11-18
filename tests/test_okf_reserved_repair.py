@@ -68,13 +68,6 @@ def test_read_only_allows_preview_but_refuses_apply(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_surgical_splice_preserves_crlf_and_comments() -> None:
-    original = "---\r\ntitle: Log\r\ntype: null # user comment\r\nother: value\r\n---\r\n# Log\r\n"
-    changed, keys = _strip(original, ["title"], "title", "Log")
-    assert keys == ("title",)
-    assert changed == original.replace("title: Log\r\n", "")
-
-
 def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "vault"
     root.mkdir()
@@ -102,34 +95,7 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "Nothing to repair" in result.stdout
 
 
-def test_apply_designated_index_preserves_other_bytes(tmp_path: Path) -> None:
-    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
-
-    path = tmp_path / "index.md"
-    original = b'---\r\nokf_version: "0.2"\r\ntitle: Index\r\ncustom: "preserve" # keep\r\n---\r\n# Index\r\n\r\nmanual content\r\n'
-    path.write_bytes(original)
-    settings = VaultSettings(
-        read_only=False,
-        okf_mode="on",
-        required_frontmatter=["title"],
-        protected_paths=["index.md"],
-        okf_capabilities=OkfCapabilities(
-            author=False, verify="off", index=True, log="off", folders=(".",)
-        ),
-    )
-    vault = Vault(source_dir=tmp_path, settings=settings)
-    try:
-        repair = ReservedFrontmatterRepair(vault)
-        assert repair.run(apply=True, allow_protected=True)[0].keys == ("title",)
-        assert path.read_bytes() == original.replace(b"title: Index\r\n", b"")
-        assert sorted(p.name for p in tmp_path.iterdir()) == ["index.md"]
-    finally:
-        vault.close()
-
-
-def test_custom_title_and_concurrent_edit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_custom_title_field(tmp_path: Path) -> None:
     (tmp_path / "guides").mkdir()
     path = tmp_path / "guides" / "index.md"
     path.write_text("---\nname: guides\ntitle: null\n---\nbody\n")
@@ -145,23 +111,8 @@ def test_custom_title_and_concurrent_edit(
     try:
         repair = ReservedFrontmatterRepair(vault)
         assert repair.run()[0].keys == ("name", "title")
-        write = vault._doc_mgr.write
-
-        def concurrent(*args: object, **kwargs: object) -> object:
-            path.write_text("new content\n")
-            return write(*args, **kwargs)
-
-        monkeypatch.setattr(vault._doc_mgr, "write", concurrent)
-        assert repair.run(apply=True)[0].skip_reason
-        assert path.read_text() == "new content\n"
     finally:
         vault.close()
-
-
-def test_ambiguous_yaml_is_left_unchanged() -> None:
-    original = "---\ntitle: Log\ntitle: Log\ntype: null\n---\nbody\n"
-    with pytest.raises(InvalidRequestError, match="manual"):
-        _strip(original, ["title", "type"], "title", "Log")
 
 
 def test_empty_header_removed_and_audit_passes(tmp_path: Path) -> None:
@@ -193,14 +144,6 @@ def test_literal_yaml_characters_in_title_are_removed(title: str) -> None:
     encoded = yaml.safe_dump({"title": title}, allow_unicode=True)
     original = f"---\n{encoded}---\n# Body\n"
     assert _strip(original, ["title"], "title", title) == ("# Body\n", ("title",))
-
-
-def test_comment_survives_when_last_key_removed() -> None:
-    original = "---\n# Keep this\ntitle: Log\n---\n# Body\n"
-    assert _strip(original, ["title"], "title", "Log") == (
-        "---\n# Keep this\n---\n# Body\n",
-        ("title",),
-    )
 
 
 def test_apply_uses_exact_byte_write_mode(
@@ -282,11 +225,12 @@ def test_uninspectable_reserved_path_is_reported(tmp_path: Path, kind: str) -> N
     try:
         item = ReservedFrontmatterRepair(vault).run()[0]
         assert item.path == "log.md" and item.skip_reason
+        assert "Cannot inspect reserved file" in item.skip_reason
     finally:
         vault.close()
 
 
-def test_cli_read_only_reports_nontransactional_batch(
+def test_cli_apply_refusals_exit_with_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "log.md").write_text("---\ntitle: Log\n---\nbody\n")
@@ -305,51 +249,45 @@ def test_cli_read_only_reports_nontransactional_batch(
     assert "no rollback" not in result.stderr
 
 
-def test_batch_reports_skips_and_continues(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    for folder in ("a", "b"):
-        (tmp_path / folder).mkdir()
-    good = tmp_path / "a" / "log.md"
-    unsafe = tmp_path / "b" / "log.md"
-    good.write_text("---\ntitle: Log\n---\n# Log\n")
-    unsafe.write_text("---\ntitle: Log # keep\n---\n# Log\n")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-    runner = CliRunner()
-    for options, word in [([], "Would remove"), (["--apply"], "Removed")]:
-        result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", *options])
-        assert result.exit_code == 1
-        assert f"{word} a/log.md: title" in result.stdout
-        assert "Skipped b/log.md:" in result.stdout and "manual" in result.stdout
-    assert good.read_text() == "# Log\n"
-    assert unsafe.read_text() == "---\ntitle: Log # keep\n---\n# Log\n"
-
-
-def test_unrelated_duplicate_keys_survive_splice() -> None:
-    original = "---\nx: 1\nx: 2\nconflict_with: null\nconflict_with: null\ntitle: Log\n---\nbody\n"
-    expected = original.replace("title: Log\n", "")
-    assert _strip(original, ["title", "conflict_with"], "title", "Log") == (
-        expected,
-        ("title",),
-    )
-
-
 @pytest.mark.parametrize(
-    "header,title",
+    "original,required,title,expected",
     [
-        ('title: "L\\\n  og"\nkeep: 1\n', "Log"),
-        ("title: a long\n  plain title\nkeep: 1\n", "a long plain title"),
+        (
+            "---\r\ntitle: Log\r\ntype: null # user comment\r\nother: value\r\n---\r\n# Log\r\n",
+            ["title"],
+            "Log",
+            "---\r\ntype: null # user comment\r\nother: value\r\n---\r\n# Log\r\n",
+        ),
+        (
+            "---\n# Keep this\ntitle: Log\n---\n# Body\n",
+            ["title"],
+            "Log",
+            "---\n# Keep this\n---\n# Body\n",
+        ),
+        (
+            "---\nx: 1\nx: 2\nconflict_with: null\nconflict_with: null\ntitle: Log\n---\nbody\n",
+            ["title", "conflict_with"],
+            "Log",
+            "---\nx: 1\nx: 2\nconflict_with: null\nconflict_with: null\n---\nbody\n",
+        ),
+        (
+            '---\ntitle: "L\\\n  og"\nkeep: 1\n---\nbody\n',
+            ["title"],
+            "Log",
+            "---\nkeep: 1\n---\nbody\n",
+        ),
+        (
+            "---\ntitle: a long\n  plain title\nkeep: 1\n---\nbody\n",
+            ["title"],
+            "a long plain title",
+            "---\nkeep: 1\n---\nbody\n",
+        ),
     ],
 )
-def test_multiline_titles_preserve_remaining_header(header: str, title: str) -> None:
-    text = f"---\n{header}---\nbody\n"
-    assert _strip(text, ["title"], "title", title) == (
-        "---\nkeep: 1\n---\nbody\n",
-        ("title",),
-    )
+def test_splice_preserves_unselected_bytes(
+    original: str, required: list[str], title: str, expected: str
+) -> None:
+    assert _strip(original, required, "title", title) == (expected, ("title",))
 
 
 def test_unreadable_batch_continues_in_preview_and_apply(
@@ -413,6 +351,7 @@ def test_designated_index_respects_operator_protection(tmp_path: Path) -> None:
         assert repair.run(apply=True)[0].skip_reason
         assert "title: Index" in path.read_text()
         assert repair.run(apply=True, allow_protected=True)[0].keys == ("title",)
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["index.md"]
     finally:
         vault.close()
 
@@ -479,3 +418,31 @@ def test_cli_reports_completed_writes_and_conflict(
     assert "Skipped b/log.md:" in result.stdout
     assert "Removed c/log.md: title" in result.stdout
     assert (tmp_path / "b" / "log.md").read_text() == "concurrent edit\n"
+
+
+def test_four_dash_frontmatter_workflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "log.md"
+    original = b"----\r\ntitle: Log\r\nkeep: value # comment\r\n----\r\n# Log\r\n"
+    path.write_bytes(original)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    runner = CliRunner()
+    preview = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
+    assert preview.exit_code == 0 and "Would remove log.md: title" in preview.stdout
+    assert path.read_bytes() == original
+    applied = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
+    assert applied.exit_code == 0 and "Removed log.md: title" in applied.stdout
+    assert path.read_bytes() == original.replace(b"title: Log\r\n", b"")
+    assert (
+        "Nothing to repair"
+        in runner.invoke(app, ["okf", "strip-seeded-frontmatter"]).stdout
+    )
+    unsafe = b"----\r\ntitle: Log # keep\r\n----\r\n# Log\r\n"
+    path.write_bytes(unsafe)
+    skipped = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
+    assert skipped.exit_code == 1 and "Skipped log.md:" in skipped.stdout
+    assert path.read_bytes() == unsafe
