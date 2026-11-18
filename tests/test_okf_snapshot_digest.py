@@ -200,3 +200,24 @@ def test_non_yaml_json_handler_values_are_hashed(
 )
 def test_review_only_frontmatter_matches_plain_read(header: str) -> None:
     assert concept_snapshot(header + "Body\n") == concept_snapshot("Body\n")
+
+
+def test_full_read_accepts_reader_c_loader_syntax(tmp_path: Path) -> None:
+    import yaml
+    from frontmatter.default_handlers import SafeLoader
+
+    from markdown_vault_mcp._cli_read import read_payload
+    from markdown_vault_mcp.vault import Vault
+
+    if not hasattr(yaml, "CSafeLoader") or SafeLoader is not yaml.CSafeLoader:
+        pytest.skip("reader does not use the C YAML loader")
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
+    (tmp_path / "note.md").write_text("---\nstatus:\tdraft\n---\nBody\n")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        assert (
+            read_payload(vault, "note.md")["okf"]["snapshot"]["algo"]
+            == "mvmcp-concept-v1"
+        )
+    finally:
+        vault.close()

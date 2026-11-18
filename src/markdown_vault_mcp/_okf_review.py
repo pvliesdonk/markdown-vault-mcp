@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import frontmatter
 import yaml
-from frontmatter.default_handlers import JSONHandler, YAMLHandler
+from frontmatter.default_handlers import JSONHandler, SafeLoader, YAMLHandler
 from yaml.constructor import SafeConstructor
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
@@ -69,7 +69,7 @@ def _json_value(value: Any, *, root: bool = False) -> Any:
 
 def _metadata(handler: Any, source: str) -> Any:
     if isinstance(handler, YAMLHandler):
-        node = yaml.compose(source, Loader=yaml.SafeLoader)
+        node = yaml.compose(source, Loader=SafeLoader)
         if node is None or (
             isinstance(node, ScalarNode)
             and not SafeConstructor().construct_object(node)
