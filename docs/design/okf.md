@@ -543,8 +543,8 @@ and forced-on mode is unaffected.
 Generators create `index.md` and `log.md` without frontmatter, regardless of
 required concept fields. Regeneration retains existing headers byte-for-byte,
 including a root `okf_version` and legacy seeded fields, and adds no keys. The
-audit still reports disallowed index frontmatter (#1396). Log maintenance edits
-the body through `DocumentManager.edit`, which retains the stored header bytes
+audit still reports disallowed index frontmatter (#1396). Log maintenance replaces
+the body through `DocumentManager.replace_body`, which retains the stored header bytes
 and avoids stacking frontmatter blocks (#1391).
 
 Repairing files the defective releases already stacked is #1403,

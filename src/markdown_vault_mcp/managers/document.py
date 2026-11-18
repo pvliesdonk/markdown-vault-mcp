@@ -1102,26 +1102,21 @@ class DocumentManager:
         Returns:
             Whether an existing frontmatter block was preserved.
         """
-        if not original:
+        head = (original or "")[: _head_end(original or "")]
+        separator = "\n" if head and not head.endswith("\n") else ""
+        with self.exact_byte_writes():
+            text = head + separator + body
+            if head:
+                raw = self._validate_path(path).read_bytes().decode("utf-8")
+                text = _keep_head(raw, _read_view(raw), text)
             self.write(
                 path,
-                body,
+                text,
                 allow_overwrite=True,
                 allow_protected=allow_protected,
                 allow_designated=allow_designated,
             )
-            return False
-        end = _head_end(original)
-        head = original[:end]
-        separator = "\n" if head and not head.endswith("\n") else ""
-        self.edit(
-            path,
-            old_text=original,
-            new_text=head + separator + body,
-            allow_protected=allow_protected,
-            allow_designated=allow_designated,
-        )
-        return bool(end)
+        return bool(head)
 
     def _finalize_content_write(
         self,
@@ -1276,7 +1271,6 @@ class DocumentManager:
         line_end: int | None = None,
         *,
         allow_protected: bool = False,
-        allow_designated: bool = False,
     ) -> EditResult:
         """Patch a section of a document.
 
@@ -1297,7 +1291,6 @@ class DocumentManager:
 
         Args:
             allow_protected: Allow this library call to change protected paths.
-            allow_designated: Permit generated indexes only.
             path: Relative document path.
             old_text: Text to replace. Required for exact-match and
                 scoped-match modes.  Must appear exactly once (in the
@@ -1351,9 +1344,7 @@ class DocumentManager:
                 )
 
         with self._file_write_lock:
-            self.refuse_protected(
-                path, allow_protected=allow_protected, allow_designated=allow_designated
-            )
+            self.refuse_protected(path, allow_protected=allow_protected)
             abs_path = self._validate_path(path)
             self._refuse_submodule(abs_path, "path", path)
             if not is_regular_file(abs_path):
