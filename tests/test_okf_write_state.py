@@ -247,3 +247,49 @@ def test_library_okf_stats_preserves_original_shape(
             }
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("declared", [False, True])
+@pytest.mark.parametrize("transport", ["local", "mcp"])
+async def test_stats_uses_one_detection_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared: bool, transport: str
+) -> None:
+    from markdown_vault_mcp._cli_read import _facet_payload
+    from markdown_vault_mcp.facets.reader import ReaderFacet
+
+    index = tmp_path / "index.md"
+    declaration = '---\nokf_version: "0.2"\n---\n'
+    if declared:
+        index.write_text(declaration)
+    original = ReaderFacet.okf_stats
+
+    def change_declaration(facet: ReaderFacet) -> dict | None:
+        section = original(facet)
+        if declared:
+            index.unlink()
+        else:
+            index.write_text(declaration)
+        return section
+
+    monkeypatch.setattr(ReaderFacet, "okf_stats", change_declaration)
+    if transport == "local":
+        vault = Vault(
+            source_dir=tmp_path, settings=VaultSettings(read_only=False, okf_write=True)
+        )
+        try:
+            payload = _facet_payload(vault, "stats", {}, vault.reader.stats())
+        finally:
+            vault.close()
+    else:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+        async with Client(make_server()) as client:
+            payload = (await client.call_tool("stats", {})).structured_content
+    section = payload["okf"]
+    assert section["capabilities"]["index"]["effective"] is declared
+    if declared:
+        assert section["declared_version"] == "0.2"
+        assert section["write_effective"] is True
+    else:
+        assert set(section) == {"capabilities"}
+        assert section["capabilities"]["index"]["reason"] == "okf_inactive"
