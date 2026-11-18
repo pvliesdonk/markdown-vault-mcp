@@ -14,7 +14,7 @@ import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
-from tests.conftest import _CLEAR_VARS, get_app_html, wait_for_mcp_writer_drain
+from tests.conftest import get_app_html, wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -762,7 +762,9 @@ class TestIncludeSemanticEdges:
 
 
 @pytest.fixture
-def _star_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _star_vault(
+    _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
     # Star-pattern vault: hub.md links to 20 spokes; each spoke links back.
     vault = tmp_path / "star_vault"
     vault.mkdir()
@@ -772,8 +774,6 @@ def _star_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         (vault / f"spoke{i}.md").write_text(f"# Spoke {i}\n\n[hub](hub.md)\n")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     return vault
 
 
@@ -822,9 +822,6 @@ class TestGraphNeighborhoodMaxNodes:
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(tmp_path / "embeddings")
         )
-        for var in _CLEAR_VARS:
-            if var != "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":
-                monkeypatch.delenv(var, raising=False)
 
         mock_prov = MockEmbeddingProvider()
         with patch(
@@ -877,9 +874,6 @@ class TestGraphNeighborhoodMaxNodes:
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(tmp_path / "embeddings")
         )
-        for var in _CLEAR_VARS:
-            if var != "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":
-                monkeypatch.delenv(var, raising=False)
 
         mock_prov = MockEmbeddingProvider()
         with patch(

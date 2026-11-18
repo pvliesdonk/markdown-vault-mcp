@@ -22,7 +22,10 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
-from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
+from markdown_vault_mcp._commit_scope import (
+    auxiliary_commit_writes,
+    current_commit_scope,
+)
 from markdown_vault_mcp._okf_log_repair import (
     LogRepairCollision,
     LogRepairInterrupted,
@@ -1963,6 +1966,11 @@ class DocumentManager:
                 move_dirty.extend(md_map.values())  # new paths -> reparsed
                 move_dirty.extend(dirty_paths)  # rewritten sources
                 self._mark_paths_dirty(move_dirty)
+
+            scope = current_commit_scope()
+            if scope is not None:
+                # All queued callbacks share this scope; set it before firing any.
+                scope.folder_move = (old_abs, new_abs)
 
             # 7. Callbacks: rename for every moved file, edit for every
             #    rewritten source (minus intra-subtree dupes).
