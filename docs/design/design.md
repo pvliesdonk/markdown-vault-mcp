@@ -1570,9 +1570,9 @@ scan records its current notes, while restart restores watch coverage; later
 versions provide attribute events that rebuild the observation root. Existing search-owned roots retain inherited behavior. Native Linux delivery
 for these cases remains unverified. On macOS, tested FSEvents recursive streams
 delivered changes after restoration on watchdog 4.0.2 and 7.1. A direct directory
-notice on a non-recursive piece reconciles direct children against watches; the
-observed cost was about 23 ms at 60 and 250 ms at 200 children. Walking a 20,000
-directory excluded tree at startup was measured at about 0.45 seconds.
+notice on a non-recursive piece reconciles direct children against watches, with
+cost growing with both. Walking a 20,000 directory excluded tree at startup was
+measured at about 0.45 seconds.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
