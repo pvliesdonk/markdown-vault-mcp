@@ -38,8 +38,10 @@ class OkfExportReport:
     """Omissions and partial v0.2 format observations for an export.
 
     Counts overlap when a path has more than one omission reason. Uninspected
-    paths can be included with metadata that exceeded an inspection bound.
-    Selected inventory failures refuse export.
+    paths include inventory observations such as aliases and inspection bounds,
+    and headers the exporter could not parse or re-encode. A path can also be
+    transformed; neither observation identifies which fields changed. Selected
+    inventory failures refuse export.
     Transformed paths and dependency sources are archive paths; other path
     observations retain vault-relative paths. These observations do not establish
     conformance.

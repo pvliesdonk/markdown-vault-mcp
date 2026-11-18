@@ -7,7 +7,7 @@ import posixpath
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlsplit
 
 import frontmatter
@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.types import OutlinkInfo
 
+_FIELD_PATH = re.compile(r"/|\.\.?(?:[/?#]|$)")
 _MARKER = re.compile(r"^( *)(?:[-+*]|[0-9]{1,9}[.)])(?= |$)( *)")
 _HTML_OPEN = re.compile(r"^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)", re.I)
 _TICKS = re.compile(r"`+|<!--")
@@ -414,9 +415,16 @@ class ExportPaths:
     )
     _candidates: dict[str, set[str]] | None = field(default=None, init=False)
     _archive_members: set[str] = field(default_factory=set, init=False)
+    _directories: set[str] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
         self._archive_members = {path[len(self.scope) + 1 :] for path in self.members}
+        self._directories = {self.scope}
+        for path in self.members:
+            parent = path.rpartition("/")[0]
+            while parent not in self._directories:
+                self._directories.add(parent)
+                parent = parent.rpartition("/")[0]
         if self.external_base is not None:
             try:
                 parts = urlsplit(self.external_base)
@@ -470,11 +478,20 @@ class ExportPaths:
         )
 
     def _outside_target(
-        self, target: str, source: str, raw: str, apparent: str
+        self,
+        target: str,
+        source: str,
+        raw: str,
+        apparent: str,
+        *,
+        directories: bool = False,
+        directory_form: bool = False,
     ) -> str | None:
         if self.external_base:
             return self._external_url(target)
-        if apparent in self._archive_members:
+        if (not directory_form and apparent in self._archive_members) or (
+            directories and f"{self.scope}/{apparent}".rstrip("/") in self._directories
+        ):
             raise _ExportCollision(
                 f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; supply external_base to resolve outside destinations"
             )
@@ -573,24 +590,38 @@ class ExportPaths:
         target, _ = _resolve_link_path(path, source)
         archive_source = source[len(self.scope) + 1 :]
         apparent, _ = _resolve_link_path(path, archive_source)
-        if target not in self.members:
+        directory_form = path.endswith("/") or path.rsplit("/", 1)[-1] in {".", ".."}
+        if target not in self._directories and (
+            directory_form or target not in self.members
+        ):
             dependencies.append(Dependency(archive_source, _safe_text(value)))
+            if directory_form and target:
+                target += "/"
             if self.external_base and path == written:
                 base = self.external_base.rstrip("/")
                 return base + "/" + _quote_field_uri(target) + suffix
-            url = self._outside_target(target, source, value, apparent)
+            url = self._outside_target(
+                target,
+                source,
+                value,
+                apparent,
+                directories=True,
+                directory_form=directory_form,
+            )
             return url + suffix if url is not None else None
-        bundle_target = target[len(self.scope) + 1 :]
+        bundle_target = target[len(self.scope) + 1 :] if target != self.scope else ""
         if not written.startswith("/") and apparent == bundle_target:
             return None
         if written.startswith("/"):
             replacement = "/" + bundle_target
         else:
             replacement = posixpath.relpath(
-                bundle_target, posixpath.dirname(archive_source) or "."
+                bundle_target or ".", posixpath.dirname(archive_source) or "."
             )
-            if not replacement.startswith("."):
+            if not _FIELD_PATH.match(replacement):
                 replacement = "./" + replacement
+        if directory_form and not replacement.endswith("/"):
+            replacement += "/"
         if "%" in written:
             replacement = quote(
                 replacement,
@@ -610,7 +641,7 @@ class ExportPaths:
             trailing = node.value[len(value) :]
             if not value or _is_external_target(value):
                 continue
-            if not value.startswith(("/", "./", "../")):
+            if not _FIELD_PATH.match(value):
                 ambiguous.append(
                     Dependency(source[len(self.scope) + 1 :], _safe_text(value))
                 )
@@ -658,11 +689,8 @@ class ExportPaths:
         handler = frontmatter.detect_format(candidate, frontmatter.handlers)
         if handler is None:
             return prefix
-        try:
-            header, _ = handler.split(candidate)
-            offset = len(prefix) - len(candidate) + candidate.index(header)
-        except ValueError:
-            return prefix
+        header, _ = handler.split(candidate)
+        offset = len(prefix) - len(candidate) + candidate.index(header)
         end = offset + len(header)
         try:
             loader = _AliasLoader(header)
@@ -680,10 +708,8 @@ class ExportPaths:
             report.uninspected.setdefault(source, "metadata_complexity")
         except _ExportCollision:
             raise
-        except ValueError:
+        except (ValueError, yaml.YAMLError):
             report.uninspected.setdefault(source, "metadata_encoding")
-        except yaml.YAMLError:
-            pass
         else:
             return prefix[:offset] + header + prefix[end:]
         return prefix
@@ -889,8 +915,7 @@ def _copy_node(node: Node, budget: list[int], active: set[int]) -> Node:
                 [_copy_node(child, budget, active) for child in node.value],
                 flow_style=True,
             )
-        if not isinstance(node, MappingNode):
-            raise _MetadataComplexity
+        node = cast("MappingNode", node)
         return MappingNode(
             node.tag,
             [
