@@ -594,20 +594,23 @@ class DocumentManager:
             _, original = self._log_repair_snapshot(path)
             return preview_log_repair(path, original)
 
-    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
+    def okf_apply_log_repair(
+        self, path: str, *, etag: str, allow_protected: bool = False
+    ) -> LogRepairResult:
         """Apply a reviewed splice after retaining the complete original.
 
         Args:
             path: Exact vault-relative log.md path used for the preview.
             etag: The ``etag`` of the preview the operator reviewed.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             New byte etag and the adjacent complete-original recovery path.
 
         Raises:
             ConcurrentModificationError: The log changed since that preview.
-            InvalidRequestError: No candidate remains, or the recovery path
-                is occupied.
+            InvalidRequestError: No candidate remains, the recovery path is
+                occupied, or the log or its recovery path is protected.
             LogRepairInterrupted: Retention or a later step failed; inspect before retry.
         """
         self.ensure_writable()
@@ -618,6 +621,8 @@ class DocumentManager:
             require_reviewed(preview, etag)
             recovery = abs_path.with_name("log.md.frontmatter-repair.bak")
             recovery_path = recovery.relative_to(self._source_dir.resolve()).as_posix()
+            for guarded in (path, recovery_path):
+                self.refuse_protected(guarded, allow_protected=allow_protected)
             target_attempted = False
             try:
                 retain_original(recovery, original, recovery_path=recovery_path)
@@ -637,13 +642,7 @@ class DocumentManager:
                 raise LogRepairInterrupted(
                     recovery_path, target_may_have_changed=target_attempted
                 ) from exc
-            return LogRepairResult(
-                path=path,
-                etag=compute_etag(repaired),
-                recovery_path=recovery_path,
-                original_etag=preview.etag,
-                removed_blocks=preview.removed_blocks,
-            )
+            return preview.applied(repaired, recovery_path)
 
     # ------------------------------------------------------------------
     # Read operations

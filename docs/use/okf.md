@@ -195,7 +195,9 @@ that ran the command can read the recovery file. It is not indexed as a note.
 In a Git-backed vault both files are committed like any other write. Keep the
 recovery file until you have checked the result. The same preview and apply
 are available to library callers as `Vault.writer.okf_preview_log_repair` and
-`Vault.writer.okf_apply_log_repair`.
+`Vault.writer.okf_apply_log_repair`. The library apply call refuses if either
+the log or recovery path is protected. A trusted library caller can pass
+`allow_protected=True`; the admin CLI passes it to preserve operator repair.
 
 Any existing recovery entry blocks apply, even one with the same bytes. If
 apply stops part-way, its error says whether the log may already have
