@@ -247,12 +247,13 @@ def build_okf_bundle(
                     return candidates
                 cursor = page.next_cursor
 
+        extensions = effective_attachment_extensions(config.attachment_extensions)
         paths = ExportPaths(
             folder,
             {item.path for item in selected},
             external_base,
             inventory,
-            effective_attachment_extensions(config.attachment_extensions),
+            extensions,
         )
         for item in selected:
             raw = _read_safe(vault.source_dir, item.path)
@@ -272,7 +273,7 @@ def build_okf_bundle(
         excluded,
     )
     data = buf.getvalue()
-    audit_export(data, report)
+    audit_export(data, report, extensions)
     return OkfBundleResult(data, notes, attachments, excluded, report)
 
 

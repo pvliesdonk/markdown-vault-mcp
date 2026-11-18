@@ -32,7 +32,7 @@ def _audit(files: dict[str, bytes]):
         for path, data in files.items():
             archive.writestr(path, data)
     report = OkfExportReport()
-    audit_export(stream.getvalue(), report)
+    audit_export(stream.getvalue(), report, frozenset({"png", "pdf"}))
     return report
 
 
@@ -50,7 +50,8 @@ def test_index_body_checks_structure_and_ignores_fenced_examples() -> None:
 
 def test_log_checks_headings_not_fenced_examples() -> None:
     assert (
-        _audit({"log.md": b"# Log\n```\n## Yesterday\n```\n"}).verdict == "conformant"
+        _audit({"log.md": b"# Log\n## 2026-01-01\n```\n## Yesterday\n```\n"}).verdict
+        == "conformant"
     )
     assert _audit({"log.md": b"# Log\n## Yesterday\n"}).verdict == "nonconformant"
 
@@ -149,8 +150,8 @@ def test_nested_index_list_and_unparseable_index_are_reported() -> None:
     report = _audit({"index.md": b"# Index\n- [A](a.md)\n  - [B](b.md)\n"})
     assert report.verdict == "nonconformant"
     report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n"})
-    assert report.verdict == "incomplete"
-    assert report.unchecked["index.md"] == ["index_frontmatter"]
+    assert report.verdict == "nonconformant"
+    assert report.unchecked == {}
 
 
 def test_unreadable_archive_member_names_the_unchecked_checks(
@@ -184,7 +185,7 @@ def test_unreadable_reserved_file_names_its_checks(
 
 def test_unparseable_index_still_checks_body() -> None:
     report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n* broken\n"})
-    assert report.verdict == "incomplete"
+    assert report.verdict == "nonconformant"
     assert any(f.reason == "index_entry_shape" for f in report.format_findings)
 
 
@@ -255,8 +256,8 @@ def test_artifact_link_observations_cover_images_references_and_encoded_paths() 
     )
     assert report.verdict == "conformant"
     assert {(item.path, item.target) for item in report.broken_links} == {
-        ("sub/note.md", "sub/missing.png"),
-        ("sub/note.md", "absent.pdf"),
+        ("sub/note.md", "missing.png"),
+        ("sub/note.md", "../absent.pdf"),
     }
 
 
@@ -265,7 +266,121 @@ def test_date_order_allows_equal_dates_and_descending_dates() -> None:
     assert report.verdict == "conformant"
 
 
-def test_invalid_url_does_not_abort_link_observation() -> None:
-    from markdown_vault_mcp.okf_export_conformance import _local_destination
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"# Index\n-\n",
+        b"# Index\n* [A](a.md)\n\n  prose\n",
+        "# Index\n* [A](a.md) — desc\n".encode(),
+    ],
+)
+def test_index_closed_entry_grammar(body: bytes) -> None:
+    assert _audit({"index.md": body}).verdict == "nonconformant"
 
-    assert _local_destination("note.md", "http://[") is None
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"# Log\nUngrouped entry\n",
+        b"# Log\n- Ungrouped\n",
+        b"# Log\n```\n## example\n```\n",
+    ],
+)
+def test_log_requires_group_before_entries(body: bytes) -> None:
+    assert _audit({"log.md": body}).verdict == "nonconformant"
+
+
+def test_artifact_observer_masks_code_and_finds_wiki_attachments() -> None:
+    body = b"---\ntype: T\n---\n![[missing.png]]\n\n    [[code]]\n\n`[[inline]]`\n\n```\n[[fenced]]\n```\n"
+    report = _audit({"note.md": body})
+    assert [(item.path, item.target) for item in report.broken_links] == [
+        ("note.md", "missing.png")
+    ]
+
+
+def test_archive_directories_and_wiki_name_are_present() -> None:
+    body = b"---\ntype: T\n---\n[root](/) [dot](.) [here](./) [[b]]\n"
+    report = _audit({"note.md": body, "sub/b.md": b"---\ntype: T\n---\n"})
+    assert report.broken_links == []
+
+
+def test_invalid_root_index_header_is_decidable() -> None:
+    report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n"})
+    assert report.verdict == "nonconformant"
+    assert report.unchecked == {}
+    assert [f.reason for f in report.format_findings] == ["index_frontmatter"]
+
+
+def test_invalid_encoding_only_records_unchecked() -> None:
+    report = _audit({"note.md": b"\xff"})
+    assert report.verdict == "incomplete"
+    assert report.format_findings == []
+
+
+def test_missing_wikilinks_and_relative_destinations_report_written_targets() -> None:
+    body = b"---\ntype: T\n---\n[[missing]] ![[lost.png]] [[../absent]] [outside](../outside.pdf)\n"
+    report = _audit({"sub/note.md": body})
+    assert [item.target for item in report.broken_links] == [
+        "missing",
+        "lost.png",
+        "../absent",
+        "../outside.pdf",
+    ]
+    assert report.verdict == "conformant"
+
+
+def test_custom_attachment_extension_uses_same_name_in_export(tmp_path: Path) -> None:
+    (tmp_path / "note.md").write_text("---\ntype: T\n---\n![[missing.custom]]\n")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(attachment_extensions=["custom"])
+    )
+    try:
+        report = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path, attachment_extensions=("custom",))
+        ).report
+    finally:
+        vault.close()
+    assert [item.target for item in report.broken_links] == ["missing.custom"]
+
+
+def test_log_allows_entry_content_after_date_and_title_only() -> None:
+    assert _audit({"log.md": b"# Log\n"}).verdict == "conformant"
+    assert (
+        _audit(
+            {"log.md": b"# Log\n## 2026-01-01\nEntry\n```\n## sample\n```\n"}
+        ).verdict
+        == "conformant"
+    )
+
+
+def test_omitted_dependency_matches_artifact_observation(tmp_path: Path) -> None:
+    folder = tmp_path / "guides"
+    folder.mkdir()
+    (folder / "note.md").write_text("---\ntype: T\n---\n[x](/outside.md)\n")
+    (tmp_path / "outside.md").write_text("---\ntype: T\n---\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        report = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        ).report
+    finally:
+        vault.close()
+    assert [item.target for item in report.dependencies] == ["/outside.md"]
+    assert [item.target for item in report.broken_links] == ["/outside.md"]
+
+
+def test_real_export_accepts_generated_empty_index_and_log(tmp_path: Path) -> None:
+    from markdown_vault_mcp.okf import build_index_markdown, build_log_markdown
+
+    (tmp_path / "index.md").write_text(build_index_markdown("Index", []))
+    (tmp_path / "log.md").write_text(build_log_markdown([])[0])
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert result.report.verdict == "conformant"
+
+
+def test_index_rejects_whitespace_only_link_title() -> None:
+    assert _audit({"index.md": b"# Index\n- [   ](a.md)\n"}).verdict == "nonconformant"

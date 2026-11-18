@@ -765,6 +765,20 @@ aborts export. Reads use the inspected vault root; relocation preserves other fr
 reproducible. Notes are read uncapped, and export never mutates the vault. This
 audits the final ZIP and reports a `conformant`, `nonconformant` or `incomplete` format verdict. Export is not a snapshot; the report is not embedded.
 
+**Design choice — reserved structure.** OKF v0.2 §8 describes index bodies as
+sections of `* [Title](url) - description` entries; §9 describes logs as "a
+flat list of date-grouped entries, newest first". One reading treats these as
+examples or advice; this audit reads §11's requirement that reserved files
+follow §8 and §9 as a format rule. Indexes allow headings and flat bullet
+entries with a nonempty linked title, optionally followed by ` - ` and a
+description. Other blocks, nested lists, and extra paragraphs are findings.
+The existing index generator writes descriptions verbatim: a multi-paragraph
+description can therefore produce an index the audit reports nonconformant.
+Logs permit headings before the first date but no ungrouped entry, and require
+valid ISO dates in non-increasing order. After a date, entry content is free.
+The shared frontmatter parser also rejects impossible implicit YAML dates;
+the export reports that parser failure without substituting another dialect.
+
 ---
 
 ## 8. Methodology interop (PARA / Zettelkasten)

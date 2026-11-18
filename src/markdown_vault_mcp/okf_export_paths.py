@@ -390,6 +390,18 @@ def _wikilink_spans(masked: str) -> Iterator[tuple[int, int, int, int]]:
             yield start + 2 + left, start + 2 + left + len(path), start, position
 
 
+def _body_spans(body: str) -> list[tuple[int, int, tuple[int, int] | None]]:
+    masked = _masked_body(body)
+    spans: list[tuple[int, int, tuple[int, int] | None]] = [
+        (start, end, None) for start, end in _destination_spans(masked)
+    ]
+    spans.extend(
+        (start, end, (opening, closing))
+        for start, end, opening, closing in _wikilink_spans(_wiki_text(masked))
+    )
+    return sorted(spans, key=lambda span: (span[0], span[1]))
+
+
 def _external_wikilink(body: str, start: int, end: int, url: str) -> tuple[int, str]:
     target, _pipe, alias = body[start + 2 : end - 2].partition("|")
     target = target.strip().removesuffix("\\")
@@ -712,15 +724,7 @@ class ExportPaths:
             return body, []
         changes = []
         dependencies: list[Dependency] = []
-        masked = _masked_body(body)
-        spans: list[tuple[int, int, tuple[int, int] | None]] = [
-            (start, end, None) for start, end in _destination_spans(masked)
-        ]
-        spans.extend(
-            (start, end, (opening, closing))
-            for start, end, opening, closing in _wikilink_spans(_wiki_text(masked))
-        )
-        for start, end, wiki in sorted(spans, key=lambda span: (span[0], span[1])):
+        for start, end, wiki in _body_spans(body):
             raw = body[start:end]
             replacement = (
                 self._wiki_replacement(raw, source, dependencies)
@@ -735,6 +739,52 @@ class ExportPaths:
         for start, end, replacement in reversed(changes):
             body = body[:start] + replacement + body[end:]
         return body, dependencies
+
+
+@dataclass(frozen=True)
+class ArtifactLinks:
+    """Resolve observed links against final archive members and directories."""
+
+    members: set[str]
+    directories: set[str]
+    extensions: frozenset[str]
+
+    def unresolved(self, body: str, source: str) -> list[str]:
+        """Return unresolved local destinations as written, in first-seen order.
+
+        Args:
+            body: Markdown body after the frontmatter block.
+            source: Source member path relative to the archive root.
+
+        Returns:
+            Unresolved destinations in the artifact's shared link grammar.
+        """
+        missing: dict[str, None] = {}
+        for start, end, wiki in _body_spans(body):
+            raw = body[start:end]
+            target = self._target(raw, source, wiki is not None)
+            if (
+                target is not None
+                and target not in self.members
+                and target not in self.directories
+            ):
+                missing.setdefault(_safe_text(raw), None)
+        return list(missing)
+
+    def _target(self, raw: str, source: str, wiki: bool) -> str | None:
+        if not wiki:
+            path, _ = _path_and_suffix(raw)
+            if not path or _is_external_target(path):
+                return None
+            return _resolve_link_path(path, source)[0]
+        name = (
+            raw
+            if names_attachment(raw, self.extensions) or raw.lower().endswith(".md")
+            else raw + ".md"
+        )
+        if name.startswith(("./", "../")):
+            return _resolve_link_path(name, source)[0]
+        return ExportPaths._wiki_match(name, source, self.members) or name
 
 
 class _ExportCollision(ValueError):

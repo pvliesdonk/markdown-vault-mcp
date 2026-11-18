@@ -1,6 +1,9 @@
 """OKF v0.2 artifact conformance and export observations."""
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+Verdict = Literal["conformant", "nonconformant", "incomplete"]
 
 
 @dataclass(frozen=True)
@@ -45,8 +48,7 @@ class OkfExportReport:
     Transformed paths, dependency sources, optional metadata, broken links,
     format findings and unchecked checks use final archive paths. Inventory
     observations retain vault-relative paths. Findings and unchecked checks
-    determine the format verdict; an encoding finding can also leave checks
-    unchecked.
+    determine the format verdict.
     """
 
     transformed: list[str] = field(default_factory=list)
@@ -56,7 +58,7 @@ class OkfExportReport:
     local_policy: LocalPolicy = field(default_factory=LocalPolicy)
     format_findings: list[FormatFinding] = field(default_factory=list)
     uninspected: dict[str, str] = field(default_factory=dict)
-    verdict: str = "incomplete"
+    verdict: Verdict = "incomplete"
     unchecked: dict[str, list[str]] = field(default_factory=dict)
     optional_metadata: list[str] = field(default_factory=list)
     broken_links: list[Dependency] = field(default_factory=list)
