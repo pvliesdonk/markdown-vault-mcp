@@ -166,6 +166,7 @@ class IndexManager:
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
         okf_admission_active: Current effective OKF state, if applicable.
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
+        observations: Optional local ledger reconciled on full sweeps.
     """
 
     def __init__(

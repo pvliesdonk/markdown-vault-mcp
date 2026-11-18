@@ -489,7 +489,14 @@ class BundleInspector:
         return complete
 
     def is_internal_path(self, path: str) -> bool:
-        """Return whether the last prepared policy hides a vault-relative path."""
+        """Check the last prepared policy for a vault-relative path.
+
+        Args:
+            path: Vault-relative path to check.
+
+        Returns:
+            Whether the path is internal to the server.
+        """
         return any(
             self._internal("/".join(_components(path)[:i]))
             for i in range(1, len(_components(path)) + 1)
@@ -517,24 +524,29 @@ class BundleInspector:
             if self._internal(path):
                 continue
             try:
-                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                if stat.S_ISDIR(info.st_mode):
-                    child = open_child_directory(fd, name)
-                    try:
-                        complete = self._observe_tree(child, path, visit) and complete
-                    finally:
-                        os.close(child)
-                elif stat.S_ISREG(info.st_mode) and is_note(path):
-                    raw = read_regular_nofollow(fd, name, info.st_size + 1)
-                    if len(raw) > info.st_size:
-                        complete = False
-                    else:
-                        visit(path, _role(name, self._policy.conventions_file), raw)
-                elif stat.S_ISLNK(info.st_mode) or is_note(path):
-                    complete = False
+                complete = self._observe_child(fd, path, visit) and complete
             except OSError:
                 complete = False
         return complete
+
+    def _observe_child(
+        self, fd: int, path: str, visit: Callable[[str, Role, bytes], None]
+    ) -> bool:
+        name = path.rsplit("/", 1)[-1]
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if stat.S_ISDIR(info.st_mode):
+            child = open_child_directory(fd, name)
+            try:
+                return self._observe_tree(child, path, visit)
+            finally:
+                os.close(child)
+        if stat.S_ISREG(info.st_mode) and is_note(path):
+            raw = read_regular_nofollow(fd, name, info.st_size + 1)
+            if len(raw) > info.st_size:
+                return False
+            visit(path, _role(name, self._policy.conventions_file), raw)
+            return True
+        return not (stat.S_ISLNK(info.st_mode) or is_note(path))
 
     def _walk_page(
         self, parent: int, request: BundleTreeRequest, scope: str
