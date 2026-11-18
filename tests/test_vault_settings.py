@@ -19,7 +19,7 @@ from markdown_vault_mcp.config_sections._assembly import (
 from markdown_vault_mcp.vault import Vault
 
 # The Vault.__init__ keywords that are NOT config-derived and therefore have
-# no VaultSettings field: the root, the five collaborators, and settings.
+# no VaultSettings field: the root, explicit collaborators, and settings.
 _NON_SETTINGS_PARAMS = {
     "self",
     "source_dir",
@@ -30,6 +30,7 @@ _NON_SETTINGS_PARAMS = {
     "chunk_strategy",
     "vector_store",
     "vector_backend",
+    "inspection_policy",
     "settings",
 }
 
