@@ -828,7 +828,7 @@ def _yaml_scalar(value: str, style: str | None, original: str) -> str:
     if style == '"':
         return _quoted_scalar(value)
     scalar = ScalarNode("tag:yaml.org,2002:str", value)
-    return _emit(scalar)
+    return _emit_flow(scalar)
 
 
 class _AliasLoader(yaml.SafeLoader):
@@ -905,6 +905,11 @@ def _copy_node(node: Node, budget: list[int], active: set[int]) -> Node:
         )
     finally:
         active.remove(id(node))
+
+
+def _emit_flow(node: Node) -> str:
+    """Emit *node* in a form valid in both flow and block collections."""
+    return _emit(SequenceNode("tag:yaml.org,2002:seq", [node], flow_style=True))[1:-1]
 
 
 def _emit(node: Node) -> str:

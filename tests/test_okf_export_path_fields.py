@@ -535,18 +535,29 @@ def test_alias_copy_preserves_values(tmp_path, kind):
 
 @pytest.mark.parametrize("escape", ["%2F", "%00", "%FF"])
 def test_refused_uri_escape_never_matches_literal_member(tmp_path, escape):
+    import yaml
+
     name = f"a{escape}b.md"
     (tmp_path / "guides").mkdir()
     (tmp_path / "guides" / name).write_text("target")
-    text = f"---\nresource: /guides/{name}\n---\n"
+    text = f"---\nbefore: first\nresource: /guides/{name}\nafter: last\n---\n"
     output, report = export(tmp_path, text)
     assert output == text
     assert [(item.path, item.target) for item in report.dependencies] == [
         ("a.md", f"/guides/{name}")
     ]
     output, report = export(tmp_path, text, external_base="https://example.org/v")
-    assert output == text.replace("/guides/", "https://example.org/v/guides/")
-    assert report.dependencies[0].target == f"/guides/{name}"
+    data = yaml.safe_load(output.split("---")[1])
+    assert list(data) == ["before", "resource", "after"]
+    assert data == {
+        "before": "first",
+        "resource": f"https://example.org/v/guides/{name}",
+        "after": "last",
+    }
+    assert [(item.path, item.target) for item in report.dependencies] == [
+        ("a.md", f"/guides/{name}")
+    ]
+    assert (tmp_path / "guides/a.md").read_text() == text
 
 
 @pytest.mark.parametrize("escape", ["%2F", "%00", "%FF"])
@@ -572,3 +583,34 @@ def test_refused_uri_escape_never_matches_literal_directory(tmp_path, escape):
     output, report = export(tmp_path, text)
     assert output == text
     assert report.dependencies[0].target == f"/guides/{directory}/"
+
+
+@pytest.mark.parametrize(
+    "base",
+    ["https://h.example/a,b/", "https://h.example/[x]/", "https://h.example/{x}/"],
+)
+@pytest.mark.parametrize("style", ["{}", "'{}'", '"{}"'])
+@pytest.mark.parametrize(
+    "field", ["resource", "computation", "executor", "attester", "sources"]
+)
+def test_external_base_flow_scalars_preserve_yaml_values(tmp_path, base, style, field):
+    import yaml
+
+    scalar = style.format("../outside.md")
+    if field in {"resource", "computation"}:
+        header = f"{{{field}: {scalar}, other: preserved}}"
+        expected = {field: base + "outside.md", "other": "preserved"}
+    elif field == "sources":
+        header = f"sources: [{{resource: {scalar}, other: preserved}}]"
+        expected = {
+            "sources": [{"resource": base + "outside.md", "other": "preserved"}]
+        }
+    else:
+        header = f"{field}: {{resource: {scalar}, other: preserved}}"
+        expected = {field: {"resource": base + "outside.md", "other": "preserved"}}
+    text = f"---\n{header}\n---\n"
+    output, report = export(tmp_path, text, external_base=base)
+    assert yaml.safe_load(output.split("---")[1]) == expected
+    assert [(item.path, item.target) for item in report.dependencies] == [
+        ("a.md", "../outside.md")
+    ]
