@@ -448,8 +448,8 @@ jobs:
         #
         # The build backend's metadata version and the publisher's twine are
         # one invariant across two files; `pyproject.toml` bounds hatchling so
-        # this side cannot be outrun again, and template-ci's
-        # publish-metadata gate proves the pair still agree.
+        # this side cannot be outrun again, and the Lint job in ci.yml
+        # proves the pair still agree on every pull request (#2259).
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: dist/
