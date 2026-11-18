@@ -309,3 +309,12 @@ def test_reserved_and_missing_notes_refused(tmp_path: Path) -> None:
             vault.writer.okf_author("missing.md", if_match="etag", fields={})
     finally:
         vault.close()
+
+
+def test_generated_block_value_keeps_comment_and_neighbor() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    text = "---\ngenerated:\n  by:\n    - old/1 # earlier\n  custom: keep\n---\nBody\n"
+    result = author_text(text, {}, "new/1")
+    assert "# earlier" in result
+    assert frontmatter.loads(result).metadata["generated"]["custom"] == "keep"

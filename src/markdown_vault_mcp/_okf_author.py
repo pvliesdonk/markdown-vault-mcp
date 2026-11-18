@@ -39,7 +39,13 @@ def _generated_edits(
     for child, child_value in value.items():
         if child in nested:
             n = nested[child]
-            edits.append((n.start_mark.index, n.end_mark.index, _render(child_value)))
+            edits.append(
+                (
+                    n.start_mark.index,
+                    n.end_mark.index,
+                    _replacement(source, n, child_value),
+                )
+            )
         else:
             missing.append(
                 f"{' ' * node.start_mark.column}{child}: {_render(child_value)}\n"
@@ -64,6 +70,15 @@ def _comments_in_span(source: str, start: int, end: int) -> str:
     return "".join(comments)
 
 
+def _replacement(source: str, node: Any, value: Any) -> str:
+    old = source[node.start_mark.index : node.end_mark.index]
+    trailing = re.search(r"\n[ \t]*$", old)
+    indent = trailing.group()[1:] if trailing else ""
+    comments = _comments_in_span(source, node.start_mark.index, node.end_mark.index)
+    suffix = "\n" if trailing else ""
+    return _render(value) + suffix + comments + indent
+
+
 def _collect_edits(
     source: str, root: MappingNode, changes: dict[str, Any]
 ) -> tuple[list[tuple[int, int, str]], list[str]]:
@@ -83,16 +98,11 @@ def _collect_edits(
         else:
             if key == "generated":
                 raise InvalidRequestError("Existing generated field must be a mapping")
-            old = source[node.start_mark.index : node.end_mark.index]
-            suffix = "\n" if old.endswith("\n") else ""
-            comments = _comments_in_span(
-                source, node.start_mark.index, node.end_mark.index
-            )
             edits.append(
                 (
                     node.start_mark.index,
                     node.end_mark.index,
-                    _render(value) + suffix + comments,
+                    _replacement(source, node, value),
                 )
             )
     return edits, additions
