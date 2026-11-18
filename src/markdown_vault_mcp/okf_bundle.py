@@ -168,7 +168,8 @@ def build_okf_bundle(
         Archive bytes, counts, and a partial report; no conformance verdict.
 
     Raises:
-        ValueError: If the scope is invalid or inventory cannot enumerate it.
+        ValueError: If the scope is invalid or inventory cannot enumerate it,
+            including failures under otherwise omitted hidden paths.
         OSError: If a selected file cannot be read.
     """
     folder = _scope(folder)
