@@ -25,6 +25,11 @@
 
 ## 2026-11-14
 
+- New: [Watchdog event filtering](watchdog-event-filtering.md), for #2045.
+  Tagged observer, inotify and FSEvents sources establish mutation masks and
+  the 4.0.2 minimum; the refutation pass rejects a ninth close-event class and
+  an at-most-one-overflow claim. Pins cover production scheduling, native mask
+  construction and mutation admission. Next review: 2027-05-14.
 - [Git history and revision queries](git-history-queries.md): added Python's
   subprocess newline/encoding behavior behind path streams (#1290).
   Sources: Python 3.14 subprocess documentation and CPython source; observed
@@ -57,6 +62,13 @@
   PyYAML 6.0.3 source distributions: keyword forwarding, default sorting,
   recursive mapping representation, loading order and formatting boundaries.
   Next review: 2027-05-14, or when either pinned dependency changes.
+- New: [OpenAI-compatible embedding responses](openai-compatible-embeddings.md),
+  for bug #2050. Sources: the OpenAI OpenAPI spec's `Embedding` and
+  `CreateEmbeddingResponse` schemas, openai-python's `Embedding` type and
+  `BaseModel.construct`, the ProtoJSON format's default-value rule and
+  Google's OpenAI compatibility page, all read 2026-11-14. Observations: raw
+  Gemini batch responses and per-text comparisons from #2050 and a rerun on
+  `gemini-embedding-2`. Next review: 2027-05-14.
 
 ## 2026-11-07
 
