@@ -134,11 +134,7 @@ class ObservationLedger:
                     not prefix or path == prefix or path.startswith(prefix + "/")
                     for prefix in blocked
                 )
-                if (
-                    old.presence == "present"
-                    and visible
-                    and not self._inspector.is_internal_path(path)
-                ):
+                if old.presence == "present" and visible:
                     result[path] = replace(
                         old,
                         presence="removed",
@@ -152,8 +148,7 @@ class ObservationLedger:
                 self._save(result)
 
     def _save(self, rows: dict[str, Observation]) -> None:
-        if self._path is None:
-            return
+        assert self._path is not None
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(
             dir=self._path.parent, prefix=".observations-", suffix=".tmp"

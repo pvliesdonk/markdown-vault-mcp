@@ -583,20 +583,6 @@ class BundleInspector:
             blocked.add("")
         return blocked
 
-    def is_internal_path(self, path: str) -> bool:
-        """Check the last prepared policy for a vault-relative path.
-
-        Args:
-            path: Vault-relative path to check.
-
-        Returns:
-            Whether the path is internal to the server.
-        """
-        return any(
-            self._internal("/".join(_components(path)[:i]))
-            for i in range(1, len(_components(path)) + 1)
-        )
-
     def _observe_tree(
         self,
         fd: int,
@@ -604,10 +590,6 @@ class BundleInspector:
         visit: Callable[[str, Role, str, str | None], None],
         blocked: set[str],
     ) -> None:
-        selected = self._absolute_source.joinpath(*_components(directory))
-        for policy_path in self._unavailable_policy_paths:
-            if policy_path.parent == selected:
-                blocked.add(policy_path.relative_to(self._absolute_source).as_posix())
         try:
             with os.scandir(fd) as children:
                 names = [child.name for child in children]
