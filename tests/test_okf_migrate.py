@@ -505,6 +505,10 @@ class TestReservedFilesUnderRequiredFrontmatter:
         result = gated_vault.writer.okf_generate_index()
         assert result.frontmatter_preserved is True
         assert path.read_bytes().startswith(header)
+        if b"title: Legacy" in header:
+            assert gated_vault.reader.okf_validate().index_frontmatter.examples == (
+                "index.md",
+            )
 
 
 _UNREADABLE = b"# caf\xe9 log\n"  # not UTF-8: exists, but cannot be read

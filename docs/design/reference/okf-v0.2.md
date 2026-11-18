@@ -248,7 +248,7 @@ tree, 2026-09-07].
   generators preserve existing headers, including legacy seeded fields, and
   add no keys. The audit reports disallowed index fields as
   `index_frontmatter` (#1396, #1438).
-  [pins: tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_generated_index_is_audited_like_any_index, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_regeneration_preserves_header_bytes]
+  [pins: tests/test_okf.py::TestIndexFrontmatterAudit::test_root_index_finding, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_generators_write_body_only, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_regeneration_preserves_header_bytes]
 - **This bundle's own `stale_after` is a calendar date.** The
   template-owned `scripts/check_references.py` requires
   `stale_after` to be `YYYY-MM-DD` and reads `verified` only as a list, both
