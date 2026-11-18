@@ -821,6 +821,7 @@ class ProjectConfig:
     )
     git_group_idle_s: float = field(
         default=300.0,
+        kw_only=True,
         metadata={
             "help": "Seconds of group inactivity before automatic close.",
             "tags": ("git",),
@@ -829,6 +830,7 @@ class ProjectConfig:
     )
     git_group_max_age_s: float = field(
         default=3600.0,
+        kw_only=True,
         metadata={
             "help": "Maximum group age in seconds before automatic close.",
             "tags": ("git",),

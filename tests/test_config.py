@@ -2816,3 +2816,18 @@ def test_direct_vault_group_timeout_validation(setting: str, value: float) -> No
 
     with pytest.raises(ConfigurationError, match=setting.removeprefix("git_")):
         VaultSettings(**{setting: value})
+
+
+def test_group_timeouts_preserve_project_config_positional_fields() -> None:
+    defaults = ProjectConfig()
+    old_fields = [
+        f
+        for f in dataclasses.fields(ProjectConfig)
+        if not f.kw_only and f.name not in {"git_group_idle_s", "git_group_max_age_s"}
+    ]
+    end = next(i for i, f in enumerate(old_fields) if f.name == "git_push_delay_s")
+    args = [
+        27.0 if f.name == "git_push_delay_s" else getattr(defaults, f.name)
+        for f in old_fields[: end + 1]
+    ]
+    assert ProjectConfig(*args).git_push_delay_s == 27.0
