@@ -2171,6 +2171,16 @@ class DocumentManager:
                 continue
             self._notifier.fire(src_abs, src_content, "edit")
 
+    def _observe_folder_sources(self, paths: dict[str, str]) -> None:
+        if self._observations is not None:
+            for path in paths:
+                self._observations.refresh(path)
+
+    def _observe_folder_moves(self, paths: dict[str, str]) -> None:
+        if self._observations is not None:
+            for old_path, new_path in paths.items():
+                self._observations.move(old_path, new_path)
+
     def move_folder(  # noqa: C901, RUF100 — pre-existing branches.
         self, old_dir: str, new_dir: str, *, allow_protected: bool = False
     ) -> MoveFolderResult:
@@ -2248,9 +2258,7 @@ class DocumentManager:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
 
-            if self._observations is not None:
-                for old_path in md_map:
-                    self._observations.refresh(old_path)
+            self._observe_folder_sources(md_map)
 
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
@@ -2281,9 +2289,7 @@ class DocumentManager:
             # 6. Index: purge old note paths, reparse new note paths, plus the
             #    rewritten sources. A single mark_paths_dirty batch makes the
             #    writer run resolve_vault_wikilinks() once.
-            if self._observations is not None:
-                for old_path, new_path in md_map.items():
-                    self._observations.move(old_path, new_path)
+            self._observe_folder_moves(md_map)
             if self._mark_paths_dirty is not None:
                 move_dirty: list[str] = []
                 move_dirty.extend(md_map.keys())  # old paths -> purged

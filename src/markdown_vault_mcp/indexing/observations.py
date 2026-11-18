@@ -58,6 +58,17 @@ def _valid_digest(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
+def _valid_move_paths(row: Observation) -> bool:
+    for related in (row.moved_from, row.moved_to):
+        if related is not None:
+            try:
+                if not _components(related):
+                    return False
+            except (ValueError, TypeError):
+                return False
+    return True
+
+
 def _valid_row(key: str, row: Observation) -> bool:
     try:
         if not _components(key) or key != row.path:
@@ -68,15 +79,9 @@ def _valid_row(key: str, row: Observation) -> bool:
         row.role not in get_args(Role)
         or row.origin not in ("unknown", "server_write")
         or row.presence not in ("present", "removed")
+        or not _valid_move_paths(row)
     ):
         return False
-    for related in (row.moved_from, row.moved_to):
-        if related is not None:
-            try:
-                if not _components(related):
-                    return False
-            except (ValueError, TypeError):
-                return False
     if not _valid_digest(row.content_digest) or (
         row.frontmatter_digest is not None and not _valid_digest(row.frontmatter_digest)
     ):

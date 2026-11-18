@@ -12,6 +12,7 @@ def test_write_and_delete_update_observations(tmp_path: Path) -> None:
     vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
     try:
         vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
         vault._doc_mgr.write("a.md", "hello")
         vault._index_mgr.process_dirty_paths({"a.md"})
         row = vault._index_mgr.observations.rows()["a.md"]
@@ -129,6 +130,7 @@ def test_delete_unobserved_source_retains_removal(tmp_path: Path) -> None:
     try:
         vault.index.build_index()
         (source / "new.md").write_text("unobserved")
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
         vault._doc_mgr.delete("new.md")
         vault._index_mgr.process_dirty_paths({"new.md"})
         assert vault._index_mgr.observations.rows()["new.md"].presence == "removed"
@@ -160,3 +162,27 @@ def test_version_one_rows_survive_upgrade(tmp_path: Path) -> None:
         assert json.loads(ledger_path.read_text())["version"] == 2
     finally:
         vault.close()
+
+
+def test_reindex_after_restart_repairs_interrupted_write(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("before")
+    settings = VaultSettings(state_path=tmp_path / "state")
+    vault = Vault(source_dir=source, settings=settings)
+    try:
+        vault.index.build_index()
+        before = vault._index_mgr.observations.rows()["a.md"]
+        # Disk replacement happened, but the process exited before ledger update.
+        (source / "a.md").write_text("after")
+    finally:
+        vault.close()
+    reopened = Vault(source_dir=source, settings=settings)
+    try:
+        reopened._index_mgr.reindex()
+        after = reopened._index_mgr.observations.rows()["a.md"]
+        assert after.content_digest == hashlib.sha256(b"after").hexdigest()
+        assert after.first_seen_at == before.first_seen_at
+        assert after.origin == "unknown"
+    finally:
+        reopened.close()
