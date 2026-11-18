@@ -4546,7 +4546,12 @@ its first write's transaction, so an open changes nothing. The supported
 range is PostgreSQL 15 to 18 with pgvector 0.7.0 (`MIN_PGVECTOR`) or later,
 17 with 0.7.4 and 18 with 0.8.7, the lowest built for them: `.github/workflows/postgres-range.yml` runs the PostgreSQL
 tests on one pinned image per combination, and the minimum is the lowest
-pgvector that workflow passes, so the docs state only what it runs. The same
+pgvector that workflow passes, so the docs state only what it runs. A weekly
+image currency job keeps one tracking issue (fixed title, label `ci`) open
+naming newer images, refreshes it when the list changes and closes it once the
+pins are current; a failed Docker Hub read fails the run and leaves the issue
+alone. vchord checks only the pinned deployment major. Bumps and new majors
+remain manual support decisions ([Docker Hub reference](reference/docker-hub-range-tags.md)). The same
 workflow (#1897) also runs those tests with the `postgres` extra's lowest
 declared drivers on the lowest supported Python. That run found psycopg
 3.3.0's broken named-cursor iteration, so the floor is 3.3.1; the bug was
