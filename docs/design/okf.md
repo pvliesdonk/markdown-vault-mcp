@@ -753,7 +753,7 @@ lists files whose bytes changed. Path-valued `resource`, `sources[].resource`, `
 paths and index-excluded paths are omitted by default. Reserved `index.md` and
 `log.md` are kept unless an omission policy applies, including a matching
 configured conventions filename. Library callers can opt into hidden and
-index-excluded paths separately (including a hidden scope root) and receive partial v0.2 observations;
+index-excluded paths separately (including a hidden scope root) and receive an artifact v0.2 format verdict and observations;
 the download ref exposes neither options nor report. Incomplete inventory
 enumeration refuses export, even under default-omitted hidden paths, including denied entries and unavailable state paths. Local policy records last-observed index state, not
 admission of current bytes; `unknown` covers candidates without a decisive index
@@ -763,7 +763,7 @@ followed; dot-path links omitted by policy are counted as hidden. Selected
 symlinks and nonregular entries refuse export. Failure to observe or read a selected file
 aborts export. Reads use the inspected vault root; relocation preserves other frontmatter values. A fixed zip-entry timestamp makes unchanged vaults
 reproducible. Notes are read uncapped, and export never mutates the vault. This
-is not a conformance verdict or snapshot; the report is not embedded.
+audits the final ZIP and reports a `conformant`, `nonconformant` or `incomplete` format verdict. Export is not a snapshot; the report is not embedded.
 
 ---
 

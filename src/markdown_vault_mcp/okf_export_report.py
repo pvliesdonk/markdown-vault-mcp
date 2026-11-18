@@ -42,9 +42,11 @@ class OkfExportReport:
     and headers the exporter could not parse or re-encode. A path can also be
     transformed; neither observation identifies which fields changed. Selected
     inventory failures refuse export.
-    Transformed paths and dependency sources are archive paths; other path
-    observations retain vault-relative paths. Format findings and unchecked
-    checks refer to final archive paths and determine the format verdict.
+    Transformed paths, dependency sources, optional metadata, broken links,
+    format findings and unchecked checks use final archive paths. Inventory
+    observations retain vault-relative paths. Findings and unchecked checks
+    determine the format verdict; an encoding finding can also leave checks
+    unchecked.
     """
 
     transformed: list[str] = field(default_factory=list)

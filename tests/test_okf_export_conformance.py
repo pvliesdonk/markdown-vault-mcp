@@ -191,3 +191,81 @@ def test_unparseable_index_still_checks_body() -> None:
 def test_empty_index_link_is_not_an_entry() -> None:
     report = _audit({"index.md": b"# Index\n* [](a.md)\n"})
     assert report.verdict == "nonconformant"
+
+
+@pytest.mark.parametrize("body", [b"# Index\n\n---\n", b"# Index\n\n> - [A](a.md)\n"])
+def test_index_rejects_non_entry_blocks(body: bytes) -> None:
+    assert _audit({"index.md": body}).verdict == "nonconformant"
+
+
+def test_log_requires_newest_dates_first() -> None:
+    report = _audit({"log.md": b"# Log\n## 2025-01-01\n- Old\n## 2026-01-01\n- New\n"})
+    assert report.verdict == "nonconformant"
+
+
+def test_broken_attachment_link_is_reported() -> None:
+    report = _audit({"note.md": b"---\ntype: T\n---\n[manual](missing.pdf)\n"})
+    assert [(item.path, item.target) for item in report.broken_links] == [
+        ("note.md", "missing.pdf")
+    ]
+
+
+def test_malformed_frontmatter_still_reports_body_links() -> None:
+    report = _audit({"note.md": b"---\ntype: [\n---\n[missing](missing.md)\n"})
+    assert [(item.path, item.target) for item in report.broken_links] == [
+        ("note.md", "missing.md")
+    ]
+
+
+@pytest.mark.parametrize("missing", ["resource", "tags"])
+def test_recommended_metadata_reports_each_missing_field(missing: str) -> None:
+    fields = {
+        "type": "T",
+        "title": "Title",
+        "description": "Description",
+        "resource": "/x",
+        "tags": "[x]",
+    }
+    del fields[missing]
+    header = "\n".join(f"{key}: {value}" for key, value in fields.items())
+    report = _audit({"note.md": f"---\n{header}\n---\n".encode()})
+    assert report.verdict == "conformant"
+    assert report.optional_metadata == ["note.md"]
+
+
+def test_malformed_nested_index_has_known_frontmatter_violation() -> None:
+    report = _audit({"sub/index.md": b"---\nbad: [\n---\n# Index\n"})
+    assert report.verdict == "nonconformant"
+    assert "sub/index.md" not in report.unchecked
+    assert any(f.reason == "index_frontmatter" for f in report.format_findings)
+
+
+def test_design_describes_artifact_verdict() -> None:
+    text = (Path(__file__).parents[1] / "docs/design/okf.md").read_text()
+    assert "partial v0.2 observations" not in text
+    assert "not a conformance verdict or snapshot" not in text
+
+
+def test_artifact_link_observations_cover_images_references_and_encoded_paths() -> None:
+    report = _audit(
+        {
+            "sub/note.md": b"---\ntype: T\n---\n[local](../files/a%20b.pdf?view=1#p) ![image](missing.png) [ref][id] [remote](https://example.com/no.pdf) [self](#heading)\n\n[id]: ../absent.pdf\n",
+            "files/a b.pdf": b"present",
+        }
+    )
+    assert report.verdict == "conformant"
+    assert {(item.path, item.target) for item in report.broken_links} == {
+        ("sub/note.md", "sub/missing.png"),
+        ("sub/note.md", "absent.pdf"),
+    }
+
+
+def test_date_order_allows_equal_dates_and_descending_dates() -> None:
+    report = _audit({"log.md": b"# Log\n## 2026-01-01\n## 2026-01-01\n## 2025-01-01\n"})
+    assert report.verdict == "conformant"
+
+
+def test_invalid_url_does_not_abort_link_observation() -> None:
+    from markdown_vault_mcp.okf_export_conformance import _local_destination
+
+    assert _local_destination("note.md", "http://[") is None

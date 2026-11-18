@@ -1,13 +1,15 @@
-"""Assess OKF v0.2 format against the final archive, independently of inventory."""
+"""Assess final archive format; see docs/design/reference/okf-v0.2.md."""
 
 from __future__ import annotations
 
 import io
+import posixpath
 import re
 import zipfile
 from datetime import date
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote, urlsplit
 
 import frontmatter
 import yaml
@@ -49,7 +51,13 @@ def _index_body_conforms(body: str) -> bool:
         elif token.type == "inline" and not in_heading:
             if not in_item or not _index_entry_conforms(token.children or []):
                 return False
-        elif token.type in {"fence", "code_block", "html_block", "ordered_list_open"}:
+        elif token.type not in {
+            "bullet_list_open",
+            "bullet_list_close",
+            "paragraph_open",
+            "paragraph_close",
+            "inline",
+        }:
             return False
     return True
 
@@ -66,6 +74,7 @@ def _index_entry_conforms(children: list[Token]) -> bool:
 
 def _log_body_conforms(body: str) -> bool:
     tokens = _MARKDOWN.parse(body)
+    previous: date | None = None
     for index, token in enumerate(tokens):
         if token.type != "heading_open" or token.tag != "h2":
             continue
@@ -73,9 +82,12 @@ def _log_body_conforms(body: str) -> bool:
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             return False
         try:
-            date.fromisoformat(value)
+            current = date.fromisoformat(value)
         except ValueError:
             return False
+        if previous is not None and current > previous:
+            return False
+        previous = current
     return True
 
 
@@ -89,7 +101,9 @@ def _inspect_concept(
         not isinstance(note_type := metadata.get("type"), str) or not note_type.strip()
     ):
         report.format_findings.append(FormatFinding(path, "missing_or_invalid_type"))
-    if not metadata.get("title") or not metadata.get("description"):
+    if any(
+        not metadata.get(key) for key in ("title", "description", "resource", "tags")
+    ):
         report.optional_metadata.append(path)
 
 
@@ -132,9 +146,13 @@ def _inspect(path: str, raw: bytes, report: OkfExportReport, members: set[str]) 
     except (yaml.YAMLError, ValueError):
         report.format_findings.append(FormatFinding(path, "malformed_frontmatter"))
         if reserved:
-            report.unchecked[path] = ["index_frontmatter"]
+            if path == "index.md":
+                report.unchecked[path] = ["index_frontmatter"]
+            else:
+                report.format_findings.append(FormatFinding(path, "index_frontmatter"))
             if not _index_body_conforms(body):
                 report.format_findings.append(FormatFinding(path, "index_entry_shape"))
+        _find_broken_links(path, body, members, report)
         return
     metadata = dict(post.metadata)
     if reserved:
@@ -144,12 +162,49 @@ def _inspect(path: str, raw: bytes, report: OkfExportReport, members: set[str]) 
     _find_broken_links(path, body, members, report)
 
 
+def _local_destination(path: str, destination: str) -> str | None:
+    try:
+        parts = urlsplit(destination)
+    except ValueError:
+        return None
+    if parts.scheme or parts.netloc or not parts.path:
+        return None
+    target = unquote(parts.path)
+    base = "" if target.startswith("/") else posixpath.dirname(path)
+    return posixpath.normpath(posixpath.join(base, target.lstrip("/")))
+
+
+def _markdown_destinations(body: str) -> list[str]:
+    destinations = []
+    for token in _MARKDOWN.parse(body):
+        for child in token.children or []:
+            if child.type == "link_open":
+                destination = child.attrGet("href")
+            elif child.type == "image":
+                destination = child.attrGet("src")
+            else:
+                continue
+            if isinstance(destination, str):
+                destinations.append(destination)
+    return destinations
+
+
 def _find_broken_links(
     path: str, body: str, members: set[str], report: OkfExportReport
 ) -> None:
-    for link in extract_links(body, path):
-        if link.target_path not in members:
-            report.broken_links.append(Dependency(path, link.target_path))
+    targets = [_local_destination(path, dest) for dest in _markdown_destinations(body)]
+    targets.extend(
+        link.target_path
+        for link in extract_links(body, path)
+        if link.link_type == "wikilink"
+    )
+    for target in dict.fromkeys(targets):
+        if (
+            target
+            and target not in members
+            and not any(name.startswith(target.rstrip("/") + "/") for name in members)
+        ):
+            report.broken_links.append(Dependency(path, target))
 
 
 def audit_export(data: bytes, report: OkfExportReport) -> None:
