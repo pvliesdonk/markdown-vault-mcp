@@ -16,8 +16,6 @@ out of this always-loaded file because it is reference material consulted on
 demand, not context every session needs.
 <!-- DOMAIN-END -->
 
-<!-- ===== TEMPLATE-OWNED SECTIONS BELOW — DO NOT EDIT; CHANGES WILL BE OVERWRITTEN ON COPIER UPDATE ===== -->
-
 ## Conventions
 
 - Write commit subjects and pull-request titles as conventional commits: one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, an optional scope (`feat(search): ...`), and `!` for a breaking change. The `PR Title` job fails any other title; retitle to clear it, no push needed. Accepted types: `scripts/check_pr_title.py`.
@@ -79,7 +77,7 @@ A review from another workflow (a plan executor's reviewer, a code-review skill 
 - The `structural-diff-gate` hook runs `scripts/structural_gate.sh` at push time.
 - The `self-review` hook fails a push whose commit has no review recorded by the `self-reviewing` skill; clear it by running the skill, which records the review as its last step.
 - Fix a failing hook; never bypass it with `--no-verify`, because the same check fails in CI.
-- Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
+- Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults are yours to maintain.
 
 ## Structural health
 
@@ -104,10 +102,8 @@ Every PR closes or references at least one issue: create the issue first when no
 
 Size a PR from its plan before coding: one behaviour, named in the title without `and`, in at most five source files (tests, docs, generated files and files that only gain a pointer uncounted; one mechanical edit repeated across files counts as one). Larger work is split into child issues, one PR each, or run as an epic on an integration branch. The changed lines in the counted files are the backstop: past 400, the PR body says why the change is still one behaviour; past 1,000, it is re-planned and reimplemented, never carved. Procedure: the `authoring-issues-prs` skill, "Size the change before coding"; evidence: `docs/design/reference/pull-request-size.md`.
 
-<!-- TEMPLATE-TRACKING-START -->
 Request Claude on a pull request or issue with an explicit `@claude` mention.
-Automatic agent review is disabled. Request Claude selectively with an `@claude` mention; deterministic CI remains the merge gate.
-<!-- TEMPLATE-TRACKING-END -->
+Automatic agent review is disabled; deterministic CI remains the merge gate.
 
 ## GitHub Review Types
 
@@ -139,17 +135,10 @@ Vale lints `docs/` and `README.md` in pre-commit and CI; keep them clean. Intern
 
 Read `docs/design/roadmap.md` before planning work, and update its argument when direction changes. GitHub owns status (epics are parent issues with native sub-issues; release packages are ordinal-named milestones); the index owns the argument.
 
-<!-- TEMPLATE-TRACKING-START -->
-## Shared Infrastructure
+## Where fixes go
 
-Shared infrastructure (auth providers, middleware, logging bootstrap, event store, CLI scaffolding, release pipeline, Docker entrypoint, nfpm and mcpb packaging) lives upstream in [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the Python library, and [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template), the copier template this project was generated from. Fixes to shared code land there and propagate here via `copier update`, run by hand.
+Every fix lands in this repository, including fixes to files that came from `fastmcp-server-template`: this project no longer tracks the template. A fix to `fastmcp-pvl-core` behaviour still goes upstream until #2241 folds the library in; `CONTRIBUTING.md`'s "Where to send fixes" has the routing, the issue and PR discipline, and the uncertainty rule.
 
-## Contributing fixes upstream
-
-`CONTRIBUTING.md` holds the three-tier routing (library to `fastmcp-pvl-core`, template to `fastmcp-server-template`, domain to this repo), the issue and PR discipline, and the uncertainty rule.
-<!-- TEMPLATE-TRACKING-END -->
-
-<!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->
 
 ## Key Design Decisions
 <!-- DOMAIN-START -->
