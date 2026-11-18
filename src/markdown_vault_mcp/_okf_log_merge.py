@@ -186,6 +186,10 @@ def _duplicate_lines(log: _Log) -> set[int]:
     return duplicates
 
 
+def _normalize_eol(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def merge_log_texts(upstream: str, local: str) -> LogMerge:
     """Union complete list entries while retaining upstream formatting.
 
@@ -206,9 +210,9 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
         "reference_definitions"
         if left.refs != right.refs
         else "frontmatter_differs"
-        if left.prefix != right.prefix
+        if _normalize_eol(left.prefix) != _normalize_eol(right.prefix)
         else "preamble_differs"
-        if left.preamble != right.preamble
+        if _normalize_eol(left.preamble) != _normalize_eol(right.preamble)
         else ""
     )
     if mismatch:

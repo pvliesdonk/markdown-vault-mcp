@@ -7053,7 +7053,7 @@ Reserved index and log conflicts never receive conflict metadata: authored
 indexes keep a verbatim local sibling. Conflicting logs union complete entries
 under date headings during replay when both sides parse safely, deduplicating
 identical complete entries. The runtime uses `markdown-it-py` block spans to
-retain list items and their continuations; equal effective reference definitions
+retain list items and their continuations; equal effective reference definitions in the preamble or list entries
 are safe, while differing definitions fall back because resolution can change.
 The union runs on each side’s working-tree text; Git’s clean filter stores the staged result.
 Decision (#1395): use the runtime `markdown-it-py` parser for CommonMark block

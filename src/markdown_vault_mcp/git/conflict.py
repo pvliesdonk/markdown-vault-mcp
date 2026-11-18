@@ -110,31 +110,7 @@ def resolve_rebase_conflicts(
             conflicted.update(conflicting)
         for rel_path in conflicting:
             is_log = Path(rel_path).name == "log.md"
-            # Save the MCP version (the commit being rebased).
-            show_result = run_git_capturing(
-                git_root,
-                *(("cat-file", "--filters") if is_log else ("show",)),
-                f"REBASE_HEAD:{rel_path}",
-                preserve_newlines=True,
-                env=env,
-            )
-            if show_result.returncode == 0:
-                if not is_okf_reserved_file(rel_path):
-                    # Preserve the existing failure on invalid UTF-8 in concept notes.
-                    os.fsencode(show_result.stdout).decode("utf-8")
-                saved[rel_path] = show_result.stdout
-            else:
-                logger.warning(
-                    "git_conflict_mcp_version_unreadable path=%s",
-                    rel_path,
-                )
-
-            if (
-                is_log
-                and show_result.returncode == 0
-                and rel_path not in fallback
-                and _merge_log_conflict(git_root, rel_path, env, show_result.stdout)
-            ):
+            if _save_and_merge_log(git_root, rel_path, env, saved, fallback):
                 merged.add(rel_path)
                 continue
             if is_log:
@@ -173,6 +149,38 @@ def resolve_rebase_conflicts(
         len(saved),
     )
     return list(saved.items())
+
+
+def _save_and_merge_log(
+    git_root: Path,
+    rel_path: str,
+    env: dict[str, str] | None,
+    saved: dict[str, str],
+    fallback: set[str],
+) -> bool:
+    is_log = Path(rel_path).name == "log.md"
+    result = run_git_capturing(
+        git_root,
+        *(("cat-file", "--filters") if is_log else ("show",)),
+        f"REBASE_HEAD:{rel_path}",
+        preserve_newlines=True,
+        env=env,
+    )
+    if result.returncode == 0:
+        if not is_okf_reserved_file(rel_path):
+            os.fsencode(result.stdout).decode("utf-8")
+        saved[rel_path] = result.stdout
+        return (
+            is_log
+            and rel_path not in fallback
+            and _merge_log_conflict(git_root, rel_path, env, result.stdout)
+        )
+    logger.warning("git_conflict_mcp_version_unreadable path=%s", rel_path)
+    if is_log:
+        stages = _conflict_stages(git_root, rel_path, env)
+        if stages is None or "3" in stages:
+            raise RuntimeError(f"Cannot preserve replayed log: {rel_path}")
+    return False
 
 
 def _merge_log_conflict(
@@ -259,17 +267,23 @@ def _upstream_deleted(
     git_root: Path, rel_path: str, env: dict[str, str] | None
 ) -> bool:
     """Recognize a conflict whose upstream stage is absent and local stage present."""
+    stages = _conflict_stages(git_root, rel_path, env)
+    return stages is not None and "2" not in stages and "3" in stages
+
+
+def _conflict_stages(
+    git_root: Path, rel_path: str, env: dict[str, str] | None
+) -> set[str] | None:
     result = run_git_capturing(
         git_root, "ls-files", "--unmerged", "-z", pathspecs=[rel_path], env=env
     )
     if result.returncode:
-        return False
-    stages = {
+        return None
+    return {
         entry.partition("\t")[0].split()[-1]
         for entry in result.stdout.split("\0")
         if entry
     }
-    return "2" not in stages and "3" in stages
 
 
 def resolve_conflicts_safely(

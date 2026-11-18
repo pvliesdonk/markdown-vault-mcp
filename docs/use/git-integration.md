@@ -412,7 +412,7 @@ commits) reports `would_apply=false`. The push leg has no safe local
     conflict metadata. A `log.md` conflict unions complete entries by date
     when both versions have compatible frontmatter and preambles and only
     bullet-list entries. Identical complete entries under the same date are
-    deduplicated. Equal reference definitions are supported; differing definitions
+    deduplicated. Equal reference definitions in the preamble or list entries are supported; differing definitions
     and invalid or out-of-order dates cause a fallback. The union reads each
     side in working-tree form; Git applies its clean filter when staging. If the
     merge is unsafe or the rebase aborts, the local log is saved as a verbatim

@@ -404,6 +404,7 @@ def test_filtered_log_resolution(
     _run_git(other, "push", "origin", "main")
     local = base + ("1. ordered\n" if mode == "fallback" else "- local\n")
     _git_commit(root, "log.md", local, "local")
+    original_head = _run_git(root, "rev-parse", "HEAD")
     original = conflict.run_git_capturing
 
     def capture(repo: Path, *args: Any, **kwargs: Any) -> Any:
@@ -429,7 +430,8 @@ def test_filtered_log_resolution(
             assert _run_git(root, "status", "--porcelain") == ""
         elif mode == "local_failure":
             assert result.reason == "conflict_resolution_failed"
-            assert (root / "log.md").read_text() == upstream
+            assert _run_git(root, "rev-parse", "HEAD") == original_head
+            assert (root / "log.md").read_text() == local
             assert not result.conflict_files
             assert "git_conflict_mcp_version_unreadable path=log.md" in caplog.text
         else:
@@ -464,3 +466,56 @@ def test_failed_upstream_read_leaves_conflict_untouched(
     assert not conflict._merge_log_conflict(tmp_path, "log.md", None, "local")
     assert target.read_text() == "conflict markers\n"
     assert commands == [("cat-file", "--filters", ":2:log.md")]
+
+
+@pytest.mark.parametrize("frontmatter", [False, True])
+def test_equivalent_line_endings_in_header_union(frontmatter: bool) -> None:
+    prefix = "---\ntitle: Log\nkind: history\n---\n" if frontmatter else ""
+    preamble = "# Log\n\nHistory of changes\nMore history\n\n"
+    heading = "## 2026-11-18\n\n"
+    upstream = (prefix + preamble + heading + "- remote\n").replace("\n", "\r\n")
+    local = prefix + preamble + heading + "- local\n"
+    assert merge_log_texts(upstream, local).text == upstream + "- local\r\n"
+
+
+def test_unreadable_log_does_not_discard_other_conflicts(
+    git_repo_pair: GitRepoPair, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    from markdown_vault_mcp.git import conflict
+    from tests.fixtures.conflict_recovery import recovery_vault
+    from tests.fixtures.git import _git_clone, _git_commit, _run_git
+
+    root = git_repo_pair.local_path
+    base = "## 2026-11-18\n\n- base\n"
+    _git_commit(root, "log.md", base, "seed")
+    _git_commit(root, "a.md", "base\n", "seed other")
+    _run_git(root, "push", "origin", "main")
+    other = _git_clone(git_repo_pair, tmp_path)
+    _git_commit(other, "log.md", base + "- remote\n", "remote log")
+    _git_commit(other, "a.md", "remote\n", "remote other")
+    _run_git(other, "push", "origin", "main")
+    (root / "log.md").write_text(base + "- local\n")
+    (root / "a.md").write_text("local\n")
+    _run_git(root, "add", "a.md", "log.md")
+    _run_git(root, "commit", "-m", "local both")
+    head = _run_git(root, "rev-parse", "HEAD")
+    original = conflict.run_git_capturing
+
+    def capture(repo: Path, *args: Any, **kwargs: Any) -> Any:
+        if args[:3] == ("cat-file", "--filters", "REBASE_HEAD:log.md"):
+            return subprocess.CompletedProcess(args, 1, "", "forced failure")
+        return original(repo, *args, **kwargs)
+
+    monkeypatch.setattr(conflict, "run_git_capturing", capture)
+    strategy, vault = recovery_vault(root)
+    try:
+        assert not strategy.sync_once(root)
+        assert _run_git(root, "rev-parse", "HEAD") == head
+        assert (root / "log.md").read_text() == base + "- local\n"
+        assert (root / "a.md").read_text() == "local\n"
+        assert _run_git(root, "status", "--porcelain") == ""
+    finally:
+        vault.close()
+        strategy.close()
