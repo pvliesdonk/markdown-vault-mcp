@@ -3625,7 +3625,9 @@ state from a single index row read without refreshing or writing the index. Live
 and tombstones take precedence over current exclusions; an absent row falls
 back to the exclusion label. Backends without the optional row-state protocol
 leave the state unevaluated. Unknown and internal-error categories remain
-unevaluated. A SQLite operational error leaves all entries unevaluated.
+unevaluated. Any SQLite error from the index read, including after the vault
+closes, leaves all entries unevaluated. Each entry is read separately, so a page
+is not a snapshot.
 Before readiness and without index knowledge, search state is `not_evaluated`.
 These observations can lag disk changes and do not determine format conformance.
 Filename roles (`index.md` navigation, `log.md` history, other Markdown concept

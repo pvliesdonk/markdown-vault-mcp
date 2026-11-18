@@ -409,7 +409,7 @@ class ReportsRowState(Protocol):
     """Optional single-read index disposition for one document."""
 
     def row_state(self, path: str) -> tuple[bool, str | None]:
-        """Return row existence and its skip category, or None for a live row."""
+        """Return (exists, category); an existing row with category None is live."""
         ...
 
 

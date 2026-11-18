@@ -68,8 +68,8 @@ continues to support computed OKF filters.
 
 ### Selected bundle inspection
 
-`inspect_bundle` reads one explicitly selected directory without building or
-querying an index. Untyped and malformed Markdown remain visible even when
+`inspect_bundle` reads one explicitly selected directory without building an
+index. It reads the index for search state when ready. Untyped and malformed Markdown remain visible even when
 index admission requires frontmatter fields. See the [security model](../../security-model.md)
 for the filesystem boundary.
 
@@ -150,8 +150,9 @@ When the index is queryable, safely observed regular Markdown entries report `se
 last index observations, even when a read limit prevented parsing. A live row
 or recorded skip takes precedence over the current exclusion label; exclusion
 is used when no index row exists. Each state comes from one index read. Unknown
-index error categories remain `not_evaluated`. A SQLite operational error
-leaves all entries `not_evaluated`. Entries also remain unevaluated when they
+index error categories remain `not_evaluated`. Any SQLite error from the index read, including after the vault closes,
+leaves all entries `not_evaluated`. Each entry is read separately, so one page
+is not a snapshot. Entries also remain unevaluated when they
 cannot be safely inspected, when the backend lacks row-state support, and before
 the index is ready. Search state reflects the last index observations and can lag disk changes
 until indexing runs. Format conformance is a separate assessment. Inspection does not

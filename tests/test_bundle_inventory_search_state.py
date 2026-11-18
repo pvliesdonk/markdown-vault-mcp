@@ -1,6 +1,9 @@
 """Search admission is reported without changing the index."""
 
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -321,13 +324,10 @@ def test_unknown_skip_category_live_is_not_searchable(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_operational_index_failure_preserves_disk_inventory(
-    tmp_path: Path, monkeypatch
+@pytest.mark.parametrize("error", [sqlite3.OperationalError, sqlite3.DatabaseError])
+def test_index_failure_preserves_disk_inventory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: type[sqlite3.Error]
 ) -> None:
-    import sqlite3
-
-    import pytest
-
     (tmp_path / "a.md").write_text("body")
     (tmp_path / "b.md").write_text("body")
     vault = Vault(source_dir=tmp_path)
@@ -340,19 +340,22 @@ def test_operational_index_failure_preserves_disk_inventory(
             nonlocal calls
             calls += 1
             if calls == 2:
-                raise sqlite3.OperationalError("database locked")
+                raise error("index unavailable")
             return original(path)
 
         monkeypatch.setattr(vault._fts, "row_state", fail_second)
         result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
         assert len(result.entries) == 2
         assert all(e.search_state == "not_evaluated" for e in result.entries)
-
-        def closed(_path: str) -> tuple[bool, str | None]:
-            raise sqlite3.ProgrammingError("closed")
-
-        monkeypatch.setattr(vault._fts, "row_state", closed)
-        with pytest.raises(sqlite3.ProgrammingError):
-            vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
     finally:
         vault.close()
+
+
+def test_closed_vault_still_inspects_disk(tmp_path: Path) -> None:
+    (tmp_path / "note.md").write_text("body")
+    vault = Vault(source_dir=tmp_path)
+    vault.index.build_index()
+    vault.close()
+    result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+    assert len(result.entries) == 1
+    assert result.entries[0].search_state == "not_evaluated"

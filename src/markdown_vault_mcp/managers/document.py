@@ -285,7 +285,7 @@ class DocumentManager:
         ):
             try:
                 return project_search_state(inspection, self._fts.row_state)
-            except sqlite3.OperationalError:
+            except sqlite3.Error:
                 logger.debug("inventory_search_state_unavailable", exc_info=True)
                 return inspection
         return inspection
