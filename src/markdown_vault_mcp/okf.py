@@ -1167,7 +1167,11 @@ def review_actor(subject: str, check: str) -> str:
         raise InvalidRequestError(
             "Unknown check; use human-review, schema, links, source-comparison, or x- followed by a name."
         )
-    actor = f"{'human' if check == 'human-review' else 'process'}:{subject}"
+    actor = (
+        f"{_HUMAN_ACTOR_PREFIX}{subject}"
+        if check == "human-review"
+        else f"process:{subject}"
+    )
     if check != "human-review" and _ACTOR_RE.fullmatch(actor) is None:
         raise InvalidRequestError(
             "Machine review requires a non-empty identity without whitespace."
@@ -1197,16 +1201,20 @@ def append_okf_verification(
             confirmed human review without identity claims.
         now: The instant of the verification, timezone-aware (spelled by
             :func:`okf_timestamp`).
-        reviewed_snapshot: Optional reviewed snapshot to bind in x-mvmcp.reviews.
+        reviewed_snapshot: Snapshot to bind in x-mvmcp.reviews; required for
+            named machine checks.
         check: Name of the review performed.
 
     Returns:
         The note text with the appended verification.
 
     Raises:
-        InvalidRequestError: If the check or machine identity is invalid.
+        InvalidRequestError: If the check or machine identity is invalid, or a
+            machine check has no reviewed snapshot.
     """
     actor = review_actor(subject, check)
+    if check != "human-review" and reviewed_snapshot is None:
+        raise InvalidRequestError("A named machine check requires a reviewed snapshot.")
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     verified = list(verified_entries(meta))

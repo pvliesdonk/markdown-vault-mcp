@@ -396,7 +396,7 @@ class WriterFacet:
                 self._convention_maintainer.maintain(canonical, "write")
             return result
 
-    def write(
+    def write(  # noqa: PLR0913, RUF100 -- preserve public write options
         self,
         path: str,
         content: str,

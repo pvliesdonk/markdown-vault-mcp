@@ -87,6 +87,10 @@ class TestAppendOkfVerification:
         out = append_okf_verification("# N\n", subject="peter", now=_NOW)
         meta = fm.loads(out).metadata
         assert meta["verified"] == [{"by": "human:peter", "at": _ISO}]
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        with pytest.raises(InvalidRequestError, match="snapshot"):
+            append_okf_verification("# N\n", subject="checker", now=_NOW, check="links")
 
     def test_appends_to_existing_list(self) -> None:
         text = "---\nverified:\n  - by: human:alice\n    at: 2026-01-01\n---\n# N\n"
