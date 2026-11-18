@@ -1188,3 +1188,684 @@ class TestRebuildWithDonor:
             outcome = rec.rebuild(store, store.identity, donor=donor)
         assert (provider.texts, outcome.embedded, outcome.published) == ([], 0, True)
         assert outcome.reused == outcome.attempted > 0
+
+
+def test_rebuild_releases_documents_before_embedding(tmp_path, monkeypatch):
+    """A reused tail must not keep all prepared documents alive at provider time."""
+    import weakref
+
+    notes = {f"{i:03}.md": f"# Note {i}\n\nContent {i}.\n" for i in range(12)}
+    fts, provider, store, rec = _setup(tmp_path, notes)
+    rec.rebuild(store, store.identity)
+    (tmp_path / "000.md").write_text("# Changed\n\nNew content.\n")
+    fts.upsert_note(parse_note(tmp_path / "000.md", tmp_path, HeadingChunker()))
+    references = []
+    document = reconciler_module._Document
+
+    def track(*args, **kwargs):
+        result = document(*args, **kwargs)
+        references.append(weakref.ref(result))
+        return result
+
+    embed = provider.embed
+
+    def observe(texts):
+        assert sum(ref() is not None for ref in references) <= 2
+        return embed(texts)
+
+    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 2)
+    monkeypatch.setattr(reconciler_module, "_Document", track)
+    monkeypatch.setattr(provider, "embed", observe)
+    outcome = rec.rebuild(store, store.identity, reuse_own=True)
+    assert outcome.published
+
+
+def test_rebuild_replays_generation_and_cleans_scratch(tmp_path, monkeypatch):
+    import tempfile
+
+    original = tempfile.TemporaryFile
+    handles = []
+
+    def track(*args, **kwargs):
+        handle = original(*args, **kwargs)
+        handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(tempfile, "TemporaryFile", track)
+    _, _provider, store, rec = _setup(tmp_path, NOTES)
+    publish = store.publish_generation
+    observed = []
+
+    def replay(identity, generation):
+        first = list(generation)
+        second = [(row, list(generation)) for row in generation]
+        assert [row for row, _ in second] == first
+        assert all(nested == first for _, nested in second)
+        assert all(
+            isinstance(row.vector, array) and row.vector.typecode == "f"
+            for doc in first
+            for row in doc.rows
+        )
+        observed.extend(first)
+        return publish(identity, generation)
+
+    monkeypatch.setattr(store, "publish_generation", replay)
+    assert rec.rebuild(store, store.identity).published
+    assert len(observed) == 2
+    assert len(handles) == 2 and all(handle.closed for handle in handles)
+
+
+def test_iter_chunks_matches_list_across_document_pages(tmp_path, monkeypatch):
+    import markdown_vault_mcp.fts_index as fts_module
+
+    notes = {
+        "a.md": "# A\n\nOne.\n\n## First\n\nTwo.\n\n## Second\n\nThree.\n",
+        "b.md": "# B\n\nFour.\n",
+        "c.md": "# C\n\nFive.\n\n## Third\n\nSix.\n",
+    }
+    fts = _index(tmp_path, notes, HeadingChunker(short_doc_lines=0))
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
+    rows = list(fts.iter_chunks())
+    assert rows == fts.list_chunks()
+    assert [row["path"] for row in rows] == [
+        "a.md",
+        "a.md",
+        "a.md",
+        "b.md",
+        "c.md",
+        "c.md",
+    ]
+    assert [row["is_first_chunk"] for row in rows] == [
+        True,
+        False,
+        False,
+        True,
+        True,
+        False,
+    ]
+    assert [row["heading"] for row in rows] == [
+        "A",
+        "First",
+        "Second",
+        "B",
+        "C",
+        "Third",
+    ]
+
+
+def test_custom_index_fallback_groups_interleaved_chunks(tmp_path, monkeypatch):
+    fts, provider, store, rec = _setup(tmp_path, NOTES)
+    rows = fts.list_chunks()
+    # The required protocol does not promise that a document's rows are adjacent.
+    rows = [
+        rows[0],
+        rows[1],
+        {**rows[0], "content": "Second chunk", "is_first_chunk": False},
+    ]
+
+    class CustomIndex:
+        def list_chunks(self, paths=None):
+            return (
+                rows if paths is None else [row for row in rows if row["path"] in paths]
+            )
+
+    calls = []
+    embed = provider.embed
+
+    def capture(texts):
+        calls.extend(texts)
+        return embed(texts)
+
+    monkeypatch.setattr(rec, "_fts", CustomIndex())
+    monkeypatch.setattr(provider, "embed", capture)
+    result = rec.rebuild(store, store.identity)
+    assert result.published
+    assert calls == ["# A\n\nApples.", "Second chunk", "# B\n\nBoats."]
+    assert len(store.rows_for("a.md")) == 2
+
+
+def test_stage_closes_retained_replay_on_publisher_failure(
+    tmp_path, monkeypatch, caplog
+):
+    import tempfile
+
+    from tests.fixtures.embedding_stage import install_cleanup_failure
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    _, _, store, rec = _setup(tmp_path, NOTES)
+    retained = []
+
+    def fail(_identity, generation):
+        reader = iter(generation)
+        next(reader)
+        retained.append(reader)
+        raise OSError("publish failed")
+
+    monkeypatch.setattr(store, "publish_generation", fail)
+    install_cleanup_failure(monkeypatch)
+    with pytest.raises(OSError, match="publish failed"):
+        rec.rebuild(store, store.identity)
+    assert not list(tmp_path.glob("embedding-stage-*"))
+    assert "embedding_stage_cleanup_failed" in caplog.text
+    with pytest.raises(ValueError, match="closed"):
+        next(retained[0])
+
+
+def test_stage_cleans_up_when_open_fails(tmp_path, monkeypatch):
+    import tempfile
+
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    original = tempfile.TemporaryFile
+    opened = []
+    failure = OSError("scratch full")
+
+    def fail_second(*args, **kwargs):
+        if opened:
+            raise failure
+        handle = original(*args, **kwargs)
+        opened.append(handle)
+        return handle
+
+    monkeypatch.setattr(tempfile, "TemporaryFile", fail_second)
+    with pytest.raises(OSError) as caught:
+        EmbeddingStage(tmp_path)
+    assert caught.value is failure
+    assert len(opened) == 1 and opened[0].closed
+    assert not list(tmp_path.iterdir())
+
+
+def test_late_chunk_page_seeks_past_earlier_documents():
+    index = FTSIndex(db_path=":memory:")
+    conn = index._conn()
+    conn.executemany(
+        "INSERT INTO documents(path,title,content_hash,modified_at) VALUES(?,?,?,?)",
+        ((f"{i:05}.md", "T", "h", 0) for i in range(8192)),
+    )
+    conn.executemany(
+        "INSERT INTO sections(document_id,heading_level,content,start_line) VALUES(?,?,?,?)",
+        ((i, 1, "body", 1) for i in range(1, 8193)),
+    )
+    conn.commit()
+
+    def steps(after):
+        calls = 0
+
+        def progress():
+            nonlocal calls
+            calls += 1
+            return 0
+
+        conn.set_progress_handler(progress, 100)
+        rows = index._chunk_page(after)
+        conn.set_progress_handler(None, 0)
+        return calls, rows
+
+    try:
+        first, _ = steps(None)
+        last, rows = steps("07935.md")
+        assert rows[0]["path"] == "07936.md"
+        assert last <= 2 * first, (first, last)
+    finally:
+        index.close()
+
+
+@pytest.mark.parametrize("primary", [True, False])
+def test_stage_attempts_both_closes_after_failure(
+    tmp_path, monkeypatch, caplog, primary
+):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    stage = EmbeddingStage(tmp_path)
+    attempts = []
+    for name in ("_docs", "_results"):
+        spool = getattr(stage, name)
+        close = spool.close
+
+        def fail(close=close, name=name):
+            attempts.append(name)
+            close()
+            raise OSError(f"{name} close failed")
+
+        monkeypatch.setattr(spool, "close", fail)
+    if primary:
+        with pytest.raises(RuntimeError, match="donor failed"), stage:
+            raise RuntimeError("donor failed")
+    else:
+        with stage:
+            pass
+    assert attempts == ["_docs", "_results"]
+    assert caplog.text.count("embedding_stage_cleanup_failed") == 2
+    assert not list(tmp_path.iterdir())
+
+
+def test_rebuild_uses_real_fts_chunk_iterator(tmp_path, monkeypatch):
+    import markdown_vault_mcp.fts_index as fts_module
+
+    notes = {f"{i:03}.md": f"# Note {i}\n\nContent {i}.\n" for i in range(5)}
+    fts, _, store, rec = _setup(tmp_path, notes)
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 2)
+    original = fts.iter_chunks
+    calls = []
+
+    def iterate():
+        calls.append(True)
+        return original()
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("rebuild used eager list_chunks")
+
+    monkeypatch.setattr(fts, "iter_chunks", iterate)
+    monkeypatch.setattr(fts, "list_chunks", unexpected)
+    outcome = rec.rebuild(store, store.identity)
+    assert outcome.published and outcome.attempted == 5
+    assert calls == [True]
+    assert set(store.tokens()) == set(notes)
+
+
+def test_custom_metadata_retains_objects_during_replay(tmp_path, monkeypatch):
+    fts, _, store, rec = _setup(tmp_path, {"a.md": "# A\n\nApple\n"})
+    line = np.int64(3)
+    rows = [{**row, "start_line": line} for row in fts.list_chunks()]
+
+    class Index:
+        def list_chunks(self, paths=None):
+            return (
+                rows if paths is None else [row for row in rows if row["path"] in paths]
+            )
+
+    class StreamingIndex(Index):
+        def iter_chunks(self):
+            return iter(self.list_chunks())
+
+    seen = []
+
+    def publish(_identity, generation):
+        seen.extend([list(generation), list(generation)])
+
+    monkeypatch.setattr(rec, "_fts", StreamingIndex())
+    monkeypatch.setattr(store, "publish_generation", publish)
+    assert rec.rebuild(store, store.identity).published
+    for generation in seen:
+        metadata = generation[0].rows[0].metadata
+        assert metadata["start_line"] is line
+
+
+def test_scratch_dir_bypasses_unavailable_default_temp(tmp_path, monkeypatch):
+    import tempfile
+
+    _, _, store, rec = _setup(tmp_path, NOTES)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "missing"))
+    rec._scratch_dir = tmp_path / "state"
+    assert rec.rebuild(store, store.identity).published
+
+
+def test_unavailable_scratch_fails_before_provider_and_keeps_store(tmp_path):
+    _, provider, store, rec = _setup(tmp_path, NOTES)
+    rec.rebuild(store, store.identity)
+    before = store.tokens()
+    provider.texts.clear()
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("fixture")
+    rec._scratch_dir = blocked / "stage"
+    with pytest.raises(OSError):
+        rec.rebuild(store, store.identity)
+    assert provider.texts == []
+    assert store.tokens() == before
+
+
+def test_source_failure_preserves_generation(tmp_path, monkeypatch):
+    fts, _, store, rec = _setup(tmp_path, NOTES)
+    rec.rebuild(store, store.identity)
+    before = store.tokens()
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("source failed")
+
+    monkeypatch.setattr(fts, "iter_chunks", fail)
+    with pytest.raises(RuntimeError, match="source failed"):
+        rec.rebuild(store, store.identity)
+    assert store.tokens() == before
+
+
+def test_chunk_iterator_observes_changes_on_later_pages(tmp_path, monkeypatch):
+    import markdown_vault_mcp.fts_index as fts_module
+
+    fts = _index(tmp_path, {f"{i}.md": f"# Note {i}\n\nBody {i}.\n" for i in range(5)})
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 2)
+    reader = fts.iter_chunks()
+    first = [next(reader), next(reader)]
+    fts.delete_by_path("2.md")
+    fts.delete_by_path("3.md")
+    (tmp_path / "4.md").write_text("# Changed\n\nNew body.\n")
+    (tmp_path / "5.md").write_text("# New\n\nNew entry.\n")
+    for name in ("4.md", "5.md"):
+        fts.upsert_note(parse_note(tmp_path / name, tmp_path, HeadingChunker()))
+    rows = first + list(reader)
+    assert [row["path"] for row in rows] == ["0.md", "1.md", "4.md", "5.md"]
+    assert "New body" in rows[2]["content"]
+
+
+def test_chunk_page_selects_paths_and_rows_in_one_statement(tmp_path):
+    fts = _index(tmp_path, {"a.md": "# A\n\nApple.\n"})
+    queries = []
+    conn = fts._conn()
+    conn.set_trace_callback(queries.append)
+    try:
+        assert fts._chunk_page(None)
+    finally:
+        conn.set_trace_callback(None)
+    assert (
+        len(
+            [
+                query
+                for query in queries
+                if query.lstrip().upper().startswith(("SELECT", "WITH"))
+            ]
+        )
+        == 1
+    )
+
+
+def test_provider_error_is_not_logged_as_scratch_failure(tmp_path, caplog):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    failure = OSError("provider unavailable")
+
+    def results():
+        raise failure
+        yield  # pragma: no cover
+
+    with EmbeddingStage(tmp_path) as stage:
+        stage.finish()
+        with pytest.raises(OSError) as caught:
+            stage.write_results(results())
+    assert caught.value is failure
+    assert "embedding_stage_io_failed" not in caplog.text
+
+
+@pytest.mark.parametrize("operation", ["rebuild", "preview"])
+def test_memory_writer_during_donor_read(tmp_path, monkeypatch, operation):
+    from threading import Thread
+
+    import markdown_vault_mcp.fts_index as fts_module
+    import markdown_vault_mcp.indexing.embedding_reconciler as reconciler_module
+    from markdown_vault_mcp.scanner import HeadingChunker, parse_note
+
+    fts, _, store, rec = _setup(
+        tmp_path, {f"{i}.md": f"# {i}\n\nBody {i}.\n" for i in range(3)}
+    )
+    monkeypatch.setattr(fts_module, "_CHUNK_PAGE_DOCS", 1)
+    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
+    errors = []
+    updated = []
+
+    def write():
+        try:
+            (tmp_path / "2.md").write_text("# Updated\n\nNew body.\n")
+            fts.upsert_note(parse_note(tmp_path / "2.md", tmp_path, HeadingChunker()))
+            updated.append(True)
+        except Exception as error:
+            errors.append(error)
+
+    class Donor:
+        source = "fixture"
+        refused_rows = 0
+
+        def vectors_for(self, _path):
+            if not updated and not errors:
+                thread = Thread(target=write)
+                thread.start()
+                thread.join()
+            return {}
+
+    try:
+        result = getattr(rec, operation)(store, store.identity, donor=Donor())
+        assert not errors
+        assert updated
+        if operation == "rebuild":
+            assert result.published and set(store.tokens()) == {"0.md", "1.md", "2.md"}
+            assert "New body" in store.rows_for("2.md")[0].metadata["content"]
+        else:
+            assert result.chunks == 3
+    finally:
+        fts.close()
+        store.close()
+
+
+def test_custom_chunk_iterator_closed_when_stage_fails(tmp_path, monkeypatch):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+
+    fts, _, store, rec = _setup(
+        tmp_path, {"a.md": "# A\n\nApple\n", "b.md": "# B\n\nBerry\n"}
+    )
+    closed = []
+    rows = fts.list_chunks()
+
+    def source():
+        try:
+            yield from rows
+        finally:
+            closed.append(True)
+
+    retained = source()
+
+    class CustomIndex:
+        def list_chunks(self, paths=None):
+            return (
+                rows if paths is None else [row for row in rows if row["path"] in paths]
+            )
+
+        def iter_chunks(self):
+            return retained
+
+    def fail(*_args, **_kwargs):
+        assert not closed
+        raise RuntimeError("stage failed")
+
+    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
+    monkeypatch.setattr(rec, "_fts", CustomIndex())
+    monkeypatch.setattr(EmbeddingStage, "add", fail)
+    with pytest.raises(RuntimeError, match="stage failed"):
+        rec.rebuild(store, store.identity)
+    assert closed == [True]
+    fts.close()
+    store.close()
+
+
+@pytest.mark.parametrize("point", ["allocation", "discovery", "write", "read"])
+def test_scratch_failure_logs_location_and_preserves_exception(
+    tmp_path, monkeypatch, caplog, point
+):
+    import json
+    import tempfile
+
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+
+    failure = OSError("synthetic scratch failure")
+
+    def fail(*_args, **_kwargs):
+        raise failure
+
+    with caplog.at_level(logging.ERROR), pytest.raises(OSError) as caught:
+        if point == "discovery":
+            monkeypatch.setattr(tempfile, "gettempdir", fail)
+            EmbeddingStage()
+        elif point == "allocation":
+            monkeypatch.setattr(tempfile, "TemporaryFile", fail)
+            EmbeddingStage(tmp_path)
+        else:
+            with EmbeddingStage(tmp_path) as stage:
+                if point == "write":
+                    monkeypatch.setattr(json, "dumps", fail)
+                stage.add(
+                    _Document(
+                        "a.md",
+                        "a",
+                        ("text",),
+                        (
+                            {
+                                "path": "a.md",
+                                "title": "A",
+                                "folder": "",
+                                "heading": None,
+                                "content": "text",
+                                "start_line": 1,
+                                "preamble": "",
+                            },
+                        ),
+                    ),
+                    {},
+                )
+                if point == "read":
+                    stage.finish()
+                    monkeypatch.setattr(stage._docs, "read", fail)
+                    list(stage.misses())
+    assert caught.value is failure
+    assert "embedding_stage_io_failed" in caplog.text
+    assert (
+        "system temporary directories" if point == "discovery" else str(tmp_path)
+    ) in caplog.text
+    assert "synthetic scratch failure" in caplog.text
+
+
+def test_mixed_reuse_and_duplicate_misses_across_windows(tmp_path, monkeypatch):
+    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+
+    _, provider, store, rec = _setup(tmp_path, NOTES)
+
+    def meta(path, content):
+        return {
+            "path": path,
+            "title": "Title",
+            "folder": "",
+            "heading": None,
+            "content": content,
+            "start_line": 1,
+            "preamble": "",
+        }
+
+    own = array("f", [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    donated = array("f", [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    store.publish_generation(
+        store.identity,
+        [DocumentRows("a.md", "old", (VectorRow(own, meta("a.md", "own")),))],
+    )
+    docs = [
+        _Document(
+            "a.md",
+            "a",
+            ("own", "donor", "miss", "miss"),
+            tuple(meta("a.md", x) for x in ("own", "donor", "miss", "miss")),
+        ),
+        _Document(
+            "b.md",
+            "b",
+            ("miss", "later"),
+            tuple(meta("b.md", x) for x in ("miss", "later")),
+        ),
+        _Document("c.md", "c", ("last",), (meta("c.md", "last"),)),
+    ]
+    calls = []
+    embed = provider.embed
+
+    class Donor:
+        source = "fixture"
+        refused_rows = 0
+
+        def vectors_for(self, _path):
+            return {"own": donated, "donor": donated}
+
+    def capture(texts):
+        calls.append(list(texts))
+        return embed(texts)
+
+    monkeypatch.setattr(rec, "_build_documents", lambda: (doc for doc in docs))
+    monkeypatch.setattr(reconciler_module, "_ROWS_BATCH", 1)
+    monkeypatch.setattr(rec, "_batch_size", 3)
+    monkeypatch.setattr(provider, "embed", capture)
+    preview = rec.preview(store, store.identity, donor=Donor(), reuse_own=True)
+    assert (preview.chunks, preview.reusable, preview.to_embed) == (7, 2, 4)
+    result = rec.rebuild(store, store.identity, donor=Donor(), reuse_own=True)
+    assert (result.reused, result.embedded) == (2, 5)
+    assert calls == [["miss", "miss", "later"], ["last"]]
+    rows = store.rows_for("a.md")
+    assert list(rows[0].vector) == list(own)
+    assert list(rows[1].vector) == list(donated)
+    assert list(rows[2].vector) == list(rows[3].vector)
+
+
+def test_stage_counts_and_fans_out_duplicate_misses(tmp_path):
+    from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+    from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+
+    doc = _Document(
+        "a.md",
+        "a",
+        ("reuse", "miss", "miss"),
+        tuple(
+            {
+                "path": "a.md",
+                "title": "A",
+                "folder": "",
+                "heading": None,
+                "content": text,
+                "start_line": 1,
+                "preamble": "",
+            }
+            for text in ("reuse", "miss", "miss")
+        ),
+    )
+    with EmbeddingStage(tmp_path) as stage:
+        stage.add(doc, {0: array("f", [1.0])})
+        stage.finish()
+        assert stage.miss_count == 1
+        assert list(stage.misses()) == [("miss", 2)]
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_written_stage_files_do_not_survive_process_death(tmp_path, fallback):
+    import os
+    import subprocess
+    import sys
+
+    state = tmp_path / "state"
+    state.mkdir()
+    program = r"""
+import os
+import sys
+import tempfile
+from array import array
+from pathlib import Path
+from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage
+from markdown_vault_mcp.indexing.embedding_reconciler import _Document
+if sys.argv[2] == "fallback":
+    tempfile._O_TMPFILE_WORKS = False
+root = Path(sys.argv[1])
+meta = {"path": "a.md", "title": "A", "folder": "", "heading": None,
+        "content": "synthetic corpus content", "start_line": 1, "preamble": ""}
+stage = EmbeddingStage(root)
+stage.add(_Document("a.md", "token", ("synthetic corpus content",), (meta,)), {})
+stage.finish()
+stage.write_results((vector for vector in [array("f", [1.0, 2.0])]))
+assert stage.miss_count == 1
+os._exit(137)
+"""
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            program,
+            str(state),
+            "fallback" if fallback else "default",
+        ],
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert child.returncode == 137, child.stderr
+    assert list(state.iterdir()) == [], "written scratch survived abrupt process death"
