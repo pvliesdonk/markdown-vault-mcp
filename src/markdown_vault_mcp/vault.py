@@ -460,9 +460,8 @@ class Vault:
             # max_chunk_words only takes effect for the conventional default
             # ("heading" string), so explicit-instance callers retain full control.
             self._chunk_strategy = _resolve_chunk_strategy(chunk_strategy)
-        # The derived cap (max_chunk_chars) is passed straight to the chunker
-        # above and kept nowhere else — it is deliberately NOT a warm-restart
-        # key, so a transient model-context read does not trigger a rebuild.
+        # The derived cap (max_chunk_chars) goes to the chunker and the builder's
+        # listed bound only; it is NOT a warm-restart key (no transient rebuild).
         # Stable warm-restart keys recorded into FTS meta at build time (#649):
         # the embedding model name and the explicit char-cap override. A change
         # to either rejects the short-circuit and cold-rebuilds.
@@ -485,6 +484,7 @@ class Vault:
             searchable_fields=tuple(self._searchable_frontmatter_fields),
             listed=self._okf_capabilities.index,
             listed_scope=self._okf_capabilities.folders,
+            listed_limit=settings.max_chunk_chars,
         )
         self._git_pull_interval_s = settings.git_pull_interval_s
         # The resolver prunes its folder walk with the *configured* patterns

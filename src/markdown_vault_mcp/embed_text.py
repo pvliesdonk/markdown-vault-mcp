@@ -13,7 +13,9 @@ The builder has these formats:
   content byte-for-byte unchanged, so default configurations are an exact
   behavioural no-op when listed-concept enrichment is disabled.
 * **v1;listed** — first chunks of designated listed concepts include title
-  and description; other chunk inputs remain byte-identical to v1.
+  and description, clipped so the input stays within the chunk character cap
+  (see :meth:`EmbedTextBuilder.bounded_listed`); other chunk inputs remain
+  byte-identical to v1.
 * **v2** — active when ``embed_context`` is enabled or any
   ``searchable_fields`` are configured: the chunk content is prefixed with
   the document title, the chunk heading (when present), and — on the first
@@ -46,7 +48,9 @@ def is_embeddable(text: str) -> bool:
 
     A note with no body — zero-byte, frontmatter-only, or whitespace-only —
     chunks to a single chunk whose content is ``""``, and under the default
-    v1 format :meth:`EmbedTextBuilder.build` returns that content verbatim.
+    v1 format with the listed policy off :meth:`EmbedTextBuilder.build`
+    returns that content verbatim (a listed concept's preamble makes it
+    non-empty).
     Every OpenAI-compatible provider rejects an empty input string with a
     hard HTTP 400 (Voyage: ``Input cannot contain empty strings or empty
     lists``), and the rejection fails the whole *batch*, not just the
@@ -141,12 +145,16 @@ class EmbedTextBuilder:
             non-empty).
         listed: Include a listed concept's title and description in its first chunk.
         listed_scope: Folder patterns that select listed concepts.
+        listed_limit: The chunk character cap a listed concept's input is
+            bounded by; ``None`` leaves the preamble unbounded. It is not part
+            of the format token, like the chunker cap it comes from.
     """
 
     embed_context: bool = False
     searchable_fields: tuple[str, ...] = field(default=())
     listed: bool = False
     listed_scope: tuple[str, ...] = ()
+    listed_limit: int | None = None
 
     @property
     def is_v2(self) -> bool:
@@ -202,6 +210,41 @@ class EmbedTextBuilder:
         if self.is_v2:
             return values
         return "\n".join(part for part in (title, values) if part)
+
+    def bounded_listed(
+        self, preamble: str, *, title: str, heading: str | None, content: str
+    ) -> str:
+        """Clip a listed concept's *preamble* so its input stays within the cap.
+
+        The room is the cap less the rest of the input (title, heading, content
+        and the separator), so the input never exceeds the larger of the cap and
+        what it would be without the listed preamble. A first chunk whose rest
+        already fills the cap (an overlapped fragment may exceed it) has no room
+        and gets no preamble: its input is then the unenriched one. The title
+        leads the v1 preamble, so a clip keeps it first.
+
+        Args:
+            preamble: The unbounded listed preamble.
+            title: Resolved document title.
+            heading: The chunk's heading, or ``None``/``""`` when absent.
+            content: Raw chunk content.
+
+        Returns:
+            *preamble* unchanged when no limit is set, else its clipped prefix
+            (``""`` when the rest of the input leaves no room).
+        """
+        if self.listed_limit is None:
+            return preamble
+        rest = len(
+            self.build(
+                title=title,
+                heading=heading,
+                content=content,
+                fields_text="",
+                is_first_chunk=True,
+            )
+        )
+        return preamble[: max(self.listed_limit - rest - 2, 0)].rstrip()
 
     def build(
         self,

@@ -331,25 +331,31 @@ class EmbeddingReconciler:
                 metadata.append(meta)
         return _Document(path, token, tuple(texts), tuple(metadata))
 
+    def _preamble(self, row: dict[str, Any]) -> str:
+        """Return a first chunk's preamble; a listed concept's is bounded by the cap."""
+        if not row.get("is_first_chunk"):
+            return ""
+        frontmatter = row.get("frontmatter_json")
+        if not self._listed_concept(row["path"]):
+            return self._builder.fields_text(frontmatter)
+        return self._builder.bounded_listed(
+            self._builder.listed_preamble(row["title"], frontmatter),
+            title=row["title"],
+            heading=row["heading"],
+            content=row["content"],
+        )
+
     def _embedding_input(
         self, row: dict[str, Any]
     ) -> tuple[str, dict[str, Any]] | None:
         """Build the shared embedding text and metadata for a keyword row."""
-        first = bool(row.get("is_first_chunk"))
-        preamble = ""
-        if first:
-            if self._listed_concept(row["path"]):
-                preamble = self._builder.listed_preamble(
-                    row["title"], row.get("frontmatter_json")
-                )
-            else:
-                preamble = self._builder.fields_text(row.get("frontmatter_json"))
+        preamble = self._preamble(row)
         text = self._builder.build(
             title=row["title"],
             heading=row["heading"],
             content=row["content"],
             fields_text=preamble,
-            is_first_chunk=first,
+            is_first_chunk=bool(row.get("is_first_chunk")),
         )
         if not is_embeddable(text):
             return None

@@ -565,3 +565,65 @@ def test_listing_metadata_cannot_push_concept_past_provider_limit(
         assert any("glow" in text for text in provider.texts)
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("words", [30, 70])
+def test_listed_input_never_exceeds_cap_or_unenriched_input(
+    tmp_path: Path, words: int
+) -> None:
+    class FlakyProvider(CountingProvider):
+        failing = True
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            if self.failing:
+                raise ValueError("provider unavailable")
+            return super().embed(texts)
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "index.md").write_text("# Index\n\n- [Concept](/concept.md) - x\n")
+    body = "\n\n".join(f"paragraph {i} " + "word " * words for i in range(6))
+    (root / "concept.md").write_text(
+        f"---\ntitle: Concept\ndescription: {'glow ' * 250}\n---\n\n{body}\n"
+    )
+
+    def texts(*, listed: bool, provider: CountingProvider) -> list[str]:
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                okf_mode="on",
+                okf_capabilities=_capabilities(listed, (".",)),
+                max_chunk_chars=300,
+                chunk_overlap_words=10,
+            ),
+            embedding_provider=provider,
+        )
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+            assert "concept.md" in _paths(vault) or not provider.texts
+            if provider.texts:
+                vault.index.build_embeddings()
+                count = len(provider.texts)
+                vault.index.build_embeddings()
+                assert len(provider.texts) == count
+        finally:
+            vault.close()
+        return provider.texts
+
+    provider = FlakyProvider()
+    assert texts(listed=True, provider=provider) == []
+    provider.failing = False
+    listed = texts(listed=True, provider=provider)
+    plain = [
+        text
+        for text in texts(listed=False, provider=CountingProvider())
+        if "/concept.md" not in text
+    ]
+    assert len(listed) == len(plain)
+    for text, bare in zip(listed, plain, strict=True):
+        assert text.endswith(bare)
+        assert len(text) <= max(300, len(bare))
+    assert any(text.startswith("Concept\nglow glow") for text in listed) == (
+        words == 30
+    )

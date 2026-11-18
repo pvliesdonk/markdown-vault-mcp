@@ -1112,7 +1112,7 @@ surface; the shared `_is_path_excluded` / `_discover_indexable_candidates`
 helpers stay on `IndexManager` and are injected into the collaborator as
 callables (#736).
 
-`build_embeddings(force=False)` over a **non-empty** vector index does not
+`build_embeddings(force=False)` over a **compatible, non-empty** vector index does not
 skip and does not rebuild: it diffs the FTS `sections` table (the
 canonical chunk set, via `FTSIndex.list_chunks()`, which carries each
 document's `content_hash` as its token) against the stored rows and
@@ -7594,4 +7594,4 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
 remains tied to `OKF_WRITE`.
 
-Designated OKF indexes are skipped for vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498). Existing vectors are purged at writer convergence, so a cold reader can see stale vectors before then. A listed concept carries its title and description in its own vector, including when the body is empty. Other notes keep their existing inputs. The listed policy has a versioned identity, so changing `OKF_INDEX` or its folder scope, or upgrading a legacy `OKF_WRITE=true` vault causes a one-time embedding rebuild.
+Designated OKF indexes are skipped for vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498). A changed designation is a changed store identity: the next store open rebuilds an owned store or refuses an unowned one, so no reader keeps vectors from the old designation. A listed concept carries its title and description in its own vector, including when the body is empty; the preamble is clipped to the room the chunk character cap (the derived `max_chunk_chars`) leaves after the rest of the input (chunk content, any v2 title and heading, and the separator), so a listed input never exceeds the larger of the cap and the input the chunk has without the policy. A first chunk whose content already fills the cap, as overlap can make it, has no room: its vector is the unenriched one and the title and description stay in the keyword index. With no cap (a `VaultSettings` built without one, whose chunker has none either) the preamble is unbounded. The cap is not part of the identity: changing it re-embeds a listed concept only when its chunk is next rebuilt. Other notes keep their existing inputs. The listed policy has a versioned identity, so changing `OKF_INDEX` or its folder scope, or upgrading a legacy `OKF_WRITE=true` vault causes a one-time embedding rebuild.

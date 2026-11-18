@@ -390,8 +390,9 @@ the server's own generators; and `okf_verify` exists only under
 initiates nothing, not that an operation is unreachable. Each
 switch defaults to off, and none implies another. What the server then
 actually does additionally requires an active bundle and a writable
-vault, so all three are inert on `auto` with no declaration and on a
-read-only vault, and `OKF_MODE=off` conflicts with a switch only when it
+vault, so the write maintenance of all three is inert on `auto` with no
+declaration and on a read-only vault (the `OKF_INDEX` vector designation
+is not a write and still applies), and `OKF_MODE=off` conflicts with a switch only when it
 is true, as with `OKF_WRITE=true` today. Read-side behaviour is not an
 ownership question and never depends on the switches. The switches are per
 instance; how one instance treats another's commits is the ingest
@@ -603,7 +604,7 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 
 ### Generated reserved files and the index gate
 
-With `OKF_INDEX` enabled, `index.md` files in designated folders are omitted from the vector index regardless of runtime detection or whether the vault is read-only. They remain in the keyword index; indexes outside those folders and all logs keep their existing embedding inputs. Designation, not authorship, controls the policy. Listed concepts include their title and description in their own vectors, even with an empty body. Changing `OKF_INDEX` or its folder scope, including legacy alias upgrades, changes the vector identity: opening an old store rebuilds it once or refuses it when unowned.
+With `OKF_INDEX` enabled, `index.md` files in designated folders are omitted from the vector index regardless of runtime detection or whether the vault is read-only. They remain in the keyword index; indexes outside those folders and all logs keep their existing embedding inputs. Designation, not authorship, controls the policy. Listed concepts include their title and description in their own vectors, even with an empty body; the metadata is clipped to the room the chunk character cap leaves, and a first chunk already at the cap is embedded without it (see the embeddings design). Changing `OKF_INDEX` or its folder scope, including legacy alias upgrades, changes the vector identity: opening an old store rebuilds it once or refuses it when unowned.
 
 In an active OKF vault, `index.md` and `log.md` bypass the
 `required_frontmatter` gate. Concept notes and all notes outside an active

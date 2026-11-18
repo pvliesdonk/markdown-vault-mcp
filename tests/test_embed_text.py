@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 
 import pytest
 
@@ -276,6 +277,41 @@ def test_listed_policy_tokens_and_preambles() -> None:
             is_first_chunk=False,
         )
         == "later"
+    )
+
+
+def test_bounded_listed_input_never_exceeds_cap_or_unenriched_input() -> None:
+    listed = EmbedTextBuilder(listed=True, listed_limit=20)
+    v2 = EmbedTextBuilder(embed_context=True, listed=True, listed_limit=20)
+    meta = "Title\n" + "d" * 50
+
+    def built(builder: EmbedTextBuilder, content: str, preamble: str = meta) -> str:
+        clipped = builder.bounded_listed(
+            preamble, title="T", heading=None, content=content
+        )
+        return builder.build(
+            title="T",
+            heading=None,
+            content=content,
+            fields_text=clipped,
+            is_first_chunk=True,
+        )
+
+    # The input is the cap, including the "\n\n" separator and a v2 title line.
+    assert built(listed, "") == meta[:18] + "\n\n"
+    assert len(built(listed, "b" * 10)) == 20
+    assert len(built(v2, "")) <= 20
+    # A chunk filling the cap, or past it with overlap, gets no preamble at all.
+    for size in (18, 25):
+        assert built(listed, "b" * size) == "b" * size
+    # Title-only and description-only listings fit whole; no limit changes nothing.
+    assert built(listed, "", "Title") == "Title\n\n"
+    assert built(listed, "", "desc") == "desc\n\n"
+    assert (
+        replace(listed, listed_limit=None).bounded_listed(
+            meta, title="T", heading=None, content="b"
+        )
+        == meta
     )
 
 
