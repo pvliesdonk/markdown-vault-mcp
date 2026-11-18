@@ -6,7 +6,7 @@ from __future__ import annotations
 # annotation stays resolvable if anything introspects it via get_type_hints.
 # (TC003 is suppressed for this file in pyproject.toml, matching indexing.py.)
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.okf_capabilities import (
@@ -51,7 +51,7 @@ class ContentConfig:
     okf_mode: str = "auto"
     okf_write: bool = False
     okf_verify: str = DEFAULT_VERIFY
-    okf_machine_review: bool = False
+    okf_machine_review: bool = field(default=False, kw_only=True)
     service_subjects: Sequence[str] | None = None
     okf_author: bool | None = None
     okf_index: bool | None = None

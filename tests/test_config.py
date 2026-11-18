@@ -2841,3 +2841,14 @@ def test_okf_machine_review_env(
     assert not ProjectConfig.from_env().content.okf_machine_review
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW", "true")
     assert ProjectConfig.from_env().content.okf_machine_review
+
+
+def test_machine_review_does_not_shift_positional_config_fields() -> None:
+    import inspect
+
+    for config_class in (ProjectConfig, ContentConfig):
+        params = inspect.signature(config_class).parameters
+        assert params["okf_machine_review"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert (
+            params["service_subjects"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        )

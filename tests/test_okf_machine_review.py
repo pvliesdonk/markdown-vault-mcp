@@ -161,3 +161,49 @@ async def test_machine_setting_does_not_bypass_human_confirmation(
             )
         await wait_for_mcp_writer_drain(client)
     assert note.read_text() == original
+
+
+@pytest.mark.parametrize(
+    ("subject", "claims", "expected"),
+    [
+        ("bad identity", {"sub": "bad identity", "idtyp": "app"}, "usable identity"),
+        ("alice", {"sub": "alice"}, "require a service principal"),
+    ],
+)
+async def test_machine_checks_require_service_with_usable_identity(
+    _clear_env: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    subject: str,
+    claims: dict[str, str],
+    expected: str,
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Bundle\n')
+    original = "---\ntype: concept\n---\nBody\n"
+    note = root / "note.md"
+    note.write_text(original)
+    for key, value in {
+        "SOURCE_DIR": str(root),
+        "READ_ONLY": "false",
+        "OKF_WRITE": "true",
+        "OKF_MACHINE_REVIEW": "true",
+    }.items():
+        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{key}", value)
+    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: subject)
+    monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: claims)
+    async with Client(make_server()) as client:
+        with pytest.raises(ToolError, match=expected):
+            await client.call_tool(
+                "okf_verify",
+                {
+                    "path": "note.md",
+                    "reviewed_snapshot": concept_snapshot(original),
+                    "check": "links",
+                },
+            )
+        await wait_for_mcp_writer_drain(client)
+    assert note.read_text() == original

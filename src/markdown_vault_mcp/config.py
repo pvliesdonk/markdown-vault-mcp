@@ -483,6 +483,7 @@ class ProjectConfig:
     )
     okf_machine_review: bool = field(
         default=False,
+        kw_only=True,
         metadata={
             "help": (
                 "Allow service principals to record named machine checks with "

@@ -569,8 +569,8 @@ verified and x-mvmcp. The user may be asked to confirm the review.
 
 **Returns**
 
-On the modern protocol's first round, an input request asking the
-client for human confirmation. After confirmation, a dict with:
+For human review with elicitation on the modern protocol, the first
+round returns an input request for confirmation. Otherwise, a dict with:
 
 - `path`: the verified note.
 - `verifier`: the `human:<subject>` or `process:<subject>` actor recorded.
