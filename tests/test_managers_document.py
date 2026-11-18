@@ -30,6 +30,68 @@ from markdown_vault_mcp.managers.document import DocumentManager
 from markdown_vault_mcp.scanner import HeadingChunker, scan_directory
 from markdown_vault_mcp.types import SubtreeToc, TocEntry
 
+
+@pytest.mark.parametrize("scoped", [False, True])
+def test_crlf_normalized_edit_preserves_header_and_suffix(
+    doc_mgr: DocumentManager, doc_vault: Path, scoped: bool
+) -> None:
+    path = doc_vault / "crlf.md"
+    header = b"\xef\xbb\xbf---\r\ngenerated: human:alice\r\nx-custom: true\r\n---\r\n"
+    path.write_bytes(header + b"First line\r\nSecond line\r\nLast line\r\n")
+    kwargs = {"line_start": 5, "line_end": 6} if scoped else {}
+    doc_mgr.edit(
+        "crlf.md", old_text="First line\nSecond line", new_text="Replacement", **kwargs
+    )
+    assert path.read_bytes() == header + b"Replacement\r\nLast line\r\n"
+
+
+@pytest.mark.parametrize("content", ["one\ntwo\n", "one\r\ntwo\r\n"])
+def test_write_preserves_supplied_newlines_on_windows_staging(
+    doc_mgr: DocumentManager,
+    doc_vault: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    content: str,
+) -> None:
+    atomic_write = doc_mod.atomic_write
+
+    def windows_staging(path: Path, data: str | bytes) -> None:
+        if isinstance(data, str):
+            data = data.replace("\n", "\r\n")
+        atomic_write(path, data)
+
+    monkeypatch.setattr(doc_mod, "atomic_write", windows_staging)
+    doc_mgr.write("newlines.md", content)
+    assert (doc_vault / "newlines.md").read_bytes() == content.encode("utf-8")
+
+
+def test_nested_exact_byte_writes_restore_outer_scope(doc_mgr: DocumentManager) -> None:
+    with doc_mgr.exact_byte_writes():
+        with doc_mgr.exact_byte_writes():
+            pass
+        assert doc_mgr._staged("line\n") == b"line\n"
+    assert doc_mgr._staged("line\n") == "line\n"
+
+
+@pytest.mark.parametrize(
+    ("original", "replacement", "expected"),
+    [
+        (b"a\r\nb\r\nc\r\n", "B1\nB2", b"a\r\nB1\nB2\r\nc\r\n"),
+        (b"a\r\nb", "B\r\n", b"a\r\nB"),
+    ],
+)
+def test_line_range_preserves_existing_boundary(
+    doc_mgr: DocumentManager,
+    doc_vault: Path,
+    original: bytes,
+    replacement: str,
+    expected: bytes,
+) -> None:
+    path = doc_vault / "range.md"
+    path.write_bytes(original)
+    doc_mgr.edit("range.md", line_start=2, line_end=2, new_text=replacement)
+    assert path.read_bytes() == expected
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

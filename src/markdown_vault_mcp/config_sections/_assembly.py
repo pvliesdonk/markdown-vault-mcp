@@ -81,7 +81,7 @@ def warn_okf_write_deprecated() -> None:
     logger.warning(
         "okf_write_deprecated replacements=%s guidance=%s",
         "OKF_AUTHOR,OKF_VERIFY,OKF_INDEX,OKF_LOG,OKF_FOLDERS",
-        "Keep OKF_WRITE enabled until the separate runtime gates are available.",
+        "Set the individual OKF capability options and remove OKF_WRITE.",
     )
     _okf_warning_emitted = True
 

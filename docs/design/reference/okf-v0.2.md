@@ -58,7 +58,7 @@ months, not twelve.
   the v0.3 proposal.
 - Depended on by: `src/markdown_vault_mcp/okf.py` (detection, annotations,
   filters, ranking weights, the audit, index/log builders, write stamps),
-  `_okf_write.py` and `_okf_convention.py` (write-side stamping and log
+  `_okf_write.py` and `_okf_convention.py` (explicit authoring and log
   maintenance), `okf_bundle.py` (export), `_tools/reader.py` and
   `writer.py` (the `okf_*` tools); `docs/design/okf.md` decides what this
   project does with these rules.
@@ -109,7 +109,7 @@ months, not twelve.
   `generated.by` is required within `generated` and is an actor;
   `generated.at` is "an ISO 8601 datetime marking the content's last
   meaningful change". [source: spec] (§5.2) [source: spec-july] (§5.2)
-  [pins: tests/test_okf_author.py]
+  [pins: tests/test_okf_author.py::test_author_preserves_evidence_and_records_explicit_producer]
 - `verified` is "a list of verification events, each with `by` (an actor)
   and `at` (an ISO 8601 datetime)"; it "is independent of `generated.at`:
   content can change without re-confirmation, and facts can be re-confirmed
@@ -128,7 +128,7 @@ months, not twelve.
   person, `process:<id>` for an automated process; "producers MUST use
   [`human:`] for hand-authored or human-confirmed content" because
   consumers key trust off that prefix. [source: spec] (§7)
-  [pins: tests/test_okf_author.py]
+  [pins: tests/test_okf_author.py::test_author_preserves_evidence_and_records_explicit_producer]
 - The spec says nothing about a tier for a malformed `verified` entry.
   The server formerly promoted any mapping, including `{}`; #1444 follows
   the adopted north star instead, counting only usable actor/timestamp
@@ -167,7 +167,7 @@ months, not twelve.
   form a `str`; python-frontmatter uses the same loader] The server's own
   stamps are therefore written as strings, UTC with `Z`, the spec's example
   form (#1372).
-  [pins: tests/test_okf_author.py]
+  [pins: tests/test_okf_author.py::test_author_preserves_evidence_and_records_explicit_producer]
 
 ### Provenance: `sources` (§5.1)
 

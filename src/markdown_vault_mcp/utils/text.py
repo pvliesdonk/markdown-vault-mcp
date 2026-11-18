@@ -19,9 +19,8 @@ def read_text_utf8(path: Path, *, limit: int | None = None) -> str:
     """Read a text file as UTF-8, stripping a leading BOM if present (#673).
 
     Uses ``utf-8-sig``: a leading UTF-8 BOM (``\\ufeff``) is stripped, and a
-    file without one decodes identically to plain ``utf-8``. The vault
-    normalizes to no-BOM (writes are plain ``utf-8``), so a BOM-prefixed file
-    read here parses correctly and loses its BOM on the next rewrite. A
+    file without one decodes identically to plain ``utf-8``. A BOM-prefixed
+    file read here parses correctly. A
     non-UTF-8 file still raises ``UnicodeDecodeError``, exactly as ``utf-8``
     would.
 
@@ -134,9 +133,23 @@ def build_position_map(original: str, normalized: str) -> list[int]:
             norm_idx += 1
             continue
 
+        # A normalized newline may follow stripped whitespace. Keep a CRLF
+        # together at the boundary so a match ending here preserves both bytes.
+        if norm_char == "\n":
+            while orig_idx < orig_len and original[orig_idx] != "\n":
+                orig_idx += 1
+            if orig_idx < orig_len:
+                boundary = orig_idx
+                if orig_idx > 0 and original[orig_idx - 1] == "\r":
+                    boundary -= 1
+                pos_map.append(boundary)
+                orig_idx += 1
+                norm_idx += 1
+            continue
+
         # Trailing whitespace was stripped: skip original trailing ws
         # before a newline or end-of-string.
-        if norm_char == "\n" or (norm_idx == norm_len - 1 and norm_char != "\n"):
+        if norm_idx == norm_len - 1:
             if norm_char != "\n":
                 # last char of normalized, not a newline — emit it first
                 pos_map.append(orig_idx)

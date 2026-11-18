@@ -19,4 +19,3 @@ class OkfCapabilities:
     index: bool
     log: str
     folders: tuple[str, ...]
-    legacy_stamping: bool

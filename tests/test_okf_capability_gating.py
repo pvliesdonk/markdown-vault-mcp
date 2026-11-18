@@ -234,7 +234,7 @@ def test_guidance_follows_independent_maintenance() -> None:
         cfg = GuidanceConfig(
             read_only=False,
             okf_mode="on",
-            okf_write=caps.legacy_stamping,
+            okf_write=False,
             okf_capabilities=caps,
         )
         return " ".join(item.text for item in _domain_snippets(cfg))

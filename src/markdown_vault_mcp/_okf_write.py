@@ -32,11 +32,9 @@ class OkfWriteIntent:
     """The current request's OKF write intent, carried across ``to_thread``.
 
     Attributes:
-        actor: Legacy intent value; does not supply provenance.
         suppress: When true, automatic convention maintenance is suppressed.
     """
 
-    actor: str
     suppress: bool = False
 
 
@@ -66,7 +64,7 @@ def okf_write_suppressed() -> Iterator[None]:
     Used by mechanical transforms and explicit review. Enter before the
     ``asyncio.to_thread`` call so the worker receives the context.
     """
-    with okf_write_intent(OkfWriteIntent(actor="", suppress=True)):
+    with okf_write_intent(OkfWriteIntent(suppress=True)):
         yield
 
 

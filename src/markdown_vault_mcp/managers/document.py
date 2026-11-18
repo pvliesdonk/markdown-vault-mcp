@@ -206,7 +206,6 @@ class DocumentManager:
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
         title_field: str = "title",
-        okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
         sync_index: Callable[[], None] | None = None,
         submodule_guard: SubmoduleGuard | None = None,
     ) -> None:
@@ -236,7 +235,6 @@ class DocumentManager:
         self._submodule_guard = submodule_guard
         self._title_field = title_field
         # Optional caller-supplied content transformation.
-        self._okf_write_enrich = okf_write_enrich
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
@@ -330,14 +328,15 @@ class DocumentManager:
         Held under the write lock, so no other write sees the mode.  For a
         caller that splices text it read byte for byte (OKF authoring) and
         must not have a platform's text-mode staging rewrite its line endings.
-        Ordinary writes keep their text-mode staging.
+        Content writes use this scope when preserving supplied bytes.
         """
         with self._file_write_lock:
+            previous = self._exact_bytes
             self._exact_bytes = True
             try:
                 yield
             finally:
-                self._exact_bytes = False
+                self._exact_bytes = previous
 
     def _staged(self, content: str) -> str | bytes:
         """Return *content* in the form the current write mode stages."""
@@ -966,7 +965,8 @@ class DocumentManager:
             else:
                 file_content = content
 
-            self._finalize_content_write(abs_path, path, file_content, "write")
+            with self.exact_byte_writes():
+                self._finalize_content_write(abs_path, path, file_content, "write")
             result = WriteResult(path=path, created=created)
 
         return result
@@ -980,8 +980,7 @@ class DocumentManager:
     ) -> None:
         """Run the shared tail of every content write.
 
-        Transforms *content* through the optional caller-supplied hook,
-        writes it atomically, marks the path dirty for the index writer, and
+        Writes *content* atomically, marks the path dirty for the index writer, and
         fires the write callback.  Must be called with ``_file_write_lock``
         held.
 
@@ -989,12 +988,9 @@ class DocumentManager:
             abs_path: Absolute path of the target file.
             path: Vault-relative path of the target file.
             content: Full file content to persist.
-            operation: The write operation reported to the enricher and the
-                write callback.
+            operation: The write operation reported to the write callback.
 
         """
-        if self._okf_write_enrich is not None:
-            content = self._okf_write_enrich(content, operation)
         atomic_write(abs_path, self._staged(content))
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
@@ -1199,8 +1195,7 @@ class DocumentManager:
                     file_content,
                     old_text,
                     new_text,
-                    line_start,
-                    line_end,
+                    (line_start, line_end),
                     path,
                 )
             else:
@@ -1219,8 +1214,7 @@ class DocumentManager:
         file_content: str,
         old_text: str | None,
         new_text: str,
-        line_start: int,
-        line_end: int,
+        line_range: tuple[int, int],
         path: str,
     ) -> tuple[str, str]:
         """Handle line-range and scoped-match edit modes.
@@ -1228,6 +1222,7 @@ class DocumentManager:
         Returns:
             Tuple of (new_file_content, match_type).
         """
+        line_start, line_end = line_range
         lines = file_content.split("\n")
         total_lines = len(lines) - 1 if lines and lines[-1] == "" else len(lines)
         if line_end > total_lines:
@@ -1240,15 +1235,28 @@ class DocumentManager:
 
         if old_text is not None:
             scope = "\n".join(lines[start_idx:end_idx])
+            # The split leaves the final CR of a scoped CRLF outside its LF.
+            # Include that LF while matching so it remains a single boundary.
+            scoped_crlf = scope.endswith("\r") and end_idx < len(lines)
+            if scoped_crlf:
+                scope += "\n"
             context_desc = f"lines {line_start}-{line_end} of {path}"
             new_scope, match_type = self._match_and_replace(
                 scope, old_text, new_text, path, context_desc=context_desc
             )
+            if scoped_crlf:
+                new_scope = new_scope.removesuffix("\n")
             lines[start_idx:end_idx] = new_scope.split("\n")
         else:
             match_type = "exact"
             # Empty new_text removes the range rather than blanking it (#1607).
-            replacement_lines = new_text.rstrip("\n").split("\n") if new_text else []
+            terminal_cr = lines[end_idx - 1].endswith("\r") and end_idx < len(lines)
+            replacement = new_text
+            while replacement.endswith("\n"):
+                replacement = replacement[:-1].removesuffix("\r")
+            replacement_lines = replacement.split("\n") if new_text else []
+            if replacement_lines and terminal_cr:
+                replacement_lines[-1] += "\r"
             lines[start_idx:end_idx] = replacement_lines
 
         return "\n".join(lines), match_type

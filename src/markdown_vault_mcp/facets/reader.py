@@ -61,7 +61,6 @@ class ReaderFacet:
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
         okf_audit: Callable[[], OkfAuditReport] | None = None,
-        okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
         """Hold the managers the read methods delegate to.
 
@@ -73,14 +72,12 @@ class ReaderFacet:
             require_built: Index-readiness gate for the bucket-3 methods.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
-            okf_write_state: Configured and effective write-layer projection.
         """
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
         self._okf_audit = okf_audit
-        self._okf_write_state = okf_write_state
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
@@ -584,20 +581,14 @@ class ReaderFacet:
     def okf_stats(self) -> dict[str, Any] | None:
         """Return the OKF statistics section, or ``None`` when inactive.
 
-        Adds the vault's write state to :meth:`SearchManager.okf_stats`.
+        Returns the aggregate from :meth:`SearchManager.okf_stats`.
 
         Returns:
             The OKF aggregate dict (mode, declared version, type histogram,
-            status/trust breakdowns, stale count, and ``write_configured``
-            and ``write_effective`` when wired), or ``None`` when OKF read
+            status/trust breakdowns and stale count), or ``None`` when OKF read
             semantics are not active.
         """
-        section = self._search_mgr.okf_stats()
-        if section is not None and self._okf_write_state is not None:
-            configured, effective = self._okf_write_state()
-            section["write_configured"] = configured
-            section["write_effective"] = effective
-        return section
+        return self._search_mgr.okf_stats()
 
     def attachment_size(self, path: str) -> int:
         """Return an attachment's on-disk byte size without reading it.

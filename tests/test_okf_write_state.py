@@ -16,16 +16,16 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    ("declared", "write", "read_only", "effective"),
+    ("declared", "write", "read_only"),
     [
-        (True, True, False, True),
-        (True, False, False, False),
-        (True, True, True, False),
-        (False, True, False, False),
+        (True, True, False),
+        (True, False, False),
+        (True, True, True),
+        (False, True, False),
     ],
 )
 def test_write_state_uses_vault_settings(
-    tmp_path: Path, declared: bool, write: bool, read_only: bool, effective: bool
+    tmp_path: Path, declared: bool, write: bool, read_only: bool
 ) -> None:
     if declared:
         (tmp_path / "index.md").write_text(
@@ -38,12 +38,11 @@ def test_write_state_uses_vault_settings(
     try:
         state = vault.okf.state()
         assert state.active is declared
-        assert vault.okf_write_state(active=state.active) == (write, effective)
         if declared:
             section = vault.reader.okf_stats()
             assert section is not None
-            assert section["write_configured"] is write
-            assert section["write_effective"] is effective
+            assert "write_configured" not in section
+            assert "write_effective" not in section
     finally:
         vault.close()
 
@@ -60,7 +59,7 @@ async def test_mcp_reports_write_state(
     async with Client(make_server()) as client:
         config = json.loads((await client.read_resource("config://vault"))[0].text)
         stats = (await client.call_tool("stats", {})).structured_content
-    assert config["okf_write_configured"] is True
-    assert config["okf_write_effective"] is False
-    assert stats["okf"]["write_configured"] is True
-    assert stats["okf"]["write_effective"] is False
+    assert "okf_write_configured" not in config
+    assert "okf_write_effective" not in config
+    assert "write_configured" not in stats["okf"]
+    assert "write_effective" not in stats["okf"]

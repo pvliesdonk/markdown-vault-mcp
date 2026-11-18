@@ -32,9 +32,7 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off` | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on` | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own. |
 
-Check the current state through the `config://vault` resource. Its `okf_write_configured` field reports the configured `OKF_WRITE` flag, and `okf_write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the `stats` tool's `okf` section reports the same values as `write_configured` and `write_effective`. The section is absent when OKF is inactive; use `config://vault` to inspect that state. Detection reflects changes to the declaration on the next call.
-
-The effective write state reports whether the legacy alias is configured and active on a writable bundle. Explicit capability settings may override its defaults, so it does not report individual tool availability.
+Check detection through the `config://vault` resource. The `stats` tool includes an `okf` section when detection is active. Detection reflects changes to the declaration on the next call.
 
 ## Authoring a concept
 

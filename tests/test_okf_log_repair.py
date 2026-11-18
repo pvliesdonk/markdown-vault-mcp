@@ -224,12 +224,9 @@ def test_notifications_precede_target_and_do_not_stamp(
     manager._notifier._callback = notify
     dirty = Mock()
     manager._mark_paths_dirty = dirty
-    enricher = Mock(side_effect=AssertionError("must not stamp"))
-    manager._okf_write_enrich = enricher
     manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert seen == [BACKUP, "log.md"]
     dirty.assert_called_once_with(["log.md"])
-    enricher.assert_not_called()
 
 
 @pytest.mark.parametrize(

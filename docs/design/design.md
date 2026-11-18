@@ -2031,12 +2031,8 @@ the spec itself says, dated and sourced, in
   breakdowns, stale count — aggregated from the same `documents` rows
   `stats` already reads, minus the reserved files, which are counted
   apart as `reserved_count` so the histograms cover the same note
-  population `okf_validate` audits). Its `write_configured` reports the
-  vault's configured `OKF_WRITE` flag and `write_effective` is true only
-  when that flag is enabled, OKF detection is active, and the vault is not
-  read-only. The section remains absent when OKF is inactive.
-  `config://vault` reports those same values as `okf_write_configured` and
-  `okf_write_effective`, including when inactive, and reports `okf_mode` /
+  population `okf_validate` audits). The section remains absent when OKF is
+  inactive. `config://vault` reports `okf_mode` /
   `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
   both enabled, startup logs INFO `okf_write_inert` (#1434). The default
   server instructions gain an OKF guidance sentence whenever the mode permits

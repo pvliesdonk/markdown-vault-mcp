@@ -72,7 +72,6 @@ class ContentConfig:
             folders=tuple(self.okf_folders)
             if self.okf_folders is not None
             else (("**",) if self.okf_write else (".",)),
-            legacy_stamping=False,
         )
 
     def __post_init__(self) -> None:

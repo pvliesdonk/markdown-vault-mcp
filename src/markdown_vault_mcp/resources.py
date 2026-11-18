@@ -111,15 +111,12 @@ def register_resources(mcp: FastMCP) -> None:
         ctx: Context = CurrentContext(),
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Vault settings, indexed fields, exclusions, and OKF detection and write state."""
+        """Vault settings, indexed fields, exclusions, and OKF detection."""
         config = _get_config(ctx)
         gen_before = vault.index.write_generation()
         stats = await asyncio.to_thread(vault.reader.stats)
         convention_folders = await asyncio.to_thread(vault.conventions.list_folders)
         okf_state = await asyncio.to_thread(vault.okf.state)
-        okf_write_configured, okf_write_effective = vault.okf_write_state(
-            active=okf_state.active
-        )
         return _stale_resource(
             vault,
             json.dumps(
@@ -140,8 +137,6 @@ def register_resources(mcp: FastMCP) -> None:
                     "okf_mode": okf_state.mode,
                     "okf_active": okf_state.active,
                     "okf_declared_version": okf_state.declared_version,
-                    "okf_write_configured": okf_write_configured,
-                    "okf_write_effective": okf_write_effective,
                     "semantic_search_available": stats.semantic_search_available,
                     "attachment_extensions": stats.attachment_extensions,
                 }

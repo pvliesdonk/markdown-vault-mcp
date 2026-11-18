@@ -23,8 +23,7 @@ def test_defaults_preserve_legacy_field_but_grant_no_writes():
         caps.index,
         caps.log,
         caps.folders,
-        caps.legacy_stamping,
-    ) == (False, "off", False, "off", (".",), False)
+    ) == (False, "off", False, "off", (".",))
 
 
 def test_alias_and_explicit_overrides():
@@ -42,8 +41,7 @@ def test_alias_and_explicit_overrides():
         caps.index,
         caps.log,
         caps.folders,
-        caps.legacy_stamping,
-    ) == (True, "off", False, "events", ("projects/*",), False)
+    ) == (True, "off", False, "events", ("projects/*",))
     assert ContentConfig(okf_verify="elicit").okf_capabilities.verify == "elicit"
     assert (
         ContentConfig(okf_verify="trust-auth").okf_capabilities.verify == "trust-auth"
@@ -55,8 +53,7 @@ def test_alias_and_explicit_overrides():
         legacy.index,
         legacy.log,
         legacy.folders,
-        legacy.legacy_stamping,
-    ) == (True, "elicit", True, "writes", ("**",), False)
+    ) == (True, "elicit", True, "writes", ("**",))
 
 
 @pytest.mark.parametrize(
@@ -120,7 +117,7 @@ def test_deprecation_warns_once_across_env_and_copies(monkeypatch, caplog):
         replace(config, okf_index=False)
     notices = [r for r in caplog.records if r.msg.startswith("okf_write_deprecated")]
     assert len(notices) == 1
-    assert "Keep OKF_WRITE enabled" in notices[0].getMessage()
+    assert "remove OKF_WRITE" in notices[0].getMessage()
     assert all(
         name in notices[0].getMessage()
         for name in ("OKF_AUTHOR", "OKF_VERIFY", "OKF_INDEX", "OKF_LOG", "OKF_FOLDERS")

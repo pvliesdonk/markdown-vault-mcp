@@ -153,8 +153,8 @@ class TestIntentContextvar:
         assert _okf_write.current_okf_intent() is None
 
     def test_intent_reset_after_block(self) -> None:
-        with okf_write_intent(OkfWriteIntent(actor="a")):
-            assert _okf_write.current_okf_intent() == OkfWriteIntent(actor="a")
+        with okf_write_intent(OkfWriteIntent(suppress=True)):
+            assert _okf_write.current_okf_intent() == OkfWriteIntent(suppress=True)
         assert _okf_write.current_okf_intent() is None
 
     def test_suppress_sets_suppress_flag(self) -> None:
@@ -288,7 +288,7 @@ class TestOffModeIdentity:
             on_disk = (root / "note.md").read_text(encoding="utf-8")
         finally:
             col.close()
-        # No enricher wired → the note lands exactly as written.
+        # The note lands exactly as written.
         assert on_disk == _VERIFIED_NOTE
 
 
@@ -380,9 +380,7 @@ class TestWriteToolThreadsActor:
     async def test_convert_links_migration_does_not_restamp(
         self, enforced_env: Path
     ) -> None:
-        # A migration transform suppresses the enricher on every write it
-        # issues (#1401), so converting a wikilink must not clear a note's
-        # human verification nor stamp it — through this tool or the facade.
+        # Converting a wikilink preserves the note's verification (#1401).
         (enforced_env / "guides" / "plain.md").write_text(
             "---\nverified:\n  - by: human:peter\n    at: 2026-01-01\n---\n"
             + _PLAIN_NOTE,
@@ -408,12 +406,10 @@ class TestFetchThreadsActor:
 
         from fastmcp_pvl_core import FetchResult
 
-        # fetch writes .md notes through DocumentManager.write, so the enricher
-        # fires; the provenance actor must be the authenticated caller (#964).
+        # Fetch preserves supplied metadata regardless of the authenticated caller.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
-        # The download is incidental here — only the actor threading on the
-        # write path is under test — so fetch_url (a black-box library
+        # The download is incidental, so fetch_url (a black-box library
         # boundary, #1028) is stubbed with a canned result.
         monkeypatch.setattr(
             "markdown_vault_mcp._tools.writer.fetch_url",
@@ -462,8 +458,7 @@ class TestOkfVerifyTrustAuth:
         payload = _parse_tool_data(result)
         assert payload["verifier"] == "human:peter"
         assert payload["verified_count"] == 1
-        # The append survives — okf_verify suppresses the enricher so its own
-        # write does not clear the verification it just added.
+        # The explicit verification survives its own write.
         meta = fm.loads(
             (trust_auth_env / "guides" / "playbook.md").read_text(encoding="utf-8")
         ).metadata
@@ -731,6 +726,19 @@ class TestServiceTokenOkf:
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
 
 
+def test_read_then_edit_preserves_crlf_header(enforced_vault: Vault) -> None:
+    path = enforced_vault.source_dir / "read-edit.md"
+    header = b"\xef\xbb\xbf---\r\nverified: []\r\nx-custom: yes\r\n---\r\n"
+    path.write_bytes(header + b"First line\r\nSecond line\r\nLast line\r\n")
+    note = enforced_vault.reader.read("read-edit.md")
+    assert note is not None
+    assert "First line\nSecond line" in note.content
+    enforced_vault.writer.edit(
+        "read-edit.md", old_text="First line\nSecond line", new_text="Replacement"
+    )
+    assert path.read_bytes() == header + b"Replacement\r\nLast line\r\n"
+
+
 def test_ordinary_write_preserves_supplied_provenance(enforced_vault: Vault) -> None:
     fields = {
         "z": "first",
@@ -761,7 +769,6 @@ def test_body_changes_preserve_frontmatter_bytes(
 def test_legacy_alias_enables_author_without_stamping() -> None:
     capabilities = ContentConfig(okf_write=True).okf_capabilities
     assert capabilities.author is True
-    assert capabilities.legacy_stamping is False
     assert (
         ContentConfig(okf_write=True, okf_author=False).okf_capabilities.author is False
     )
