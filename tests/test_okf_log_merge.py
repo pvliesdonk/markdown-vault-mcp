@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -182,3 +182,124 @@ def test_later_local_entry_survives_multiple_replays(
     finally:
         vault.close()
         strategy.close()
+
+
+def test_malformed_local_log_is_saved_verbatim(
+    git_repo_pair: GitRepoPair, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from tests.fixtures.conflict_recovery import recovery_vault
+    from tests.fixtures.git import _git_clone, _git_commit, _run_git
+
+    root = git_repo_pair.local_path
+    base = "# Log\n\n## 2026-11-18\n\n- base\n"
+    _git_commit(root, "log.md", base, "seed")
+    _run_git(root, "push", "origin", "main")
+    other = _git_clone(git_repo_pair, tmp_path)
+    upstream = base + "- remote\n"
+    _git_commit(other, "log.md", upstream, "remote")
+    _run_git(other, "push", "origin", "main")
+    local = base + "\nindependent prose\n"
+    _git_commit(root, "log.md", local, "local")
+    strategy, vault = recovery_vault(root)
+    try:
+        result = strategy.force_pull()
+        assert result.reason == "conflicts_resolved_with_siblings"
+        assert len(result.conflict_files) == 1
+        assert (root / result.conflict_files[0]).read_text() == local
+        assert (root / "log.md").read_text() == upstream
+        assert "git_conflict_log_merge_fallback" in caplog.text
+        assert "unsupported_content" in caplog.text
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_abort_after_union_restores_both_versions(
+    git_repo_pair: GitRepoPair, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    from markdown_vault_mcp.git import conflict
+    from tests.fixtures.conflict_recovery import recovery_vault
+    from tests.fixtures.git import _git_clone, _git_commit, _run_git
+
+    root = git_repo_pair.local_path
+    base = "# Log\n\n## 2026-11-18\n\n- base\n"
+    _git_commit(root, "log.md", base, "seed")
+    _run_git(root, "push", "origin", "main")
+    other = _git_clone(git_repo_pair, tmp_path)
+    upstream = base + "- remote\n"
+    _git_commit(other, "log.md", upstream, "remote")
+    _run_git(other, "push", "origin", "main")
+    local = base + "- local\n"
+    _git_commit(root, "log.md", local, "local")
+    original_run = subprocess.run
+
+    def fail_continue(*args: Any, **kwargs: Any) -> Any:
+        command = args[0]
+        if "rebase" in command and "--continue" in command:
+            return subprocess.CompletedProcess(command, 1, "", "forced failure")
+        return original_run(*args, **kwargs)
+
+    strategy, vault = recovery_vault(root)
+    try:
+        monkeypatch.setattr(conflict.subprocess, "run", fail_continue)
+        result = strategy.force_pull()
+        assert result.reason == "conflicts_resolved_with_siblings"
+        assert len(result.conflict_files) == 1
+        assert (root / result.conflict_files[0]).read_text() == local
+        assert (root / "log.md").read_text() == upstream
+        assert _run_git(root, "status", "--porcelain") == ""
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_existing_date_and_concept_conflict_only_saves_concept(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    from tests.fixtures.conflict_recovery import recovery_vault
+    from tests.fixtures.git import _git_clone, _git_commit, _run_git
+
+    root = git_repo_pair.local_path
+    base = "# Log\n\n## 2026-11-18\n\n- base\n"
+    _git_commit(root, "log.md", base, "seed log")
+    _git_commit(root, "concept.md", "# Base\n", "seed concept")
+    _run_git(root, "push", "origin", "main")
+    other = _git_clone(git_repo_pair, tmp_path)
+    (other / "log.md").write_text(base + "- remote\n")
+    (other / "concept.md").write_text("# Remote\n")
+    _run_git(other, "add", "log.md", "concept.md")
+    _run_git(other, "commit", "-m", "remote")
+    _run_git(other, "push", "origin", "main")
+    (root / "log.md").write_text(base + "- local\n")
+    (root / "concept.md").write_text("# Local\n")
+    _run_git(root, "add", "log.md", "concept.md")
+    _run_git(root, "commit", "-m", "local")
+    strategy, vault = recovery_vault(root)
+    try:
+        result = strategy.force_pull()
+        assert result.reason == "conflicts_resolved_with_siblings"
+        assert len(result.conflict_files) == 1
+        assert result.conflict_files[0].startswith("concept.conflict-mcp-")
+        log = (root / "log.md").read_text()
+        assert log.count("## 2026-11-18") == 1
+        assert "- remote\n" in log and "- local\n" in log
+        assert "conflict_with" not in log
+        assert _run_git(root, "status", "--porcelain") == ""
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_single_unclosed_fence_is_not_a_valid_log() -> None:
+    text = "## 2026-11-18\n\n- one\n  ```\n"
+    assert merge_log_texts(text, text).text is None
+
+
+def test_blank_preamble_separators_do_not_block_union() -> None:
+    upstream = "# Log\n\n  \n## 2026-11-18\n\n- upstream\n"
+    local = "# Log\n\n## 2026-11-18\n\n- local\n"
+    result = merge_log_texts(upstream, local)
+    assert result.text is not None
+    assert "- upstream\n- local\n" in result.text

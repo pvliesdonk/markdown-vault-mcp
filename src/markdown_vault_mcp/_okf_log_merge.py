@@ -51,7 +51,7 @@ def _fences_closed(tokens: list[Token], lines: list[str]) -> bool:
             pattern = (
                 re.escape(token.markup[0]) + "{" + str(len(token.markup)) + r",}\s*"
             )
-            if not re.fullmatch(pattern, closing):
+            if token.map[1] - 1 == token.map[0] or not re.fullmatch(pattern, closing):
                 return False
     return True
 
@@ -126,7 +126,10 @@ def _parse(text: str) -> tuple[_Log | None, str]:
         return None, "unaccounted_content"
     if any(not section.entries for section in sections):
         return None, "empty_section"
-    return _Log(prefix, "".join(lines[:first]).rstrip("\r\n"), lines, sections), ""
+    preamble = lines[:first]
+    while preamble and not preamble[-1].strip(" \t\r\n"):
+        preamble.pop()
+    return _Log(prefix, "".join(preamble).rstrip("\r\n"), lines, sections), ""
 
 
 def _insertions(

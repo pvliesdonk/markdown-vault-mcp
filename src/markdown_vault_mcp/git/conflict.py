@@ -45,14 +45,16 @@ def resolve_rebase_conflicts(
     conflicted: set[str] | None = None,
     generated_index: collections.abc.Callable[[Path], bool] | None = None,
 ) -> list[tuple[str, str]]:
-    """Resolve rebase conflicts by accepting theirs and saving ours.
+    """Resolve rebase conflicts, preserving authored content.
 
     Called when ``git rebase <ref>`` (the resolved ``origin/<branch>``
     remote-tracking ref) has stopped at a conflict.
-    For each conflicting file, saves the MCP version from
-    ``REBASE_HEAD``, then accepts the upstream version via
-    ``git checkout --ours``.  Continues the rebase, looping if
-    multiple commits conflict.
+    For each conflicting file, saves the MCP version from ``REBASE_HEAD``.
+    Compatible ``log.md`` files are merged by entry union and staged; other
+    conflicts accept upstream via ``git checkout --ours``. Continues the
+    rebase, looping if multiple commits conflict. A successful rebase removes
+    unioned paths from the saved result and the optional conflict collector.
+    A fallback or incomplete rebase retains them for sibling recovery.
     A designated index deleted upstream keeps its local copy for regeneration;
     any other reserved file stays deleted, its local bytes returned as saved.
 
@@ -63,8 +65,8 @@ def resolve_rebase_conflicts(
         generated_index: Optional authority check for generated index recovery.
 
     Returns:
-        A list of ``(relative_path, saved_content)`` tuples for the
-        files that had conflicts.  May be partial (not all commits
+        A list of ``(relative_path, saved_content)`` tuples for conflicts
+        still requiring sibling recovery.  May be partial (not all commits
         resolved) if the iteration limit is hit; the caller is
         responsible for aborting any in-progress rebase before
         writing the conflict files.
