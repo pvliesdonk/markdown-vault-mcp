@@ -28,11 +28,11 @@ class GitConfig:
     group_max_age_s: float = 3600
 
     def __post_init__(self) -> None:
-        """Validate non-negative sync cadences on every construction path (#638).
+        """Validate sync cadences and group deadlines on construction (#638).
 
         Raises:
-            ConfigurationError: If ``push_delay_s`` or ``pull_interval_s`` is
-                negative.
+            ConfigurationError: If a sync cadence is negative or a group
+                deadline is nonpositive or nonfinite.
         """
         if not (0 < self.group_idle_s < float("inf")) or not (
             0 < self.group_max_age_s < float("inf")

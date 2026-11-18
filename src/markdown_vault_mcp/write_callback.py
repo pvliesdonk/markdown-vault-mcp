@@ -139,6 +139,8 @@ class WriteCallbackDispatcher:
                 :data:`~markdown_vault_mcp.types.ACCEPTS_OLD_PATH_ATTR`
                 attribute to ``True`` also receives ``old_path=`` on
                 ``rename`` dispatches (#894).
+            group_idle_s: Idle seconds before closing a group.
+            group_max_age_s: Maximum group age in seconds.
         """
         self._on_write = on_write
         self._groups: dict[str, CommitGroup] = {}
@@ -322,7 +324,15 @@ class WriteCallbackDispatcher:
     def close_group(
         self, handle: str, principal: Principal | None, *, _automatic: bool = False
     ) -> Future[GroupCommitResult]:
-        """Close a group and return a future for its commit result."""
+        """Close a group and return a future for its commit result.
+
+        Automatically closed results remain available to the same owner.
+
+        Args:
+            handle: Opaque group handle.
+            principal: Calling identity.
+            _automatic: Retain the result for a later explicit close.
+        """
         with self._group_lock:
             finished = self._finished_groups.get(handle)
             if finished is not None and finished[0] == owner_key(principal):
@@ -384,7 +394,7 @@ class WriteCallbackDispatcher:
     def _expire_group(self, handle: str) -> None:
         with self._group_lock:
             group = self._groups.get(handle)
-            if group is None or group.closed:
+            if self._groups_closed or group is None or group.closed:
                 return
             now = time.monotonic()
             deadline = min(

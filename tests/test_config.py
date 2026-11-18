@@ -2789,3 +2789,12 @@ def test_group_timeout_settings_reach_vault_settings(
     settings = VaultSettings.from_project_config(config)
     assert settings.git_group_idle_s == 23
     assert settings.git_group_max_age_s == 67
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+@pytest.mark.parametrize("setting", ["git_group_idle_s", "git_group_max_age_s"])
+def test_group_timeout_must_be_finite_and_positive(setting: str, value: float) -> None:
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError):
+        ProjectConfig(**{setting: value})

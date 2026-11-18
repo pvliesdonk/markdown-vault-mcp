@@ -127,3 +127,48 @@ def test_shutdown_does_not_restart_group_timer() -> None:
 
     with pytest.raises(CommitGroupError):
         dispatcher.open_group("Too late", None)
+
+
+def test_pending_expiry_does_not_close_group_after_shutdown() -> None:
+    from markdown_vault_mcp._commit_groups import CommitGroupError
+
+    dispatcher = WriteCallbackDispatcher(None, group_idle_s=0.05, group_max_age_s=1)
+    group = dispatcher.open_group("Shutdown race", None)
+    with dispatcher._group_lock:
+        worker = threading.Thread(target=dispatcher._expire_group, args=(group.handle,))
+        worker.start()
+        time.sleep(0.08)
+        dispatcher.close()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert (
+        dispatcher.close_group(group.handle, None).result(timeout=2).status
+        == "no_changes"
+    )
+    with pytest.raises(CommitGroupError):
+        dispatcher.close_group(group.handle, None)
+
+
+def test_auto_closed_result_is_only_available_to_owner() -> None:
+    from markdown_vault_mcp._commit_groups import CommitGroupError
+
+    dispatcher = WriteCallbackDispatcher(None, group_idle_s=0.05, group_max_age_s=1)
+    alice = Principal("alice", "Alice", "alice@example.com", "human")
+    bob = Principal("bob", "Bob", "bob@example.com", "human")
+    try:
+        group = dispatcher.open_group("Private", alice)
+        deadline = time.monotonic() + 2
+        while (
+            group.handle not in dispatcher._finished_groups
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
+        assert group.handle in dispatcher._finished_groups
+        with pytest.raises(CommitGroupError):
+            dispatcher.close_group(group.handle, bob)
+        assert (
+            dispatcher.close_group(group.handle, alice).result(timeout=2).status
+            == "no_changes"
+        )
+    finally:
+        dispatcher.close()
