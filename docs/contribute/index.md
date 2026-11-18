@@ -30,10 +30,6 @@ rm -rf .venv
 uv sync --all-extras --all-groups
 ```
 
-### `uv.lock` after a template update
-
-When a template update adds a dependency, the `uv sync --locked` step in CI fails against the stale lockfile. Run `uv lock` and commit the refreshed `uv.lock` with the update. CI never rewrites `uv.lock` in its own workspace, so lockfile drift shows as a red install step with a clear message.
-
 ## After scaffolding
 
 Once, after `copier copy` and `gh repo create --push`:
@@ -49,7 +45,7 @@ The workflows read two required repository secrets and one optional token. Confi
 
 | Secret | Used by | How to generate |
 |---|---|---|
-| `RELEASE_TOKEN` | `release-prepare.yml`, `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | A fine-grained personal access token from <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write` and `administration: write` (bootstrap applies the repository rulesets, auto-merge, the security settings and the About block). It must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the tag and GitHub release that knope creates after a release pull request merges rely on it. Scoped to this repository. |
+| `RELEASE_TOKEN` | `release-prepare.yml`, `release.yml`, `renovate.yml`, `bootstrap.yml` | A fine-grained personal access token from <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write` and `administration: write` (bootstrap applies the repository rulesets, auto-merge, the security settings and the About block). It must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the tag and GitHub release that knope creates after a release pull request merges rely on it. Scoped to this repository. |
 | `SONAR_TOKEN` | `ci.yml` | <https://sonarcloud.io>: after importing the repository, open **Administration → Analysis Method**. Turn Automatic Analysis off first, because SonarQube Cloud refuses a CI scan while it is on; choosing GitHub Actions then shows the token. Until the secret exists, CI skips the scan. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml` | Optional. Run `claude setup-token` locally; configure it only for `@claude` or opted-in automatic review. |
 
@@ -60,12 +56,11 @@ gh secret set SONAR_TOKEN
 gh secret set CLAUDE_CODE_OAUTH_TOKEN
 ```
 
-`GITHUB_TOKEN` is provided by GitHub; nothing to configure. Dependency updates come from Renovate (`renovate.yml`), which reuses `RELEASE_TOKEN`, maintains `uv.lock` and merges patch and minor bumps once `CI Success` is green. `bootstrap.yml` enables auto-merge, applies the rulesets under `.github/rulesets/`, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from `pyproject.toml` on the first push; [repository protection](repository-protection.md) has the per-branch posture. GitHub Actions versions are updated in the template and arrive through template updates, not per repository.
+`GITHUB_TOKEN` is provided by GitHub; nothing to configure. Dependency updates come from Renovate (`renovate.yml`), which reuses `RELEASE_TOKEN`, maintains `uv.lock` and merges patch and minor bumps once `CI Success` is green. `bootstrap.yml` enables auto-merge, applies the rulesets under `.github/rulesets/`, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from `pyproject.toml` on the first push; [repository protection](repository-protection.md) has the per-branch posture. GitHub Actions versions and the `hatchling` build-backend bound in `pyproject.toml` are updated in the template and arrive through template updates, not per repository.
 
 ## The other pages here
 
 - [Documentation structure](docs-structure.md): where documentation goes and who owns it.
 - [Release process](release-process.md): how a release is cut and what it publishes.
-- [Template updates](template-updates.md): applying the weekly template update.
 - [Repository protection](repository-protection.md): rulesets, required checks and bypass.
 - [Integration branches](integration-branches.md): landing an epic as one merge.

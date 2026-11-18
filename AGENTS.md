@@ -42,7 +42,6 @@ Skills live under `.agents/skills/`; Claude Code reads them through the `.claude
 - `authoring-issues-prs` — when filing an issue, sizing a change before coding, or opening a PR.
 - `self-reviewing` — before opening a PR, marking one ready, or pushing further commits to a branch with an open PR: self-review the cumulative diff.
 - `stacking-prs` — when work ships as several dependent PRs (a stack): plan it, run `self-reviewing` on each PR before starting the next, and restack after a squash merge.
-- `applying-template-updates` — when working through the weekly template update PR (`copier/update` branch) or after running `copier update`.
 - `writing-release-notes` — when drafting a `docs/releases/` page.
 - `roadmapping` — when charting, refining or revisiting epics and release packages; before planning work that spans PRs.
 - `researching-references` — when a change depends on how something outside the repo behaves (a markdown dialect, git, a file format, a vendor API) and `docs/design/reference/` has no current page for it.
@@ -78,7 +77,6 @@ A review from another workflow (a plan executor's reviewer, a code-review skill 
 
 - Install once per clone with `uv run pre-commit install`; run `uv run pre-commit run --all-files` before pushing.
 - The `structural-diff-gate` hook runs `scripts/structural_gate.sh` at push time.
-- **Template conformance runs at push time:** the `template-conformance` hook fails a push that adds content outside a sentinel block in a file `copier update` re-renders. Move the content into the block the file declares. Skip the hook only for drift a Decay issue tracks: `SKIP=template-conformance git push`.
 - The `self-review` hook fails a push whose commit has no review recorded by the `self-reviewing` skill; clear it by running the skill, which records the review as its last step.
 - Fix a failing hook; never bypass it with `--no-verify`, because the same check fails in CI.
 - Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
@@ -144,9 +142,7 @@ Read `docs/design/roadmap.md` before planning work, and update its argument when
 <!-- TEMPLATE-TRACKING-START -->
 ## Shared Infrastructure
 
-Shared infrastructure (auth providers, middleware, logging bootstrap, event store, CLI scaffolding, release pipeline, Docker entrypoint, nfpm and mcpb packaging) lives upstream in [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the Python library, and [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template), the copier template this project was generated from. Fixes to shared code land there and propagate here via `copier update`, run by the weekly `.github/workflows/copier-update.yml` cron or by hand.
-
-Content outside a sentinel block in a file `copier update` re-renders is drift, not a customisation: `uv run --script scripts/check_template_conformance.py` lists every such line against the pinned template version, and `docs/contribute/template-updates.md` names each file's blocks. Domain code (tools, resources, prompts, and the config fields inside the `CONFIG-*` sentinels) stays in this repo. A conflict marker in a copier-update PR often signals a template bug; check whether the template needs fixing before resolving locally.
+Shared infrastructure (auth providers, middleware, logging bootstrap, event store, CLI scaffolding, release pipeline, Docker entrypoint, nfpm and mcpb packaging) lives upstream in [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the Python library, and [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template), the copier template this project was generated from. Fixes to shared code land there and propagate here via `copier update`, run by hand.
 
 ## Contributing fixes upstream
 
