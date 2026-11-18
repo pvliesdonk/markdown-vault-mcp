@@ -7646,3 +7646,12 @@ Automatic OKF maintenance respects protection; its isolated failures do not
 undo the primary write. A rename or folder move skips protected
 backlink rewrites and reports them; bulk OKF transforms finish eligible writes
 and report protected paths they skipped.
+
+
+### OKF capability transition
+
+The configuration resolves independent author, verify, index, log and folder
+capabilities. Unset capabilities grant no semantic writes. The deprecated
+`OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
+resolved capabilities; explicit settings take precedence. Runtime write gates
+still follow `OKF_WRITE` until the subsequent transition.
