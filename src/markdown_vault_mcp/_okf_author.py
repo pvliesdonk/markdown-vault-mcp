@@ -26,6 +26,75 @@ def _render(value: Any) -> str:
     )
 
 
+def _generated_edits(
+    source: str, node: MappingNode, value: dict[str, str]
+) -> list[tuple[int, int, str]]:
+    if node.flow_style:
+        existing = yaml.safe_load(source[node.start_mark.index : node.end_mark.index])
+        existing.update(value)
+        return [(node.start_mark.index, node.end_mark.index, _render(existing))]
+    nested = {k.value: v for k, v in node.value}
+    edits = []
+    missing = []
+    for child, child_value in value.items():
+        if child in nested:
+            n = nested[child]
+            edits.append((n.start_mark.index, n.end_mark.index, _render(child_value)))
+        else:
+            missing.append(
+                f"{' ' * node.start_mark.column}{child}: {_render(child_value)}\n"
+            )
+    if missing:
+        edits.append((node.end_mark.index, node.end_mark.index, "".join(missing)))
+    return edits
+
+
+def _collect_edits(
+    source: str, root: MappingNode, changes: dict[str, Any]
+) -> tuple[list[tuple[int, int, str]], list[str]]:
+    nodes = {}
+    for key, value in root.value:
+        if key.value in nodes:
+            raise InvalidRequestError("Cannot author frontmatter with duplicate keys")
+        nodes[key.value] = value
+    edits = []
+    additions = []
+    for key, value in changes.items():
+        node = nodes.get(key)
+        if node is None:
+            additions.append(f"{key}: {_render(value)}\n")
+        elif key == "generated" and isinstance(node, MappingNode):
+            edits.extend(_generated_edits(source, node, value))
+        else:
+            if key == "generated":
+                raise InvalidRequestError("Existing generated field must be a mapping")
+            old = source[node.start_mark.index : node.end_mark.index]
+            suffix = "\n" if old.endswith("\n") else ""
+            edits.append(
+                (node.start_mark.index, node.end_mark.index, _render(value) + suffix)
+            )
+    return edits, additions
+
+
+def _parse_root(source: str) -> MappingNode:
+    try:
+        if any(
+            isinstance(token, (yaml.AliasToken, yaml.AnchorToken))
+            for token in yaml.scan(source)
+        ):
+            raise InvalidRequestError(
+                "Authoring frontmatter with YAML anchors is not supported"
+            )
+        root = yaml.compose(source)
+    except yaml.YAMLError as exc:
+        raise InvalidRequestError("Cannot author malformed frontmatter") from exc
+    if root is None:
+        return MappingNode(tag="tag:yaml.org,2002:map", value=[])
+    if not isinstance(root, MappingNode) or root.flow_style:
+        raise InvalidRequestError("Authoring requires block-mapping frontmatter")
+    return root
+
+
 def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
     """Apply named fields and optional producer without reserializing the note."""
     if fields.keys() - _FIELDS:
@@ -55,56 +124,8 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
             + text
         )
     source = match.group(1)
-    try:
-        root = yaml.compose(source)
-    except yaml.YAMLError as exc:
-        raise InvalidRequestError("Cannot author malformed frontmatter") from exc
-    if root is None:
-        root = MappingNode(tag="tag:yaml.org,2002:map", value=[])
-    if not isinstance(root, MappingNode) or root.flow_style:
-        raise InvalidRequestError("Authoring requires block-mapping frontmatter")
-    nodes = {}
-    for key, value in root.value:
-        if key.value in nodes:
-            raise InvalidRequestError("Cannot author frontmatter with duplicate keys")
-        nodes[key.value] = value
-    edits = []
-    additions = []
-    for key, value in changes.items():
-        node = nodes.get(key)
-        if node is None:
-            additions.append(f"{key}: {_render(value)}\n")
-        elif key == "generated" and isinstance(node, MappingNode):
-            if node.flow_style:
-                existing = yaml.safe_load(
-                    source[node.start_mark.index : node.end_mark.index]
-                )
-                existing.update(value)
-                edits.append(
-                    (node.start_mark.index, node.end_mark.index, _render(existing))
-                )
-            else:
-                nested = {k.value: v for k, v in node.value}
-                missing = []
-                for child, child_value in value.items():
-                    if child in nested:
-                        n = nested[child]
-                        edits.append(
-                            (n.start_mark.index, n.end_mark.index, _render(child_value))
-                        )
-                    else:
-                        missing.append(f"  {child}: {_render(child_value)}\n")
-                if missing:
-                    edits.append(
-                        (node.end_mark.index, node.end_mark.index, "".join(missing))
-                    )
-        else:
-            # A block value includes the newline before the next key.
-            old = source[node.start_mark.index : node.end_mark.index]
-            suffix = "\n" if old.endswith("\n") else ""
-            edits.append(
-                (node.start_mark.index, node.end_mark.index, _render(value) + suffix)
-            )
+    root = _parse_root(source)
+    edits, additions = _collect_edits(source, root, changes)
     for start, end, replacement in sorted(edits, reverse=True):
         source = source[:start] + replacement + source[end:]
     if additions:
