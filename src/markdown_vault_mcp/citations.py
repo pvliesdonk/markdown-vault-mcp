@@ -225,31 +225,25 @@ def citation_edges(text: str) -> list[CitationEdge]:
     if "[^" not in text:
         return []
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    metadata = dict(parse_frontmatter(text).metadata)
-    if "sources" not in metadata:
+    sources = parse_frontmatter(text).metadata.get("sources")
+    if not isinstance(sources, list):
         return []
-    sources = metadata["sources"]
     ids, _, _ = _source_ids(sources)
     citations = _join(_markers(strip_frontmatter_block(text)), ids)
-    declared = (
-        list(
-            dict.fromkeys(
-                source["resource"]
-                for source in sources
-                if isinstance(source, dict)
-                and isinstance(source.get("resource"), str)
-                and source["resource"].strip()
-            )
+    declared = list(
+        dict.fromkeys(
+            source["resource"]
+            for source in sources
+            if isinstance(source, dict)
+            and isinstance(source.get("resource"), str)
+            and source["resource"].strip()
         )
-        if isinstance(sources, list)
-        else []
     )
     edges = []
     for citation in citations:
         resource = None
-        if citation.status == "matched" and isinstance(sources, list):
-            source = sources[citation.source_indices[0]]
-            value = source.get("resource") if isinstance(source, dict) else None
+        if citation.status == "matched":
+            value = sources[citation.source_indices[0]].get("resource")
             if isinstance(value, str) and value.strip():
                 resource = value
         status: Literal["matched", "unmatched", "ambiguous", "invalid_resource"] = (

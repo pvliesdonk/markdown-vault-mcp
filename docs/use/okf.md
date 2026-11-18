@@ -102,8 +102,9 @@ exact resource. The result includes label occurrence counts and unresolved or
 ambiguous labels, plus labels whose matched source has no valid resource, in notes
 declaring the resource. Results are unbounded. When OKF is active, reserved
 `index.md` and `log.md` files are excluded. Body links alone do not count.
-The lookup requires a version-13 index build. `unconverted_notes` counts indexed
-notes not yet re-read for citations; a later reindex can bring that count to zero.
+The index rebuilds on the first startup after upgrading. `unconverted_notes` counts
+indexed notes that could not be re-read with compatible citation rules; a later
+reindex can bring that count to zero.
 The lookup does not fetch resources or assess whether they support a claim.
 
 

@@ -1971,9 +1971,9 @@ normalized note snapshot. Exact resource matches return indexed notes and label
 counts; unmatched, ambiguous and invalid-resource labels are diagnostics under
 each distinct resource declared by that note. The result is unbounded. Reserved
 files are excluded only while OKF is active. Navigation links do not create edges.
-The additive table and per-note conversion mark are filled on a version-13
-rebuild. A lookup reports `unconverted_notes` for retained indexed notes not yet
-re-read; they are omitted until a later reindex succeeds. Incompatible or missing
+The index rebuilds on the first startup after upgrading. A lookup reports
+`unconverted_notes` for retained indexed notes not yet re-read with compatible
+citation rules; they are omitted until a later reindex succeeds. Incompatible or missing
 schema is unavailable rather than empty. No resource is fetched and attribution
 does not establish support.
 
@@ -2696,7 +2696,7 @@ CREATE TABLE IF NOT EXISTS documents (
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
     modified_at REAL NOT NULL,        -- file mtime
-    citations_derived INTEGER NOT NULL DEFAULT 0, -- citation rows derived for this note
+    citations_derived INTEGER NOT NULL DEFAULT 0, -- producer semantics for citation rows
     skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -2747,8 +2747,7 @@ CREATE INDEX IF NOT EXISTS idx_tags_docid
     ON document_tags(document_id);
 
 -- Citation attribution rows are separate from navigation links (#1446).
--- This additive table keeps schema_version at 1; semantics version 13
--- requires a completed rebuild before reverse reads are served.
+-- This additive table keeps schema_version at 1.
 CREATE TABLE IF NOT EXISTS citations (
     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     label TEXT NOT NULL,

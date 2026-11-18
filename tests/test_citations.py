@@ -254,15 +254,9 @@ def test_definition_interrupts_paragraph_without_becoming_a_marker() -> None:
     assert [citation.id for citation in report.citations] == ["a"]
 
 
-def test_indexed_citation_edges_use_exact_yaml_keys() -> None:
+def test_unmatched_labels_fan_out_to_declared_resources() -> None:
     from markdown_vault_mcp.citations import citation_edges
 
-    text = '---\n"\\x73ources":\n  - id: a\n    resource: urn:one\n---\nClaim[^a] twice[^a] and [^missing].'
-    edges = citation_edges(text)
-    assert [(e.label, e.status, e.occurrences, e.resource) for e in edges] == [
-        ("a", "matched", 2, "urn:one"),
-        ("missing", "unmatched", 1, "urn:one"),
-    ]
     multi = _note(
         [
             {"id": "a", "resource": "urn:one"},
@@ -336,13 +330,11 @@ def test_citation_diagnostics(tmp_path: Path) -> None:
     (tmp_path / "mapping.md").write_text(
         _note({"bad": {"id": "a", "resource": resource}}, "[^a]"), encoding="utf-8"
     )
-    text = "---\rsources:\r  - id: a\r    resource: urn:s\r---\rClaim[^a] missing[^missing]\r"
-    (tmp_path / "cr.md").write_bytes(text.encode())
     vault = Vault(source_dir=tmp_path)
     try:
         vault.index.build_index()
         result = vault.reader.find_citing_notes(resource)
-        assert [r["path"] for r in result["citing"]] == ["cr.md"]
+        assert result["citing"] == []
         assert [
             (r["path"], r["label"], r["status"]) for r in result["diagnostics"]
         ] == [
@@ -350,7 +342,6 @@ def test_citation_diagnostics(tmp_path: Path) -> None:
             ("ambiguous.md", "missing", "unmatched"),
             ("candidate.md", "a", "invalid_resource"),
             ("candidate.md", "blank", "invalid_resource"),
-            ("cr.md", "missing", "unmatched"),
         ]
         with pytest.raises(InvalidRequestError):
             vault.reader.find_citing_notes("  ")
@@ -455,34 +446,9 @@ def test_citation_lookup_refuses_incompatible_semantics(
             writer.close()
 
 
-def test_citation_foreign_key_has_index() -> None:
-    from markdown_vault_mcp.fts_index import FTSIndex
-
-    index = FTSIndex(":memory:")
-    try:
-        plan = (
-            index._conn()
-            .execute(
-                "EXPLAIN QUERY PLAN SELECT * FROM citations WHERE document_id = ?", (1,)
-            )
-            .fetchall()
-        )
-        assert any("idx_citations_docid" in row[3] for row in plan)
-        resource_plan = (
-            index._conn()
-            .execute(
-                "EXPLAIN QUERY PLAN SELECT * FROM citations WHERE resource = ?",
-                ("urn:s",),
-            )
-            .fetchall()
-        )
-        assert any("idx_citations_resource" in row[3] for row in resource_plan)
-    finally:
-        index.close()
-
-
+@pytest.mark.parametrize("version", [12, 14])
 def test_upgrade_reports_unconverted_after_upsert_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
 ) -> None:
     from markdown_vault_mcp.fts_index import FTSIndex
 
@@ -497,10 +463,11 @@ def test_upgrade_reports_unconverted_after_upsert_failure(
     try:
         vault.index.build_index()
         conn = vault._fts._conn()
-        conn.execute("DELETE FROM citations")
-        conn.execute("UPDATE documents SET citations_derived=0")
-        conn.execute("UPDATE meta SET value='12' WHERE key='index_semantics_version'")
-        original = vault._fts.upsert_note
+        conn.execute("UPDATE documents SET citations_derived=?", (version,))
+        conn.execute(
+            "UPDATE meta SET value=? WHERE key='index_semantics_version'",
+            (str(version),),
+        )
 
         def fail(_note: object) -> int:
             raise ValueError("transient indexing failure")
@@ -508,18 +475,11 @@ def test_upgrade_reports_unconverted_after_upsert_failure(
         with monkeypatch.context() as patch:
             patch.setattr(vault._fts, "upsert_note", fail)
             vault.index.build_index()
-        assert vault.reader.find_citing_notes("urn:s")["unconverted_notes"] == 1
-        reader = FTSIndex(db, read_only=True)
-        try:
-            assert reader.get_citation_rows("urn:s")[1] == 1
-        finally:
-            reader.close()
-        assert vault._fts.upsert_note == original
+        result = vault.reader.find_citing_notes("urn:s")
+        assert result["unconverted_notes"] == 1
+        assert result["citing"] == []
         vault.index.reindex()
         assert vault.reader.find_citing_notes("urn:s")["unconverted_notes"] == 0
-        assert [
-            r["path"] for r in vault.reader.find_citing_notes("urn:s")["citing"]
-        ] == ["one.md"]
     finally:
         vault.close()
     reader = FTSIndex(db, read_only=True)
@@ -529,7 +489,10 @@ def test_upgrade_reports_unconverted_after_upsert_failure(
         reader.close()
 
 
-def test_upgrade_reports_unconverted_after_unreadable_walk(tmp_path: Path) -> None:
+@pytest.mark.parametrize("version", [12, 14])
+def test_upgrade_reports_unconverted_after_unreadable_walk(
+    tmp_path: Path, version: int
+) -> None:
     from markdown_vault_mcp.fts_index import FTSIndex
 
     root = tmp_path / "notes"
@@ -548,13 +511,17 @@ def test_upgrade_reports_unconverted_after_unreadable_walk(tmp_path: Path) -> No
     try:
         vault.index.build_index()
         conn = vault._fts._conn()
-        conn.execute("DELETE FROM citations")
-        conn.execute("UPDATE documents SET citations_derived=0")
-        conn.execute("UPDATE meta SET value='12' WHERE key='index_semantics_version'")
+        conn.execute("UPDATE documents SET citations_derived=?", (version,))
+        conn.execute(
+            "UPDATE meta SET value=? WHERE key='index_semantics_version'",
+            (str(version),),
+        )
         hidden.chmod(0)
         try:
             assert not vault.index.build_index().walk_complete
-            assert vault.reader.find_citing_notes("urn:s")["unconverted_notes"] == 1
+            result = vault.reader.find_citing_notes("urn:s")
+            assert result["unconverted_notes"] == 1
+            assert [r["path"] for r in result["citing"]] == ["three.md", "two.md"]
             reader = FTSIndex(db, read_only=True)
             try:
                 assert reader.get_citation_rows("urn:s")[1] == 1

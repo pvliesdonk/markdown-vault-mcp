@@ -52,6 +52,7 @@ from markdown_vault_mcp._fts_queries import QueryExecutor, register_functions
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
+    IndexUnavailableError,
     StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.types import (
@@ -1205,7 +1206,7 @@ class FTSIndex:
             INSERT INTO documents (path, title, folder, frontmatter_json,
                                    content_hash, modified_at, chunk_count,
                                    content_chars, citations_derived)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 note.path,
@@ -1216,6 +1217,7 @@ class FTSIndex:
                 note.modified_at,
                 len(note.chunks),
                 note.content_chars,
+                INDEX_SEMANTICS_VERSION,
             ),
         )
         if cur.lastrowid is None:
@@ -1475,8 +1477,6 @@ class FTSIndex:
         Returns:
             Citation rows in path and label order and the unconverted count.
         """
-        from markdown_vault_mcp.exceptions import IndexUnavailableError
-
         conn = self._conn()
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
         citation_columns = {
@@ -1485,8 +1485,7 @@ class FTSIndex:
         if (
             self.get_chunking_meta().semantics_version != INDEX_SEMANTICS_VERSION
             or "citations_derived" not in columns
-            or not {"document_id", "resource", "label", "status", "occurrences"}
-            <= citation_columns
+            or not citation_columns
         ):
             raise IndexUnavailableError(
                 "Citation index needs a compatible completed build; retry after a writer rebuilds it.",
@@ -1495,11 +1494,12 @@ class FTSIndex:
         rows = conn.execute(
             """SELECT d.path, d.title, c.label, c.status, c.occurrences
                FROM citations c JOIN documents d ON d.id=c.document_id
-               WHERE c.resource=? ORDER BY d.path, c.label""",
-            (resource,),
+               WHERE c.resource=? AND d.citations_derived=? ORDER BY d.path, c.label""",
+            (resource, INDEX_SEMANTICS_VERSION),
         ).fetchall()
         count = conn.execute(
-            "SELECT count(*) FROM documents_live WHERE citations_derived=0"
+            "SELECT count(*) FROM documents_live WHERE citations_derived != ?",
+            (INDEX_SEMANTICS_VERSION,),
         ).fetchone()[0]
         return rows, count
 
