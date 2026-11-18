@@ -3,7 +3,7 @@
   "name": "io.github.pvliesdonk/markdown-vault-mcp",
   "title": "Markdown Vault MCP",
   "description": "Generic markdown vault MCP with hybrid search",
-  "version": "6.1.2",
+  "version": "6.1.3",
   "websiteUrl": "https://pvliesdonk.github.io/markdown-vault-mcp/",
   "repository": {
     "url": "https://github.com/pvliesdonk/markdown-vault-mcp",
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "markdown-vault-mcp",
-      "version": "6.1.2",
+      "version": "6.1.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -133,6 +133,10 @@
           "description": "Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.",
           "format": "boolean",
           "default": "true"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_PROTECTED_PATHS",
+          "description": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS",
@@ -556,7 +560,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/pvliesdonk/markdown-vault-mcp:v6.1.2",
+      "identifier": "ghcr.io/pvliesdonk/markdown-vault-mcp:v6.1.3",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:{--port}/mcp"
@@ -790,6 +794,10 @@
           "description": "Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.",
           "format": "boolean",
           "default": "true"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_PROTECTED_PATHS",
+          "description": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS",

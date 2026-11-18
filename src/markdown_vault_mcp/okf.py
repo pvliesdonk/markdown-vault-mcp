@@ -26,6 +26,7 @@ import datetime as _dt
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 # Both halves of the library are used here, deliberately: `fm` serialises the
@@ -74,6 +75,23 @@ _HUMAN_ACTOR_PREFIX = "human:"
 #: phase 1 — staged for the conformance audit (#962: reserved files are
 #: exempt from the ``type`` rule) and ranking downweights (#965).
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
+
+
+def is_okf_reserved_file(path: str) -> bool:
+    """Classify an already scoped vault-relative POSIX path by its basename.
+
+    POSIX basename rules ignore trailing separators and dot components;
+    backslashes remain literal. This lexical check grants no detection,
+    admission, authorship, or maintenance authority.
+
+    Args:
+        path: A vault-relative POSIX path.
+
+    Returns:
+        Whether its basename is an exact-case reserved OKF filename.
+    """
+    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
+
 
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
 #: builders and the reserved-frontmatter policy so the heading a reader sees
@@ -393,7 +411,7 @@ def okf_downweight_factor(annotation: dict[str, Any], path: str) -> float:
         factor *= OKF_DEPRECATED_WEIGHT
     if annotation.get("stale"):
         factor *= OKF_STALE_WEIGHT
-    if path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+    if is_okf_reserved_file(path):
         factor *= OKF_RESERVED_WEIGHT
     return factor
 
@@ -632,7 +650,7 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
         acc.root_index_seen = True
     elif "okf_version" in metadata:
         acc.misplaced.add(rel)
-    if name in OKF_RESERVED_FILENAMES:
+    if is_okf_reserved_file(rel):
         if name == "log.md" and not _log_headings_conform(body):
             acc.log_shape.add(rel)
         elif name == "index.md" and not _index_frontmatter_conforms(rel, raw, metadata):

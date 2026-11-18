@@ -1,7 +1,7 @@
 {
   "name": "markdown-vault-mcp",
   "description": "Generic markdown vault MCP with hybrid search",
-  "version": "6.1.2",
+  "version": "6.1.3",
   "author": {
     "name": "Peter van Liesdonk"
   },
@@ -40,7 +40,8 @@
       "type": "string",
       "title": "Embedding provider",
       "description": "Semantic-search backend: fastembed, ollama, openai, or voyage. Leave empty to disable embeddings.",
-      "required": false
+      "required": false,
+      "default": ""
     },
     "ollama_host": {
       "type": "string",
@@ -68,25 +69,29 @@
       "title": "OpenAI API key",
       "description": "OpenAI API key for the openai embedding provider, and the fallback key for the summarize tool when MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY is unset. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OpenAI ecosystem convention.",
       "required": false,
+      "default": "",
       "sensitive": true
     },
     "openai_base_url": {
       "type": "string",
       "title": "OpenAI base URL",
       "description": "Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself.",
-      "required": false
+      "required": false,
+      "default": ""
     },
     "openai_embedding_model": {
       "type": "string",
       "title": "OpenAI embedding model",
       "description": "Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.",
-      "required": false
+      "required": false,
+      "default": ""
     },
     "voyage_api_key": {
       "type": "string",
       "title": "Voyage API key",
       "description": "Voyage AI API key for the voyage embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OPENAI_API_KEY / OLLAMA_HOST convention. Setting it never auto-selects the provider; choose it explicitly with MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage.",
       "required": false,
+      "default": "",
       "sensitive": true
     },
     "voyage_model": {
@@ -100,26 +105,30 @@
       "type": "string",
       "title": "Git sync repository URL",
       "description": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push.",
-      "required": false
+      "required": false,
+      "default": ""
     },
     "git_token": {
       "type": "string",
       "title": "Git access token",
       "description": "Token/password for HTTPS git auth; remotes must be HTTPS when set.",
       "required": false,
+      "default": "",
       "sensitive": true
     },
     "server_name": {
       "type": "string",
       "title": "Server name",
       "description": "Rename this server instance; defaults to the project name.",
-      "required": false
+      "required": false,
+      "default": ""
     },
     "instance_description": {
       "type": "string",
       "title": "Instance description",
       "description": "Concise routing context that distinguishes this deployment's material or responsibility.",
-      "required": false
+      "required": false,
+      "default": ""
     },
     "log_level": {
       "type": "string",

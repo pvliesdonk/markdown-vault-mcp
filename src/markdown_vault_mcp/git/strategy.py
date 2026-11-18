@@ -17,6 +17,7 @@ documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import re
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     )
 
 from markdown_vault_mcp._commit_groups import GroupCommitResult
+from markdown_vault_mcp._commit_scope import current_folder_move
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
@@ -55,7 +57,7 @@ from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.health import (
     SyncHealth,
     SyncHealthTracker,
-    one_line,
+    log_git_stderr,
     push_failure_reason,
 )
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
@@ -118,9 +120,9 @@ class GitWriteStrategy:
 
     Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
     and arrive at :meth:`on_write_batch`, which stages every path the same
-    scoped way and commits them once as ``"<tool>: N files"``. A call that
-    touched a single file commits under that file's own path instead, so
-    ordinary writes read in ``git log`` exactly as they always have. A write
+    scoped way and commits them once as ``"<tool>: N files"``. A call
+    touching a single file ordinarily names that file instead; folder moves
+    name their roots even for one file. A write
     with no owning tool call takes the per-write path above.
 
     Push is deferred to a background ``threading.Timer`` that resets on
@@ -413,10 +415,8 @@ class GitWriteStrategy:
 
     #: Opt into the dispatcher's batched dispatch (#1264), so every write from
     #: one tool call lands in a single commit instead of one commit per file.
-    #: Always on: with a single-file call still committing under its own path
-    #: (see :func:`_stage_and_commit_batch`), grouping differs from per-write
-    #: commits only where one call touches many files — which is the defect
-    #: #1264 reports, not a preference to configure. See
+    #: Ordinary single-file calls keep their path subject; folder moves name
+    #: their roots (see :func:`_stage_and_commit_batch`). See
     #: :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`.
     accepts_batch: bool = True
     #: Preserve the note subject when secondary writes (OKF maintenance, a
@@ -436,10 +436,10 @@ class GitWriteStrategy:
         """Commit every write from one tool call as a single commit.
 
         Mirrors :meth:`__call__`'s guards and push scheduling; only the commit
-        boundary differs, and for a call that wrote a single file not even
-        that — see :func:`_stage_and_commit_batch`. The author identity is
-        taken from the first item's principal: one tool call has one acting
-        principal, so the items cannot legitimately disagree.
+        boundary differs; an ordinary single-file call keeps its file subject,
+        while a folder move names its roots — see :func:`_stage_and_commit_batch`.
+        The author identity is taken from the first item's principal: one tool
+        call has one acting principal, so the items cannot legitimately disagree.
 
         Args:
             items: The tool call's writes, in the order they were fired.
@@ -495,7 +495,7 @@ class GitWriteStrategy:
                 "git_batch_failed tool=%s files=%s error=%s",
                 tool_name,
                 len(items),
-                self._redact(exc.stderr or ""),
+                log_git_stderr(exc.stderr or "", self._token),
             )
         return result
 
@@ -635,7 +635,7 @@ class GitWriteStrategy:
                 operation,
                 exc.cmd,
                 exc.returncode,
-                sanitized_stderr,
+                log_git_stderr(sanitized_stderr),
             )
         except Exception:
             logger.error(
@@ -671,7 +671,7 @@ class GitWriteStrategy:
                 "git_lfs_pull_failed command=%s returncode=%d error=%s",
                 exc.cmd,
                 exc.returncode,
-                exc.stderr or "",
+                log_git_stderr(exc.stderr or "", self._token),
             )
         except FileNotFoundError:
             logger.error("git_lfs_pull_failed reason=git_not_found_on_path")
@@ -864,7 +864,7 @@ class GitWriteStrategy:
                 ancestor,
                 descendant,
                 proc.returncode,
-                self._redact((proc.stderr or "").strip()),
+                log_git_stderr(proc.stderr or "", self._token),
             )
             return False
         return proc.returncode == 0
@@ -1102,7 +1102,7 @@ class GitWriteStrategy:
             logger.warning(
                 "git_fetch_failed strategy=%s error=%s",
                 log_prefix,
-                stderr,
+                log_git_stderr(stderr),
             )
             return PullResult.head_unchanged_failure(from_sha, PULL_REASON_FETCH_FAILED)
 
@@ -1184,7 +1184,7 @@ class GitWriteStrategy:
             logger.debug(
                 "git_ff_only_failed strategy=%s error=%s",
                 log_prefix,
-                (ff_exc.stderr or "").strip(),
+                log_git_stderr(ff_exc.stderr or "", self._token),
             )
             return self._force_pull_rebase_fallback(
                 git_root=git_root,
@@ -1272,7 +1272,7 @@ class GitWriteStrategy:
                 "git_rebase_stopped strategy=%s target=%s error=%s",
                 log_prefix,
                 ref,
-                one_line(rebase_stderr) or "(no stderr)",
+                log_git_stderr(rebase_stderr) or "(no stderr)",
             )
             detail = rebase_stderr or None
             # Real conflicts during rebase — resolve by accepting upstream
@@ -1606,7 +1606,7 @@ class GitWriteStrategy:
 
                 logger.error(
                     "git_push_failed strategy=force_push error=%s",
-                    stderr,
+                    log_git_stderr(stderr),
                 )
                 truncated = stderr[:200]
                 return PushResult(
@@ -1684,7 +1684,7 @@ class GitWriteStrategy:
         except subprocess.CalledProcessError as exc:
             logger.warning(
                 "git_command_failed context=sync_once error=%s",
-                (exc.stderr or "").strip(),
+                log_git_stderr(exc.stderr or "", self._token),
             )
             return False
 
@@ -1712,10 +1712,12 @@ class GitWriteStrategy:
         side skips the report: the observer then treats the new HEAD as
         unexplained, which costs a reindex rather than hiding a change.
         A completed commit also rechecks outstanding startup dirt.
+        A block that raises is not reported, even if HEAD moved: the move
+        cannot be attributed to it, so the next reconciliation reindexes.
         """
         observer = self._commit_observer
         parent = self._try_head_sha(git_root) if observer is not None else None
-        yield
+        yield  # NOSONAR(S9152) Failed blocks must skip observation.
         if self._worktree_wanted:
             self._observe_worktree(git_root)
         if observer is None or parent is None:
@@ -2244,7 +2246,7 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
         logger.warning(
             "git_check_ignore_failed rc=%s stderr=%s",
             result.returncode,
-            (result.stderr or "").strip(),
+            log_git_stderr(result.stderr or ""),
         )
         return set()
     return {entry for entry in result.stdout.split("\0") if entry}
@@ -2489,6 +2491,19 @@ def _write_subject(
     return f"{operation}: {path}"
 
 
+def _folder_subject_path(path: Path, root: Path | None = None) -> str:
+    """Render a root repo-relative (absolute outside *root*), one line, quoted if odd."""
+    name = str(path.relative_to(root) if root and path.is_relative_to(root) else path)
+    if (
+        name != name.strip()
+        or " -> " in name
+        or not name.isprintable()
+        or any(c in '\\"' for c in name)
+    ):
+        return json.dumps(name, ensure_ascii=not name.isprintable())
+    return name
+
+
 @dataclass(frozen=True, slots=True)
 class _CommitIdentity:
     """Committer and author identity for one commit.
@@ -2545,9 +2560,10 @@ def _stage_and_commit_batch(
     scoped to, both taken from the union of what the items reported
     (#1249, #1273).
 
-    A one-item batch delegates to :func:`_stage_and_commit` instead, so the
-    commit subject stays that file's own path rather than becoming the
-    pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
+    A one-item batch without folder provenance delegates to
+    :func:`_stage_and_commit`, so the commit subject stays that file's own
+    path rather than becoming the pathless ``"write: 1 file"``; *tool_name*
+    is unused on that branch.
 
     Args:
         git_root: Git repository root.
@@ -2558,7 +2574,8 @@ def _stage_and_commit_batch(
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
     """
-    if len(items) == 1:
+    folder_move = current_folder_move()
+    if len(items) == 1 and folder_move is None:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps
         # its commit subject the path ("write: notes/one.md") rather than the
@@ -2618,7 +2635,12 @@ def _stage_and_commit_batch(
 
     noun = "file" if staged == 1 else "files"
     subject = f"{tool_name}: {staged} {noun}"
-    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
+    if folder_move is not None:
+        old_dir, new_dir = folder_move
+        old_name = _folder_subject_path(old_dir, git_root)
+        new_name = _folder_subject_path(new_dir, git_root)
+        subject = f"{tool_name}: {old_name} -> {new_name}"
+    elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)

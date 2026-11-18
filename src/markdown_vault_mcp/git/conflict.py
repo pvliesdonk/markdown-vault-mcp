@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING
 
 import frontmatter
 
-from markdown_vault_mcp.git._run import literal_pathspec, redact, run_git_capturing
+from markdown_vault_mcp.git._run import literal_pathspec, run_git_capturing
+from markdown_vault_mcp.git.health import log_git_stderr
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
@@ -212,7 +213,7 @@ def resolve_conflicts_safely(
         if abort_proc.returncode != 0:
             logger.warning(
                 "git_conflict_defensive_abort_failed stderr=%s",
-                redact((abort_proc.stderr or "").strip(), token),
+                log_git_stderr(abort_proc.stderr or "", token),
             )
         return None, PullResult.head_unchanged_failure(
             from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
@@ -258,7 +259,7 @@ def rebase_in_progress(
         logger.error(
             "git_conflict_git_dir_lookup_failed "
             "action=assume_rebase_in_progress stderr=%s",
-            redact((git_dir_proc.stderr or "").strip(), token),
+            log_git_stderr(git_dir_proc.stderr or "", token),
         )
         return True
 
@@ -305,7 +306,7 @@ def abort_in_progress_rebase(
     if abort_proc.returncode != 0:
         logger.error(
             "git_conflict_abort_failed stderr=%s",
-            redact((abort_proc.stderr or "").strip(), token),
+            log_git_stderr(abort_proc.stderr or "", token),
         )
         return False
     return True
@@ -362,7 +363,7 @@ def restore_upstream_paths(
                 "git_conflict_upstream_restore_failed "
                 "path=%r action=drop_sibling stderr=%s",
                 rel_path,
-                redact((checkout_proc.stderr or "").strip(), token),
+                log_git_stderr(checkout_proc.stderr or "", token),
             )
             continue
         restored.append((rel_path, mcp_content))
@@ -531,8 +532,8 @@ def write_conflict_files(
         logger.debug(
             "git_conflict_commit_failed rc=%d stderr=%s",
             commit_result.returncode,
-            redact(
-                (commit_result.stderr or commit_result.stdout or "").strip(),
+            log_git_stderr(
+                commit_result.stderr or commit_result.stdout or "",
                 token,
             ),
         )

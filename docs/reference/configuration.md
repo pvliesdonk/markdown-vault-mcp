@@ -228,12 +228,17 @@ configuration and deployment examples are covered in the
 [authentication guide](../deploy/authentication.md) and
 [OIDC deployment guide](../deploy/oidc.md).
 
-The subsections below follow the order of the variable tables after them.
+The interaction subsections below follow the order of the variable tables after them.
 
 #### Write safety {#write-safety}
 
-`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable
-servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`.
+`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool.
+
+On a read-only server, `OKF_WRITE` is valid but inactive; see the
+[OKF write layer](../use/okf.md#the-enforced-write-layer) for the startup
+diagnostic and affected operations.
+
+Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`.
 Whole-file `write` operations (notes and attachments) and `fetch` operations
 over an existing path require the matching `if_match` etag.
 Targeted `edit`, `append`, `delete`, and `rename`
@@ -244,6 +249,13 @@ Upload links have no `if_match` option. With protection enabled,
 the file appears before the bytes arrive. Use a new path, or set
 `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
 See [transfer links](../deploy/transfer-links.md#upload-destinations).
+
+`MARKDOWN_VAULT_MCP_PROTECTED_PATHS` protects matching paths, including
+automatic OKF upkeep. An unprotected primary write still succeeds if upkeep is
+blocked. Globs are case-insensitive; `*` crosses `/`, and `**/` requires at
+least one folder. Use `_conventions.md,**/_conventions.md` to cover both the
+root and nested convention files. A matching folder protects its contents.
+The root pattern `.` is rejected; use `*` to protect every path.
 
 !!! danger "Write tools default to enabled"
     Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade
@@ -359,6 +371,33 @@ result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with
 `get_job_result`. A Redis tasks backend is durable and shared across workers;
 the default memory backend is process-local and does not survive restarts.
 
+### Cross-instance note links
+
+When an agent connects to several vault servers, give each server a distinct
+name and describe the URL prefix for its own vault. Configure one server with:
+
+```dotenv
+MARKDOWN_VAULT_MCP_SERVER_NAME=corpus-mcp
+MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION="Contains craft notes. This instance serves files available at this GitHub URL: https://github.com/pvliesdonk/corpus/blob/main/"
+```
+
+Configure each other server independently with its own name and URL prefix.
+Keep any existing description text in the same value, adding the URL sentence
+to it. The sentence describes this instance's notes; it need not name other
+instances. A client that passes the server instructions to its model can use
+the prefix to choose the server and infer the vault-relative path.
+
+The prefix represents the vault root: a link ending in
+`blob/main/craft/note.md` maps to `craft/note.md`. If the vault serves a
+repository subfolder, include that subfolder in the prefix. Update the prefix
+if the publication branch or folder moves. Never include a token in the URL:
+the description reaches connected clients.
+
+An unset description adds nothing. Restart the server and reconnect after changing
+the value. The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement
+suppresses the description; see [Server](#server) for precedence and the
+instruction budget.
+
 ### Vault
 
 The tables from here on list every domain variable with its default and
@@ -373,6 +412,7 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+. |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true` | No | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites. |
+| `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` | (none) | No | Comma-separated case-insensitive vault-relative globs protecting paths and folder contents (_conventions.md,**/_conventions.md). Empty by default. The * wildcard crosses folders; **/ requires a folder. |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | `false` | No | Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged. |
 
 ### Embeddings
