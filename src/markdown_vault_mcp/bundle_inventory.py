@@ -545,10 +545,11 @@ class BundleInspector:
             return None, 0
         if len(parts) > 32:
             raise OSError("Snapshot traversal depth exceeded")
+        if mode not in {"100644", "100755"}:
+            reason = "submodule" if mode == "160000" else "symlink"
+            return BundleEntry(path, state="unavailable", reason=reason), 0
         if not self._visible_file(path):
             return None, 0
-        if mode not in {"100644", "100755"}:
-            return BundleEntry(path, state="unavailable", reason="symlink"), 0
         self._check_snapshot_access(self._absolute_source, parts)
         if not is_note(path):
             return BundleEntry(path, "supporting", reason="supporting"), 0

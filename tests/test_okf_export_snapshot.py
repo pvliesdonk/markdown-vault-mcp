@@ -314,3 +314,41 @@ def test_git_committed_symlink_is_not_followed(tmp_path: Path) -> None:
             okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
     finally:
         vault.close()
+
+
+def test_git_submodule_is_not_silently_omitted(tmp_path: Path) -> None:
+    import pytest
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "note.md").write_text("note")
+    _git(tmp_path, "add", "note.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    commit = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "update-index", "--add", "--cacheinfo", f"160000,{commit},nested")
+    _git(tmp_path, "commit", "-qm", "add gitlink")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(OSError, match=r"nested.*submodule"):
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+
+
+def test_git_unallowed_suffix_symlink_is_not_silently_omitted(tmp_path: Path) -> None:
+    import pytest
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "target.md").write_text("target")
+    (tmp_path / "link.unsupported").symlink_to("target.md")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "add symlink")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(OSError, match=r"link\.unsupported.*symlink"):
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
