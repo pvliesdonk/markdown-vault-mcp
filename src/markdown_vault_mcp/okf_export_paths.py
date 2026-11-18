@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
 
 import yaml
-from yaml.nodes import MappingNode, ScalarNode, SequenceNode
+from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
 from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
@@ -467,17 +467,25 @@ class ExportPaths:
             base + "/" + quote(target.lstrip("/"), safe="/", errors="surrogateescape")
         )
 
-    def _outside(self, target: str, source: str, raw: str) -> str | None:
-        path, suffix = _path_and_suffix(raw)
+    def _outside_target(
+        self, target: str, source: str, raw: str, apparent: str
+    ) -> str | None:
         if self.external_base:
-            url = self._external_url(target) + suffix
-            return f"<{url}>" if is_pointy_destination(raw) else url
-        apparent, _ = _resolve_link_path(path, source[len(self.scope) + 1 :])
-        if f"{self.scope}/{apparent}" in self.members:
+            return self._external_url(target)
+        if apparent in self._archive_members:
             raise ValueError(
                 f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; supply external_base to resolve outside destinations"
             )
         return None
+
+    def _outside(self, target: str, source: str, raw: str) -> str | None:
+        path, suffix = _path_and_suffix(raw)
+        apparent, _ = _resolve_link_path(path, source[len(self.scope) + 1 :])
+        url = self._outside_target(target, source, raw, apparent)
+        if url is None:
+            return None
+        url += suffix
+        return f"<{url}>" if is_pointy_destination(raw) else url
 
     def _wiki_candidates(self, raw: str, name: str, source: str) -> set[str]:
         if self._candidates is None:
@@ -558,30 +566,26 @@ class ExportPaths:
     def _field_replacement(
         self, value: str, source: str, dependencies: list[Dependency]
     ) -> str | None:
-        target = _field_target(value, source)
+        path, suffix = _field_parts(value)
+        target = _field_target(path, source)
         archive_source = source[len(self.scope) + 1 :]
         if target not in self.members:
             dependencies.append(Dependency(archive_source, _safe_text(value)))
-            if self.external_base:
-                return self._external_url(target)
-            if _field_target(value, archive_source) in self._archive_members:
-                raise ValueError(
-                    f"Export collision in {_safe_text(source)}: {_safe_text(value)}; "
-                    "supply external_base to resolve outside destinations"
-                )
-            return None
+            apparent = _field_target(path, archive_source)
+            url = self._outside_target(target, source, value, apparent)
+            return url + suffix if url is not None else None
         if value.startswith("/"):
-            return "/" + target[len(self.scope) + 1 :]
+            return "/" + target[len(self.scope) + 1 :] + suffix
         replacement = posixpath.relpath(
             target[len(self.scope) + 1 :], posixpath.dirname(archive_source) or "."
         )
-        if value.startswith("./") and not replacement.startswith("."):
-            return "./" + replacement
-        return replacement
+        if not replacement.startswith("."):
+            return "./" + replacement + suffix
+        return replacement + suffix
 
     def relocate_frontmatter(
         self, prefix: str, source: str
-    ) -> tuple[str, list[Dependency], list[Dependency], bool]:
+    ) -> tuple[str, list[Dependency], list[Dependency]]:
         """Relocate known YAML scalar fields while retaining all other text.
 
         Args:
@@ -589,42 +593,31 @@ class ExportPaths:
             source: Vault-relative source path.
 
         Returns:
-            Updated prefix, outside dependencies, ambiguous paths and alias flag.
+            Updated prefix, outside dependencies and ambiguous paths.
 
         Raises:
             ValueError: An outside path collides with a bundle member.
         """
         if not self.scope:
-            return prefix, [], [], False
-        match = re.match(
-            r"\ufeff?\s*---[^\S\r\n]*\r?\n(.*?)(?:^---[^\S\r\n]*(?:\r?\n|$))",
-            prefix,
-            re.S | re.M,
-        )
-        if not match:
-            return prefix, [], [], False
-        text = match.group(1)
-        try:
-            root = yaml.compose(text, Loader=yaml.SafeLoader)
-            tokens = list(yaml.scan(text))
-        except yaml.YAMLError:
-            return prefix, [], [], False
-        shared = _shared_nodes(root)
+            return prefix, [], []
+        parsed = _frontmatter_text(prefix, source)
+        if parsed is None:
+            return prefix, [], []
+        text, original_text, offset, end_offset = parsed
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+        tokens = list(yaml.scan(text))
         dependencies: list[Dependency] = []
         ambiguous: list[Dependency] = []
         changes = []
-        alias_skipped = False
         for node in _frontmatter_paths(root):
-            value = node.value
+            value = node.value.rstrip("\n") if node.style in ("|", ">") else node.value
+            trailing = node.value[len(value) :]
             if not value or _is_external_target(value):
                 continue
             if not value.startswith(("/", "./", "../")):
                 ambiguous.append(
                     Dependency(source[len(self.scope) + 1 :], _safe_text(value))
                 )
-                continue
-            if id(node) in shared:
-                alias_skipped = True
                 continue
             replacement = self._field_replacement(value, source, dependencies)
             if replacement is not None and replacement != value:
@@ -638,15 +631,24 @@ class ExportPaths:
                     node.start_mark.index,
                 )
                 changes.append(
-                    (start, node.end_mark.index, _yaml_scalar(replacement, node.style))
+                    (
+                        start,
+                        node.end_mark.index,
+                        _yaml_scalar(
+                            replacement + trailing,
+                            node.style,
+                            text[start : node.end_mark.index],
+                        ),
+                    )
                 )
         for start, end, replacement in sorted(changes, reverse=True):
             text = text[:start] + replacement + text[end:]
+        if not changes:
+            text = original_text
         return (
-            prefix[: match.start(1)] + text + prefix[match.end(1) :],
+            prefix[:offset] + text + prefix[end_offset:],
             dependencies,
             ambiguous,
-            alias_skipped,
         )
 
     def relocate(self, body: str, source: str) -> tuple[str, list[Dependency]]:
@@ -699,11 +701,21 @@ def _field_target(value: str, source: str) -> str:
 def _mapping_values(node: object, key: str) -> list[object]:
     if not isinstance(node, MappingNode):
         return []
-    return [
+    direct = [
         value
         for name, value in node.value
         if isinstance(name, ScalarNode) and name.value == key
     ]
+    if direct:
+        return direct[-1:]
+    for name, value in node.value:
+        if isinstance(name, ScalarNode) and name.tag == "tag:yaml.org,2002:merge":
+            candidates = value.value if isinstance(value, SequenceNode) else [value]
+            for candidate in candidates:
+                found = _mapping_values(candidate, key)
+                if found:
+                    return found
+    return []
 
 
 def _frontmatter_paths(root: object) -> list[ScalarNode]:
@@ -722,30 +734,71 @@ def _frontmatter_paths(root: object) -> list[ScalarNode]:
     ]
 
 
-def _yaml_scalar(value: str, style: str | None) -> str:
+def _field_parts(value: str) -> tuple[str, str]:
+    index = min((value.find(c) for c in "?#" if c in value), default=len(value))
+    return value[:index], value[index:]
+
+
+def _yaml_scalar(value: str, style: str | None, original: str) -> str:
+    if style in ("|", ">"):
+        ending = (
+            "\r\n"
+            if original.endswith("\r\n")
+            else "\n"
+            if original.endswith("\n")
+            else ""
+        )
+        return json.dumps(value, ensure_ascii=False) + ending
     if style == "'":
         return "'" + value.replace("'", "''") + "'"
     if style == '"':
-        return json.dumps(value, ensure_ascii=True)
-    encoded = (
-        yaml.safe_dump(value, allow_unicode=True, default_flow_style=True)
+        return json.dumps(value, ensure_ascii=False)
+    return (
+        yaml.safe_dump(
+            value, allow_unicode=True, default_flow_style=True, width=1000000
+        )
         .removesuffix("\n...\n")
         .removesuffix("\n")
     )
-    return encoded
 
 
-def _shared_nodes(root: object) -> set[int]:
+def _bounded_yaml(text: str) -> bool:
+    depth = 0
+    for ordinal, event in enumerate(yaml.parse(text, Loader=yaml.SafeLoader)):
+        if ordinal >= 4096:
+            return False
+        if isinstance(event, yaml.events.CollectionStartEvent):
+            depth += 1
+        elif isinstance(event, yaml.events.CollectionEndEvent):
+            depth -= 1
+        if depth > 32:
+            return False
+    return True
+
+
+class _AliasLoader(yaml.SafeLoader):
+    def __init__(self, stream: str) -> None:
+        super().__init__(stream)
+        self.aliases: list[tuple[int, int, object]] = []
+
+    def compose_node(self, parent: Node | None, index: int) -> Node | None:
+        if self.check_event(yaml.events.AliasEvent):
+            event = self.peek_event()  # type: ignore[no-untyped-call]
+            anchor = event.anchor
+            node = self.anchors.get(anchor)
+            self.aliases.append((event.start_mark.index, event.end_mark.index, node))
+        return super().compose_node(parent, index)
+
+
+def _relevant_nodes(root: object, selected: set[int]) -> set[int]:
+    pending = [root]
     seen: set[int] = set()
-    shared: set[int] = set()
-
-    def visit(node: object, ancestors: set[int]) -> None:
+    parents: dict[int, set[int]] = {}
+    while pending:
+        node = pending.pop()
         ident = id(node)
-        if ident in ancestors:
-            shared.add(ident)
-            return
         if ident in seen:
-            shared.add(ident)
+            continue
         seen.add(ident)
         children: list[object] = []
         if isinstance(node, MappingNode):
@@ -753,7 +806,101 @@ def _shared_nodes(root: object) -> set[int]:
         elif isinstance(node, SequenceNode):
             children = list(node.value)
         for child in children:
-            visit(child, ancestors | {ident})
+            parents.setdefault(id(child), set()).add(ident)
+            pending.append(child)
+    relevant = set(selected)
+    queue = list(selected)
+    while queue:
+        for parent in parents.get(queue.pop(), set()):
+            if parent not in relevant:
+                relevant.add(parent)
+                queue.append(parent)
+    return relevant
 
-    visit(root, set())
-    return shared
+
+def _expand_relevant_aliases(text: str) -> str:
+    loader = _AliasLoader(text)
+    try:
+        root = loader.get_single_node()
+        selected = {id(node) for node in _frontmatter_paths(root)}
+        relevant = _relevant_nodes(root, selected)
+        changes = []
+        total_size = 0
+        memo: dict[int, int] = {}
+        for start, end, node in loader.aliases:
+            if id(node) not in relevant:
+                continue
+            total_size += _expanded_size(node, memo, set())
+            if total_size > 4096:
+                raise ValueError(
+                    "Cannot export: YAML aliases exceed inspection limits; simplify metadata before exporting"
+                )
+            expanded = yaml.safe_load(yaml.serialize(node))
+            replacement = (
+                yaml.safe_dump(
+                    expanded, default_flow_style=True, allow_unicode=True, width=1000000
+                )
+                .removesuffix("\n...\n")
+                .removesuffix("\n")
+            )
+            changes.append((start, end, replacement))
+        for start, end, replacement in reversed(changes):
+            text = text[:start] + replacement + text[end:]
+        return text
+    finally:
+        loader.dispose()
+
+
+def _expanded_size(node: object, memo: dict[int, int], active: set[int]) -> int:
+    ident = id(node)
+    if ident in active:
+        return 4097
+    if ident in memo:
+        return memo[ident]
+    children: list[object] = []
+    if isinstance(node, MappingNode):
+        children = [child for pair in node.value for child in pair]
+    elif isinstance(node, SequenceNode):
+        children = list(node.value)
+    active.add(ident)
+    size = 1
+    for child in children:
+        size += _expanded_size(child, memo, active)
+        if size > 4096:
+            break
+    active.remove(ident)
+    memo[ident] = size
+    return size
+
+
+def _frontmatter_text(prefix: str, source: str) -> tuple[str, str, int, int] | None:
+    match = re.match(
+        r"\ufeff?\s*---[^\S\r\n]*\r?\n(.*?)(?:^---[^\S\r\n]*(?:\r?\n|$))",
+        prefix,
+        re.S | re.M,
+    )
+    if match:
+        offset, end_offset = match.start(1), match.end(1)
+    elif prefix.lstrip("\ufeff \t\r\n").startswith("{"):
+        offset = len(prefix) - len(prefix.lstrip("\ufeff \t\r\n"))
+        end_offset = prefix.rfind("}") + 1
+    else:
+        return None
+    original = prefix[offset:end_offset]
+    try:
+        if not _bounded_yaml(original):
+            raise ValueError(
+                f"Cannot export {_safe_text(source)}: frontmatter exceeds inspection limits; simplify metadata before exporting"
+            )
+        text = _expand_relevant_aliases(original)
+        if not _bounded_yaml(text):
+            raise ValueError(
+                f"Cannot export {_safe_text(source)}: frontmatter exceeds inspection limits; simplify metadata before exporting"
+            )
+        return text, original, offset, end_offset
+    except RecursionError as exc:
+        raise ValueError(
+            f"Cannot export {_safe_text(source)}: frontmatter exceeds inspection limits; simplify metadata before exporting"
+        ) from exc
+    except yaml.YAMLError:
+        return None

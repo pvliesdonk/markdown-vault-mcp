@@ -749,8 +749,7 @@ when root-relative; relative destinations stay as written when they retain their
 Outside destinations are reported as dependencies, and a destination that would
 point to a different exported file refuses the export. Library callers can supply
 `external_base` to turn outside destinations into absolute URLs. The report
-lists files whose bytes changed. Frontmatter stays unchanged, and only the
-selected root’s own index can provide an `okf_version`. Known outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Wikilink-looking text in recognized Markdown link titles and destinations is treated as literal content of the enclosing link. Links with titles spanning multiple lines are not recognized by the shared link grammar. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
+lists files whose bytes changed. Path-valued `resource`, `sources[].resource`, `computation`, `executor.resource` and `attester.resource` follow the same relocation rules, retaining query strings and fragments. Non-slash, non-dot paths remain unchanged and appear in the library-only `ambiguous_path` report; download users cannot see it. Aliases and merges preserve other values, and metadata beyond bounded inspection refuses export. Only the selected root’s own index can provide an `okf_version`. Known outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Wikilink-looking text in recognized Markdown link titles and destinations is treated as literal content of the enclosing link. Links with titles spanning multiple lines are not recognized by the shared link grammar. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
 paths and index-excluded paths are omitted by default. Reserved `index.md` and
 `log.md` are kept unless an omission policy applies, including a matching
 configured conventions filename. Library callers can opt into hidden and
@@ -762,8 +761,7 @@ state. A candidate absent from both policy lists was last observed searchable.
 An uninspected entry may be included with bounded metadata. Links are never
 followed; dot-path links omitted by policy are counted as hidden. Selected
 symlinks and nonregular entries refuse export. Failure to observe or read a selected file
-aborts export. Reads use the inspected vault root; conversion leaves supplied
-frontmatter bytes unchanged. A fixed zip-entry timestamp makes unchanged vaults
+aborts export. Reads use the inspected vault root; relocation preserves other frontmatter values. A fixed zip-entry timestamp makes unchanged vaults
 reproducible. Notes are read uncapped, and export never mutates the vault. This
 is not a conformance verdict or snapshot; the report is not embedded.
 

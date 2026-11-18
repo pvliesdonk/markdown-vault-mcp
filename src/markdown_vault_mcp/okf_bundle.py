@@ -143,7 +143,7 @@ def _note_bytes(
     paths: ExportPaths,
     report: OkfExportReport,
 ) -> bytes:
-    """Convert graph links and relocate body paths, preserving frontmatter."""
+    """Convert graph links and relocate body and frontmatter paths."""
     item, name = selection
     if paths.scope and (b"\x00" in raw or raw.startswith((b"\xff\xfe", b"\xfe\xff"))):
         report.uninspected.setdefault(item.path, "body_encoding")
@@ -160,11 +160,9 @@ def _note_bytes(
             body = convert_body_wikilinks(body, outlinks)
         else:
             body, _, _ = convert_wikilinks_to_markdown(body, outlinks)
-    prefix, field_dependencies, ambiguous, alias_skipped = paths.relocate_frontmatter(
+    prefix, field_dependencies, ambiguous = paths.relocate_frontmatter(
         prefix, item.path
     )
-    if alias_skipped:
-        report.uninspected.setdefault(item.path, "frontmatter_alias")
     report.dependencies.extend(field_dependencies)
     report.ambiguous_path.extend(ambiguous)
     body, dependencies = paths.relocate(body, item.path)
