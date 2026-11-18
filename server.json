@@ -70,7 +70,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
-          "description": "Prepare review authority: off, elicit or trust-auth. Unset resolves to off, or elicit when OKF_WRITE is enabled. Runtime gates still require OKF_WRITE; keep it enabled until separate runtime gates are available. Elicit requires a human confirmation; trust-auth uses the token subject without confirmation and is safe only for a human-driven UI. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
+          "description": "Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. Elicit asks a human to confirm; trust-auth requires human credentials and a human-driven interface. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
         },
         {
           "name": "OLLAMA_HOST",
@@ -207,7 +207,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-          "description": "Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index."
+          "description": "Comma-separated required frontmatter fields; documents missing any are excluded from the index, except index.md and log.md in an active OKF vault."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EXCLUDE",
@@ -238,7 +238,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
-          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected.",
+          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode.",
           "default": "auto"
         },
         {
@@ -254,16 +254,16 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
-          "description": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+          "description": "Enable automatic index maintenance in designated folders; defaults to false.",
           "format": "boolean"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
-          "description": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting."
+          "description": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
-          "description": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting."
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
@@ -744,7 +744,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
-          "description": "Prepare review authority: off, elicit or trust-auth. Unset resolves to off, or elicit when OKF_WRITE is enabled. Runtime gates still require OKF_WRITE; keep it enabled until separate runtime gates are available. Elicit requires a human confirmation; trust-auth uses the token subject without confirmation and is safe only for a human-driven UI. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
+          "description": "Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. Elicit asks a human to confirm; trust-auth requires human credentials and a human-driven interface. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error."
         },
         {
           "name": "OLLAMA_HOST",
@@ -881,7 +881,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-          "description": "Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index."
+          "description": "Comma-separated required frontmatter fields; documents missing any are excluded from the index, except index.md and log.md in an active OKF vault."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EXCLUDE",
@@ -912,7 +912,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
-          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected.",
+          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode.",
           "default": "auto"
         },
         {
@@ -928,16 +928,16 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
-          "description": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+          "description": "Enable automatic index maintenance in designated folders; defaults to false.",
           "format": "boolean"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
-          "description": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting."
+          "description": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
-          "description": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting."
+          "description": "Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
