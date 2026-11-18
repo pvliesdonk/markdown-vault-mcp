@@ -6,8 +6,8 @@ from tests.conftest import MockEmbeddingProvider
 class CountingProvider(MockEmbeddingProvider):
     """Collect texts sent to the deterministic mock provider."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, dim: int = 32) -> None:
+        super().__init__(dim)
         self.texts: list[str] = []
 
     def embed(self, texts: list[str]) -> list[list[float]]:

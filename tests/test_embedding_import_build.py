@@ -14,6 +14,7 @@ from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
 from markdown_vault_mcp.types import ANY_TOKEN
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.embedding_providers import CountingProvider
 from tests.fixtures.sidecar_v5_1.notes import NOTES
 from tests.fixtures.vector_store_contract import doc
 
@@ -22,18 +23,16 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class _Counting(MockEmbeddingProvider):
+class _Counting(CountingProvider):
     """``mock/mock-dim-32``, counting embedded texts; fails while ``down``."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.texts: list[str] = []
         self.down = False
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if self.down:
             raise RuntimeError("provider down")
-        self.texts.extend(texts)
         return super().embed(texts)
 
 

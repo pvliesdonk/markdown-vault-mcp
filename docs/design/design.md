@@ -7559,4 +7559,4 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
 remains tied to `OKF_WRITE`.
 
-Designated OKF indexes have no vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498).
+Designated OKF indexes are skipped for vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498). Existing vectors are purged at writer convergence, so a cold reader can see stale vectors before then. Only notes with embeddable text have their own vectors; default v1 input is body-only, while searchable frontmatter fields can include descriptions and context adds titles.

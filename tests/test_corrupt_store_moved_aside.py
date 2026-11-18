@@ -13,7 +13,7 @@ import pytest
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.exceptions import StoreCorruptError, StoreUnavailableError
 from markdown_vault_mcp.vault import Vault
-from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.embedding_providers import CountingProvider
 from tests.fixtures.sidecar_v5_1.notes import NOTES as RELEASED_NOTES
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sidecar_v5_1"
@@ -21,16 +21,6 @@ NOTES = {
     "a.md": "# Alpha\n\nApples and pears.\n",
     "b.md": "# Beta\n\nBoats in the harbour.\n",
 }
-
-
-class _Counting(MockEmbeddingProvider):
-    def __init__(self, dim: int = 32) -> None:
-        super().__init__(dim)
-        self.texts: list[str] = []
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        self.texts.extend(texts)
-        return super().embed(texts)
 
 
 def _vault(tmp_path: Path, store: str, provider: Any = None, **settings: Any) -> Vault:
@@ -42,7 +32,7 @@ def _vault(tmp_path: Path, store: str, provider: Any = None, **settings: Any) ->
             embedding_store=store,
             **settings,
         ),
-        embedding_provider=provider or _Counting(),
+        embedding_provider=provider or CountingProvider(),
     )
 
 
@@ -121,7 +111,7 @@ def test_a_corrupt_sqlite_store_is_moved_aside_with_its_wal(tmp_path: Path) -> N
     slot = VectorStoreSlot(
         backend=_Corrupt(),
         location=tmp_path / "vec",
-        provider=_Counting(),
+        provider=CountingProvider(),
         text_format="v1",
     )
     try:
@@ -167,7 +157,7 @@ def test_a_released_sidecar_donates_to_the_corrupt_rebuild(
         )
     _build(tmp_path, store, RELEASED_NOTES)
     _corrupt(tmp_path, store)
-    provider = _Counting()
+    provider = CountingProvider()
     vault = _vault(tmp_path, store, provider)
     try:
         vault.index.build_index()
@@ -231,7 +221,7 @@ def test_another_identity_still_rebuilds_from_scratch(
     tmp_path: Path, store: str
 ) -> None:
     _build(tmp_path, store)
-    provider = _Counting(dim=16)  # another dimension: another identity
+    provider = CountingProvider(dim=16)  # another dimension: another identity
     vault = _vault(tmp_path, store, provider)
     try:
         vault.index.build_index()
@@ -242,7 +232,7 @@ def test_another_identity_still_rebuilds_from_scratch(
     assert _aside(tmp_path) == []
 
 
-class _SameName(_Counting):
+class _SameName(CountingProvider):
     """One model name at any dimension, as an endpoint swap can produce."""
 
     @property
@@ -280,7 +270,7 @@ def test_a_search_first_corrupt_rebuild_uses_the_released_sidecar(
         )
     _build(tmp_path, store, RELEASED_NOTES)
     _corrupt(tmp_path, store)
-    provider = _Counting()
+    provider = CountingProvider()
     vault = _vault(tmp_path, store, provider)
     try:
         vault.index.build_index()
@@ -303,7 +293,7 @@ def test_a_damaged_sqlite_store_of_another_model_is_moved_aside_not_deleted(
     data[middle : middle + 4096] = os.urandom(4096)
     target.write_bytes(bytes(data))
     damaged = target.read_bytes()
-    vault = _vault(tmp_path, "sqlite", _Counting(dim=16))  # another identity
+    vault = _vault(tmp_path, "sqlite", CountingProvider(dim=16))  # another identity
     try:
         vault.index.build_index()
         vault.index.build_embeddings()

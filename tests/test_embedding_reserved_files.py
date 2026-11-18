@@ -95,8 +95,7 @@ def test_changed_designated_index_is_not_embedded(tmp_path: Path, route: str) ->
         else:
             (root / "generated/index.md").write_text("# Listing\n\nchanged listing\n")
             vault.index.reindex()
-        listing = (root / "generated/index.md").read_text()
-        assert listing not in provider.texts
+        assert not any("[Pineapple](" in text for text in provider.texts)
         assert "generated/index.md" not in _paths(vault)
         assert not any("changed listing" in text for text in provider.texts)
     finally:
@@ -155,7 +154,7 @@ def test_meaning_search_reaches_authored_content_and_generated_listing_concepts(
         titles = re.findall(r"^- \[(.*?)\]\(", listing, re.MULTILINE)
         assert set(titles) == {"Canine", "Astral"}
         assert "generated/index.md" not in _paths(vault)
-        assert listing not in provider.texts
+        assert not any("[Canine](" in text for text in provider.texts)
         queries = {"fruit": "authored/index.md", "journey": "generated/log.md"}
         synonyms = {"Canine": "dog", "Astral": "stars"}
         for title in titles:
@@ -246,5 +245,35 @@ def test_restart_purges_designated_vectors_without_forcing_open(
             assert not provider.texts
         assert "generated/index.md" not in _paths(vault)
         assert {"generated/log.md", "authored/index.md"} <= _paths(vault)
+    finally:
+        vault.close()
+
+
+def test_configured_description_retrieved_from_concept(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "generated").mkdir(parents=True)
+    (root / "generated/concept.md").write_text(
+        "---\ntitle: Concept\ndescription: voyage\n---\n"
+    )
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=_capabilities(True),
+            searchable_frontmatter_fields=["description"],
+        ),
+        embedding_provider=MeaningProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        vault.writer.write("generated/trigger.md", "# Trigger\n\nunrelated\n")
+        wait_for_writer_drain(vault)
+        assert "voyage" in (root / "generated/index.md").read_text()
+        assert "generated/index.md" not in _paths(vault)
+        assert vault.reader.search("journey", mode="semantic", limit=1)[0].path == (
+            "generated/concept.md"
+        )
     finally:
         vault.close()

@@ -1314,7 +1314,10 @@ class ProjectConfig:
     okf_index: bool | None = field(
         default=None,
         metadata={
-            "help": "Enable automatic index maintenance in designated folders; defaults to false.",
+            "help": (
+                "Enable automatic index maintenance in designated folders; defaults to false. "
+                "Designated index.md files do not receive embeddings."
+            ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },
