@@ -40,7 +40,9 @@ class OkfExportReport:
     Counts overlap when a path has more than one omission reason. Uninspected
     paths can be included with metadata that exceeded an inspection bound.
     Selected inventory failures refuse export.
-    These observations do not establish conformance.
+    Transformed paths and dependency sources are archive paths; other path
+    observations retain vault-relative paths. These observations do not establish
+    conformance.
     """
 
     transformed: list[str] = field(default_factory=list)

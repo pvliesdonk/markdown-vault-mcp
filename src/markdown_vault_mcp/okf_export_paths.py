@@ -2,62 +2,192 @@
 
 from __future__ import annotations
 
-import posixpath
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
 
+from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import Dependency
 from markdown_vault_mcp.scanner import (
-    _RE_INLINE_CODE,
+    _RE_LINE_QUOTE_PREFIX,
     _RE_REF_DEF_OPEN,
     _RE_REF_DEF_TAIL,
     _blank_spans,
+    _closes_fence,
     _definition_destination_end,
+    _fence_opener,
+    _find_wikilink,
     _is_external_target,
     _iter_definition_matches,
     _paragraph_regions,
     _resolve_link_path,
-    _unfenced_lines,
 )
 from markdown_vault_mcp.utils.links import (
+    _follow_inline_destination,
     _is_escaped,
+    compute_new_raw_target,
     decode_markdown_destination,
     find_bracket_span,
-    iter_inline_links,
+    iter_bracket_links,
     split_markdown_fragment,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from markdown_vault_mcp.types import OutlinkInfo
+
+_MARKER = re.compile(r"^( *)(?:[-+*]|[0-9]{1,9}[.)])(?= |$)( *)")
+_HTML_OPEN = re.compile(r"^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)", re.I)
+_TICKS = re.compile(r"`+|<!--")
+
+
+@dataclass
+class _BlockState:
+    items: list[int] = field(default_factory=list)
+    depth: int = 0
+    fence: tuple[str, int] | None = None
+    html: str | None = None
+    blank_before: bool = True
+    in_code: bool = False
+
+    def _container(self, line: str) -> tuple[str, int, re.Match[str] | None]:
+        quote = _RE_LINE_QUOTE_PREFIX.match(line)
+        prefix = quote.group() if quote else ""
+        depth = prefix.count(">")
+        if depth != self.depth:
+            self.items.clear()
+            if self.fence and self.depth:
+                self.fence = None
+            self.depth = depth
+        text = line[len(prefix) :].rstrip("\n").expandtabs(4)
+        indent = len(text) - len(text.lstrip(" "))
+        marker = _MARKER.match(text)
+        while self.items and indent < self.items[-1] and (self.blank_before or marker):
+            self.items.pop()
+        return text, indent, marker
+
+    def _open(self, inner: str) -> bool:
+        self.fence = _fence_opener(inner)
+        if self.fence:
+            return True
+        tag = _HTML_OPEN.match(inner)
+        if tag:
+            self.html = r"</" + tag.group(1) + r"\s*>"
+        elif inner.lstrip(" ").startswith("<!--") and "-->" not in inner:
+            self.html = r"-->"
+        if self.html:
+            if re.search(self.html, inner, re.I):
+                self.html = None
+            return True
+        return False
+
+    def _active(self, inner: str) -> bool:
+        if self.fence:
+            if _closes_fence(inner, self.fence):
+                self.fence = None
+            return True
+        if self.html:
+            if re.search(self.html, inner, re.I):
+                self.html = None
+            return True
+        return False
+
+    def protected(self, line: str) -> bool:
+        text, indent, marker = self._container(line)
+        blank = not text.strip()
+        base = self.items[-1] if self.items else 0
+        inner = text[base:] if indent >= base else text.lstrip(" ")
+        active = self._active(inner)
+        if not active and not blank:
+            self.in_code = indent - base >= 4 and (self.blank_before or self.in_code)
+            active = self.in_code or self._new_line(text, indent, base, marker, inner)
+        self.blank_before = blank
+        return active
+
+    def _new_line(
+        self,
+        text: str,
+        indent: int,
+        base: int,
+        marker: re.Match[str] | None,
+        inner: str,
+    ) -> bool:
+        if marker and 0 <= indent - base <= 3:
+            spacing = len(marker.group(2))
+            column = marker.end() if 1 <= spacing <= 4 else marker.end() - spacing + 1
+            self.items.append(column)
+            if spacing >= 5:
+                self.in_code = True
+                return True
+            inner = text[column:]
+        return self._open(inner)
+
+
+def _protected_lines(lines: list[str]) -> set[int]:
+    state = _BlockState()
+    return {index for index, line in enumerate(lines) if state.protected(line)}
+
 
 def _mask_blocks(body: str) -> str:
-    # Keep every offset stable while normalizing line endings for the scanner.
     normalized = re.sub(r"\r(?=\n)", " ", body).replace("\r", "\n")
-    normalized = re.sub(
-        r"<!--.*?(?:-->|\Z)",
-        lambda m: re.sub(r"[^\n]", " ", m.group()),
-        normalized,
-        flags=re.DOTALL,
-    )
     lines = normalized.splitlines(keepends=True)
-    unfenced = {index for index, _ in _unfenced_lines(lines)}
-    indented = False
-    blank_before = True
-    for index, line in enumerate(lines):
-        blank = not line.strip()
-        starts_code = line.startswith(("    ", "\t"))
-        if not blank:
-            indented = starts_code and (indented or blank_before)
-        if index not in unfenced or indented:
-            lines[index] = re.sub(r"[^\n]", " ", line)
-        blank_before = blank
-    masked = "".join(lines)
-    return _RE_INLINE_CODE.sub(lambda m: re.sub(r"[^\n]", " ", m.group()), masked)
+    protected = _protected_lines(lines)
+    return "".join(
+        re.sub(r"[^\n]", " ", line) if index in protected else line
+        for index, line in enumerate(lines)
+    )
 
 
-def _destination_spans(body: str) -> list[tuple[int, int]]:
-    masked = _mask_blocks(body)
-    spans: list[tuple[int, int]] = []
-    definition_spans = []
+def _mask_inline(region: str) -> str:
+    # Index each backtick run once so unmatched runs stay linear-time.
+    matches = list(_TICKS.finditer(region))
+    next_run: dict[int, int] = {}
+    closes: dict[int, int] = {}
+    for match in reversed(matches):
+        token = match.group()
+        if token.startswith("`"):
+            length = len(token)
+            if length in next_run:
+                closes[match.start()] = next_run[length]
+            next_run[length] = match.start()
+    spans = []
+    pos = 0
+    for match in matches:
+        if match.start() < pos or _is_escaped(region, match.start()):
+            continue
+        if match.group() == "<!--":
+            end = region.find("-->", match.end())
+            if end < 0:
+                continue
+            pos = end + 3
+        else:
+            closing = closes.get(match.start())
+            if closing is None:
+                continue
+            pos = closing + len(match.group())
+        spans.append((match.start(), pos))
+    return _blank_spans(region, spans)
+
+
+def _regions(masked: str) -> Iterator[tuple[int, str]]:
+    offset = 0
+    for region in _paragraph_regions(masked):
+        start = masked.find(region, offset)
+        while start > 0 and masked[start - 1] != "\n":
+            start = masked.find(region, start + 1)
+        if start < 0:
+            raise RuntimeError("Paragraph region missing")
+        yield start, region
+        offset = start + len(region)
+
+
+def _definition_spans(
+    masked: str,
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    spans = []
+    definitions = []
     for label, _tail, start, end in _iter_definition_matches(masked):
         if label.startswith("^"):
             continue
@@ -74,22 +204,64 @@ def _destination_spans(body: str) -> list[tuple[int, int]]:
         target_end = _definition_destination_end(masked, target_start)
         if target_end is not None:
             spans.append((target_start, target_end))
-            definition_spans.append((start, end))
-    masked = _blank_spans(masked, definition_spans)
-    # The shared scanner omits images; treating their marker as whitespace
-    # lets the same destination grammar handle both links and images.
-    masked = re.sub(r"(?<!!)!(?=\[)", " ", masked)
-    offset = 0
-    for region in _paragraph_regions(masked):
-        offset = masked.find(region, offset)
-        for link in iter_inline_links(region):
-            spans.append(
-                (
-                    offset + link.target_start,
-                    offset + link.target_start + len(link.raw_target),
-                )
-            )
-        offset += len(region)
+            definitions.append((start, end))
+    return spans, definitions
+
+
+def _inline_destinations(region: str, offset: int) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+
+    def follow(
+        text: str, opener: int, closer: int
+    ) -> tuple[tuple[str, int], int] | None:
+        result = _follow_inline_destination(text, opener, closer)
+        if result is not None:
+            (raw, start), _end = result
+            spans.append((offset + start, offset + start + len(raw)))
+        return result
+
+    for _ in iter_bracket_links(region, follow):
+        pass
+    return spans
+
+
+def _masked_body(body: str) -> str:
+    masked = _mask_blocks(body)
+    chars = list(masked)
+    for start, region in _regions(masked):
+        chars[start : start + len(region)] = _mask_inline(region)
+    return "".join(chars)
+
+
+def convert_body_wikilinks(body: str, outlinks: list[OutlinkInfo]) -> str:
+    """Convert indexed wikilinks outside protected Markdown content.
+
+    Args:
+        body: Markdown body without frontmatter.
+        outlinks: The graph's last-observed links from the note.
+
+    Returns:
+        Body with eligible wikilinks converted.
+    """
+    masked = _masked_body(body)
+    changes = []
+    position = 0
+    while (found := _find_wikilink(masked, position)) is not None:
+        end, _target, _alias, start = found
+        converted, _, _ = convert_wikilinks_to_markdown(body[start:end], outlinks)
+        changes.append((start, end, converted))
+        position = end
+    for start, end, converted in reversed(changes):
+        body = body[:start] + converted + body[end:]
+    return body
+
+
+def _destination_spans(body: str) -> list[tuple[int, int]]:
+    masked = _masked_body(body)
+    spans, definitions = _definition_spans(masked)
+    masked = _blank_spans(masked, definitions)
+    for offset, region in _regions(masked):
+        spans.extend(_inline_destinations(region, offset))
     return sorted(spans)
 
 
@@ -133,7 +305,9 @@ class ExportPaths:
                 raise ValueError(
                     "external_base must be an absolute HTTP(S) URL without query or fragment"
                 )
-        self.bundle_members = {p[len(self.scope) + 1 :] for p in self.members}
+        self.bundle_members = (
+            {p[len(self.scope) + 1 :] for p in self.members} if self.scope else set()
+        )
 
     def _replacement(
         self, raw: str, source: str, dependencies: list[Dependency]
@@ -148,19 +322,31 @@ class ExportPaths:
             apparent, _ = _resolve_link_path(path, source[len(self.scope) + 1 :])
             if not path.startswith("/") and apparent == bundle_target:
                 return None
-            relocated = (
-                "/" + bundle_target
-                if path.startswith("/")
-                else posixpath.relpath(
-                    bundle_target,
-                    posixpath.dirname(source[len(self.scope) + 1 :]) or ".",
-                )
+            written = raw[1:-1] if raw.startswith("<") and raw.endswith(">") else raw
+            path_written = written[: len(written) - len(suffix)] if suffix else written
+            pointy = raw.startswith("<") and raw.endswith(">")
+            raw_path = "<" + path_written + ">" if pointy else path_written
+            replacement = compute_new_raw_target(
+                "markdown",
+                raw_path,
+                None,
+                bundle_target,
+                source_path=source[len(self.scope) + 1 :],
+                old_path=target,
             )
-            replacement = quote(relocated, safe="/") + suffix
+            if pointy:
+                replacement = replacement[:-1] + suffix + ">"
+            else:
+                replacement += suffix
         else:
             dependencies.append(Dependency(source, raw))
             replacement = self._outside(target, source, raw)
-        if replacement is not None and raw.startswith("<") and raw.endswith(">"):
+        if (
+            target not in self.members
+            and replacement is not None
+            and raw.startswith("<")
+            and raw.endswith(">")
+        ):
             return "<" + replacement + ">"
         return replacement
 
@@ -181,12 +367,15 @@ class ExportPaths:
             )
         return None
 
-    def relocate(self, body: str, source: str) -> tuple[str, list[Dependency]]:
+    def relocate(
+        self, body: str, source: str, archive_path: str
+    ) -> tuple[str, list[Dependency]]:
         """Relocate body destinations and report outside dependencies.
 
         Args:
             body: Markdown body without frontmatter.
             source: Vault-relative source path.
+            archive_path: Source path in the exported archive.
 
         Returns:
             Rewritten body and outside dependencies.
@@ -204,4 +393,4 @@ class ExportPaths:
                 changes.append((start, end, replacement))
         for start, end, replacement in reversed(changes):
             body = body[:start] + replacement + body[end:]
-        return body, dependencies
+        return body, [Dependency(archive_path, d.target) for d in dependencies]

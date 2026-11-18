@@ -26,7 +26,7 @@ def test_subtree_relocates_and_reports(tmp_path):
             assert archive.read("a.md") == original.replace(
                 b"/guides/b.md?x=1#h", b"/b.md?x=1#h"
             )
-        assert result.report.transformed == ["guides/a.md"]
+        assert result.report.transformed == ["a.md"]
         assert result.report.dependencies[0].target == "/other.md"
         assert (tmp_path / "guides/a.md").read_bytes() == original
     finally:
@@ -177,7 +177,7 @@ def test_scope_index_version_and_transformed_wikilink(tmp_path):
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             assert archive.read("index.md") == b'---\nokf_version: "0.1"\n---\n'
             assert archive.read("a.md") == b"[b](/b.md)\n"
-        assert result.report.transformed == ["guides/a.md"]
+        assert result.report.transformed == ["a.md"]
     finally:
         vault.close()
 
@@ -224,3 +224,186 @@ def test_external_anchor_pointy_and_footnote(tmp_path):
         == b"[^note]: words\n\n[x](https://example.org/a) [anchor](#part) [pointy](</b.md>)\n"
     )
     assert not report.dependencies
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ("> ```\n> [x](/guides/b.md)\n> ```\n", "> ```\n> [x](/guides/b.md)\n> ```\n"),
+        ("```\n<!--\n```\n\n[x](/guides/b.md)\n", "```\n<!--\n```\n\n[x](/b.md)\n"),
+        ("`inline\n[x](/guides/b.md)`\n", "`inline\n[x](/guides/b.md)`\n"),
+        ("`<!--` [x](/guides/b.md)\n", "`<!--` [x](/b.md)\n"),
+        ("<pre>\n[x](/guides/b.md)\n</pre>\n", "<pre>\n[x](/guides/b.md)\n</pre>\n"),
+        ("- item\n\n    - [x](/guides/b.md)\n", "- item\n\n    - [x](/b.md)\n"),
+        ("- item\n\n      [x](/guides/b.md)\n", "- item\n\n      [x](/guides/b.md)\n"),
+        (
+            "- item\n  ```\n  <!--\n  ```\n  [x](/guides/b.md)\n",
+            "- item\n  ```\n  <!--\n  ```\n  [x](/b.md)\n",
+        ),
+        ("[![i](/guides/b.md)](/guides/b.md)\n", "[![i](/b.md)](/b.md)\n"),
+        ("![a [b](/guides/b.md)](/guides/b.md)\n", "![a [b](/b.md)](/b.md)\n"),
+    ],
+)
+def test_replan_markdown_forms(tmp_path, body, expected):
+    output, report = _export_body(tmp_path, body.encode())
+    assert output == expected.encode()
+    assert report.transformed == (["a.md"] if body != expected else [])
+    assert not report.dependencies
+    assert (tmp_path / "guides/a.md").read_text() == body
+
+
+def test_replan_spelling_and_report_paths(tmp_path):
+    (tmp_path / "guides").mkdir()
+    body = "[a](/guides/é.md) [b](</guides/my file.md>) [c](/missing.md)"
+    (tmp_path / "guides/a.md").write_text(body)
+    (tmp_path / "guides/é.md").write_text("é")
+    (tmp_path / "guides/my file.md").write_text("b")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert (
+                archive.read("a.md").decode()
+                == "[a](/é.md) [b](</my file.md>) [c](/missing.md)"
+            )
+        assert result.report.transformed == ["a.md"]
+        assert [(d.path, d.target) for d in result.report.dependencies] == [
+            ("a.md", "/missing.md")
+        ]
+        assert (tmp_path / "guides/a.md").read_text() == body
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        (
+            "<script>\n[x](/guides/b.md)\n</script>\n",
+            "<script>\n[x](/guides/b.md)\n</script>\n",
+        ),
+        (
+            "<style>\n[x](/guides/b.md)\n</style>\n",
+            "<style>\n[x](/guides/b.md)\n</style>\n",
+        ),
+        (
+            "<textarea>\n[x](/guides/b.md)\n</textarea>\n",
+            "<textarea>\n[x](/guides/b.md)\n</textarea>\n",
+        ),
+        ("- item\n\n\t- [x](/guides/b.md)\n", "- item\n\n\t- [x](/b.md)\n"),
+        ("1. item\n\n    - [x](/guides/b.md)\n", "1. item\n\n    - [x](/b.md)\n"),
+        ("- item\n\n    [x](/guides/b.md)\n", "- item\n\n    [x](/b.md)\n"),
+        ("- item\n  text\n[x](/guides/b.md)\n", "- item\n  text\n[x](/b.md)\n"),
+        ("1. item\n\n       [x](/b.md)\n", "1. item\n\n       [x](/b.md)\n"),
+        ("- item\n\n\t  [x](/b.md)\n", "- item\n\n\t  [x](/b.md)\n"),
+        ("-     [x](/b.md)\n", "-     [x](/b.md)\n"),
+        (
+            "- parent\n  - child\n\n        [x](/b.md)\n\n- next\n\n      [y](/b.md)\n",
+            "- parent\n  - child\n\n        [x](/b.md)\n\n- next\n\n      [y](/b.md)\n",
+        ),
+        (
+            "<!--\n[x](/guides/b.md)\n-->\n[x](/guides/b.md)\n",
+            "<!--\n[x](/guides/b.md)\n-->\n[x](/b.md)\n",
+        ),
+        (
+            "<!-- [x](/guides/b.md) --> [y](/guides/b.md)\n",
+            "<!-- [x](/guides/b.md) --> [y](/b.md)\n",
+        ),
+        ("> ```\n> [x](/b.md)\n> ```\n", "> ```\n> [x](/b.md)\n> ```\n"),
+        ('[r]: /guides/b.md "see /guides/b.md"\n', '[r]: /b.md "see /guides/b.md"\n'),
+    ],
+)
+def test_replan_container_cases(tmp_path, body, expected):
+    output, report = _export_body(tmp_path, body.encode())
+    assert output == expected.encode()
+    assert report.transformed == (["a.md"] if body != expected else [])
+    assert not report.dependencies
+    assert (tmp_path / "guides/a.md").read_text() == body
+
+
+def test_replan_unmatched_backticks_are_bounded(tmp_path):
+    import time
+
+    body = " ".join("`" * i for i in range(1, 600))
+    started = time.monotonic()
+    output, _ = _export_body(tmp_path, body.encode())
+    assert output == body.encode()
+    assert time.monotonic() - started < 5
+
+
+def test_replan_nested_images_with_attachment_and_collision(tmp_path):
+    (tmp_path / "guides").mkdir()
+    body = "[![i](/guides/i.png)](/guides/b.md) ![a [b](/guides/b.md)](/guides/i.png)"
+    (tmp_path / "guides/a.md").write_text(body)
+    (tmp_path / "guides/b.md").write_text("# B")
+    (tmp_path / "guides/i.png").write_bytes(b"image")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(attachment_extensions=["png"])
+    )
+    try:
+        config = ProjectConfig(source_dir=tmp_path, attachment_extensions=("png",))
+        result = build_okf_bundle(vault, config, folder="guides")
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert (
+                archive.read("a.md") == b"[![i](/i.png)](/b.md) ![a [b](/b.md)](/i.png)"
+            )
+        assert result.report.transformed == ["a.md"]
+        assert not result.report.dependencies
+        (tmp_path / "guides/a.md").write_text("[![i](/i.png)](/guides/b.md)")
+        with pytest.raises(ValueError, match="collision"):
+            build_okf_bundle(vault, config, folder="guides")
+    finally:
+        vault.close()
+
+
+def test_replan_invalid_utf8_is_copied(tmp_path):
+    body = b"\xff[x](/guides/b.md)"
+    output, report = _export_body(tmp_path, body)
+    assert output == body
+    assert not report.transformed and not report.dependencies
+    assert any(f.reason == "invalid_encoding" for f in report.format_findings)
+
+
+def test_replan_escaped_backtick_does_not_open_code(tmp_path):
+    body = b"\\` [x](/guides/b.md) `\n"
+    output, report = _export_body(tmp_path, body)
+    assert output == b"\\` [x](/b.md) `\n"
+    assert report.transformed == ["a.md"]
+
+
+def test_replan_wikilinks_in_code_remain_literal(tmp_path):
+    (tmp_path / "guides").mkdir()
+    body = "[[b]]\n\n```\n[[b]]\n```\n"
+    (tmp_path / "guides/a.md").write_text(body)
+    (tmp_path / "guides/b.md").write_text("# B")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b"[b](/b.md)\n\n```\n[[b]]\n```\n"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (
+            "> ```\n> [x](/guides/b.md)\n\n[y](/guides/b.md)\n",
+            "> ```\n> [x](/guides/b.md)\n\n[y](/b.md)\n",
+        ),
+        (
+            "<pre>[x](/guides/b.md)</pre>\n\n[y](/guides/b.md)\n",
+            "<pre>[x](/guides/b.md)</pre>\n\n[y](/b.md)\n",
+        ),
+        ("text <!-- unclosed [x](/guides/b.md)\n", "text <!-- unclosed [x](/b.md)\n"),
+    ],
+)
+def test_replan_protected_boundaries(tmp_path, body, expected):
+    output, _ = _export_body(tmp_path, body.encode())
+    assert output == expected.encode()

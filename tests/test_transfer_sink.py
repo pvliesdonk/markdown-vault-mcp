@@ -390,7 +390,7 @@ async def test_read_bundle_folder_scope(sink: VaultTransferSink, vault: Vault) -
     result = await sink.read("okf-bundle:guides")
     assert result.filename == "guides.zip"
     names = zipfile.ZipFile(io.BytesIO(result.body)).namelist()
-    assert names == ["guides/g.md"]
+    assert names == ["g.md"]
 
 
 @pytest.mark.parametrize("kind", ["download", "upload"])

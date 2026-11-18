@@ -12,8 +12,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
-from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
-from markdown_vault_mcp.okf_export_paths import ExportPaths
+from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
 from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
@@ -137,12 +136,13 @@ def _require_complete(page: BundleInspection, folder: str) -> None:
 
 def _note_bytes(
     raw: bytes,
-    item: BundleEntry,
+    selection: tuple[BundleEntry, str],
     vault: Vault,
     paths: ExportPaths,
     report: OkfExportReport,
 ) -> bytes:
     """Convert graph links and relocate body paths, preserving frontmatter."""
+    item, name = selection
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -150,14 +150,12 @@ def _note_bytes(
     body = strip_frontmatter_block(content.removeprefix("\ufeff"))
     prefix = content[: len(content) - len(body)]
     if item.search_state == "searchable":
-        body, _, _ = convert_wikilinks_to_markdown(
-            body, vault.graph.get_outlinks(item.path)
-        )
-    body, dependencies = paths.relocate(body, item.path)
+        body = convert_body_wikilinks(body, vault.graph.get_outlinks(item.path))
+    body, dependencies = paths.relocate(body, item.path, name)
     report.dependencies.extend(dependencies)
     result = (prefix + body).encode("utf-8")
     if result != raw:
-        report.transformed.append(item.path)
+        report.transformed.append(name)
     return result
 
 
@@ -236,7 +234,7 @@ def build_okf_bundle(
                 _write(
                     zf,
                     name,
-                    _note_bytes(raw, item, vault, paths, report),
+                    _note_bytes(raw, (item, name), vault, paths, report),
                 )
                 notes += 1
     logger.info(
