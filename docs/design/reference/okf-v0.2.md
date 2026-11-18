@@ -51,7 +51,7 @@ revision [source: spec] (§1, §12), it was amended without a version bump,
 and the repository carries no tags, so this page's `stale_after` is six
 months, not twelve.
 
-On 2026-11-17 the neutral repository published a v0.3 draft [source: draft-v03].
+Rechecked on 2026-11-17: the neutral repository contains a v0.3 draft [source: draft-v03].
 Published v0.2 remains this project’s baseline; the draft changes the treatment
 of untyped Markdown and dot-paths and is not adopted by this export.
 

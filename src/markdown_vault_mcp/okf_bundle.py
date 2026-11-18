@@ -14,7 +14,6 @@ from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
-from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -38,7 +37,8 @@ class OkfBundleResult:
         data: The zip archive bytes.
         notes: Number of notes written into the bundle.
         attachments: Number of attachments written into the bundle.
-        excluded: Number of in-scope files skipped (convention/template files).
+        excluded: Number of files omitted by selection policy, counted once.
+        report: Partial v0.2 format, admission and omission observations.
     """
 
     data: bytes
@@ -46,34 +46,6 @@ class OkfBundleResult:
     attachments: int
     excluded: int
     report: OkfExportReport
-
-
-def _is_excluded(path: str, conventions_file: str | None, templates_root: str) -> bool:
-    """Return whether *path* is a convention or template file (excluded from export).
-
-    Convention files (the per-folder ``_conventions.md``) are authoring guidance,
-    and the template folder holds note scaffolds — neither is bundle content. The
-    reserved ``index.md`` / ``log.md`` are navigation and are kept.
-    """
-    name = path.rsplit("/", 1)[-1]
-    if conventions_file is not None and name == conventions_file:
-        return True
-    return bool(
-        templates_root
-        and (path == templates_root or path.startswith(f"{templates_root}/"))
-    )
-
-
-def _safe_abs(source_dir: Path, path: str) -> Path:
-    """Resolve a vault-relative path under *source_dir*, rejecting any escape.
-
-    ``list_documents`` already yields safe relative paths; this is defence in
-    depth before a raw filesystem read.
-    """
-    resolved = (source_dir / path).resolve()
-    if not resolved.is_relative_to(source_dir.resolve()):
-        raise ValueError(f"Path escapes the vault: {path}")
-    return resolved
 
 
 def _read_safe(source: Path, path: str) -> bytes:
@@ -186,7 +158,7 @@ def build_okf_bundle(
                 else:
                     _observe_export(item, report)
                     try:
-                        content = decode_utf8(raw)
+                        content = raw.decode("utf-8")
                     except UnicodeDecodeError:
                         _write(zf, item.path, raw)
                     else:

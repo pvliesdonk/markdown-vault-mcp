@@ -121,24 +121,6 @@ def test_bundle_is_byte_reproducible(vault: Vault, config: ProjectConfig):
     assert first == second
 
 
-def test_is_excluded_matches_convention_and_template_files():
-    from markdown_vault_mcp.okf_bundle import _is_excluded
-
-    assert _is_excluded("_conventions.md", "_conventions.md", "_templates")
-    assert _is_excluded("sub/_conventions.md", "_conventions.md", "_templates")
-    assert _is_excluded("_templates", "_conventions.md", "_templates")
-    assert _is_excluded("_templates/t.md", "_conventions.md", "_templates")
-    assert not _is_excluded("a.md", "_conventions.md", "_templates")
-    assert not _is_excluded("index.md", "_conventions.md", "_templates")
-
-
-def test_safe_abs_rejects_escape(tmp_path: Path):
-    from markdown_vault_mcp.okf_bundle import _safe_abs
-
-    with pytest.raises(ValueError, match=r"escapes"):
-        _safe_abs(tmp_path, "../outside.md")
-
-
 def test_bundle_reads_attachment_without_encoding(
     vault: Vault, config: ProjectConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -211,3 +193,16 @@ def test_large_note_and_symlink_are_reported(source_dir: Path, tmp_path: Path) -
         assert result.report.uninspected["escape.md"] == "symlink"
     finally:
         vault.close()
+
+
+def test_bundle_preserves_bom_with_and_without_link_rewrite(
+    source_dir: Path, vault: Vault, config: ProjectConfig
+) -> None:
+    untouched = b"\xef\xbb\xbf# BOM\n"
+    rewritten = b"\xef\xbb\xbf# Link\nSee [[b]].\n"
+    (source_dir / "bom.md").write_bytes(untouched)
+    (source_dir / "linked.md").write_bytes(rewritten)
+    vault.index.reindex()
+    with zipfile.ZipFile(io.BytesIO(build_okf_bundle(vault, config).data)) as archive:
+        assert archive.read("bom.md") == untouched
+        assert archive.read("linked.md") == b"\xef\xbb\xbf# Link\nSee [b](/b.md).\n"
