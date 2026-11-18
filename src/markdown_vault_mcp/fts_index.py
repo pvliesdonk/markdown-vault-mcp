@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS citations (
     resource TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 CREATE TABLE IF NOT EXISTS links (
     id INTEGER PRIMARY KEY,
@@ -517,7 +518,8 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-#: Version 13 (#1446) fills citation edges from each note snapshot.
+#: Version 13 (#1446) fills citation edges from each note snapshot and
+#: normalizes CR-only note text before deriving indexed metadata and content.
 INDEX_SEMANTICS_VERSION = 13
 
 
@@ -1481,7 +1483,13 @@ class FTSIndex:
             is None
         ):
             raise IndexUnavailableError(
-                "Older index lacks citations; a writer must reopen it.", reason="broken"
+                "Older index lacks citations; a writer must reopen it.",
+                reason="never_built",
+            )
+        if self.get_chunking_meta().semantics_version != INDEX_SEMANTICS_VERSION:
+            raise IndexUnavailableError(
+                "Citation index needs a compatible completed build; retry after a writer rebuilds it.",
+                reason="never_built",
             )
         matched = conn.execute(
             "SELECT d.path, d.title, c.label, c.occurrences FROM citations c JOIN documents d ON d.id=c.document_id WHERE c.resource=? AND c.status='matched' ORDER BY d.path, c.label",
@@ -1490,7 +1498,8 @@ class FTSIndex:
         diagnostics = conn.execute(
             """SELECT d.path, c.label, c.status, c.occurrences FROM citations c
             JOIN documents d ON d.id=c.document_id
-            WHERE c.status IN ('unmatched', 'ambiguous') AND EXISTS (
+            WHERE c.status IN ('unmatched', 'ambiguous', 'invalid_resource')
+            AND json_type(d.frontmatter_json, '$.sources') = 'array' AND EXISTS (
               SELECT 1 FROM json_each(d.frontmatter_json, '$.sources') j
               WHERE CASE WHEN j.type='object' THEN json_extract(j.value, '$.resource') END = ?
             ) ORDER BY d.path, c.label""",

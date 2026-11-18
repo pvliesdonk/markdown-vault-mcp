@@ -748,7 +748,7 @@ class Vault:
             doc_mgr=self._doc_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
-            citation_mgr=CitationManager(self._fts),
+            citation_mgr=CitationManager(self._fts, lambda: self._okf.state().active),
             okf_audit=self._okf_audit,
             okf_write_state=lambda: self.okf_write_state(active=True),
         )

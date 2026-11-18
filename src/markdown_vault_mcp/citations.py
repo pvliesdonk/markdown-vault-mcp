@@ -42,7 +42,7 @@ class CitationEdge:
     """A literal citation label and its resolved resource, if unique."""
 
     label: str
-    status: Literal["matched", "unmatched", "ambiguous"]
+    status: Literal["matched", "unmatched", "ambiguous", "invalid_resource"]
     occurrences: int
     resource: str | None
 
@@ -213,14 +213,11 @@ def _join(markers: dict[str, int], ids: dict[str, list[int]]) -> list[Citation]:
     return citations
 
 
-def citation_edges(
-    text: str, metadata: dict[str, Any] | None = None
-) -> list[CitationEdge]:
+def citation_edges(text: str) -> list[CitationEdge]:
     """Extract indexed citation edges from a single note snapshot.
 
     Args:
         text: Full decoded note text.
-        metadata: Frontmatter already parsed from that text, if available.
 
     Returns:
         Literal labels, statuses, counts and uniquely matched resources.
@@ -228,8 +225,7 @@ def citation_edges(
     if "[^" not in text:
         return []
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    if metadata is None:
-        metadata = dict(parse_frontmatter(text).metadata)
+    metadata = dict(parse_frontmatter(text).metadata)
     if "sources" not in metadata:
         return []
     sources = metadata["sources"]
@@ -243,7 +239,10 @@ def citation_edges(
             value = source.get("resource") if isinstance(source, dict) else None
             if isinstance(value, str) and value:
                 resource = value
-        edges.append(
-            CitationEdge(citation.id, citation.status, citation.occurrences, resource)
+        status: Literal["matched", "unmatched", "ambiguous", "invalid_resource"] = (
+            citation.status
         )
+        if status == "matched" and resource is None:
+            status = "invalid_resource"
+        edges.append(CitationEdge(citation.id, status, citation.occurrences, resource))
     return edges

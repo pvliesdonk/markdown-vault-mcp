@@ -277,7 +277,9 @@ Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` 
 ### Find notes citing a source
 
 Call `find_citing_notes(resource="https://example.org/source")` to find indexed
-non-reserved notes with literal footnote labels matching a source record for that
+notes with literal footnote labels matching a source record for that
 exact resource. The result includes label occurrence counts and unresolved or
-ambiguous labels in notes declaring the resource. Body links alone do not count.
+ambiguous labels, plus labels whose matched source has no valid resource, in notes
+declaring the resource. Results are unbounded. When OKF is active, reserved
+`index.md` and `log.md` files are excluded. Body links alone do not count.
 The lookup does not fetch resources or assess whether they support a claim.

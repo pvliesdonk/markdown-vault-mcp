@@ -1967,10 +1967,13 @@ ones).
 ### Reverse citation lookup (#1446)
 
 `find_citing_notes(resource)` reads persisted citation edges derived from the
-same decoded note snapshot as frontmatter. A semantic-version rebuild fills the
-new table. Exact resource matches return non-reserved indexed notes and label
-counts; unresolved and ambiguous labels are diagnostics only in notes declaring
-that resource. Navigation links do not create edges. Missing tables on older
+same decoded note snapshot as frontmatter. Scanner normalizes line endings before
+parsing while hashing original bytes; CR-only notes now derive metadata and content
+from that normalized snapshot. A semantic-version rebuild fills the
+new table. Exact resource matches return indexed notes and label
+counts; unmatched, ambiguous and invalid-resource labels are diagnostics only in
+notes declaring that resource. Results are unbounded. Reserved files are excluded only while OKF
+is active. Navigation links do not create edges. Missing tables on older
 read-only indexes are unavailable rather than empty. No resource is fetched and
 attribution does not establish support.
 
@@ -2741,6 +2744,19 @@ CREATE INDEX IF NOT EXISTS idx_tags_kv
 
 CREATE INDEX IF NOT EXISTS idx_tags_docid
     ON document_tags(document_id);
+
+-- Citation attribution rows are separate from navigation links (#1446).
+-- This additive table keeps schema_version at 1; semantics version 13
+-- requires a completed rebuild before reverse reads are served.
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 -- Links: inter-document references extracted from markdown content
 CREATE TABLE IF NOT EXISTS links (
