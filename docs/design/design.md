@@ -7691,9 +7691,10 @@ and report protected paths they skipped.
 `index.md` in designated folders against ordinary mutations, including resolved
 aliases and secondary writes. Generation and maintenance bypass this designation
 only; explicit protected paths remain enforced. Name variants follow the disk’s
-case and Unicode identity, observed at the nearest existing folder. When no
-entry establishes it, a hidden scratch directory is created there and removed
-immediately; an unwritable folder is refused. Library callers retain the
+case and Unicode identity. For ambiguous spellings, a hidden scratch directory
+is created in the nearest existing folder and removed immediately; an unwritable
+folder is refused. A leaf symlink to an authored note is editable, while an alias
+to a designated index remains protected. Library callers retain the
 explicit `allow_protected` override. Other indexes and logs remain editable.
 
 ### OKF capability transition

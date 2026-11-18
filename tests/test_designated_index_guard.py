@@ -114,6 +114,44 @@ def test_directory_and_leaf_symlink_aliases(tmp_path: Path) -> None:
         vault.close()
 
 
+@pytest.mark.parametrize("target", ["guides/concept.md", "other/index.md"])
+def test_designated_leaf_alias_to_authored_note_is_editable(
+    tmp_path: Path, target: str
+) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "other").mkdir()
+    note = tmp_path / target
+    note.write_text("authored")
+    (tmp_path / "guides/index.md").symlink_to(note)
+    vault = designated_vault(tmp_path)
+    try:
+        vault.index.build_index()
+        vault.writer.write("guides/note.md", "# Note")
+        wait_for_writer_drain(vault)
+        assert note.read_text() == "authored"
+        vault.writer.write("guides/index.md", "changed")
+        assert note.read_text().endswith("changed")
+    finally:
+        vault.close()
+
+
+def test_explicit_policy_protects_designated_leaf_alias(tmp_path: Path) -> None:
+    from markdown_vault_mcp._path_guard import PathGuard
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/concept.md").write_text("authored")
+    (tmp_path / "guides/index.md").symlink_to(tmp_path / "guides/concept.md")
+    guard = PathGuard(
+        tmp_path,
+        ["guides/index.md"],
+        lambda p: designated_index_path(tmp_path, p, ("guides",)),
+    )
+    assert "PROTECTED_PATHS" in (guard.reason("guides/index.md") or "")
+
+
 def test_automatic_maintenance_and_legacy_alias(tmp_path: Path) -> None:
     from tests.conftest import wait_for_writer_drain
 
@@ -383,52 +421,17 @@ def test_missing_folder_operand_never_reaches_samefile(
     assert designated_index_path(tmp_path, "guides/index.md", ("guides",))
 
 
-def test_filesystem_observation_and_probe(
+def test_filesystem_probe_and_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from markdown_vault_mcp.okf_capabilities import (
-        _folds,
-        _probe,
-        _unicode_variant,
-        designated_index_path,
-    )
+    from markdown_vault_mcp.okf_capabilities import _probe
 
-    assert _folds(tmp_path, str.swapcase) is None
-    (tmp_path / "entry").write_text("data")
-    assert _folds(tmp_path, lambda _: "absent") is False
-    (tmp_path / "alias").symlink_to(tmp_path / "entry")
-    assert _folds(tmp_path, lambda name: "alias" if name == "entry" else name) is None
-    (tmp_path / "alias").unlink()
-    hardlink = tmp_path / "hardlink"
-    hardlink.hardlink_to(tmp_path / "entry")
-    assert (
-        _folds(tmp_path, lambda name: "hardlink" if name == "entry" else name) is None
-    )
-    hardlink.unlink()
-    other = tmp_path / "other"
-    other.touch()
-    with monkeypatch.context() as simulated:
-
-        def failed_samefile(_self: Path, _other: Path) -> bool:
-            raise OSError("unavailable")
-
-        simulated.setattr(Path, "samefile", failed_samefile)
-        assert (
-            _folds(tmp_path, lambda name: "other" if name == "entry" else "entry")
-            is None
-        )
-    other.unlink()
-    assert _folds(tmp_path / "entry", str.swapcase) is None
-    (tmp_path / "entry").unlink()
-    (tmp_path / "broken").symlink_to(tmp_path / "missing")
-    assert _folds(tmp_path, lambda _: "broken") is None
-    (tmp_path / "broken").unlink()
     before = set(tmp_path.iterdir())
     case, unicode = _probe(tmp_path)
     probe_entry = tmp_path / "Aé"
     probe_entry.touch()
     assert case == (tmp_path / "aÉ").exists()
-    assert unicode == (tmp_path / _unicode_variant("Aé")).exists()
+    assert unicode == (tmp_path / "Ae\u0301").exists()
     probe_entry.unlink()
     assert set(tmp_path.iterdir()) == before
 
@@ -439,20 +442,6 @@ def test_filesystem_observation_and_probe(
         "markdown_vault_mcp.okf_capabilities.tempfile.TemporaryDirectory", denied
     )
     assert _probe(tmp_path) == (True, True)
-
-    def unexpected_probe(_anchor: Path) -> tuple[bool, bool]:
-        raise AssertionError("case-only match must not probe Unicode")
-
-    monkeypatch.setattr("markdown_vault_mcp.okf_capabilities._probe", unexpected_probe)
-    (tmp_path / "entry").write_text("data")
-    assert (
-        designated_index_path(tmp_path, "GUIDES/index.md", ("guides",))
-        == (tmp_path / "ENTRY").exists()
-    )
-    monkeypatch.setattr(
-        "markdown_vault_mcp.okf_capabilities._folds", lambda *_args: False
-    )
-    assert not designated_index_path(tmp_path, "GUIDES/index.md", ("guides",))
 
 
 def test_symlink_is_not_filesystem_wide_case_evidence(tmp_path: Path) -> None:
@@ -465,41 +454,3 @@ def test_symlink_is_not_filesystem_wide_case_evidence(tmp_path: Path) -> None:
     (tmp_path / "OTHER").mkdir()
     (tmp_path / "OTHER" / "index.md").write_text("authored")
     assert not designated_index_path(tmp_path, "OTHER/index.md", ("other",))
-
-
-def test_observer_reads_at_most_64_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The identity observer must not enumerate an entire large folder."""
-    import os
-
-    from markdown_vault_mcp.okf_capabilities import _folds
-
-    for number in range(70):
-        (tmp_path / str(number)).touch()
-    original_scandir = os.scandir
-    counts = {"seen": 0, "closed": False}
-
-    class CountedEntries:
-        def __init__(self, path: Path) -> None:
-            self.entries = original_scandir(path)
-
-        def __enter__(self) -> "CountedEntries":
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            self.entries.close()
-            counts["closed"] = True
-
-        def __iter__(self) -> "CountedEntries":
-            return self
-
-        def __next__(self) -> os.DirEntry[str]:
-            counts["seen"] += 1
-            return next(self.entries)
-
-    monkeypatch.setattr(
-        "markdown_vault_mcp.okf_capabilities.os.scandir", CountedEntries
-    )
-    assert _folds(tmp_path, lambda name: name) is None
-    assert counts == {"seen": 64, "closed": True}

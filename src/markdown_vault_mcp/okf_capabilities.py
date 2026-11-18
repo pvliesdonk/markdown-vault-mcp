@@ -2,9 +2,7 @@
 
 import os
 import tempfile
-from collections.abc import Callable
 from dataclasses import dataclass
-from itertools import islice
 from pathlib import Path
 from unicodedata import normalize
 
@@ -35,35 +33,6 @@ def _fold(value: str, case: bool, unicode: bool) -> str:
     return value.casefold() if case else value
 
 
-def _unicode_variant(value: str) -> str:
-    """Switch a spelling between composed and decomposed Unicode."""
-    return normalize("NFD" if value == normalize("NFC", value) else "NFC", value)
-
-
-def _folds(anchor: Path, variant: Callable[[str], str]) -> bool | None:
-    """Observe at most 64 entries for an alias, or return None without evidence."""
-    try:
-        with os.scandir(anchor) as entries:
-            for item in islice(entries, 64):
-                entry = anchor / item.name
-                alias = anchor / variant(item.name)
-                if alias.name == item.name:
-                    continue
-                try:
-                    if entry.is_symlink() or alias.is_symlink():
-                        continue
-                    if entry.is_file() and entry.stat().st_nlink > 1:
-                        continue
-                    if not os.path.lexists(alias):
-                        return False
-                    return alias.samefile(entry)
-                except OSError:
-                    continue
-    except OSError:
-        pass
-    return None
-
-
 def _probe(anchor: Path) -> tuple[bool, bool]:
     """Measure both aliases in an immediately removed same-filesystem directory."""
     try:
@@ -71,7 +40,7 @@ def _probe(anchor: Path) -> tuple[bool, bool]:
             source = Path(scratch) / "Aé"
             source.touch()
             case = Path(scratch) / source.name.swapcase()
-            unicode = Path(scratch) / _unicode_variant(source.name)
+            unicode = Path(scratch) / "Ae\u0301"
             return (
                 os.path.lexists(case) and case.samefile(source),
                 os.path.lexists(unicode) and unicode.samefile(source),
@@ -120,16 +89,4 @@ def designated_index_path(root: Path, path: str, folders: tuple[str, ...]) -> bo
     anchor = root / note.parent
     while not anchor.is_dir() and anchor != root:
         anchor = anchor.parent
-    case = _folds(anchor, str.swapcase)
-    unicode = _folds(anchor, _unicode_variant)
-    if hit(case or False, unicode or False):
-        return True
-    if not hit(
-        case if case is not None else True, unicode if unicode is not None else True
-    ):
-        return False
-    if case is None or unicode is None:
-        probed_case, probed_unicode = _probe(anchor)
-        case = probed_case if case is None else case
-        unicode = probed_unicode if unicode is None else unicode
-    return hit(case, unicode)
+    return hit(*_probe(anchor))
