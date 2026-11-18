@@ -204,6 +204,11 @@ page, even when most names are omitted. Resume skips policy checks for names
 before the cursor. A current non-directory at the cursor is treated as a leaf;
 an inaccessible cursor ancestor makes enumeration incomplete.
 
+To select concept candidates from the same bounded observation, call
+`vault.reader.okf_inventory(BundleTreeRequest(root="knowledge"), type_state="absent")`.
+The filters apply after the page limit; continue with `next_cursor` even when
+no entries match. Parsing and search states can also be filtered.
+
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet
 <!-- vale on -->

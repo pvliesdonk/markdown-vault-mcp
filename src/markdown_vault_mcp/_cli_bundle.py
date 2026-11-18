@@ -19,6 +19,7 @@ from markdown_vault_mcp.bundle_inventory import (
     TypeState,
 )
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections._assembly import to_vault_settings
 from markdown_vault_mcp.exceptions import (
     ConfigurationError,
     IndexUnavailableError,
@@ -30,7 +31,6 @@ def _local(arguments: dict[str, Any], source: str | None) -> dict[str, Any]:
     config = replace(
         ProjectConfig.from_env(),
         embedding_provider=None,
-        embeddings_path=None,
         summarize_provider=None,
         summarize_openai_api_key=None,
         summarize_openai_base_url=None,
@@ -38,8 +38,9 @@ def _local(arguments: dict[str, Any], source: str | None) -> dict[str, Any]:
     path = config.index_path
     existing = path is not None and str(path) != ":memory:" and path.is_file()
     if not existing:
-        config = replace(config, index_path=None)
-    built = _build_reader_vault(config, source, not existing)
+        state_path = to_vault_settings(config).effective_state_path(config.source_dir)
+        config = replace(config, index_path=None, state_path=state_path)
+    built = _build_reader_vault(config, source, False)
     try:
         if existing:
             with suppress(IndexUnavailableError):

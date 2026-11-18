@@ -686,7 +686,13 @@ Inspect concept candidates in a bundle, including notes outside search.
 Observations, scope and enumeration states, and an optional `next_cursor`.
 
 <!-- DOMAIN-EXAMPLE-okf_inventory-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+To find untyped candidates under `knowledge`, call:
+
+```json
+{"root": "knowledge", "type_state": "absent", "entry_limit": 100}
+```
+
+Continue with the returned `next_cursor`, even if this page has no entries.
 <!-- DOMAIN-EXAMPLE-okf_inventory-END -->
 
 ## `query_documents`

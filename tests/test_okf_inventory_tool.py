@@ -111,3 +111,48 @@ def test_local_no_index_does_not_create_one(tmp_path, monkeypatch, _clear_env):
     assert cli.exit_code == 0, cli.output
     assert json.loads(cli.stdout)["entries"][0]["search_state"] == "not_evaluated"
     assert not index.exists()
+
+
+def test_inventory_filters_malformed_and_non_admitted(tmp_path):
+    from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+
+    (tmp_path / "broken.md").write_text("---\ntype: [\n---\ntext")
+    (tmp_path / "missing.md").write_text("text")
+    (tmp_path / "typed.md").write_text("---\ntype: concept\ntitle: Typed\n---\ntext")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        malformed = vault.reader.okf_inventory(
+            BundleTreeRequest(""), parse_state="malformed_metadata"
+        )
+        assert [entry.path for entry in malformed.entries] == ["broken.md"]
+        vault.index.build_index()
+        rejected = vault.reader.okf_inventory(
+            BundleTreeRequest(""), search_state="non_admitted"
+        )
+        assert [entry.path for entry in rejected.entries] == ["missing.md"]
+    finally:
+        vault.close()
+
+
+def test_local_keeps_configured_state_directory_private(
+    tmp_path, monkeypatch, _clear_env
+):
+    import json
+
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    state = tmp_path / "vectors"
+    state.mkdir()
+    (state / "secret.md").write_text("private")
+    (tmp_path / "note.md").write_text("visible")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(state))
+    result = CliRunner().invoke(app, ["okf-inventory", "", "--local", "--json"])
+    assert result.exit_code == 0, result.output
+    assert [entry["path"] for entry in json.loads(result.stdout)["entries"]] == [
+        "note.md"
+    ]
