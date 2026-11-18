@@ -742,17 +742,15 @@ time via `okf_bundle.build_okf_bundle`. This is path 2 of pvl-core's transfer
 model (a domain use of the primitives) expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
 
-The bundle copies live inventory independently of search admission. Subtree export uses an offset-preserving mask distinct from graph extraction so original literal bytes survive. For subtree exports, fences, indented code including list items, HTML code blocks, code spans and comments retain their bytes. Other HTML blocks are not protected, and raw HTML attributes are neither rewritten nor reported. Non-UTF-8 notes are copied unchanged without link reporting. Transformed paths and dependency sources use archive paths; H1 observations use vault paths. Resolvable
-wikilinks are rewritten only for searchable notes using the existing graph,
-which can be stale; notes outside the index retain raw wikilinks. A subtree
+The bundle copies live inventory independently of search admission. Subtree export uses an offset-preserving mask distinct from graph extraction so original literal bytes survive. For subtree exports, fences, indented code including list items, HTML code blocks, code spans and comments retain their bytes. Other HTML blocks are not protected, and raw HTML attributes are neither rewritten nor reported. Subtree notes with invalid UTF-8 are scanned losslessly; NUL or UTF-16 bodies are copied and reported as uninspected. Transformed paths and dependency sources use archive paths; H1 observations use vault paths. Resolvable
+wikilinks use the existing graph for searchable notes, which can be stale. Remaining subtree wikilinks are resolved by name against a lazily loaded whole-vault inventory, independently of search admission. Alias-only and case-insensitive matches are not resolved. A subtree
 becomes the archive root. Body destinations to selected files are relocated
 when root-relative; relative destinations stay as written when they retain their target, and are adjusted when needed.
 Outside destinations are reported as dependencies, and a destination that would
 point to a different exported file refuses the export. Library callers can supply
 `external_base` to turn outside destinations into absolute URLs. The report
 lists files whose bytes changed. Frontmatter stays unchanged, and only the
-selected root’s own index can provide an `okf_version`. The report does not
-list unconverted wikilinks. Convention files, templates, hidden
+selected root’s own index can provide an `okf_version`. Outside wikilink targets are reported as dependencies. Convention files, templates, hidden
 paths and index-excluded paths are omitted by default. Reserved `index.md` and
 `log.md` are kept unless an omission policy applies, including a matching
 configured conventions filename. Library callers can opt into hidden and

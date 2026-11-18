@@ -323,11 +323,11 @@ def test_nested_images_with_attachment_and_collision(tmp_path):
         vault.close()
 
 
-def test_invalid_utf8_is_copied(tmp_path):
+def test_invalid_utf8_link_is_relocated(tmp_path):
     body = b"\xff[x](/guides/b.md)"
     output, report = _export_body(tmp_path, body)
-    assert output == body
-    assert not report.transformed and not report.dependencies
+    assert output == b"\xff[x](/b.md)"
+    assert report.transformed == ["a.md"] and not report.dependencies
     assert any(f.reason == "invalid_encoding" for f in report.format_findings)
 
 
@@ -431,3 +431,363 @@ def test_list_fence_blank_lines_remain_literal(tmp_path):
     body = b"- ```\n\n\n  [x](/guides/b.md)\n  ```\noutside [x](/guides/b.md)\n"
     output, _ = _export_body(tmp_path, body)
     assert output == body.replace(b"outside [x](/guides/b.md)", b"outside [x](/b.md)")
+
+
+@pytest.mark.parametrize(
+    "body, files, expected",
+    [
+        ("[[guides/b]]", [], "[[b]]"),
+        ("[[b]]", [], "[[b]]"),
+        ("[[outside/b]]", ["guides/outside/b.md"], "[[outside/b]]"),
+        ("[[b]]", ["guides/nested/b.md"], "[[b]]"),
+        ("[[../guides/b#head|B]] `[[guides/b]]`", [], "[[b#head|B]] `[[guides/b]]`"),
+    ],
+)
+def test_unindexed_wikilink_targets(tmp_path, body, files, expected):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text(body)
+    (tmp_path / "guides/b.md").write_text("# B")
+    for name in files:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# target")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md").decode() == expected
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("outside", ["outside/b.md", "x/b.md"])
+def test_unindexed_wikilink_outside_winner_refused_or_externalized(tmp_path, outside):
+    (tmp_path / "guides/nested").mkdir(parents=True)
+    (tmp_path / "guides/outside").mkdir()
+    (tmp_path / "guides/a.md").write_text(
+        "[[outside/b]]" if outside.startswith("outside") else "[[b]]"
+    )
+    (tmp_path / "guides/outside/b.md").write_text("# B")
+    (tmp_path / "guides/nested/b.md").write_text("# B")
+    path = tmp_path / outside
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("# outside")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        config = ProjectConfig(source_dir=tmp_path)
+        with pytest.raises(ValueError, match="collision"):
+            build_okf_bundle(vault, config, folder="guides")
+        result = build_okf_bundle(
+            vault, config, folder="guides", external_base="https://example.org/vault"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert (
+                archive.read("a.md").decode()
+                == f"[[https://example.org/vault/{outside}]]"
+            )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        (b"\xff [x](/guides/b.md)", b"\xff [x](/b.md)"),
+        (b"\xff [x](/caf\xe9.md)", b"\xff [x](https://example.org/caf%E9.md)"),
+        (b"\xff plain", b"\xff plain"),
+    ],
+)
+def test_invalid_utf8_body_relocated_losslessly(tmp_path, body, expected):
+    output, report = _export_body(tmp_path, body, external_base="https://example.org")
+    assert output == expected
+    assert any(f.reason == "invalid_encoding" for f in report.format_findings)
+    assert bool(report.transformed) == (body != expected)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"\xff\xfe[\x00x\x00]",
+        "[x](/guides/b.md)".encode("utf-16le"),
+        b"text\x00[x](/guides/b.md)",
+    ],
+)
+def test_uninspectable_body_copied_and_reported(tmp_path, body):
+    output, report = _export_body(tmp_path, body)
+    assert output == body
+    assert report.uninspected["guides/a.md"] == "body_encoding"
+
+
+def test_named_wikilink_nested_winner_and_outside_dependency(tmp_path):
+    (tmp_path / "guides/nested").mkdir(parents=True)
+    (tmp_path / "guides/a.md").write_text("[[b]] [[outside/c]]")
+    (tmp_path / "guides/nested/b.md").write_text("# B")
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "outside/c.md").write_text("# C")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b"[[nested/b]] [[outside/c]]"
+        assert [(d.path, d.target) for d in result.report.dependencies] == [
+            ("a.md", "outside/c.md")
+        ]
+    finally:
+        vault.close()
+
+
+def test_relative_wikilinks_preserve_suffixes_and_collision():
+    paths = ExportPaths(
+        "guides", {"guides/s/a.md", "guides/b.md", "guides/s/img.png"}, None
+    )
+    body = "[[../b#heading|B]] ![[./img.png|image]] [[../../guides/b\\|table]]\n`[[../../guides/b]]` <!-- [[../../guides/b]] -->"
+    output, dependencies = paths.relocate(body, "guides/s/a.md")
+    assert (
+        output
+        == "[[../b#heading|B]] ![[./img.png|image]] [[b\\|table]]\n`[[../../guides/b]]` <!-- [[../../guides/b]] -->"
+    )
+    assert not dependencies
+    with pytest.raises(ValueError, match="collision"):
+        paths.relocate("[[../../b]]", "guides/s/a.md")
+
+
+def test_inventory_is_lazy_and_refusal_names_link(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from markdown_vault_mcp.bundle_inventory import BundleEntry
+
+    (tmp_path / "guides").mkdir()
+    note = tmp_path / "guides/a.md"
+    note.write_text("ordinary text")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        original = vault.reader.inspect_bundle_tree
+        calls = []
+
+        def inspect(request):
+            calls.append(request.root)
+            page = original(request)
+            if not request.root:
+                failed = BundleEntry(
+                    "outside", role="directory", state="unavailable", reason="denied"
+                )
+                return replace(page, enumeration="unavailable", entries=(failed,))
+            return page
+
+        monkeypatch.setattr(vault.reader, "inspect_bundle_tree", inspect)
+        config = ProjectConfig(source_dir=tmp_path)
+        build_okf_bundle(vault, config, folder="guides")
+        assert calls == ["guides"]
+        note.write_text("[[b]] [[c]]")
+        with pytest.raises(
+            ValueError, match=r"\[\[b\]\].*guides/a.md.*inventory unavailable.*outside"
+        ):
+            build_okf_bundle(vault, config, folder="guides")
+    finally:
+        vault.close()
+
+
+def test_wikilink_resolution_agrees_with_index(tmp_path):
+    for name in [
+        "guides/a.md",
+        "guides/b.md",
+        "x/b.md",
+        "outside/c.md",
+        "long/d.md",
+        "x/d.md",
+    ]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Note\n")
+    (tmp_path / "guides/a.md").write_text("[[b]] [[outside/c]] [[d]]")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        outlinks = vault.graph.get_outlinks("guides/a.md")
+        resolved = {link.raw_target: link.target_path for link in outlinks}
+        candidates = {
+            "guides/a.md",
+            "guides/b.md",
+            "x/b.md",
+            "outside/c.md",
+            "long/d.md",
+            "x/d.md",
+        }
+        paths = ExportPaths(
+            "guides", {"guides/a.md", "guides/b.md"}, None, lambda: candidates
+        )
+        for name in ("b", "outside/c", "d"):
+            assert (
+                paths._wiki_match(name + ".md", "guides/a.md", candidates)
+                == resolved[name]
+            )
+    finally:
+        vault.close()
+
+
+def test_wikilink_inventory_ignores_symlinks(tmp_path):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("[[b]]")
+    (tmp_path / "guides/b.md").write_text("# B")
+    (tmp_path / "b.md").symlink_to(tmp_path / "guides/b.md")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b"[[b]]"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "state", ["searchable", "non_admitted", "index_excluded", "stale"]
+)
+def test_wikilink_relocation_independent_of_search_state(tmp_path, state):
+    (tmp_path / "guides/s").mkdir(parents=True)
+    note = tmp_path / "guides/s/a.md"
+    note.write_text(
+        "---\ntitle: A\n---\n[[../../guides/b|B]]"
+        if state == "searchable"
+        else "[[../../guides/b|B]]"
+    )
+    (tmp_path / "guides/b.md").write_text("---\ntitle: B\n---\n# B")
+    settings = VaultSettings(
+        required_frontmatter=["title"],
+        exclude_patterns=["guides/s/a.md"] if state == "index_excluded" else [],
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        if state == "stale":
+            note.write_text("---\ntitle: A\n---\nold text")
+        vault.index.build_index()
+        if state == "stale":
+            note.write_text("---\ntitle: A\n---\n[[../../guides/b|B]]")
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="guides",
+            include_index_excluded=True,
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            body = archive.read("s/a.md").decode()
+        assert "[[b|B]]" in body or "[B](/b.md)" in body
+    finally:
+        vault.close()
+
+
+def test_index_excluded_outside_wikilink_candidate(tmp_path):
+    (tmp_path / "guides/outside").mkdir(parents=True)
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "guides/a.md").write_text("[[outside/b]]")
+    (tmp_path / "guides/outside/b.md").write_text("# selected")
+    (tmp_path / "outside/b.md").write_text("# excluded")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(exclude_patterns=["outside/b.md"])
+    )
+    try:
+        with pytest.raises(ValueError, match="collision"):
+            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), folder="guides")
+    finally:
+        vault.close()
+
+
+def test_named_wikilink_inventory_loaded_once():
+    calls = []
+
+    def inventory():
+        calls.append(1)
+        return {"guides/a.md", "guides/b.md", "guides/c.md"}
+
+    paths = ExportPaths(
+        "guides", {"guides/a.md", "guides/b.md", "guides/c.md"}, None, inventory
+    )
+    output, _ = paths.relocate("[[b]] [[c]]", "guides/a.md")
+    assert output == "[[b]] [[c]]"
+    assert calls == [1]
+
+
+def test_indexed_outside_wikilink_collision(tmp_path):
+    (tmp_path / "guides/outside").mkdir(parents=True)
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "guides/a.md").write_text("[[outside/b]]")
+    (tmp_path / "guides/outside/b.md").write_text("# selected")
+    (tmp_path / "outside/b.md").write_text("# outside")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        with pytest.raises(ValueError, match="collision"):
+            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), folder="guides")
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="guides",
+            external_base="https://example.org",
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert "https://example.org/outside/b.md" in archive.read("a.md").decode()
+    finally:
+        vault.close()
+
+
+def test_missing_wikilink_collision_and_invalid_dependency_text():
+    paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None, lambda: set())
+    with pytest.raises(ValueError, match="collision"):
+        paths.relocate("[[b]]", "guides/a.md")
+    output, dependencies = paths.relocate("[x](/caf\udce9.md)", "guides/a.md")
+    assert output == "[x](/caf\udce9.md)"
+    assert dependencies[0].target == r"/caf\udce9.md"
+
+
+def test_relative_attachment_and_external_wikilinks():
+    members = {"guides/s/a.md", "guides/b.png", "guides/b.md"}
+    paths = ExportPaths("guides", members, "https://example.org/vault")
+    output, dependencies = paths.relocate(
+        "![[../../guides/b.png#fragment|B]] [[../../outside/b|B]] [[https://example.org]] [[#section]]",
+        "guides/s/a.md",
+    )
+    assert (
+        output
+        == "![[b.png#fragment|B]] [[https://example.org/vault/outside/b.md|B]] [[https://example.org]] [[#section]]"
+    )
+    assert [d.target for d in dependencies] == ["outside/b.md"]
+
+
+def test_wikilink_inventory_reads_all_pages_once(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("[[b]] [[b]]")
+    (tmp_path / "guides/b.md").write_text("# B")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        original = vault.reader.inspect_bundle_tree
+        roots = []
+        full_page = original(BundleTreeRequest(root=""))
+
+        def inspect(request):
+            if request.root:
+                return original(request)
+            roots.append(request.cursor)
+            if request.cursor is None:
+                return replace(
+                    full_page, entries=full_page.entries[:1], next_cursor="page-two"
+                )
+            return replace(full_page, entries=full_page.entries[1:], next_cursor=None)
+
+        monkeypatch.setattr(vault.reader, "inspect_bundle_tree", inspect)
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b"[[b]] [[b]]"
+        assert roots == [None, "page-two"]
+    finally:
+        vault.close()

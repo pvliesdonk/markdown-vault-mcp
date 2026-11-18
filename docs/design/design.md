@@ -2122,11 +2122,14 @@ the spec itself says, dated and sourced, in
   ships as an overloaded download ref rather than a bespoke tool: the domain
   ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
   ref on pvl-core's ``create_download_link`` and generates the archive at
-  fetch time via ``okf_bundle.build_okf_bundle`` (resolvable wikilinks rewritten
-  only for searchable notes using the potentially stale index graph,
+  fetch time via ``okf_bundle.build_okf_bundle`` (searchable wikilinks use the
+  potentially stale index graph; subtree exports also resolve remaining named
+  wikilinks against a lazily loaded whole-vault inventory, excluding alias-only
+  and case-insensitive matches. Invalid UTF-8 is scanned losslessly; NUL and
+  UTF-16 bodies are copied and reported uninspected,
   convention/template files excluded, reserved ``index.md`` / ``log.md`` kept
   unless an omission policy applies,
-  non-conformant notes as-is, reproducible bytes, never mutating the vault;
+  non-conformant notes included, reproducible bytes, never mutating the vault;
   gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
   independent of search admission. The library result reports omitted classes,
   last-observed index admission, partial v0.2 format findings and uninspected

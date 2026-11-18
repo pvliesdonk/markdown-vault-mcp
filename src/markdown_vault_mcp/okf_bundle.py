@@ -16,6 +16,7 @@ from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
 from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
 from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.utils.content_kind import effective_attachment_extensions
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
 
 if TYPE_CHECKING:
@@ -144,8 +145,11 @@ def _note_bytes(
 ) -> bytes:
     """Convert graph links and relocate body paths, preserving frontmatter."""
     item, name = selection
+    if paths.scope and (b"\x00" in raw or raw.startswith((b"\xff\xfe", b"\xfe\xff"))):
+        report.uninspected.setdefault(item.path, "body_encoding")
+        return raw
     try:
-        content = raw.decode("utf-8")
+        content = raw.decode("utf-8", "surrogateescape" if paths.scope else "strict")
     except UnicodeDecodeError:
         return raw
     body = strip_frontmatter_block(content.removeprefix("\ufeff"))
@@ -158,7 +162,7 @@ def _note_bytes(
             body, _, _ = convert_wikilinks_to_markdown(body, outlinks)
     body, dependencies = paths.relocate(body, item.path)
     report.dependencies.extend(dependencies)
-    result = (prefix + body).encode("utf-8")
+    result = (prefix + body).encode("utf-8", "surrogateescape")
     if result != raw:
         report.transformed.append(name)
     return result
@@ -228,7 +232,33 @@ def build_okf_bundle(
             if page.next_cursor is None:
                 break
             cursor = page.next_cursor
-        paths = ExportPaths(folder, {item.path for item in selected}, external_base)
+
+        def inventory() -> set[str]:
+            cursor = None
+            candidates: set[str] = set()
+            while True:
+                page = vault.reader.inspect_bundle_tree(
+                    BundleTreeRequest(root="", entry_limit=1000, cursor=cursor)
+                )
+                _require_complete(page, "")
+                candidates.update(
+                    item.path
+                    for item in page.entries
+                    if item.role not in {"directory", "unknown"}
+                    and item.state not in {"unavailable", "missing"}
+                    and (include_hidden or not item.hidden_path)
+                )
+                if page.next_cursor is None:
+                    return candidates
+                cursor = page.next_cursor
+
+        paths = ExportPaths(
+            folder,
+            {item.path for item in selected},
+            external_base,
+            inventory,
+            effective_attachment_extensions(config.attachment_extensions),
+        )
         for item in selected:
             raw = _read_safe(vault.source_dir, item.path)
             name = item.path[len(folder) + 1 :] if folder else item.path

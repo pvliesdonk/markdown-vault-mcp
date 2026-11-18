@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
 
+from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import Dependency
 from markdown_vault_mcp.scanner import (
@@ -21,6 +22,10 @@ from markdown_vault_mcp.scanner import (
     _paragraph_regions,
     _resolve_link_path,
 )
+from markdown_vault_mcp.utils.content_kind import (
+    effective_attachment_extensions,
+    names_attachment,
+)
 from markdown_vault_mcp.utils.links import (
     _follow_inline_destination,
     _is_escaped,
@@ -32,7 +37,7 @@ from markdown_vault_mcp.utils.links import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from markdown_vault_mcp.types import OutlinkInfo
 
@@ -256,8 +261,7 @@ def convert_body_wikilinks(body: str, outlinks: list[OutlinkInfo]) -> str:
     return body
 
 
-def _destination_spans(body: str) -> list[tuple[int, int]]:
-    masked = _masked_body(body)
+def _destination_spans(masked: str) -> list[tuple[int, int]]:
     spans, definitions = _definition_spans(masked)
     masked = _blank_spans(masked, definitions)
     for offset, region in _regions(masked):
@@ -277,6 +281,20 @@ def _path_and_suffix(raw: str) -> tuple[str, str]:
     return decode_markdown_destination(before_fragment), suffix
 
 
+def _safe_text(text: str) -> str:
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
+def _wikilink_spans(masked: str) -> Iterator[tuple[int, int]]:
+    position = 0
+    while (found := _find_wikilink(masked, position)) is not None:
+        position, target, _alias, start = found
+        left = len(target) - len(target.lstrip())
+        path = target.strip().removesuffix("\\").split("#", 1)[0]
+        if path and not _is_external_target(path):
+            yield start + 2 + left, start + 2 + left + len(path)
+
+
 @dataclass
 class ExportPaths:
     """Selected vault paths and their bundle-root mapping."""
@@ -284,8 +302,15 @@ class ExportPaths:
     scope: str
     members: set[str]
     external_base: str | None
+    inventory: Callable[[], set[str]] | None = None
+    extensions: frozenset[str] = field(
+        default_factory=lambda: effective_attachment_extensions(None)
+    )
+    _candidates: dict[str, set[str]] | None = field(default=None, init=False)
+    _archive_members: set[str] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
+        self._archive_members = {path[len(self.scope) + 1 :] for path in self.members}
         if self.external_base is not None:
             try:
                 parts = urlsplit(self.external_base)
@@ -314,7 +339,7 @@ class ExportPaths:
         target, _ = _resolve_link_path(path, source)
         archive_source = source[len(self.scope) + 1 :]
         if target not in self.members:
-            dependencies.append(Dependency(archive_source, raw))
+            dependencies.append(Dependency(archive_source, _safe_text(raw)))
             return self._outside(target, source, raw)
         bundle_target = target[len(self.scope) + 1 :]
         apparent, _ = _resolve_link_path(path, archive_source)
@@ -338,16 +363,98 @@ class ExportPaths:
             url = (
                 self.external_base.rstrip("/")
                 + "/"
-                + quote(target.lstrip("/"), safe="/")
+                + quote(target.lstrip("/"), safe="/", errors="surrogateescape")
                 + suffix
             )
             return f"<{url}>" if is_pointy_destination(raw) else url
         apparent, _ = _resolve_link_path(path, source[len(self.scope) + 1 :])
         if f"{self.scope}/{apparent}" in self.members:
             raise ValueError(
-                f"Export collision in {source}: {raw}; supply external_base to resolve outside destinations"
+                f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; supply external_base to resolve outside destinations"
             )
         return None
+
+    def _wiki_candidates(self, raw: str, source: str) -> set[str]:
+        if self._candidates is None:
+            try:
+                inventory = self.inventory() if self.inventory else self.members
+                self._candidates = {}
+                for path in inventory:
+                    self._candidates.setdefault(path.rpartition("/")[2], set()).add(
+                        path
+                    )
+            except ValueError as exc:
+                raise ValueError(
+                    f"Cannot resolve [[{_safe_text(raw)}]] in {_safe_text(source)}: "
+                    f"vault inventory unavailable: {exc}; use an explicit path or fix permissions"
+                ) from exc
+        name = (
+            raw
+            if names_attachment(raw, self.extensions) or raw.lower().endswith(".md")
+            else raw + ".md"
+        )
+        return self._candidates.get(name.rpartition("/")[2], set())
+
+    @staticmethod
+    def _wiki_match(name: str, source: str, candidates: set[str]) -> str | None:
+        if name in candidates:
+            return name
+        matches = [path for path in candidates if path.endswith("/" + name)]
+        return _pick_wikilink_candidate(matches, source) if matches else None
+
+    def _wiki_outside(
+        self,
+        target: str,
+        raw: str,
+        source: str,
+        dependencies: list[Dependency],
+        collision: bool,
+    ) -> str | None:
+        dependencies.append(
+            Dependency(source[len(self.scope) + 1 :], _safe_text(target))
+        )
+        if self.external_base:
+            return (
+                self.external_base.rstrip("/")
+                + "/"
+                + quote(target.lstrip("/"), safe="/", errors="surrogateescape")
+            )
+        if collision:
+            raise ValueError(
+                f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; "
+                "supply external_base to resolve outside destinations"
+            )
+        return None
+
+    def _wiki_replacement(
+        self, raw: str, source: str, dependencies: list[Dependency]
+    ) -> str | None:
+        attachment = names_attachment(raw, self.extensions)
+        name = raw if attachment or raw.lower().endswith(".md") else raw + ".md"
+        archive_source = source[len(self.scope) + 1 :]
+        relative = name.startswith(("./", "../"))
+        target: str | None
+        apparent: str | None
+        if relative:
+            target, _ = _resolve_link_path(name, source)
+            apparent, _ = _resolve_link_path(name, archive_source)
+            collision = apparent in self._archive_members
+        else:
+            target = self._wiki_match(name, source, self._wiki_candidates(raw, source))
+            apparent = self._wiki_match(name, archive_source, self._archive_members)
+            collision = apparent is not None
+        if target not in self.members:
+            return self._wiki_outside(
+                target or name, raw, source, dependencies, collision
+            )
+        bundle_target = target[len(self.scope) + 1 :]
+        if relative and apparent == bundle_target:
+            return None
+        if not relative and name == bundle_target:
+            return None
+        if attachment:
+            return bundle_target
+        return compute_new_raw_target("wikilink", raw, None, bundle_target)
 
     def relocate(self, body: str, source: str) -> tuple[str, list[Dependency]]:
         """Relocate body destinations and report outside dependencies.
@@ -366,8 +473,16 @@ class ExportPaths:
             return body, []
         changes = []
         dependencies: list[Dependency] = []
-        for start, end in _destination_spans(body):
-            replacement = self._replacement(body[start:end], source, dependencies)
+        masked = _masked_body(body)
+        spans = [(start, end, False) for start, end in _destination_spans(masked)]
+        spans.extend((start, end, True) for start, end in _wikilink_spans(masked))
+        for start, end, wiki in sorted(spans):
+            raw = body[start:end]
+            replacement = (
+                self._wiki_replacement(raw, source, dependencies)
+                if wiki
+                else self._replacement(raw, source, dependencies)
+            )
             if replacement is not None:
                 changes.append((start, end, replacement))
         for start, end, replacement in reversed(changes):
