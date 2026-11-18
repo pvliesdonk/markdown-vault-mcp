@@ -338,7 +338,6 @@ class GitWriteStrategy:
         self._group_pull_guard: Callable[
             [], contextlib.AbstractContextManager[bool]
         ] = lambda: contextlib.nullcontext(False)
-        self._automatic_pull_lock = threading.Lock()
         self._pull_deferrals = 0
         self._on_pull: Callable[[], object] | None = None
         self._on_tick: Callable[[], object] | None = None
@@ -1117,7 +1116,8 @@ class GitWriteStrategy:
         """Wire the dispatcher guard used to defer automatic pulls.
 
         Args:
-            guard: Context manager yielding whether a group is open.
+            guard: Context manager yielding whether a group is open. A guard
+                that can yield True must serialize all its invocations.
         """
         self._group_pull_guard = guard
 
@@ -1134,8 +1134,8 @@ class GitWriteStrategy:
         return self._automatic_pull(git_root, _INTERACTIVE_PULL)
 
     def _automatic_pull(self, git_root: Path, entry: _PullEntry) -> PullResult:
-        """Serialize automatic attempts and bound consecutive deferrals."""
-        with self._automatic_pull_lock, self._group_pull_guard() as open_groups:
+        """Bound consecutive deferrals using the group guard."""
+        with self._group_pull_guard() as open_groups:
             if open_groups and self._pull_deferrals < 3:
                 self._pull_deferrals += 1
                 logger.info(
