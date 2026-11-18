@@ -7051,21 +7051,20 @@ the vault is a subdirectory. Returned `conflict_files` and `conflict_with`
 metadata use repository-relative paths; vault tools take vault-relative paths.
 Reserved index and log conflicts never receive conflict metadata: authored
 indexes and logs keep a verbatim local sibling. Designated generated indexes
-take upstream during a completed rebase and regenerate after the next search
-index reconcile. A generated-only conflict, including a local deletion of the
-index, returns `rebased` without siblings. Regeneration failures are logged;
-the next write into the folder or `okf_generate_index` heals the listing, as
+take upstream when present during a completed rebase and regenerate after the
+next search index reconcile. A generated-only conflict, including deletion on either side,
+returns `rebased` without siblings. When upstream deleted the index, the local
+copy supplies its root `okf_version` until regeneration. Regeneration failures
+are logged; the next write into the folder or `okf_generate_index` heals the listing, as
 does a restart followed by those actions. An aborted rebase (more than 50
 conflicting replays, or a stop that is not a conflict) keeps the local index;
 the next pull attempts the rebase again and the same history can abort it again.
-When upstream deleted an index changed locally, the pull stops as
-`conflict_resolution_failed`, keeps the local copy and needs manual resolution,
-as for any note. After regeneration, the write callback drain flushes open
-scopes before a following push in the same `git_sync`, within a bounded timeout. A callback
+After regeneration, the write callback drain flushes open scopes before a
+following push in the same `git_sync`, within a bounded timeout. A callback
 timeout or commit failure follows the ordinary write path; inclusion in that
 push is not guaranteed, and the drain does not confirm commit success. Reserved
-siblings stay indexed concepts until reconciled by hand. The upstream root `okf_version` wins; a
-local-only change to it is not carried forward.
+siblings stay indexed concepts until reconciled by hand. When upstream has a
+root index, its `okf_version` wins; a local-only change is not carried forward.
 If discovery fails, Git reports the original configured path error. `sync_once` adapts the result to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
 so a remoteless checkout skips quietly at INFO level, and maps

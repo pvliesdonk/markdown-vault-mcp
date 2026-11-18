@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-18
+
+- [Git staging and commits](git-staging-and-commits.md): checked the index stage
+  records for an upstream delete during rebase against `git-ls-files(1)` and
+  the real-Git recovery fixture. Other claims and review date unchanged.
+
 ## 2026-11-17
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the

@@ -410,23 +410,23 @@ commits) reports `would_apply=false`. The push leg has no safe local
 
     An authored `index.md` or any `log.md` keeps the local bytes in a
     sibling without adding `conflict_with` or `conflict_date` to either copy.
-    A designated generated index takes the upstream copy and is regenerated
+    A designated generated index takes the upstream copy when present and is regenerated
     after the search index catches up. A generated-only conflict, including a
-    local deletion of the index, reports `rebased` with no siblings. A failure
-    to regenerate is logged; the next write into the folder or
+    deletion on either side, reports `rebased` with no siblings. When upstream
+    deleted the index, the local copy supplies its root `okf_version` until
+    regeneration. A failure to regenerate is logged; the next write into the folder or
     `okf_generate_index` heals the listing, as it does after a restart. An
     aborted rebase (more than 50 conflicting replays, or a stop that is not a
     conflict) keeps the local index. The next pull attempts the rebase again,
-    and the same history can abort it again. When upstream deleted an index
-    changed locally, the pull reports `conflict_resolution_failed`, keeps the
-    local copy and needs manual resolution, as for any note. The server drains
-    regenerated writes before a following push in the same `git_sync`. A
+    and the same history can abort it again. For an authored index or log, an
+    upstream deletion conflicting with a local edit stops the pull and keeps the
+    local copy for manual resolution. The server drains regenerated writes before a following push in the same `git_sync`. A
     callback timeout or commit failure follows the ordinary write path; the
     drain does not confirm commit success. Preserved siblings appear in search
     and generated listings until manually reconciled and deleted. They can also
     produce `missing_type` validation findings; a root index sibling carrying
-    `okf_version` can produce `misplaced_okf_version`. At the root, the upstream
-    `okf_version` wins, so a local-only change to it is not preserved.
+    `okf_version` can produce `misplaced_okf_version`. When upstream has a root
+    index, its `okf_version` wins, so a local-only change is not preserved.
 
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and

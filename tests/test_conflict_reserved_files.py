@@ -198,8 +198,13 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
             local_index = index.read_text()
 
             def saved_at_rebase_head(
-                _root: Path, _env: object, *, conflicted: set[str] | None = None
+                _root: Path,
+                _env: object,
+                *,
+                conflicted: set[str] | None = None,
+                generated_index: object = None,
             ) -> list[tuple[str, str]]:
+                _ = generated_index
                 if conflicted is not None:
                     conflicted.update(("index.md", "concept.md"))
                 return [

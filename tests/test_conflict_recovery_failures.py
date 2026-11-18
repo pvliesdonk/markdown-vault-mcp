@@ -300,3 +300,131 @@ def test_generation_failure_logs_and_manual_generation_heals(
     finally:
         vault.close()
         strategy.close()
+
+
+@pytest.mark.parametrize(
+    ("subdir", "authority"),
+    [(False, "enabled"), (True, "enabled"), (False, "inactive"), (True, "inactive")],
+)
+def test_upstream_deleted_generated_index_is_regenerated(
+    git_repo_pair: GitRepoPair, subdir: bool, authority: str
+) -> None:
+    import subprocess
+
+    from tests.conftest import wait_for_writer_drain
+    from tests.fixtures.git import _run_git
+
+    root = git_repo_pair.local_path
+    vault_root = root / "vault [odd]" if subdir else root
+    vault_root.mkdir(exist_ok=True)
+    prefix = "vault [odd]/" if subdir else ""
+    index = vault_root / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Base\n')
+    _run_git(root, "add", f"{prefix}index.md")
+    _run_git(root, "commit", "-m", "seed")
+    _run_git(root, "push", "origin", "main")
+    other = root.parent / "other"
+    subprocess.run(
+        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _run_git(other, "config", "user.name", "Other")
+    _run_git(other, "config", "user.email", "other@example.com")
+    _run_git(other, "rm", f"{prefix}index.md")
+    (other / prefix).mkdir(exist_ok=True)
+    (other / prefix / "remote.md").write_text("# Remote\n")
+    _run_git(other, "add", f"{prefix}remote.md")
+    _run_git(other, "commit", "-m", "upstream delete")
+    _run_git(other, "push", "origin", "main")
+    index.write_text('---\nokf_version: "0.2"\n---\n# Local\n')
+    (vault_root / "local.md").write_text("# Local\n")
+    _run_git(root, "add", f"{prefix}index.md", f"{prefix}local.md")
+    _run_git(root, "commit", "-m", "local change")
+    strategy, vault = recovery_vault(vault_root, authority=authority, build=True)
+    try:
+        result = strategy.force_pull()
+        assert result.applied and result.reason == "rebased"
+        assert not result.conflict_files
+        assert not list(vault_root.glob("index.conflict-mcp-*.md"))
+        vault.reconcile_index_with_head(source="git_sync")
+        wait_for_writer_drain(vault)
+        text = index.read_text()
+        assert "okf_version" in text and "0.2" in text
+        assert "local.md" in text and "remote.md" in text
+        assert "conflict_with" not in text and "conflict_date" not in text
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+        assert index.read_text() == text
+    finally:
+        vault.close()
+        strategy.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "authority"),
+    [("concept.md", "enabled"), ("index.md", "disabled"), ("log.md", "enabled")],
+)
+def test_upstream_deleted_authored_file_keeps_local_copy(
+    git_repo_pair: GitRepoPair, name: str, authority: str
+) -> None:
+    import subprocess
+
+    from tests.fixtures.git import _run_git
+
+    root = git_repo_pair.local_path
+    path = root / name
+    path.write_text("base\n")
+    _run_git(root, "add", name)
+    _run_git(root, "commit", "-m", "seed")
+    _run_git(root, "push", "origin", "main")
+    other = root.parent / "other"
+    subprocess.run(
+        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _run_git(other, "config", "user.name", "Other")
+    _run_git(other, "config", "user.email", "other@example.com")
+    _run_git(other, "rm", name)
+    _run_git(other, "commit", "-m", "delete")
+    _run_git(other, "push", "origin", "main")
+    path.write_text("local content\n")
+    _run_git(root, "add", name)
+    _run_git(root, "commit", "-m", "local change")
+    strategy, vault = recovery_vault(root, authority=authority)
+    try:
+        result = strategy.force_pull()
+        assert not result.applied and result.reason == "conflict_resolution_failed"
+        assert path.read_text() == "local content\n"
+        assert not list(root.glob(f"{path.stem}.conflict-mcp-*.md"))
+    finally:
+        vault.close()
+        strategy.close()
+
+
+@pytest.mark.parametrize(
+    ("returncode", "entries"),
+    [
+        (1, ""),
+        (0, "100644 abc 2\tindex.md\0"),
+        (0, "100644 abc 2\tindex.md\0100644 def 3\tindex.md\0"),
+    ],
+)
+def test_upstream_deletion_check_refuses_git_error_and_other_stages(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, returncode: int, entries: str
+) -> None:
+    import subprocess
+
+    from markdown_vault_mcp.git import conflict
+
+    monkeypatch.setattr(
+        conflict,
+        "run_git_capturing",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [], returncode, entries, ""
+        ),
+    )
+    assert not conflict._upstream_deleted_generated(
+        git_repo, "index.md", None, lambda _path: True
+    )

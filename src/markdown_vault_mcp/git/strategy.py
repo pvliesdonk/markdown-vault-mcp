@@ -1365,17 +1365,18 @@ class GitWriteStrategy:
             # abort so a subsequent ``force_pull`` (or any per-write commit
             # path) does not trip over the leftover ``rebase-merge`` directory.
             conflicted: set[str] = set()
-            if self._generated_index_policy is None:
-                saved, early_exit = conflict.resolve_conflicts_safely(
-                    git_root, env, from_sha, token=self._token
+            resolve_fn = (
+                functools.partial(
+                    conflict.resolve_rebase_conflicts,
+                    conflicted=conflicted,
+                    generated_index=self._generated_index_policy,
                 )
-            else:
-                resolve_fn = functools.partial(
-                    conflict.resolve_rebase_conflicts, conflicted=conflicted
-                )
-                saved, early_exit = conflict.resolve_conflicts_safely(
-                    git_root, env, from_sha, token=self._token, resolve_fn=resolve_fn
-                )
+                if self._generated_index_policy is not None
+                else None
+            )
+            saved, early_exit = conflict.resolve_conflicts_safely(
+                git_root, env, from_sha, token=self._token, resolve_fn=resolve_fn
+            )
             if early_exit is not None:
                 return early_exit
             # ``resolve_conflicts_safely`` returns ``(saved, None)`` on

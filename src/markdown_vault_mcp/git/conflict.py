@@ -42,6 +42,7 @@ def resolve_rebase_conflicts(
     env: dict[str, str] | None,
     *,
     conflicted: set[str] | None = None,
+    generated_index: collections.abc.Callable[[Path], bool] | None = None,
 ) -> list[tuple[str, str]]:
     """Resolve rebase conflicts by accepting theirs and saving ours.
 
@@ -56,6 +57,7 @@ def resolve_rebase_conflicts(
         git_root: Working-tree root.
         env: Optional Git environment.
         conflicted: Optional collector for all unmerged paths.
+        generated_index: Optional authority check for generated index recovery.
 
     Returns:
         A list of ``(relative_path, saved_content)`` tuples for the
@@ -122,7 +124,14 @@ def resolve_rebase_conflicts(
             # Accept upstream's version.  During rebase, --ours is the
             # branch being rebased onto (upstream), --theirs is the
             # commit being replayed (our local MCP commit).
-            run_git(git_root, "checkout", "--ours", pathspecs=[rel_path], env=env)
+            try:
+                run_git(git_root, "checkout", "--ours", pathspecs=[rel_path], env=env)
+            except subprocess.CalledProcessError:
+                if not _upstream_deleted_generated(
+                    git_root, rel_path, env, generated_index
+                ):
+                    raise
+                run_git(git_root, "checkout", "--theirs", pathspecs=[rel_path], env=env)
             run_git(git_root, "add", pathspecs=[rel_path], env=env)
 
         # Continue the rebase.  If another commit conflicts, the loop
@@ -153,6 +162,28 @@ def resolve_rebase_conflicts(
         len(saved),
     )
     return list(saved.items())
+
+
+def _upstream_deleted_generated(
+    git_root: Path,
+    rel_path: str,
+    env: dict[str, str] | None,
+    generated_index: collections.abc.Callable[[Path], bool] | None,
+) -> bool:
+    """Recognize a designated index with an absent upstream conflict stage."""
+    if generated_index is None or not generated_index(git_root / rel_path):
+        return False
+    result = run_git_capturing(
+        git_root, "ls-files", "--unmerged", "-z", pathspecs=[rel_path], env=env
+    )
+    if result.returncode:
+        return False
+    stages = {
+        entry.partition("\t")[0].split()[-1]
+        for entry in result.stdout.split("\0")
+        if entry
+    }
+    return "2" not in stages and "3" in stages
 
 
 def resolve_conflicts_safely(
