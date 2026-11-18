@@ -124,7 +124,7 @@ sources:
   `bearer-anon`) in `client_id`; the mapped builder puts each configured
   subject there. Both supply scopes and no `sub`. Subject spelling does not
   establish human identity. [source: core-bearer]
-  [pins: tests/test_identity.py::TestServicePrincipals::test_real_bearer_verifier_is_not_human, tests/test_okf_write.py::TestServiceTokenOkf::test_trust_auth_refuses_without_changing_note]
+  [pins: tests/test_identity.py::TestServicePrincipals::test_real_bearer_verifier_is_not_human, tests/test_okf_write.py::TestServiceTokenOkf::test_service_cannot_record_human_review]
 - FastMCP's static verifier returns the configured entry as `claims`, so
   these bearer tokens have `client_id` and scopes in their claims, rather
   than an empty dictionary. [source: fastmcp-jwt]
@@ -212,9 +212,10 @@ client ID in every access token, so a `sub_mode` that yields usernames makes
 ## Where this project departs from the subject
 
 The [write-identity design](../design.md) determines OKF
-attribution. Client-ID-only callers are service principals and use the tool
-actor, including single, custom and mapped bearer credentials. Elicitation
-can confirm a human review without identifying the person; that review uses
+attribution. Client-ID-only callers are service principals, including single,
+custom and mapped bearer credentials. The tool refuses their human reviews;
+with `OKF_MACHINE_REVIEW=true` and review enabled, they can record named
+machine checks. Elicitation can confirm an unauthenticated human review as
 `human:local`. `trust-auth` requires a human principal.
 
 A token with a usable `sub` is a service principal when the issuer marks it

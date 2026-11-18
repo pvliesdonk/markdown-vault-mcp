@@ -145,6 +145,7 @@ placement in `config.py`, wizard metadata via field
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: never apply OKF semantics (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
 | `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Deprecated alias enabling authoring, review and maintenance defaults; explicit settings take precedence. |
+| `MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW` | boolean | `false` | Allows service principals to record named machine checks when review is enabled. |
 | `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `off` (or `elicit` with alias) | Independently enables review and selects how a human review is attributed. |
 | `MARKDOWN_VAULT_MCP_OKF_INDEX` | bool | `false` | Enables automatic index maintenance in designated folders. |
 | `MARKDOWN_VAULT_MCP_OKF_LOG` | `off` / `events` / `writes` | `off` | Controls logging; `writes` appends for ordinary server writes. |
@@ -370,8 +371,8 @@ The operator controls explicit authoring, review, index and log maintenance inde
 ### 6.0 Ownership and write behavior
 
 - **Provenance preservation**: ordinary writes, edits, appends, uploads and link rewrites preserve supplied `generated` and `verified`. Body-only changes retain the frontmatter bytes. The authenticated principal remains commit context and does not establish authorship. Explicit `okf_author` records a producer only when supplied. `OKF_WRITE` enables `OKF_AUTHOR` unless explicitly overridden; it never stamps or clears metadata.
-- **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
-  promoting the note's tier. The required `reviewed_snapshot` must match before confirmation. The write appends a snapshot and check claim under `x-mvmcp.reviews` and a matching instance-local receipt. The facet rechecks the snapshot after confirmation and an etag guards the final write. Reads currently report unbound applicability without evaluating these claims. `destructiveHint=False`, `idempotentHint=False`.
+- **`okf_verify` tool** (gated by `OKF_VERIFY`): appends a review entry to `verified`,
+  promoting the note's tier. Human reviews record `{by: human:<subject>, at}` (`at` a UTC instant, #1372). The required `reviewed_snapshot` must match before confirmation. The write appends a snapshot and check claim under `x-mvmcp.reviews` and a matching instance-local receipt. The facet rechecks the snapshot after confirmation and an etag guards the final write. Reads currently report unbound applicability without evaluating these claims. `destructiveHint=False`, `idempotentHint=False`.
 
   The authenticated subject is *whose token* is in play, not evidence that a
   human reviewed the note. In an agentic session the model wields the human's
@@ -384,7 +385,7 @@ The operator controls explicit authoring, review, index and log maintenance inde
   included, can supply a `human:` entry. The attestation path of the explicit
   operation is operator-configurable via `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
 
-  - **`elicit`** (default): the tool issues an MCP **elicitation** asking the
+  - **`elicit`** (default): for a human review, the tool issues an MCP **elicitation** asking the
     human to confirm they personally reviewed the note, and writes the
     `verified` entry only on an affirmative reply. **Fails closed** — if the
     client cannot elicit, or the human declines, it raises `ToolError` and
@@ -392,18 +393,24 @@ The operator controls explicit authoring, review, index and log maintenance inde
     this tool records leaves its control by construction; a headless agent (no
     human) cannot produce one through `okf_verify`. The guard covers only this
     operation, not `verified` supplied on an ordinary write. The subject stamped is the token's `sub`
-    when the principal is human, else `local` (including service credentials
-    and application-marked tokens) — the elicitation, not the
-    token, is the human-presence proof.
+    when the principal is human, else `local` without authenticated identity.
+    Service principals cannot record human reviews.
   - **`off`**: hides the tool entirely (via the `okf-enforce` tag disable), so
     `verified` is set only by external tooling (CLI / git-hook / CI) beyond the
     model's reach.
-  - **`trust-auth`**: attribute to the token's `sub` with no elicitation;
-    refuses (`ToolError`) without auth, with a client-ID-only identity,
+  - **`trust-auth`**: attribute a human review to the token's `sub` with no elicitation;
+    for human review, refuses (`ToolError`) without auth, with a client-ID-only identity,
     including static bearer credentials (#1463), or with a token the issuer
     marks as an application's or whose `sub` is in `SERVICE_SUBJECTS` (#1480).
-    An explicit opt-in, only safe when the sole `okf_verify` caller is a
-    genuinely human-driven UI, not an agent.
+    An explicit opt-in, only safe when the caller recording human reviews is a
+    human-driven UI, not an agent.
+
+  With `OKF_MACHINE_REVIEW=true`, a service principal may instead record `schema`,
+  `links`, `source-comparison`, or an `x-` named check as `process:<subject>`.
+  This works under either enabled review mode and uses the same snapshot guard
+  and receipt. Under the v0.2 tier rule,
+  machine-only entries yield `machine-confirmed`; an existing human entry
+  keeps `human-reviewed`.
 
   Trust caveat: `elicit` asks a human to confirm this tool’s entry, but the
   tier also classifies supplied metadata and establishes neither reviewer

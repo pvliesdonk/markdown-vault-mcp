@@ -565,15 +565,15 @@ verified and x-mvmcp. The user may be asked to confirm the review.
 |---|---|---|---|
 | `path` | `string` | required | Path of the note the user reviewed. |
 | `reviewed_snapshot` | `object` | required | Snapshot from the whole-note read that was reviewed. |
-| `check` | `string` | `"human-review"` | Review performed; defaults to human-review. |
+| `check` | `string` | `"human-review"` | human-review, schema, links, source-comparison, or an x- prefixed check. |
 
 **Returns**
 
-On the modern protocol's first round, an input request asking the
-client for human confirmation. After confirmation, a dict with:
+For human review with elicitation on the modern protocol, the first
+round returns an input request for confirmation. Otherwise, a dict with:
 
 - `path`: the verified note.
-- `verifier`: the `human:<subject>` actor recorded.
+- `verifier`: the `human:<subject>` or `process:<subject>` actor recorded.
 - `verified_count`: the number of verification entries after the
   append.
 - remote (dict, optional): present only while the vault's git clone
@@ -582,7 +582,7 @@ client for human confirmation. After confirmation, a dict with:
 
 **Outcomes and errors**
 
-- ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; read and review the current text before calling `okf_verify` again. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity.
+- ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; read and review the current text before calling `okf_verify` again. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity. Service principals need machine review enabled and cannot record human-review.
 - DocumentNotFoundError: If the note does not exist.
 - InvalidRequestError: If the path is protected.
 

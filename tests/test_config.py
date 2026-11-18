@@ -2831,3 +2831,24 @@ def test_group_timeouts_preserve_project_config_positional_fields() -> None:
         for f in old_fields[: end + 1]
     ]
     assert ProjectConfig(*args).git_push_delay_s == 27.0
+
+
+def test_okf_machine_review_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW", raising=False)
+    assert not ProjectConfig.from_env().content.okf_machine_review
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW", "true")
+    assert ProjectConfig.from_env().content.okf_machine_review
+
+
+def test_machine_review_does_not_shift_positional_config_fields() -> None:
+    import inspect
+
+    for config_class in (ProjectConfig, ContentConfig):
+        params = inspect.signature(config_class).parameters
+        assert params["okf_machine_review"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert (
+            params["service_subjects"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        )

@@ -467,15 +467,29 @@ class ProjectConfig:
                 "when the client cannot elicit or the human declines, so a "
                 "model holding the human's token cannot self-attest. Set "
                 "trust-auth instead to attribute to a token's sub claim with no "
-                "confirmation; it rejects static bearer credentials, other "
+                "confirmation for human reviews; that check rejects static bearer credentials, other "
                 "client-ID-only identities, and OAuth tokens the issuer marks "
-                "as an application's. This is safe only when the sole "
-                "caller is a human-driven UI. Set off to hide the tool, "
+                "as an application's. This is safe only when the "
+                "caller recording human reviews is a human-driven UI. Opted-in service "
+                "machine checks work with either enabled mode. Set off to hide the tool, "
                 "leaving attestation to external tooling. "
                 "Unset resolves to off, or elicit with OKF_WRITE enabled. An explicit "
                 "elicit or trust-auth with OKF_MODE=off is a configuration error. "
                 "Independent review requires an active OKF vault and a writable server. "
                 "The OKF_WRITE alias also permits review of an undeclared vault in auto mode."
+            ),
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_machine_review: bool = field(
+        default=False,
+        kw_only=True,
+        metadata={
+            "help": (
+                "Allow service principals to record named machine checks with "
+                "okf_verify. Off by default; OKF_VERIFY must also enable review. "
+                "Service principals cannot record human-review."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -487,8 +501,8 @@ class ProjectConfig:
             "help": (
                 "Comma-separated token sub values that belong to applications, "
                 "not people. A caller whose sub is listed is a service: "
-                "okf_verify records its review as local (elicit) or refuses it "
-                "(trust-auth). Entries match the token's sub exactly. Use it "
+                "okf_verify refuses human review and permits named machine checks only "
+                "when OKF_MACHINE_REVIEW is enabled. Entries match the token's sub exactly. Use it "
                 "for issuers whose "
                 "client-credentials tokens carry nothing that marks them as an "
                 "application's, such as a Keycloak, authentik or Zitadel "
@@ -1251,6 +1265,7 @@ class ProjectConfig:
             okf_mode=self.okf_mode,
             okf_write=self.okf_write,
             okf_verify=self.okf_verify,
+            okf_machine_review=self.okf_machine_review,
             okf_author=self.okf_author,
             okf_index=self.okf_index,
             okf_log=self.okf_log,
@@ -1515,6 +1530,9 @@ class ProjectConfig:
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
             okf_verify=read_okf_verify(_ENV_PREFIX),
+            okf_machine_review=to_bool(
+                env(_ENV_PREFIX, "OKF_MACHINE_REVIEW"), default=False
+            ),
             okf_author=to_bool(raw_author, default=False)
             if (raw_author := env(_ENV_PREFIX, "OKF_AUTHOR")) is not None
             else None,

@@ -6,7 +6,7 @@ from __future__ import annotations
 # annotation stays resolvable if anything introspects it via get_type_hints.
 # (TC003 is suppressed for this file in pyproject.toml, matching indexing.py.)
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.okf_capabilities import (
@@ -33,9 +33,11 @@ class ContentConfig:
     a human review:
     ``"elicit"`` (default) requires an affirmative MCP elicitation and fails
     closed otherwise, ``"trust-auth"`` attributes to a token's ``sub`` with no
-    confirmation and refuses service principals (client-ID-only identities
-    including static bearer credentials, application-marked tokens, and
-    ``service_subjects``), ``"off"`` hides the tool.
+    confirmation for human reviews and refuses service principals for that check
+    (client-ID-only identities including static bearer credentials,
+    application-marked tokens, and ``service_subjects``); ``"off"`` hides the
+    tool. With ``okf_machine_review`` enabled, service principals may record
+    named machine checks under either enabled mode.
 
     ``service_subjects`` lists token ``sub`` values the operator declares are
     applications; the identity layer resolves them to service principals
@@ -51,6 +53,7 @@ class ContentConfig:
     okf_mode: str = "auto"
     okf_write: bool = False
     okf_verify: str = DEFAULT_VERIFY
+    okf_machine_review: bool = field(default=False, kw_only=True)
     service_subjects: Sequence[str] | None = None
     okf_author: bool | None = None
     okf_index: bool | None = None

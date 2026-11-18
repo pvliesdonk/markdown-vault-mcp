@@ -29,6 +29,7 @@ from markdown_vault_mcp.okf import (
     append_okf_verification,
     is_okf_reserved_file,
     okf_timestamp,
+    review_actor,
     verified_entries,
 )
 from markdown_vault_mcp.scanner import parse_frontmatter
@@ -188,7 +189,7 @@ class WriterFacet:
 
         Args:
             path: Vault-relative note path.
-            subject: Reviewer identity, recorded as ``human:<subject>``.
+            subject: Reviewer identity, without an actor prefix.
             snapshot: Snapshot from the whole-note read that was reviewed.
             check: Kind of review performed.
 
@@ -219,9 +220,9 @@ class WriterFacet:
             reviewed_snapshot=snapshot,
             check=check,
         )
+        actor = review_actor(subject, check)
         with okf_write_suppressed():
             self.write(path, text, if_match=note.etag)
-        actor = f"human:{subject}"
         try:
             cast("ReceiptStore", self._receipt_store).append(
                 {

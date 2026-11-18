@@ -4335,8 +4335,9 @@ that retains its identifier for identity context. This covers single,
 custom and mapped bearer credentials, including their use alongside OIDC.
 Without an attributable token the principal is `local` with no subject.
 A real token `sub` spelled `local` is distinct from the no-auth sentinel.
-`resolve_human_subject()` checks the kind, so `trust-auth` refuses service
-credentials; an affirmative elicitation instead records `human:local`.
+`resolve_human_subject()` checks the kind. `okf_verify` refuses human review
+from service principals in both modes; with `OKF_MACHINE_REVIEW=true`, they
+may record named machine checks while review is enabled.
 The external contract is in [authenticated subjects](reference/authenticated-subjects.md).
 OAuth `sub` can also identify a service. A token with a `sub` is a `service`
 principal when the issuer marks it as an application's in a way the check

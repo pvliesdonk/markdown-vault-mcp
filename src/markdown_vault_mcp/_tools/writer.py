@@ -12,7 +12,7 @@ import contextlib
 import json
 import logging
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -236,7 +236,8 @@ async def _resolve_verify_mode_subject(
     ``trust-auth`` requires a human principal (refuses service credentials
     and auth mode ``none``); any other mode is treated as ``elicit`` and requires an
     affirmative elicitation before attributing to the authenticated subject (or
-    the local sentinel). ``off`` never reaches here — the server hides the tool.
+    the local sentinel). The caller refuses service principals before this gate.
+    ``off`` never reaches here — the server hides the tool.
 
     Raises:
         ToolError: If the mode's gate is not satisfied.
@@ -1230,7 +1231,7 @@ def register(mcp: FastMCP) -> None:
     async def okf_verify(
         path: str,
         reviewed_snapshot: dict[str, str],
-        check: Literal["human-review"] = "human-review",
+        check: str = "human-review",
         ctx: Context = CurrentContext(),
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
@@ -1243,14 +1244,14 @@ def register(mcp: FastMCP) -> None:
         Args:
             path: Path of the note the user reviewed.
             reviewed_snapshot: Snapshot from the whole-note read that was reviewed.
-            check: Review performed; defaults to human-review.
+            check: human-review, schema, links, source-comparison, or an x- prefixed check.
 
         Returns:
-            On the modern protocol's first round, an input request asking the
-            client for human confirmation. After confirmation, a dict with:
+            For human review with elicitation on the modern protocol, the first
+            round returns an input request for confirmation. Otherwise, a dict with:
 
             - `path`: the verified note.
-            - `verifier`: the `human:<subject>` actor recorded.
+            - `verifier`: the `human:<subject>` or `process:<subject>` actor recorded.
             - `verified_count`: the number of verification entries after the
               append.
             - remote (dict, optional): present only while the vault's git clone
@@ -1262,10 +1263,28 @@ def register(mcp: FastMCP) -> None:
                 changed since it was read; read and review the current text before
                 calling okf_verify again. Under `elicit` the gate needs a client that can
                 ask the user, and the user's confirmation; under `trust-auth`,
-                an authenticated identity.
+                an authenticated identity. Service principals need machine review
+                enabled and cannot record human-review.
             DocumentNotFoundError: If the note does not exist.
             InvalidRequestError: If the path is protected.
         """
+        principal = resolve_mcp_principal()
+        if principal.kind == "service":
+            if check == "human-review":
+                raise ToolError(
+                    "A service principal cannot record human-review.",
+                    log_level=logging.INFO,
+                )
+            if not config.content.okf_machine_review:
+                raise ToolError(
+                    "Machine reviews require OKF_MACHINE_REVIEW=true.",
+                    log_level=logging.INFO,
+                )
+        elif check != "human-review":
+            raise ToolError(
+                "Named machine checks require a service principal.",
+                log_level=logging.INFO,
+            )
         await _require_review_authority(config, vault)
         await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
         try:
@@ -1279,13 +1298,17 @@ def register(mcp: FastMCP) -> None:
                 f"Could not read note {path!r} or the local review receipt state, "
                 "so nothing was written. Ask the operator to check the server's files."
             ) from exc
-        subject_or_request = await _resolve_verify_mode_subject(
-            mode=config.content.okf_capabilities.verify,
-            ctx=ctx,
-            path=path,
-            snapshot=reviewed_snapshot,
-            check=check,
-        )
+        subject_or_request: str | InputRequiredResult
+        if principal.kind == "service":
+            subject_or_request = principal.subject or ""
+        else:
+            subject_or_request = await _resolve_verify_mode_subject(
+                mode=config.content.okf_capabilities.verify,
+                ctx=ctx,
+                path=path,
+                snapshot=reviewed_snapshot,
+                check=check,
+            )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
         await _require_review_authority(config, vault)

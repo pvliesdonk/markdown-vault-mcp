@@ -1143,6 +1143,42 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
+_REVIEW_CHECKS = frozenset({"human-review", "schema", "links", "source-comparison"})
+
+
+def review_actor(subject: str, check: str) -> str:
+    """Derive the review actor from the check and reviewer subject.
+
+    Args:
+        subject: Reviewer identity without an actor prefix.
+        check: Kind of review performed.
+
+    Returns:
+        The actor to record in the note and receipt.
+
+    Raises:
+        InvalidRequestError: If the check or machine identity is invalid.
+    """
+    if check not in _REVIEW_CHECKS and not (
+        check.startswith("x-")
+        and len(check) > 2
+        and not any(c.isspace() for c in check)
+    ):
+        raise InvalidRequestError(
+            "Unknown check; use human-review, schema, links, source-comparison, or x- followed by a name."
+        )
+    actor = (
+        f"{_HUMAN_ACTOR_PREFIX}{subject}"
+        if check == "human-review"
+        else f"process:{subject}"
+    )
+    if check != "human-review" and _ACTOR_RE.fullmatch(actor) is None:
+        raise InvalidRequestError(
+            "Machine review requires a non-empty identity without whitespace."
+        )
+    return actor
+
+
 def append_okf_verification(
     text: str,
     *,
@@ -1151,10 +1187,9 @@ def append_okf_verification(
     reviewed_snapshot: dict[str, str] | None = None,
     check: str = "human-review",
 ) -> str:
-    """Append a ``human:<subject>`` entry to a note's ``verified`` list.
+    """Append a review actor to a note's ``verified`` list.
 
-    The ``okf_verify`` tool's core transform (design §6): records an attributable
-    human attestation, promoting the note's trust tier to ``human-reviewed``.
+    The check selects ``human:<subject>`` or ``process:<subject>``.
     Preserves other frontmatter values and mapping order, including nested
     mappings. A new ``verified`` field appends; an existing field retains its
     slot. The entry keeps the ``{by, at}`` shape :func:`derive_trust_tier` reads.
@@ -1162,20 +1197,31 @@ def append_okf_verification(
 
     Args:
         text: The full note file text (frontmatter and body).
-        subject: The human verifier's subject (without the ``human:`` prefix),
-            or ``local`` for a confirmed review without human identity claims.
+        subject: Reviewer identity without a prefix, or ``local`` for a
+            confirmed human review without identity claims.
         now: The instant of the verification, timezone-aware (spelled by
             :func:`okf_timestamp`).
-        reviewed_snapshot: Optional reviewed snapshot to bind in x-mvmcp.reviews.
+        reviewed_snapshot: Snapshot to bind in x-mvmcp.reviews; required for
+            named machine checks.
         check: Name of the review performed.
 
     Returns:
         The note text with the appended verification.
+
+    Raises:
+        InvalidRequestError: If the check or machine identity is invalid, or a
+            machine check has no reviewed snapshot.
     """
+    actor = review_actor(subject, check)
+    if check != "human-review" and reviewed_snapshot is None:
+        raise InvalidRequestError("A named machine check requires a reviewed snapshot.")
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     verified = list(verified_entries(meta))
-    entry = {"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)}
+    entry = {
+        "by": actor,
+        "at": okf_timestamp(now),
+    }
     if reviewed_snapshot is None:
         meta["verified"] = [*verified, entry]
         return fm.dumps(fm.Post(post.content, **meta), sort_keys=False)
