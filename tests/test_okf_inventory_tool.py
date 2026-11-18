@@ -1,5 +1,7 @@
 """Read-only bundle inventory across its public adapters."""
 
+from pathlib import Path
+
 import pytest
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
@@ -475,3 +477,35 @@ def test_local_inventory_does_not_bootstrap_managed_source(tmp_path, monkeypatch
     )
     assert not attempts
     assert result.exit_code == (1 if case == "missing" else 0), result.output
+
+
+async def test_unavailable_ledger_is_visible_through_tool_and_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from fastmcp import Client
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+    from tests.conftest import wait_for_mcp_writer_drain
+    from tests.server_factory import make_server
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "live.md").write_text("Live")
+    state = tmp_path / "state"
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(state))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_INDEX_PATH", raising=False)
+    async with Client(make_server()) as client:
+        await wait_for_mcp_writer_drain(client)
+        (tmp_path / "state.observations.json").write_text('{"version": 99, "rows": {}}')
+        payload = (
+            await client.call_tool("okf_inventory", {"root": ""})
+        ).structured_content
+        cli = CliRunner().invoke(app, ["okf-inventory", "", "--local", "--json"])
+        assert cli.exit_code == 0, cli.output
+        for result in (payload, json.loads(cli.stdout)):
+            assert result["enumeration"] == "unavailable"
+            assert any(entry["path"] == "live.md" for entry in result["entries"])

@@ -344,18 +344,7 @@ class ReaderFacet:
         Returns:
             The bounded page with matching concepts and the original continuation.
         """
-        ledger = self._doc_mgr._observations
-        try:
-            rows = ledger.rows() if ledger else {}
-        except (OSError, StoreUnsupportedSchemaError):
-            rows = {}
-        candidates = _removed_candidates(request, rows)
-        page = self._inventory_with_removals(
-            self.inspect_bundle_tree(
-                replace(request, entry_limit=500 if candidates else 1000)
-            ),
-            candidates,
-        )
+        page = self._inventory_page(request)
         matching = tuple(
             entry
             for entry in page.entries
@@ -374,6 +363,25 @@ class ReaderFacet:
                 else page.enumeration
             ),
         )
+
+    def _inventory_page(self, request: BundleTreeRequest) -> BundleInspection:
+        ledger = self._doc_mgr._observations
+        usable = True
+        rows: dict[str, Observation] = {}
+        if ledger is not None:
+            try:
+                with ledger._lock:
+                    rows, usable = ledger._load()
+            except (OSError, StoreUnsupportedSchemaError):
+                usable = False
+        candidates = _removed_candidates(request, rows)
+        page = self._inventory_with_removals(
+            self.inspect_bundle_tree(
+                replace(request, entry_limit=500 if candidates else 1000)
+            ),
+            candidates,
+        )
+        return page if usable else replace(page, enumeration="unavailable")
 
     def _inventory_with_removals(
         self, page: BundleInspection, candidates: list[str]
@@ -404,7 +412,7 @@ class ReaderFacet:
             or tuple(entry.path.split("/")) <= tuple(cutoff.split("/"))
         ]
         for path in checked:
-            if inspector.observe_path(path, lambda *_: None) == "missing":
+            if inspector.path_presence(path) == "missing":
                 entry = BundleEntry(
                     path=path,
                     role="concept_candidate",

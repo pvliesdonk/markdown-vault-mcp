@@ -56,23 +56,23 @@ def test_removed_probes_are_bounded_and_resumable(
             (tmp_path / f"{i:04}.md").unlink()
         vault._index_mgr.observations.sweep()
         seen: list[str] = []
-        original = BundleInspector.observe_path
+        original = BundleInspector.path_presence
 
-        def counted(self, path, visit):
+        def counted(self, path):
             seen.append(path)
-            return original(self, path, visit)
+            return original(self, path)
 
-        monkeypatch.setattr(BundleInspector, "observe_path", counted)
+        monkeypatch.setattr(BundleInspector, "path_presence", counted)
         first = vault.reader.okf_inventory(BundleTreeRequest(root="", entry_limit=1000))
         if all_removed:
-            assert len(seen) <= 1000
+            assert len(seen) == 1000
         assert first.next_cursor is not None
         seen.clear()
         second = vault.reader.okf_inventory(
             BundleTreeRequest(root="", entry_limit=1000, cursor=first.next_cursor)
         )
         if all_removed:
-            assert len(seen) <= 1000
+            assert len(seen) == 1
             assert second.next_cursor is None
         paths = [e.path for e in (*first.entries, *second.entries)]
         cursor = second.next_cursor
@@ -109,6 +109,45 @@ def test_mixed_inventory_pages_and_reappearing_path(tmp_path: Path) -> None:
             ("d.md", "present"),
             ("e.md", "removed"),
         ]
+    finally:
+        vault.close()
+
+
+def test_reappeared_large_note_removal_probe_has_bounded_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.bundle_inventory as inventory
+    from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+
+    note = tmp_path / "note.md"
+    note.write_text("original")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault._index_mgr.observations.sweep()
+        note.unlink()
+        vault._index_mgr.observations.sweep()
+        note.write_bytes(b"x" * (4 * 1024 * 1024))
+        total = 0
+        original = inventory._observation_digests
+        original_read = inventory.read_regular_nofollow
+
+        def counted(stream):
+            nonlocal total
+            result = original(stream)
+            total += stream.tell()
+            return result
+
+        def counted_read(parent, name, limit):
+            nonlocal total
+            result = original_read(parent, name, limit)
+            total += len(result)
+            return result
+
+        monkeypatch.setattr(inventory, "_observation_digests", counted)
+        monkeypatch.setattr(inventory, "read_regular_nofollow", counted_read)
+        page = vault.reader.okf_inventory(BundleTreeRequest(root=""))
+        assert [(e.path, e.presence) for e in page.entries] == [("note.md", "present")]
+        assert total <= 1024 * 1024
     finally:
         vault.close()
 
@@ -305,30 +344,30 @@ def test_removed_folder_paging_and_blocked_scope(
         vault.close()
 
 
-@pytest.mark.parametrize("failure", ["newer", "unreadable"])
+@pytest.mark.parametrize("failure", ["newer", "corrupt", "unreadable"])
 def test_inventory_without_usable_ledger_keeps_live_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+    tmp_path: Path, failure: str
 ) -> None:
     from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
-    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.vault import VaultSettings
 
     source = tmp_path / "vault"
     source.mkdir()
     (source / "live.md").write_text("Live")
     state = tmp_path / "state"
-    (tmp_path / "state.observations.json").write_text('{"version": 99, "rows": {}}')
+    ledger = tmp_path / "state.observations.json"
+    if failure == "unreadable":
+        ledger.mkdir()
+    else:
+        ledger.write_text(
+            "not json" if failure == "corrupt" else '{"version": 99, "rows": {}}'
+        )
     vault = Vault(source_dir=source, settings=VaultSettings(state_path=state))
     try:
-        if failure == "unreadable":
-
-            def fail(_self):
-                raise OSError("unreadable")
-
-            monkeypatch.setattr(ObservationLedger, "rows", fail)
         page = vault.reader.okf_inventory(BundleTreeRequest(root=""))
         assert [(entry.path, entry.presence) for entry in page.entries] == [
             ("live.md", "present")
         ]
+        assert page.enumeration == "unavailable"
     finally:
         vault.close()

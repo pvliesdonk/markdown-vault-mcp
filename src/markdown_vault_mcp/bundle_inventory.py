@@ -582,6 +582,26 @@ class BundleInspector:
         Returns:
             The visibility outcome; blocked paths cannot prove absence.
         """
+        return self._probe_path(
+            path,
+            lambda fd, blocked: self._observe_note(fd, path, visit, blocked),
+        )
+
+    def path_presence(self, path: str) -> str:
+        """Report whether a path is present, missing or blocked, reading no content.
+
+        Args:
+            path: Vault-relative Markdown path.
+
+        Returns:
+            The visibility outcome; blocked paths cannot prove absence.
+        """
+        return self._probe_path(
+            path,
+            lambda fd, _blocked: read_regular_nofollow(fd, path.rsplit("/", 1)[-1], 0),
+        )
+
+    def _probe_path(self, path: str, observe: Callable[[int, set[str]], object]) -> str:
         try:
             root = self._source.resolve(strict=True)
         except (OSError, RuntimeError):
@@ -595,7 +615,7 @@ class BundleInspector:
                 return "blocked"
             blocked: set[str] = set()
             with open_directory_nofollow(root, parts[:-1], source_resolved=True) as fd:
-                self._observe_note(fd, path, visit, blocked)
+                observe(fd, blocked)
             return "blocked" if blocked else "present"
         except OSError as exc:
             return "missing" if _missing(exc) else "blocked"
