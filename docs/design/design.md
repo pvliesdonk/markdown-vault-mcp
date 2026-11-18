@@ -2136,6 +2136,9 @@ the spec itself says, dated and sourced, in
   independent of search admission. The library result reports omitted classes,
   last-observed index admission, partial v0.2 format findings and uninspected
   content or metadata (including metadata of files included in the archive);
+  subtree frontmatter path fields are relocated with the same outside-path rules;
+  non-slash, non-dot values are reported as ambiguous and YAML with aliases is
+  preserved unchanged. Other frontmatter text is retained verbatim.
   incomplete inventory enumeration refuses export, even under default-omitted
   hidden paths. Reports and selection options
   are library-only; the download ref exposes neither. Subtree links in

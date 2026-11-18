@@ -160,6 +160,11 @@ def _note_bytes(
             body = convert_body_wikilinks(body, outlinks)
         else:
             body, _, _ = convert_wikilinks_to_markdown(body, outlinks)
+    prefix, field_dependencies, ambiguous = paths.relocate_frontmatter(
+        prefix, item.path
+    )
+    report.dependencies.extend(field_dependencies)
+    report.ambiguous_path.extend(ambiguous)
     body, dependencies = paths.relocate(body, item.path)
     report.dependencies.extend(dependencies)
     result = (prefix + body).encode("utf-8", "surrogateescape")

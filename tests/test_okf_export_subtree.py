@@ -37,9 +37,9 @@ def test_subtree_relocates_and_reports(tmp_path):
             assert archive.read("index.md") == b'---\nokf_version: "0.1"\n---\n'
             assert archive.read("a.md") == original.replace(
                 b"/guides/b.md?x=1#h", b"/b.md?x=1#h"
-            ).replace("/guides/é.md".encode(), "/é.md".encode()).replace(
-                b"/guides/my file.md", b"/my file.md"
-            )
+            ).replace(b"resource: /guides/b.md", b"resource: /b.md").replace(
+                "/guides/é.md".encode(), "/é.md".encode()
+            ).replace(b"/guides/my file.md", b"/my file.md")
         assert result.report.transformed == ["a.md"]
         assert [(d.path, d.target) for d in result.report.dependencies] == [
             ("a.md", "/other.md"),

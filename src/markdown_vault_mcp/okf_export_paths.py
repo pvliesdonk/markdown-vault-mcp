@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import posixpath
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
+
+import yaml
+from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
@@ -550,6 +555,85 @@ class ExportPaths:
             return bundle_target
         return compute_new_raw_target("wikilink", raw, None, bundle_target)
 
+    def relocate_frontmatter(
+        self, prefix: str, source: str
+    ) -> tuple[str, list[Dependency], list[Dependency]]:
+        """Relocate known YAML scalar fields while retaining all other text.
+
+        Args:
+            prefix: Original frontmatter including delimiters.
+            source: Vault-relative source path.
+
+        Returns:
+            Updated prefix, outside dependencies and ambiguous paths.
+
+        Raises:
+            ValueError: An outside path collides with a bundle member.
+        """
+        if not self.scope:
+            return prefix, [], []
+        match = re.match(
+            r"\ufeff?\s*---[^\S\r\n]*\r?\n(.*?)(?:^---[^\S\r\n]*(?:\r?\n|$))",
+            prefix,
+            re.S | re.M,
+        )
+        if not match:
+            return prefix, [], []
+        text = match.group(1)
+        try:
+            if any(isinstance(token, yaml.AliasToken) for token in yaml.scan(text)):
+                return prefix, [], []
+            root = yaml.compose(text, Loader=yaml.SafeLoader)
+        except yaml.YAMLError:
+            return prefix, [], []
+        dependencies: list[Dependency] = []
+        ambiguous: list[Dependency] = []
+        changes = []
+        for node in _frontmatter_paths(root):
+            value = node.value
+            if not value or _is_external_target(value):
+                continue
+            archive_source = source[len(self.scope) + 1 :]
+            if not value.startswith(("/", "./", "../")):
+                ambiguous.append(Dependency(archive_source, _safe_text(value)))
+                continue
+            target = _field_target(value, source)
+            if target not in self.members:
+                dependencies.append(Dependency(archive_source, _safe_text(value)))
+                if self.external_base:
+                    replacement = self._external_url(target)
+                elif _field_target(value, archive_source) in self._archive_members:
+                    raise ValueError(
+                        f"Export collision in {_safe_text(source)}: {_safe_text(value)}; "
+                        "supply external_base to resolve outside destinations"
+                    )
+                else:
+                    continue
+            elif value.startswith("/"):
+                replacement = "/" + target[len(self.scope) + 1 :]
+            else:
+                replacement = posixpath.relpath(
+                    target[len(self.scope) + 1 :],
+                    posixpath.dirname(archive_source) or ".",
+                )
+                if value.startswith("./") and not replacement.startswith("."):
+                    replacement = "./" + replacement
+            if replacement != value:
+                changes.append(
+                    (
+                        node.start_mark.index,
+                        node.end_mark.index,
+                        _yaml_scalar(replacement, node.style),
+                    )
+                )
+        for start, end, replacement in sorted(changes, reverse=True):
+            text = text[:start] + replacement + text[end:]
+        return (
+            prefix[: match.start(1)] + text + prefix[match.end(1) :],
+            dependencies,
+            ambiguous,
+        )
+
     def relocate(self, body: str, source: str) -> tuple[str, list[Dependency]]:
         """Relocate body destinations and report outside dependencies.
 
@@ -590,3 +674,47 @@ class ExportPaths:
         for start, end, replacement in reversed(changes):
             body = body[:start] + replacement + body[end:]
         return body, dependencies
+
+
+def _field_target(value: str, source: str) -> str:
+    base = "" if value.startswith("/") else posixpath.dirname(source)
+    return posixpath.normpath("/" + posixpath.join(base, value).lstrip("/")).lstrip("/")
+
+
+def _mapping_values(node: object, key: str) -> list[object]:
+    if not isinstance(node, MappingNode):
+        return []
+    return [
+        value
+        for name, value in node.value
+        if isinstance(name, ScalarNode) and name.value == key
+    ]
+
+
+def _frontmatter_paths(root: object) -> list[ScalarNode]:
+    nodes = _mapping_values(root, "resource") + _mapping_values(root, "computation")
+    for key in ("executor", "attester"):
+        for parent in _mapping_values(root, key):
+            nodes.extend(_mapping_values(parent, "resource"))
+    for sources in _mapping_values(root, "sources"):
+        if isinstance(sources, SequenceNode):
+            for item in sources.value:
+                nodes.extend(_mapping_values(item, "resource"))
+    return [
+        node
+        for node in nodes
+        if isinstance(node, ScalarNode) and node.tag == "tag:yaml.org,2002:str"
+    ]
+
+
+def _yaml_scalar(value: str, style: str | None) -> str:
+    if style == "'":
+        return "'" + value.replace("'", "''") + "'"
+    if style == '"':
+        return json.dumps(value, ensure_ascii=True)
+    encoded = (
+        yaml.safe_dump(value, allow_unicode=True, default_flow_style=True)
+        .removesuffix("\n...\n")
+        .removesuffix("\n")
+    )
+    return encoded
