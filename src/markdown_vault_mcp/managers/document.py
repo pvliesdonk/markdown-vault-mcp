@@ -283,7 +283,11 @@ class DocumentManager:
             and self._inventory_ready()
             and isinstance(self._fts, ReportsRowState)
         ):
-            return project_search_state(inspection, self._fts.row_state)
+            try:
+                return project_search_state(inspection, self._fts.row_state)
+            except sqlite3.OperationalError:
+                logger.debug("inventory_search_state_unavailable", exc_info=True)
+                return inspection
         return inspection
 
     # ------------------------------------------------------------------

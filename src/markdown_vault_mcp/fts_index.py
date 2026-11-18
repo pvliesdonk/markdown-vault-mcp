@@ -1612,15 +1612,15 @@ class FTSIndex:
         )
 
     @_retry_on_locked
-    def row_state(self, path: str) -> str | None:
+    def row_state(self, path: str) -> tuple[bool, str | None]:
         """Read one document's live or skipped state in a single query.
 
         Args:
             path: Vault-relative document path.
 
         Returns:
-            ``live`` for a searchable row, its skip category for a tombstone,
-            or None when no row exists.
+            A pair of row existence and skip category. An existing row with
+            no category is live; a missing row has no category.
         """
         row = (
             self._conn()
@@ -1628,8 +1628,8 @@ class FTSIndex:
             .fetchone()
         )
         if row is None:
-            return None
-        return row["skip_category"] if row["skip_category"] is not None else "live"
+            return False, None
+        return True, row["skip_category"]
 
     @_retry_on_locked
     def get_tombstone(self, path: str) -> dict[str, Any] | None:

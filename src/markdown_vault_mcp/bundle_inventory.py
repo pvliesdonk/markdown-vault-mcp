@@ -180,25 +180,25 @@ _SKIP_STATE: dict[str, SearchState] = {
 
 
 def _search_state(
-    entry: BundleEntry, row_state: Callable[[str], str | None]
+    entry: BundleEntry, row_state: Callable[[str], tuple[bool, str | None]]
 ) -> SearchState:
     if entry.state != "inspected" and not (
         entry.state == "not_inspected"
         and entry.reason in {"note_limit", "byte_budget", "metadata_complexity"}
     ):
         return "not_evaluated"
-    state = row_state(entry.path)
-    if state == "live":
+    exists, category = row_state(entry.path)
+    if exists and category is None:
         return "searchable"
-    if state is not None:
-        return _SKIP_STATE.get(state, "not_evaluated")
+    if exists:
+        return _SKIP_STATE.get(category or "", "not_evaluated")
     return (
         "index_excluded" if entry.visibility == "index_excluded" else "not_indexed_yet"
     )
 
 
 def project_search_state(
-    inspection: BundleInspection, row_state: Callable[[str], str | None]
+    inspection: BundleInspection, row_state: Callable[[str], tuple[bool, str | None]]
 ) -> BundleInspection:
     """Project read-only index observations onto safely observed entries.
 

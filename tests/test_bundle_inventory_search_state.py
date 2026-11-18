@@ -302,3 +302,57 @@ def test_backend_without_row_state_is_usable(tmp_path: Path, monkeypatch) -> Non
         assert fake.mock_calls == []
     finally:
         vault.close()
+
+
+def test_unknown_skip_category_live_is_not_searchable(tmp_path: Path) -> None:
+    from markdown_vault_mcp.types import SkippedFile
+
+    (tmp_path / "note.md").write_text("quartz body")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        vault._fts.upsert_tombstone(
+            SkippedFile("note.md", "live", "private"), content_hash="h", modified_at=1.0
+        )
+        assert vault.reader.search("quartz") == []
+        entry = vault.reader.inspect_bundle(BundleInspectionRequest(root="")).entries[0]
+        assert entry.search_state == "not_evaluated"
+    finally:
+        vault.close()
+
+
+def test_operational_index_failure_preserves_disk_inventory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import sqlite3
+
+    import pytest
+
+    (tmp_path / "a.md").write_text("body")
+    (tmp_path / "b.md").write_text("body")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        original = vault._fts.row_state
+        calls = 0
+
+        def fail_second(path: str) -> tuple[bool, str | None]:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise sqlite3.OperationalError("database locked")
+            return original(path)
+
+        monkeypatch.setattr(vault._fts, "row_state", fail_second)
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert len(result.entries) == 2
+        assert all(e.search_state == "not_evaluated" for e in result.entries)
+
+        def closed(_path: str) -> tuple[bool, str | None]:
+            raise sqlite3.ProgrammingError("closed")
+
+        monkeypatch.setattr(vault._fts, "row_state", closed)
+        with pytest.raises(sqlite3.ProgrammingError):
+            vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+    finally:
+        vault.close()

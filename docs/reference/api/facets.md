@@ -150,8 +150,10 @@ When the index is queryable, safely observed regular Markdown entries report `se
 last index observations, even when a read limit prevented parsing. A live row
 or recorded skip takes precedence over the current exclusion label; exclusion
 is used when no index row exists. Each state comes from one index read. Unknown
-index error categories remain `not_evaluated`, as do other entries, entries
-without a row-state capable backend, and all entries before the index is ready. Search state reflects the last index observations and can lag disk changes
+index error categories remain `not_evaluated`. A SQLite operational error
+leaves all entries `not_evaluated`. Entries also remain unevaluated when they
+cannot be safely inspected, when the backend lacks row-state support, and before
+the index is ready. Search state reflects the last index observations and can lag disk changes
 until indexing runs. Format conformance is a separate assessment. Inspection does not
 refresh or write the index or tracker. Direct `BundleInspector` use has no
 index knowledge and reports `not_evaluated`.

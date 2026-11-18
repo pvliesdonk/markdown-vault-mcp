@@ -3620,12 +3620,12 @@ operations to them. No manager holds a back-reference to Vault.
 `DocumentManager` to `BundleInspector`. The caller explicitly chooses a
 vault-relative root and one root-relative directory. This library-only surface
 observes disk files independently of index admission: untyped and malformed
-Markdown remain visible. Once the index is queryable, entries project existing
-a single index row read without refreshing or writing the index. Live rows
+Markdown remain visible. Once the index is queryable, entries report search
+state from a single index row read without refreshing or writing the index. Live rows
 and tombstones take precedence over current exclusions; an absent row falls
 back to the exclusion label. Backends without the optional row-state protocol
 leave the state unevaluated. Unknown and internal-error categories remain
-unevaluated.
+unevaluated. A SQLite operational error leaves all entries unevaluated.
 Before readiness and without index knowledge, search state is `not_evaluated`.
 These observations can lag disk changes and do not determine format conformance.
 Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
