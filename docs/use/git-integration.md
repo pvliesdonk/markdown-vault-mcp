@@ -40,7 +40,7 @@ filenames retain the same spelling when Git decides which paths to stage.
 ## What a commit covers
 
 In both git modes, the commit boundary is the MCP tool call, not the file.
-A call that wrote one file commits under that file's path
+By default, a call that wrote one file commits under that file's path
 (`write: notes/one.md`), so an ordinary vault's log reads as it always
 did. A call that touched many primary files, such as
 `okf_convert_links`, produces one commit with the
@@ -65,7 +65,9 @@ With Git commits enabled, a writing MCP call waits up to 30 seconds for its
 local commit attempt before returning; on timeout or failure, the result returns
 and the commit may be late or absent. Push remains deferred.
 
-No setting changes this. In managed mode, the deferred push sends
+These examples show the default mechanical subjects. The optional
+[model-written subjects](#model-written-auto-commit-subjects) retain them in a
+Git trailer. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
@@ -92,6 +94,30 @@ deferred. Explicit `git_sync` and force pulls continue immediately and can
 also split a group. A deferred webhook returns HTTP 503. Deferred timer ticks
 and webhooks still reconcile search with HEAD; their generated-index repair
 waits until no group is open. Explicit sync repairs immediately.
+## Model-written auto-commit subjects
+
+Set `MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS=true` and configure the
+summarize backend to send each auto-commit's staged diff to that endpoint. This
+may incur charges and disclose note content to the endpoint. A legacy rename
+callback without its old path sends the entire staged diff, matching its commit
+scope. The default is false. A successful subject starts with `[AI summary]` and the original subject
+is retained in a `Mechanical-Subject` trailer. `okf_seed_log` copies the marked
+subject into the seeded history. The marker is a claim, not authentication:
+anyone able to write a Git commit can create the same marker.
+
+The staged diff and selected working-tree paths are checked again after generation;
+a known change falls back to the mechanical message. This check is not atomic
+with the commit.
+
+If the backend is unavailable, the diff is empty or over 16,000 characters, or
+generation fails, times out, or returns no usable line, the original mechanical
+message is used. Each Git check waits at most two seconds and generation at
+most five seconds. Together they can add about 11 seconds while holding the
+strategy lock, delaying other writes and sync operations. A timed-out generation
+may continue in the background; later
+commits skip generation until it finishes. Git's partial commits use the working
+tree at commit time, so an external edit between staging and committing may not
+be represented in the summary.
 
 ## Uncommitted files at startup
 

@@ -451,6 +451,12 @@
           "description": "OIDC claim key used as the commit author email (e.g. email) when an OIDC token is present; the committer stays GIT_COMMIT_EMAIL. Resolved and carried the same way as the name claim."
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS",
+          "description": "Send each auto-commit diff to the summarize endpoint; may incur charges. The generated subject persists in Git.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_GIT_LFS",
           "description": "Run git lfs pull on startup to fetch LFS-tracked attachments; set to false for repos without LFS.",
           "format": "boolean",
@@ -1139,6 +1145,12 @@
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM",
           "description": "OIDC claim key used as the commit author email (e.g. email) when an OIDC token is present; the committer stays GIT_COMMIT_EMAIL. Resolved and carried the same way as the name claim."
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS",
+          "description": "Send each auto-commit diff to the summarize endpoint; may incur charges. The generated subject persists in Git.",
+          "format": "boolean",
+          "default": "false"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_LFS",

@@ -86,6 +86,8 @@ class OpenAISummarizer(Summarizer):
         base_url: str | None = None,
         max_tokens: int,
         timeout: float = 120.0,
+        max_retries: int = 2,
+        private_logging: bool = False,
     ) -> None:
         """Initialise the client, lazily importing the openai SDK.
 
@@ -95,6 +97,8 @@ class OpenAISummarizer(Summarizer):
             base_url: Endpoint base URL, or ``None`` for the SDK default.
             max_tokens: Upper bound on generated tokens per call.
             timeout: Per-request wall-clock budget in seconds.
+            max_retries: SDK retry count.
+            private_logging: Omit provider-supplied text from logs.
 
         Raises:
             ImportError: If the ``openai`` SDK is not installed.
@@ -106,6 +110,7 @@ class OpenAISummarizer(Summarizer):
                 "OpenAISummarizer requires the 'openai' SDK. "
                 "Install it with: pip install 'markdown-vault-mcp[summarize]'"
             ) from exc
+        self._private_logging = private_logging
         self._openai = openai
         # A bounded per-request timeout (default 120s; same fixed-client-side-
         # timeout pattern as the embeddings transport, which pins 30s) so a
@@ -116,6 +121,7 @@ class OpenAISummarizer(Summarizer):
             api_key=api_key or _PLACEHOLDER_API_KEY,
             base_url=base_url,
             timeout=timeout,
+            max_retries=max_retries,
         )
         self._model = model
         self._base_url = base_url
@@ -162,7 +168,7 @@ class OpenAISummarizer(Summarizer):
                     logger.debug(
                         "summarize_reasoning_effort_fallback model=%s error=%s",
                         self._model,
-                        exc,
+                        type(exc).__name__ if self._private_logging else exc,
                     )
                     del kwargs["reasoning_effort"]
                     continue
@@ -173,7 +179,7 @@ class OpenAISummarizer(Summarizer):
                     logger.debug(
                         "summarize_token_param_fallback model=%s error=%s",
                         self._model,
-                        exc,
+                        type(exc).__name__ if self._private_logging else exc,
                     )
                     kwargs["max_tokens"] = kwargs.pop("max_completion_tokens")
                     continue
@@ -209,7 +215,9 @@ class OpenAISummarizer(Summarizer):
                 "summarize_timeout model=%s timeout_s=%s setting=%s",
                 self._model,
                 self._timeout,
-                "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT",
+                "fixed_commit_subject_budget"
+                if self._private_logging
+                else "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT",
             )
             raise SummarizeTimeoutError(
                 f"Summarization exceeded the {self._timeout:g}s per-request budget. "
@@ -220,7 +228,11 @@ class OpenAISummarizer(Summarizer):
         except self._openai.OpenAIError as exc:
             # Expected upstream failures (auth, rate limit, 5xx): surface a
             # user-facing error string rather than leak the SDK exception.
-            logger.warning("summarize_api_error model=%s error=%s", self._model, exc)
+            logger.warning(
+                "summarize_api_error model=%s error=%s",
+                self._model,
+                type(exc).__name__ if self._private_logging else exc,
+            )
             raise RuntimeError(
                 f"OpenAI-compatible summarization failed: {exc}"
             ) from exc
@@ -233,7 +245,9 @@ class OpenAISummarizer(Summarizer):
         refusal = getattr(message, "refusal", None)
         if refusal:
             logger.warning(
-                "summarize_refusal model=%s refusal=%s", self._model, refusal
+                "summarize_refusal model=%s refusal=%s",
+                self._model,
+                "redacted" if self._private_logging else refusal,
             )
             raise RuntimeError(f"Summarization request was refused: {refusal}")
         text: str | None = getattr(message, "content", None)
@@ -241,7 +255,7 @@ class OpenAISummarizer(Summarizer):
             logger.warning(
                 "summarize_empty_response model=%s finish_reason=%s",
                 self._model,
-                finish_reason,
+                "redacted" if self._private_logging else finish_reason,
             )
             if finish_reason == "length":
                 # On reasoning models the token budget covers internal

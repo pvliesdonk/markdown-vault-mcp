@@ -525,6 +525,7 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | No | Git committer email for auto-commits, and the author email too unless an OIDC claim supplies one. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` | (none) | No | OIDC claim key used as the commit author name (such as name) when an OIDC token is present; the committer stays GIT_COMMIT_NAME. The claim is resolved when the tool call arrives and carried to the background commit, so it applies on every write. A configured claim the token does not carry is reported once at WARNING and the static identity is used. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` | (none) | No | OIDC claim key used as the commit author email (such as email) when an OIDC token is present; the committer stays GIT_COMMIT_EMAIL. Resolved and carried the same way as the name claim. |
+| `MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS` | `false` | No | Send each auto-commit diff to the summarize endpoint; may incur charges. The generated subject persists in Git. |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | No | Run git lfs pull on startup to fetch LFS-tracked attachments; set to false for repos without LFS. |
 
 ### Change detection

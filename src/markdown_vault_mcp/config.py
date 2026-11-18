@@ -904,6 +904,14 @@ class ProjectConfig:
             "wizard": {"group": "Git sync"},
         },
     )
+    git_generate_commit_subjects: bool = field(
+        default=False,
+        metadata={
+            "help": "Send each auto-commit diff to the summarize endpoint; may incur charges. The generated subject persists in Git.",
+            "tags": ("git",),
+            "wizard": {"group": "Git sync"},
+        },
+    )
     git_lfs: bool = field(
         default=True,
         metadata={
@@ -1591,6 +1599,9 @@ class ProjectConfig:
             or "noreply@markdown-vault-mcp",
             git_commit_name_claim=env(_ENV_PREFIX, "GIT_COMMIT_NAME_CLAIM") or None,
             git_commit_email_claim=env(_ENV_PREFIX, "GIT_COMMIT_EMAIL_CLAIM") or None,
+            git_generate_commit_subjects=to_bool(
+                env(_ENV_PREFIX, "GIT_GENERATE_COMMIT_SUBJECTS"), default=False
+            ),
             git_lfs=to_bool(env(_ENV_PREFIX, "GIT_LFS"), default=True),
             file_watcher=to_bool(env(_ENV_PREFIX, "FILE_WATCHER"), default=True),
             file_watcher_debounce_s=env_float(

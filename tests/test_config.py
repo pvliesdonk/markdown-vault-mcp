@@ -866,8 +866,10 @@ class TestGitLfsConfig:
         """ProjectConfig.from_env() parses GIT_LFS=true as True."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_LFS", "true")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS", "true")
         config = ProjectConfig.from_env()
         assert config.git.lfs is True
+        assert config.git_generate_commit_subjects is True
 
     def test_git_lfs_passed_to_strategy(self, tmp_path: Path) -> None:
         """to_vault_instances() passes git_lfs to GitWriteStrategy."""
