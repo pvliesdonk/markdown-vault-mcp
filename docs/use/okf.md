@@ -279,8 +279,13 @@ trimmed. An absent, unterminated or invalid UTF-8 header has no frontmatter
 digest; invalid bytes in the body do not affect a valid header's digest. Reads
 use bounded chunks. Ordinary notes use bounded memory, while a candidate header,
 including an unterminated one, can use memory proportional to its length. The
-version 1 ledger preserves digest meanings across parser upgrades; changing them
+version 2 ledger preserves digest meanings across parser upgrades; changing them
 requires a new version and migration.
+
+Server writes and deletes refresh affected observations. A server rename records
+both paths; a move detected by a later scan is a removal and an addition. A
+write is attributed to the server only when the bytes read from disk match the
+bytes it wrote. Reindex repairs missed observations after an interruption.
 
 A build, reindex or successful pull observes external edits, even when the Git
 HEAD does not change. The server reconciles after interactive pulls and webhooks,

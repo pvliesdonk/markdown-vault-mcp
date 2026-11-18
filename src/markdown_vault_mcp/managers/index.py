@@ -1410,6 +1410,8 @@ class IndexManager:
     def _process_dirty_path(self, path: str, *, exempt: bool | None = None) -> None:
         """Refresh one row, propagating any failure that leaves it stale."""
         abs_path = self._source_dir / path
+        if self.observations is not None:
+            self.observations.refresh(path)
         try:
             if self._is_path_excluded(path):
                 # Excluded paths (e.g. convention files) never enter

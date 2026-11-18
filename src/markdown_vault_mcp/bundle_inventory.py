@@ -552,6 +552,38 @@ class BundleInspector:
             blocked.add("")
         return blocked
 
+    def observe_path(
+        self, path: str, visit: Callable[[str, Role, str, str | None], None]
+    ) -> str:
+        """Observe a single inventory path, returning present, missing or blocked.
+
+        Args:
+            path: Vault-relative Markdown path.
+            visit: Consumer of the observed digests.
+
+        Returns:
+            The visibility outcome; blocked paths cannot prove absence.
+        """
+        try:
+            parts = _components(path)
+            if not parts or not is_note(path):
+                return "blocked"
+            root = self._source.resolve(strict=True)
+            self._prepare_policy(root)
+            if any(self._internal("/".join(parts[:i])) for i in range(len(parts) + 1)):
+                return "blocked"
+            blocked: set[str] = set()
+            with open_directory_nofollow(root, parts[:-1], source_resolved=True) as fd:
+                mode = os.stat(parts[-1], dir_fd=fd, follow_symlinks=False).st_mode
+                if not stat.S_ISREG(mode):
+                    return "blocked"
+                self._observe_note(fd, path, visit, blocked)
+            return "blocked" if blocked else "present"
+        except OSError as exc:
+            return "missing" if _missing(exc) else "blocked"
+        except (ValueError, RuntimeError):
+            return "blocked"
+
     def _observe_tree(
         self,
         fd: int,

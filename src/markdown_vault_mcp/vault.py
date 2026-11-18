@@ -745,6 +745,7 @@ class Vault:
             title_field=self._title_field,
             submodule_guard=self._build_submodule_guard(),
             inventory_ready=self._coordinator.is_queryable,
+            observations=observations,
             inspection_policy=policy,
         )
 

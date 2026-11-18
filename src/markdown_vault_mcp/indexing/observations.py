@@ -40,6 +40,8 @@ class Observation:
     presence: str = "present"
     removed_observed_at: str | None = None
     origin: str = "unknown"
+    moved_from: str | None = None
+    moved_to: str | None = None
 
 
 def _valid_timestamp(value: object) -> bool:
@@ -68,6 +70,13 @@ def _valid_row(key: str, row: Observation) -> bool:
         or row.presence not in ("present", "removed")
     ):
         return False
+    for related in (row.moved_from, row.moved_to):
+        if related is not None:
+            try:
+                if not _components(related):
+                    return False
+            except (ValueError, TypeError):
+                return False
     if not _valid_digest(row.content_digest) or (
         row.frontmatter_digest is not None and not _valid_digest(row.frontmatter_digest)
     ):
@@ -84,7 +93,7 @@ def _valid_row(key: str, row: Observation) -> bool:
 class ObservationLedger:
     """Compare complete inventory sweeps against durable local state.
 
-    Version 1 writers preserve row meaning and digest vectors across parser
+    Version 2 writers preserve row meaning and digest vectors across parser
     upgrades. A changed digest meaning needs a version bump and migration that
     retains trustworthy history and marks unknowns.
     """
@@ -92,6 +101,7 @@ class ObservationLedger:
     def __init__(self, path: Path | None, inspector: BundleInspector) -> None:
         self._path = path
         self._inspector = inspector
+        self._pending: dict[str, str] = {}
         self._rows: dict[str, Observation] | None = {} if path is None else None
         self._lock = (
             threading.Lock()
@@ -107,14 +117,14 @@ class ObservationLedger:
             version = data["version"]
             if type(version) is not int:
                 raise ValueError("Invalid observation version")
-            if version > 1:
+            if version > 2:
                 raise StoreUnsupportedSchemaError(
                     f"Unsupported observation schema version: {version}. "
                     "Upgrade the server or move the ledger aside to start new history.",
                     backend="observations",
                     location=str(self._path),
                 )
-            if version != 1 or not isinstance(data["rows"], dict):
+            if version not in (1, 2) or not isinstance(data["rows"], dict):
                 raise ValueError("Invalid observation ledger")
             rows = {key: Observation(**row) for key, row in data["rows"].items()}
             if any(not _valid_row(key, row) for key, row in rows.items()):
@@ -130,6 +140,99 @@ class ObservationLedger:
         """Return a snapshot of locally recorded observations."""
         with self._lock:
             return self._load()[0]
+
+    def expect_write(self, path: str, digest: str) -> None:
+        """Record a digest of bytes staged by a completed server write.
+
+        Args:
+            path: Vault-relative path.
+            digest: SHA-256 of the staged bytes.
+        """
+        with self._lock:
+            self._pending[path] = digest
+
+    def refresh(self, path: str) -> None:
+        """Reconcile one dirty path against the inventory scope.
+
+        Args:
+            path: Vault-relative path.
+        """
+        with self._lock:
+            rows, valid = self._load()
+            previous = rows.copy()
+            expected = self._pending.get(path)
+            state = self._refresh_locked(rows, path, expected)
+            if self._path is None:
+                self._rows = rows
+            elif rows != previous or not valid:
+                self._save(rows)
+            if state != "blocked":
+                self._pending.pop(path, None)
+
+    def _refresh_locked(
+        self, rows: dict[str, Observation], path: str, expected: str | None
+    ) -> str:
+        now = datetime.now(UTC).isoformat()
+        old = rows.get(path)
+
+        def visit(name: str, role: str, digest: str, header: str | None) -> None:
+            origin = "server_write" if expected == digest else "unknown"
+            if (
+                old
+                and old.presence == "present"
+                and (old.content_digest, old.frontmatter_digest) == (digest, header)
+            ):
+                rows[name] = replace(
+                    old,
+                    role=role,
+                    origin=origin if expected is not None else old.origin,
+                )
+            else:
+                rows[name] = Observation(
+                    name,
+                    role,
+                    digest,
+                    header,
+                    old.first_seen_at if old else now,
+                    now,
+                    origin=origin,
+                )
+
+        state = self._inspector.observe_path(path, visit)
+        if state == "missing" and old and old.presence == "present":
+            rows[path] = replace(
+                old,
+                presence="removed",
+                removed_observed_at=now,
+                last_change_observed_at=now,
+                origin="unknown",
+            )
+        return state
+
+    def move(self, old_path: str, new_path: str) -> None:
+        """Record both ends of a server-observed move.
+
+        Args:
+            old_path: Former vault-relative path.
+            new_path: Destination vault-relative path.
+        """
+        with self._lock:
+            rows, valid = self._load()
+            previous = rows.copy()
+            self._refresh_locked(rows, old_path, None)
+            self._refresh_locked(rows, new_path, None)
+            if (
+                old_path in rows
+                and rows[old_path].presence == "removed"
+                and new_path in rows
+                and rows[new_path].presence == "present"
+            ):
+                rows[old_path] = replace(rows[old_path], moved_to=new_path)
+                rows[new_path] = replace(rows[new_path], moved_from=old_path)
+            if self._path is None:
+                self._rows = rows
+            elif rows != previous or not valid:
+                self._save(rows)
 
     def sweep(self) -> None:
         """Reconcile a live inventory sweep; incomplete walks retain absent rows."""
@@ -190,7 +293,7 @@ class ObservationLedger:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 json.dump(
-                    {"version": 1, "rows": {k: asdict(v) for k, v in rows.items()}},
+                    {"version": 2, "rows": {k: asdict(v) for k, v in rows.items()}},
                     stream,
                     sort_keys=True,
                 )

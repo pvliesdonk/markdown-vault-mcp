@@ -10,8 +10,10 @@ Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import itertools
 import logging
+import os
 import posixpath
 import re
 import shutil
@@ -124,6 +126,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
@@ -279,7 +282,9 @@ class DocumentManager:
         submodule_guard: SubmoduleGuard | None = None,
         inspection_policy: InspectionPolicy | None = None,
         inventory_ready: Callable[[], bool] | None = None,
+        observations: ObservationLedger | None = None,
     ) -> None:
+        self._observations = observations
         self._fts = fts
         self._source_dir = source_dir
         self._inspection_policy = inspection_policy or InspectionPolicy()
@@ -692,6 +697,10 @@ class DocumentManager:
                 )
                 target_attempted = True
                 atomic_write(abs_path, repaired)
+                if self._observations is not None:
+                    self._observations.expect_write(
+                        path, hashlib.sha256(repaired).hexdigest()
+                    )
                 if self._mark_paths_dirty is not None:
                     self._mark_paths_dirty([path])
                 self._notifier.fire(abs_path, repaired.decode("utf-8"), "write")
@@ -1181,7 +1190,15 @@ class DocumentManager:
             operation: The write operation reported to the write callback.
 
         """
-        atomic_write(abs_path, self._staged(content))
+        staged = self._staged(content)
+        atomic_write(abs_path, staged)
+        if self._observations is not None:
+            data = (
+                staged
+                if isinstance(staged, bytes)
+                else staged.replace("\n", os.linesep).encode("utf-8")
+            )
+            self._observations.expect_write(path, hashlib.sha256(data).hexdigest())
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
         self._notifier.fire(abs_path, content, operation)
@@ -1670,6 +1687,8 @@ class DocumentManager:
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
 
+                if self._observations is not None:
+                    self._observations.refresh(old_path)
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
 
@@ -1692,6 +1711,8 @@ class DocumentManager:
                     unrewritten, allow_protected=allow_protected
                 )
 
+                if self._observations is not None:
+                    self._observations.move(old_path, note.path)
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
                     dirty.extend(backlink_paths)
@@ -1815,6 +1836,10 @@ class DocumentManager:
         # Encoded here so the ledger records the hash of exactly what landed.
         encoded = content.encode("utf-8")
         atomic_write(source_abs, encoded)
+        if self._observations is not None:
+            self._observations.expect_write(
+                source_path, hashlib.sha256(encoded).hexdigest()
+            )
         self._link_rewrites.record(
             source_path, compute_etag(raw), compute_etag(encoded)
         )
@@ -2221,6 +2246,10 @@ class DocumentManager:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
 
+            if self._observations is not None:
+                for old_path in md_map:
+                    self._observations.refresh(old_path)
+
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
             #    raised before anything moved.
@@ -2250,6 +2279,9 @@ class DocumentManager:
             # 6. Index: purge old note paths, reparse new note paths, plus the
             #    rewritten sources. A single mark_paths_dirty batch makes the
             #    writer run resolve_vault_wikilinks() once.
+            if self._observations is not None:
+                for old_path, new_path in md_map.items():
+                    self._observations.move(old_path, new_path)
             if self._mark_paths_dirty is not None:
                 move_dirty: list[str] = []
                 move_dirty.extend(md_map.keys())  # old paths -> purged

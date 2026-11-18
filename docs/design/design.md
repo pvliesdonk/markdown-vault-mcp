@@ -7771,7 +7771,13 @@ with surrounding whitespace trimmed; it is absent for missing, unterminated or
 invalid UTF-8 headers. Invalid body bytes do not change a valid header digest.
 Reads use bounded chunks and ordinary notes use bounded memory; a candidate
 header, including an unterminated one, may use memory proportional to its length.
-Version 1 preserves row meanings and digest vectors across parser upgrades; a
+Version 2 adds `moved_from` and `moved_to` to the version 1 rows; old rows
+load without a move. Server renames record both ends, while a sweep sees only
+a removal and an addition. Dirty paths are inspected individually in inventory
+scope. The writer retains the digest of its staged bytes until processing;
+only a matching disk digest records `server_write`. Reindex repairs changes
+missed after a crash, without guessing their origin. Version 2 preserves row
+meanings and digest vectors across parser upgrades; a
 change requires a version bump and a migration preserving trustworthy history
 and marking unknowns. A missing or corrupt ledger starts new history, while a
 newer schema is refused. A ledger refusal or I/O failure fails the build or
