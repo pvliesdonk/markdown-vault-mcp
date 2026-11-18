@@ -124,9 +124,7 @@ def _build_reader_vault(
     from markdown_vault_mcp.vault import Vault
 
     # A read uses the existing checkout: never bootstrap or sync a managed clone.
-    same_source = (
-        source_dir is None or Path(source_dir).resolve() == config.source_dir.resolve()
-    )
+    configured = config.source_dir
     config = replace(
         config,
         source_dir=Path(source_dir) if source_dir is not None else config.source_dir,
@@ -138,6 +136,12 @@ def _build_reader_vault(
         raise ConfigurationError(problem[1])
     # Native reads resolve note paths, so their root must use the same identity.
     config = replace(config, source_dir=config.source_dir.resolve())
+    same_source = source_dir is None
+    if not same_source:
+        try:
+            same_source = config.source_dir == configured.resolve()
+        except (OSError, RuntimeError):
+            same_source = False
     if not _vectors_kept(config, None):
         config = replace(config, embedding_provider=None)
     instances = to_vault_instances(config)
