@@ -7,11 +7,13 @@ deferred flush). Using a single builder everywhere is load-bearing: if any
 site embedded plain chunk content while another embedded enriched text, the
 boot convergence pass would "heal" the enriched vectors back to plain.
 
-The builder has two formats:
+The builder has these formats:
 
 * **v1** — the default: :meth:`EmbedTextBuilder.build` returns the chunk
   content byte-for-byte unchanged, so default configurations are an exact
-  behavioural no-op.
+  behavioural no-op when listed-concept enrichment is disabled.
+* **v1;listed** — first chunks of designated listed concepts include title
+  and description; other chunk inputs remain byte-identical to v1.
 * **v2** — active when ``embed_context`` is enabled or any
   ``searchable_fields`` are configured: the chunk content is prefixed with
   the document title, the chunk heading (when present), and — on the first
@@ -135,10 +137,14 @@ class EmbedTextBuilder:
         searchable_fields: Frontmatter keys whose scalar values form the
             first-chunk preamble (also switches to format v2 when
             non-empty).
+        listed: Include a listed concept's title and description in its first chunk.
+        listed_scope: Folder patterns that select listed concepts.
     """
 
     embed_context: bool = False
     searchable_fields: tuple[str, ...] = field(default=())
+    listed: bool = False
+    listed_scope: tuple[str, ...] = ()
 
     @property
     def is_v2(self) -> bool:
@@ -150,11 +156,15 @@ class EmbedTextBuilder:
 
         Returns:
             ``"v1"`` for the default no-op format, else
-            ``"v2;fields=<comma-joined field names>"``.
+            ``"v2;fields=<comma-joined field names>"``. The listed policy
+            appends ``";listed;scope="`` and its folder patterns.
         """
-        if not self.is_v2:
-            return "v1"
-        return "v2;fields=" + ",".join(self.searchable_fields)
+        token = "v2;fields=" + ",".join(self.searchable_fields) if self.is_v2 else "v1"
+        if self.listed:
+            token += ";listed;scope=" + json.dumps(
+                self.listed_scope, separators=(",", ":")
+            )
+        return token
 
     def fields_text(self, frontmatter_or_json: Mapping[str, Any] | str | None) -> str:
         """Return the first-chunk preamble for this builder's fields.
@@ -162,6 +172,26 @@ class EmbedTextBuilder:
         See the module-level :func:`fields_text` for the exact contract.
         """
         return fields_text(frontmatter_or_json, self.searchable_fields)
+
+    def listed_preamble(
+        self, title: str, frontmatter_or_json: Mapping[str, Any] | str | None
+    ) -> str:
+        """Return the first-chunk preamble for a listed concept.
+
+        Args:
+            title: Resolved note title.
+            frontmatter_or_json: Parsed or JSON-encoded frontmatter.
+
+        Returns:
+            Title and description for v1; configured fields plus description for v2.
+        """
+        fields = self.searchable_fields
+        if "description" not in fields:
+            fields = (*fields, "description")
+        values = fields_text(frontmatter_or_json, fields)
+        if self.is_v2:
+            return values
+        return "\n".join(part for part in (title, values) if part)
 
     def build(
         self,
@@ -183,12 +213,15 @@ class EmbedTextBuilder:
             is_first_chunk: ``True`` for the document's chunk-0 row.
 
         Returns:
-            v1: *content* unchanged (byte-exact no-op). v2: the title line,
+            v1: *content* unchanged unless a listed preamble is supplied.
+            v2: the title line,
             the heading line (omitted when empty), and — first chunk only —
             the non-empty *fields_text*, followed by a blank line and the
             content.
         """
         if not self.is_v2:
+            if self.listed and is_first_chunk and fields_text:
+                return fields_text + "\n\n" + content
             return content
         lines = [title]
         if heading:

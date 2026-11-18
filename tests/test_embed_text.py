@@ -233,3 +233,47 @@ class TestIsEmbeddable:
             is_first_chunk=True,
         )
         assert is_embeddable(text) is True
+
+
+def test_listed_policy_tokens_and_preambles() -> None:
+    plain = EmbedTextBuilder()
+    listed = EmbedTextBuilder(listed=True)
+    v2 = EmbedTextBuilder(searchable_fields=("summary",), listed=True)
+    dedup = EmbedTextBuilder(searchable_fields=("description",), listed=True)
+    data = {"summary": "Summary", "description": "Description"}
+    assert plain.format_token() == "v1"
+    assert listed.format_token() == "v1;listed;scope=[]"
+    assert v2.format_token() == "v2;fields=summary;listed;scope=[]"
+    assert listed.listed_preamble("Title", data) == "Title\nDescription"
+    assert v2.listed_preamble("Title", data) == "Summary\nDescription"
+    assert dedup.listed_preamble("Title", data) == "Description"
+    assert (
+        listed.build(
+            title="Title",
+            heading=None,
+            content="body",
+            fields_text="",
+            is_first_chunk=True,
+        )
+        == "body"
+    )
+    assert (
+        listed.build(
+            title="Title",
+            heading=None,
+            content="body",
+            fields_text="Title\nDescription",
+            is_first_chunk=True,
+        )
+        == "Title\nDescription\n\nbody"
+    )
+    assert (
+        listed.build(
+            title="Title",
+            heading=None,
+            content="later",
+            fields_text="ignored",
+            is_first_chunk=False,
+        )
+        == "later"
+    )

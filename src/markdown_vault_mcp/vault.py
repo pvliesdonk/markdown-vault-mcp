@@ -483,6 +483,8 @@ class Vault:
         self._embed_builder = EmbedTextBuilder(
             embed_context=settings.embed_context,
             searchable_fields=tuple(self._searchable_frontmatter_fields),
+            listed=self._okf_capabilities.index,
+            listed_scope=self._okf_capabilities.folders,
         )
         self._git_pull_interval_s = settings.git_pull_interval_s
         # The resolver prunes its folder walk with the *configured* patterns
@@ -562,6 +564,16 @@ class Vault:
             and folder_is_designated(parent, self._okf_capabilities.folders)
         )
 
+    def _is_listed_concept(self, path: str) -> bool:
+        """Return whether a designated folder lists this non-reserved note."""
+        from markdown_vault_mcp._okf_convention import folder_is_designated
+        from markdown_vault_mcp.okf import is_okf_reserved_file
+
+        parent, _, _ = path.rpartition("/")
+        return not is_okf_reserved_file(path) and folder_is_designated(
+            parent, self._okf_capabilities.folders
+        )
+
     def _build_managers(self, settings: VaultSettings) -> None:
         """Construct the index/tracker sub-modules and the manager layer.
 
@@ -629,6 +641,9 @@ class Vault:
             okf_admission_active=self._reserved_exempt,
             skip_embedding=(
                 self._is_generated_index if self._okf_capabilities.index else None
+            ),
+            listed_concept=(
+                self._is_listed_concept if self._okf_capabilities.index else None
             ),
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,

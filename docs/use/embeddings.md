@@ -16,7 +16,7 @@ This guide covers configuring each supported embedding provider for semantic sea
 
 All four providers produce embeddings that enable the `semantic` and `hybrid` search modes in the `search` tool.
 
-When `OKF_INDEX` is enabled, `index.md` files in designated `OKF_FOLDERS` do not receive embeddings, even in a read-only vault or without an OKF declaration. They remain available to keyword and hybrid search. Authored indexes outside those folders and all `log.md` files still receive embeddings; listed notes with text eligible for embedding retain their own vectors. The default `OKF_FOLDERS=.` designates the root `index.md`; the legacy `OKF_WRITE=true` setting designates every folder. After a designation change, a note write, a reindex with the vector store already open, or an embedding build purges old vectors. A keyword `build_index()` alone does not converge vectors, including when it takes the warm-start shortcut. A search that opens an old store before any of the vector convergence operations may still return a newly designated index. To restore vectors after removing a designation, run `build_embeddings()`; server startup runs this build. `get_similar` and the similar section of `get_context` are empty for a skipped index. The default v1 embedding input contains body text only; a frontmatter-only description is not embedded unless `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` includes `description`. `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` adds title context, but description still requires that searchable field. See [OKF conventions](okf.md).
+When `OKF_INDEX` is enabled, `index.md` files in designated `OKF_FOLDERS` do not receive embeddings, even in a read-only vault or without an OKF declaration. They remain available to keyword and hybrid search. Indexes outside those folders and all `log.md` files retain their existing embedding inputs. A listed concept carries its title and description in its own vector, including when its body is empty. Designation, not authorship, determines which folder receives this treatment. The default `OKF_FOLDERS=.` designates the root `index.md`; the legacy `OKF_WRITE=true` setting designates every folder. After a designation change, a note write, a reindex with the vector store already open, or an embedding build purges old vectors. A keyword `build_index()` alone does not converge vectors, including when it takes the warm-start shortcut. A search that opens an old store before any of the vector convergence operations may still return a newly designated index. To restore vectors after removing a designation, run `build_embeddings()`; server startup runs this build. `get_similar` and the similar section of `get_context` are empty for a skipped index. Turning `OKF_INDEX` on or off, or changing `OKF_FOLDERS` while it is on, changes the embedding input identity and re-embeds the vault once on the next embedding build; server startup runs that build. Upgrading a vault using the legacy `OKF_WRITE=true` alias has the same one-time cost. See [OKF conventions](okf.md).
 
 The server needs the matching package extra: `embeddings` for FastEmbed, `embeddings-api` for Ollama, OpenAI and Voyage (quoted, as in `uv tool install "markdown-vault-mcp[embeddings-api]"`). `[all]` covers both, and the Docker image, the `.mcpb` bundle and the Claude Code plugin install it.
 
@@ -525,7 +525,7 @@ The [CLI reference](../reference/cli.md#markdown-vault-mcp-admin-embeddings-impo
 
 ### Notes with no body
 
-A note with no body is indexed for keyword search but is not embedded. This
+By default, a note with no body is indexed for keyword search but is not embedded. This
 covers zero-byte files, notes that are nothing but frontmatter, and notes
 whose body is only whitespace. These notes hold no text to embed, so they
 carry no semantic signal either way.
@@ -541,7 +541,8 @@ Nothing is required of you. The notes still appear in keyword search and in
 `list_documents`, and they gain vectors as soon as they get a body. If you set
 `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` or `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`,
 the enriched input carries the title and frontmatter values, so those notes are
-embedded as before.
+embedded as before. Listed concepts in designated OKF folders also receive
+title and description inputs, even when their bodies are empty.
 
 ### Slow or CPU-only backends
 

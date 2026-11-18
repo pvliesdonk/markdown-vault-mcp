@@ -1225,7 +1225,7 @@ cold-boot rebuild ran the resilient batch path instead.
 
 A note with no body — zero-byte, frontmatter-only, or whitespace-only —
 chunks to a single chunk whose `content` is `""`. Under the default (v1)
-embedding format `EmbedTextBuilder.build()` returns that content verbatim,
+embedding format without the listed-concept policy, `EmbedTextBuilder.build()` returns that content verbatim,
 so the empty string would be submitted to the provider. Every
 OpenAI-compatible endpoint rejects an empty input string with HTTP 400
 (Voyage: `Input cannot contain empty strings or empty lists`), **and the
@@ -1247,7 +1247,7 @@ it:
   chunk excluded only at embed time would leave the two permanently
   unequal and re-embed that document on *every* pass.
 
-A body-less note stays fully keyword-searchable through FTS; only its
+A body-less note stays fully keyword-searchable through FTS; without listed-concept or v2 enrichment its
 vector is skipped, which costs nothing — there is no content to match
 semantically. Under the v2 format the same note builds a non-empty text
 (title, heading, first-chunk preamble) and is embedded as before, so
@@ -7559,4 +7559,4 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
 remains tied to `OKF_WRITE`.
 
-Designated OKF indexes are skipped for vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498). Existing vectors are purged at writer convergence, so a cold reader can see stale vectors before then. Only notes with embeddable text have their own vectors; default v1 input is body-only, while searchable frontmatter fields can include descriptions and context adds titles.
+Designated OKF indexes are skipped for vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498). Existing vectors are purged at writer convergence, so a cold reader can see stale vectors before then. A listed concept carries its title and description in its own vector, including when the body is empty. Other notes keep their existing inputs. The listed policy has a versioned identity, so changing `OKF_INDEX` or its folder scope, or upgrading a legacy `OKF_WRITE=true` vault causes a one-time embedding rebuild.

@@ -1316,7 +1316,7 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Enable automatic index maintenance in designated folders; defaults to false. "
-                "Designated index.md files do not receive embeddings."
+                "See docs/use/embeddings.md."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
