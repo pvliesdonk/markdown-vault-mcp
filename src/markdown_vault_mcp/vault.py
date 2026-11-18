@@ -412,6 +412,12 @@ class Vault:
                 or ``settings.conventions_file`` contains fnmatch
                 metacharacters.
         """
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        self._okf_capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
         self._index_path = settings.index_path
         self._embeddings_path = settings.effective_embeddings_path()
         self._embedding_batch_size = settings.embedding_batch_size
@@ -545,6 +551,17 @@ class Vault:
             raise OSError("OKF scope probe failed")
         return state.active
 
+    def _is_generated_index(self, path: str) -> bool:
+        """Return whether the operator designated this index for generation."""
+        from markdown_vault_mcp._okf_convention import folder_is_designated
+
+        parent, _, name = path.rpartition("/")
+        return (
+            self._okf_capabilities.index
+            and name == "index.md"
+            and folder_is_designated(parent, self._okf_capabilities.folders)
+        )
+
     def _build_managers(self, settings: VaultSettings) -> None:
         """Construct the index/tracker sub-modules and the manager layer.
 
@@ -600,22 +617,6 @@ class Vault:
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
 
-        from markdown_vault_mcp._okf_convention import folder_is_designated
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        capabilities = (
-            settings.okf_capabilities
-            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
-        )
-
-        def is_generated_index(path: str) -> bool:
-            parent, _, name = path.rpartition("/")
-            return (
-                capabilities.index
-                and name == "index.md"
-                and folder_is_designated(parent, capabilities.folders)
-            )
-
         self._index_mgr = IndexManager(
             fts=self._fts,
             tracker=self._tracker,
@@ -626,8 +627,9 @@ class Vault:
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
             okf_admission_active=self._reserved_exempt,
-            skip_embedding=is_generated_index,
-            embedding_scope=lambda: capabilities.index and self._okf.state().active,
+            skip_embedding=(
+                self._is_generated_index if self._okf_capabilities.index else None
+            ),
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
@@ -805,14 +807,8 @@ class Vault:
         )
         # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        capabilities = (
-            settings.okf_capabilities
-            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
-        )
         if not settings.read_only and (
-            capabilities.index or capabilities.log == "writes"
+            self._okf_capabilities.index or self._okf_capabilities.log == "writes"
         ):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
 
@@ -823,7 +819,7 @@ class Vault:
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
                 source_dir=self._source_dir,
-                capabilities=capabilities,
+                capabilities=self._okf_capabilities,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,

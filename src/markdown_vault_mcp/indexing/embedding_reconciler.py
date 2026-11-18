@@ -388,6 +388,7 @@ class EmbeddingReconciler:
         *,
         site: str,
         recover_corruption: bool = False,
+        sweep_skipped: bool = False,
     ) -> ReconcileResult:
         """Bring *paths* (or every document) in the store in line with the keyword index.
 
@@ -407,6 +408,7 @@ class EmbeddingReconciler:
             paths: The documents to reconcile; ``None`` for a whole-store pass.
             site: Which caller, for the log lines.
             recover_corruption: Propagate typed write corruption for recovery.
+            sweep_skipped: Also remove stored paths excluded from embeddings.
 
         Returns:
             What the pass did; ``conflicts`` holds the paths to re-queue.
@@ -414,6 +416,8 @@ class EmbeddingReconciler:
         stored = store.tokens()
         docs = self.documents(paths)
         held = set(stored) if paths is None else set(paths) & set(stored)
+        if sweep_skipped:
+            held.update(path for path in stored if self._skip_embedding(path))
         state = _Pass(store, stored, ReconcileResult(), site, recover_corruption)
         self._remove_unbacked(state, sorted(held - set(docs)))
         retoken: list[_Document] = []

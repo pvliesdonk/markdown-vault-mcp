@@ -1109,6 +1109,7 @@ canonical chunk set, via `FTSIndex.list_chunks()`, which carries each
 document's `content_hash` as its token) against the stored rows and
 tokens (the store's `tokens()` and `rows_for()`) and reconciles:
 
+- Stored vectors of designated indexes are removed on every dirty flush and open-store reindex (#1498).
 - Documents missing from the vector index are embedded and added.
 - Documents whose per-path `(title, heading, content, start_line,
   preamble)` chunk multiset differs in any way (modified content, changed
@@ -7558,4 +7559,4 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
 remains tied to `OKF_WRITE`.
 
-Designated generated OKF indexes have no vectors while OKF is active; keyword indexing remains in place, and a declaration transition reconciles their vectors. Authored indexes outside the designated folders and all logs keep their vectors (#1498).
+Designated OKF indexes have no vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498).

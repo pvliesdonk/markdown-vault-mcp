@@ -596,8 +596,7 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 
 ### Generated reserved files and the index gate
 
-Generated `index.md` files in designated folders are omitted from the vector index when OKF is active and `OKF_INDEX` is enabled. They remain in the keyword index; authored indexes outside the designated folders and all logs retain vectors. Reconciliation removes old vectors for designated indexes, and a later build restores them if designation is removed.
-
+With `OKF_INDEX` enabled, `index.md` files in designated folders are omitted from the vector index regardless of runtime detection or whether the vault is read-only. They remain in the keyword index; authored indexes outside those folders and all logs retain vectors. A note write, an open-store reindex or a build purges old vectors after designation changes; a build restores them after designation is removed. A search before those writer operations may still return a newly designated index from an old store.
 
 In an active OKF vault, `index.md` and `log.md` bypass the
 `required_frontmatter` gate. Concept notes and all notes outside an active

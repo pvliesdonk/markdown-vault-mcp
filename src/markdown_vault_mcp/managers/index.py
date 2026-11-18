@@ -165,8 +165,7 @@ class IndexManager:
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
         okf_admission_active: Current effective OKF state, if applicable.
-        skip_embedding: Identifies documents omitted when the embedding scope is active.
-        embedding_scope: Reads whether the vector-only exclusion is active.
+        skip_embedding: Identifies documents whose vectors should be removed.
     """
 
     def __init__(
@@ -191,7 +190,6 @@ class IndexManager:
         scratch_dir: Path | None = None,
         okf_admission_active: Callable[[], bool | None] | None = None,
         skip_embedding: Callable[[str], bool] | None = None,
-        embedding_scope: Callable[[], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -229,7 +227,6 @@ class IndexManager:
             vector_slot=vector_slot,
             scratch_dir=scratch_dir,
             skip_embedding=skip_embedding,
-            embedding_scope=embedding_scope,
         )
 
     @property
@@ -916,7 +913,6 @@ class IndexManager:
         # Phase 1: scan filesystem (read-only walk + hashing). Excluded
         # subtrees are filtered before hashing so they neither churn the
         # tracker nor get reported as changes (#257).
-        self._embeddings.refresh_embedding_scope()
         exempt, stale = self._begin_admission_reindex()
         prior_skipped = set(self._tracker.skip_reasons())
         changes = self._tracker.detect_changes(
@@ -964,6 +960,8 @@ class IndexManager:
         # the per-note loop below on its lazy-load (converge-and-skip)
         # semantics — see test_embedding_convergence.
         stale_excluded, vectors = self._purge_stale_excluded(vectors)
+        if vectors is not None:
+            self._embeddings.purge_skipped(vectors)
         if stale_excluded:
             logger.info(
                 "reindex_purged_stale_excluded count=%d",
@@ -1048,7 +1046,6 @@ class IndexManager:
         admitted = maintenance & prior_skipped & reconciled
         rejected = (maintenance - prior_skipped) & resolved_skips
         new_skip_count = len(set(newly_skipped) - (prior_skipped - changed))
-        self._embeddings.reconcile_embedding_scope()
         self._embeddings.finish_vector_recovery()
         return ReindexResult(
             added=indexed_added,

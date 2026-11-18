@@ -95,8 +95,7 @@ class EmbeddingsManager:
             :class:`~markdown_vault_mcp.source_probe.FileSourceProbe` over
             ``source_dir`` (#1785).
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
-        skip_embedding: Identifies documents omitted when the embedding scope is active.
-        embedding_scope: Reads whether the vector-only exclusion is active.
+        skip_embedding: Identifies documents whose vectors should be removed.
         vector_slot: Opens, rebuilds and describes the vector store. ``None``
             with a provider builds a numpy store over ``embeddings_path``
             (in memory when that is ``None``), owned by this manager and
@@ -117,7 +116,6 @@ class EmbeddingsManager:
         source_probe: SourceProbe | None = None,
         scratch_dir: Path | None = None,
         skip_embedding: Callable[[str], bool] | None = None,
-        embedding_scope: Callable[[], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -126,10 +124,7 @@ class EmbeddingsManager:
         self._embed_builder = embed_text_builder
         self._embedding_batch_size = embedding_batch_size
         self._is_path_excluded = is_path_excluded
-        self._skip_embedding = skip_embedding or (lambda _path: False)
-        self._embedding_scope_probe = embedding_scope
-        self._embedding_scope: bool | None = None
-        self._scope_changed = False
+        self._skip_embedding = skip_embedding
         if vector_slot is None and embedding_provider is not None:
             from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
             from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
@@ -155,35 +150,11 @@ class EmbeddingsManager:
                 source_probe=source_probe or FileSourceProbe(source_dir),
                 is_excluded=is_path_excluded,
                 scratch_dir=scratch_dir,
-                skip_embedding=lambda path: (
-                    bool(self._embedding_scope) and self._skip_embedding(path)
-                ),
+                skip_embedding=skip_embedding,
             )
             if embedding_provider is not None
             else None
         )
-
-    def refresh_embedding_scope(self) -> None:
-        """Snapshot OKF embedding policy once for a writer operation."""
-        if self._embedding_scope_probe is None:
-            return
-        active = self._embedding_scope_probe()
-        if self._embedding_scope is not None and active != self._embedding_scope:
-            self._scope_changed = True
-        self._embedding_scope = active
-
-    def reconcile_embedding_scope(self) -> None:
-        """Reconcile designated indexes after a policy transition."""
-        vectors = self._loaded_store()
-        if not self._scope_changed or vectors is None:
-            return
-        paths = {row["path"] for row in self._fts.list_notes()}
-        paths.update(vectors.tokens())
-        paths = {path for path in paths if self._skip_embedding(path)}
-        result = self.reconcile_paths(vectors, paths, site="scope")
-        if result.embedded or result.reused or result.removed or result.retokened:
-            vectors.checkpoint()
-        self._scope_changed = False
 
     # ------------------------------------------------------------------
     # Shared-path accessors (read by IndexManager's FTS pipeline)
@@ -436,7 +407,6 @@ class EmbeddingsManager:
             RuntimeError: If damaged-store recovery is incomplete; notes stay retried.
         """
         self._require_vectors()
-        self.refresh_embedding_scope()
         if self._embedding_provider is None or self._slot is None:
             raise RuntimeError(
                 "_require_vectors() must be called before build_embeddings()"
@@ -597,7 +567,6 @@ class EmbeddingsManager:
                 store held vectors: nothing was published.
             StoreOpenError: If the store cannot be opened for writing.
         """
-        self.refresh_embedding_scope()
         store = self.import_target()
         if self._slot is None:  # pragma: no cover - import_target() checked
             raise RuntimeError("No vector store slot without an embedding provider.")
@@ -628,7 +597,6 @@ class EmbeddingsManager:
             store: EmbeddingStore | None = self._slot.get(rebuild=None)
         except (StoreCorruptError, StoreIncompatibleError):
             store = None  # the import would replace it
-        self.refresh_embedding_scope()
         return self._reconciler.preview(store, identity, donor=donor, reuse_own=True)
 
     def _upgrade_donor(self, identity: EmbeddingIdentity) -> Donor | None:
@@ -871,11 +839,11 @@ class EmbeddingsManager:
         """
         if self._reconciler is None or not (paths or self._retries):
             return
-        self.refresh_embedding_scope()
         vectors = self._open_store()
         paths |= self.take_embedding_retries()
-        self.reconcile_embedding_scope()
-        self.reconcile_paths(vectors, paths, site="flush")
+        self.reconcile_paths(
+            vectors, paths, site="flush", sweep_skipped=self._skip_embedding is not None
+        )
         if self._slot is not None and self._slot.has_suspect():
             self.rebuild_after_fault(_strict=True)
             return
@@ -885,7 +853,12 @@ class EmbeddingsManager:
         logger.debug("deferred_embeddings_flushed paths=%d", len(paths))
 
     def reconcile_paths(
-        self, vectors: EmbeddingStore, paths: Collection[str] | None, *, site: str
+        self,
+        vectors: EmbeddingStore,
+        paths: Collection[str] | None,
+        *,
+        site: str,
+        sweep_skipped: bool = False,
     ) -> ReconcileResult:
         """Reconcile *paths* in *vectors* with the keyword index (#1785).
 
@@ -898,6 +871,7 @@ class EmbeddingsManager:
             vectors: The store to write.
             paths: The paths to reconcile; ``None`` for every document.
             site: Which caller, for the log lines.
+            sweep_skipped: Also remove stored paths excluded from embeddings.
 
         Returns:
             What the pass did; conflicts and retries are also recorded here.
@@ -913,6 +887,7 @@ class EmbeddingsManager:
                 paths,
                 site=site,
                 recover_corruption=recover,
+                sweep_skipped=sweep_skipped,
             )
         except StoreCorruptError:
             if self._slot is None or not self._slot.mark_suspect(vectors):
@@ -921,6 +896,20 @@ class EmbeddingsManager:
         self._conflicts |= result.conflicts
         self._retries |= result.retry
         return result
+
+    def purge_skipped(self, vectors: EmbeddingStore) -> None:
+        """Remove designated vectors from an already open store.
+
+        Args:
+            vectors: The writable store already open for this reindex.
+        """
+        if self._skip_embedding is None:
+            return
+        result = self.reconcile_paths(
+            vectors, (), site="designation", sweep_skipped=True
+        )
+        if result.removed:
+            vectors.checkpoint()
 
     def finish_vector_recovery(self) -> None:
         """Recover a suspect store after keyword work, unless deferred."""
