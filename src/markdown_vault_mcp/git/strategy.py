@@ -1263,6 +1263,8 @@ class GitWriteStrategy:
             return PullResult.head_unchanged_failure(
                 from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
             ), []
+        if rebase_in_progress:
+            saved = conflict.latest_log_snapshots(git_root, env, saved, from_sha)
         generated, authored = self._split_conflicts(
             git_root, recovery.conflicted, saved
         )

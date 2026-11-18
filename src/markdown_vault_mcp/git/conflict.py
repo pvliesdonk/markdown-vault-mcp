@@ -419,6 +419,36 @@ def abort_in_progress_rebase(
     return True
 
 
+def latest_log_snapshots(
+    git_root: Path, env: dict[str, str] | None, saved: list[tuple[str, str]], ref: str
+) -> list[tuple[str, str]]:
+    """Replace saved log blobs with the original branch tip after an abort.
+
+    Missing or unreadable blobs are omitted so the caller reports them unsaved
+    instead of overwriting a local deletion with the upstream copy.
+
+    Args:
+        git_root: Working-tree root.
+        env: Optional Git environment.
+        saved: Previously saved conflict contents.
+        ref: Original local branch tip.
+
+    Returns:
+        Saved contents with log snapshots refreshed from the original tip.
+    """
+    refreshed = []
+    for path, content in saved:
+        if Path(path).name == "log.md":
+            result = run_git_capturing(
+                git_root, "show", f"{ref}:{path}", preserve_newlines=True, env=env
+            )
+            if result.returncode != 0:
+                continue
+            content = result.stdout
+        refreshed.append((path, content))
+    return refreshed
+
+
 def restore_upstream_paths(
     git_root: Path,
     env: dict[str, str] | None,

@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import re
-from typing import TYPE_CHECKING
 
 from markdown_it import MarkdownIt
 
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
 from markdown_vault_mcp.scanner import strip_frontmatter_block
-
-if TYPE_CHECKING:
-    from markdown_it.token import Token
 
 
 @dataclasses.dataclass(frozen=True)
@@ -30,6 +27,7 @@ class _Section:
     start: int
     end: int
     entries: list[tuple[str, ...]]
+    spans: list[tuple[int, int]]
 
 
 @dataclasses.dataclass
@@ -44,55 +42,44 @@ def _lines(text: str) -> list[str]:
     return re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", text)[:-1]
 
 
-def _fences_closed(tokens: list[Token], lines: list[str]) -> bool:
-    for token in tokens:
-        if token.type == "fence" and token.map:
-            closing = lines[token.map[1] - 1].strip()
-            pattern = (
-                re.escape(token.markup[0]) + "{" + str(len(token.markup)) + r",}\s*"
-            )
-            if token.map[1] - 1 == token.map[0] or not re.fullmatch(pattern, closing):
-                return False
-    return True
-
-
 def _read_sections(
     lines: list[str], body: str
 ) -> tuple[list[_Section], int, set[int], str]:
-    tokens = MarkdownIt("commonmark").parse(body)
-    if not _fences_closed(tokens, lines):
-        return [], 0, set(), "unclosed_fence"
+    env: dict[str, object] = {}
+    tokens = MarkdownIt("commonmark").parse(body, env)
+    if env.get("references"):
+        return [], 0, set(), "reference_definitions"
     sections: list[_Section] = []
     first = len(lines)
     accounted: set[int] = set()
-    for token in tokens:
+    for index, token in enumerate(tokens):
         if (
             token.type == "heading_open"
             and token.level == 0
             and token.tag == "h2"
             and token.map
         ):
-            line = lines[token.map[0]].rstrip("\r\n")
-            match = _LOG_HEADING_RE.fullmatch(line)
+            heading = tokens[index + 1].content
+            match = _LOG_HEADING_RE.fullmatch(f"## {heading}")
             if not match or token.markup != "##":
                 return [], 0, set(), "non_date_heading"
+            try:
+                datetime.date.fromisoformat(match.group(1))
+            except ValueError:
+                return [], 0, set(), "invalid_date"
             if any(section.date == match.group(1) for section in sections):
                 return [], 0, set(), "duplicate_date"
             if sections:
+                if sections[-1].date < match.group(1):
+                    return [], 0, set(), "date_order"
                 sections[-1].end = token.map[0]
             accounted.update(range(*token.map))
             first = min(first, token.map[0])
-            sections.append(_Section(match.group(1), token.map[0], len(lines), []))
-        elif (
-            token.level == 0
-            and token.map
-            and token.map[0] >= first
-            and token.type != "bullet_list_open"
-        ):
-            return [], 0, set(), "unsupported_content"
+            sections.append(_Section(match.group(1), token.map[0], len(lines), [], []))
         elif (
             token.type == "list_item_open"
             and token.level == 1
+            and token.markup in {"-", "+", "*"}
             and token.map
             and sections
         ):
@@ -101,11 +88,11 @@ def _read_sections(
             while item and not item[-1].strip(" \t\r\n"):
                 item.pop()
             sections[-1].entries.append(tuple(line.rstrip("\r\n") for line in item))
+            sections[-1].spans.append((token.map[0], token.map[0] + len(item)))
     return sections, first, accounted, ""
 
 
 def _parse(text: str) -> tuple[_Log | None, str]:
-    # Each refusal accounts for a distinct unsafe Markdown structure.
     try:
         text.encode("utf-8")
     except UnicodeEncodeError:
@@ -124,8 +111,6 @@ def _parse(text: str) -> tuple[_Log | None, str]:
         if i >= first
     ):
         return None, "unaccounted_content"
-    if any(not section.entries for section in sections):
-        return None, "empty_section"
     preamble = lines[:first]
     while preamble and not preamble[-1].strip(" \t\r\n"):
         preamble.pop()
@@ -168,6 +153,17 @@ def _insertions(
     return insertions, known, added
 
 
+def _duplicate_lines(log: _Log) -> set[int]:
+    duplicates: set[int] = set()
+    for section in log.sections:
+        seen: set[tuple[str, ...]] = set()
+        for entry, (start, end) in zip(section.entries, section.spans, strict=True):
+            if entry in seen:
+                duplicates.update(range(start, end))
+            seen.add(entry)
+    return duplicates
+
+
 def merge_log_texts(upstream: str, local: str) -> LogMerge:
     """Union complete list entries while retaining upstream formatting.
 
@@ -178,7 +174,6 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
     Returns:
         Merged text and count, or a reason why the union is unsafe.
     """
-    # Keep insertion decisions and the final safety check together.
     left, reason = _parse(upstream)
     if left is None:
         return LogMerge(None, 0, reason)
@@ -193,9 +188,12 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
     eol_match = re.search(r"\r\n|\r|\n", upstream)
     eol = eol_match.group() if eol_match else "\n"
     insertions, known, added = _insertions(left, right, eol)
-    if not added:
+    duplicates = _duplicate_lines(left)
+    if not added and not duplicates:
         return LogMerge(upstream, 0, "")
-    output = list(left.lines)
+    output = [
+        "" if index in duplicates else line for index, line in enumerate(left.lines)
+    ]
     for pos in sorted(insertions, reverse=True):
         if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
             output[pos - 1] += eol

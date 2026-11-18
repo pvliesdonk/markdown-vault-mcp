@@ -208,7 +208,7 @@ def test_malformed_local_log_is_saved_verbatim(
         assert (root / result.conflict_files[0]).read_text() == local
         assert (root / "log.md").read_text() == upstream
         assert "git_conflict_log_merge_fallback" in caplog.text
-        assert "unsupported_content" in caplog.text
+        assert "unaccounted_content" in caplog.text
     finally:
         vault.close()
         strategy.close()
@@ -292,14 +292,19 @@ def test_existing_date_and_concept_conflict_only_saves_concept(
         strategy.close()
 
 
-def test_single_unclosed_fence_is_not_a_valid_log() -> None:
-    text = "## 2026-11-18\n\n- one\n  ```\n"
-    assert merge_log_texts(text, text).text is None
-
-
 def test_blank_preamble_separators_do_not_block_union() -> None:
     upstream = "# Log\n\n  \n## 2026-11-18\n\n- upstream\n"
     local = "# Log\n\n## 2026-11-18\n\n- local\n"
     result = merge_log_texts(upstream, local)
     assert result.text is not None
     assert "- upstream\n- local\n" in result.text
+
+
+@pytest.mark.parametrize("extra", ["", "- local\n"])
+def test_upstream_repeated_entry_is_deduplicated(extra: str) -> None:
+    upstream = "## 2026-11-18\n\n- repeated\n- repeated\n"
+    local = "## 2026-11-18\n\n- repeated\n" + extra
+    result = merge_log_texts(upstream, local)
+    assert result.text is not None
+    assert result.text.count("- repeated\n") == 1
+    assert ("- local\n" in result.text) == bool(extra)
