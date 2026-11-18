@@ -125,10 +125,9 @@ def _find_git_root(path: Path) -> Path | None:
                 "--show-toplevel",
             ],
             capture_output=True,
-            text=True,
             check=True,
         )
-        return Path(result.stdout.strip())
+        return Path(os.fsdecode(result.stdout.removesuffix(b"\n")))
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
