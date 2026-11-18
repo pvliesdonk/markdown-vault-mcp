@@ -1164,9 +1164,7 @@ def register(mcp: FastMCP) -> None:
 
         The user may be asked to confirm the review. The record means a person looked,
         not that the content is correct. A retained review may describe an older
-        version of the note; it is not bound to the current content. Independent
-        review requires active OKF; the legacy OKF_WRITE alias also permits review
-        of an undeclared vault in auto mode.
+        version of the note; it is not bound to the current content.
 
         Args:
             path: Path of the note the user reviewed.
