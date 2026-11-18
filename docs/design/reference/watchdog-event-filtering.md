@@ -119,7 +119,9 @@ platforms. [source: fs400] [source: fs401] [source: fs402] [source: changes]
 ## Where this project departs from the subject
 
 The project chooses eight mutation classes rather than watchdog's unfiltered
-default and keeps its handler guard and root-relative hidden-path checks; see
+default. Search and observation handlers share the observer and debounce;
+observation also watches search-excluded roots and readable siblings of
+protected paths. The search handler retains root-relative hidden-path checks; see
 the [watcher design](../design.md). The scheduling pin covers recursive visible
 and dot-roots, the optional floor, excluded children and protected state paths.
 [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch]

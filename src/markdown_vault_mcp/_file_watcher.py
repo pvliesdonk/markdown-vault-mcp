@@ -1,7 +1,7 @@
 """Filesystem-event watcher for external file changes (issue #558).
 
-Monitors ``source_dir`` with watchdog and calls ``on_change()`` after a
-quiet debounce window.  Used when neither the git periodic-pull loop nor a
+Monitors ``source_dir`` with watchdog and coalesces search and observation
+events after a quiet debounce window. Used when neither the git periodic-pull loop nor a
 push webhook drives reindexing — those mechanisms already trigger reindex
 on their own cadence, and mixing a file watcher with git checkout would
 cause redundant reindexes and mid-checkout partial scans.
@@ -20,11 +20,20 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from markdown_vault_mcp.utils.fs import _dir_prune_rules, _should_prune_dir
+from markdown_vault_mcp.bundle_inventory import INTERNAL_DIRECTORY_NAMES
+from markdown_vault_mcp.utils import is_path_excluded
+from markdown_vault_mcp.utils.content_kind import is_note
+from markdown_vault_mcp.utils.fs import (
+    _dir_prune_rules,
+    _should_prune_dir,
+    is_directory,
+    is_subtree_excluded,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -518,8 +527,8 @@ class VaultFileWatcher:
             dir, ``.git``) that must never be watched, so ``reindex``'s writes
             into them do not re-trigger the watcher (see
             :func:`_derive_watch_roots`).
-        on_observation: Optional callback for inventory changes, independently
-            debounced and subscribed without search exclusions.
+        on_observation: Optional callback for inventory-only changes, subscribed
+            without search exclusions and coalesced with search events.
     """
 
     def __init__(
@@ -539,41 +548,28 @@ class VaultFileWatcher:
         self._root_floor = root_floor
         self._internal_dirs = tuple(internal_dirs)
         self._on_observation = on_observation
-        self._observation_timer: threading.Timer | None = None
         self._observer: Any = None
         self._timer: threading.Timer | None = None
+        self._search_pending = False
+        self._observation_roots: set[Path] = set()
+        self._observation_nonrecursive: set[Path] = set()
+        self._observation_watches: dict[Path, tuple[int, int, Any]] = {}
+        self._search_handlers: dict[Path, Any] = {}
         self._lock = threading.Lock()
         self._stopped = False
 
     def _schedule_observation(self) -> None:
-        with self._lock:
-            if self._stopped or self._on_observation is None:
-                return
-            if self._observation_timer is not None:
-                self._observation_timer.cancel()
-            self._observation_timer = threading.Timer(
-                self._debounce_s, self._fire_observation
-            )
-            self._observation_timer.daemon = True
-            self._observation_timer.start()
-
-    def _fire_observation(self) -> None:
-        with self._lock:
-            if self._stopped:
-                return
-            self._observation_timer = None
-            callback = self._on_observation
-        if callback is not None:
-            try:
-                callback()
-            except Exception:
-                logger.error("file_watcher_observation_failed", exc_info=True)
+        self._queue(search=False)
 
     def _schedule(self) -> None:
         """Reset the debounce timer — no-op after stop()."""
+        self._queue(search=True)
+
+    def _queue(self, *, search: bool) -> None:
         with self._lock:
             if self._stopped:
                 return
+            self._search_pending |= search
             if self._timer is not None:
                 self._timer.cancel()
             self._timer = threading.Timer(self._debounce_s, self._fire)
@@ -585,10 +581,122 @@ class VaultFileWatcher:
             if self._stopped:
                 return
             self._timer = None
+            search, self._search_pending = self._search_pending, False
+        callback = self._on_change if search else self._on_observation
+        if callback is None:
+            return
         try:
-            self._on_change()
+            callback()
         except Exception:
             logger.error("file_watcher_on_change_raised", exc_info=True)
+
+    def _search_event_allowed(self, event: FileSystemEvent) -> bool:
+        source = _resolve_or_original(self._source_dir)
+        for endpoint in _event_paths(event):
+            try:
+                relative = Path(endpoint).relative_to(source).as_posix()
+            except ValueError:
+                # A watched symlink can deliver a realpath outside source.
+                return True
+            if not is_path_excluded(relative, self._exclude_patterns) and not (
+                event.is_directory
+                and is_subtree_excluded(relative, self._exclude_patterns or ())
+            ):
+                return True
+        return False
+
+    def _watch_observation_root(self, root: Path) -> bool:
+        """Watch readable siblings without recursing into protected subtrees."""
+        root = _resolve_or_original(root)
+        if (
+            root == _resolve_or_original(self._source_dir)
+            or root in self._observation_nonrecursive
+        ):
+            return self._refresh_observation_children(root)
+        protected = frozenset(_resolve_internal_dirs(self._internal_dirs)) - {
+            _resolve_or_original(self._source_dir)
+        }
+        if (
+            root in self._observation_roots
+            or any(root == item or root.is_relative_to(item) for item in protected)
+            or root.name in INTERNAL_DIRECTORY_NAMES
+        ):
+            return False
+        recursive = not _contains_internal_dir(root, protected)
+        observer = self._observer
+        if observer is None:
+            return False
+        try:
+            info = root.stat()
+            watch = observer.schedule(
+                _ObservationEventHandler(
+                    self._schedule_observation,
+                    root,
+                    None if recursive else self._watch_observation_root,
+                ),
+                str(root),
+                recursive=recursive,
+                event_filter=_MUTATING_EVENT_CLASSES,
+            )
+            self._observation_watches[root] = (info.st_dev, info.st_ino, watch)
+            self._observation_roots.add(root)
+            if root in self._search_handlers and recursive:
+                observer.schedule(
+                    self._search_handlers[root],
+                    str(root),
+                    recursive=True,
+                    event_filter=_MUTATING_EVENT_CLASSES,
+                )
+            if not recursive:
+                self._observation_nonrecursive.add(root)
+                for child in root.iterdir():
+                    if is_directory(child):
+                        self._watch_observation_root(child)
+            return True
+        except Exception:
+            logger.warning(
+                "file_watcher_observation_schedule_failed root=%s", root, exc_info=True
+            )
+            return False
+
+    def _refresh_observation_children(self, root: Path) -> bool:
+        """Discover children and retire watches for replaced directories."""
+        changed = self._retire_changed_children(root)
+        try:
+            for child in root.iterdir():
+                if is_directory(child):
+                    changed = self._watch_observation_root(child) or changed
+        except OSError:
+            logger.warning(
+                "file_watcher_observation_enumerate_failed root=%s", root, exc_info=True
+            )
+        return changed
+
+    def _retire_changed_children(self, parent: Path) -> bool:
+        """Forget native watches whose directories disappeared or were replaced."""
+        observer = self._observer
+        if observer is None:
+            return False
+        removed = False
+        for root, (device, inode, _) in list(self._observation_watches.items()):
+            if root.parent != parent:
+                continue
+            try:
+                current = root.stat()
+                unchanged = (current.st_dev, current.st_ino) == (device, inode)
+            except OSError:
+                unchanged = False
+            if unchanged:
+                continue
+            removed = True
+            for child, (_, _, watch) in list(self._observation_watches.items()):
+                if child == root or child.is_relative_to(root):
+                    with suppress(KeyError):
+                        observer.unschedule(watch)
+                    self._observation_watches.pop(child, None)
+                    self._observation_roots.discard(child)
+                    self._observation_nonrecursive.discard(child)
+        return removed
 
     def start(self) -> None:
         """Start watching *source_dir*.
@@ -614,8 +722,13 @@ class VaultFileWatcher:
         )
         observer = Observer()
         scheduled: list[_WatchRoot] = []
+        self._search_handlers.clear()
         for root in roots:
-            handler = _VaultEventHandler(self._schedule, root.path)
+            handler = _VaultEventHandler(
+                self._schedule,
+                root.path,
+                self._search_event_allowed if self._on_observation else None,
+            )
             try:
                 observer.schedule(
                     handler,
@@ -634,6 +747,7 @@ class VaultFileWatcher:
                 )
                 continue
             scheduled.append(root)
+            self._search_handlers[root.path] = handler
 
         if roots and not scheduled:
             # Every derived root failed to schedule: the observer will run but
@@ -649,32 +763,36 @@ class VaultFileWatcher:
                 self._source_dir,
             )
 
-        if self._on_observation is not None:
-            observation_roots = _derive_watch_roots(
-                self._source_dir,
-                None,
-                root_floor=self._root_floor,
-                internal_dirs=self._internal_dirs,
-            )
-            for root in observation_roots:
-                try:
-                    observer.schedule(
-                        _ObservationEventHandler(self._schedule_observation, root.path),
-                        str(root.path),
-                        recursive=root.recursive,
-                        event_filter=_MUTATING_EVENT_CLASSES,
-                    )
-                except Exception:
-                    logger.warning(
-                        "file_watcher_observation_schedule_failed root=%s",
-                        root.path,
-                        exc_info=True,
-                    )
-
         # Assign before start() so stop() can always see and stop it,
         # even if it races into the narrow window between schedule() and start().
         with self._lock:
             self._observer = observer
+            self._observation_roots.clear()
+            self._observation_nonrecursive.clear()
+            self._observation_watches.clear()
+        if self._on_observation is not None:
+            source = _resolve_or_original(self._source_dir)
+            try:
+                for child in source.iterdir():
+                    if is_directory(child):
+                        self._watch_observation_root(child)
+                if self._root_floor:
+                    observer.schedule(
+                        _ObservationEventHandler(
+                            self._schedule_observation,
+                            source,
+                            self._watch_observation_root,
+                        ),
+                        str(source),
+                        recursive=False,
+                        event_filter=_MUTATING_EVENT_CLASSES,
+                    )
+            except OSError:
+                logger.warning(
+                    "file_watcher_observation_schedule_failed root=%s",
+                    source,
+                    exc_info=True,
+                )
         try:
             observer.start()
         except Exception:
@@ -701,9 +819,7 @@ class VaultFileWatcher:
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
-            if self._observation_timer is not None:
-                self._observation_timer.cancel()
-                self._observation_timer = None
+            self._search_pending = False
             observer, self._observer = self._observer, None
         if observer is not None:
             try:
@@ -718,25 +834,50 @@ if _WATCHDOG_AVAILABLE:
     class _ObservationEventHandler(FileSystemEventHandler):
         """Schedule inventory reconciliation for mutations, including dot paths."""
 
-        def __init__(self, schedule: Callable[[], None], root: Path) -> None:
+        def __init__(
+            self,
+            schedule: Callable[[], None],
+            root: Path,
+            watch_directory: Callable[[Path], bool] | None = None,
+        ) -> None:
             super().__init__()
             self._schedule = schedule
             self._root = root
+            self._watch_directory = watch_directory
 
         def on_any_event(self, event: FileSystemEvent) -> None:
             """Schedule for either endpoint of a mutation within this root."""
             if event.event_type not in _MUTATING_EVENT_TYPES:
                 return
-            for path in _event_paths(event):
+            relevant = False
+            for index, path in enumerate(_event_paths(event)):
                 try:
                     parts = Path(path).relative_to(self._root).parts
                 except ValueError:
                     continue
-                if parts and not any(
-                    p in {".git", ".markdown_vault_mcp"} for p in parts
+                if (
+                    not parts
+                    and event.is_directory
+                    and self._watch_directory is not None
                 ):
-                    self._schedule()
+                    if self._watch_directory(self._root):
+                        self._schedule()
                     return
+                if parts and not any(p in INTERNAL_DIRECTORY_NAMES for p in parts):
+                    if (
+                        event.is_directory
+                        and (
+                            event.event_type == EVENT_TYPE_CREATED
+                            or (event.event_type == EVENT_TYPE_MOVED and index == 1)
+                        )
+                        and self._watch_directory is not None
+                    ):
+                        self._watch_directory(Path(path))
+                    relevant |= (
+                        event.is_directory and event.event_type != EVENT_TYPE_MODIFIED
+                    ) or (not event.is_directory and is_note(path))
+            if relevant:
+                self._schedule()
 
     class _VaultEventHandler(FileSystemEventHandler):
         """Forward mutating, non-hidden filesystem events to the scheduler.
@@ -750,15 +891,24 @@ if _WATCHDOG_AVAILABLE:
         descendants while hidden noise below any root is still dropped.
         """
 
-        def __init__(self, schedule: Callable[[], None], watch_root: Path) -> None:
+        def __init__(
+            self,
+            schedule: Callable[[], None],
+            watch_root: Path,
+            allowed: Callable[[FileSystemEvent], bool] | None = None,
+        ) -> None:
             super().__init__()
             self._schedule = schedule
             self._watch_root = watch_root
+            self._allowed = allowed
             self._notices = _HiddenChangeNotices()
 
         def _concerns_vault(self, event: FileSystemEvent) -> bool:
             """Return whether a mutating event is a visible, non-derived change."""
             paths = _event_paths(event)
+            if self._allowed is not None and not self._allowed(event):
+                self._notices.note_hidden(event, paths)
+                return False
             if all(
                 _is_hidden_relative_to_root(path, self._watch_root) for path in paths
             ):

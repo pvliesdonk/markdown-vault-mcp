@@ -55,6 +55,7 @@ SearchState = Literal[
     "not_indexed_yet",
 ]
 Enumeration = Literal["complete", "entry_limit", "unavailable", "not_inspected"]
+INTERNAL_DIRECTORY_NAMES = frozenset({".git", ".markdown_vault_mcp"})
 
 
 def _components(path: str) -> tuple[str, ...]:
@@ -479,10 +480,10 @@ class BundleInspector:
 
     def _internal(self, path: str) -> bool:
         parts = path.split("/")
-        if any(part in {".git", ".markdown_vault_mcp"} for part in parts):
+        if any(part in INTERNAL_DIRECTORY_NAMES for part in parts):
             return True
         candidate = self._absolute_source.joinpath(*parts)
-        for internal_name in (".git", ".markdown_vault_mcp"):
+        for internal_name in INTERNAL_DIRECTORY_NAMES:
             if _normalized_name(candidate.name) == internal_name and _same_file(
                 candidate, candidate.parent / internal_name
             ):

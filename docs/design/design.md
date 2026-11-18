@@ -1494,10 +1494,11 @@ the cost of root-level files being picked up only by scans. The vault's
 own state / index / embeddings directories and `.git` are never watched
 (#830): `reindex()` rewrites the state file on every run, so a watch on
 its directory would re-trigger the watcher into a self-feedback loop.
-Consequences: a top-level directory created after startup needs a restart
+For search, a top-level directory created after startup needs a restart
 to be watched, and a state/index/embeddings path configured beneath a
 content directory un-watches that whole top-level directory (keep those
-paths at the vault root or outside the vault). Every derived watch root
+paths at the vault root or outside the vault). Observation has separate
+subscriptions described below. Every derived watch root
 (`source_dir`, its floor, and each kept child) is resolved to its realpath
 at derive time (#849), because watchdog's macOS FSEvents emitter resolves
 the scheduled path with `os.path.realpath` and delivers events whose
@@ -1536,13 +1537,14 @@ file onto a visible note and moves of visible content into hidden or outside
 storage. Hidden-only and root-self noise stays ignored, including below
 intentionally watched dot-roots; other mutations consider only their source.
 
-An independently debounced observation subscription uses the same protected
-roots and floor, without search exclusions. Mutations including hidden paths
-and either move endpoint trigger an inventory sweep; the inventory enforces
-its own access and internal-path boundary. This subscription never requests a
-search reindex. The existing search subscription retains its exclusions and
-hidden-path rules. The root-floor and newly-created top-level directory limits
-apply to both subscriptions.
+The observation subscription includes search-excluded and hidden paths, with
+non-recursive watches along internal-directory ancestors to keep readable
+siblings in scope. The root floor discovers new top-level observation roots;
+without that floor, root-level files and newly created top-level directories
+wait for startup, pull or reindex. Search and observation events share one
+debounce: a search reindex performs the observation sweep, with an independent
+sweep as fallback if reindex fails. Observation-only changes do not reindex.
+The inventory enforces access and internal-path boundaries during each sweep.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
@@ -7769,7 +7771,9 @@ tree. A failed fallback sweep is logged and reported as failed, allowing the
 pull tick to continue to its independent pending push retry. A tick reads the full
 observation scope, normally every 600 seconds. The watcher is disabled when
 periodic pulls or a deliverable webhook are active; external changes then wait
-for the next startup, pull or reindex sweep. Byte or presence changes advance the change time;
+for the next startup, pull or reindex sweep. With the watcher root floor off,
+root-level notes and newly created top-level directories have the same bound.
+Byte or presence changes advance the change time;
 a role-only refresh leaves it intact. Unchanged rows remain stable;
 inaccessible paths and their subtrees do not establish removal, but do not block
 removal elsewhere. A readable empty root records prior files as removed even

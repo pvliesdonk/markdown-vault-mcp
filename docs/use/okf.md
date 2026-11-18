@@ -308,8 +308,9 @@ When the watcher runs, external changes in readable hidden and search-excluded
 paths also trigger an observation sweep; excluded changes alone do not trigger
 a search reindex. When the watcher is disabled, including for periodic pulls
 or an active webhook, external changes are observed at the next startup, pull
-or reindex sweep. Watcher root-floor and internal-directory restrictions still
-apply.
+or reindex sweep. With the watcher root floor disabled, root-level files and
+top-level directories created after startup wait for one of those
+sweeps; restart also begins watching those directories.
 A readable empty root records previously observed files as removed,
 even if search refuses to prune its own rows for an empty root.
 

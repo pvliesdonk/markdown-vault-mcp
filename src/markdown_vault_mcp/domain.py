@@ -416,8 +416,10 @@ class Service:
                     logger.info(
                         "file_watcher_reindex_skipped reason=index_not_queryable"
                     )
+                    vault._sweep_observations("file_watcher")
                 except Exception:
                     logger.error("file_watcher_reindex_failed", exc_info=True)
+                    vault._sweep_observations("file_watcher")
 
             def _on_observation() -> None:
                 vault._sweep_observations("file_watcher")

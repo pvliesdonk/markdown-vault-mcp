@@ -209,6 +209,18 @@ def test_hidden_move_parent_notices_do_not_schedule(tmp_path: Path) -> None:
     assert calls == []
 
 
+def _observation_case(tmp_path: Path, case: str) -> tuple[Path, Path | None, list[str]]:
+    folder = tmp_path / ("new" if case == "new_root" else "visible/excluded")
+    if case != "new_root":
+        folder.mkdir(parents=True)
+        (folder / "note.md").write_text("before")
+    state = folder / "state" / "state.json" if case == "nested_state" else None
+    if state is not None:
+        state.parent.mkdir()
+    excludes = [] if case == "visible" else [f"{folder.relative_to(tmp_path)}/**"]
+    return folder, state, excludes
+
+
 @pytest.mark.parametrize(
     "events",
     [
@@ -925,8 +937,10 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
     asyncio.run(_run())
 
 
+@pytest.mark.parametrize("observation_enabled", [True, False])
 def test_lifespan_observes_excluded_external_change_without_reindex(
     tmp_path: Path,
+    observation_enabled: bool,
 ) -> None:
     """An excluded edit reaches the ledger through the real watcher alone."""
     import asyncio
@@ -946,14 +960,34 @@ def test_lifespan_observes_excluded_external_change_without_reindex(
     )
 
     async def run() -> None:
+        real_init = VaultFileWatcher.__init__
+
+        def init(self: VaultFileWatcher, *args: object, **kwargs: object) -> None:
+            if not observation_enabled:
+                kwargs["on_observation"] = None
+            real_init(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(VaultFileWatcher, "__init__", init):
+            await exercise()
+
+    async def exercise() -> None:
         async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
             vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
             ledger = vault._index_mgr.observations
+            before = ledger.rows()["excluded/note.md"].content_digest
+            await asyncio.sleep(0.4)
             with patch.object(
                 vault.index, "reindex", wraps=vault.index.reindex
             ) as reindex:
                 note.write_text("after")
                 expected = hashlib.sha256(b"after").hexdigest()
+                if not observation_enabled:
+                    await asyncio.sleep(0.6)
+                    assert ledger.rows()["excluded/note.md"].content_digest == before
+                    await asyncio.to_thread(vault.index.reindex)
+                    assert ledger.rows()["excluded/note.md"].content_digest == expected
+                    return
                 for _ in range(100):
                     if ledger.rows()["excluded/note.md"].content_digest == expected:
                         break
@@ -979,6 +1013,167 @@ def test_observation_handler_accepts_hidden_move_destination(tmp_path: Path) -> 
     assert calls == [1]
 
 
+def test_observation_handler_ignores_non_notes_and_internal_paths(
+    tmp_path: Path,
+) -> None:
+    """Noise and internal files do not request a full inventory sweep."""
+    from markdown_vault_mcp._file_watcher import _ObservationEventHandler
+
+    calls: list[int] = []
+    handler = _ObservationEventHandler(lambda: calls.append(1), tmp_path)
+    for name in (
+        "image.png",
+        ".obsidian/settings.json",
+        ".git/note.md",
+        ".markdown_vault_mcp/a.md",
+    ):
+        handler.on_any_event(FileModifiedEvent(str(tmp_path / name)))
+    handler.on_any_event(DirModifiedEvent(str(tmp_path)))
+    assert calls == []
+
+
+def test_observation_and_search_share_debounce_and_stop(tmp_path: Path) -> None:
+    """A search event subsumes pending observation; stop cancels either."""
+    search = threading.Event()
+    observed = threading.Event()
+    watcher = VaultFileWatcher(
+        tmp_path, search.set, debounce_s=0.08, on_observation=observed.set
+    )
+    watcher._schedule_observation()
+    watcher._schedule()
+    assert search.wait(2)
+    assert not observed.wait(0.2)
+    watcher._schedule_observation()
+    watcher.stop()
+    assert not observed.wait(0.2)
+
+
+def test_root_notice_without_changed_registrations_does_not_sweep(
+    tmp_path: Path,
+) -> None:
+    """Parent notices from state writes do not re-arm observation."""
+    from markdown_vault_mcp._file_watcher import _ObservationEventHandler
+
+    calls: list[int] = []
+    handler = _ObservationEventHandler(
+        lambda: calls.append(1), tmp_path, lambda _: False
+    )
+    handler.on_any_event(DirModifiedEvent(str(tmp_path)))
+    assert calls == []
+
+
+def test_observation_callback_error_does_not_escape(tmp_path: Path) -> None:
+    """A failed observation callback is contained by the shared timer."""
+
+    def fail() -> None:
+        raise RuntimeError("ledger unavailable")
+
+    watcher = VaultFileWatcher(tmp_path, lambda: None, on_observation=fail)
+    watcher._fire()
+
+
+@pytest.mark.parametrize(
+    "case", ["new_root", "nested_state", "nested_exclude", "visible"]
+)
+def test_lifespan_observation_routing(tmp_path: Path, case: str) -> None:
+    """Settled watcher routes excluded and visible edits to the right work."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder, state, excludes = _observation_case(tmp_path, case)
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        exclude=excludes,
+        state_path=state,
+        file_watcher_debounce_s=0.08,
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            ledger = vault._index_mgr.observations
+            await asyncio.sleep(0.5)
+            with (
+                patch.object(
+                    vault.index, "reindex", wraps=vault.index.reindex
+                ) as reindex,
+                patch.object(ledger, "sweep", wraps=ledger.sweep) as sweep,
+            ):
+                if case == "new_root":
+                    folder.mkdir()
+                    await asyncio.sleep(0.4)
+                    reindex.reset_mock()
+                note = folder / "note.md"
+                note.write_text("after")
+                key = note.relative_to(tmp_path).as_posix()
+                expected = hashlib.sha256(b"after").hexdigest()
+                for _ in range(100):
+                    row = ledger.rows().get(key)
+                    if row is not None and row.content_digest == expected:
+                        break
+                    await asyncio.sleep(0.05)
+                assert row is not None and row.content_digest == expected
+                await asyncio.sleep(0.4)
+                if case == "visible":
+                    assert reindex.call_count == 1
+                    assert sweep.call_count == 1
+                else:
+                    assert reindex.call_count == 0
+                if case == "new_root":
+                    note.write_text("again")
+                    expected = hashlib.sha256(b"again").hexdigest()
+                    for _ in range(100):
+                        if ledger.rows()[key].content_digest == expected:
+                            break
+                        await asyncio.sleep(0.05)
+                    assert ledger.rows()[key].content_digest == expected
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("remove", ["delete", "move"])
+def test_recreated_excluded_root_is_watched(tmp_path: Path, remove: str) -> None:
+    """A replacement directory receives a fresh native subscription."""
+    import asyncio
+    import hashlib
+    import shutil
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder = tmp_path / "excluded"
+    folder.mkdir()
+    (folder / "note.md").write_text("before")
+    config = ProjectConfig(
+        source_dir=tmp_path, exclude=["excluded/**"], file_watcher_debounce_s=0.08
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            ledger = vault._index_mgr.observations
+            await asyncio.sleep(0.5)
+            if remove == "delete":
+                shutil.rmtree(folder)
+            else:
+                folder.rename(tmp_path / "moved")
+            await asyncio.sleep(0.4)
+            folder.mkdir()
+            await asyncio.sleep(0.4)
+            (folder / "note.md").write_text("replacement")
+            expected = hashlib.sha256(b"replacement").hexdigest()
+            for _ in range(100):
+                if ledger.rows()["excluded/note.md"].content_digest == expected:
+                    break
+                await asyncio.sleep(0.05)
+            assert ledger.rows()["excluded/note.md"].content_digest == expected
+
+    asyncio.run(run())
+
+
 def test_lifespan_observes_hidden_external_move(tmp_path: Path) -> None:
     """A hidden destination is read after a real external rename."""
     import asyncio
@@ -995,18 +1190,57 @@ def test_lifespan_observes_hidden_external_move(tmp_path: Path) -> None:
 
     async def run() -> None:
         async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
-            ledger = ctx["vault"]._index_mgr.observations
-            source.rename(destination)
-            for _ in range(100):
-                rows = ledger.rows()
-                if ".notes/.nested/new.md" in rows:
-                    break
-                await asyncio.sleep(0.05)
-            assert (
-                rows[".notes/.nested/new.md"].content_digest
-                == hashlib.sha256(b"moved").hexdigest()
-            )
-            assert rows[".notes/.nested/old.md"].presence == "removed"
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            ledger = vault._index_mgr.observations
+            await asyncio.sleep(0.4)
+            with patch.object(
+                vault.index, "reindex", wraps=vault.index.reindex
+            ) as reindex:
+                source.rename(destination)
+                for _ in range(100):
+                    rows = ledger.rows()
+                    if ".notes/.nested/new.md" in rows:
+                        break
+                    await asyncio.sleep(0.05)
+                assert (
+                    rows[".notes/.nested/new.md"].content_digest
+                    == hashlib.sha256(b"moved").hexdigest()
+                )
+                assert rows[".notes/.nested/old.md"].presence == "removed"
+                await asyncio.sleep(0.2)
+                assert reindex.call_count == 0
+
+    asyncio.run(run())
+
+
+def test_lifespan_reindex_failure_still_observes(tmp_path: Path) -> None:
+    """A failing search refresh does not lose the observation route."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    note = tmp_path / "note.md"
+    note.write_text("before")
+    config = ProjectConfig(source_dir=tmp_path, file_watcher_debounce_s=0.08)
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            ledger = vault._index_mgr.observations
+            await asyncio.sleep(0.4)
+            with patch.object(
+                vault.index, "reindex", side_effect=RuntimeError("failed")
+            ):
+                note.write_text("after")
+                expected = hashlib.sha256(b"after").hexdigest()
+                for _ in range(100):
+                    if ledger.rows()["note.md"].content_digest == expected:
+                        break
+                    await asyncio.sleep(0.05)
+                assert ledger.rows()["note.md"].content_digest == expected
 
     asyncio.run(run())
 
