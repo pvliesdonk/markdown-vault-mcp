@@ -5,7 +5,7 @@ kind: explanation
 
 # Repository Protection
 
-The template ships GitHub repository rulesets that gate the branches a
+This repository keeps GitHub repository rulesets that gate the branches a
 release can ship from. The rules live as JSON files in `.github/rulesets/`
 and the `bootstrap.yml` workflow applies them, so the effective protection
 state is checked in, reviewed, and re-applied rather than clicked together
@@ -75,7 +75,7 @@ owned by a personal account.
 
 Ruleset bypass lists name roles, teams, apps, or deploy keys, not user
 accounts. The shipped entry grants bypass to the **repository admin role**
-(`actor_id` 5, the one actor a template can name without knowing your
+(`actor_id` 5, the one actor a checked-in file can name without knowing an
 account), with `bypass_mode: always`.
 
 The release flow depends on this. `RELEASE_TOKEN` is a personal access
@@ -130,7 +130,7 @@ The apply step needs `administration: write`, a permission the default
 `GITHUB_TOKEN` cannot be granted, so it runs with `RELEASE_TOKEN`,
 matching the permission set the README already asks for.
 
-## Requiring a check the template does not own
+## Requiring a check outside `ci.yml`
 
 `CI Success` is the only context the shipped rulesets require, and it is an
 aggregate: it passes when every job in the generated `ci.yml` passed, so
@@ -224,12 +224,11 @@ security-settings failure show up apart:
 | Secret scanning push protection | Blocks a push that contains a recognised secret | Public repositories, when the plan allows it; a refusal is a warning in the run, not a failure |
 
 Without private vulnerability reporting, a researcher's only path is a public
-issue asking for a private one, which is how a project generated from this
-template was contacted. `SECURITY.md` at the repository root is the policy
+issue asking for a private one, which is how another project built from the same template was
+contacted. `SECURITY.md` at the repository root is the policy
 GitHub shows next to that button. It covers the reporting path, the response
 targets, the supported versions, and where a fix lands. The response targets
-and the scope live inside its `DOMAIN-SECURITY` block, which a project edits
-once and keeps across template updates.
+and the scope live inside its `DOMAIN-SECURITY` block.
 
 The job runs with `RELEASE_TOKEN`, the same `administration: write` the
 rulesets need. Each call is idempotent, so a re-run converges on the same

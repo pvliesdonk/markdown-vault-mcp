@@ -30,15 +30,6 @@ rm -rf .venv
 uv sync --all-extras --all-groups
 ```
 
-## After scaffolding
-
-Once, after `copier copy` and `gh repo create --push`:
-
-1. Fill in the `DOMAIN-*` blocks in `README.md` and `AGENTS.md`. The `GENERATED-*` regions are not yours: the generators own them and rewrite them on every run.
-2. Configure the GitHub secrets below.
-3. Install the tooling and the hooks (the first two commands above).
-4. Run the gate; push the first commit. CI should be green.
-
 ## GitHub secrets
 
 The workflows read two required repository secrets and one optional token. Configure them under **Settings → Secrets and variables → Actions**, or with `gh secret set`:
@@ -56,7 +47,7 @@ gh secret set SONAR_TOKEN
 gh secret set CLAUDE_CODE_OAUTH_TOKEN
 ```
 
-`GITHUB_TOKEN` is provided by GitHub; nothing to configure. Dependency updates come from Renovate (`renovate.yml`), which reuses `RELEASE_TOKEN`, maintains `uv.lock` and merges patch and minor bumps once `CI Success` is green. `bootstrap.yml` enables auto-merge, applies the rulesets under `.github/rulesets/`, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from `pyproject.toml` on the first push; [repository protection](repository-protection.md) has the per-branch posture. GitHub Actions versions and the `hatchling` build-backend bound in `pyproject.toml` are updated in the template and arrive through template updates, not per repository.
+`GITHUB_TOKEN` is provided by GitHub; nothing to configure. Dependency updates come from Renovate (`renovate.yml`), which reuses `RELEASE_TOKEN`, maintains `uv.lock` and merges patch and minor bumps once `CI Success` is green. `bootstrap.yml` enables auto-merge, applies the rulesets under `.github/rulesets/`, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from `pyproject.toml` on the first push; [repository protection](repository-protection.md) has the per-branch posture. Renovate does not update GitHub Actions versions or the `hatchling` build-backend bound in `pyproject.toml`; until #2259 settles how, bump them by hand.
 
 ## The other pages here
 
