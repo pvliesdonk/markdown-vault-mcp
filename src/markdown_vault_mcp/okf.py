@@ -905,10 +905,8 @@ class OkfIndexResult:
     Attributes:
         path: Vault-relative path of the generated listing.
         entries: Notes and sub-folder pointers listed.
-        frontmatter_preserved: Whether frontmatter already on the file was
-            carried over. Not "the file has frontmatter": a file that had
-            none remains body-only
-            (#1175), which reports ``False`` here.
+        frontmatter_preserved: Whether an existing frontmatter block, including
+            an empty one, was carried over. A new body-only file reports False.
         created: Subfolder ``index.md`` files written because the listing
             points at them and they did not exist (#1647), outermost first.
     """
@@ -921,7 +919,13 @@ class OkfIndexResult:
 
 @dataclass(frozen=True)
 class OkfLogResult:
-    """Result of seeding a reserved ``log.md`` from git history (#963)."""
+    """Result of seeding a reserved ``log.md`` from git history (#963).
+
+    Attributes:
+        path: Vault-relative path of the generated log.
+        commits: Number of commits included.
+        dates: Number of dates represented.
+    """
 
     path: str
     commits: int

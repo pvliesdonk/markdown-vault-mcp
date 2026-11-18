@@ -428,6 +428,12 @@ class Vault:
         # once (design okf.md §3). A vault that declares OKF mid-session
         # gains annotations immediately but indexed OKF tags only on the
         # next startup.
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        self._okf_capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
         self._okf = OkfDetector(self._source_dir, settings.okf_mode)
         configured_field_count = len(settings.indexed_frontmatter_fields or [])
         self._indexed_frontmatter_fields: list[str] = settings.effective_indexed_fields(
@@ -691,8 +697,16 @@ class Vault:
             )
 
         # 4. DocumentManager (mark_paths_dirty routes through the writer)
-        # The deprecated OKF_WRITE alias, reported as the write state.
         self._okf_write_configured = settings.okf_write
+        from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+        capabilities = self._okf_capabilities
+
+        def designated_index(path: str) -> bool:
+            return self._okf.state().active and designated_index_path(
+                self._source_dir, path, capabilities.folders
+            )
+
         self._doc_mgr = DocumentManager(
             fts=self._fts,
             source_dir=self._source_dir,
@@ -702,6 +716,7 @@ class Vault:
             write_protect_existing=self._write_protect_existing,
             exclude_patterns=self._exclude_patterns,
             protected_paths=settings.protected_paths,
+            designated_index=designated_index if capabilities.index else None,
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
@@ -777,14 +792,7 @@ class Vault:
         )
         # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        capabilities = (
-            settings.okf_capabilities
-            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
-        )
-        self._okf_capabilities = capabilities
-        self._okf_write_alias = settings.okf_write
+        capabilities = self._okf_capabilities
         if not settings.read_only and (
             capabilities.index or capabilities.log == "writes"
         ):
@@ -942,7 +950,7 @@ class Vault:
             if self._read_only:
                 reason = "read_only"
             elif enabled:
-                if not active and not (name == "verify" and self._okf_write_alias):
+                if not active and not (name == "verify" and self._okf_write_configured):
                     reason = "okf_inactive"
                 elif (
                     name == "author"

@@ -191,6 +191,12 @@ def test_explicit_generate_index_retains_recursive_behavior(tmp_path: Path) -> N
         ("a/c", ("a/**/c",), True),
         ("a/b/c", ("a/**/c",), True),
         ("a/b/d", ("a/**/c",), False),
+        ("cafe\u0301", ("café",), True),
+        ("café", ("cafe\u0301",), True),
+        ("a\u0301\u0323", ("a[\u0301]\u0323",), False),
+        ("a\u0301\u0323", ("a?\u0323",), False),
+        ("a\u0301\u0323", ("\u1ea1\u0301",), True),
+        ("\u1ea1\u0301", ("a\u0301\u0323",), True),
     ],
 )
 def test_designation_glob_depth(
@@ -565,7 +571,11 @@ def test_reserved_file_symlink_write_does_not_trigger_maintenance(
     )
     try:
         vault.index.build_index()
-        vault.writer.write("team/alias.md", "# Manual reserved content\n")
+        vault.writer.write(
+            "team/alias.md",
+            "# Manual reserved content\n",
+            allow_protected=reserved == "index.md",
+        )
         wait_for_writer_drain(vault)
         assert (folder / reserved).read_text() == "# Manual reserved content\n"
         other = "log.md" if reserved == "index.md" else "index.md"
@@ -599,7 +609,7 @@ def test_rename_from_reserved_file_symlink_does_not_trigger_maintenance(
     )
     try:
         vault.index.build_index()
-        vault.writer.rename("team/alias.md", "team/renamed.md")
+        vault.writer.rename("team/alias.md", "team/renamed.md", allow_protected=True)
         wait_for_writer_drain(vault)
         assert (folder / "renamed.md").read_text() == "# Authored index\n"
         assert not (folder / "index.md").exists()

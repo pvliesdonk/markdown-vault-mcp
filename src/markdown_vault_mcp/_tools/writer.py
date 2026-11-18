@@ -1065,8 +1065,8 @@ def register(mcp: FastMCP) -> None:
             - path (str): the index.md written.
             - entries (int): notes and subfolder links listed.
             - frontmatter_preserved (bool): true when the file already had
-              frontmatter, which is kept; false when it had none, though the
-              fields the vault requires are still added.
+              a frontmatter block, including an empty block, which is kept;
+              false when it had none. No fields are added.
             - created (list[str]): index.md files written for subfolders that
               had none, outermost first.
             - remote (dict, optional): present only while the vault's git clone
@@ -1233,6 +1233,7 @@ def register(mcp: FastMCP) -> None:
         """
         await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
         await _require_review_authority(config, vault)
+        await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
         subject_or_request = await _resolve_verify_mode_subject(
             mode=config.content.okf_capabilities.verify, ctx=ctx, path=path
         )

@@ -7729,3 +7729,22 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 ### Bundle inventory surfaces
 
 The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Each call filters one bounded page of up to 1,000 observations, returning up to the requested number of candidates and a continuation when further observations may remain, including when the filtered page is empty. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. Search admission remains an observation and can be unknown without an index. The local CLI uses a usable configured index only when the selected source resolves to the configured vault. An unusable or unsupported optional index leaves search state unknown without modifying the store.
+
+
+
+
+**Designated indexes.** In an active OKF vault, the index capability reserves
+`index.md` in designated folders against ordinary mutations, including resolved
+aliases and secondary writes. Generation and maintenance bypass this designation
+only; explicit protected paths remain enforced. Folder paths and globs are
+normalized to NFC for both maintenance and protection, including on disks that
+keep differently normalized names distinct. Case and index filename variants
+follow the disk's identity. For ambiguous spellings, a hidden scratch directory
+is created in the nearest existing folder and removed immediately; if the probe
+fails, the guard assumes both case and Unicode folding when checking the policy.
+On a case-folding disk `[!a]*` also reserves `a`, because
+`A` matches; `[!aA]*` excludes both spellings. Character classes and `?` match
+the NFC-normalized folder spelling; the guard does not expand a folder into
+decomposed spellings for glob matching. A leaf symlink to an authored note is editable, while an alias
+to a designated index remains protected. Library callers retain the
+explicit `allow_protected` override. Other indexes and logs remain editable.
