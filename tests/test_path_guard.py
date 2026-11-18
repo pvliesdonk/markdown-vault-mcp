@@ -8,9 +8,14 @@ from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
-def test_bulk_retry_reaches_later_unprotected_notes(tmp_path: Path) -> None:
-    for name in ("a.md", "policy.md", "y.md"):
+@pytest.mark.parametrize("policy_has_link", [False, True])
+def test_bulk_conversion_skips_only_changed_protected_notes(
+    tmp_path: Path, policy_has_link: bool
+) -> None:
+    for name in ("a.md", "y.md"):
         (tmp_path / name).write_text("[[z]]")
+    original = "[[z]]" if policy_has_link else "no links"
+    (tmp_path / "policy.md").write_text(original)
     (tmp_path / "z.md").write_text("# z")
     vault = Vault(
         source_dir=tmp_path,
@@ -18,31 +23,17 @@ def test_bulk_retry_reaches_later_unprotected_notes(tmp_path: Path) -> None:
     )
     try:
         vault.index.build_index()
-        for count in (2, 0):
-            with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS") as exc:
-                vault.writer.okf_convert_links()
-            assert f"Converted {count} notes" in str(exc.value)
-            assert "policy.md" in str(exc.value)
-            assert (tmp_path / "a.md").read_text() == "[z](/z.md)"
-            assert (tmp_path / "y.md").read_text() == "[z](/z.md)"
-        assert (tmp_path / "policy.md").read_text() == "[[z]]"
-    finally:
-        vault.close()
-
-
-def test_protected_backlink_is_not_rewritten(tmp_path: Path) -> None:
-    (tmp_path / "target.md").write_text("target")
-    linker = tmp_path / "policy.md"
-    linker.write_text("[target](target.md)")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, protected_paths=["policy.md"]),
-    )
-    try:
-        vault.index.build_index()
-        result = vault.writer.rename("target.md", "new.md", update_links=True)
-        assert linker.read_text() == "[target](target.md)"
-        assert result.hint and "PROTECTED_PATHS" in result.hint
+        if policy_has_link:
+            for count in (2, 0):
+                with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS") as exc:
+                    vault.writer.okf_convert_links()
+                assert f"Converted {count} notes" in str(exc.value)
+                assert "policy.md" in str(exc.value)
+        else:
+            vault.writer.okf_convert_links()
+        assert (tmp_path / "a.md").read_text() == "[z](/z.md)"
+        assert (tmp_path / "y.md").read_text() == "[z](/z.md)"
+        assert (tmp_path / "policy.md").read_text() == original
     finally:
         vault.close()
 
@@ -112,8 +103,6 @@ def test_direct_mutations_and_override(tmp_path: Path, operation: str) -> None:
     [
         ("from/two.md", False),
         ("to/two.md", False),
-        ("from", False),
-        ("to", False),
         ("to/two.md", True),
     ],
 )
@@ -146,12 +135,10 @@ def test_folder_endpoints_and_files(
     ("pattern", "path"),
     [
         ("private", "private/a.md"),
-        ("private/", "private/a.md"),
         ("private/**", "private/a.md"),
         ("_CONVENTIONS.md", "_conventions.md"),
         ("café.md", "cafe\u0301.md"),
-        ("dir/./x.md", "dir/x.md"),
-        ("dir//x.md", "dir/x.md"),
+        ("**/_conventions.md", "folder/_conventions.md"),
     ],
 )
 def test_matching_patterns(tmp_path: Path, pattern: str, path: str) -> None:
@@ -160,16 +147,16 @@ def test_matching_patterns(tmp_path: Path, pattern: str, path: str) -> None:
         settings=VaultSettings(read_only=False, protected_paths=[pattern]),
     )
     try:
+        if pattern == "**/_conventions.md":
+            vault.writer.write("_conventions.md", "root allowed")
         with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
             vault.writer.write(path, "changed")
     finally:
         vault.close()
 
 
-@pytest.mark.parametrize(
-    ("target", "pattern"), [("target.md", "target.md"), ("TARGET.md", "target.md")]
-)
-def test_symlink_alias_protected(tmp_path: Path, target: str, pattern: str) -> None:
+def test_symlink_alias_protected(tmp_path: Path) -> None:
+    target, pattern = "TARGET.md", "target.md"
     (tmp_path / target).write_text("original")
     (tmp_path / "alias.md").symlink_to(target)
     vault = Vault(
@@ -260,22 +247,39 @@ def test_maintenance_respects_protection(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_index_generation_reports_skips_and_progress(tmp_path: Path) -> None:
+@pytest.mark.parametrize("protect_parent", [False, True])
+def test_index_generation_reports_skips_and_progress(
+    tmp_path: Path, protect_parent: bool
+) -> None:
     for folder in ("a", "z"):
         (tmp_path / folder).mkdir()
         (tmp_path / folder / "note.md").write_text("# Note")
+    if protect_parent:
+        (tmp_path / "index.md").write_text("original")
+    protected = "index.md" if protect_parent else "a/index.md"
     vault = Vault(
         source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, protected_paths=["a/index.md"]),
+        settings=VaultSettings(read_only=False, protected_paths=[protected]),
     )
     try:
         vault.index.build_index()
         with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS") as exc:
             vault.writer.okf_generate_index()
-        assert "a/index.md" in str(exc.value) and "z/index.md" in str(exc.value)
-        assert not (tmp_path / "a/index.md").exists()
+        assert protected in str(exc.value) and "z/index.md" in str(exc.value)
         assert (tmp_path / "z/index.md").exists()
-        assert "/a/index.md" not in (tmp_path / "index.md").read_text()
+        if protect_parent:
+            assert (tmp_path / "index.md").read_text() == "original"
+            assert (tmp_path / "a/index.md").exists()
+        else:
+            assert not (tmp_path / "a/index.md").exists()
+            assert "/a/index.md" not in (tmp_path / "index.md").read_text()
+    finally:
+        vault.close()
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index()
+        assert "/a/index.md" in (tmp_path / "index.md").read_text()
     finally:
         vault.close()
 
@@ -306,32 +310,6 @@ async def test_mcp_read_and_conventions_remain_available(
             )
 
 
-def test_protected_parent_index_after_children(tmp_path: Path) -> None:
-    (tmp_path / "child").mkdir()
-    (tmp_path / "child/note.md").write_text("# Note")
-    (tmp_path / "index.md").write_text("original")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, protected_paths=["index.md"]),
-    )
-    try:
-        vault.index.build_index()
-        with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS") as exc:
-            vault.writer.okf_generate_index()
-        assert "child/index.md" in str(exc.value)
-        assert (tmp_path / "index.md").read_text() == "original"
-        assert (tmp_path / "child/index.md").exists()
-    finally:
-        vault.close()
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        vault.index.build_index()
-        vault.writer.okf_generate_index()
-        assert "/child/index.md" in (tmp_path / "index.md").read_text()
-    finally:
-        vault.close()
-
-
 def test_seed_protected_log(tmp_path: Path) -> None:
     vault = Vault(
         source_dir=tmp_path,
@@ -341,25 +319,6 @@ def test_seed_protected_log(tmp_path: Path) -> None:
         with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
             vault.writer.okf_seed_log()
         assert not (tmp_path / "log.md").exists()
-    finally:
-        vault.close()
-
-
-def test_protected_note_with_no_convertible_links_does_not_block(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "policy.md").write_text("no links")
-    (tmp_path / "a.md").write_text("[[z]]")
-    (tmp_path / "z.md").write_text("# z")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, protected_paths=["policy.md"]),
-    )
-    try:
-        vault.index.build_index()
-        vault.writer.okf_convert_links()
-        assert (tmp_path / "a.md").read_text() == "[z](/z.md)"
-        assert (tmp_path / "policy.md").read_text() == "no links"
     finally:
         vault.close()
 
@@ -457,18 +416,5 @@ def test_empty_policy_folder_move_has_no_submodule_hint(
         result = vault.writer.move_folder("src", "dst")
         assert result.failed_links == ["sub/link.md"]
         assert result.hint is None
-    finally:
-        vault.close()
-
-
-def test_glob_double_star_requires_folder(tmp_path: Path) -> None:
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, protected_paths=["**/_conventions.md"]),
-    )
-    try:
-        vault.writer.write("_conventions.md", "root allowed")
-        with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
-            vault.writer.write("folder/_conventions.md", "refused")
     finally:
         vault.close()

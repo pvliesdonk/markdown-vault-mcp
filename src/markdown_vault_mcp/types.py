@@ -462,7 +462,7 @@ class MoveFolderResult:
             successfully rewritten to point into the new prefix.
         failed_links: Relative paths of source documents whose link rewrite
             failed (best-effort; logged and skipped, not aborted).
-        hint: Guidance for protected or submodule link sources, if any.
+        hint: Guidance for protected link sources, if any.
     """
 
     old_dir: str
