@@ -13,7 +13,7 @@ kind: how-to
 !!! tip "Example pack"
     The [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) directory ships a declaration index, typed note templates (`Concept`, `Capture`), and a prompt pack (author a concept, verify a note, triage stale content, migrate a vault) that you can copy into your vault and prompt folders.
 
-Live whole-note structured reads in an active bundle include `okf.snapshot` with algorithm `mvmcp-concept-v1` and a SHA-256 digest. It identifies the body and parsed frontmatter except `verified` and `x-mvmcp`; spellings parsed as equal share a snapshot, while the etag distinguishes raw bytes. The legacy verifier can rewrite the body or other metadata and change the snapshot; snapshot-preserving review recording is planned for D3. The digest does not itself bind a review or prove who recorded one. Historical and section reads and search hits omit it. In the CLI, use `--json` or `--agent` to see the snapshot.
+Live whole-note structured reads in an active bundle include `okf.snapshot` with algorithm `mvmcp-concept-v1` and a SHA-256 digest. It identifies the body and frontmatter except `verified` and `x-mvmcp`; YAML and JSON numeric spellings count, while optional TOML uses the numeric and timestamp precision of its parser. The etag distinguishes raw bytes. The legacy verifier can rewrite the body or other metadata and change the snapshot; snapshot-preserving review recording is planned for D3. The digest does not itself bind a review or prove who recorded one. Historical and section reads and search hits omit it. In the CLI, use `--json` or `--agent` to see the snapshot.
 
 ## How the server recognises a bundle
 

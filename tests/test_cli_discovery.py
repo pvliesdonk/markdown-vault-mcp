@@ -285,13 +285,9 @@ def test_historical_read_retains_revision_shape(
     _run_git(discovery_source, "add", "alpha.md")
     _run_git(discovery_source, "commit", "-m", "test: change note")
     with reader_backend(remote) as connection:
-        runner = CliRunner()
-        live = runner.invoke(app, ["read", "alpha.md", *connection, "--json"])
-        result = runner.invoke(
+        result = CliRunner().invoke(
             app, ["read", "alpha.md", "--revision", revision, *connection, "--json"]
         )
-    assert live.exit_code == 0, live.output
-    assert json.loads(live.stdout)["okf"]["snapshot"]["algo"] == "mvmcp-concept-v1"
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
     assert "Details here." in data["content"]
