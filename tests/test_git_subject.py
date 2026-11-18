@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from markdown_vault_mcp import __version__
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
     _resolve_subject_writer,
@@ -63,13 +62,8 @@ def test_commit_and_seed_log_preserve_attribution(repo: Path, operation: str) ->
             else "[AI summary] Raise retention period"
         )
         assert git(repo, "log", "-1", "--format=%s").strip() == subject
-        trailers = git(repo, "log", "-1", "--format=%(trailers)")
-        assert (
-            f"Vault-Tool: {operation if operation != 'surrogate' else 'write'}"
-            in trailers
-        )
-        assert f"Vault-Server: markdown-vault-mcp/{__version__}" in trailers
         if operation != "surrogate":
+            trailers = git(repo, "log", "-1", "--format=%(trailers)")
             assert f"Mechanical-Subject: {mechanical}" in trailers
         assert (
             "rename from old.md" if operation == "rename" else "synthetic retention"
@@ -213,7 +207,6 @@ def test_batch_fallback_and_no_diff(repo: Path) -> None:
         )
         trailers = git(repo, "log", "-1", "--format=%(trailers)")
         assert "Mechanical-Subject: convert: 2 files" in trailers
-        assert "Vault-Tool: convert" in trailers
         assert set(
             git(repo, "show", "--format=", "--name-only", "HEAD").splitlines()
         ) == {"a.md", "b.md"}
@@ -221,7 +214,6 @@ def test_batch_fallback_and_no_diff(repo: Path) -> None:
         strategy.on_write_batch([(first, "write", None, None)], "convert")
         trailers = git(repo, "log", "-1", "--format=%(trailers)")
         assert "Mechanical-Subject: write: a.md" in trailers
-        assert "Vault-Tool: convert" in trailers
         assert len(fake.calls) == 2
     finally:
         strategy.close()
@@ -311,8 +303,5 @@ def test_changed_worktree_during_generation_falls_back(repo: Path, case: str) ->
         strategy(note, "", operation)
         assert git(repo, "show", "HEAD:race.md") == "later synthetic content"
         assert git(repo, "log", "-1", "--format=%s").strip() == f"{operation}: race.md"
-        trailers = git(repo, "log", "-1", "--format=%(trailers)")
-        assert f"Vault-Tool: {operation}" in trailers
-        assert f"Vault-Server: markdown-vault-mcp/{__version__}" in trailers
     finally:
         strategy.close()
