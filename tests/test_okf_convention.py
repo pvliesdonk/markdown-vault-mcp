@@ -31,7 +31,7 @@ from tests.conftest import wait_for_writer_drain
 from tests.fixtures.git import make_superproject
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 _FIXED = date(2026, 8, 9)
@@ -55,7 +55,10 @@ class _FakeMigrate:
         self.index_calls: list[str] = []
         self.raise_on_index = False
 
-    def generate_index(self, *, folder: str = "") -> None:
+    def generate_index(
+        self, *, folder: str = "", designated: Callable[[str], bool] | None = None
+    ) -> None:
+        del designated
         if self.raise_on_index:
             raise RuntimeError("boom")
         self.index_calls.append(folder)

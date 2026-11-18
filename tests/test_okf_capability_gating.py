@@ -418,3 +418,191 @@ async def test_review_refuses_when_bundle_deactivated_during_confirmation(
         with pytest.raises(ToolError, match="OKF is not active"):
             await client.call_tool("okf_verify", {"path": "note.md"})
     assert note.read_text() == "# Note\n"
+
+
+@pytest.mark.parametrize("operation", ["write", "edit", "append", "delete", "rename"])
+@pytest.mark.parametrize("alias", ["dotdot", "symlink"])
+def test_aliased_note_operations_preserve_undesignated_index(
+    tmp_path: Path, operation: str, alias: str
+) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.conftest import wait_for_writer_drain
+
+    root = tmp_path / "vault"
+    (root / "team" / "links").mkdir(parents=True)
+    (root / "private").mkdir()
+    (root / "team" / "links" / "private").symlink_to(
+        root / "private", target_is_directory=True
+    )
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    index = root / "private" / "index.md"
+    original = "# Private authored navigation\n"
+    index.write_text(original)
+    (root / "private" / "one.md").write_text("# One\n")
+    prefix = "team/../private" if alias == "dotdot" else "team/links/private"
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=("team/*/*",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        path = f"{prefix}/one.md"
+        if operation == "write":
+            vault.writer.write(f"{prefix}/new.md", "# New\n")
+        elif operation == "edit":
+            vault.writer.edit(path, old_text="One", new_text="Edited")
+        elif operation == "append":
+            vault.writer.append(path, "More\n")
+        elif operation == "delete":
+            vault.writer.delete(path)
+        else:
+            vault.writer.rename(path, f"{prefix}/two.md")
+        wait_for_writer_drain(vault)
+        note = root / "private" / "one.md"
+        if operation == "write":
+            assert (root / "private" / "new.md").read_text() == "# New\n"
+        elif operation == "edit":
+            assert note.read_text() == "# Edited\n"
+        elif operation == "append":
+            assert "More" in note.read_text()
+        elif operation == "delete":
+            assert not note.exists()
+        else:
+            assert not note.exists()
+            assert (root / "private" / "two.md").read_text() == "# One\n"
+        assert index.read_text() == original
+        assert not (root / "private" / "log.md").exists()
+    finally:
+        vault.close()
+
+
+def test_dot_path_maintains_designated_folder(tmp_path: Path) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.conftest import wait_for_writer_drain
+
+    root = tmp_path / "vault"
+    (root / "team").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=("team",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("./team/one.md", "# One\n")
+        wait_for_writer_drain(vault)
+        assert (root / "team" / "index.md").exists()
+        assert (root / "team" / "log.md").exists()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("alias", ["dotdot", "symlink"])
+def test_aliased_folder_move_preserves_undesignated_index(
+    tmp_path: Path, alias: str
+) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.conftest import wait_for_writer_drain
+
+    root = tmp_path / "vault"
+    (root / "team" / "links").mkdir(parents=True)
+    (root / "private" / "old").mkdir(parents=True)
+    (root / "team" / "links" / "private").symlink_to(
+        root / "private", target_is_directory=True
+    )
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    original = "# Private authored navigation\n"
+    (root / "private" / "old" / "index.md").write_text(original)
+    (root / "private" / "old" / "one.md").write_text("# One\n")
+    prefix = "team/../private" if alias == "dotdot" else "team/links/private"
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=("team/*/*/*",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.move_folder(f"{prefix}/old", f"{prefix}/new")
+        wait_for_writer_drain(vault)
+        assert (root / "private" / "new" / "index.md").read_text() == original
+        assert not (root / "private" / "new" / "log.md").exists()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("reserved", ["index.md", "log.md"])
+def test_reserved_file_symlink_write_does_not_trigger_maintenance(
+    tmp_path: Path, reserved: str
+) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.conftest import wait_for_writer_drain
+
+    root = tmp_path / "vault"
+    folder = root / "team"
+    folder.mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (folder / "index.md").write_text("# Original index\n")
+    (folder / "log.md").write_text("# Original log\n")
+    (folder / "alias.md").symlink_to(folder / reserved)
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=("team",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("team/alias.md", "# Manual reserved content\n")
+        wait_for_writer_drain(vault)
+        assert (folder / reserved).read_text() == "# Manual reserved content\n"
+        other = "log.md" if reserved == "index.md" else "index.md"
+        assert (folder / other).read_text() == (
+            "# Original log\n" if other == "log.md" else "# Original index\n"
+        )
+    finally:
+        vault.close()
+
+
+def test_rename_from_reserved_file_symlink_does_not_trigger_maintenance(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.conftest import wait_for_writer_drain
+
+    root = tmp_path / "vault"
+    folder = root / "team"
+    folder.mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (folder / "index.md").write_text("# Authored index\n")
+    (folder / "log.md").write_text("# Authored log\n")
+    (folder / "alias.md").symlink_to(folder / "index.md")
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=("team",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.rename("team/alias.md", "team/renamed.md")
+        wait_for_writer_drain(vault)
+        assert (folder / "renamed.md").read_text() == "# Authored index\n"
+        assert not (folder / "index.md").exists()
+        assert (folder / "log.md").read_text() == "# Authored log\n"
+    finally:
+        vault.close()

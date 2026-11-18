@@ -245,7 +245,7 @@ class OkfMigrationManager:
             subfolders = {
                 sub
                 for sub in subfolders
-                if self._has_index(prefix + sub) or designated(prefix + sub)
+                if designated(prefix + sub) or self._has_index(prefix + sub)
             }
         # Immediate notes first, then a pointer into each subfolder's index.
         entries = note_entries + [

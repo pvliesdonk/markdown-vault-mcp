@@ -38,7 +38,7 @@ from markdown_vault_mcp.okf import (
     is_okf_reserved_file,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
-from markdown_vault_mcp.utils import folder_of, normalize_folder
+from markdown_vault_mcp.utils import folder_of, normalize_folder, resolve_inside
 from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
@@ -159,8 +159,22 @@ class ConventionMaintainer:
             capabilities or ContentConfig(okf_write=True).okf_capabilities
         )
 
+    def _canonical(self, path: str) -> str:
+        """Return the vault-relative identity of *path* after validation's resolution.
+
+        Reuses the shared traversal guard, so ``.``/``..`` segments and symlink
+        aliases fold to the same note or folder every write already targets.
+        Designation, anchor choice and generated writes decide on this identity,
+        never on the caller's spelling. The vault root is ``""``.
+        """
+        rel = Path(path)
+        if self._source_dir is not None:
+            rel = resolve_inside(path, self._source_dir)
+            rel = rel.relative_to(self._source_dir.resolve())
+        return "" if rel == Path() else rel.as_posix()
+
     def _designated(self, folder: str) -> bool:
-        return folder_is_designated(folder, self._capabilities.folders)
+        return folder_is_designated(self._canonical(folder), self._capabilities.folders)
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and its listing.
@@ -186,7 +200,7 @@ class ConventionMaintainer:
             # A suppressed write (okf_verify's attestation, a mechanical
             # transform) gets neither provenance stamping nor maintenance.
             return
-        if is_okf_reserved_file(Path(path).as_posix()):
+        if is_okf_reserved_file(path := self._canonical(path)):
             return
         if not self._detector.state().active:
             return
@@ -215,7 +229,7 @@ class ConventionMaintainer:
         folder in *create* is refreshed regardless, as a folder a note was
         written into is (#1609). The same guards as :meth:`maintain` apply:
         nothing on an inactive vault or under a suppressed intent, and nothing
-        when every *trigger_paths* entry is a reserved file, whose change never
+        when any *trigger_paths* entry is a reserved file, whose change never
         triggers its own regeneration (#1414). ``log.md`` is left to the log
         design; only the listings are kept current here. Never raises.
 
@@ -232,7 +246,7 @@ class ConventionMaintainer:
             for folder in dict.fromkeys(
                 [*wanted, *(f for f in create if self._designated(f))]
             ):
-                self._refresh_index(folder)
+                self._refresh_index(self._canonical(folder))
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.
@@ -282,7 +296,7 @@ class ConventionMaintainer:
         Returns:
             The anchor folder, or ``""`` when no level has an index.
         """
-        current = folder
+        current = self._canonical(folder)
         while current != "" and not self._has_index(current):
             parent = folder_of(current)
             if not self._designated(parent):
@@ -295,7 +309,7 @@ class ConventionMaintainer:
         intent = current_okf_intent()
         if intent is not None and intent.suppress:
             return False
-        if all(is_okf_reserved_file(Path(p).as_posix()) for p in trigger_paths):
+        if any(is_okf_reserved_file(self._canonical(p)) for p in trigger_paths):
             return False
         return self._detector.state().active
 
@@ -365,12 +379,7 @@ class ConventionMaintainer:
         try:
             if self._sync_index is not None:
                 self._sync_index()
-            if self._capabilities.folders == ("**",):
-                self._okf_migrate.generate_index(folder=folder)
-            else:
-                self._okf_migrate.generate_index(
-                    folder=folder, designated=self._designated
-                )
+            self._okf_migrate.generate_index(folder=folder, designated=self._designated)
         except Exception:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True
