@@ -86,7 +86,7 @@ src/markdown_vault_mcp/
     bootstrap.py       -- RepoBootstrap: managed-clone bootstrap, remote-protocol validation, memoised git-root discovery (#893)
     push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     health.py          -- SyncHealthTracker: whether the clone is still reaching its remote; transition-logged, lock-free reads (#1287)
-    conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
+    conflict.py        -- rebase-conflict resolution and durable pending generated indexes (caller holds the strategy lock)
     submodules.py      -- SubmoduleGuard: which paths lie in or hold a submodule (cached index gitlinks) or nested repository (live structural .git resolution with strict gitfile reads), so write managers refuse them (#1564, #1949)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants

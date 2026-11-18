@@ -95,8 +95,8 @@ class PullResult:
               histories diverged and the conflict-resolution path
               failed to produce a usable result; HEAD did not move.
             * ``"rebased"`` — local and remote histories diverged but
-              ``git rebase origin/<branch>`` replayed local commits cleanly
-              on top of the upstream with no manual intervention.
+              the rebase completed without siblings, including when only
+              designated generated indexes conflicted and await regeneration.
               ``applied`` is ``True``; ``conflict_files`` is empty.
             * ``"conflicts_resolved_with_siblings"`` — local and remote
               histories diverged AND rebase hit real conflicts, which

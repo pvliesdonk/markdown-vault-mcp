@@ -95,6 +95,17 @@ class _PullEntry:
     timer_driven: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class _ConflictRecovery:
+    git_root: Path
+    env: dict[str, str] | None
+    saved: list[tuple[str, str]]
+    ref: str
+    from_sha: str
+    rebase_in_progress: bool
+    detail: str | None
+
+
 _INTERACTIVE_PULL = _PullEntry("Git force_pull")
 _STARTUP_PULL = _PullEntry("Git pull")
 _LOOP_PULL = _PullEntry("Git pull", timer_driven=True)
@@ -213,6 +224,7 @@ class GitWriteStrategy:
         self._worktree_checked = False
         self._worktree_retry_at: float | None = None
         # ONE strategy-wide lock, shared with both collaborators below.
+        self._generated_index_policy: Callable[[Path], bool] | None = None
         self._lock = threading.Lock()
         self._bootstrap = RepoBootstrap(
             lock=self._lock,
@@ -1135,6 +1147,73 @@ class GitWriteStrategy:
             to_sha=remote_sha,
         )
 
+    def set_generated_index_policy(
+        self, is_generated: Callable[[Path], bool] | None
+    ) -> None:
+        """Set the vault's authority check for conflict recovery."""
+        self._generated_index_policy = is_generated
+
+    def pending_generated_indexes(self, repo_path: Path) -> list[Path]:
+        """Return absolute index paths awaiting recovery."""
+        root = self._bootstrap.ensure_git_root(repo_path)
+        if root is None:
+            return []
+        with self._lock:
+            return [root / p for p in conflict.read_generated_indexes(root)]
+
+    def settle_generated_indexes(self, repo_path: Path, done: list[Path]) -> None:
+        """Settle successfully regenerated index paths."""
+        root = self._bootstrap.ensure_git_root(repo_path)
+        if root is not None:
+            with self._lock:
+                conflict.settle_generated_indexes(
+                    root, [p.relative_to(root).as_posix() for p in done]
+                )
+
+    def _finish_conflicts(
+        self, recovery: _ConflictRecovery
+    ) -> tuple[PullResult | None, list[tuple[str, str]]]:
+        git_root, env, saved = recovery.git_root, recovery.env, recovery.saved
+        ref, from_sha = recovery.ref, recovery.from_sha
+        rebase_in_progress, detail = recovery.rebase_in_progress, recovery.detail
+        if rebase_in_progress and not conflict.abort_in_progress_rebase(
+            git_root, env, token=self._token
+        ):
+            return PullResult.head_unchanged_failure(
+                from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
+            ), []
+        generated: list[tuple[str, str]] = []
+        authored: list[tuple[str, str]] = []
+        for item in saved:
+            try:
+                is_generated = (
+                    self._generated_index_policy is not None
+                    and self._generated_index_policy(git_root / item[0])
+                )
+            except Exception:
+                logger.warning(
+                    "git_conflict_policy_failed path=%s action=keep_sibling",
+                    item[0],
+                    exc_info=True,
+                )
+                is_generated = False
+            (generated if is_generated else authored).append(item)
+        if rebase_in_progress:
+            authored = conflict.restore_upstream_paths(
+                git_root, env, authored, ref, token=self._token
+            )
+        else:
+            conflict.record_generated_indexes(git_root, [p for p, _ in generated])
+        if not authored:
+            if not rebase_in_progress and self.head_sha(git_root) != from_sha:
+                return self._build_pull_result_advanced(
+                    git_root, env, from_sha=from_sha, reason=PULL_REASON_REBASED
+                ), []
+            return PullResult.head_unchanged_failure(
+                from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
+            ), []
+        return None, authored
+
     def _force_pull_rebase_fallback(
         self,
         *,
@@ -1233,28 +1312,13 @@ class GitWriteStrategy:
                 git_root, env, token=self._token
             )
 
-            if rebase_in_progress:
-                if not conflict.abort_in_progress_rebase(
-                    git_root, env, token=self._token
-                ):
-                    return PullResult.head_unchanged_failure(
-                        from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
-                    )
-                saved = conflict.restore_upstream_paths(
-                    git_root, env, saved, ref, token=self._token
+            result, saved = self._finish_conflicts(
+                _ConflictRecovery(
+                    git_root, env, saved, ref, from_sha, rebase_in_progress, detail
                 )
-
-            if not saved:
-                # DEBUG since #1287: this repeats every pull cycle while the
-                # divergence stands.  Entering the unsynced state is logged
-                # once at ERROR by SyncHealthTracker, which this outcome feeds.
-                logger.debug(
-                    "git_conflict_resolution_failed strategy=%s",
-                    log_prefix,
-                )
-                return PullResult.head_unchanged_failure(
-                    from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
-                )
+            )
+            if result is not None:
+                return result
 
             # Rebase has already completed via ``git rebase --continue`` — HEAD
             # has advanced even if the sibling-files commit below fails.

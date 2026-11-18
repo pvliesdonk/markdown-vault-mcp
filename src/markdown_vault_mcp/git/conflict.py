@@ -11,8 +11,11 @@ suite's global ``subprocess.run`` monkeypatch still intercepts them.
 from __future__ import annotations
 
 import datetime
+import json
 import logging
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,6 +27,7 @@ from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
 )
+from markdown_vault_mcp.okf import is_okf_reserved_file
 from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory, path_exists
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -89,10 +93,11 @@ def resolve_rebase_conflicts(
 
         for rel_path in conflicting:
             # Save the MCP version (the commit being rebased).
-            show_result = subprocess.run(
-                ["git", "-C", root, "show", f"REBASE_HEAD:{rel_path}"],
-                capture_output=True,
-                text=True,
+            show_result = run_git_capturing(
+                git_root,
+                "show",
+                f"REBASE_HEAD:{rel_path}",
+                preserve_newlines=True,
                 env=env,
             )
             if show_result.returncode == 0:
@@ -349,6 +354,12 @@ def restore_upstream_paths(
     return restored
 
 
+def _write_reserved_sibling(git_root: Path, conflict_rel: str, content: str) -> None:
+    target = git_root / conflict_rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content.encode("utf-8"))
+
+
 def write_conflict_files(
     git_root: Path,
     saved: list[tuple[str, str]],
@@ -358,9 +369,10 @@ def write_conflict_files(
     commit_email: str,
     token: str | None,
 ) -> list[str] | None:
-    """Write conflict files and add ``conflict_with`` frontmatter to both sides.
+    """Write conflict siblings and annotate concept conflicts on both sides.
 
-    For each ``(relative_path, content)`` in *saved*:
+    Reserved index and log siblings preserve the local text verbatim without
+    reading or annotating the original. For other saved paths:
 
     1. Write the MCP version as ``<stem>.conflict-mcp-<timestamp><ext>``
        with ``conflict_with`` and ``conflict_date`` frontmatter.
@@ -391,6 +403,11 @@ def write_conflict_files(
         original = Path(rel_path)
         conflict_name = f"{original.stem}.conflict-mcp-{timestamp}{original.suffix}"
         conflict_rel = str(original.parent / conflict_name)
+
+        if is_okf_reserved_file(rel_path):
+            _write_reserved_sibling(git_root, conflict_rel, mcp_content)
+            written.append(conflict_rel)
+            continue
 
         # --- Write conflict file (MCP version) ---
         try:
@@ -507,3 +524,55 @@ def write_conflict_files(
         return None
 
     return written
+
+
+def _pending_file(git_root: Path) -> Path:
+    result = run_git_capturing(git_root, "rev-parse", "--absolute-git-dir")
+    if result.returncode:
+        raise OSError("Cannot locate git directory")
+    return Path(result.stdout.strip()) / "markdown-vault-pending-indexes.json"
+
+
+def read_generated_indexes(git_root: Path) -> list[str]:
+    """Read repository-relative generated indexes awaiting regeneration."""
+    marker = _pending_file(git_root)
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        if not isinstance(data, list) or any(
+            not isinstance(p, str) or Path(p).is_absolute() or ".." in Path(p).parts
+            for p in data
+        ):
+            raise ValueError("invalid pending indexes")
+        return data
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError, UnicodeError):
+        logger.warning("git_pending_indexes_unreadable path=%s", marker, exc_info=True)
+        return []
+
+
+def _write_generated_indexes(git_root: Path, paths: list[str]) -> None:
+    marker = _pending_file(git_root)
+    if not paths:
+        marker.unlink(missing_ok=True)
+        return
+    fd, name = tempfile.mkstemp(prefix=".pending-indexes-", dir=marker.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(sorted(set(paths)), stream)
+        Path(name).replace(marker)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def record_generated_indexes(git_root: Path, paths: list[str]) -> None:
+    """Atomically add repository-relative paths to the pending set."""
+    if paths:
+        _write_generated_indexes(git_root, read_generated_indexes(git_root) + paths)
+
+
+def settle_generated_indexes(git_root: Path, done: list[str]) -> None:
+    """Remove successfully regenerated paths from the pending set."""
+    _write_generated_indexes(
+        git_root, [p for p in read_generated_indexes(git_root) if p not in done]
+    )

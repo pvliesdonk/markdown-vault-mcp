@@ -408,6 +408,14 @@ commits) reports `would_apply=false`. The push leg has no safe local
       replays your local commits *on top of* the remote tip — the
       counting model only reports linear-history catch-ups.
 
+    An authored `index.md` or any `log.md` keeps the local bytes in a
+    sibling without adding `conflict_with` or `conflict_date` to either copy.
+    A designated generated index instead takes the upstream copy and is
+    regenerated after the search index catches up. A generated-only conflict
+    reports `rebased` with no siblings. The pending regeneration survives a
+    restart and is retried if it fails. At the root, the upstream
+    `okf_version` wins, so a local-only change to it is not preserved.
+
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and
     `delete` the sibling once merged. If the vault is a subdirectory, strip

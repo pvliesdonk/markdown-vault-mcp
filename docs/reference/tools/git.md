@@ -8,7 +8,9 @@ kind: reference
 # Git
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+Generated index conflicts can return `rebased` without siblings; authored
+indexes and logs retain a local sibling without injected conflict metadata.
+See [Git integration](../../use/git-integration.md) for recovery details.
 <!-- DOMAIN-INTRO-END -->
 
 ## `get_history`

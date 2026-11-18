@@ -203,6 +203,50 @@ class ConventionMaintainer:
         """Whether *folder*'s ``index.md`` may be generated automatically."""
         return self._designated(folder) and self._destination_ok(folder, "index.md")
 
+    def generated_index(self, path: Path) -> bool:
+        """Return whether this vault may regenerate the given index path.
+
+        Args:
+            path: Absolute candidate path.
+
+        Returns:
+            Whether this active vault designates the index for generation.
+        """
+        if (
+            self._source_dir is None
+            or path.name != "index.md"
+            or not self._capabilities.index
+        ):
+            return False
+        try:
+            rel = path.relative_to(self._source_dir.resolve())
+            folder = "" if rel.parent == Path() else rel.parent.as_posix()
+            return self._detector.state().active and self._may_index(folder)
+        except (ValueError, InvalidRequestError):
+            return False
+
+    def refresh_generated(self, paths: list[Path]) -> list[Path]:
+        """Regenerate pending index paths.
+
+        Args:
+            paths: Absolute paths awaiting regeneration.
+
+        Returns:
+            Paths whose regeneration failed or was refused.
+        """
+        if self._source_dir is None:
+            return paths
+        folders = {
+            p: (
+                ""
+                if p.parent == self._source_dir.resolve()
+                else p.parent.relative_to(self._source_dir.resolve()).as_posix()
+            )
+            for p in paths
+        }
+        failed = self.refresh_indexes(folders.values(), trigger_paths=())
+        return [p for p, folder in folders.items() if folder in failed]
+
     def _may_log(self, folder: str) -> bool:
         """Whether a write into *folder* may append to its ``log.md``."""
         return self._capabilities.log == "writes" and self._destination_ok(
@@ -260,7 +304,7 @@ class ConventionMaintainer:
         *,
         trigger_paths: Iterable[str],
         create: Iterable[str] = (),
-    ) -> None:
+    ) -> list[str]:
         """Refresh folder ``index.md`` files after a delete, rename or move.
 
         A designated folder in *folders* is refreshed only if it already has an
@@ -277,15 +321,22 @@ class ConventionMaintainer:
             trigger_paths: The vault-relative paths the change touched.
             create: Folders a note arrived in, refreshed even without an
                 ``index.md`` yet.
+
+        Returns:
+            Requested folders that were not successfully refreshed.
         """
+        folders = list(folders)
         if not self._capabilities.index or not self._maintains_after(trigger_paths):
-            return
+            return folders
         wanted = [f for f in folders if self._may_index(f) and self._has_index(f)]
+        failed = [f for f in folders if f not in wanted]
         with okf_write_suppressed(), auxiliary_commit_writes():
             for folder in dict.fromkeys(
                 [*wanted, *(f for f in create if self._may_index(f))]
             ):
-                self._refresh_index(self._canonical(folder))
+                if not self._refresh_index(self._canonical(folder)):
+                    failed.append(folder)
+        return failed
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.
@@ -412,14 +463,16 @@ class ConventionMaintainer:
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
-    def _refresh_index(self, folder: str) -> None:
+    def _refresh_index(self, folder: str) -> bool:
         """Regenerate the folder's ``index.md`` from the (drained) listing."""
         index_path = f"{folder}/index.md" if folder else "index.md"
         try:
             if self._sync_index is not None:
                 self._sync_index()
             self._okf_migrate.generate_index(folder=folder, designated=self._may_index)
+            return True
         except Exception:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True
             )
+            return False
