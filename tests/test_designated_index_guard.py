@@ -146,6 +146,52 @@ def test_literal_bracket_folder_refuses_case_alias(tmp_path: Path) -> None:
         vault.close()
 
 
+@pytest.mark.parametrize("pattern", ["a[\u0301]\u0323", "a?\u0323"])
+def test_nfc_glob_alias_write_is_not_later_regenerated(
+    tmp_path: Path, pattern: str
+) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    folder = tmp_path / "a\u0301\u0323"
+    alias = tmp_path / "a\u0323\u0301"
+    folder.mkdir()
+    index = folder / "index.md"
+    index.write_text("# generated\n")
+    if not alias.exists() or not alias.samefile(folder):
+        pytest.skip("requires a normalization-insensitive filesystem")
+    vault = designated_vault(tmp_path, (pattern,))
+    try:
+        vault.index.build_index()
+        vault.writer.write(f"{alias.name}/index.md", "# CLIENT\n")
+        vault.writer.write(f"{folder.name}/note.md", "# note\n")
+        wait_for_writer_drain(vault)
+        assert "CLIENT" in index.read_text()
+    finally:
+        vault.close()
+
+
+def test_nfc_literal_glob_protects_and_refreshes_alias(tmp_path: Path) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    folder = tmp_path / "a\u0301\u0323"
+    alias = tmp_path / "a\u0323\u0301"
+    folder.mkdir()
+    index = folder / "index.md"
+    index.write_text("# generated\n")
+    if not alias.exists() or not alias.samefile(folder):
+        pytest.skip("requires a normalization-insensitive filesystem")
+    vault = designated_vault(tmp_path, ("\u1ea1\u0301",))
+    try:
+        vault.index.build_index()
+        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
+            vault.writer.write(f"{alias.name}/index.md", "# CLIENT\n")
+        vault.writer.write(f"{folder.name}/note.md", "# note\n")
+        wait_for_writer_drain(vault)
+        assert "note.md" in index.read_text()
+    finally:
+        vault.close()
+
+
 def test_directory_named_index_is_not_reserved(tmp_path: Path) -> None:
     (tmp_path / "guides" / "index.md").mkdir(parents=True)
     (tmp_path / "guides" / "index.md" / "note.md").write_text("note")
@@ -285,6 +331,31 @@ def test_policy_with_simulated_folding_axes(
     name, pattern = names
     monkeypatch.setattr("markdown_vault_mcp.okf_capabilities._probe", lambda _p: axes)
     assert designated_index_path(tmp_path, f"{name}/index.md", (pattern,)) is want
+
+
+@pytest.mark.parametrize("pattern", ["?", "[é]"])
+def test_nfc_designation_protects_case_alias_with_simulated_axes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pattern: str
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+    monkeypatch.setattr(
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _p: (True, True)
+    )
+    assert designated_index_path(tmp_path, "e\u0301/INDEX.md", (pattern,))
+
+
+def test_nfc_folder_policy_on_sensitive_filesystem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+    monkeypatch.setattr(
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _p: (False, False)
+    )
+    assert designated_index_path(tmp_path, "e\u0301/index.md", ("é",))
+    assert designated_index_path(tmp_path, "é/index.md", ("e\u0301",))
+    assert not designated_index_path(tmp_path, "é/INDEX.md", ("é",))
 
 
 def test_witness_tables_match_each_codepoint() -> None:

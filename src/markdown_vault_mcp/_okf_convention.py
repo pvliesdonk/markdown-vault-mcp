@@ -27,6 +27,7 @@ from datetime import date
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TYPE_CHECKING
+from unicodedata import normalize
 
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
@@ -68,6 +69,7 @@ def folder_is_designated(
 
     ``a/**`` does not designate ``a`` itself. The empty folder is root.
     Leading ``./`` or ``/`` and trailing ``/`` in patterns are ignored.
+    Folders and patterns are normalized to NFC before matching.
 
     Args:
         folder: Vault-relative folder, or an empty string for the root.
@@ -93,10 +95,11 @@ def folder_is_designated(
             and matches(parts[1:], glob[1:])
         )
 
+    folder = normalize("NFC", folder)
     for pattern in patterns:
         glob = tuple(
             part
-            for part in (normalize_folder(pattern) or "").split("/")
+            for part in (normalize_folder(normalize("NFC", pattern)) or "").split("/")
             if part and part != "."
         )
         if not folder:

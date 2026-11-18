@@ -7690,13 +7690,15 @@ and report protected paths they skipped.
 **Designated indexes.** In an active OKF vault, the index capability reserves
 `index.md` in designated folders against ordinary mutations, including resolved
 aliases and secondary writes. Generation and maintenance bypass this designation
-only; explicit protected paths remain enforced. Name variants follow the disk’s
-case and Unicode identity. For ambiguous spellings, a hidden scratch directory
+only; explicit protected paths remain enforced. Folder paths and globs are
+normalized to NFC for both maintenance and protection, including on disks that
+keep differently normalized names distinct. Case and index filename variants
+follow the disk's identity. For ambiguous spellings, a hidden scratch directory
 is created in the nearest existing folder and removed immediately; if the probe
 fails, the guard assumes both case and Unicode folding when checking the policy.
 On a case-folding disk `[!a]*` also reserves `a`, because
-`A` matches; `[!aA]*` excludes both spellings. A glob that is not in canonical mark order, or places a class or `?` among
-combining marks, is judged in canonical mark order. A leaf symlink to an authored note is editable, while an alias
+`A` matches; `[!aA]*` excludes both spellings. Character classes and `?` match
+the NFC-normalized folder spelling. A leaf symlink to an authored note is editable, while an alias
 to a designated index remains protected. Library callers retain the
 explicit `allow_protected` override. Other indexes and logs remain editable.
 
