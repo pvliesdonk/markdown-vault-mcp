@@ -315,7 +315,7 @@ class OkfMigrationManager:
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
         reason = self._doc_mgr.protection_reason(
-            index_path, allow_protected=allow_protected
+            index_path, allow_protected=allow_protected, allow_designated=True
         )
         if reason:
             skipped[index_path] = reason
@@ -329,6 +329,7 @@ class OkfMigrationManager:
                     ),
                     allow_overwrite=True,
                     allow_protected=allow_protected,
+                    allow_designated=True,
                 )
         return OkfIndexResult(
             path=index_path,

@@ -688,6 +688,31 @@ class Vault:
         # 4. DocumentManager (mark_paths_dirty routes through the writer)
         # The deprecated OKF_WRITE alias, reported as the write state.
         self._okf_write_configured = settings.okf_write
+        from pathlib import Path
+
+        from markdown_vault_mcp._okf_convention import folder_is_designated
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
+
+        def designated_index(path: str) -> bool:
+            note = Path(path)
+            parent = (self._source_dir / note.parent).resolve()
+            if not parent.is_relative_to(self._source_dir.resolve()):
+                return False
+            folder = parent.relative_to(self._source_dir.resolve()).as_posix()
+            if folder == ".":
+                folder = ""
+            return (
+                capabilities.index
+                and self._okf.state().active
+                and note.name == "index.md"
+                and folder_is_designated(folder, capabilities.folders)
+            )
+
         self._doc_mgr = DocumentManager(
             fts=self._fts,
             source_dir=self._source_dir,
@@ -697,6 +722,7 @@ class Vault:
             write_protect_existing=self._write_protect_existing,
             exclude_patterns=self._exclude_patterns,
             protected_paths=settings.protected_paths,
+            designated_index=designated_index if capabilities.index else None,
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
