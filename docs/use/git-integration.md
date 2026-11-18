@@ -76,6 +76,9 @@ Call `begin_transaction` with a commit description, pass its handle as
 `move_folder`, then call `end_transaction`. The files change immediately and
 are not rolled back. A write without the handle commits separately. Uploads,
 `fetch` and OKF tools do not accept a handle and stay outside the group.
+If a request is cancelled after its write starts, the write continues. While
+its group remains open, `end_transaction` and `git_sync` refuse until the write
+finishes; cancellation does not roll it back.
 
 `end_transaction` returns `committed`, `no_changes` or `failed` with a SHA
 when available and a file count. Without Git commit support, a group with writes

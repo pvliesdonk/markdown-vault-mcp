@@ -6846,6 +6846,9 @@ immediately readable, and indexing proceeds independently of the commit.
 Callbacks that do not opt into groups flush ordinary batches or individual
 writes and report `no_changes`. MCP clients open a group with `begin_transaction`,
 pass its handle to supported write calls, and close it with `end_transaction`.
+A cancelled request does not stop a write worker already running. While its group
+remains open, end and sync refuse until that worker completes; cancellation does
+not roll back its writes.
 A real `git_sync` closes its caller's open groups and waits for pending closes,
 including manual and automatic ones. A supplied handle is validated, including a
 retained auto-close result; a failed commit stops the sync. Omitted handles do

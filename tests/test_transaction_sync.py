@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastmcp import Client
@@ -463,3 +463,101 @@ async def test_sync_joins_pending_manual_close_and_second_end(
         )
         with pytest.raises(ToolError, match="Unknown"):
             await client.call_tool("end_transaction", {"handle": handle})
+
+
+async def _assert_cancelled_write_commits(
+    client: Client[Any], pair: GitRepoPair, handle: str, path: str
+) -> None:
+    import asyncio
+
+    async with asyncio.timeout(5):
+        while True:
+            try:
+                result = await client.call_tool("end_transaction", {"handle": handle})
+                break
+            except ToolError as exc:
+                assert "active" in str(exc)
+                await asyncio.sleep(0.01)
+    assert result.data["status"] == "committed"
+    assert result.data["files"] == 1
+    assert _run_git(pair.local_path, "log", "-1", "--format=%s").strip() == (
+        "Cancelled write"
+    )
+    assert _run_git(pair.local_path, "show", f"HEAD:{path}") == "x"
+    await client.call_tool("git_sync", {"direction": "push"})
+    assert _run_git(pair.remote_path, "show", f"HEAD:{path}") == "x"
+
+
+@pytest.mark.parametrize("attachment", [False, True])
+@pytest.mark.parametrize("after_callback", [False, True])
+@pytest.mark.parametrize("settle", ["end_transaction", "git_sync"])
+async def test_cancelled_write_keeps_transaction_active_until_worker_finishes(
+    git_repo_pair: GitRepoPair,
+    _git_managed_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    attachment: bool,
+    after_callback: bool,
+    settle: str,
+) -> None:
+    """A cancelled request cannot close a group while its write still runs."""
+    import asyncio
+    import threading
+
+    from markdown_vault_mcp import domain
+
+    entered, release, completed = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    path = "cancel.png" if attachment else "cancel.md"
+    async with Client(make_server()) as client:
+        handle = (
+            await client.call_tool(
+                "begin_transaction", {"description": "Cancelled write"}
+            )
+        ).data["handle"]
+        vault = domain.get_vault_singleton()
+        assert vault is not None
+        method = "write_attachment" if attachment else "write"
+        original = getattr(vault.writer, method)
+
+        def gated(*args, **kwargs):
+            try:
+                if not after_callback:
+                    entered.set()
+                    assert release.wait(10)
+                result = original(*args, **kwargs)
+                if after_callback:
+                    entered.set()
+                    assert release.wait(10)
+                return result
+            finally:
+                completed.set()
+
+        monkeypatch.setattr(vault.writer, method, gated)
+        args = {"path": path, "transaction": handle}
+        args.update({"content_base64": "eA=="} if attachment else {"content": "x"})
+        task = asyncio.create_task(client.call_tool("write", args))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            assert task.cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(task), 1)
+            except (asyncio.CancelledError, TimeoutError):
+                pass  # Cancellation may be delayed until the worker has finished.
+            else:
+                pytest.fail("cancelled request unexpectedly returned")
+            settlement = (
+                {"handle": handle}
+                if settle == "end_transaction"
+                else {"direction": "push"}
+            )
+            with pytest.raises(ToolError, match="active"):
+                await client.call_tool(settle, settlement)
+        finally:
+            release.set()
+            assert await asyncio.to_thread(completed.wait, 10)
+            if not task.done():
+                await asyncio.gather(task, return_exceptions=True)
+        await _assert_cancelled_write_commits(client, git_repo_pair, handle, path)

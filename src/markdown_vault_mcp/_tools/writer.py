@@ -64,7 +64,7 @@ from .._okf_write import (
 )
 from ..domain import get_config, get_vault
 from ._common import attach_conventions, attach_remote_health, okf_active
-from .transactions import transaction_scope
+from .transactions import run_in_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -400,12 +400,14 @@ def register(mcp: FastMCP) -> None:
                 )
             # Attachments carry no OKF frontmatter; bind only the principal
             # so the git commit is attributed to the caller (#1218).
-            with (
-                transaction_scope(vault, transaction),
-                write_identity_scope(okf_intent=False),
-            ):
-                result = await asyncio.to_thread(
-                    vault.writer.write_attachment, path, raw_bytes, if_match=if_match
+            with write_identity_scope(okf_intent=False):
+                result = await run_in_transaction(
+                    vault,
+                    transaction,
+                    vault.writer.write_attachment,
+                    path,
+                    raw_bytes,
+                    if_match=if_match,
                 )
             return attach_remote_health(vault, _write_payload(result))
         # Bind the caller's Principal plus the OKF provenance actor for the
@@ -414,8 +416,10 @@ def register(mcp: FastMCP) -> None:
         # worker, where the enricher runs and the dispatcher snapshots the
         # principal for the git commit.
         report = vault.report_unresolved_links
-        with transaction_scope(vault, transaction), write_identity_scope():
-            result = await asyncio.to_thread(
+        with write_identity_scope():
+            result = await run_in_transaction(
+                vault,
+                transaction,
                 vault.writer.write,
                 path,
                 content,
@@ -502,8 +506,10 @@ def register(mcp: FastMCP) -> None:
         """
         report = vault.report_unresolved_links
         try:
-            with transaction_scope(vault, transaction), write_identity_scope():
-                result = await asyncio.to_thread(
+            with write_identity_scope():
+                result = await run_in_transaction(
+                    vault,
+                    transaction,
                     vault.writer.edit,
                     path,
                     old_text=old_text,
@@ -592,8 +598,10 @@ def register(mcp: FastMCP) -> None:
                 (ConcurrentModificationError).
         """
         report = vault.report_unresolved_links
-        with transaction_scope(vault, transaction), write_identity_scope():
-            result = await asyncio.to_thread(
+        with write_identity_scope():
+            result = await run_in_transaction(
+                vault,
+                transaction,
                 vault.writer.append,
                 path,
                 content,
@@ -647,12 +655,9 @@ def register(mcp: FastMCP) -> None:
         """
         # Bind the caller's Principal so the delete commit is attributed
         # (#1218); the OKF enricher never runs for deletes, so no intent.
-        with (
-            transaction_scope(vault, transaction),
-            write_identity_scope(okf_intent=False),
-        ):
-            result = await asyncio.to_thread(
-                vault.writer.delete, path, if_match=if_match
+        with write_identity_scope(okf_intent=False):
+            result = await run_in_transaction(
+                vault, transaction, vault.writer.delete, path, if_match=if_match
             )
         return attach_remote_health(vault, asdict(result))
 
@@ -722,11 +727,10 @@ def register(mcp: FastMCP) -> None:
         # Bind the caller's Principal so the rename commit (and any link-
         # rewrite commits) are attributed (#1218); no OKF intent — the
         # enricher's actor for link rewrites stays the tool actor, as before.
-        with (
-            transaction_scope(vault, transaction),
-            write_identity_scope(okf_intent=False),
-        ):
-            result = await asyncio.to_thread(
+        with write_identity_scope(okf_intent=False):
+            result = await run_in_transaction(
+                vault,
+                transaction,
                 vault.writer.rename,
                 old_path,
                 new_path,
@@ -803,13 +807,10 @@ def register(mcp: FastMCP) -> None:
         # Bind the caller's Principal so every per-file commit of the move is
         # attributed (#1218); no OKF intent — the enricher's actor for the
         # link-rewrite edits stays the tool actor, as before.
-        with (
-            transaction_scope(vault, transaction),
-            write_identity_scope(okf_intent=False),
-        ):
+        with write_identity_scope(okf_intent=False):
             try:
-                result = await asyncio.to_thread(
-                    vault.writer.move_folder, old_dir, new_dir
+                result = await run_in_transaction(
+                    vault, transaction, vault.writer.move_folder, old_dir, new_dir
                 )
             except FolderMoveInterruptedError as exc:
                 # A file error while moving can leave the subtree part-moved

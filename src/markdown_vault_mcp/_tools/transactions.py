@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import contextmanager
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
@@ -22,8 +22,10 @@ from markdown_vault_mcp.domain import get_vault
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
     from concurrent.futures import Future
+
+_T = TypeVar("_T")
 
 
 @contextmanager
@@ -35,14 +37,37 @@ def _refused() -> Iterator[None]:
         raise ToolError(str(exc), log_level=logging.INFO) from None
 
 
-@contextmanager
-def transaction_scope(vault: Vault, handle: str | None) -> Iterator[None]:
-    """Bind an explicit transaction to this call, if one was supplied."""
+async def run_in_transaction(
+    vault: Vault, handle: str | None, func: Callable[..., _T], *args: Any, **kwargs: Any
+) -> _T:
+    """Run a blocking write in a worker thread, inside the transaction if given.
+
+    The group is bound in the worker, so its active-write count lasts as long as
+    the write does, even when the request is cancelled and stops waiting.
+    The caller's principal is resolved here, on the event loop.
+
+    Args:
+        vault: Vault whose write callback owns the transaction group.
+        handle: Handle from ``begin_transaction``, or None to run ungrouped.
+        func: Blocking write to run in the worker thread.
+        *args: Positional arguments for ``func``.
+        **kwargs: Keyword arguments for ``func``.
+
+    Returns:
+        Whatever ``func`` returns.
+
+    Raises:
+        ToolError: If the handle is unknown, closed or unavailable.
+    """
     if handle is None:
-        yield
-        return
-    with _refused(), vault._write_callback.bind_group(handle, resolve_mcp_principal()):
-        yield
+        return await asyncio.to_thread(func, *args, **kwargs)
+    principal = resolve_mcp_principal()
+
+    def run() -> _T:
+        with _refused(), vault._write_callback.bind_group(handle, principal):
+            return func(*args, **kwargs)
+
+    return await asyncio.to_thread(run)
 
 
 async def _await_commits(
@@ -57,8 +82,8 @@ async def _await_commits(
     )
     if pending:
         raise ToolError(
-            "Transaction commit is still pending and continues in the background; "
-            "no sync leg ran. Ask the operator to check the server log, Git index and history. "
+            "Transaction commit is still pending and continues in the background. "
+            "Ask the operator to check the server log, Git index and history. "
             "A later git_sync waits only while the commit is still pending.",
             log_level=logging.WARNING,
         )
