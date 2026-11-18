@@ -64,6 +64,7 @@ async def test_tool_and_cli_read_only_parity(
     from typer.testing import CliRunner
 
     from markdown_vault_mcp.cli import app
+    from tests.conftest import wait_for_mcp_writer_drain
     from tests.server_factory import make_server
 
     vault_dir = tmp_path / "vault"
@@ -76,6 +77,7 @@ async def test_tool_and_cli_read_only_parity(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
     async with Client(make_server()) as client:
+        await wait_for_mcp_writer_drain(client)
         tools = {tool.name: tool for tool in await client.list_tools()}
         assert tools["okf_inventory"].icons
         payload = (
