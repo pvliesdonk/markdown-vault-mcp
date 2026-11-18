@@ -7,8 +7,8 @@ import posixpath
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
-from urllib.parse import quote, urlsplit
+from typing import TYPE_CHECKING
+from urllib.parse import quote, unquote, urlsplit
 
 import frontmatter
 import yaml
@@ -37,6 +37,7 @@ from markdown_vault_mcp.utils.content_kind import (
     names_attachment,
 )
 from markdown_vault_mcp.utils.links import (
+    _RE_REFUSED_ESCAPE,
     _follow_inline_destination,
     _is_escaped,
     compute_new_raw_target,
@@ -478,19 +479,12 @@ class ExportPaths:
         )
 
     def _outside_target(
-        self,
-        target: str,
-        source: str,
-        raw: str,
-        apparent: str,
-        *,
-        directories: bool = False,
-        directory_form: bool = False,
+        self, target: str, source: str, raw: str, apparent: str, *, dirs: bool = False
     ) -> str | None:
         if self.external_base:
             return self._external_url(target)
-        if (not directory_form and apparent in self._archive_members) or (
-            directories and f"{self.scope}/{apparent}".rstrip("/") in self._directories
+        if apparent in self._archive_members or (
+            dirs and f"{self.scope}/{apparent}".rstrip("/") in self._directories
         ):
             raise _ExportCollision(
                 f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; supply external_base to resolve outside destinations"
@@ -587,29 +581,28 @@ class ExportPaths:
     ) -> str | None:
         written, suffix = _field_parts(value)
         path = decode_link_target(written)
+        try:
+            refused = bool(_RE_REFUSED_ESCAPE.search(written))
+            unquote(written, errors="strict")
+        except UnicodeDecodeError:
+            refused = True
         target, _ = _resolve_link_path(path, source)
         archive_source = source[len(self.scope) + 1 :]
         apparent, _ = _resolve_link_path(path, archive_source)
         directory_form = path.endswith("/") or path.rsplit("/", 1)[-1] in {".", ".."}
-        if target not in self._directories and (
-            directory_form or target not in self.members
+        if refused or (
+            target not in self._directories
+            and (directory_form or target not in self.members)
         ):
             dependencies.append(Dependency(archive_source, _safe_text(value)))
-            if directory_form and target:
-                target += "/"
+            if directory_form:
+                target, apparent = target + "/", apparent + "/"
             if self.external_base and path == written:
                 base = self.external_base.rstrip("/")
                 return base + "/" + _quote_field_uri(target) + suffix
-            url = self._outside_target(
-                target,
-                source,
-                value,
-                apparent,
-                directories=True,
-                directory_form=directory_form,
-            )
+            url = self._outside_target(target, source, value, apparent, dirs=True)
             return url + suffix if url is not None else None
-        bundle_target = target[len(self.scope) + 1 :] if target != self.scope else ""
+        bundle_target = target[len(self.scope) + 1 :]
         if not written.startswith("/") and apparent == bundle_target:
             return None
         if written.startswith("/"):
@@ -651,22 +644,6 @@ class ExportPaths:
                 changes.append((node, replacement + trailing))
         return changes, dependencies, ambiguous
 
-    def _rewrite_header(
-        self,
-        header: str,
-        loader: _AliasLoader,
-        root: object,
-        changes: list[tuple[ScalarNode, str]],
-        source: str,
-    ) -> str:
-        if loader.aliases:
-            header = _isolate(
-                header, root, loader.aliases, {id(node) for node, _ in changes}
-            )
-            root = yaml.compose(header, Loader=yaml.SafeLoader)
-            changes, _, _ = self._field_changes(root, source)
-        return _splice_fields(header, changes)
-
     def relocate_frontmatter(
         self, prefix: str, source: str, report: OkfExportReport
     ) -> str:
@@ -683,11 +660,9 @@ class ExportPaths:
         Raises:
             ValueError: An outside path collides with a bundle member.
         """
-        if not self.scope:
-            return prefix
         candidate = prefix.removeprefix("\ufeff").lstrip()
         handler = frontmatter.detect_format(candidate, frontmatter.handlers)
-        if handler is None:
+        if not self.scope or handler is None:
             return prefix
         header, _ = handler.split(candidate)
         offset = len(prefix) - len(candidate) + candidate.index(header)
@@ -701,7 +676,12 @@ class ExportPaths:
                 report.ambiguous_path.extend(ambiguous)
                 if not changes:
                     return prefix
-                header = self._rewrite_header(header, loader, root, changes, source)
+                if loader.aliases:
+                    changed = {id(node) for node, _ in changes}
+                    header = _isolate(header, root, loader.aliases, changed)
+                    root = yaml.compose(header, Loader=yaml.SafeLoader)
+                    changes, _, _ = self._field_changes(root, source)
+                header = _splice_fields(header, changes)
             finally:
                 loader.dispose()
         except (_MetadataComplexity, RecursionError):
@@ -915,7 +895,6 @@ def _copy_node(node: Node, budget: list[int], active: set[int]) -> Node:
                 [_copy_node(child, budget, active) for child in node.value],
                 flow_style=True,
             )
-        node = cast("MappingNode", node)
         return MappingNode(
             node.tag,
             [

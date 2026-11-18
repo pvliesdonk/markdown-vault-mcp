@@ -2135,18 +2135,19 @@ the spec itself says, dated and sourced, in
   gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
   independent of search admission. The library result reports omitted classes,
   last-observed index admission, partial v0.2 format findings and uninspected
-  content or metadata (including metadata of files included in the archive);
-  subtree frontmatter path fields are relocated with the same outside-path rules;
-  non-slash, non-dot values are reported as ambiguous. Field values are URI
+  content or metadata (including metadata of files included in the archive).
+  Subtree frontmatter path fields are relocated with the same outside-path rules.
+  Non-slash, non-dot values are reported as ambiguous. Field values are URI
   references with percent-decoded matching and preserved suffixes. YAML aliases and merges used by changed paths are copied to preserve
   other values. Directory paths relocate too: the selected root becomes `/`,
   directory-form paths retain their slash, and `.` and `..` are paths.
   `uninspected` records inventory observations (including aliases and limits) and
   `metadata_encoding` when export cannot parse or re-encode a header; unrecognised
   grammars are copied without an entry. A file may also be `transformed` when
-  its bytes change; neither entry identifies which fields relocated. Incomplete inventory enumeration refuses export, even under default-omitted
-  hidden paths. Reports and selection options
-  are library-only; the download ref exposes neither. Subtree links in
+  its bytes change; neither entry identifies which fields relocated.
+  Incomplete inventory enumeration refuses export, even under default-omitted
+  hidden paths. Reports and selection options are library-only; the download
+  ref exposes neither. Subtree links in
   unindexed notes are handled independently of index admission; the report
   does not claim conformance. Descriptor-relative no-follow raw reads protect
   notes and attachments after inventory (#1448, #2167).

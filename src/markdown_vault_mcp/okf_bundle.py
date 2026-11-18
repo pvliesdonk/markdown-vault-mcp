@@ -195,8 +195,8 @@ def build_okf_bundle(
     Raises:
         ValueError: If the scope is invalid or inventory cannot enumerate it,
             including failures under otherwise omitted hidden paths, or if an
-            outside body or frontmatter destination collides with an exported file, or the
-            external URL prefix is invalid.
+            outside body or frontmatter destination collides with an exported
+            file or directory, or the external URL prefix is invalid.
         OSError: If a selected file cannot be read.
     """
     folder = _scope(folder)

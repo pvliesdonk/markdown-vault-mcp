@@ -531,3 +531,44 @@ def test_alias_copy_preserves_values(tmp_path, kind):
     assert executor.value[1][1].tag == "tag:yaml.org,2002:timestamp"
     assert executor.value[2][1].tag == "!foo"
     assert "defaults: &d {resource: /guides/b.md" in output
+
+
+@pytest.mark.parametrize("escape", ["%2F", "%00", "%FF"])
+def test_refused_uri_escape_never_matches_literal_member(tmp_path, escape):
+    name = f"a{escape}b.md"
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / name).write_text("target")
+    text = f"---\nresource: /guides/{name}\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert [(item.path, item.target) for item in report.dependencies] == [
+        ("a.md", f"/guides/{name}")
+    ]
+    output, report = export(tmp_path, text, external_base="https://example.org/v")
+    assert output == text.replace("/guides/", "https://example.org/v/guides/")
+    assert report.dependencies[0].target == f"/guides/{name}"
+
+
+@pytest.mark.parametrize("escape", ["%2F", "%00", "%FF"])
+def test_refused_uri_escape_collision_and_literal_percent_filename(tmp_path, escape):
+    name = f"a{escape}b.md"
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / name).write_text("target")
+    with pytest.raises(ValueError, match="collision"):
+        export(tmp_path, f"---\nresource: /{name}\n---\n")
+    encoded = name.replace("%", "%25")
+    text = f"---\nresource: /guides/{encoded}\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text.replace("/guides/", "/")
+    assert not report.dependencies
+
+
+@pytest.mark.parametrize("escape", ["%2F", "%00", "%FF"])
+def test_refused_uri_escape_never_matches_literal_directory(tmp_path, escape):
+    directory = f"dir{escape}name"
+    (tmp_path / "guides" / directory).mkdir(parents=True)
+    (tmp_path / "guides" / directory / "n.md").write_text("target")
+    text = f"---\nresource: /guides/{directory}/\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.dependencies[0].target == f"/guides/{directory}/"

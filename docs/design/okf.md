@@ -758,7 +758,7 @@ the download ref exposes neither options nor report. Incomplete inventory
 enumeration refuses export, even under default-omitted hidden paths, including denied entries and unavailable state paths. Local policy records last-observed index state, not
 admission of current bytes; `unknown` covers candidates without a decisive index
 state. A candidate absent from both policy lists was last observed searchable.
-An uninspected entry may be included with bounded metadata. Links are never
+Links are never
 followed; dot-path links omitted by policy are counted as hidden. Selected
 symlinks and nonregular entries refuse export. Failure to observe or read a selected file
 aborts export. Reads use the inspected vault root; relocation preserves other frontmatter values. A fixed zip-entry timestamp makes unchanged vaults
