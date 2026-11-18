@@ -3,8 +3,9 @@
 A thin view exposing search, document reads, listing, table-of-contents,
 similarity, recent, context, stats, attachment reads, and git history, diff
 and revision reads.
-Each method delegates 1:1 to one collaborator (:class:`SearchManager`,
-:class:`DocumentManager`, or :class:`GitQueryManager`); the bucket-3 methods
+Methods delegate to :class:`SearchManager`, :class:`DocumentManager`, or
+:class:`GitQueryManager`; OKF stats also include the vault's write-state
+projection. The bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
@@ -65,6 +66,7 @@ class ReaderFacet:
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
         okf_audit: Callable[[], OkfAuditReport] | None = None,
+        okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
         """Hold the managers the read methods delegate to.
 
@@ -76,12 +78,14 @@ class ReaderFacet:
             require_built: Index-readiness gate for the bucket-3 methods.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
+            okf_write_state: Configured and effective write-layer projection.
         """
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
         self._okf_audit = okf_audit
+        self._okf_write_state = okf_write_state
 
     def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
         """Inspect one explicitly selected bundle directory before or after indexing.
@@ -607,14 +611,20 @@ class ReaderFacet:
     def okf_stats(self) -> dict[str, Any] | None:
         """Return the OKF statistics section, or ``None`` when inactive.
 
-        Delegates to :meth:`SearchManager.okf_stats`.
+        Adds the vault's write state to :meth:`SearchManager.okf_stats`.
 
         Returns:
             The OKF aggregate dict (mode, declared version, type histogram,
-            status/trust breakdowns, stale count), or ``None`` when OKF
-            read semantics are not active.
+            status/trust breakdowns, stale count, and ``write_configured``
+            and ``write_effective`` when wired), or ``None`` when OKF read
+            semantics are not active.
         """
-        return self._search_mgr.okf_stats()
+        section = self._search_mgr.okf_stats()
+        if section is not None and self._okf_write_state is not None:
+            configured, effective = self._okf_write_state()
+            section["write_configured"] = configured
+            section["write_effective"] = effective
+        return section
 
     def attachment_size(self, path: str) -> int:
         """Return an attachment's on-disk byte size without reading it.

@@ -253,10 +253,16 @@ A second table, `notes_fts_rowid_map`, bridges each `notes_fts` chunk row's
 indexed rowid lookup instead of an ordinary-column scan of the
 content-carrying FTS5 table (see the [Database Schema](#database-schema)
 DDL, and decision 26 below for why a bridge table rather than a direct
-`sections.fts_rowid` column). A second open-time migration backfills this
-map, once, for a database created before it existed — a `notes_fts`/
-`documents` join on `path`, run in pure SQL after the summary-column
-migration above.
+`sections.fts_rowid` column). After the summary migration, each writable
+open compares the FTS5 docsize rowid inventory with the bridge. For ordinary
+writer histories, mapped rows and sections correspond in chunk order, so
+exact query excerpts pair correctly. Repair bridges unbridged rows of a note
+with sections and no existing bridge rows. It purges other unbridged rows:
+orphans, stale rows beside a mapped generation, and rows left by a note
+replaced with an empty note or tombstone. It does not validate arbitrary
+corruption or detect a stale bridge pointing to a reused rowid. A read-only
+open leaves repair to the next writer. The obsolete `fts_rowid_map_backfilled`
+meta row remains inert in existing databases.
 
 Domain-specific filtering (by cluster, topic, tag) happens via the
 `document_tags` table, not FTS5 columns.
@@ -899,6 +905,12 @@ Two methods manage the index:
   unreachable at startup, so its context length reads as `None` and the cap
   falls back to a conservative default) changes neither key and so does
   not force a rebuild, avoiding flap.
+
+  `IndexManager.chunking_meta` owns the canonical rendering of the stable
+  build inputs as a `ChunkingMeta` record. Both the build writer and Vault's
+  coordinator wiring consume it, rather than rendering field lists and
+  attachment settings independently. The keyword-index methods and stored
+  metadata format remain unchanged (#1361).
 
   **Derived-content invalidation (issue #1124)**: the same `meta` row set
   carries one key that records no operator input —
@@ -1953,10 +1965,16 @@ the spec itself says, dated and sourced, in
   breakdowns, stale count — aggregated from the same `documents` rows
   `stats` already reads, minus the reserved files, which are counted
   apart as `reserved_count` so the histograms cover the same note
-  population `okf_validate` audits); `config://vault` reports `okf_mode` /
-  `okf_active` / `okf_declared_version`; the default server instructions
-  gain an OKF guidance sentence whenever the mode permits detection
-  (same pre-clone rationale as the conventions sentence).
+  population `okf_validate` audits). Its `write_configured` reports the
+  vault's configured `OKF_WRITE` flag and `write_effective` is true only
+  when that flag is enabled, OKF detection is active, and the vault is not
+  read-only. The section remains absent when OKF is inactive.
+  `config://vault` reports those same values as `okf_write_configured` and
+  `okf_write_effective`, including when inactive, and reports `okf_mode` /
+  `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
+  both enabled, startup logs INFO `okf_write_inert` (#1434). The default
+  server instructions gain an OKF guidance sentence whenever the mode permits
+  detection (same pre-clone rationale as the conventions sentence).
 - **Indexed-field extension**: when detection is active at `Vault`
   construction, the OKF scalar keys (`type`, `status`, `stale_after`)
   join the effective `indexed_frontmatter_fields` set — feeding
@@ -3684,6 +3702,21 @@ isolated unit testing and clear dependency boundaries. Pure utility functions
 live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
 ``utils/links.py`` (link target computation and replacement).
 
+#### Atomic file permissions
+
+`managers/_write_kernel.py` owns atomic note and attachment writes (#2054).
+A new file gets the mode a plain create receives in its directory: with a
+POSIX default ACL, the ACL's owner, group-class and other entries restricted
+to `0666`; otherwise `0666` less the process umask. The mode is derived from
+the directory's `system.posix_acl_default` xattr rather than learned by
+creating a file, so the vault never sees a probe. Content is staged in an
+owner-only temp file, which inherits the ACL's entries, and is chmod'd to
+that mode before `Path.replace` publishes it. Existing files keep the
+`copymode` policy. ACL read errors propagate before publication and staging
+is cleaned. Other ACL models (NFSv4, SMB) are not derived and fall back to
+the umask. See [file creation permissions](reference/file-creation-permissions.md)
+for the external rules and focused regressions.
+
 #### Facets (`facets/`, #604)
 
 The ``facets/`` package groups the formerly flat ``Vault`` surface into
@@ -5111,7 +5144,7 @@ another one, and is the explicit switch of choice C.
   reopened as `_recover_corrupt` does: a damaged SQLite store still opens.
   One that another thread already replaced is left alone, and a slot that
   cannot rename files (injected, not owned, in memory, or PostgreSQL, which
-  has no `quarantine`) condemns nothing. Two paths reach it:
+  has no `quarantine`) condemns nothing. Three paths reach it:
   - A search read (`SearchManager._vector_rows`) that raises
     `StoreCorruptError` sends the store to `rebuilt_after_read`. The search
     thread only marks the store suspect and runs the usual rebuild after a
@@ -5128,10 +5161,24 @@ another one, and is the explicit switch of choice C.
     rebuild starts from a fresh one. The numpy store has no `verify`,
     because its open reads everything.
 
-  A process that does not own the files condemns nothing and raises
-  `StoreCorruptError`. A write that meets the damage is not recovered on
-  the writer thread, and an incremental `build_embeddings` runs no
-  `verify`; the next streamed search or full build recovers it (#1976).
+  - A writer reconciliation that encounters corruption marks the store suspect
+    and rebuilds it in the same job after keyword work finishes. This includes
+    the stale or excluded vector purge during `build_index`. SQLite classifies
+    corruption in write transactions as well as reads. Recovery runs inline;
+    after condemnation a provider batch failure fails the job and directs
+    the operator to retry `build_embeddings` or, when a failed full build left
+    the tool gated on a queryable index, to restart (#1976). Recovery puts
+    every note in the embedding retry set before it starts, so a failure at
+    any step keeps them, because the cold build does not say which notes it
+    lacks: the next flush reconciles them (a complete note
+    costs no provider call) and `build_embeddings` finishes the rest. They
+    are not pending work and queue no flush, so no retry loop runs while the
+    provider is down. An ordinary cold build retains its existing failure
+    behavior.
+
+  A slot that cannot condemn preserves per-document handling of write errors;
+  corruption found in a read still raises `StoreCorruptError`. A job that
+  cannot recover corruption follows the existing job failure logging.
 - As a fallback, the SQLite store's first write after
   `open_fresh` moves aside the same way (`reason=unusable`) a file that is
   not a vector store or whose pages are damaged, damage the open did not
@@ -5855,6 +5902,15 @@ and logs a deprecation warning; when it is set, both additive variables are
 ignored. None reaches `ProjectConfig`: a domain field mirroring them would be
 a second, silently-diverging reader of the same variables.
 
+For cross-instance note links (#1131), an operator can include the GitHub file
+URL prefix for this vault root in its instance description. A model receiving
+the instructions can infer the serving instance and the path relative to that
+prefix. This is self-advertisement, with no sibling list. The server neither
+fetches nor verifies the URL, and does not derive it from `GIT_REPO_URL`: that
+is a clone URL, its branch is unknown, and it can sit beside credentials.
+Whether instructions reach the model depends on the client; see the
+[model-facing text reference](reference/mcp-model-facing-text.md).
+
 The generated-text compatibility target is a tested configuration matrix,
 not an estimate from the default stdio server. The maximal case enables
 read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
@@ -6124,6 +6180,8 @@ Path JSON and human output retain the native object. Agent output emits one obje
 
 The CLI separates reading from writing (#2005). `register_read_commands` in `_cli_reader` registers `search` and every read-only command, and nothing it reaches writes the index, the stored vectors or the vault. The `admin` group in `_cli_admin` holds `index`, `reindex` and `embeddings import`; their former top-level names stay as hidden aliases that run the same command and name the new form on stderr. `serve` stays top-level because the template owns it and the image, compose file and unit call it. A client-only script (#2000) can mount the read registration alone; `tests/test_cli_structure.py` checks that it reaches no write command and that `_cli_reader` imports neither `_cli_admin` nor `cli` at load time. The local-vault helpers the read commands share are still imported lazily from `cli`.
 
+Owned-store CLI commands report typed store-open failures on stderr and exit with code 1, both during construction and subsequent index work. A busy store keeps the command-specific stop-server and retry guidance. Unexpected exceptions remain visible.
+
 ## Configuration
 
 ### The config import floor (#1259)
@@ -6180,6 +6238,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files; when absent the server starts but every tool fails naming this variable (managed git clones into it) | `/data/vault` |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
+| `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` | Case-insensitive vault-relative globs protecting paths and matching folder contents | empty |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied; set `false` to allow blind overwrites | `true` |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | Add `unresolved_links` to `write` / `edit` / `append` responses: the links the call added that `get_broken_links` reports | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
@@ -6537,11 +6596,16 @@ SQLite (3.53.1 at template v11.5.0), so the image no longer runs Debian's
 CI/CD, GitHub Actions, and PyPI publishing adapted from ifcraftcorpus with
 minimal changes.
 
-**Volume layout**: two volumes: `/data/vault` (user content, bind-mount or
+**Default volume layout**: two volumes: `/data/vault` (user content, bind-mount or
 named volume) and `/data/state` (all internal state: SQLite index, embeddings,
 FastEmbed model cache, OIDC proxy state via `FASTMCP_HOME`). The Dockerfile
 sets `FASTMCP_HOME=/data/state/fastmcp` so OIDCProxy persists JTI mappings
 and upstream tokens across restarts.
+
+The [opt-in Docker recipe](../deploy/docker.md#separate-search-data-from-persistent-state)
+keeps KV and FastMCP state persistent while separating the index, tracker,
+local vectors and model cache. Search data can be rebuilt from the vault;
+the model cache can be downloaded again.
 
 **Entrypoint + gosu privilege drop**: the container starts as root and runs
 `docker-entrypoint.sh`, which chowns `/data/*` to `appuser` (fixing
@@ -6554,6 +6618,13 @@ Deployed behind **litellm MCP gateway + mcp-auth-proxy** (same as
 ifcraftcorpus).
 
 ### Write + Git Integration
+
+Startup validation reports `git --version` once per `RepoBootstrap` when a
+Git repository is found, using `git_runtime_version` at INFO (#1312). The
+five-second probe is diagnostic only: failure logs at DEBUG without changing
+startup behavior. No-git mode skips it. This identifies the actual runtime;
+it neither declares a supported minimum nor substitutes for a Git-version
+matrix or verification of a published image's contents.
 
 What git itself does at every point this section relies on it (how a push is
 refused and in what words, credentials, URL forms, pathspec magic, `log -z`
@@ -6638,9 +6709,10 @@ file. One call that writes 2,595 files produces one commit, where per-file
 commits produced 2,595 and serialised every concurrent write behind them.
 
 There is no mode knob. #54 anticipated one, but the two boundaries differ only
-where a call touches many files: a call that wrote a single file still commits
+where a call touches many files: an ordinary single-file write still commits
 under that file's own path (`write: notes/one.md`), so ordinary writes read in
-`git log` exactly as they did before. What remains is the bulk case, which is
+`git log` exactly as they did before. A folder move names its roots even when
+it moves one file. What remains is the bulk case, which is
 the defect #1264 reports rather than a preference to configure.
 
 `CommitScopeMiddleware` (`_commit_scope.py`) binds a `CommitScope` —
@@ -6649,7 +6721,8 @@ a process-unique token plus the tool name — for the duration of each
 item. The worker buffers writes by token and dispatches each group once, via
 the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
 subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
-subject when the call staged exactly one path.
+subject when the call staged exactly one path. Folder moves name their source
+and destination instead.
 
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with
@@ -6668,16 +6741,22 @@ source and destination; callbacks without that path retain the destination-only
 subject. The primary item carries its old path through subject selection,
 without changing the callback tuple. A path fired more than once (a renamed
 note whose self-link is rewritten) counts as one primary path, named by its
-first item. Multi-file folder moves retain their
-batch summary; exact folder roots are not inferred from the moved files
-(#1676, single-note slice).
+first item. A folder move records its validated source and destination in the
+scope before dispatching writes. The dispatcher binds only those captured
+roots on the worker during the batch callback, including through forwarding
+overrides, without assigning callback writes to the finished scope.
+The Git batch writer renders each root relative to the Git worktree in the
+subject, or as an absolute path when it is outside that worktree, while
+committing all moved and derived files. Unusual roots are quoted and escaped
+on one line. Other batch callbacks keep their existing contract
+(#2139).
 
 Three properties this depends on:
 
-- **The scope is read in `fire`, never on the worker.** `fire` runs on the
-  request's `to_thread` worker, whose copied context carries the contextvar;
-  the dispatcher thread has no request context, so reading there would always
-  see `None` — the same constraint that governs `current_principal` (#1218).
+- **The scope is captured in `fire`.** `fire` runs on the request's
+  `to_thread` worker, whose copied context carries the contextvar. The
+  dispatcher thread has no request context; it binds only the captured folder
+  roots while invoking the batch callback and resets them afterward (#1218).
 - **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
   a shared server interleaves concurrent tool calls, and position-based
   grouping would fold two unrelated calls into one commit.
@@ -6733,7 +6812,12 @@ seconds of idle, all accumulated local commits are pushed in a single
 `PushScheduler.flush()` (cancel timer + synchronous push); `close()` marks
 the strategy closed (subsequent writes are ignored), stops the pull thread,
 then calls `flush()`. The pull loop retries a failed deferred push via
-`PushScheduler.do_push_safe()` after each tick (#957).
+`PushScheduler.do_push_safe()` after each tick (#957). A backend can compose
+`PushScheduler` with push and startup probe callables;
+the default CLI path is unchanged (#1308).
+Injected failures are sanitized before logging and health reporting. Like the
+CLI, an injected startup failure permits local versioning without an automatic
+startup retry.
 
 **Sync health (`git/health.py`, #1287)**: a clone whose pushes are being
 rejected keeps accepting writes — the commit lands, `read` serves it back —
@@ -6819,6 +6903,10 @@ path reports it.
   `restore_upstream_paths`). The guidance the incident produced still holds:
   alert on the transitions, not the attempts.
 
+Git CLI stderr in log fields is token-redacted and collapsed to one line so
+line-oriented collectors keep each event together (#1349). Result hints and
+details retain their existing redacted text and whitespace.
+
 Every vault-mutating write tool passes its result through
 `attach_remote_health`, which adds a `remote` object while the clone is
 unsynced and adds nothing otherwise — the `previous_revision` idiom, where
@@ -6880,7 +6968,13 @@ rather than on the concrete class:
 - `Versioner` — the per-write commit; structurally the same shape as
   `PrincipalAwareWriteCallback`, restated so the module needs no runtime
   import beyond `typing`.
+  Batching is an optional `BatchAwareWriteCallback` opt-in; a store that opts
+  in must still accept per-write calls, which the dispatcher keeps using for
+  writes outside a tool call.
 - `VersionedStore` — all of them, which is what `Vault` holds.
+
+Config assembly returns `VersionedStore` through `_build_git_strategy`, the
+single construction point; backend selection is deferred to #1309.
 
 `GitWriteStrategy` remains the single object implementing all of them, and is
 still wired as both `git_strategy` and `on_write`; `VaultInstances.close()`
@@ -7479,7 +7573,7 @@ Later decisions (2026-09-19, #1535):
 
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
-| 26 | `notes_fts` delete cost | A small ordinary `notes_fts_rowid_map` bridge table (`document_id`, `fts_rowid`, `WITHOUT ROWID`), populated on insert and consulted by `_delete_document` to delete by `rowid` instead of `WHERE path = ?` | `notes_fts` is content-carrying FTS5 (no index on ordinary columns — every non-`MATCH`, non-`rowid` filter forces a full scan of the shadow content table), so every upsert/delete paid one full scan; O(N × table_size) for a batch of N changed notes. **Rejected:** the reporter's `rowid = documents.id` suggestion — `notes_fts` holds one row per chunk, not one per document, so a document's rows cannot share a single rowid. **Rejected:** converting to an external-content table keyed off `sections.id` — the migration would need to recompute the `summary` column in Python per document rather than a pure-SQL join, and `notes_fts`'s column set (`path`/`title`/`folder`/`summary`) doesn't map onto `sections`'s columns without denormalizing further. **Rejected:** a `fts_rowid` column added directly to `sections` (1:1 with `notes_fts` rows — same loop in `_insert_sections`), which would need no new table — backfilling `sections.fts_rowid` on a legacy database would require assuming a positional correspondence between `sections` rows and `notes_fts` rows that nothing in the schema guarantees, whereas the bridge table's backfill is a path join that is correct regardless of row order. See docs/design/reference/sqlite-fts5.md. |
+| 26 | `notes_fts` delete cost | A small ordinary `notes_fts_rowid_map` bridge table (`document_id`, `fts_rowid`, `WITHOUT ROWID`), populated on insert and consulted by `_delete_document` to delete by `rowid` instead of `WHERE path = ?` | `notes_fts` is content-carrying FTS5 (no index on ordinary columns — every non-`MATCH`, non-`rowid` filter forces a full scan of the shadow content table), so every upsert/delete paid one full scan; O(N × table_size) for a batch of N changed notes. **Rejected:** the reporter's `rowid = documents.id` suggestion — `notes_fts` holds one row per chunk, not one per document, so a document's rows cannot share a single rowid. **Rejected:** converting to an external-content table keyed off `sections.id` — the migration would need to recompute the `summary` column in Python per document rather than a pure-SQL join, and `notes_fts`'s column set (`path`/`title`/`folder`/`summary`) doesn't map onto `sections`'s columns without denormalizing further. **Rejected:** a `fts_rowid` column added directly to `sections` (1:1 with `notes_fts` rows — same loop in `_insert_sections`), which would need no new table — backfilling `sections.fts_rowid` would require a positional correspondence not guaranteed by the schema. The bridge records ownership on new writes; repair of legacy rows also relies on the historical writer inserting sections and FTS rows in chunk order. **Rejected:** a once-only sentinel because older writers can create unbridged rows later, and equal total counts because an orphan and a missing mapping can cancel. The healthy check scans only the compact docsize inventory and bridge. See docs/design/reference/sqlite-fts5.md. |
 | 27 | Reindex interruption | Snapshot `state.json` on a wall-clock timer during the upsert loop, from the FTS index's current contents, via a `checkpoint_state` that deliberately does not consume the tracker's skipped carries | A pass interrupted by a short-lived MCP client otherwise restarts from the last *completed* pass and redoes every note it had already committed (#1535). The index is already durable per note for process death — the failure #1535 names — though not for a power loss or kernel crash (the FTS connection runs WAL with `PRAGMA synchronous = NORMAL` and `_save_state` does not fsync before its rename, so the two can disagree about what actually reached disk), so its own `content_hash` column is an accurate record of progress in the covered case — no separate delta tracking is needed, and a checkpoint is just the closing write run early. The 30s interval trades measured cost against restart latency: the first snapshot lands one interval after the upsert loop starts (the parse phase precedes it and is not covered), so the interval also bounds how much committed work an interrupted pass redoes; 30s is ~0.4% overhead at the benchmarked 119 ms/checkpoint on 25k notes, and the cost argument alone does not distinguish 60s from 15–30s, so the latency side decides it. **Rejected:** a `final: bool` flag on `update_state` — the carry consumption is a correctness contract ("consumed by exactly one call"), and a flag invites a caller to get it wrong; a separate method makes the two intents distinct. **Rejected:** in-memory delta tracking of applied hashes — `list_notes()` per checkpoint is tens to hundreds of milliseconds at 25k notes, noise at a 30s interval, and correct by construction rather than by bookkeeping. **Not covered:** the parse phase, which runs to completion before the first upsert; and inline-embedded vectors, which stay in memory until pass end and converge via `build_embeddings` (#665) rather than being re-embedded after a checkpointed restart. |
 | 28 | Boot-reindex kill switch | `MARKDOWN_VAULT_MCP_BOOT_REINDEX` (default `true`) gates exactly the `reindex_async()` submission in `Service.start()`, leaving `build_index_async()` and `build_embeddings_async()` unconditional | An operator of a large vault should not have to pay a full filesystem reconciliation on every server start, which for a per-session-spawned MCP server is every session (#1535). Gating only the reindex keeps the two invariants either side of it: the initial build is a correctness requirement (a fresh install must still get an index), and the embeddings submission is what lets the inline-embed windows from decision 27 self-heal at boot. **Rejected:** a defer-by-N-seconds knob, which the issue also proposed — it made sense when an interrupted reindex could restart forever, but decisions 26 and 27 bounded that cost and made a pass resumable, so a delay now only relocates bounded work while adding a numeric knob and its validation rule. **Rejected:** threading the flag through `VaultSettings` — the submission is domain-owned and `Service.start()` already holds the config, so settings plumbing nothing reads would be pure indirection. |
 
@@ -7507,3 +7601,15 @@ Later decisions (2026-10-22, #1505):
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
 | 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |
 | 38 | Outline source | The outline (`get_toc`, `toc://vault/{path}`, folder mode included) reads `note_headings`, filled at index time by `parse_note` with the same heading scan `read(path, section=...)` uses, never the chunk table; `INDEX_SEMANTICS_VERSION` 11 fills it on existing vaults. A read-only open of an index without the table (built by an older version) falls back to chunk headings and logs WARNING `toc_heading_table_missing` once. `schema_version` stays 1: the table is additive and an older version reads an index that has it (#2033). | `get_toc` read `sections` from its start (#97), so every heading the chunker gives no chunk was missing: all of a note of 30 lines or fewer, H3+ inside a section within budget, a heading with no body, and a parent re-split at its sub-headings with no text between. Outline and search chunks answer different questions, and tying one to the other let a chunker change silently change the outline. Storing the headings keeps folder mode one query over up to 200 notes. **Rejected:** parsing headings from disk per call, as `read(section=)` does (#741): no schema change, but folder mode would read up to 200 files per call. **Rejected:** making the chunker keep every heading: chunk boundaries serve search, and a row per heading would change ranking and embeddings. **Rejected:** bumping `schema_version`: an older version would then refuse an index it can read. |
+| 39 | Protected paths | Operator globs refuse ordinary mutations and automatic maintenance, with explicit library override. Bulk operations report protected skips after eligible writes. | One shared policy covers requested and resolved paths. |
+
+
+**Protected paths.** `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` defines
+case-insensitive vault-relative globs for ordinary client mutations. A matching
+folder protects its contents, and both requested and resolved paths are checked.
+A folder move checks every entry its cleanup removes before moving files.
+Reads remain available; library callers can opt in with `allow_protected=True`.
+Automatic OKF maintenance respects protection; its isolated failures do not
+undo the primary write. A rename or folder move skips protected
+backlink rewrites and reports them; bulk OKF transforms finish eligible writes
+and report protected paths they skipped.

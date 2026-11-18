@@ -522,6 +522,13 @@
       "help": "Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites."
     },
     {
+      "id": "protected_paths",
+      "label": "Protected Paths",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_PROTECTED_PATHS",
+      "help": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder."
+    },
+    {
       "id": "report_unresolved_links",
       "label": "Report Unresolved Links",
       "type": "bool",

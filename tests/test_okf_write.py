@@ -43,7 +43,6 @@ from markdown_vault_mcp.okf import (
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import (
-    _CLEAR_VARS,
     _parse_tool_data,
     wait_for_mcp_writer_drain,
     wait_for_writer_drain,
@@ -536,7 +535,9 @@ _PLAIN_NOTE = "# Plain\n\nSee [[playbook]].\n"
 
 
 @pytest.fixture
-def enforced_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def enforced_env(
+    _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
     """Env for a writable, OKF-declared vault with the enforced-write layer on."""
     vault = tmp_path / "vault"
     (vault / "guides").mkdir(parents=True)
@@ -544,8 +545,6 @@ def enforced_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (vault / "guides" / "playbook.md").write_text(
         "---\ntitle: Playbook\n---\n# Playbook\n", encoding="utf-8"
     )
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
@@ -971,3 +970,25 @@ class TestServiceTokenOkf:
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+
+async def test_protected_verify_precedes_elicitation(
+    enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = enforced_env / "_conventions.md"
+    path.write_text("original")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "_conventions.md")
+    calls = 0
+
+    async def accept(*_args: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await client.call_tool("okf_verify", {"path": "_conventions.md"})
+    assert calls == 0
+    assert path.read_text() == "original"

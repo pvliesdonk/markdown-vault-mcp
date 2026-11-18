@@ -26,34 +26,10 @@ if TYPE_CHECKING:
     import mcp.types as mcp_types
 
 
-_CLEAR_VARS = (
-    "MARKDOWN_VAULT_MCP_INDEX_PATH",
-    "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-    "MARKDOWN_VAULT_MCP_STATE_PATH",
-    "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
-    "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-    "MARKDOWN_VAULT_MCP_EXCLUDE",
-    "MARKDOWN_VAULT_MCP_GIT_TOKEN",
-    "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
-    "MARKDOWN_VAULT_MCP_SERVER_NAME",
-    "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
-    # Auth vars — ensure non-auth tests run unauthenticated
-    "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
-    "MARKDOWN_VAULT_MCP_AUTH_MODE",
-    "MARKDOWN_VAULT_MCP_BASE_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
-    "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
-    "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
-    "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
-)
-
-
 @pytest.fixture
-def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _mcp_env(
+    _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Set minimal env vars for make_server, leaving READ_ONLY at its default.
 
     That default is ``false`` since #1113, so a server built on this fixture
@@ -77,12 +53,12 @@ def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
-def _mcp_env_readonly(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _mcp_env_readonly(
+    _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Set env vars with an explicit read_only=true.
 
     Read-only is an opt-in since #1113, so every read-only expectation names
@@ -90,12 +66,12 @@ def _mcp_env_readonly(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
-def _mcp_env_writable(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _mcp_env_writable(
+    _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Set env vars with an explicit read_only=false.
 
     Names the mode rather than inheriting it. Reserved for tests whose
@@ -104,18 +80,15 @@ def _mcp_env_writable(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
-def _mcp_env_with_fields(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _mcp_env_with_fields(
+    _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Set env vars with indexed frontmatter fields."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
-    # Set after clearing so it's not wiped by _CLEAR_VARS.
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "cluster,tags")
 
 
@@ -280,7 +253,10 @@ class TestServerIdentity:
             utf16_code_units,
         )
 
-        routing = "Contains projects, meetings, and operational notes."
+        routing = (
+            "Contains craft notes. This instance serves files available at this GitHub URL: "
+            "https://github.com/pvliesdonk/corpus/blob/main/"
+        )
         policy = "Prefer concise answers and cite each note by path."
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION", routing)
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA", policy)
@@ -538,6 +514,49 @@ class TestConfigDrivenPrompts:
 
 def _route_paths(server: FastMCP) -> set[str]:
     return {r.path for r in server._additional_http_routes}
+
+
+@pytest.mark.usefixtures("_mcp_env")
+@pytest.mark.parametrize("verify", ["elicit", "off", "trust-auth"])
+async def test_okf_write_inert_on_read_only_server(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, verify: str
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", verify)
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._server_wiring"):
+        server = make_server(transport="stdio")
+
+    records = [
+        r for r in caplog.records if r.getMessage().startswith("okf_write_inert ")
+    ]
+    assert len(records) == 1
+    assert records[0].levelno == logging.INFO
+    assert (
+        records[0].getMessage()
+        == f"okf_write_inert reason=read_only okf_verify={verify}"
+    )
+    if verify == "trust-auth":
+        async with Client(server) as client:
+            names = {tool.name for tool in await client.list_tools()}
+        assert "okf_verify" not in names
+
+
+@pytest.mark.usefixtures("_mcp_env")
+@pytest.mark.parametrize(("read_only", "write"), [("true", "false"), ("false", "true")])
+def test_okf_write_inert_silent_otherwise(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    read_only: str,
+    write: str,
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", read_only)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", write)
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._server_wiring"):
+        make_server(transport="stdio")
+    assert not any(
+        r.getMessage().startswith("okf_write_inert ") for r in caplog.records
+    )
 
 
 class TestGitHubWebhookWiring:
@@ -1668,9 +1687,6 @@ class TestMCPExcludePatterns:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EXCLUDE", "subfolder/**")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-        for var in _CLEAR_VARS:
-            if var != "MARKDOWN_VAULT_MCP_EXCLUDE":
-                monkeypatch.delenv(var, raising=False)
 
         server = make_server()
         async with Client(server) as client:
@@ -1718,7 +1734,7 @@ _OIDC_REQUIRED = {
 
 @pytest.fixture
 def _mcp_env_writable_with_attachments(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     """Writable vault with a PDF and PNG attachment pre-created."""
     vault = tmp_path / "vault"
@@ -1730,8 +1746,6 @@ def _mcp_env_writable_with_attachments(
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
     return vault
 
@@ -2086,6 +2100,20 @@ class TestFetchTool:
         ]
         assert failed and failed[-1].levelno == logging.INFO
         assert failed[-1].exc_info is None
+
+    async def test_fetch_refuses_protected_before_download(
+        self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "guard.md")
+        mock_fetch = AsyncMock(side_effect=ValueError("network failure"))
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            async with Client(make_server()) as client:
+                with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+                    await client.call_tool(
+                        "fetch",
+                        {"url": "https://example.invalid/x", "path": "guard.md"},
+                    )
+        mock_fetch.assert_not_awaited()
 
     @pytest.mark.parametrize("path", ["../escape.md", "../escape.png", "new.exe"])
     async def test_fetch_validates_destination_before_download(
@@ -2590,7 +2618,9 @@ class TestLinkTools:
     """Integration tests for get_backlinks, get_outlinks, get_broken_links."""
 
     @pytest.fixture
-    def _mcp_env_linked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _mcp_env_linked(
+        self, _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Create a vault with interlinked notes for link tool tests."""
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -2605,8 +2635,6 @@ class TestLinkTools:
         )
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_backlinks(self) -> None:
@@ -2846,7 +2874,9 @@ class TestContextTool:
     """Integration tests for get_context tool."""
 
     @pytest.fixture
-    def _mcp_env_context(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _mcp_env_context(
+        self, _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Vault with interlinked notes and a folder peer for context tests."""
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -2865,9 +2895,6 @@ class TestContextTool:
         )
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
-        # Set after clearing so it is not wiped by _CLEAR_VARS.
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "tags")
 
     @pytest.mark.usefixtures("_mcp_env_context")
@@ -3585,8 +3612,6 @@ class TestLifespanAutoEmbeddings:
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
         embeddings_path = str(tmp_path / "embeddings")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", embeddings_path)
 
@@ -3625,8 +3650,6 @@ class TestLifespanAutoEmbeddings:
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
         embeddings_path = str(tmp_path / "embeddings")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", embeddings_path)
 
@@ -3682,8 +3705,6 @@ class TestLifespanAutoEmbeddings:
         """Without EMBEDDINGS_PATH, startup does not build embeddings."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
 
         server = make_server()
         async with Client(server) as client:
@@ -4090,12 +4111,12 @@ def git_vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def _mcp_env_git(git_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _mcp_env_git(
+    _clear_env: None, git_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Set env vars pointing to a git-backed vault."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(git_vault))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 class TestGetHistoryTool:
@@ -4393,8 +4414,6 @@ async def test_search_tool_accepts_chunks_per_file_and_snippet_words(
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
     server = make_server()
     async with Client(server) as client:
@@ -4437,8 +4456,6 @@ async def test_read_tool_returns_only_named_section(
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
     server = make_server()
     async with Client(server) as client:
@@ -4592,7 +4609,8 @@ class TestReadAtRevisionTool:
                     ["git", "-C", str(vault), *args], capture_output=True, check=True
                 )
             (vault / "alpha.md").write_text("# Alpha\n\nA different note.\n")
-            for args in (["add", "."], ["commit", "-m", "write: alpha.md"]):
+            # Keep this fixture commit scoped to the recreated note.
+            for args in (["add", "alpha.md"], ["commit", "-m", "write: alpha.md"]):
                 subprocess.run(
                     ["git", "-C", str(vault), *args], capture_output=True, check=True
                 )
@@ -4610,7 +4628,9 @@ class TestIndexStaleSignal:
     """
 
     @pytest.fixture
-    def _mcp_env_linked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _mcp_env_linked(
+        self, _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Create a vault with interlinked notes for B3 tool stale-signal tests."""
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -4625,8 +4645,6 @@ class TestIndexStaleSignal:
         )
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_stale_true_when_writer_has_pending_dirty_paths(

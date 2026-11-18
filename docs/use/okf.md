@@ -32,7 +32,9 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off` | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on` | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own. |
 
-Check the current state at any time through the `okf` section of the `stats` tool, or the `config://vault` resource.
+Check the current state through the `config://vault` resource. Its `okf_write_configured` field reports the configured `OKF_WRITE` flag, and `okf_write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the `stats` tool's `okf` section reports the same values as `write_configured` and `write_effective`. The section is absent when OKF is inactive; use `config://vault` to inspect that state. Detection reflects changes to the declaration on the next call.
+
+The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether `okf_verify` is available: `OKF_VERIFY=off` can hide that tool while the write layer remains effective. Independent capability reporting is planned in [#1412](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412).
 
 ## What the metadata means
 
@@ -105,7 +107,9 @@ Anything already in the file wins, so a title you wrote yourself and the root `i
 
 ## The enforced write layer
 
-The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before. On a read-only deployment the flag is accepted and does nothing: the write tools are hidden, so there is no write for the layer to act on.
+The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.
+
+Enabling `OKF_WRITE` on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Stamping, verification invalidation, reserved-file upkeep, and `okf_verify` are inactive regardless of `OKF_VERIFY`; OKF read semantics remain available. Startup logs `okf_write_inert` at INFO, and `config://vault` reports `okf_write_effective=false`.
 
 With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
 
@@ -190,7 +194,9 @@ that ran the command can read the recovery file. It is not indexed as a note.
 In a Git-backed vault both files are committed like any other write. Keep the
 recovery file until you have checked the result. The same preview and apply
 are available to library callers as `Vault.writer.okf_preview_log_repair` and
-`Vault.writer.okf_apply_log_repair`.
+`Vault.writer.okf_apply_log_repair`. The library apply call refuses if either
+the log or recovery path is protected. A trusted library caller can pass
+`allow_protected=True`; the admin CLI passes it to preserve operator repair.
 
 Any existing recovery entry blocks apply, even one with the same bytes. If
 apply stops part-way, its error says whether the log may already have
@@ -225,3 +231,11 @@ The export reads from the live vault and never changes it. Wikilinks become the 
 It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the **index** currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run `okf_validate`. Run `okf_validate` yourself before you publish, and read `get_index_status.skipped_files` to see what the index is leaving out.
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
+
+Protected paths also prevent automatic index and log upkeep. A primary write
+to an unprotected note still succeeds when upkeep is blocked. Explicit OKF
+bulk transforms finish eligible writes before reporting protected paths they
+skipped. The refusal repeats until the operator converts the protected notes or
+changes the setting; see [protected paths](../reference/configuration.md).
+Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
+the client write guard.
