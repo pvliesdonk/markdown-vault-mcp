@@ -3006,8 +3006,8 @@ in the UI and forgotten.</p>
   Child pull requests need a pull request and <code>CI Success</code>, and force pushes
   are blocked because a rebase would rewrite the commits every open child is
   based on. Deletion stays open, so GitHub's automatic head-branch deletion
-  can remove the branch once its final pull request merges. The checks
-  listed in <code>extra_required_checks</code> (below) are not required here: they come
+  can remove the branch once its final pull request merges. The extra checks
+  the main and release rulesets require (below) are not required here: they come
   from workflows the project owns, which may not run on <code>integration/*</code>, and
   the final pull request to <code>main</code> has to pass them anyway.</li>
 <li><strong><code>v*</code> tags</strong> are the identity of every shipped release: package
@@ -3089,21 +3089,18 @@ workflow is a different matter. A workflow cannot list another workflow's
 job in its own <code>needs:</code>, so a domain workflow the project added itself
 cannot join the aggregate: it runs, it shows red on the pull request, and
 nothing stops the merge.</p>
-<p>List its context in the <code>extra_required_checks</code> copier answer instead:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># .copier-answers.yml</span>
-<span class="nt">extra_required_checks</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SPA sources</span>
+<p>List its context in the <code>required_status_checks</code> array of
+<code>.github/rulesets/protect-main.json</code> and <code>protect-release-branches.json</code>
+instead, next to <code>CI Success</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"context"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CI Success"</span><span class="w"> </span><span class="p">},</span>
+<span class="p">{</span><span class="w"> </span><span class="nt">"context"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SPA source up-to-date"</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
-<p>Each name renders into the <code>required_status_checks</code> array of both release
-branch rulesets, alongside <code>CI Success</code>, and applies to <code>main</code> and
-<code>release/*</code> alike. Integration branches require <code>CI Success</code> alone. The answer is the project's own, so the rulesets stay template-owned
-and a <code>copier update</code> re-renders them with the project's checks intact. An
-empty answer, the default, renders exactly the single-context form every
-project already had.</p>
+<p>The name then applies to <code>main</code> and <code>release/*</code> alike. Integration branches
+require <code>CI Success</code> alone.</p>
 <p>Write each name as the check appears on the pull request. That is the job's
 <code>name:</code> when it has one and the job id otherwise, not the workflow's name,
 and not the file it lives in.</p>
-<p>The rendered files reach GitHub the same way as any other ruleset change:
+<p>The edited files reach GitHub the same way as any other ruleset change:
 commit them and push, and the <code>.github/rulesets/</code> path filter starts
 <code>bootstrap.yml</code>; a <code>workflow_dispatch</code> run applies them on demand.</p>
 <div class="admonition warning">
@@ -3138,9 +3135,9 @@ when <code>pytest</code> finishes.</p>
 <p>Python 3.14 supports branch measurement with coverage.py's
 <a href="https://coverage.readthedocs.io/en/latest/config.html#run-core"><code>sys.monitoring</code> core</a>.
 Python 3.12 and 3.13 cannot use that core for branch coverage.</p>
-<p><code>coverage/patch</code> is the one context this rule applies to that the template
-itself ships, and it is worth knowing how it reaches a pull request before
-you add it to <code>extra_required_checks</code>.</p>
+<p><code>coverage/patch</code> is the one context this rule applies to that <code>ci.yml</code>
+itself posts, and it is worth knowing how it reaches a pull request before
+you add it to the rulesets' <code>required_status_checks</code>.</p>
 <p>Two workflows post it. <code>ci.yml</code> posts it directly for a pull request from a
 branch in this repository. A pull request from a fork gets a read-only token,
 so <code>ci.yml</code> cannot write the status there; <code>coverage-status.yml</code> posts it

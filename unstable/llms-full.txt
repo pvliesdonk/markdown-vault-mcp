@@ -14043,7 +14043,7 @@ The reasoning per branch class:
 
 - **`main`** requires a pull request and the aggregate `CI Success` check. Zero required approvals is deliberate: a solo-maintainer account has no second reviewer, and requiring one would deadlock the Renovate patch/minor auto-merge. The pull request requirement still routes every change through CI and the review tooling; the check requirement is what holds an auto-merge until CI is green.
 - **`release/*`** stabilisation branches carry a shipped release for their lifetime, so backports get the same gate class as `main`: pull request plus `CI Success`, with the CI structural gate measuring the diff against the release branch itself rather than `main`. The generated `ci.yml` runs on pull requests targeting `release/*` for exactly this reason. Status checks are not enforced on branch creation, so cutting `release/X.Y` is a plain push.
-- **`integration/*`** branches park an epic's child pull requests until the whole epic goes to `main` at once; the [integration branches](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/integration-branches/index.md) page covers the workflow. Child pull requests need a pull request and `CI Success`, and force pushes are blocked because a rebase would rewrite the commits every open child is based on. Deletion stays open, so GitHub's automatic head-branch deletion can remove the branch once its final pull request merges. The checks listed in `extra_required_checks` (below) are not required here: they come from workflows the project owns, which may not run on `integration/*`, and the final pull request to `main` has to pass them anyway.
+- **`integration/*`** branches park an epic's child pull requests until the whole epic goes to `main` at once; the [integration branches](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/integration-branches/index.md) page covers the workflow. Child pull requests need a pull request and `CI Success`, and force pushes are blocked because a rebase would rewrite the commits every open child is based on. Deletion stays open, so GitHub's automatic head-branch deletion can remove the branch once its final pull request merges. The extra checks the main and release rulesets require (below) are not required here: they come from workflows the project owns, which may not run on `integration/*`, and the final pull request to `main` has to pass them anyway.
 - **`v*` tags** are the identity of every shipped release: package registries, Docker tags, and install instructions all point at them. The ruleset blocks deleting or force-moving them. Creating tags stays unrestricted because the release workflow creates one per release.
 
 ### Branches need not be up to date
@@ -14079,19 +14079,18 @@ The apply step needs `administration: write`, a permission the default `GITHUB_T
 
 `CI Success` is the only context the shipped rulesets require, and it is an aggregate: it passes when every job in the generated `ci.yml` passed, so adding a job there needs no ruleset change. A check that lives outside that workflow is a different matter. A workflow cannot list another workflow's job in its own `needs:`, so a domain workflow the project added itself cannot join the aggregate: it runs, it shows red on the pull request, and nothing stops the merge.
 
-List its context in the `extra_required_checks` copier answer instead:
+List its context in the `required_status_checks` array of `.github/rulesets/protect-main.json` and `protect-release-branches.json` instead, next to `CI Success`:
 
 ```
-# .copier-answers.yml
-extra_required_checks:
-  - SPA sources
+{ "context": "CI Success" },
+{ "context": "SPA source up-to-date" }
 ```
 
-Each name renders into the `required_status_checks` array of both release branch rulesets, alongside `CI Success`, and applies to `main` and `release/*` alike. Integration branches require `CI Success` alone. The answer is the project's own, so the rulesets stay template-owned and a `copier update` re-renders them with the project's checks intact. An empty answer, the default, renders exactly the single-context form every project already had.
+The name then applies to `main` and `release/*` alike. Integration branches require `CI Success` alone.
 
 Write each name as the check appears on the pull request. That is the job's `name:` when it has one and the job id otherwise, not the workflow's name, and not the file it lives in.
 
-The rendered files reach GitHub the same way as any other ruleset change: commit them and push, and the `.github/rulesets/` path filter starts `bootstrap.yml`; a `workflow_dispatch` run applies them on demand.
+The edited files reach GitHub the same way as any other ruleset change: commit them and push, and the `.github/rulesets/` path filter starts `bootstrap.yml`; a `workflow_dispatch` run applies them on demand.
 
 A required check must report on every pull request
 
@@ -14109,7 +14108,7 @@ CI requires the full test suite to pass on Python 3.11 through 3.14. It also run
 
 Python 3.14 supports branch measurement with coverage.py's [`sys.monitoring` core](https://coverage.readthedocs.io/en/latest/config.html#run-core). Python 3.12 and 3.13 cannot use that core for branch coverage.
 
-`coverage/patch` is the one context this rule applies to that the template itself ships, and it is worth knowing how it reaches a pull request before you add it to `extra_required_checks`.
+`coverage/patch` is the one context this rule applies to that `ci.yml` itself posts, and it is worth knowing how it reaches a pull request before you add it to the rulesets' `required_status_checks`.
 
 Two workflows post it. `ci.yml` posts it directly for a pull request from a branch in this repository. A pull request from a fork gets a read-only token, so `ci.yml` cannot write the status there; `coverage-status.yml` posts it instead, from a `workflow_run` that executes in this repository's context after CI finishes.
 
@@ -14152,7 +14151,7 @@ Reach for one when an epic spans many pull requests that must ship together, whi
 
 ## What the template provides
 
-- `integration/*` branches are protected: child pull requests need a green `CI Success`, and force pushes are blocked. Checks a project adds through `extra_required_checks` are required only on the final pull request to `main`. See [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/repository-protection/index.md).
+- `integration/*` branches are protected: child pull requests need a green `CI Success`, and force pushes are blocked. Checks added to the main and release rulesets' `required_status_checks` are required only on the final pull request to `main`. See [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/repository-protection/index.md).
 - `ci.yml`, `docs.yml`, `codeql.yml` and the automatic review run on pull requests that target an `integration/*` branch, and CI also runs on every push to one.
 - The local structural gate measures a child branch against the integration branch it was cut from, not against `main`.
 - The release workflows ignore integration branches. Nothing is released from one, and merging a child pull request releases nothing.

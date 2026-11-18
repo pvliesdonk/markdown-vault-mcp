@@ -2802,9 +2802,9 @@ throughout.</p>
 <h2 id="what-the-template-provides">What the template provides<a class="headerlink" href="#what-the-template-provides" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>integration/*</code> branches are protected: child pull requests need a green
-  <code>CI Success</code>, and force pushes are blocked. Checks a project adds through
-  <code>extra_required_checks</code> are required only on the final pull request to
-  <code>main</code>. See
+  <code>CI Success</code>, and force pushes are blocked. Checks added to the main and release
+  rulesets' <code>required_status_checks</code> are required only on the final pull
+  request to <code>main</code>. See
   <a href="../repository-protection/">Repository Protection</a>.</li>
 <li><code>ci.yml</code>, <code>docs.yml</code>, <code>codeql.yml</code> and the automatic review run on pull
   requests that target an <code>integration/*</code> branch, and CI also runs on every
