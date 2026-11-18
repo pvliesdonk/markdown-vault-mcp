@@ -67,6 +67,7 @@ from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
     PULL_REASON_DIVERGED,
     PULL_REASON_FETCH_FAILED,
+    PULL_REASON_GROUP_OPEN,
     PULL_REASON_NO_REMOTE,
     PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS,
     PULL_REASON_PULL_DISABLED,
@@ -1137,7 +1138,9 @@ class GitWriteStrategy:
         with self._automatic_pull_lock, self._group_pull_guard() as open_groups:
             if open_groups and self._pull_deferrals < 3:
                 self._pull_deferrals += 1
-                return PullResult(False, False, 0, "", "", reason="group_open")
+                return PullResult(
+                    False, False, 0, "", "", reason=PULL_REASON_GROUP_OPEN
+                )
             self._pull_deferrals = 0
             return self._pull_pipeline(git_root, entry=entry)
 

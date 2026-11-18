@@ -4,6 +4,8 @@ from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import PullResult
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
@@ -35,7 +37,8 @@ def test_timer_defers_an_open_group(git_repo: Path) -> None:
         strategy.close()
 
 
-def test_bounded_deferrals_split_and_reset(git_repo: Path) -> None:
+@pytest.mark.parametrize("back_to_back", [False, True])
+def test_bounded_deferrals_split_and_reset(git_repo: Path, back_to_back: bool) -> None:
     strategy = GitWriteStrategy(
         token=None, repo_url=None, managed=False, repo_path=git_repo
     )
@@ -49,15 +52,27 @@ def test_bounded_deferrals_split_and_reset(git_repo: Path) -> None:
         dispatcher.fire(note, "one", "write")
     result = PullResult(True, True, 0, "a", "a")
     try:
-        with patch.object(strategy, "_pull_locked", return_value=result) as pull:
-            for _ in range(3):
-                assert strategy.automatic_pull().reason == "group_open"
+        with (
+            patch.object(strategy, "_pull_locked", return_value=result) as pull,
+            patch.object(strategy, "_tracking_ref", return_value="origin/main"),
+        ):
+            assert strategy.automatic_pull().reason == "group_open"
+            assert not strategy.sync_once(git_repo, timer_driven=True)
+            assert strategy.automatic_pull().reason == "group_open"
             pull.assert_not_called()
+            if back_to_back:
+                dispatcher.close_group(group.handle, None).result(timeout=5)
+                group = dispatcher.open_group("Second group", None)
+                note.write_text("two", encoding="utf-8")
+                with dispatcher.bind_group(group.handle, None):
+                    dispatcher.fire(note, "two", "write")
             assert strategy.automatic_pull() == result
             assert pull.call_count == 1
             from tests.fixtures.git import _run_git
 
-            assert _run_git(git_repo, "log", "-1", "--format=%s").strip() == "Group"
+            assert _run_git(git_repo, "log", "-1", "--format=%s").strip() == (
+                "Second group" if back_to_back else "Group"
+            )
             assert strategy.automatic_pull().reason == "group_open"
             dispatcher.close_group(group.handle, None).result(timeout=5)
             assert strategy.automatic_pull() == result

@@ -48,7 +48,10 @@ from starlette.responses import JSONResponse
 
 from markdown_vault_mcp.domain import get_vault_singleton
 from markdown_vault_mcp.exceptions import ConfigurationError
-from markdown_vault_mcp.git.types import PULL_REASON_PULL_DISABLED
+from markdown_vault_mcp.git.types import (
+    PULL_REASON_GROUP_OPEN,
+    PULL_REASON_PULL_DISABLED,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -410,8 +413,7 @@ def _reconcile_after_pull(vault: Any, provider_name: str) -> None:
     pull-loop tick lost is retried here.
 
     Failure is logged at ERROR and not re-raised so callers can return
-    a 200 to the host regardless (a non-200 response causes a retry,
-    which would trigger another pull on a potentially half-updated index).
+    a 200 to the host regardless. A later reconcile retries the index update.
 
     Args:
         vault: Live :class:`~markdown_vault_mcp.vault.Vault`.
@@ -436,10 +438,8 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
     stays inside the project's complexity budget.
 
     The automatic pull runs regardless of ``is_queryable()``: it is a pure git
-    operation with no FTS or vector-index dependency, so blocking on a cold
-    index would exhaust the host's retry budget (GitHub: ~5 s + ~25 s + ~90 s
-    ≈ 2 min) before a large vault finishes its initial build, permanently
-    losing the delivery.  The reconcile that follows defers on an unbuilt
+    operation with no FTS or vector-index dependency, so a cold index need
+    not block delivery. The reconcile that follows defers on an unbuilt
     index; the boot reindex or a later reconcile covers the pulled tree.
 
     Every settled pull reconciles, including one reported as not applied: a
@@ -477,7 +477,7 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
     if pull_result.reason == PULL_REASON_PULL_DISABLED:
         # A webhook credential set on a deployment with no managed remote
         # (#1128). Nothing was fetched and nothing can be: answer 200 so the
-        # host records the delivery instead of retrying every push. Set
+        # host records the delivery. Set
         # MARKDOWN_VAULT_MCP_GIT_REPO_URL (or unset the webhook credentials)
         # to fix.
         logger.warning(
@@ -485,17 +485,17 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         )
         return JSONResponse({"ok": True, "message": "pull disabled"})
 
-    if pull_result.reason == "group_open":
+    if pull_result.reason == PULL_REASON_GROUP_OPEN:
         return JSONResponse(
-            {"error": "pull deferred", "reason": "group_open"}, status_code=503
+            {"error": "pull deferred", "reason": PULL_REASON_GROUP_OPEN},
+            status_code=503,
         )
 
     await asyncio.to_thread(_reconcile_after_pull, vault, name)
 
     if not pull_result.applied:
         # Transient failures (network, expired token) benefit from retry.
-        # Permanent failures (no_remote, conflict) exhaust the retry budget
-        # and fall back to the next periodic pull tick.
+        # A later tick, push event, or deliberate redelivery can retry.
         logger.warning(
             "webhook_force_pull_not_applied kind=%s reason=%s delivery_id=%s",
             name,
@@ -532,8 +532,7 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
     - Returns 200 for the host's ping event, when it has one, and for
       any event that is not a push.
     - Returns 503 when the server has not yet initialised (singleton not
-      set), so the host retries rather than treating the delivery as
-      successfully handled.
+      set), so the delivery is not treated as successfully handled.
     - Hands push events to :func:`_process_push`, which owns the pull, the
       conditional reindex, and the remaining status mapping.
 

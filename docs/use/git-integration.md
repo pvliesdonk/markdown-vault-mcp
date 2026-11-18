@@ -83,11 +83,13 @@ per-call commit path under the opener's identity. Git stages current on-disk
 content, which can include a write whose callback is still pending.
 
 Timer and webhook pulls defer while any group remains open. After three
-consecutive deferrals, the fourth automatic attempt pulls and drains pending
+consecutive deferrals shared across timer and webhook attempts, even across
+back-to-back groups, the fourth automatic attempt pulls and drains pending
 writes, which can split an open group into multiple commits. Once groups close,
-the next normal timer or webhook trigger retries the pull. Explicit `git_sync`
-and force pulls continue immediately and can also split a group. A deferred
-webhook returns HTTP 503 so the sender can retry.
+the next timer tick, subsequent push event, or deliberate sender redelivery
+retries the pull. A webhook-only vault with no subsequent trigger remains
+deferred. Explicit `git_sync` and force pulls continue immediately and can
+also split a group. A deferred webhook returns HTTP 503.
 
 ## Uncommitted files at startup
 
@@ -315,10 +317,10 @@ so a test delivery pulls exactly as a push does.
   here rather than lost.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event
   returns 200 and does nothing.
-- A delivery whose pull did not apply returns 503, so the host retries it
-  instead of marking it delivered. A pull that keeps failing, such as an
-  unresolved conflict, exhausts the retries and waits for the next
-  periodic tick. Divergent history is not a failure: it flows through the
+- A delivery whose pull did not apply returns 503. A later timer tick,
+  push event, or deliberate sender redelivery can retry the pull. A pull
+  that keeps failing, such as an unresolved conflict, waits for a later
+  trigger. Divergent history is not a failure: it flows through the
   Syncthing-style sibling resolution described under
   [`git_sync`](#manual-sync-git_sync-tool) below.
 - A delivery to a server with no managed remote returns 200, not 503. No
@@ -342,9 +344,8 @@ so a test delivery pulls exactly as a push does.
     This is a no-op rather than a failure as of 4.1. Before that the pull
     path ignored the sync switch unmanaged mode turns off and ran
     `git fetch origin` anyway: a checkout with no reachable `origin`
-    failed that fetch and answered 503, burning the host's retries on every
-    push, and against a vault that was not a git repository at all the
-    pull raised out of the handler.
+    failed that fetch and answered 503 on every push. Against a vault that
+    was not a git repository at all, the pull raised out of the handler.
 
 Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness
 window; the loop is what catches the deliveries the webhook loses.
