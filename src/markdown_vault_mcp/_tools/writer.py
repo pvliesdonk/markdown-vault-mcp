@@ -1052,8 +1052,8 @@ def register(mcp: FastMCP) -> None:
             - path (str): the index.md written.
             - entries (int): notes and subfolder links listed.
             - frontmatter_preserved (bool): true when the file already had
-              frontmatter, which is kept; false when it had none, though the
-              fields the vault requires are still added.
+              a frontmatter block, including an empty block, which is kept;
+              false when it had none. No fields are added.
             - created (list[str]): index.md files written for subfolders that
               had none, outermost first.
             - remote (dict, optional): present only while the vault's git clone

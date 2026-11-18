@@ -33,7 +33,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.exceptions import DocumentUnreadableError
-from markdown_vault_mcp.managers.document import _head_end
 from markdown_vault_mcp.okf import (
     OKF_ROOT_INDEX_TITLE,
     OkfConvertResult,
@@ -243,19 +242,11 @@ class OkfMigrationManager:
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         existing = self._doc_mgr.read(index_path)
-        existing_fm = existing.frontmatter if existing is not None else None
-        preserved = bool(existing_fm)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
-        if existing is not None and existing.content:
-            end = _head_end(existing.content)
-            head = existing.content[:end]
-            separator = "\n" if head and not head.endswith("\n") else ""
-            self._doc_mgr.edit(
-                index_path, old_text=existing.content, new_text=head + separator + body
-            )
-        else:
-            self._doc_mgr.write(index_path, body, allow_overwrite=True)
+        preserved = self._doc_mgr.replace_body(
+            index_path, existing.content if existing is not None else None, body
+        )
         return OkfIndexResult(
             path=index_path,
             entries=len(entries),

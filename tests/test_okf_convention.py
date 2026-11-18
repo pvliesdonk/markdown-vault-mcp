@@ -89,9 +89,11 @@ class _FakeDoc:
         raw = fm.dumps(fm.Post(body, **metadata)) if metadata else body
         return type("N", (), {"content": raw, "frontmatter": metadata})()
 
-    def edit(self, path: str, *, old_text: str, new_text: str) -> None:
-        assert self.read(path).content == old_text
-        self.write(path, new_text)
+    def replace_body(self, path: str, original: str | None, body: str) -> bool:
+        if original is not None and self.existing and self.existing[1]:
+            body = fm.dumps(fm.Post(body, **self.existing[1]))
+        self.write(path, body)
+        return bool(self.existing and self.existing[1])
 
     def write(self, path: str, content: str, **kw: object) -> None:
         if self.raise_on_write:

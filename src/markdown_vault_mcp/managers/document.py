@@ -1024,6 +1024,26 @@ class DocumentManager:
 
         return result
 
+    def replace_body(self, path: str, original: str | None, body: str) -> bool:
+        """Replace a note body while preserving an existing header's bytes.
+
+        Args:
+            path: Relative document path.
+            original: Content returned by a preceding read, or None for a new file.
+            body: Replacement Markdown body.
+
+        Returns:
+            Whether an existing frontmatter block was preserved.
+        """
+        if not original:
+            self.write(path, body, allow_overwrite=True)
+            return False
+        end = _head_end(original)
+        head = original[:end]
+        separator = "\n" if head and not head.endswith("\n") else ""
+        self.edit(path, old_text=original, new_text=head + separator + body)
+        return bool(end)
+
     def _finalize_content_write(
         self,
         abs_path: Path,

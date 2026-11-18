@@ -540,6 +540,13 @@ class TestReservedFilesUnderRequiredFrontmatter:
             .startswith(b'---\nokf_version: "0.2"\n---\n')
         )
 
+    def test_empty_existing_header_reports_preserved(self, gated_vault: Vault) -> None:
+        path = gated_vault.source_dir / "index.md"
+        path.write_bytes(b"---\n---\n# Old\n")
+        result = gated_vault.writer.okf_generate_index()
+        assert result.frontmatter_preserved is True
+        assert path.read_bytes().startswith(b"---\n---\n")
+
     def test_regeneration_preserves_header_bytes(self, gated_vault: Vault) -> None:
         path = gated_vault.source_dir / "index.md"
         header = b'\xef\xbb\xbf---\r\nokf_version: "0.2" # declaration\r\ntitle: Legacy\r\n---\r\n'

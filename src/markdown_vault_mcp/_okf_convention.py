@@ -32,7 +32,6 @@ from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.managers.document import _head_end
 from markdown_vault_mcp.okf import (
     append_okf_log_entry,
     is_okf_reserved_file,
@@ -386,16 +385,11 @@ class ConventionMaintainer:
                 new_text = append_okf_log_entry(
                     body, date=self._today().isoformat(), summary=summary
                 )
-                if existing is not None and existing.content:
-                    head = existing.content[: _head_end(existing.content)]
-                    separator = "\n" if head and not head.endswith("\n") else ""
-                    self._doc_mgr.edit(
-                        log_path,
-                        old_text=existing.content,
-                        new_text=head + separator + new_text,
-                    )
-                else:
-                    self._doc_mgr.write(log_path, new_text, allow_overwrite=True)
+                self._doc_mgr.replace_body(
+                    log_path,
+                    existing.content if existing is not None else None,
+                    new_text,
+                )
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
