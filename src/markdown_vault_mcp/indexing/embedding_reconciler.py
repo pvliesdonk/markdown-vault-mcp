@@ -152,8 +152,8 @@ class RebuildPreview:
     """What a full build would do, counted without building (:meth:`EmbeddingReconciler.preview`).
 
     Attributes:
-        chunks: Every chunk the keyword index holds.
-        reusable: Chunks a vector would be copied for, from the store's own
+        chunks: Eligible embedding inputs, including listing rows.
+        reusable: Inputs a vector would be copied for, from the store's own
             rows or a donor (#1505).
         to_embed: The inputs the build would send the provider, each once
             per document.
@@ -171,9 +171,9 @@ class RebuildOutcome:
     Counts describe the generation the build assembled, published or not.
 
     Attributes:
-        embedded: Chunks the provider embedded for the generation.
-        reused: Chunks copied into it from the store's own rows or a donor (#1505).
-        attempted: Every chunk the keyword index holds.
+        embedded: Inputs the provider embedded for the generation.
+        reused: Inputs copied into it from the store's own rows or a donor (#1505).
+        attempted: Eligible embedding inputs, including listing rows.
         published: Whether a generation was published.
         failed_batches: Provider batches that failed and were skipped.
     """
@@ -775,7 +775,7 @@ class EmbeddingReconciler:
             identity: The identity the vectors are embedded at.
             donor: A read-only store to copy matching vectors from.
             reuse_own: Copy matching vectors from *store*'s current rows; off
-                by default, so a forced rebuild re-embeds every chunk.
+                by default, so a forced rebuild re-embeds eligible inputs.
 
         Returns:
             What the build did.
