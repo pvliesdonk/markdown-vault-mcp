@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from markdown_vault_mcp.citations import CITATION_MARKER_SCOPE, CITATION_SYNTAX
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 
@@ -54,5 +55,9 @@ class CitationManager:
             "resource": resource,
             "citing": list(citing.values()),
             "diagnostics": diagnostics,
-            "scope": "Exact resource string; indexed non-reserved notes only. No resources fetched. A label match is attribution, not support.",
+            "syntax": CITATION_SYNTAX,
+            "scope": (
+                "Exact resource string; indexed non-reserved notes only. No resources fetched. A label match is attribution, not support. "
+                + CITATION_MARKER_SCOPE
+            ),
         }

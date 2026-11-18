@@ -15,6 +15,14 @@ if TYPE_CHECKING:
     from markdown_it.rules_block import StateBlock
     from markdown_it.rules_inline import StateInline
 
+CITATION_SYNTAX = "commonmark-literal-footnote-markers-v1"
+CITATION_MARKER_SCOPE = (
+    "Only single-line labels without whitespace, brackets or backslashes are "
+    "inspected, outside code, HTML blocks, links, images, wikilinks and footnote "
+    "definitions. Other dialect extensions are not interpreted; absence is not "
+    "an exhaustive citation audit."
+)
+
 # Labels are deliberately literal: no CommonMark reference-label normalization.
 _MARKER = re.compile(r"\[\^([^\s\[\]\\]+)\]")
 
@@ -50,13 +58,10 @@ class CitationReport:
     source_issues: list[str]
     duplicate_ids: list[str]
     unkeyed_source_indices: list[int]
-    syntax: str = "commonmark-literal-footnote-markers-v1"
+    syntax: str = CITATION_SYNTAX
     scope: str = (
         "One returned note text, LF-normalized then UTF-8 hashed; not a raw-file "
-        "etag or portable file identity. Only single-line labels without whitespace, "
-        "brackets or backslashes are inspected, outside code, HTML blocks, links, "
-        "images, wikilinks and footnote definitions. Other dialect extensions "
-        "are not interpreted; absence is not an exhaustive citation audit. "
+        "etag or portable file identity. " + CITATION_MARKER_SCOPE + " "
         "Matches are literal attribution, "
         "not support or truth; unmatched markers may be ordinary footnotes. "
         "Source indices are zero-based, not stable keys; IDs are stable exact strings. "

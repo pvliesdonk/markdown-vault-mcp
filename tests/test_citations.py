@@ -296,5 +296,7 @@ def test_reverse_citations_are_distinct_from_links(tmp_path: Path) -> None:
             for row in result["citing"]
         )
         assert [row["label"] for row in result["diagnostics"]] == ["missing"] * 3
+        assert result["syntax"] == inspect_citation_text("", "").syntax
+        assert "not an exhaustive citation audit" in result["scope"]
     finally:
         vault.close()
