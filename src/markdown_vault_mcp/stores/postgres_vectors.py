@@ -63,7 +63,7 @@ from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
 from markdown_vault_mcp.stores._postgres_rows import (
     check_key,
     chunk_values,
-    generation_values,
+    generation_replay,
     require_dimension,
 )
 from markdown_vault_mcp.stores._postgres_tables import (
@@ -598,6 +598,8 @@ class PostgresVectorStore:
             ReadOnlyError: If it was opened read-only.
             ValueError: If a path appears twice or a row cannot be stored;
                 nothing changed.
+            OSError: If the validated rows cannot be staged in the system
+                temporary directory (full or unwritable); nothing changed.
             StoreIncompatibleError: If another identity has been published;
                 nothing changed.
             StoreUnsupportedSchemaError: If a fresh store's schema holds a
@@ -607,33 +609,33 @@ class PostgresVectorStore:
                 generation may have landed.
         """
         self._ensure_lease()
-        docs, chunks = generation_values(documents, identity.dimension)
-        generations: list[int] = []
+        with generation_replay(documents, identity.dimension) as replay:
+            generations: list[int] = []
 
-        def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
-            if not self._state.reset_pending:  # a reset here already emptied them
-                empty_rows(conn, schema=self._schema)
-            generations.append(
-                load_generation(
-                    conn,
-                    schema=self._schema,
-                    identity=identity,
-                    documents=docs,
-                    chunks=chunks,
+            def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
+                if not self._state.reset_pending:  # a reset here already emptied them
+                    empty_rows(conn, schema=self._schema)
+                generations.append(
+                    load_generation(
+                        conn,
+                        schema=self._schema,
+                        identity=identity,
+                        documents=replay.documents,
+                        chunks=replay.chunks(),
+                    )
                 )
-            )
-            return "published"
+                return "published"
 
-        self._writing(work, unbounded=True, identity=identity)
-        self._identity = identity
-        logger.info(
-            "postgres_vector_store_generation_published schema=%s generation=%d "
-            "documents=%d rows=%d",
-            self._schema,
-            generations[0],
-            len(docs),
-            len(chunks),
-        )
+            self._writing(work, unbounded=True, identity=identity)
+            self._identity = identity
+            logger.info(
+                "postgres_vector_store_generation_published schema=%s generation=%d "
+                "documents=%d rows=%d",
+                self._schema,
+                generations[0],
+                len(replay.documents),
+                replay.count,
+            )
 
     def _writing(
         self,
