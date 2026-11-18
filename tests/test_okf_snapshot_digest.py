@@ -55,8 +55,11 @@ def test_body_whitespace_is_part_of_snapshot(changed: str) -> None:
     assert concept_snapshot(base) != concept_snapshot("\n" + base)
 
 
+@pytest.mark.parametrize(
+    "malformed", ["---\ntype: [\n---\nBody\n", '{\n"type": [\n}\nBody\n']
+)
 def test_concurrent_malformed_content_reports_unreadable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, malformed: str
 ) -> None:
 
     from markdown_vault_mcp._cli_read import read_payload
@@ -68,7 +71,7 @@ def test_concurrent_malformed_content_reports_unreadable(
     vault = Vault(source_dir=tmp_path)
     monkeypatch.setattr(
         "markdown_vault_mcp.managers.document._read_text_utf8",
-        lambda _path: "---\ntype: [\n---\nBody\n",
+        lambda _path: malformed,
     )
     try:
         with pytest.raises(DocumentUnreadableError, match=r"note\.md"):
@@ -174,6 +177,9 @@ def test_optional_toml_handler_remains_readable(
             return tomllib.loads(fm)
 
     monkeypatch.setattr(frontmatter, "handlers", [*frontmatter.handlers, TomlHandler()])
+    assert concept_snapshot("Body\n") == concept_snapshot(
+        "+++\nverified = []\n+++\nBody\n"
+    )
     note = '+++\ntype = "concept"\nitems = [1, 2]\nvalue = 1.5\nat = 2026-01-01T12:00:00Z\n+++\nBody\n'
     assert concept_snapshot(note) == concept_snapshot(
         note.replace('type = "concept"', 'type = "concept"\nverified = []')
@@ -199,3 +205,36 @@ def test_yaml_equal_keys_keep_precedence_across_spellings() -> None:
     first = "---\nkeys: {1: first, 01: second}\n---\nBody\n"
     second = "---\nkeys: {01: second, 1: first}\n---\nBody\n"
     assert concept_snapshot(first) != concept_snapshot(second)
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "---\n{}\n---\n",
+        "---\nnull\n---\n",
+        "---\nfalse\n---\n",
+        "---\n0\n---\n",
+        "---\n[]\n---\n",
+        "{\n}\n",
+        "---\nverified: []\n---\n",
+        "---\nx-mvmcp: {}\n---\n",
+        '{\n"verified": []\n}\n',
+        '{\n"x-mvmcp": {}\n}\n',
+    ],
+)
+def test_review_only_frontmatter_matches_plain_read(
+    tmp_path: Path, header: str
+) -> None:
+    from markdown_vault_mcp._cli_read import read_payload
+    from markdown_vault_mcp.vault import Vault
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
+    note = tmp_path / "note.md"
+    note.write_text("Body\n")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        first = read_payload(vault, "note.md")["okf"]["snapshot"]
+        note.write_text(header + "Body\n")
+        assert read_payload(vault, "note.md")["okf"]["snapshot"] == first
+    finally:
+        vault.close()

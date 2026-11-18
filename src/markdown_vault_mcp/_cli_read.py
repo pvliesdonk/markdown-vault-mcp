@@ -266,7 +266,7 @@ def read_payload(
         data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
         try:
             data["okf"]["snapshot"] = concept_snapshot(note.content)
-        except yaml.YAMLError as exc:
+        except (yaml.YAMLError, ValueError) as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
     return data
 
