@@ -205,3 +205,75 @@ async def test_verify_off_hides_machine_review(
         assert "okf_verify" not in [tool.name for tool in await client.list_tools()]
         await wait_for_mcp_writer_drain(client)
     assert (machine_review_env / "note.md").read_text() == NOTE
+
+
+@pytest.mark.parametrize(
+    ("actor", "check"),
+    [
+        ("process:checker", "human-review"),
+        ("", "schema"),
+        ("bad actor", "links"),
+        ("process:checker", "bogus"),
+    ],
+)
+def test_explicit_actor_refusal_writes_no_note_or_receipt(
+    tmp_path: Path, actor: str, check: str
+) -> None:
+    from datetime import UTC, datetime
+
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.okf import append_okf_verification
+    from markdown_vault_mcp.utils.fs import is_regular_file
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    note = root / "note.md"
+    note.write_text(NOTE)
+    snapshot = concept_snapshot(NOTE)
+    with pytest.raises(InvalidRequestError):
+        append_okf_verification(
+            NOTE,
+            subject="checker",
+            now=datetime.now(UTC),
+            reviewed_snapshot=snapshot,
+            actor=actor,
+            check=check,
+        )
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        with pytest.raises(InvalidRequestError):
+            vault.writer.okf_verify("note.md", "checker", snapshot, check, actor=actor)
+        assert note.read_text() == NOTE
+        assert not is_regular_file(tmp_path / "state.receipts.json")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    ("actor", "check"),
+    [
+        ("checker/1.2", "schema"),
+        ("process:checker", "x-local"),
+        ("human:alice", "human-review"),
+    ],
+)
+def test_explicit_valid_actor_is_recorded(actor: str, check: str) -> None:
+    from datetime import UTC, datetime
+
+    from markdown_vault_mcp.okf import append_okf_verification
+
+    result = append_okf_verification(
+        NOTE,
+        subject="ignored",
+        now=datetime.now(UTC),
+        reviewed_snapshot=concept_snapshot(NOTE),
+        actor=actor,
+        check=check,
+    )
+    metadata = frontmatter.loads(result).metadata
+    assert metadata["verified"][0]["by"] == actor
+    assert metadata["x-mvmcp"]["reviews"][0]["check"] == check

@@ -1143,6 +1143,24 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
+def _validate_review_claim(actor: str, check: str) -> None:
+    """Validate explicitly attributed review evidence before recording it."""
+    if _ACTOR_RE.fullmatch(actor) is None:
+        raise InvalidRequestError(
+            "Review actor must be human:<id>, process:<id>, or <tool>/<version>."
+        )
+    if check not in {"human-review", "schema", "links", "source-comparison"} and not (
+        check.startswith("x-")
+        and len(check) > 2
+        and not any(c.isspace() for c in check)
+    ):
+        raise InvalidRequestError(
+            "Unknown check; use schema, links, source-comparison, or x- followed by a name."
+        )
+    if check == "human-review" and not actor.startswith("human:"):
+        raise InvalidRequestError("A nonhuman actor cannot record human-review.")
+
+
 def append_okf_verification(  # noqa: PLR0913, RUF100 - optional actor preserves the public API
     text: str,
     *,
@@ -1171,9 +1189,15 @@ def append_okf_verification(  # noqa: PLR0913, RUF100 - optional actor preserves
         check: Name of the review performed.
         actor: Explicit reviewer actor, or None to use the human subject.
 
+    Raises:
+        InvalidRequestError: If the explicit actor or check is invalid or a
+            nonhuman actor claims a human review.
+
     Returns:
         The note text with the appended verification.
     """
+    if actor is not None:
+        _validate_review_claim(actor, check)
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     verified = list(verified_entries(meta))

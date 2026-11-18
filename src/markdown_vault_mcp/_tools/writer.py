@@ -1315,20 +1315,6 @@ def register(mcp: FastMCP) -> None:
                 snapshot=reviewed_snapshot,
                 check=check,
             )
-        if check not in {
-            "human-review",
-            "schema",
-            "links",
-            "source-comparison",
-        } and not (
-            check.startswith("x-")
-            and len(check) > 2
-            and not any(c.isspace() for c in check)
-        ):
-            raise ToolError(
-                "Unknown check; use schema, links, source-comparison, or x- followed by a name.",
-                log_level=logging.INFO,
-            )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
         await _require_review_authority(config, vault)
