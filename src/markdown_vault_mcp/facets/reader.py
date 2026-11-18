@@ -56,6 +56,7 @@ if TYPE_CHECKING:
         SearchState,
         TypeState,
     )
+    from markdown_vault_mcp.indexing.observations import Observation
     from markdown_vault_mcp.managers.citations import CitationManager
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -319,10 +320,21 @@ class ReaderFacet:
         Returns:
             The bounded page with matching concepts and the original continuation.
         """
-        page = self.inspect_bundle_tree(replace(request, entry_limit=1000))
+        ledger = self._doc_mgr._observations
+        rows = ledger.rows() if ledger else {}
+        has_removals = any(
+            row.presence == "removed" and row.role == "concept_candidate"
+            for row in rows.values()
+        )
+        page = self._inventory_with_removals(
+            self.inspect_bundle_tree(
+                replace(request, entry_limit=500 if has_removals else 1000)
+            ),
+            rows,
+        )
         matching = tuple(
             entry
-            for entry in self._inventory_with_removals(page)
+            for entry in page.entries
             if _selected(entry, type_state, parse_state, search_state)
         )
         truncated = len(matching) > request.entry_limit
@@ -340,15 +352,14 @@ class ReaderFacet:
         )
 
     def _inventory_with_removals(
-        self, page: BundleInspection
-    ) -> tuple[BundleEntry, ...]:
-        ledger = self._doc_mgr._observations
+        self, page: BundleInspection, rows: dict[str, Observation]
+    ) -> BundleInspection:
         if (
-            ledger is None
+            not rows
             or page.state != "inspected"
             or not isinstance(page.request, BundleTreeRequest)
         ):
-            return page.entries
+            return page
         manager = self._doc_mgr
         inspector = BundleInspector(
             manager._source_dir,
@@ -362,29 +373,48 @@ class ReaderFacet:
         )
         cursor = tuple(page.request.cursor.split("/")) if page.request.cursor else ()
         boundary = tuple(page.next_cursor.split("/")) if page.next_cursor else None
-        entries = list(page.entries)
-        for path, row in ledger.rows().items():
-            parts = tuple(path.split("/"))
-            if (
-                row.presence != "removed"
-                or row.role != "concept_candidate"
-                or parts[: len(scope)] != scope
-                or len(parts) <= len(scope)
-                or parts <= cursor
-                or (boundary is not None and parts > boundary)
-            ):
-                continue
-            if inspector.observe_path(path, lambda *_: None) != "missing":
-                continue
-            entries.append(
-                BundleEntry(
+        candidates = sorted(
+            (
+                path
+                for path, row in rows.items()
+                if row.presence == "removed"
+                and row.role == "concept_candidate"
+                and tuple(path.split("/"))[: len(scope)] == scope
+                and len(path.split("/")) > len(scope)
+                and tuple(path.split("/")) > cursor
+                and (boundary is None or tuple(path.split("/")) <= boundary)
+            ),
+            key=lambda path: tuple(path.split("/")),
+        )
+        budget = 1000 - len(page.entries)
+        truncated = len(candidates) > budget
+        checked = candidates[:budget]
+        cutoff = checked[-1] if truncated else None
+        entries = [
+            entry
+            for entry in page.entries
+            if cutoff is None
+            or tuple(entry.path.split("/")) <= tuple(cutoff.split("/"))
+        ]
+        for path in checked:
+            if inspector.observe_path(path, lambda *_: None) == "missing":
+                entry = BundleEntry(
                     path=path,
                     role="concept_candidate",
                     state="missing",
                     presence="removed",
                 )
-            )
-        return tuple(sorted(entries, key=lambda entry: tuple(entry.path.split("/"))))
+                entries.append(inspector._labelled(entry, path))
+        return replace(
+            page,
+            entries=tuple(
+                sorted(entries, key=lambda entry: tuple(entry.path.split("/")))
+            ),
+            next_cursor=cutoff if cutoff is not None else page.next_cursor,
+            enumeration="entry_limit"
+            if cutoff is not None and page.enumeration != "unavailable"
+            else page.enumeration,
+        )
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
@@ -542,6 +572,9 @@ class ReaderFacet:
 
         Returns:
             An available comparison or an unavailable observation.
+
+        Raises:
+            ValueError: If the current concept snapshot has an invalid shape.
         """
         from markdown_vault_mcp._okf_observed import review_observation
 

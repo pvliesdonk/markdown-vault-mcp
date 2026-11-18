@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.okf import (
@@ -31,7 +32,16 @@ def review_observation(
 
     Returns:
         An available comparison or an unavailable observation.
+
+    Raises:
+        ValueError: If the current concept snapshot has an invalid shape.
     """
+    if snapshot is not None and (
+        snapshot.get("algo") != "mvmcp-concept-v1"
+        or not isinstance(snapshot.get("digest"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", snapshot["digest"]) is None
+    ):
+        raise ValueError("Invalid concept snapshot")
     entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
     if (
         not entries
@@ -44,7 +54,7 @@ def review_observation(
     latest = max(value for value in dates if isinstance(value, datetime))
     first = datetime.fromisoformat(row.first_seen_at)
     changed = datetime.fromisoformat(row.last_change_observed_at)
-    if first > latest and first == changed:
+    if latest > datetime.now(UTC) or first > latest:
         return {"state": "unavailable"}
     if changed <= latest:
         return {"state": "available", "later_change_observed": False}
@@ -68,10 +78,10 @@ def review_observation(
         not isinstance(binding, dict)
         or binding.get("algo") != snapshot["algo"]
         or not isinstance(binding.get("digest"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", binding["digest"]) is None
+        or binding == snapshot
         for binding in bindings
     ):
-        return {"state": "unavailable"}
-    if any(binding == snapshot for binding in bindings):
         return {"state": "unavailable"}
     return {
         "state": "available",

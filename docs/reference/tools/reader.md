@@ -754,7 +754,7 @@ To find untyped candidates under `knowledge`, call:
 {"root": "knowledge", "type_state": "absent", "entry_limit": 100}
 ```
 
-Continue with the returned `next_cursor`, even if this page has no entries.
+Continue with the returned `next_cursor`, even if this page has no entries. Locally observed removals appear as `presence: removed`; see [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews).
 <!-- DOMAIN-EXAMPLE-okf_inventory-END -->
 
 ## `okf_navigation`
