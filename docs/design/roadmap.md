@@ -137,7 +137,8 @@ and embedding paths, and [#1564][1564], [#1542][1542], [#1480][1480] and
 while its features are still not ready. [#1728][1728] waited on the template's
 packaged-install seam
 ([fastmcp-server-template#781](https://github.com/pvliesdonk/fastmcp-server-template/issues/781));
-since the detach decision it is re-refined under [#2240][2240] (§ Independence from the template and pvl-core).
+since the detach decision it waits on [#2246][2246] instead, which makes those
+manifests this project's own (§ Independence from the template and pvl-core).
 [#1734][1734] ships in the 5.1.0 cut instead, because 5.1.0 widens the exposure
 it describes.
 
@@ -445,11 +446,15 @@ remains. Their refinement issues are [#2242][2242] and [#2243][2243].
 
 `evidenced` — `FORKING.md`'s detach is kept current and smoke-tested upstream,
 but only on a fresh render that never runs `pytest`. A trial detach of
-`eb374b2` broke 10 tests here and left the upstream routing in
-`CONTRIBUTING.md` and the `TEMPLATE-OWNED` banners on the skills in place.
+`eb374b2` broke 10 tests here and the Lint job's config-surface check, which
+reads `.copier-answers.yml`, and left the upstream routing in `CONTRIBUTING.md`
+and the `TEMPLATE-OWNED` banners on the skills in place. The release-flow tests
+that failed in the same trial fail identically without the detach in that
+environment, so the detach does not touch them.
 pvl-core 10.2.0 is about 11,700 lines with about 15,800 lines of tests, and this
 project imports 59 of its 96 public names. Figures and method are in the epic
-bodies of [#2240][2240] and [#2241][2241].
+bodies of [#2240][2240] and [#2241][2241], and in [#2246][2246] for the
+config-surface check.
 
 `evidenced` — Order: the template first. pvl-core is imported outside sentinel
 blocks in `server.py`, `cli.py`, `config.py` and `_server_apps.py`, and the
@@ -470,6 +475,26 @@ fastmcp-pvl-core#543) into this repository.
 `docs`), and the core epic's first releasable child is chosen at its
 refinement. Bug [#2235][2235] keeps its lock-only override as the near-term fix;
 its CI-side option becomes a local edit once [#2240][2240]'s detach lands.
+
+`derived` — Refinement turned [#2240][2240] into features. The final sync
+([#2245][2245]) comes first, because whatever it does not bring in has to be
+ported by hand afterwards. Stopping the tracking ([#2246][2246]) comes next,
+because its conformance gate is what blocks every other child: the project
+settings file ([#2247][2247]), the fix routing ([#2248][2248]), the
+single-owner skills and docs ([#2249][2249]) and the experimental Python leg
+([#2250][2250]) all edit template-owned lines, and they can then land in any
+order. The same gate blocks [#1728][1728], [refinement #2251][2251] and every
+child of [#2241][2241].
+
+`derived` — Coverage falls short in one place, and the criterion stays as
+frozen: while pvl-core is a dependency, fixes to its behaviour still go
+upstream, so "the only place fixes go" holds only once [#2241][2241]'s vendored
+copy lands. [#2240][2240] stays open until then.
+
+`derived` — The sentinel blocks stay. Five generators and the config-contract
+test parse them; only the ownership wording around them goes. The detach keeps
+`claude.yml`, the `@claude` responder this repository advertises, unless the
+owner decides otherwise on [#2246][2246].
 
 ### Other ambitions remain available
 
@@ -707,9 +732,8 @@ verified implementation findings.
 
 | Question | Resolved by | Consequence for order |
 | --- | --- | --- |
-| Which support for several lockstep distributions must this project build itself, and which parts of the folded-in pvl-core (client, authentication, non-MCP API) does the split reuse? | The re-refinement of [#1471][1471] under [#2240][2240]; [fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855) no longer gates it | Decides when the split can ship; the import-independence work in `020` does not wait for it. |
-| Which of the tests coupled to the template (conformance, agent-instruction links, release-flow contract) guard this project's behaviour rather than the template's? | The detach child of [#2240][2240] | Decides whether each test is deleted or rewritten; not the order. |
-| Is any pvl-core type, such as `ConfigurationError`, part of this project's public library interface? | The import-shim child of [#2241][2241] | Decides whether a core child carries `!`. |
+| Which support for several lockstep distributions must this project build itself, and which parts of the folded-in pvl-core (client, authentication, non-MCP API) does the split reuse? | [Refinement #2251][2251] of [#1471][1471]; [fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855) no longer gates it | Decides when the split can ship; the import-independence work in `020` does not wait for it. |
+| Is any pvl-core type, such as `ConfigurationError`, part of this project's public library interface? | The import-shim child of [#2241][2241], once [refinement #2243][2243] files it | Decides whether a core child carries `!`. |
 | Do pvl-core's tests pass unchanged once vendored, and what do they add to CI time? | The vendoring child of [#2241][2241] | Effort only; not the order. |
 | Which pvl-core areas are thin wrappers around FastMCP, and which are helpers to keep under this project's names? | [Refinement #2243][2243] | Shapes the dissolution children; not needed before the vendoring. |
 | What documentation and consumer validation make the library independently adoptable? | [Refinement #1472][1472], using [#1436][1436] and the research verdict | The package must deliver a supported consumer experience, not only a list of public names. |
@@ -1106,6 +1130,14 @@ known-unknowns row on fastmcp-server-template#855 now resolves through the
 re-refinement of [#1471][1471]. Epics [#2240][2240] and [#2241][2241] are filed
 with their refinement issues only.
 
+### 18 November 2026 — refine [#2240][2240]
+
+`derived` — Six features cover the template epic, with one recorded shortfall
+on pvl-core routing (§ Independence from the template and pvl-core). The epic body's planned
+re-refinements moved to their own epics: [refinement #2251][2251] under
+[#1471][1471], and [#1728][1728] now waits on [#2246][2246]. The trial detach
+answered the known unknown on template-coupled tests, so its row is removed.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1260,3 +1292,10 @@ with their refinement issues only.
 [2241]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2241
 [2242]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2242
 [2243]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2243
+[2245]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2245
+[2246]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2246
+[2247]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2247
+[2248]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2248
+[2249]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2249
+[2250]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2250
+[2251]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2251
