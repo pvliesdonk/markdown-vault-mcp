@@ -773,6 +773,9 @@ class Vault:
             require_built=self._require_built,
             okf_audit=self._okf_audit,
             okf_write_state=lambda: self.okf_write_state(active=True),
+            okf_capabilities=lambda: self.okf_capability_report(
+                active=self._okf.state().active
+            ),
         )
         # The reserved files the OKF generators write are subject to this
         # vault's own required-frontmatter gate, so the generators need the
@@ -797,6 +800,8 @@ class Vault:
             settings.okf_capabilities
             or ContentConfig(okf_write=settings.okf_write).okf_capabilities
         )
+        self._okf_capabilities = capabilities
+        self._okf_write_alias = settings.okf_write
         if not settings.read_only and (
             capabilities.index or capabilities.log == "writes"
         ):
@@ -918,6 +923,45 @@ class Vault:
         """
         configured = self._okf_write_enrich is not None
         return configured, configured and active and not self._read_only
+
+    def okf_capability_report(self, *, active: bool) -> dict[str, Any]:
+        """Report configured and effective OKF authority for this vault.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Capability entries and the configured folder designation scope.
+        """
+        caps = self._okf_capabilities
+
+        def entry(name: str, configured: bool | str) -> dict[str, Any]:
+            reason = None
+            enabled = configured is True or (
+                isinstance(configured, str) and configured != "off"
+            )
+            if self._read_only:
+                reason = "read_only"
+            elif enabled:
+                if not active and not (name == "verify" and self._okf_write_alias):
+                    reason = "okf_inactive"
+                elif name == "author" or (name == "log" and configured == "events"):
+                    reason = "not_implemented"
+                elif name in ("index", "log") and not caps.folders:
+                    reason = "not_designated"
+            return {
+                "configured": configured,
+                "effective": enabled and reason is None,
+                "reason": reason,
+            }
+
+        return {
+            "author": entry("author", caps.author),
+            "verify": entry("verify", caps.verify),
+            "index": entry("index", caps.index),
+            "log": entry("log", caps.log),
+            "folders": list(caps.folders),
+        }
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).

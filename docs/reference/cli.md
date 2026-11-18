@@ -126,6 +126,8 @@ indexed metadata without constructing embedding or summarization providers or
 loading vector sidecars. Follow a returned path with `read`, `read --section`,
 `similar`, `context` or a graph command. Local freshness remains unknown.
 
+
+The `stats` command reports [OKF capability state](../use/okf.md), including when OKF is inactive.
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search

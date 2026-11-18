@@ -163,7 +163,7 @@ class TestNonOkfBaseline:
             )
             assert "okf" not in read
             stats = _structured(await client.call_tool("stats", {}))
-            assert "okf" not in stats
+            assert set(stats["okf"]) == {"capabilities"}
             context = _structured(
                 await client.call_tool(
                     "get_context",
@@ -329,7 +329,7 @@ class TestModeOff:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
             stats = _structured(await client.call_tool("stats", {}))
-            assert "okf" not in stats
+            assert set(stats["okf"]) == {"capabilities"}
             assert "type" not in stats["indexed_frontmatter_fields"]
         server = make_server()
         assert server.instructions is not None

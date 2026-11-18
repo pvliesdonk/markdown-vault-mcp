@@ -295,8 +295,11 @@ Dict with the following fields:
   Call '`get_broken_links`' if non-zero.
 - `orphan_count` (int): Notes with no inbound or outbound links.
   Call '`get_orphan_notes`' if non-zero.
-- okf (dict, optional): Present only when the vault is an active
-  OKF (Open Knowledge Format) bundle. Carries mode,
+- okf (dict): Always includes capabilities with configured values,
+  effective true/false values, reasons and folder scope. Reasons are
+  `read_only`, `okf_inactive`, `not_implemented` or `not_designated`;
+  null means no reason. When OKF is inactive, capabilities is
+  the only field. An active OKF bundle also carries mode,
   `declared_version`, a per-`type` histogram plus `untyped_count`,
   status and trust-tier breakdowns, and `stale_count`. Those cover
   the note population '`okf_validate`' audits; the reserved

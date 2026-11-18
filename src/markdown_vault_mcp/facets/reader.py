@@ -67,6 +67,7 @@ class ReaderFacet:
         require_built: Callable[[], None],
         okf_audit: Callable[[], OkfAuditReport] | None = None,
         okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
+        okf_capabilities: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         """Hold the managers the read methods delegate to.
 
@@ -79,6 +80,7 @@ class ReaderFacet:
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
             okf_write_state: Configured and effective write-layer projection.
+            okf_capabilities: Configured and effective capability report.
         """
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
@@ -86,6 +88,7 @@ class ReaderFacet:
         self._require_built = require_built
         self._okf_audit = okf_audit
         self._okf_write_state = okf_write_state
+        self._okf_capabilities = okf_capabilities
 
     def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
         """Inspect one explicitly selected bundle directory before or after indexing.
@@ -609,21 +612,21 @@ class ReaderFacet:
         return self._search_mgr.stats()
 
     def okf_stats(self) -> dict[str, Any] | None:
-        """Return the OKF statistics section, or ``None`` when inactive.
-
-        Adds the vault's write state to :meth:`SearchManager.okf_stats`.
+        """Return capability reporting and, when active, OKF aggregates.
 
         Returns:
-            The OKF aggregate dict (mode, declared version, type histogram,
-            status/trust breakdowns, stale count, and ``write_configured``
-            and ``write_effective`` when wired), or ``None`` when OKF read
-            semantics are not active.
+            The OKF statistics section, or ``None`` for an inactive standalone
+            facet without a capability provider.
         """
         section = self._search_mgr.okf_stats()
         if section is not None and self._okf_write_state is not None:
             configured, effective = self._okf_write_state()
             section["write_configured"] = configured
             section["write_effective"] = effective
+        if self._okf_capabilities is not None:
+            if section is None:
+                section = {}
+            section["capabilities"] = self._okf_capabilities()
         return section
 
     def attachment_size(self, path: str) -> int:
