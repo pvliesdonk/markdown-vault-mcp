@@ -117,3 +117,42 @@ def test_apply_designated_index_preserves_other_bytes(tmp_path: Path) -> None:
         assert sorted(p.name for p in tmp_path.iterdir()) == ["index.md"]
     finally:
         vault.close()
+
+
+def test_custom_title_and_concurrent_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+
+    (tmp_path / "guides").mkdir()
+    path = tmp_path / "guides" / "index.md"
+    path.write_text("---\nname: guides\ntitle: null\n---\nbody\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            required_frontmatter=["name", "title"],
+            title_field="name",
+        ),
+    )
+    try:
+        repair = ReservedFrontmatterRepair(vault)
+        assert repair.run()[0].keys == ("name", "title")
+        write = vault._doc_mgr.write
+
+        def concurrent(*args: object, **kwargs: object) -> object:
+            path.write_text("new content\n")
+            return write(*args, **kwargs)
+
+        monkeypatch.setattr(vault._doc_mgr, "write", concurrent)
+        with pytest.raises(ConcurrentModificationError):
+            repair.run(apply=True)
+        assert path.read_text() == "new content\n"
+    finally:
+        vault.close()
+
+
+def test_ambiguous_yaml_is_left_unchanged() -> None:
+    original = "---\ntitle: Log\ntitle: Log\ntype: null\n---\nbody\n"
+    assert _strip(original, ["title", "type"], "title", "Log") == (original, ())

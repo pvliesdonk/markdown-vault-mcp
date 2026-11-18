@@ -239,7 +239,7 @@ implicit stamping. `OKF_WRITE=true` enables these capabilities and logs a deprec
 
 ## Removing seeded placeholder fields
 
-Older servers could add required concept fields to generated `index.md` and `log.md` files. Run `markdown-vault-mcp okf strip-seeded-frontmatter` to list matching paths and fields without writing. Review the list, then run the same command with `--apply` to remove those fields. The repair matches the historical title for each reserved file and null values for other configured required fields; it keeps edited titles, the bundle declaration, conflict markers and other fields. It inspects the live vault, including notes excluded from search. The command requires an active OKF vault and the apply step requires write access. A concurrent change is refused; retry after inspecting the file. If a field has comments or complex YAML, inspect it manually.
+Older servers could add required concept fields to generated `index.md` and `log.md` files. Run `markdown-vault-mcp okf strip-seeded-frontmatter` to list matching paths and fields without writing. Review the list, then run the same command with `--apply` to remove those fields. The repair matches the historical title for each reserved file and null values for other configured required fields; it keeps edited titles, the bundle declaration, conflict markers and other fields. It inspects the live vault, including notes excluded from search. The command requires an active OKF vault and the apply step requires write access. A concurrent change is refused; inspect the vault before retrying, since earlier files may already have changed. If a field has comments or complex YAML, inspect it manually.
 
 ## Inspecting bundle inventory
 

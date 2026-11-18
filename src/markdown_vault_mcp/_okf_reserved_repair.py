@@ -49,11 +49,33 @@ def _strip(
         or node.flow_style
     ):
         return text, ()
+    edits = _candidate_edits(header, node, mapping, required, (title_field, title))
+    changed = header
+    for start, end, _ in reversed(edits):
+        changed = changed[:start] + changed[end:]
+    try:
+        remaining = yaml.safe_load(changed) or {}
+    except (yaml.YAMLError, ValueError):
+        return text, ()
+    keys = tuple(item[2] for item in edits)
+    if remaining != {k: v for k, v in mapping.items() if k not in keys}:
+        return text, ()
+    return text[: match.start("header")] + changed + text[match.end("header") :], keys
+
+
+def _candidate_edits(
+    header: str,
+    node: MappingNode,
+    mapping: dict[object, object],
+    required: list[str],
+    title_spec: tuple[str, str],
+) -> list[tuple[int, int, str]]:
+    title_field, title = title_spec
     edits: list[tuple[int, int, str]] = []
     seen: set[str] = set()
     for key, value in node.value:
         if not isinstance(key, ScalarNode) or key.value in seen:
-            return text, ()
+            return []
         seen.add(key.value)
         name = key.value
         if (
@@ -80,19 +102,7 @@ def _strip(
         ):
             continue
         edits.append((start, end, name))
-    if not edits:
-        return text, ()
-    changed = header
-    for start, end, _ in reversed(edits):
-        changed = changed[:start] + changed[end:]
-    try:
-        remaining = yaml.safe_load(changed) or {}
-    except (yaml.YAMLError, ValueError):
-        return text, ()
-    keys = tuple(item[2] for item in edits)
-    if remaining != {k: v for k, v in mapping.items() if k not in keys}:
-        return text, ()
-    return text[: match.start("header")] + changed + text[match.end("header") :], keys
+    return edits
 
 
 class ReservedFrontmatterRepair:

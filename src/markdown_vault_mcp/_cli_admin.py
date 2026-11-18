@@ -57,6 +57,11 @@ def strip_seeded_frontmatter(
         finally:
             built.close()
     except MarkdownMCPError as exc:
+        if apply:
+            typer.echo(
+                "Earlier files may already have been changed; inspect the vault before retrying.",
+                err=True,
+            )
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
 
