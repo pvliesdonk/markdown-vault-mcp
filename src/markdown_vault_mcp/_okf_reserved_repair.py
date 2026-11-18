@@ -182,7 +182,7 @@ class ReservedFrontmatterRepair:
                 candidate: _PendingRepair | ReservedRepair | None
                 try:
                     candidate = self._inspect_entry(entry)
-                except (MarkdownMCPError, OSError, UnicodeDecodeError) as exc:
+                except (MarkdownMCPError, OSError, UnicodeError, RecursionError) as exc:
                     candidate = ReservedRepair(entry.path, (), str(exc))
                 if candidate:
                     result.append(candidate)
@@ -242,7 +242,6 @@ class ReservedFrontmatterRepair:
                     item.result.path,
                     item.text,
                     if_match=item.etag,
-                    allow_overwrite=True,
                     allow_protected=allow_protected,
                     allow_designated=True,
                 )

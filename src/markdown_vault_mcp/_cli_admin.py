@@ -2,9 +2,11 @@
 
 ``index``, ``reindex`` and ``embeddings import`` change the shared index or the
 stored vectors, and ``repair-log`` changes one ``log.md`` (#1403), so they live
-under ``admin``. ``okf strip-seeded-frontmatter`` writes only with ``--apply``
-(#1438); every other command except ``serve`` only reads (:mod:`._cli_reader`). The names the first three shipped under stay as hidden
-top-level aliases that run the same command and name the new form on stderr.
+under ``admin``. The top-level ``okf strip-seeded-frontmatter`` (#1438), which
+sits outside ``admin``, writes only with ``--apply``; every other command except
+``serve`` only reads (:mod:`._cli_reader`). The names the first three shipped
+under stay as hidden top-level aliases that run the same command and name the
+new form on stderr.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
+from markdown_vault_mcp._cli_output import terminal_text as _safe
 from markdown_vault_mcp.config import _ENV_PREFIX
 
 if TYPE_CHECKING:
@@ -57,15 +60,15 @@ def strip_seeded_frontmatter(
             action = "Removed" if apply else "Would remove"
             for item in items:
                 if item.skip_reason:
-                    typer.echo(f"Skipped {item.path}: {item.skip_reason}")
+                    typer.echo(_safe(f"Skipped {item.path}: {item.skip_reason}"))
                 for key in item.keys:
-                    typer.echo(f"{action} {item.path}: {key}")
+                    typer.echo(_safe(f"{action} {item.path}: {key}"))
             if any(item.skip_reason for item in items):
                 raise typer.Exit(1)
         finally:
             built.close()
     except (MarkdownMCPError, OSError) as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
+        typer.echo(_safe(f"ERROR: {exc}"), err=True)
         raise typer.Exit(1) from exc
 
 

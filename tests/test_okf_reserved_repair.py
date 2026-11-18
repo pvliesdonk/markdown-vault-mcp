@@ -532,3 +532,45 @@ def test_large_log_exceeds_interactive_limit_but_is_repaired(tmp_path: Path) -> 
         assert path.read_bytes() == body
     finally:
         vault.close()
+
+
+def test_large_recursive_alias_skips_file_and_repairs_others(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+    bad = tmp_path / "a" / "log.md"
+    original = b"---\ntitle: Log\ncycle: &loop [*loop]\n---\n" + b"x" * 70000
+    bad.write_bytes(original)
+    good = tmp_path / "b" / "log.md"
+    good.write_bytes(b"---\ntitle: Log\n---\n# Log\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    for options, action in [([], "Would remove"), (["--apply"], "Removed")]:
+        result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter", *options])
+        assert result.exit_code == 1
+        assert "Skipped a/log.md:" in result.stdout
+        assert f"{action} b/log.md: title" in result.stdout
+    assert bad.read_bytes() == original
+    assert good.read_bytes() == b"# Log\n"
+
+
+def test_cli_escapes_controls_in_repair_outcomes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for folder, header in [
+        ("safe\x1b[31m", "title: Log"),
+        ("skip\x1b[32m", "title: Log # comment"),
+    ]:
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "log.md").write_text(f"---\n{header}\n---\nbody\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+    result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter"], color=True)
+    assert result.exit_code == 1
+    assert "\x1b" not in result.stdout
+    assert r"safe\x1b[31m/log.md" in result.stdout
+    assert r"skip\x1b[32m/log.md" in result.stdout
