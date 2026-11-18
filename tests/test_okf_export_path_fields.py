@@ -415,3 +415,94 @@ def test_unknown_representation_node_is_bounded():
 
     with pytest.raises(_MetadataComplexity):
         _copy_node(Node("!unknown", "value", None, None), [1], set())
+
+
+@pytest.mark.parametrize(
+    "written", ["/outside%2Ffile.md", "/outside%FF.md", "/outside%FF file%20name%.md"]
+)
+def test_external_uri_preserves_escaped_octets(tmp_path, written):
+    text = f'---\nresource: "{written}"\n---\n'
+    output, report = export(tmp_path, text, external_base="https://example.org/v")
+    expected = written.replace(" ", "%20").removesuffix("%.md")
+    if written.endswith("%.md"):
+        expected += "%25.md"
+    assert "https://example.org/v" + expected in output
+    assert report.dependencies[0].target == written
+
+
+def test_unencodable_field_is_reported(tmp_path):
+    text = '---\nresource: "/outside/\\ud800.md"\ncomputation: /guides/b.md\n---\n'
+    output, report = export(tmp_path, text, external_base="https://example.org/v")
+    assert "computation: /b.md" in output or report.uninspected.get("guides/a.md")
+
+
+def test_noncollision_value_error_is_reported(tmp_path, monkeypatch):
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+
+    def fail(*_args):
+        raise ValueError("unexpected value")
+
+    monkeypatch.setattr(ExportPaths, "_field_replacement", fail)
+    text = "---\nresource: /guides/b.md\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.uninspected["guides/a.md"] == "metadata_encoding"
+
+
+def test_scalar_token_boundaries_are_indexed_linearly(monkeypatch):
+    import yaml
+
+    from markdown_vault_mcp.okf_export_paths import _splice_fields
+
+    text = "\n".join(f"k{i}: /guides/b.md" for i in range(1000))
+    root = yaml.compose(text, Loader=yaml.SafeLoader)
+    assert isinstance(root, yaml.MappingNode)
+    changes = [(value, "/b.md") for _, value in root.value]
+    original_scan = yaml.scan
+    count = [0]
+
+    class CountMark:
+        def __init__(self, mark):
+            self.mark = mark
+
+        @property
+        def index(self):
+            count[0] += 1
+            return self.mark.index
+
+    def scan(source):
+        for token in original_scan(source):
+            if isinstance(token, yaml.ScalarToken):
+                token.end_mark = CountMark(token.end_mark)
+            yield token
+
+    monkeypatch.setattr(yaml, "scan", scan)
+    output = _splice_fields(text, changes)
+    assert output.count("/b.md") == 1000
+    assert count[0] <= 2000
+
+
+def test_block_scalar_keeps_all_following_blank_lines(tmp_path):
+    text = "---\nresource: |\n  /guides/b.md\n\n\ntitle: T\n---\n"
+    output, _ = export(tmp_path, text)
+    assert output == '---\nresource: "/b.md\\n"\n\n\ntitle: T\n---\n'
+
+
+def test_unclosed_handler_block_is_copied(monkeypatch):
+    from markdown_vault_mcp import okf_export_paths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    class IncompleteHandler:
+        def split(self, _candidate):
+            raise ValueError("unterminated")
+
+    monkeypatch.setattr(
+        okf_export_paths.frontmatter, "detect_format", lambda *_: IncompleteHandler()
+    )
+    paths = okf_export_paths.ExportPaths("guides", {"guides/a.md"}, None)
+    assert (
+        paths.relocate_frontmatter(
+            "---\nresource: /x\n", "guides/a.md", OkfExportReport()
+        )
+        == "---\nresource: /x\n"
+    )

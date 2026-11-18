@@ -475,7 +475,7 @@ class ExportPaths:
         if self.external_base:
             return self._external_url(target)
         if apparent in self._archive_members:
-            raise ValueError(
+            raise _ExportCollision(
                 f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; supply external_base to resolve outside destinations"
             )
         return None
@@ -575,6 +575,9 @@ class ExportPaths:
         apparent, _ = _resolve_link_path(path, archive_source)
         if target not in self.members:
             dependencies.append(Dependency(archive_source, _safe_text(value)))
+            if self.external_base and path == written:
+                base = self.external_base.rstrip("/")
+                return base + "/" + _quote_field_uri(target) + suffix
             url = self._outside_target(target, source, value, apparent)
             return url + suffix if url is not None else None
         bundle_target = target[len(self.scope) + 1 :]
@@ -617,6 +620,22 @@ class ExportPaths:
                 changes.append((node, replacement + trailing))
         return changes, dependencies, ambiguous
 
+    def _rewrite_header(
+        self,
+        header: str,
+        loader: _AliasLoader,
+        root: object,
+        changes: list[tuple[ScalarNode, str]],
+        source: str,
+    ) -> str:
+        if loader.aliases:
+            header = _isolate(
+                header, root, loader.aliases, {id(node) for node, _ in changes}
+            )
+            root = yaml.compose(header, Loader=yaml.SafeLoader)
+            changes, _, _ = self._field_changes(root, source)
+        return _splice_fields(header, changes)
+
     def relocate_frontmatter(
         self, prefix: str, source: str, report: OkfExportReport
     ) -> str:
@@ -642,7 +661,10 @@ class ExportPaths:
         try:
             header, _ = handler.split(candidate)
             offset = len(prefix) - len(candidate) + candidate.index(header)
-            end = offset + len(header)
+        except ValueError:
+            return prefix
+        end = offset + len(header)
+        try:
             loader = _AliasLoader(header)
             try:
                 root = loader.get_single_node()
@@ -651,23 +673,20 @@ class ExportPaths:
                 report.ambiguous_path.extend(ambiguous)
                 if not changes:
                     return prefix
-                if loader.aliases:
-                    header = _isolate(
-                        header, root, loader.aliases, {id(node) for node, _ in changes}
-                    )
-                    root = yaml.compose(header, Loader=yaml.SafeLoader)
-                    changes, _, _ = self._field_changes(root, source)
-                header = _splice_fields(header, changes)
+                header = self._rewrite_header(header, loader, root, changes, source)
             finally:
                 loader.dispose()
         except (_MetadataComplexity, RecursionError):
             report.uninspected.setdefault(source, "metadata_complexity")
-            return prefix
-        except (yaml.YAMLError, ValueError) as exc:
-            if isinstance(exc, ValueError) and str(exc).startswith("Export collision"):
-                raise
-            return prefix
-        return prefix[:offset] + header + prefix[end:]
+        except _ExportCollision:
+            raise
+        except ValueError:
+            report.uninspected.setdefault(source, "metadata_encoding")
+        except yaml.YAMLError:
+            pass
+        else:
+            return prefix[:offset] + header + prefix[end:]
+        return prefix
 
     def relocate(self, body: str, source: str) -> tuple[str, list[Dependency]]:
         """Relocate body destinations and report outside dependencies.
@@ -709,6 +728,20 @@ class ExportPaths:
         for start, end, replacement in reversed(changes):
             body = body[:start] + replacement + body[end:]
         return body, dependencies
+
+
+class _ExportCollision(ValueError):
+    """An outside path would address a different archive member."""
+
+
+def _quote_field_uri(path: str) -> str:
+    parts = re.split(r"(%[0-9A-Fa-f]{2})", path.lstrip("/"))
+    return "".join(
+        part
+        if re.fullmatch(r"%[0-9A-Fa-f]{2}", part)
+        else quote(part, safe="/", errors="surrogateescape")
+        for part in parts
+    )
 
 
 class _MetadataComplexity(Exception):
@@ -783,24 +816,13 @@ def _quoted_scalar(value: str) -> str:
 
 def _yaml_scalar(value: str, style: str | None, original: str) -> str:
     if style in ("|", ">"):
-        ending = (
-            "\r\n"
-            if original.endswith("\r\n")
-            else "\n"
-            if original.endswith("\n")
-            else ""
-        )
-        return _quoted_scalar(value) + ending
+        return _quoted_scalar(value) + original[len(original.rstrip("\r\n")) :]
     if style == "'":
         return "'" + value.replace("'", "''") + "'"
     if style == '"':
         return _quoted_scalar(value)
     scalar = ScalarNode("tag:yaml.org,2002:str", value)
-    return (
-        yaml.serialize(scalar, allow_unicode=True, width=1000000)
-        .removesuffix("\n...\n")
-        .removesuffix("\n")
-    )
+    return _emit(scalar)
 
 
 class _AliasLoader(yaml.SafeLoader):
@@ -809,15 +831,16 @@ class _AliasLoader(yaml.SafeLoader):
         self.aliases: list[tuple[int, int, Node]] = []
 
     def compose_node(self, parent: Node | None, index: int) -> Node | None:
-        if self.check_event(yaml.events.AliasEvent):
-            event = self.peek_event()  # type: ignore[no-untyped-call]
-            node = super().compose_node(parent, index)
-            if node is not None:
-                self.aliases.append(
-                    (event.start_mark.index, event.end_mark.index, node)
-                )
-            return node
-        return super().compose_node(parent, index)
+        event = self.peek_event()  # type: ignore[no-untyped-call]
+        node = super().compose_node(parent, index)
+        if (
+            isinstance(event, yaml.AliasEvent)
+            and node is not None
+            and event.start_mark is not None
+            and event.end_mark is not None
+        ):
+            self.aliases.append((event.start_mark.index, event.end_mark.index, node))
+        return node
 
 
 def _relevant_nodes(root: object, selected: set[int]) -> set[int]:
@@ -880,40 +903,34 @@ def _copy_node(node: Node, budget: list[int], active: set[int]) -> Node:
         active.remove(id(node))
 
 
+def _emit(node: Node) -> str:
+    return (
+        yaml.serialize(node, allow_unicode=True, width=1000000)
+        .removesuffix("\n...\n")
+        .removesuffix("\n")
+    )
+
+
 def _isolate(
     text: str, root: object, aliases: list[tuple[int, int, Node]], changed: set[int]
 ) -> str:
     relevant = _relevant_nodes(root, changed)
     budget = [4096]
-    replacements = []
-    for start, end, node in aliases:
-        if id(node) not in relevant:
-            continue
-        clone = _copy_node(node, budget, set())
-        replacement = (
-            yaml.serialize(clone, allow_unicode=True, width=1000000)
-            .removesuffix("\n...\n")
-            .removesuffix("\n")
-        )
-        replacements.append((start, end, replacement))
-    for start, end, replacement in reversed(replacements):
-        text = text[:start] + replacement + text[end:]
+    for start, end, node in reversed(aliases):
+        if id(node) in relevant:
+            text = text[:start] + _emit(_copy_node(node, budget, set())) + text[end:]
     return text
 
 
 def _splice_fields(text: str, changes: list[tuple[ScalarNode, str]]) -> str:
-    tokens = list(yaml.scan(text))
+    starts = {
+        token.end_mark.index: token.start_mark.index
+        for token in yaml.scan(text)
+        if isinstance(token, yaml.ScalarToken)
+    }
     replacements = []
     for node, value in changes:
-        start = next(
-            (
-                t.start_mark.index
-                for t in tokens
-                if isinstance(t, yaml.ScalarToken)
-                and t.end_mark.index == node.end_mark.index
-            ),
-            node.start_mark.index,
-        )
+        start = starts.get(node.end_mark.index, node.start_mark.index)
         replacements.append(
             (
                 start,
@@ -921,6 +938,10 @@ def _splice_fields(text: str, changes: list[tuple[ScalarNode, str]]) -> str:
                 _yaml_scalar(value, node.style, text[start : node.end_mark.index]),
             )
         )
-    for start, end, replacement in sorted(replacements, reverse=True):
-        text = text[:start] + replacement + text[end:]
-    return text
+    pieces: list[str] = []
+    previous = 0
+    for start, end, replacement in sorted(replacements):
+        pieces.extend((text[previous:start], replacement))
+        previous = end
+    pieces.append(text[previous:])
+    return "".join(pieces)
