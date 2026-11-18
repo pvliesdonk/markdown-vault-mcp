@@ -364,3 +364,35 @@ def test_server_instructions_use_resolved_capabilities(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_FOLDERS", ".,projects/*")
     text = make_server().instructions or ""
     assert "projects/*" in text
+
+
+@pytest.mark.anyio
+async def test_review_refuses_when_bundle_deactivated_during_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typing import Any
+
+    from fastmcp.exceptions import ToolError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    index = root / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    note = root / "note.md"
+    note.write_text("# Note\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(root))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+
+    async def accept(
+        _message: str, _response_type: Any, _params: Any, _context: Any
+    ) -> bool:
+        index.write_text("# Declaration removed\n")
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        with pytest.raises(ToolError, match="OKF is not active"):
+            await client.call_tool("okf_verify", {"path": "note.md"})
+    assert note.read_text() == "# Note\n"

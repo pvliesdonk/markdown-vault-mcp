@@ -238,7 +238,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
-          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and review act only when OKF semantics are active.",
+          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode.",
           "default": "auto"
         },
         {
@@ -912,7 +912,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
-          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and review act only when OKF semantics are active.",
+          "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode.",
           "default": "auto"
         },
         {

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from fastmcp_pvl_core import InstructionRole, instructions_for
 
 from markdown_vault_mcp._write_tools import gated_tool
+from markdown_vault_mcp.config_sections.content import ContentConfig
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastmcp import FastMCP
@@ -186,15 +187,18 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
         )
     if config.okf_mode != "off":
         # Tell the agent which files and folder scope the server maintains.
-        caps = config.okf_capabilities
-        index = caps.index if caps is not None else config.okf_write
-        log = caps.log == "writes" if caps is not None else config.okf_write
-        if index and log and (caps is None or caps.folders == ("**",)):
+        caps = (
+            config.okf_capabilities
+            or ContentConfig(okf_write=config.okf_write).okf_capabilities
+        )
+        index = caps.index
+        log = caps.log == "writes"
+        if index and log and caps.folders == ("**",):
             upkeep = "Leave 'log.md'/'index.md' to the server."
         elif not index and not log:
             upkeep = "For edits, update 'log.md'/'index.md'."
         else:
-            scope = ", ".join(caps.folders) if caps is not None else "**"
+            scope = ", ".join(caps.folders)
             upkeep = (
                 f"In designated folders ({scope}) the server maintains {'index.md' if index else 'log.md'}; "
                 f"maintain {'log.md' if index else 'index.md'} yourself. "

@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
+from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     ReservedFrontmatterPolicy,
@@ -154,12 +155,12 @@ class ConventionMaintainer:
         self._today = today
         self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
         self._source_dir = source_dir
-        self._capabilities = capabilities
+        self._capabilities = (
+            capabilities or ContentConfig(okf_write=True).okf_capabilities
+        )
 
     def _designated(self, folder: str) -> bool:
-        return self._capabilities is None or folder_is_designated(
-            folder, self._capabilities.folders
-        )
+        return folder_is_designated(folder, self._capabilities.folders)
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and its listing.
@@ -193,11 +194,11 @@ class ConventionMaintainer:
         if not self._designated(folder):
             return
         with okf_write_suppressed(), auxiliary_commit_writes():
-            if self._capabilities is None or self._capabilities.log == "writes":
+            if self._capabilities.log == "writes":
                 self._append_log(folder, path, operation)
             # A note in a folder without an index is listed from the nearest
             # indexed level, which indexes every missing level below (#1647).
-            if self._capabilities is None or self._capabilities.index:
+            if self._capabilities.index:
                 self._refresh_index(self.indexed_anchor(folder))
 
     def refresh_indexes(
@@ -224,9 +225,7 @@ class ConventionMaintainer:
             create: Folders a note arrived in, refreshed even without an
                 ``index.md`` yet.
         """
-        if (
-            self._capabilities is not None and not self._capabilities.index
-        ) or not self._maintains_after(trigger_paths):
+        if not self._capabilities.index or not self._maintains_after(trigger_paths):
             return
         wanted = [f for f in folders if self._designated(f) and self._has_index(f)]
         with okf_write_suppressed(), auxiliary_commit_writes():
@@ -366,7 +365,7 @@ class ConventionMaintainer:
         try:
             if self._sync_index is not None:
                 self._sync_index()
-            if self._capabilities is None:
+            if self._capabilities.folders == ("**",):
                 self._okf_migrate.generate_index(folder=folder)
             else:
                 self._okf_migrate.generate_index(

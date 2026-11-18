@@ -427,8 +427,9 @@ class ProjectConfig:
                 "(the default), read annotations switch on when the vault "
                 "declares an OKF version in its root index.md. Use off to "
                 "disable OKF semantics entirely, or on to force them for an "
-                "undeclared vault. OKF maintenance and review act only when OKF "
-                "semantics are active."
+                "undeclared vault. OKF maintenance and independent review require "
+                "active semantics; the OKF_WRITE alias also permits review of an "
+                "undeclared vault in auto mode."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -468,8 +469,8 @@ class ProjectConfig:
                 "leaving attestation to external tooling. "
                 "Unset resolves to off, or elicit with OKF_WRITE enabled. An explicit "
                 "elicit or trust-auth with OKF_MODE=off is a configuration error. "
-                "Review is available independently of OKF_WRITE; it requires an active "
-                "OKF vault and a writable server."
+                "Independent review requires an active OKF vault and a writable server. "
+                "The OKF_WRITE alias also permits review of an undeclared vault in auto mode."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
