@@ -2122,12 +2122,16 @@ the spec itself says, dated and sourced, in
   ships as an overloaded download ref rather than a bespoke tool: the domain
   ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
   ref on pvl-core's ``create_download_link`` and generates the archive at
-  fetch time via ``okf_bundle.build_okf_bundle`` (wikilinks rewritten,
+  fetch time via ``okf_bundle.build_okf_bundle`` (resolvable wikilinks rewritten
+  only for searchable notes using the potentially stale index graph,
   convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
   non-conformant notes as-is, reproducible bytes, never mutating the vault;
   gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
   independent of search admission. The library result reports omitted classes,
-  local admission, partial v0.2 format findings and incomplete observations;
+  local admission, partial v0.2 format findings and uninspected files;
+  incomplete inventory enumeration refuses export. Reports and selection options
+  are library-only; the download ref exposes neither. Unindexed notes retain
+  raw links and bytes, and the report does not identify those links;
   it does not claim conformance. Descriptor-relative no-follow raw reads protect
   notes and attachments after inventory (#1448, #2167).
 - **Reserved-file classification**: `okf.is_okf_reserved_file` owns the

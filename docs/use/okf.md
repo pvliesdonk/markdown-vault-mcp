@@ -223,18 +223,14 @@ OKF composes with the [PARA](para.md) and [Zettelkasten](zettelkasten.md) method
 
 When you want a copy to share or hand to other OKF tooling, download one through the standard `create_download_link` tool with a bundle reference rather than a file path:
 
-Bundle export uses the live inventory, including notes search did not admit.
-It omits index-excluded and hidden paths, convention files and templates by
-default. Internal state and inaccessible paths are never exported. Library
-callers can select index-excluded and hidden paths separately and inspect the
-partial v0.2 report returned by `build_okf_bundle`.
-
 - `create_download_link` with `ref="okf-bundle"` returns a one-time URL for a zip of the whole vault.
 - `create_download_link` with `ref="okf-bundle:guides"` scopes the zip to a folder subtree.
 
-The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are.
+Export uses the live inventory, including notes search did not admit; see the [security model](../security-model.md) for its access boundary. It omits index-excluded and hidden paths, convention files and templates by default; internal state and inaccessible paths are never exported. An explicitly selected hidden folder also requires `include_hidden=True` from a library caller. Library callers can select hidden and index-excluded paths separately and inspect the partial v0.2 report returned by `build_okf_bundle`; download links do not expose these options or the report.
 
-It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the **index** currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run `okf_validate`. Run `okf_validate` yourself before you publish, and read `get_index_status.skipped_files` to see what the index is leaving out.
+Export converts resolvable wikilinks using the existing graph for searchable notes. That graph can be stale; notes absent from the index keep their raw links and bytes. The report does not identify unconverted links. Reserved `index.md` and `log.md` are included. An unavailable or incomplete inventory refuses the export.
+
+Export reads the live vault without changing it, not a point-in-time snapshot. A concurrent write can leave the archive internally inconsistent, so quiesce writes if that matters. The report is not a conformance verdict and is not embedded in the archive. Run `okf_validate` separately before publishing.
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
 

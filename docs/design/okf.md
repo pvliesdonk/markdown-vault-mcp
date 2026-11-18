@@ -742,15 +742,17 @@ time via `okf_bundle.build_okf_bundle`. This is path 2 of pvl-core's transfer
 model (a domain use of the primitives) expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
 
-The bundle is a conformant *copy*: wikilinks rewritten to root-absolute links
-(reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
-convention files (`_conventions.md`) and the template folder excluded, the
-reserved `index.md` / `log.md` kept, non-conformant notes included as-is
-(permissive consumers tolerate them), and a fixed zip-entry timestamp so an
-unchanged vault re-exports to identical bytes. Notes are read raw from disk
-(uncapped), so a large note exports in full. Export never mutates the vault.
-Residual conformance gaps are reported separately by `okf_validate`, not embedded
-in the archive.
+The bundle copies live inventory independently of search admission. Resolvable
+wikilinks are rewritten only for searchable notes using the existing graph,
+which can be stale; notes outside the index retain raw links and bytes. The
+report does not list unconverted links. Convention files, templates, hidden
+paths and index-excluded paths are omitted by default; reserved `index.md` and
+`log.md` are kept. Library callers can opt into hidden and index-excluded paths
+separately (including a hidden scope root) and receive partial v0.2 observations;
+the download ref exposes neither options nor report. Incomplete inventory
+enumeration refuses export. A fixed zip-entry timestamp makes unchanged vaults
+reproducible. Notes are read uncapped, and export never mutates the vault. This
+is not a conformance verdict or snapshot; the report is not embedded.
 
 ---
 
@@ -766,7 +768,7 @@ onto `sources`. Three documented frictions, resolved at guide level:
 |---|---|
 | `status` vocabulary: PARA `active/archived` (workflow) vs OKF `draft/stable/deprecated` (lifecycle) | Different meanings — do **not** map (archived ≠ deprecated). PARA workflow state moves to its own extension key (OKF preserves unknown keys); `status` is reserved for OKF lifecycle. |
 | PARA `0-Inbox/` notes are deliberately untyped until triage | Captures get placeholder `type: Capture` (conformant immediately; triage overwrites). Fallback: audit-whitelist the inbox via exclude patterns. |
-| Zettelkasten/Obsidian wikilink dialect vs OKF standard-link convention | Not a conformance issue (conformance is frontmatter-only). Internal graph parses both dialects; conversion happens at export. Guides state: write either style, export converts. |
+| Zettelkasten/Obsidian wikilink dialect vs OKF standard-link convention | Not a conformance issue (conformance is frontmatter-only). Internal graph parses both dialects; export converts resolvable links only for searchable notes using the existing graph. |
 
 Deliverables (docs phase): `docs/guides/okf.md`; "Using X with OKF" interop
 sections in `para.md` and `zettelkasten.md`; `examples/okf/` (templates +

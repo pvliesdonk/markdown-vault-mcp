@@ -517,7 +517,7 @@ Zettelkasten and the [Open Knowledge Format](okf.md) sit at different layers: th
 
 **Status does not collide.** Zettelkasten leans on links and tags rather than a lifecycle field, which leaves the OKF `status` field (`draft`, `stable`, `deprecated`) free to use as intended. Reach for it when a permanent note is provisional (`draft`) or has been superseded (`deprecated`); deprecated and stale notes rank lower in search on a detected bundle, which keeps a growing Zettelkasten navigable.
 
-**Add provenance where it helps.** The OKF `sources` list is a natural home for the citations a literature note already tracks, and `verified` records a human review. Add them to literature and permanent notes to promote their trust tier, and leave quick-capture notes lean. Write `[[wikilinks]]` freely; `okf_convert_links` produces the OKF link style at export time.
+**Add provenance where it helps.** The OKF `sources` list is a natural home for the citations a literature note already tracks, and `verified` records a human review. Add them to literature and permanent notes to promote their trust tier, and leave quick-capture notes lean. Write `[[wikilinks]]` freely; use `okf_convert_links` to convert resolvable links before sharing, or see [bundle export](okf.md#exporting-a-bundle) for its graph-based conversion limits.
 
 The [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) pack adds the declaration index, typed note templates, and a prompt pack (author, verify, triage-stale, migrate) that drops in alongside the Zettelkasten prompts.
 

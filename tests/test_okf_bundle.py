@@ -206,3 +206,111 @@ def test_bundle_preserves_bom_with_and_without_link_rewrite(
     with zipfile.ZipFile(io.BytesIO(build_okf_bundle(vault, config).data)) as archive:
         assert archive.read("bom.md") == untouched
         assert archive.read("linked.md") == b"\xef\xbb\xbf# Link\nSee [b](/b.md).\n"
+
+
+def test_inventory_failure_refuses_export(
+    vault: Vault, config: ProjectConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
+
+    def unavailable(request):
+        return BundleInspection(
+            request,
+            "inspected",
+            "unavailable",
+            (BundleEntry("deep", "directory", "unavailable", "depth_limit"),),
+        )
+
+    monkeypatch.setattr(vault.reader, "inspect_bundle_tree", unavailable)
+    with pytest.raises(ValueError, match=r"deep.*depth_limit"):
+        build_okf_bundle(vault, config)
+    monkeypatch.setattr(
+        vault.reader,
+        "inspect_bundle_tree",
+        lambda request: BundleInspection(request, "unavailable"),
+    )
+    with pytest.raises(ValueError, match=r"guides.*unavailable"):
+        build_okf_bundle(vault, config, folder="guides")
+
+
+def test_scope_normalization_and_validation(
+    vault: Vault, config: ProjectConfig
+) -> None:
+    for scope in ("guides/./", "guides//"):
+        assert _members(build_okf_bundle(vault, config, folder=scope).data) == {
+            "guides/one.md"
+        }
+    for scope in ("/guides", "guides/../guides", "guides\\\\x", "guides/\x00"):
+        with pytest.raises(ValueError):
+            build_okf_bundle(vault, config, folder=scope)
+
+
+def test_raw_links_for_notes_outside_graph(source_dir: Path) -> None:
+    body = "---\ntype: Note\n---\n[[target]]\n"
+    (source_dir / "target.md").write_text("---\ntitle: Target\n---\n")
+    (source_dir / "nonadmitted.md").write_text(body)
+    (source_dir / "excluded.md").write_text(body)
+    vault = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(
+            read_only=False,
+            required_frontmatter=["title"],
+            exclude_patterns=["excluded.md"],
+        ),
+    )
+    try:
+        vault.index.build_index()
+        (source_dir / "new.md").write_text(body)
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=source_dir), include_index_excluded=True
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            for path in ("nonadmitted.md", "excluded.md", "new.md"):
+                assert archive.read(path) == body.encode()
+    finally:
+        vault.close()
+
+
+def test_export_pages_and_read_failure(
+    source_dir: Path,
+    vault: Vault,
+    config: ProjectConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp import okf_bundle
+
+    for i in range(1001):
+        (source_dir / f"page-{i:04}.md").write_text("# Page\n")
+    original = okf_bundle._read_safe
+
+    def read(source, path):
+        if path == "page-0500.md":
+            raise OSError("refused")
+        return original(source, path)
+
+    monkeypatch.setattr(okf_bundle, "_read_safe", read)
+    result = build_okf_bundle(vault, config)
+    members = _members(result.data)
+    assert "page-0000.md" in members and "page-1000.md" in members
+    assert "page-0500.md" not in members
+    assert result.report.uninspected["page-0500.md"] == "read_unavailable"
+
+
+def test_deep_inventory_and_unsupported_nofollow_refuse(
+    source_dir: Path,
+    vault: Vault,
+    config: ProjectConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import markdown_vault_mcp.utils.fs as fs
+
+    directory = source_dir
+    for _ in range(32):
+        directory = directory / "d"
+        directory.mkdir()
+    (directory / "deep.md").write_text("# Deep\n")
+    with pytest.raises(ValueError, match="depth_limit"):
+        build_okf_bundle(vault, config)
+    monkeypatch.setattr(fs, "_NOFOLLOW_SUPPORTED", False)
+    with pytest.raises(ValueError, match=r"inventory unavailable.*unavailable"):
+        build_okf_bundle(vault, config)

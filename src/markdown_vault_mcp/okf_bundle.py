@@ -8,6 +8,7 @@ import os
 import stat
 import zipfile
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
@@ -18,7 +19,7 @@ from markdown_vault_mcp.utils.fs import open_directory_nofollow
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from markdown_vault_mcp.bundle_inventory import BundleEntry
+    from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
 
@@ -96,6 +97,55 @@ def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
         report.uninspected[item.path] = item.reason or "not_inspected"
 
 
+def _scope(folder: str) -> str:
+    """Normalize harmless separators while rejecting escapes."""
+    if not isinstance(folder, str) or "\x00" in folder or "\\" in folder:
+        raise ValueError("Scope must be a relative POSIX path")
+    scope = PurePosixPath(folder)
+    if scope.is_absolute() or ".." in scope.parts:
+        raise ValueError("Scope must be a relative POSIX path without traversal")
+    return str(scope) if scope.parts else ""
+
+
+def _require_complete(page: BundleInspection, folder: str) -> None:
+    """Refuse a page that could omit unobservable descendants."""
+    if page.state != "inspected" or page.enumeration not in {
+        "complete",
+        "entry_limit",
+    }:
+        failed = next(
+            (
+                entry
+                for entry in page.entries
+                if entry.role == "directory" and entry.state == "unavailable"
+            ),
+            None,
+        )
+        path = failed.path if failed else folder or "(root)"
+        reason = (
+            (failed.reason or failed.state)
+            if failed
+            else (page.state if page.state != "inspected" else page.enumeration)
+        )
+        raise ValueError(
+            f"Cannot export scope {folder or '(root)'}: inventory unavailable at {path}: {reason}"
+        )
+
+
+def _note_bytes(raw: bytes, item: BundleEntry, vault: Vault) -> bytes:
+    """Convert indexed graph links while preserving every other byte."""
+    if item.search_state != "searchable":
+        return raw
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw
+    content, _, _ = convert_wikilinks_to_markdown(
+        content, vault.graph.get_outlinks(item.path)
+    )
+    return content.encode("utf-8")
+
+
 def build_okf_bundle(
     vault: Vault,
     config: ProjectConfig,
@@ -115,7 +165,11 @@ def build_okf_bundle(
 
     Returns:
         Archive bytes, counts, and a partial report; no conformance verdict.
+
+    Raises:
+        ValueError: If the scope is invalid or inventory cannot enumerate it.
     """
+    folder = _scope(folder)
     report = OkfExportReport()
     buf = io.BytesIO()
     notes = attachments = excluded = 0
@@ -125,11 +179,7 @@ def build_okf_bundle(
             page = vault.reader.inspect_bundle_tree(
                 BundleTreeRequest(root=folder, entry_limit=1000, cursor=cursor)
             )
-            if page.state != "inspected" or page.enumeration not in {
-                "complete",
-                "entry_limit",
-            }:
-                report.enumeration_incomplete = True
+            _require_complete(page, folder)
             for item in page.entries:
                 if item.role == "directory":
                     continue
@@ -157,16 +207,7 @@ def build_okf_bundle(
                     attachments += 1
                 else:
                     _observe_export(item, report)
-                    try:
-                        content = raw.decode("utf-8")
-                    except UnicodeDecodeError:
-                        _write(zf, item.path, raw)
-                    else:
-                        if item.search_state == "searchable":
-                            content, _, _ = convert_wikilinks_to_markdown(
-                                content, vault.graph.get_outlinks(item.path)
-                            )
-                        _write(zf, item.path, content.encode("utf-8"))
+                    _write(zf, item.path, _note_bytes(raw, item, vault))
                     notes += 1
             if page.next_cursor is None:
                 break
