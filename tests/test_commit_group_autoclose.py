@@ -338,3 +338,19 @@ def test_expired_group_keeps_followup_multifile_call_in_one_commit(
     finally:
         dispatcher.close()
         strategy.close()
+
+
+def test_failed_initial_timer_leaves_no_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    dispatcher = WriteCallbackDispatcher(None)
+
+    def fail_start(_timer: threading.Timer) -> None:
+        raise RuntimeError("cannot start")
+
+    try:
+        monkeypatch.setattr(threading.Timer, "start", fail_start)
+        with pytest.raises(RuntimeError, match="cannot start"):
+            dispatcher.open_group("Not opened", None)
+        assert not dispatcher._groups
+        assert not dispatcher._group_timers
+    finally:
+        dispatcher.close()

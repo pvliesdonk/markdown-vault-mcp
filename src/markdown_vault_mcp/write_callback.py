@@ -287,8 +287,8 @@ class WriteCallbackDispatcher:
         with self._group_lock:
             if self._groups_closed:
                 raise CommitGroupError("Dispatcher is closed")
-            self._groups[group.handle] = group
             self._schedule_group(group)
+            self._groups[group.handle] = group
         return group
 
     def _get_group(self, handle: str, principal: Principal | None) -> CommitGroup:
