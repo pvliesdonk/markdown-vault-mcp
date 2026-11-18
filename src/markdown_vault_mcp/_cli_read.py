@@ -244,7 +244,13 @@ def read_payload(
     """
     from dataclasses import asdict
 
-    from markdown_vault_mcp.exceptions import DocumentNotFoundError
+    import yaml
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+    from markdown_vault_mcp.exceptions import (
+        DocumentNotFoundError,
+        DocumentUnreadableError,
+    )
     from markdown_vault_mcp.okf import derive_annotation
     from markdown_vault_mcp.utils import is_note
 
@@ -258,9 +264,10 @@ def read_payload(
     data = asdict(note)
     if section is None and vault.okf.state().active:
         data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
-        from markdown_vault_mcp._okf_review import concept_snapshot
-
-        data["okf"]["snapshot"] = concept_snapshot(note.content)
+        try:
+            data["okf"]["snapshot"] = concept_snapshot(note.content)
+        except yaml.YAMLError as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
     return data
 
 
