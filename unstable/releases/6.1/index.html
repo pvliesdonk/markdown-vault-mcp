@@ -2991,6 +2991,133 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v614" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v6.1.4
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v6.1.4">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrading_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-notes-keep-their-folders-permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New notes keep their folder's permissions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes-frontmatter-and-the-file-watcher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes, frontmatter and the file watcher
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#embeddings-and-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Embeddings and search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git-history-and-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git history and logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf-write-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OKF write state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#command-line-and-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command line and installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#for-library-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For library users
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contributors_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3012,7 +3139,7 @@
 
 
 <h1 id="61">6.1<a class="headerlink" href="#61" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: d89a93f4d47ff3ee5ee7c266f3c2d47dec4d14af -->
+<!-- notes-range-end: c7d6dee258da83abc0c14c5c5d2a7650c0f7cba7 -->
 
 <!-- RELEASE-SUMMARY v6.1.0 START -->
 <p>This release brings the vault to the terminal. The <code>markdown-vault-mcp</code>
@@ -3476,6 +3603,209 @@ stays open. Custom keyword backends can opt in through the new
 <a href="https://github.com/salmonumbrella">@salmonumbrella</a>, for issues the
 maintainer had filed. The append-only guidance answers a suggestion from
 <a href="https://github.com/FoundationOperations">@FoundationOperations</a>.</p>
+<h2 id="v614">v6.1.4<a class="headerlink" href="#v614" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v6.1.4 START -->
+<p>This release fixes how new notes and changed notes reach the disk and the
+index. A new note in a folder with a default ACL keeps the group access that
+ACL grants. Frontmatter is written in the order you gave it. A save that
+replaces a note through a hidden temporary file now triggers reindexing.
+OpenAI-compatible endpoints that omit <code>index</code>, such as Gemini's, embed whole
+batches again. A folder move's commit names the folder. Indexing no longer
+sends the Linux file watcher a read event for every file. Nothing needs to change on upgrade
+for most deployments; see <a href="#upgrading">Upgrading</a>.</p>
+<!-- RELEASE-SUMMARY v6.1.4 END -->
+
+<h3 id="upgrading_4">Upgrading<a class="headerlink" href="#upgrading_4" title="Permanent link">&para;</a></h3>
+<p>No step is required for most deployments.</p>
+<ul>
+<li><strong>If you install with <code>pip</code> and pin <code>watchdog</code>:</strong> the <code>file-watcher</code> and <code>all</code>
+  extras now need <code>watchdog&gt;=4.0.2</code>, because "earlier FSEvents scheduling
+  overrides lack the filter keyword"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2066">#2066</a>).</li>
+<li><strong>If your state folder or <code>TMPDIR</code> is small or memory-backed:</strong> a full
+  embedding build now stages its prepared windows on scratch disk beside the
+  state file (<code>/data/state</code> in the shipped Compose setup), or in <code>TMPDIR</code> when
+  there is no state file. A PostgreSQL store's full publish also stages rows
+  in the system temp folder. Make room there, since a memory-backed folder
+  counts against memory
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2176">#2176</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2185">#2185</a>).</li>
+<li><strong>If you installed the Claude Desktop bundle and left optional fields empty:</strong>
+  reinstall it. The new bundle sends those fields empty instead of as literal
+  <code>${user_config.&lt;id&gt;}</code> text
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2141">#2141</a>).</li>
+</ul>
+<p><strong>Clients:</strong> nothing beyond reconnecting. The tool surface is unchanged.
+<code>config://vault</code> and <code>stats</code> gain fields that report the OKF write state.</p>
+<p><strong>State:</strong> kept. The index is not rebuilt and no vectors are re-embedded. On
+its first writable open, the keyword index repairs rows left without an owner
+by older builds, and logs <code>fts_index_rowid_map_repaired</code> when it finds any.</p>
+<p><strong>Security posture:</strong> on Linux, a note or attachment the server creates in a
+folder with a POSIX default ACL now gets the permissions that ACL grants, as a
+plain file creation there would. A group the ACL grants write keeps write.
+When the ACL cannot be read for another reason than its absence, such as a
+permission error, creating the file fails instead of falling back to the
+umask. Three more Git failure log lines now redact the configured token.</p>
+<h3 id="new-notes-keep-their-folders-permissions">New notes keep their folder's permissions<a class="headerlink" href="#new-notes-keep-their-folders-permissions" title="Permanent link">&para;</a></h3>
+<p>In a vault folder with a POSIX default ACL, "a note the server creates gets its
+group permissions from the process umask instead of from the default ACL, so a
+group the ACL grants write gets read-only," reported
+<a href="https://github.com/princelundgren">@princelundgren</a> in
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2054">#2054</a>. Another
+program writing as that group, such as a sync client, then could not update the
+note.</p>
+<p>The server now reads the folder's default ACL and gives a new note the mode a
+plain <code>open()</code> would. Without a default ACL, the umask applies as before. Other
+platforms, filesystems without extended attributes, and NFSv4 or SMB ACL formats keep
+the umask behaviour. Overwriting a note still keeps its existing mode, and
+nothing is created in the vault to work the mode out
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2144">#2144</a>,
+<a href="../../reference/tools/writer/">writer tools</a>).</p>
+<h3 id="notes-frontmatter-and-the-file-watcher">Notes, frontmatter and the file watcher<a class="headerlink" href="#notes-frontmatter-and-the-file-watcher" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Frontmatter keeps your key order.</strong> "Expected the frontmatter keys of
+  <code>write()</code> to be serialised in the order the caller supplied them; got them
+  re-sorted into alphabetical order on disk," reported
+  <a href="https://github.com/mingyueman">@mingyueman</a> in
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2029">#2029</a>. Every
+  writer now keeps the caller's order, nested mappings included: writes, OKF
+  stamping and verification, and the two files a Git pull conflict rewrites.
+  Notes already on disk keep their order until they are rewritten
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2075">#2075</a>).</li>
+<li><strong>Saves through a hidden temporary file reindex the note.</strong> An editor that
+  saves to a file such as <code>notes/.save.tmp</code> and renames it over the note did not
+  trigger the watcher, while the same save from a visible temporary name did
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2063">#2063</a>). A move
+  now counts when either end is a visible path in the vault
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2080">#2080</a>).</li>
+<li><strong>Indexing no longer feeds the Linux watcher read events.</strong> A reindex opens and
+  closes every file. On a vault with about 40,000 files that produced about
+  80,000 read events, "well over the default <code>fs.inotify.max_queued_events</code> of
+  16384, so the queue overflows"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2045">#2045</a>). The
+  watcher now subscribes only to creates, changes, moves and deletes
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2066">#2066</a>). The
+  reported loop was not reproduced, and a real burst of changes can still
+  overflow the queue, so #2045 stays open for the overflow backoff and for
+  skipping excluded folders.</li>
+</ul>
+<h3 id="embeddings-and-search">Embeddings and search<a class="headerlink" href="#embeddings-and-search" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>OpenAI-compatible endpoints that omit <code>index</code>.</strong> With Gemini's
+  compatibility endpoint, "every embedding batch that holds more than one chunk
+  is skipped. No vectors are saved, so search by meaning has nothing to search."
+  The issue's diagnosis: "The endpoint omits the <code>index</code> field of the first item
+  in <code>data</code>"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2050">#2050</a>). A
+  missing <code>index</code> now counts as the first position. A response whose indexes
+  collide is refused rather than risk pairing a vector with the wrong text, and
+  the build skips that batch with a warning. The
+  <code>MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE=1</code> workaround is no longer needed
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2220">#2220</a>,
+  <a href="../../use/embeddings/">embeddings guide</a>).</li>
+<li><strong>A store damaged after startup is recovered by the writer.</strong> A damaged
+  <code>numpy</code> or <code>sqlite</code> vector store met by a reindex, flush or convergence job
+  failed that job with a traceback on every note change
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1976">#1976</a>). The job
+  now moves the store aside as <code>.corrupt-&lt;time&gt;</code> and rebuilds it. Stores the
+  process does not own, and PostgreSQL, behave as before
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2194">#2194</a>).</li>
+<li><strong>Full builds hold less at once.</strong> Two more steps on
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938">#1938</a>: a full
+  build now prepares sections in bounded windows staged on disk
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2176">#2176</a>), and a
+  PostgreSQL publish replays rows from a temporary file instead of holding every
+  vector (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2185">#2185</a>).
+  The PRs measured only the steps they change: the PostgreSQL preparation probe
+  went from between 111,140 and 111,532 KiB to between 97,248 and 97,540 KiB, and the build probe's
+  <code>tracemalloc</code> peak from 190.8 MB to 188.9 MB, about 13% slower in one run. No
+  step yet lowers a whole build's peak, and #1938 stays open
+  (<a href="../../use/embedding-stores/">embedding stores</a>).</li>
+<li><strong>The keyword index repairs orphaned rows.</strong> After a downgrade to a build from
+  before #1535 and back, keyword rows without an owner could never be deleted.
+  In the issue's words, "The failure mode is silent"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1538">#1538</a>). Every
+  writable open now re-links or purges them
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2184">#2184</a>).</li>
+</ul>
+<h3 id="git-history-and-logs">Git history and logs<a class="headerlink" href="#git-history-and-logs" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Folder moves name the folder.</strong> v6.1.3 left <code>move_folder</code> commits as
+  <code>move_folder: N files</code>. They now read <code>move_folder: drafts -&gt; archive/2026</code>,
+  with the moved files and rewritten backlinks in the same commit
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/2139">#2139</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2178">#2178</a>,
+  <a href="../../use/git-integration/#what-a-commit-covers">what a commit covers</a>).</li>
+<li><strong>Git errors stay on one log line.</strong> Git's stderr spans several lines, so "one
+  logical event becomes one prefixed line plus several unprefixed continuation
+  lines" for a line-oriented collector
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1349">#1349</a>). Failure
+  logs now carry stderr on one line. The LFS pull, fast-forward and sync failure
+  lines now also redact the configured token
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2189">#2189</a>).</li>
+<li><strong>Startup logs the Git version.</strong> A Git-backed vault logs
+  <code>git_runtime_version</code> once at startup. No minimum version is enforced yet
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2146">#2146</a>,
+  <a href="../../use/git-integration/">guide</a>).</li>
+</ul>
+<h3 id="okf-write-state">OKF write state<a class="headerlink" href="#okf-write-state" title="Permanent link">&para;</a></h3>
+<p>Neither <code>config://vault</code> nor <code>stats</code> reported it, so "an operator cannot tell
+from the server whether <code>OKF_WRITE</code> is in effect"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1432">#1432</a>).
+<code>config://vault</code> now reports <code>okf_write_configured</code> and <code>okf_write_effective</code>, and
+<code>stats.okf</code> reports <code>write_configured</code> and <code>write_effective</code>. Effective means
+<code>OKF_WRITE</code> is on, OKF is active and the vault is writable
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2155">#2155</a>). A read-only
+server with <code>OKF_WRITE</code> set also logs <code>okf_write_inert</code> at startup
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1434">#1434</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2174">#2174</a>,
+<a href="../../use/okf/">OKF guide</a>).</p>
+<h3 id="command-line-and-installation">Command line and installation<a class="headerlink" href="#command-line-and-installation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Store-open errors without a traceback.</strong> "A traceback also reads as a crash,
+  so a permission or path mistake is reported as a bug"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1955">#1955</a>).
+  <code>admin index</code> and <code>admin reindex</code> now print <code>ERROR: &lt;cause&gt;</code> and exit 1
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2164">#2164</a>).</li>
+<li><strong>Empty optional install fields.</strong> Claude Desktop passed an optional field the
+  user left empty "as the literal text <code>${user_config.&lt;id&gt;}</code>"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1729">#1729</a>). Nine
+  optional fields now default to empty. This was checked against the released
+  MCPB loader, not in the Claude Desktop interface
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2141">#2141</a>,
+  <a href="../../get-started/claude-desktop/">Claude Desktop</a>).</li>
+</ul>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><a href="../../get-started/http-client/">VS Code and Goose</a> connection examples, and a
+  read-only local Goose setup
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2145">#2145</a>).</li>
+<li><a href="../../reference/configuration/#cross-instance-note-links">Cross-instance note links</a>:
+  name a vault's URL prefix in its instance description, so a model can map a
+  link to the right server
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1131">#1131</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2169">#2169</a>).</li>
+<li><a href="../../deploy/docker/#separate-search-data-from-persistent-state">Separate search data from persistent state</a>:
+  an opt-in Docker volume, so the index and embeddings can be reset without
+  losing sign-in state
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/650">#650</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2173">#2173</a>).</li>
+</ul>
+<h3 id="for-library-users">For library users<a class="headerlink" href="#for-library-users" title="Permanent link">&para;</a></h3>
+<p>Additions only. <code>markdown_vault_mcp.git.GitWriteSettings</code> groups the Git strategy's
+settings, and the flat constructor arguments still work
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2219">#2219</a>,
+<a href="../../reference/api/git/">Git API</a>). <code>IteratesChunks</code> is a new optional protocol
+in <code>markdown_vault_mcp.interfaces</code>
+(<a href="../../reference/api/storage/">storage API</a>). Importing
+<code>markdown_vault_mcp.write_callback</code> no longer loads FastMCP
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/2152">#2152</a>).</p>
+<h3 id="contributors_2">Contributors<a class="headerlink" href="#contributors_2" title="Permanent link">&para;</a></h3>
+<p>Every fix in this release came from pull requests by
+<a href="https://github.com/salmonumbrella">@salmonumbrella</a>, except the Gemini fix,
+which <a href="https://github.com/Fl0p">@Fl0p</a> both reported and wrote. Thanks also to
+<a href="https://github.com/princelundgren">@princelundgren</a> and
+<a href="https://github.com/mingyueman">@mingyueman</a> for their reports.</p>
 <!-- PATCH-RELEASES-END -->
 
 
