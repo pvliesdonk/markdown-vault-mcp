@@ -94,10 +94,12 @@ deferred. Explicit `git_sync` and force pulls continue immediately and can
 also split a group. A deferred webhook returns HTTP 503. Deferred timer ticks
 and webhooks still reconcile search with HEAD; their generated-index repair
 waits until no group is open. Explicit sync repairs immediately.
+
 Server-generated write commits include `Vault-Tool` and `Vault-Server` trailers
 identifying the operation and server version. These are descriptive metadata;
 they do not authenticate the author or grant authority. Group commits use
-`write_group` as the tool value, including when automatically closed. Background or library writes outside a tool call use their operation name.
+`write_group` as the tool value, including when automatically closed. Background
+or library writes outside a tool call use their operation name.
 
 ## Model-written auto-commit subjects
 

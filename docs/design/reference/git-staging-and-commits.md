@@ -149,7 +149,7 @@ repositories under `/tmp/gitref/`.
 
 ### Committing and identity (`strategy.py`: `_commit_staged`, `_sanitize_git_identity`)
 
-- A trailer is a colon-separated key and value; keys use ASCII alphanumerics and hyphens. A trailer block is at the end of the message and preceded by a blank line. `--parse` outputs parsed trailers. [source: git-interpret-trailers] [pins: tests/test_commit_conventions.py::test_server_commit_trailers]
+- A trailer is a colon-separated key and value; keys use ASCII alphanumerics and hyphens. A trailer block is at the end of the message and preceded by a blank line. `--parse` outputs parsed trailers. [source: git-interpret-trailers] [pins: tests/test_git_commit_trailers.py::test_server_commit_trailers]
 
 - `commit --only -- <paths>` commits the *working-tree* content of those paths and nothing else staged; `--only` without paths is `fatal: No paths with --include/--only does not make sense.` outside `--amend`/`--allow-empty`; an unchanged path exits 1 `nothing to commit`. [source: git-commit] (`--only`) [source: src-commit] [observed: git 2.43.0, index `idx`, tree `wt`, commit recorded `wt`] [pins: tests/test_git.py::TestCommitsAreScopedToTheOperation::test_a_real_write_commits_only_its_own_path]
 - During a merge (`MERGE_HEAD`) a partial commit dies `fatal: cannot do a partial commit during a merge.`, exit 128; the whole-index form dies on the unmerged paths instead. [source: src-commit] (`COMMIT_PARTIAL`) [observed: git 2.43.0] [pins: tests/test_git.py::TestCommitsAreScopedToTheOperation::test_a_write_during_a_merge_commits_nothing]
