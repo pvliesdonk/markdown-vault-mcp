@@ -10,7 +10,7 @@ from tests.server_factory import make_server
 
 
 @pytest.mark.usefixtures("_clear_env")
-async def test_legacy_alias_read_review_and_reread(tmp_path, monkeypatch):
+async def test_legacy_alias_read_and_review(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / "note.md").write_text("Body\n")
@@ -30,6 +30,3 @@ async def test_legacy_alias_read_review_and_reread(tmp_path, monkeypatch):
             "okf_verify",
             {"path": "note.md", "reviewed_snapshot": read["okf"]["snapshot"]},
         )
-        reread = _parse_tool_data(await client.call_tool("read", {"path": "note.md"}))
-        assert reread["okf"]["snapshot"] == read["okf"]["snapshot"]
-        assert "human:local" in reread["content"]

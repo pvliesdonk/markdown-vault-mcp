@@ -1576,7 +1576,7 @@ class TestScopeSurvivesARealToolCall:
     async def test_write_finishes_commit_before_sequential_folder_move(
         self, _git_vault_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A sequential move records the committed note as a rename."""
+        """A sequential move records the committed note as a rename with maintenance off."""
         import subprocess
 
         from fastmcp import Client

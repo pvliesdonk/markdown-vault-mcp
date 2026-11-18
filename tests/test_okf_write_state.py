@@ -74,17 +74,17 @@ async def test_mcp_reports_write_state(
     [
         (
             (False, False, False),
-            (False, "off", False, "off", (".",), False),
+            (False, "off", False, "off", (".",)),
             [(False, None), (False, None), (False, None), (False, None)],
         ),
         (
             (False, False, False),
-            (True, "elicit", True, "writes", ("**",), False),
+            (True, "elicit", True, "writes", ("**",)),
             [(False, "okf_inactive")] * 4,
         ),
         (
             (False, False, True),
-            (True, "elicit", True, "writes", ("**",), False),
+            (True, "elicit", True, "writes", ("**",)),
             [
                 (False, "okf_inactive"),
                 (True, None),
@@ -94,7 +94,7 @@ async def test_mcp_reports_write_state(
         ),
         (
             (True, False, False),
-            (True, "trust-auth", True, "events", ("guides",), False),
+            (True, "trust-auth", True, "events", ("guides",)),
             [
                 (False, "not_implemented"),
                 (True, None),
@@ -104,7 +104,7 @@ async def test_mcp_reports_write_state(
         ),
         (
             (True, False, False),
-            (False, "elicit", True, "writes", (), False),
+            (False, "elicit", True, "writes", ()),
             [
                 (False, None),
                 (True, None),
@@ -114,7 +114,7 @@ async def test_mcp_reports_write_state(
         ),
         (
             (True, False, False),
-            (False, "prompt", False, "write", (".",), False),
+            (False, "prompt", False, "write", (".",)),
             [
                 (False, None),
                 (False, "not_implemented"),
@@ -124,12 +124,12 @@ async def test_mcp_reports_write_state(
         ),
         (
             (True, True, False),
-            (False, "off", True, "writes", ("guides",), False),
+            (False, "off", True, "writes", ("guides",)),
             [(False, "read_only")] * 4,
         ),
         (
             (True, False, False),
-            (False, "off", True, "writes", ("guides",), False),
+            (False, "off", True, "writes", ("guides",)),
             [(False, None), (False, None), (True, None), (True, None)],
         ),
     ],
@@ -137,7 +137,7 @@ async def test_mcp_reports_write_state(
 def test_capability_report_matrix(
     tmp_path: Path,
     flags: tuple[bool, bool, bool],
-    caps: tuple[bool, str, bool, str, tuple[str, ...], bool],
+    caps: tuple[bool, str, bool, str, tuple[str, ...]],
     expected: list[tuple[bool, str | None]],
 ) -> None:
     from markdown_vault_mcp.okf_capabilities import OkfCapabilities
@@ -150,7 +150,7 @@ def test_capability_report_matrix(
         settings=VaultSettings(
             read_only=read_only,
             okf_write=alias,
-            okf_capabilities=OkfCapabilities(*caps[:5]),
+            okf_capabilities=OkfCapabilities(*caps),
         ),
     )
     try:

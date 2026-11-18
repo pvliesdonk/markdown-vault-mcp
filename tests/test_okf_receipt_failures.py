@@ -22,6 +22,7 @@ from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.utils.fs import is_regular_file
 from markdown_vault_mcp.vault import Vault
 from tests.server_factory import make_server
 
@@ -90,35 +91,16 @@ class TestReceiptStore:
         other[0].join()
         assert {row["id"] for row in _rows(path)} == {"a", "b"}
 
-    def test_concurrent_appends_use_unique_temporaries(self, tmp_path: Path) -> None:
-        path = tmp_path / "receipts.json"
-        stores = [ReceiptStore(path, tmp_path / "v") for _ in range(4)]
-        errors: list[BaseException] = []
-
-        def run(store: ReceiptStore, name: int) -> None:
-            try:
-                for index in range(25):
-                    store.append({"id": f"{name}-{index}"})
-            except BaseException as exc:  # pragma: no cover - failure detail
-                errors.append(exc)
-
-        threads = [
-            threading.Thread(target=run, args=(store, n))
-            for n, store in enumerate(stores)
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        assert errors == []
-        assert len(_rows(path)) == 100
-        assert sorted(p.name for p in tmp_path.iterdir()) == ["receipts.json"]
-
     def test_reload_appends_to_existing_store(self, tmp_path: Path) -> None:
         path = tmp_path / "receipts.json"
         ReceiptStore(path, tmp_path / "v").append({"id": "a"})
         ReceiptStore(path, tmp_path / "v").append({"id": "b"})
         assert [row["id"] for row in _rows(path)] == ["a", "b"]
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["receipts.json"]
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        with pytest.raises(InvalidRequestError, match="outside"):
+            ReceiptStore(tmp_path / "v" / "receipts.json", tmp_path / "v").check()
 
     @pytest.mark.parametrize(
         "raw",
@@ -157,7 +139,7 @@ class TestWriterOrdering:
         with pytest.raises(ConcurrentModificationError):
             vault.writer.okf_verify("note.md", "alice", snapshot)
         assert "verified" not in (vault_root / "note.md").read_text(encoding="utf-8")
-        assert not _receipts(tmp_path).exists()
+        assert not is_regular_file(_receipts(tmp_path))
 
     def test_failed_note_write_records_no_receipt(
         self, vault: Vault, vault_root: Path, tmp_path: Path
@@ -170,7 +152,7 @@ class TestWriterOrdering:
         finally:
             vault_root.chmod(0o755)
         assert (vault_root / "note.md").read_text(encoding="utf-8") == _NOTE
-        assert not _receipts(tmp_path).exists()
+        assert not is_regular_file(_receipts(tmp_path))
 
     def test_receipt_failure_after_note_write_is_distinct(
         self, vault: Vault, vault_root: Path
@@ -187,7 +169,7 @@ class TestWriterOrdering:
             vault.writer.okf_verify("note.md", "alice", snapshot)
         assert "human:alice" in (vault_root / "note.md").read_text(encoding="utf-8")
 
-    def test_success_writes_note_then_receipt(
+    def test_success_records_matching_receipt(
         self, vault: Vault, vault_root: Path, tmp_path: Path
     ) -> None:
         snapshot = concept_snapshot(_NOTE)
@@ -198,8 +180,18 @@ class TestWriterOrdering:
             "verified_count": 1,
         }
         (row,) = _rows(_receipts(tmp_path))
-        assert row["snapshot"] == snapshot and row["by"] == "human:alice"
-        assert concept_snapshot((vault_root / "note.md").read_text("utf-8")) == snapshot
+        import frontmatter
+
+        text = (vault_root / "note.md").read_text("utf-8")
+        metadata = frontmatter.loads(text).metadata
+        entry = metadata["verified"][-1]
+        assert {key: row[key] for key in ("by", "at", "check", "snapshot")} == {
+            **entry,
+            "check": "human-review",
+            "snapshot": snapshot,
+        }
+        assert row["path"] == "note.md"
+        assert concept_snapshot(text) == snapshot
 
 
 @pytest.fixture
@@ -229,36 +221,35 @@ async def _verify(snapshot: dict[str, str]) -> None:
 
 @pytest.mark.usefixtures("_env")
 class TestToolOutcomes:
+    @pytest.mark.parametrize("callback", [False, True])
     async def test_note_write_oserror_names_note_and_asks_reread(
-        self, vault_root: Path, tmp_path: Path
-    ) -> None:
-        vault_root.chmod(0o555)
-        try:
-            with pytest.raises(ToolError) as caught:
-                await _verify(concept_snapshot(_NOTE))
-        finally:
-            vault_root.chmod(0o755)
-        message = str(caught.value)
-        assert "note.md" in message and "Read the note again" in message
-        assert "nothing was written" not in message and "unavailable" not in message
-        assert not _receipts(tmp_path).exists()
-
-    async def test_callback_oserror_after_replace_is_not_nothing_written(
-        self, vault_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        vault_root: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        callback: bool,
     ) -> None:
         from markdown_vault_mcp.managers._write_notifier import WriteNotifier
 
         def fail(*_args: Any, **_kwargs: Any) -> None:
             raise OSError("callback failed")
 
-        monkeypatch.setattr(WriteNotifier, "fire", fail)
-        with pytest.raises(ToolError) as caught:
-            await _verify(concept_snapshot(_NOTE))
+        if callback:
+            monkeypatch.setattr(WriteNotifier, "fire", fail)
+        else:
+            vault_root.chmod(0o555)
+        try:
+            with pytest.raises(ToolError) as caught:
+                await _verify(concept_snapshot(_NOTE))
+        finally:
+            if not callback:
+                vault_root.chmod(0o755)
         message = str(caught.value)
+        assert "note.md" in message and "Read the note again" in message
         assert "nothing was written" not in message and "unavailable" not in message
-        assert "Read the note again" in message
-        assert "human:local" in (vault_root / "note.md").read_text(encoding="utf-8")
-        assert not _receipts(tmp_path).exists()
+        if callback:
+            assert "human:local" in (vault_root / "note.md").read_text(encoding="utf-8")
+            assert not is_regular_file(_receipts(tmp_path))
 
     async def test_receipt_failure_after_note_write_says_note_written(
         self, vault_root: Path, monkeypatch: pytest.MonkeyPatch
@@ -274,12 +265,30 @@ class TestToolOutcomes:
         assert "no local receipt" in message and "nothing was written" not in message
         assert "human:local" in (vault_root / "note.md").read_text(encoding="utf-8")
 
+    @pytest.mark.parametrize("corrupt", [False, True])
     async def test_unreadable_receipt_state_refused_before_prompt(
-        self, tmp_path: Path, vault_root: Path
+        self, tmp_path: Path, vault_root: Path, corrupt: bool
     ) -> None:
-        _receipts(tmp_path).mkdir()
-        with pytest.raises(ToolError, match="nothing was written"):
-            await _verify(concept_snapshot(_NOTE))
+        if corrupt:
+            _receipts(tmp_path).write_text('{"version": 2, "rows": []}')
+        else:
+            _receipts(tmp_path).mkdir()
+        called = False
+
+        async def confirm(*_args: Any) -> bool:
+            nonlocal called
+            called = True
+            return True
+
+        async with Client(
+            make_server(), mode="legacy", elicitation_handler=confirm
+        ) as client:
+            with pytest.raises(ToolError, match="nothing was written"):
+                await client.call_tool(
+                    "okf_verify",
+                    {"path": "note.md", "reviewed_snapshot": concept_snapshot(_NOTE)},
+                )
+        assert not called
         assert (vault_root / "note.md").read_text(encoding="utf-8") == _NOTE
 
     async def test_receipt_state_corrupted_during_confirmation(

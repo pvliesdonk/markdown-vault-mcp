@@ -1291,9 +1291,7 @@ def register(mcp: FastMCP) -> None:
         await _require_review_authority(config, vault)
         try:
             with write_identity_scope():
-                result = await run_in_transaction(
-                    vault,
-                    None,
+                result = await asyncio.to_thread(
                     vault.writer.okf_verify,
                     path,
                     subject_or_request,

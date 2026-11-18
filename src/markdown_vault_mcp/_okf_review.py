@@ -115,18 +115,11 @@ def concept_snapshot(text: str) -> dict[str, str]:
 
 
 def _review_sequence(source: str, node: SequenceNode, value: dict[str, Any]) -> str:
-    from markdown_vault_mcp._okf_author import _render
+    from markdown_vault_mcp._okf_author import _flow_insertion, _render
 
     if node.flow_style:
-        pos = node.end_mark.index - 1
-        tokens = [
-            token
-            for token in yaml.scan(source)
-            if node.start_mark.index <= token.start_mark.index < pos
-        ]
-        trailing_comma = tokens and isinstance(tokens[-1], yaml.FlowEntryToken)
-        prefix = ", " if node.value and not trailing_comma else ""
-        return source[:pos] + prefix + _render(value) + source[pos:]
+        start, end, insertion = _flow_insertion(source, node, [_render(value)])
+        return source[:start] + insertion + source[end:]
     pos = node.end_mark.index
     newline = "\r\n" if "\r\n" in source else "\n"
     return (

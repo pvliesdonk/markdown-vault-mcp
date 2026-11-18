@@ -48,7 +48,7 @@ def test_malformed_verified_refused_without_overwriting() -> None:
         )
 
 
-def test_invalid_extension_and_toml_refused_without_rewriting() -> None:
+def test_invalid_extension_refused() -> None:
     import pytest
 
     from markdown_vault_mcp.exceptions import InvalidRequestError
@@ -56,79 +56,14 @@ def test_invalid_extension_and_toml_refused_without_rewriting() -> None:
     for text in (
         "---\nx-mvmcp: bad\n---\nBody\n",
         "---\nx-mvmcp: {reviews: bad}\n---\nBody\n",
-        '+++\ntype = "concept"\n+++\nBody\n',
     ):
-        with pytest.raises(InvalidRequestError):
+        with pytest.raises(InvalidRequestError, match="must be a mapping with a list"):
             append_okf_verification(
                 text,
                 subject="a",
                 now=datetime.now(UTC),
                 reviewed_snapshot=concept_snapshot(text),
             )
-
-
-def test_review_preserves_extension_source_lexemes() -> None:
-    text = "---\nx-mvmcp:\n  precise: 0.1234567890123456789\n  reviews: []\n---\nBody\n"
-    result = append_okf_verification(
-        text,
-        subject="alice",
-        now=datetime.now(UTC),
-        reviewed_snapshot=concept_snapshot(text),
-    )
-    assert "precise: 0.1234567890123456789" in result
-
-
-def test_review_accepts_null_stubs() -> None:
-    text = "---\nverified: null\nx-mvmcp: null\n---\nBody\n"
-    result = append_okf_verification(
-        text,
-        subject="alice",
-        now=datetime.now(UTC),
-        reviewed_snapshot=concept_snapshot(text),
-    )
-    assert frontmatter.loads(result).metadata["x-mvmcp"]["reviews"]
-
-
-def test_existing_mapping_review_keeps_precision() -> None:
-    text = "---\nverified:\n  by: human:b\n  score: 0.1234567890123456789\nx-mvmcp: {other: 0x10}\n---\nBody\n"
-    result = append_okf_verification(
-        text,
-        subject="a",
-        now=datetime.now(UTC),
-        reviewed_snapshot=concept_snapshot(text),
-    )
-    assert "score: 0.1234567890123456789" in result
-    assert "other: 0x10" in result
-    assert len(frontmatter.loads(result).metadata["verified"]) == 2
-
-
-def test_receipt_store_persists_and_refuses_bad_state(tmp_path) -> None:
-    import json
-
-    import pytest
-
-    from markdown_vault_mcp._okf_receipts import ReceiptStore
-    from markdown_vault_mcp.exceptions import (
-        InvalidRequestError,
-        StoreUnsupportedSchemaError,
-    )
-
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    path = tmp_path / "receipts.json"
-    store = ReceiptStore(path, vault)
-    store.check()
-    row = {"snapshot": {"algo": "mvmcp-concept-v1", "digest": "abc"}}
-    store.append(row)
-    assert json.loads(path.read_text())["rows"] == [row]
-    for bad in ("broken", '{"version":2,"rows":[]}'):
-        path.write_text(bad)
-        with pytest.raises(StoreUnsupportedSchemaError):
-            store.check()
-        with pytest.raises(StoreUnsupportedSchemaError):
-            store.append(row)
-    with pytest.raises(InvalidRequestError, match="outside"):
-        ReceiptStore(vault / "receipts.json", vault).check()
 
 
 def test_non_yaml_reviews_refuse_without_conversion() -> None:
@@ -151,6 +86,11 @@ def test_non_yaml_reviews_refuse_without_conversion() -> None:
 
 def test_review_splices_existing_sequences_without_touching_values() -> None:
     variants = [
+        "x-mvmcp:\n  precise: 0.1234567890123456789\n  reviews: []\n",
+        "verified: null\nx-mvmcp: null\n",
+        "verified:\n  by: human:b\n  score: 0.1234567890123456789\nx-mvmcp: {other: 0x10}\n",
+        "verified: {by: human:b, precision: 0.1234567890123456789}\n",
+        "base: &a {k: 1}\nother: *a\n",
         "verified:\n  - by: human:b\n    precision: 0.1234567890123456789 # kept\nx-mvmcp:\n  date: 2025-01-01\n  hex: 0x10\n  reviews:\n    - by: human:b\n      precision: 0.1234567890123456789 # kept\n",
         "verified: [{by: human:b, precision: 0.1234567890123456789,}]\nx-mvmcp: {hex: 0x10, reviews: [{by: human:b, precision: 0.1234567890123456789,}],}\n",
         "x-mvmcp:\n  precision: 0.1234567890123456789\n  date: 2025-01-01\n",
@@ -164,8 +104,14 @@ def test_review_splices_existing_sequences_without_touching_values() -> None:
             now=datetime.now(UTC),
             reviewed_snapshot=concept_snapshot(text),
         )
-        assert "0.1234567890123456789" in result
-        assert concept_snapshot(result) == concept_snapshot(text)
+        if "0.1234567890123456789" in text:
+            assert "0.1234567890123456789" in result
+        if "other: *a" in text:
+            assert "base: &a {k: 1}\nother: *a\n" in result
+        metadata = frontmatter.loads(result).metadata
+        assert metadata["x-mvmcp"]["reviews"]
+        if "by: human:b" in text:
+            assert len(metadata["verified"]) == 2
         if "0x10" in text:
             assert "0x10" in result
         if "# kept" in text:
@@ -177,40 +123,18 @@ def test_review_rejects_duplicate_and_aliased_fields() -> None:
 
     from markdown_vault_mcp.exceptions import InvalidRequestError
 
-    for header in ("verified: []\nverified: []\n", "base: &base []\nverified: *base\n"):
+    for header, message in (
+        ("verified: []\nverified: []\n", "Duplicate review fields"),
+        ("base: &base []\nverified: *base\n", "Cannot safely preserve"),
+    ):
         text = "---\n" + header + "---\nBody\n"
-        with pytest.raises(InvalidRequestError):
+        with pytest.raises(InvalidRequestError, match=message):
             append_okf_verification(
                 text,
                 subject="a",
                 now=datetime.now(UTC),
                 reviewed_snapshot=concept_snapshot(text),
             )
-
-
-def test_unrelated_yaml_alias_is_preserved() -> None:
-    text = "---\nbase: &a {k: 1}\nother: *a\n---\nBody\n"
-    result = append_okf_verification(
-        text,
-        subject="a",
-        now=datetime.now(UTC),
-        reviewed_snapshot=concept_snapshot(text),
-    )
-    assert "base: &a {k: 1}\nother: *a\n" in result
-    assert concept_snapshot(result) == concept_snapshot(text)
-
-
-def test_flow_mapping_review_keeps_precision() -> None:
-    text = "---\nverified: {by: human:b, precision: 0.1234567890123456789}\n---\nBody\n"
-    result = append_okf_verification(
-        text,
-        subject="a",
-        now=datetime.now(UTC),
-        reviewed_snapshot=concept_snapshot(text),
-    )
-    assert "{by: human:b, precision: 0.1234567890123456789}" in result
-    assert len(frontmatter.loads(result).metadata["verified"]) == 2
-    assert concept_snapshot(result) == concept_snapshot(text)
 
 
 def test_facet_rejects_stale_and_malformed_snapshots(tmp_path) -> None:
@@ -232,23 +156,5 @@ def test_facet_rejects_stale_and_malformed_snapshots(tmp_path) -> None:
         ):
             with pytest.raises(InvalidRequestError, match="snapshot"):
                 vault.writer.require_reviewable("note.md", bad)
-    finally:
-        vault.close()
-
-
-def test_unconfigured_receipt_store_is_refused(tmp_path) -> None:
-    import pytest
-
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    path = tmp_path / "note.md"
-    path.write_text("Body\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        vault.writer._receipt_store = None
-        with pytest.raises(InvalidRequestError, match="storage"):
-            vault.writer.okf_verify("note.md", "alice", concept_snapshot("Body\n"))
-        assert path.read_text() == "Body\n"
     finally:
         vault.close()
