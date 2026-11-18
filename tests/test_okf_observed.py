@@ -302,7 +302,16 @@ async def test_mcp_read_exposes_receipt_observation(
         }
 
 
-@pytest.mark.parametrize("contents", [None, "not json", '{"version": 99, "rows": []}'])
+@pytest.mark.parametrize(
+    "contents",
+    [
+        None,
+        "not json",
+        '{"version": 99, "rows": []}',
+        '{"version": 1, "rows": [{"path": "note.md", "at": "2099-01-01T00:00:00Z", "by": ["human:a"]}]}',
+        '{"version": 1, "rows": [{"path": "note.md", "at": "2099-01-01T00:00:00Z", "by": {}}]}',
+    ],
+)
 def test_receipt_read_error_is_unavailable(
     tmp_path: Path, contents: str | None
 ) -> None:

@@ -139,7 +139,8 @@ class ReceiptStore:
             for row in rows
             if row.get("path") == path
             and _parse_stale_after(row.get("at")) == latest
-            and row.get("by") in actors
+            and isinstance(row.get("by"), str)
+            and row["by"] in actors
         ]
         if len(matching) != len(actors) or {row["by"] for row in matching} != actors:
             return {"state": "unavailable"}
