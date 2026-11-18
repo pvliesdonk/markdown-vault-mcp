@@ -124,7 +124,7 @@ sources:
   `bearer-anon`) in `client_id`; the mapped builder puts each configured
   subject there. Both supply scopes and no `sub`. Subject spelling does not
   establish human identity. [source: core-bearer]
-  [pins: tests/test_identity.py::TestServicePrincipals::test_real_bearer_verifier_is_not_human, tests/test_okf_write.py::TestServiceTokenOkf::test_trust_auth_refuses_without_changing_note]
+  [pins: tests/test_identity.py::TestServicePrincipals::test_real_bearer_verifier_is_not_human, tests/test_okf_write.py::TestServiceTokenOkf::test_service_cannot_record_human_review]
 - FastMCP's static verifier returns the configured entry as `claims`, so
   these bearer tokens have `client_id` and scopes in their claims, rather
   than an empty dictionary. [source: fastmcp-jwt]
