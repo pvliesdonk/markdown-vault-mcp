@@ -5,8 +5,6 @@ from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from unicodedata import normalize
 
-from markdown_vault_mcp.utils import resolve_inside
-
 
 class PathGuard:
     """Match configured protected globs against paths and their ancestors."""
@@ -29,8 +27,10 @@ class PathGuard:
 
         def candidates() -> Iterator[str]:
             yield path
-            resolved = resolve_inside(path, self._source_dir)
-            yield resolved.relative_to(self._source_dir.resolve()).as_posix()
+            root = self._source_dir.resolve()
+            resolved = (root / path).resolve()
+            if resolved.is_relative_to(root):
+                yield resolved.relative_to(root).as_posix()
 
         for candidate in candidates():
             parts = PurePosixPath(normalize("NFC", candidate).casefold()).parts

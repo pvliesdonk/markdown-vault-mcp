@@ -498,3 +498,101 @@ def test_walk_files_strict_includes_directories_without_following_links(
     monkeypatch.setattr(os, "walk", failing_walk)
     with pytest.raises(PermissionError):
         walk_files_strict(tmp_path, include_dirs=True)
+
+
+@pytest.mark.parametrize("patterns", [None, ["unrelated.md"]])
+def test_move_folder_with_unrelated_external_symlink(
+    tmp_path: Path, patterns: list[str] | None
+) -> None:
+    root = tmp_path / "vault"
+    (root / "src").mkdir(parents=True)
+    (root / "src/note.md").write_text("note")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "src/link").symlink_to(outside, target_is_directory=True)
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, protected_paths=patterns),
+    )
+    try:
+        vault.writer.move_folder("src", "dest")
+        assert (root / "dest/note.md").read_text() == "note"
+        assert outside.is_dir()
+    finally:
+        vault.close()
+
+
+def test_rename_backlink_replaced_by_external_symlink_notifies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "target.md").write_text("# target")
+    link = root / "link.md"
+    link.write_text("[target](target.md)")
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside")
+    callbacks: list[str] = []
+    dirty: list[list[str]] = []
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, protected_paths=["unrelated.md"]),
+        on_write=lambda _path, _content, operation: callbacks.append(operation),
+    )
+    try:
+        vault.index.build_index()
+        rewrite = vault._doc_mgr._update_backlinks
+        mark = vault._doc_mgr._mark_paths_dirty
+
+        def external_edit(*args: object, **kwargs: object) -> object:
+            link.unlink()
+            link.symlink_to(outside)
+            return rewrite(*args, **kwargs)  # type: ignore[arg-type]
+
+        def record_dirty(paths: list[str]) -> None:
+            dirty.append(paths)
+            if mark is not None:
+                mark(paths)
+
+        monkeypatch.setattr(vault._doc_mgr, "_update_backlinks", external_edit)
+        monkeypatch.setattr(vault._doc_mgr, "_mark_paths_dirty", record_dirty)
+        result = vault.writer.rename("target.md", "new.md", update_links=True)
+        assert result.new_path == "new.md"
+        assert (root / "new.md").exists()
+        assert not (root / "target.md").exists()
+        assert outside.read_text() == "outside"
+        assert any({"target.md", "new.md"} <= set(paths) for paths in dirty)
+        assert "rename" in callbacks
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "operation", ["write", "edit", "delete", "rename_from", "rename_to"]
+)
+def test_mutation_endpoints_still_refuse_external_symlink(
+    tmp_path: Path, operation: str
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("original")
+    (root / "link.md").symlink_to(outside)
+    (root / "note.md").write_text("note")
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, protected_paths=["unrelated.md"]),
+    )
+    try:
+        actions = {
+            "write": lambda: vault.writer.write("link.md", "changed"),
+            "edit": lambda: vault.writer.edit("link.md", "original", "changed"),
+            "delete": lambda: vault.writer.delete("link.md"),
+            "rename_from": lambda: vault.writer.rename("link.md", "new.md"),
+            "rename_to": lambda: vault.writer.rename("note.md", "link.md"),
+        }
+        with pytest.raises(InvalidRequestError, match="traversal"):
+            actions[operation]()
+        assert outside.read_text() == "original"
+    finally:
+        vault.close()
