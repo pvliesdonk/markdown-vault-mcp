@@ -705,7 +705,7 @@ class DocumentManager:
                         observed_path, compute_etag(repaired)
                     )
                 if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([observed_path])
+                    self._mark_paths_dirty([*{path: 0, observed_path: 0}])
                 self._notifier.fire(abs_path, repaired.decode("utf-8"), "write")
             except LogRepairCollision:
                 raise
@@ -1193,7 +1193,7 @@ class DocumentManager:
             operation: The write operation reported to the write callback.
 
         """
-        path = self._vault_relative(abs_path)
+        observed_path = self._vault_relative(abs_path)
         staged = self._staged(content)
         atomic_write(abs_path, staged)
         if self._observations is not None:
@@ -1202,9 +1202,9 @@ class DocumentManager:
                 if isinstance(staged, bytes)
                 else staged.replace("\n", os.linesep).encode("utf-8")
             )
-            self._observations.expect_write(path, compute_etag(data))
+            self._observations.expect_write(observed_path, compute_etag(data))
         if self._mark_paths_dirty is not None:
-            self._mark_paths_dirty([path])
+            self._mark_paths_dirty([*{path: 0, observed_path: 0}])
         self._notifier.fire(abs_path, content, operation)
 
     def append(
@@ -1599,7 +1599,7 @@ class DocumentManager:
                 if self._observations is not None:
                     self._observations.record_removal(observed_path, captured)
                 if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([observed_path])
+                    self._mark_paths_dirty([*{path: 0, observed_path: 0}])
             else:
                 abs_path = self._artifacts.unlink(path, if_match)
 
@@ -1697,12 +1697,12 @@ class DocumentManager:
                     old_abs, old_path, if_match, tolerate=tolerate_link_rewrites
                 )
 
-                observed_old = self._vault_relative(old_abs)
-                observed_new = self._vault_relative(new_abs)
+                canon_old = self._vault_relative(old_abs)
+                canon_new = self._vault_relative(new_abs)
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
 
                 captured = (
-                    self._observations.capture(observed_old)
+                    self._observations.capture(canon_old)
                     if self._observations
                     else None
                 )
@@ -1733,13 +1733,13 @@ class DocumentManager:
                     )
                 finally:
                     self._record_moves(
-                        {observed_old: observed_new},
-                        {observed_old: captured},
+                        {canon_old: canon_new},
+                        {canon_old: captured},
                         backlink_callbacks,
                     )
                     if self._mark_paths_dirty is not None:
                         self._mark_paths_dirty(
-                            [observed_old, observed_new, *backlink_paths]
+                            [old_path, new_path, canon_old, canon_new, *backlink_paths]
                         )
             else:
                 old_abs, new_abs = self._artifacts.move(old_path, new_path, if_match)
@@ -1782,13 +1782,13 @@ class DocumentManager:
         completed: set[str],
         moves: dict[str, str],
         captures: dict[str, _Captured | None],
+        callers: dict[str, tuple[str, str]],
     ) -> None:
-        completed_notes = {
-            path: target for path, target in moves.items() if path in completed
-        }
-        self._record_moves(completed_notes, captures, [])
-        if completed_notes and self._mark_paths_dirty is not None:
-            self._mark_paths_dirty([*completed_notes, *completed_notes.values()])
+        done = {path: target for path, target in moves.items() if path in completed}
+        self._record_moves(done, captures, [])
+        if done and self._mark_paths_dirty is not None:
+            caller = dict(callers[path] for path in done)
+            self._mark_paths_dirty([*done, *done.values(), *caller, *caller.values()])
 
     def _check_rename_etag(
         self, abs_path: Path, path: str, if_match: str | None, *, tolerate: bool
@@ -1890,11 +1890,10 @@ class DocumentManager:
         # Encoded here so the ledger records the hash of exactly what landed.
         encoded = content.encode("utf-8")
         atomic_write(source_abs, encoded)
+        etag = compute_etag(encoded)
         if self._observations is not None:
-            self._observations.expect_write(source_path, compute_etag(encoded))
-        self._link_rewrites.record(
-            source_path, compute_etag(raw), compute_etag(encoded)
-        )
+            self._observations.expect_write(self._vault_relative(source_abs), etag)
+        self._link_rewrites.record(source_path, compute_etag(raw), etag)
         return content
 
     def _rewrite_link_sources(
@@ -1930,8 +1929,8 @@ class DocumentManager:
               source document whose bytes actually changed. A source the
               rewrite left untouched is in none of the three lists: it is
               not a failure, but it is not an update either (#1521).
-            * ``dirty_paths`` — vault-relative paths of those same sources,
-              for the caller to feed to ``mark_paths_dirty``.
+            * ``dirty_paths`` — each such source's caller path and canonical
+              path, for the caller to feed to ``mark_paths_dirty``.
             * ``failed_sources`` — sources that were skipped or failed.
         """
         pending_callbacks: list[tuple[Path, str]] = []
@@ -1985,7 +1984,7 @@ class DocumentManager:
                     # reindex, announce or count (#1521).
                     continue
                 pending_callbacks.append((source_abs, content))
-                dirty_paths.append(source_path)
+                dirty_paths += {source_path: 0, self._vault_relative(source_abs): 0}
             except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:
                 logger.warning(
                     "link_rewrite_source_failed op=%s path=%s err=%s",
@@ -2293,10 +2292,7 @@ class DocumentManager:
             # 3. Capture backlinks for every moved note BEFORE the move, while
             #    the index still reflects old paths. Annotate each row with its
             #    target's old/new path so a multi-target rewrite is possible.
-            annotated: list[tuple[str, dict[str, Any]]] = []  # (target_old, row)
-            for target_old in md_map:
-                for row in self._fts.get_backlinks(target_old):
-                    annotated.append((target_old, row))
+            annotated = [(t, r) for t in md_map for r in self._fts.get_backlinks(t)]
 
             observation_map = {
                 self._vault_relative(
@@ -2304,6 +2300,7 @@ class DocumentManager:
                 ): self._vault_relative(new_abs / Path(path).relative_to(old_dir))
                 for path in md_map
             }
+            callers = dict(zip(observation_map, md_map.items(), strict=True))
             captures = (
                 {path: self._observations.capture(path) for path in observation_map}
                 if self._observations is not None
@@ -2320,7 +2317,9 @@ class DocumentManager:
                     shutil.move(str(src_abs), str(dst_abs))
                     completed.add(self._vault_relative(src_abs))
             except OSError as exc:
-                self._record_completed_moves(completed, observation_map, captures)
+                self._record_completed_moves(
+                    completed, observation_map, captures, callers
+                )
                 raise FolderMoveInterruptedError(old_dir, new_dir) from exc
 
             # 5. Single-pass link rewrite. Group annotated rows by source,
@@ -2341,10 +2340,9 @@ class DocumentManager:
 
             # 6. Queue the moved paths and rewritten sources for indexing.
             self._record_moves(observation_map, captures, pending_callbacks)
+            moved = {**md_map, **observation_map}
             if self._mark_paths_dirty is not None:
-                self._mark_paths_dirty(
-                    [*observation_map, *observation_map.values(), *dirty_paths]
-                )
+                self._mark_paths_dirty([*moved, *moved.values(), *dirty_paths])
 
             scope = current_commit_scope()
             if scope is not None:

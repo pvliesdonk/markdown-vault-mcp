@@ -8,6 +8,181 @@ import pytest
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
+def test_alias_rename_queues_index_and_observation_paths(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    (source / "real" / "sub").mkdir(parents=True)
+    (source / "real" / "a.md").write_text("alpha")
+    (source / "alias").symlink_to(source / "real" / "sub", target_is_directory=True)
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        dirty: set[str] = set()
+        vault._doc_mgr._mark_paths_dirty = dirty.update
+        vault.writer.rename("alias/../a.md", "alias/../b.md", update_links=False)
+        assert {"alias/../a.md", "alias/../b.md", "real/a.md", "real/b.md"} <= dirty
+        vault._index_mgr.process_dirty_paths(dirty)
+        rows = vault._index_mgr.observations.rows()
+        assert rows["real/a.md"].moved_to == "real/b.md"
+        assert rows["real/b.md"].moved_from == "real/a.md"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_alias_folder_move_queues_completed_caller_and_canonical_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool
+) -> None:
+    from markdown_vault_mcp.exceptions import FolderMoveInterruptedError
+    from markdown_vault_mcp.managers import document
+
+    source = tmp_path / "vault"
+    (source / "real" / "sub").mkdir(parents=True)
+    (source / "real" / "old").mkdir()
+    for name in ("a.md", "b.md"):
+        (source / "real" / "old" / name).write_text(name)
+    (source / "alias").symlink_to(source / "real" / "sub", target_is_directory=True)
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        dirty: set[str] = set()
+        vault._doc_mgr._mark_paths_dirty = dirty.update
+        original = document.shutil.move
+        completed: list[str] = []
+
+        def move(src: str, dst: str) -> str:
+            if interrupted and completed:
+                raise OSError("disk failure")
+            result = original(src, dst)
+            completed.append(Path(src).name)
+            return result
+
+        monkeypatch.setattr(document.shutil, "move", move)
+        if interrupted:
+            with pytest.raises(FolderMoveInterruptedError):
+                vault.writer.move_folder("alias/../old", "alias/../new")
+        else:
+            vault.writer.move_folder("alias/../old", "alias/../new")
+        for name in completed:
+            assert {
+                f"alias/../old/{name}",
+                f"alias/../new/{name}",
+                f"real/old/{name}",
+                f"real/new/{name}",
+            } <= dirty
+        vault._index_mgr.process_dirty_paths(dirty)
+        rows = vault._index_mgr.observations.rows()
+        for name in completed:
+            assert rows[f"real/old/{name}"].moved_to == f"real/new/{name}"
+            assert rows[f"real/new/{name}"].moved_from == f"real/old/{name}"
+    finally:
+        vault.close()
+
+
+def test_symlink_link_rewrite_records_canonical_write_digest(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "real.md").write_text("[[target]]")
+    (source / "link.md").symlink_to("real.md")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        manager = vault._doc_mgr
+        callbacks, dirty, failed = manager._rewrite_link_sources(
+            {
+                "link.md": [
+                    (
+                        "target.md",
+                        {
+                            "link_type": "wikilink",
+                            "raw_target": "target",
+                            "fragment": None,
+                        },
+                    )
+                ]
+            },
+            {"target.md": "renamed.md"},
+            op_name="rename",
+        )
+        assert callbacks and not failed
+        assert "link.md" in dirty
+        vault._index_mgr.process_dirty_paths(set(dirty))
+        row = vault._index_mgr.observations.rows()["real.md"]
+        assert (
+            row.content_digest
+            == hashlib.sha256((source / "real.md").read_bytes()).hexdigest()
+        )
+        assert row.origin == "server_write"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("reconcile", ["refresh", "sweep"])
+def test_failed_capture_does_not_link_external_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reconcile: str
+) -> None:
+    from markdown_vault_mcp import bundle_inventory
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "a.md"
+    note.write_text("original")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        original = bundle_inventory._observation_digests
+
+        def changed_during_read(stream):
+            result = original(stream)
+            note.write_text("editor update during capture")
+            monkeypatch.setattr(bundle_inventory, "_observation_digests", original)
+            return result
+
+        monkeypatch.setattr(
+            bundle_inventory, "_observation_digests", changed_during_read
+        )
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        (source / "b.md").write_text("external replacement")
+        if reconcile == "refresh":
+            vault._index_mgr.process_dirty_paths({"a.md", "b.md"})
+        else:
+            ledger.sweep()
+        rows = ledger.rows()
+        assert rows["a.md"].presence == "removed"
+        assert rows["a.md"].moved_to is None
+        assert rows["b.md"].presence == "present"
+        assert rows["b.md"].moved_from is None
+    finally:
+        vault.close()
+
+
+def test_write_through_symlink_refreshes_caller_search_path(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "real.md").write_text("alpha")
+    (source / "link.md").symlink_to("real.md")
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        assert "link.md" in {
+            hit.path for hit in vault.reader.search("alpha", mode="keyword")
+        }
+        vault.writer.write("link.md", "beta")
+        vault._coordinator.prepare_index_read()
+        assert "link.md" in {
+            hit.path for hit in vault.reader.search("beta", mode="keyword")
+        }
+        assert "link.md" not in {
+            hit.path for hit in vault.reader.search("alpha", mode="keyword")
+        }
+        row = vault._index_mgr.observations.rows()["real.md"]
+        assert row.content_digest == hashlib.sha256(b"beta").hexdigest()
+        assert row.origin == "server_write"
+    finally:
+        vault.close()
+
+
 @pytest.mark.parametrize("succeed", [0, 1, 2, 3])
 def test_interrupted_folder_move_records_completed_notes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, succeed: int
@@ -1103,7 +1278,7 @@ def test_move_without_current_source_does_not_link_old_tombstone(
         vault._coordinator.prepare_index_read()
         rows = ledger.rows()
         assert rows["a.md"].moved_to is None
-        assert rows["b.md"].moved_from == "a.md"
+        assert rows["b.md"].moved_from is None
     finally:
         vault.close()
 

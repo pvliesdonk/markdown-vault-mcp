@@ -318,9 +318,9 @@ class ObservationLedger:
                 target_removal is None or target_removal.captured is None
             ):
                 continue
-            if removal.captured is not None and (
-                rows[target].content_digest
-                not in (removal.captured.digest, removal.rewritten)
+            if rows[target].content_digest not in (
+                removal.captured.digest if removal.captured else None,
+                removal.rewritten,
             ):
                 continue
             rows[target] = replace(rows[target], moved_from=source)
