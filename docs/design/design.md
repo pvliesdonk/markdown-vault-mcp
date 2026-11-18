@@ -3728,9 +3728,10 @@ outcomes from every page, and treat unresolved boundary rows as incomplete.
 A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
 following them. There is no navigation synthesis or declaration discovery.
 
-Names outside the file allowlist that are symlinks remain hidden and make
-enumeration unavailable; their target kind cannot be known without following
-them. Resume skips policy checks for earlier siblings but still lists and sorts
+Symlinks outside the file allowlist are unavailable `hidden_symlink` rows.
+Their targets and target kinds are not returned, and they are never followed.
+Callers must inspect unavailable rows even when enumeration is complete.
+Resume skips policy checks for earlier siblings but still lists and sorts
 all names in each visited directory on each page. The page limit counts rows,
 not listing work. At the exact cursor, current non-directories are leaves;
 cursor ancestors must still be traversable without following links.

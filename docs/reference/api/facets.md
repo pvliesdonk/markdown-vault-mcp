@@ -79,7 +79,7 @@ from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
 observation = vault.reader.inspect_bundle(
     BundleInspectionRequest(root="knowledge", directory="concepts", entry_limit=100)
 )
-# Check observation.state and observation.enumeration before treating entries as complete.
+# Check state, enumeration and unavailable entries before treating the observation as complete.
 ```
 
 `root` is vault-relative and required; `root=""` explicitly selects the vault.
@@ -119,8 +119,7 @@ siblings stay visible. Alternate spellings of internal paths follow filesystem i
 siblings, including when the note-read budget has been exhausted; a refused stat or open
 consumes none of that budget. A directory
 entry's visibility describes its own name, not the admission of its subtree. Visible symlinks have reason `symlink`; special files remain unavailable and are
-never followed or read. A link with a name outside the allowlist stays hidden
-and makes enumeration unavailable because its target kind is unknown. When a stat failure prevents determining whether an
+never followed or read. A link with a name outside the allowlist is an unavailable `hidden_symlink` row. Its target is not returned and it is never followed. Check unavailable rows even when enumeration is complete. When a stat failure prevents determining whether an
 omitted name is a visible directory, enumeration is `unavailable`.
 
 The entry limit defaults to 100 (maximum 1000). Every visited entry, including
@@ -179,6 +178,7 @@ while pending:
         unavailable |= page.state != "inspected" or page.enumeration == "unavailable"
         for entry in page.entries:
             # Consume each entry here. The selected directory itself is not returned again.
+            unavailable |= entry.state == "unavailable"
             if entry.reason == "depth_limit":
                 pending.append(entry.path.removeprefix("knowledge/"))
         cursor = page.next_cursor
@@ -198,7 +198,7 @@ walks 32 levels below its selected directory. A directory at the limit has
 Select it using its path relative to `root` and start a new walk to reach
 deeper levels. Repeat for each boundary row, and do not treat unresolved rows
 as complete. The page also stops before exceeding its 1 MiB read budget;
-visible symlinks and those without a suffix are unavailable. The limit counts
+symlinks are unavailable rows; their targets are not returned. The limit counts
 rows, not work: every visited directory lists and sorts all of its names on each
 page, even when most names are omitted. Resume skips policy checks for names
 before the cursor. A current non-directory at the cursor is treated as a leaf;
