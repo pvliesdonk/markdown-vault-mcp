@@ -3,6 +3,8 @@
 Handles all read/write/edit/append/delete/rename operations, attachment I/O,
 path validation, and backlink updates — all with dependency injection
 and no back-reference to :class:`Vault`.
+
+Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 """
 
 from __future__ import annotations
@@ -36,6 +38,12 @@ from markdown_vault_mcp._okf_log_repair import (
     retain_original,
 )
 from markdown_vault_mcp._path_guard import PathGuard
+from markdown_vault_mcp.bundle_inventory import (
+    BundleInspection,
+    BundleInspectionRequest,
+    BundleInspector,
+    InspectionPolicy,
+)
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -191,6 +199,7 @@ class DocumentManager:
             ``read()`` titles would diverge from search titles.
         submodule_guard: Refuses a write into a git submodule or nested
             repository, which would never be committed (#1564, #1949). ``None`` refuses nothing.
+        inspection_policy: Configured conventions and state paths for bundle inspection.
     """
 
     def __init__(
@@ -212,9 +221,11 @@ class DocumentManager:
         okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
         sync_index: Callable[[], None] | None = None,
         submodule_guard: SubmoduleGuard | None = None,
+        inspection_policy: InspectionPolicy | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
+        self._inspection_policy = inspection_policy or InspectionPolicy()
         self._file_write_lock = write_lock
         self._chunk_strategy = chunk_strategy
         self._read_only = read_only
@@ -246,6 +257,23 @@ class DocumentManager:
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
+
+    def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
+        """Inspect one selected directory independently of index admission.
+
+        Args:
+            request: Explicit bundle root, directory and observation cap.
+
+        Returns:
+            Current policy-visible observations, without content or write authority.
+        """
+        return BundleInspector(
+            self._source_dir,
+            self._exclude_patterns or (),
+            self._artifacts.extensions(),
+            self._max_note_read_bytes,
+            self._inspection_policy,
+        ).inspect(request)
 
     # ------------------------------------------------------------------
     # Validation helpers
@@ -906,7 +934,8 @@ class DocumentManager:
         """Create or overwrite a document.
 
         Creates intermediate directories as needed.  If *frontmatter* is
-        provided, it is serialised as a YAML header at the top of the file.
+        provided, it is serialised as a YAML header in mapping insertion order,
+        including nested mappings. YAML comments and formatting are not retained.
 
         Args:
             allow_protected: Allow this library call to change protected paths.
@@ -951,7 +980,7 @@ class DocumentManager:
 
             if frontmatter is not None:
                 post = fm.Post(content, **frontmatter)
-                file_content = fm.dumps(post)
+                file_content = fm.dumps(post, sort_keys=False)
             else:
                 file_content = content
 

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
 import markdown_vault_mcp.stores.sqlite_keyword
 import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
+from markdown_vault_mcp.bundle_inventory import InspectionPolicy
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
@@ -717,6 +718,12 @@ class Vault:
             title_field=self._title_field,
             okf_write_enrich=self._okf_write_enrich,
             submodule_guard=self._build_submodule_guard(),
+            inspection_policy=InspectionPolicy(
+                settings.conventions_file,
+                () if self._state_path is None else (self._state_path,),
+                self._embeddings_path,
+                self._index_path,
+            ),
         )
 
     def _build_submodule_guard(self) -> SubmoduleGuard | None:
@@ -791,6 +798,8 @@ class Vault:
             settings.okf_capabilities
             or ContentConfig(okf_write=settings.okf_write).okf_capabilities
         )
+        self._okf_capabilities = capabilities
+        self._okf_write_alias = settings.okf_write
         if not settings.read_only and (
             capabilities.index or capabilities.log == "writes"
         ):
@@ -912,6 +921,62 @@ class Vault:
         """
         configured = self._okf_write_enrich is not None
         return configured, configured and active and not self._read_only
+
+    def okf_stats_report(self) -> dict[str, Any]:
+        """Return OKF capability reporting with any active-bundle aggregates.
+
+        Returns:
+            A capability report and, when OKF is active, its statistics.
+        """
+        section = self.reader.okf_stats()
+        active = section is not None
+        if section is None:
+            section = {}
+        section["capabilities"] = self.okf_capability_report(active=active)
+        return section
+
+    def okf_capability_report(self, *, active: bool) -> dict[str, Any]:
+        """Report configured and effective OKF authority for this vault.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Capability entries and the configured folder designation scope.
+        """
+        caps = self._okf_capabilities
+
+        def entry(name: str, configured: bool | str) -> dict[str, Any]:
+            reason = None
+            enabled = configured is True or (
+                isinstance(configured, str) and configured != "off"
+            )
+            if self._read_only:
+                reason = "read_only"
+            elif enabled:
+                if not active and not (name == "verify" and self._okf_write_alias):
+                    reason = "okf_inactive"
+                elif (
+                    name == "author"
+                    or (name == "verify" and configured not in ("elicit", "trust-auth"))
+                    or (name == "log" and configured != "writes")
+                ):
+                    reason = "not_implemented"
+                elif name in ("index", "log") and not caps.folders:
+                    reason = "not_designated"
+            return {
+                "configured": configured,
+                "effective": enabled and reason is None,
+                "reason": reason,
+            }
+
+        return {
+            "author": entry("author", caps.author),
+            "verify": entry("verify", caps.verify),
+            "index": entry("index", caps.index),
+            "log": entry("log", caps.log),
+            "folders": list(caps.folders),
+        }
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).

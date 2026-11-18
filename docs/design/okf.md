@@ -159,9 +159,7 @@ detection works before the index is built — relevant in managed-git mode where
 the clone happens inside the server lifespan). `config://vault` reports the
 mode, declared version and active state, as well as `okf_write_configured`
 and `okf_write_effective`. Active `stats.okf` reports the configured and
-effective write layer as `write_configured` and `write_effective`; it is
-absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
-OKF is active, and the vault is not read-only. This legacy flag does not report each independent capability.
+effective write layer as `write_configured` and `write_effective`. Effective means `OKF_WRITE` is enabled, OKF is active, and the vault is not read-only. The resource also reports `okf_capabilities`; `stats.okf.capabilities` and the CLI carry the same configured values, effective true/false values, reasons and folder scope, including when detection is inactive. See [capability reporting](../use/okf.md) for the reason precedence.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -186,22 +184,51 @@ frontmatter blob; not persisted):
   asks; absent field → not stale. Accepting the bare date is a deliberate
   lenience against the amended text's "ignore" — Obsidian authors write
   dates, and the upstream issue behind the amendment is still open.
-- `trust_tier`: `human-reviewed` if any `verified[].by` has the `human:`
-  prefix; else `machine-confirmed` if `verified` is non-empty (all
-  verifiers non-human); else `unverified`. A bare `verified` mapping is
-  read as a one-element list (spec shorthand; `okf.verified_entries` is the
-  one reader, #1357). Exact tier algorithm lives in
-  the field-mapping table (§1 spec-stability caveat) with table-driven
-  tests.
+- `trust_tier`: a compatibility label for recorded claims, not server
+  certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
+  or `<producer>/<version>`, with nonempty, whitespace-free components)
+  and an offset-aware `at` instant counts. A usable human record yields
+  `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
+  otherwise `unverified`. A bare mapping is still one record. Malformed
+  siblings do not erase usable records. This deliberately changes the
+  public helper and filter behavior from v6.1.2 (#1444).
+- `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
+  `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
+  or `server_local_date`. The compatibility `stale: false` includes missing
+  and malformed expiry and therefore does not mean fresh or true.
+- `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
+  `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
+  Mixed lists retain both counts; `recorded` never means applicability to
+  the current revision has been established. A malformed outer value counts
+  as one malformed entry. No source fetching or reviewer authentication occurs.
+- `review_applicability`: supplied review entries report `snapshot: unbound`
+  and `basis: no_snapshot_binding`; timestamps and extensions do not establish
+  coverage. This includes malformed entries: unbound describes binding absence,
+  while `review` reports entry validity. An absent or empty review reports
+  `review: none` with `basis: no_review_supplied`; a malformed outer value
+  reports `review: unknown` with `basis: malformed_review`. This assessment is
+  separate from freshness.
+
+Expiry strings accept extended calendar dates or calendar datetimes with
+`T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
+numeric `±HH:MM` offset. Week/basic dates, offset-less times, out-of-range
+clock components and offsets are unsupported. This bounded interpretation
+is not full ISO 8601 validation. Parsed Python dates/datetimes are also
+accepted; datetime awareness requires a non-None `utcoffset()`.
+
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
 
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier}` — omitted entirely when
+   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability}` — omitted entirely when
    detection is off, and individual members omitted when underivable.
-   `sources` are surfaced on `read` (full) and counted on search hits
+   Whole reads also carry `recorded` with supplied `stale_after` and
+   `verified` values as parsed, including null/malformed values and extensions;
+   missing keys stay absent. Compact results omit these potentially large
+   records. Values use the existing metadata serialization, not original YAML
+   spelling. `sources` are surfaced on `read` (full) and counted on search hits
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
    `type` histogram, status/trust-tier breakdowns, stale count. The
@@ -255,7 +282,7 @@ is disk-based rather than index-based, and the tool is hidden under
 `search` and `list_documents` accept OKF filter dimensions, implemented on the
 existing `filters` → `document_tags` subquery path (AND semantics unchanged):
 
-- `type=<value>` — direct tag lookup.
+- `type=<value>` — direct tag lookup. `type=null` post-filters admitted notes without a non-empty string type, excluding reserved files. Non-string types match this selector as well as their existing string equality filter.
 - `status=<value>` — tag lookup with the documented caveat that absent
   `status` means `stable` (the filter for `stable` must match
   absent-or-stable; this is the one filter that cannot be a pure tag lookup
@@ -428,6 +455,13 @@ Tool tags following switches: #1412.
   operator lists in `SERVICE_SUBJECTS`; an unmarked, unlisted service-account
   token still stamps `human:<subject>`. See
   [authenticated subjects](reference/authenticated-subjects.md).
+
+  Content writes and verification preserve surviving frontmatter fields in
+  order, including nested mappings and mappings inside lists. Replacing
+  `generated` or `verified` retains its slot; an absent field appends, and
+  content writes still remove `verified`. Order and values survive, while
+  comments, quoting and whitespace may change. The serializer boundary is
+  recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
   A stamp is written *into* the note's frontmatter, so content whose block
   no parser can read leaves nothing to stamp and the write is **refused**
@@ -786,9 +820,9 @@ phase owns.
 
 ## 10. Open questions
 
-- Trust-tier edge cases: `verified` entries by `process:` actors only —
-  v0.2 tier language suggests machine-confirmed; confirm against SPEC.md
-  examples before freezing the table.
+- Reads report supplied review entries as unbound (#1413). How observed changes
+  are represented and how reviews bind to snapshots remain follow-ups (#1414,
+  #1445).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
   amendment and #1373: the value carries its own offset; a bare date is the
   server-local day.

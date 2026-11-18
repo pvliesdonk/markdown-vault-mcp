@@ -129,11 +129,11 @@ months, not twelve.
   [`human:`] for hand-authored or human-confirmed content" because
   consumers key trust off that prefix. [source: spec] (§7)
   [pins: tests/test_okf_write.py::TestActorResolution::test_tool_actor_format, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_human_actor_is_recorded_verbatim]
-- The spec says nothing about a tier for a `verified` entry that carries no
-  `by`, or an empty list; "non-`human:` actors only" reads naturally as
-  machine-confirmed for `[{}]`, which is what the server does.
-  [unverified] A spec-maintainer answer or a reference-agent fixture would
-  settle it.
+- The spec says nothing about a tier for a malformed `verified` entry.
+  The server formerly promoted any mapping, including `{}`; #1444 follows
+  the adopted north star instead, counting only usable actor/timestamp
+  records as recorded claims. This is a local interpretation, not a claim
+  that upstream mandates the server's exact supported timestamp subset.
 
 ### Lifecycle: `status` and `stale_after` (§5.4, §5.5)
 

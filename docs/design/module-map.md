@@ -53,7 +53,7 @@ src/markdown_vault_mcp/
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
-    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, numbered_files, report_unused_sidecar (#1505)
+    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, matrix_sequence, numbered_files, report_unused_sidecar (#1505)
     _writer_lock.py    -- one writer process per built-in store: the flock on {base}.lock, shared and counted within a process, a no-op where no lock can be taken; StoreBusyError otherwise (#1505)
     _quarantine.py     -- move_aside: a corrupt built-in store's files renamed to .corrupt-<UTC time> under one suffix, undone on a refused rename (StoreUnavailableError) (#1505)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as `{base}.v2.json` naming a per-persist `{base}.v2.m<N>.npy`; a release's or edge build's `{base}.json` is read only through `legacy_only=True`, read-only, as an upgrade or import source (#1505)
@@ -106,6 +106,7 @@ src/markdown_vault_mcp/
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   okf_capabilities.py  -- resolve configured OKF authority and the legacy alias
+  bundle_inventory.py -- Bounded selected-directory and pageable subtree observations, independent of index admission (#1442)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _path_guard.py       -- operator-configured mutation protection and path matching

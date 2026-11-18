@@ -175,6 +175,15 @@ Frontmatter is **optional by default**. Documents without frontmatter are
 indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
+Content writes serialize supplied frontmatter in caller insertion order,
+including nested mappings and mappings inside lists. Edit, append, OKF
+verification and git conflict marking retain surviving fields in their
+existing order when they serialize a header. This preserves mapping order and
+values, not comments, quoting, whitespace or arbitrary exact formatting. Every
+frontmatter dump (the document writer, the two OKF transforms and the two
+conflict-file writes in `git/conflict.py`) passes `sort_keys=False`; the pinned dependency behavior is recorded in
+[Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
+
 **The body the index reads (#2036)**: `scanner.note_body` returns
 python-frontmatter's body, which is stripped at both ends, with one repair:
 the first non-blank line keeps its leading spaces and tabs. Without it, a note
@@ -227,7 +236,7 @@ The `filters` parameter on `search()` generates
 `document_id IN (SELECT ... FROM document_tags WHERE ...)` subqueries. This
 gives O(1) indexed lookup without `json_extract()` performance problems.
 
-**Filter semantics**: `filters` is `dict[str, str]`. Each key-value pair is
+**Filter semantics**: `filters` maps keys to strings. On an active OKF bundle, `type: null` selects indexed non-reserved notes without a non-empty string type, including non-string values; it is evaluated after admission and does not change indexed rows. Each key-value pair is
 ANDed. Example: `filters={"cluster": "fiction", "genre": "horror"}` returns
 documents tagged with both `cluster=fiction` AND `genre=horror`. Multi-valued
 OR queries within a single key are not supported in Phase 1; use multiple
@@ -1494,6 +1503,14 @@ a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python
 with a WARNING rather than dropped, degrading to the pre-resolution behavior
 (correct on inotify / ReadDirectoryChangesW) instead of crashing `start()`.
 
+Delivered moves trigger reindexing when either endpoint is a nonempty,
+non-hidden descendant of the delivering watch root, using watchdog's
+[source and destination event paths](https://github.com/gorakhargosh/watchdog/blob/v4.0.0/src/watchdog/events.py#L114-L151).
+Each qualifying event schedules once, including moves from a hidden temporary
+file onto a visible note and moves of visible content into hidden or outside
+storage. Hidden-only and root-self noise stays ignored, including below
+intentionally watched dot-roots; other mutations consider only their source.
+
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
 narrow `_file_write_lock` (a `threading.RLock` that serialises only the
@@ -1952,14 +1969,18 @@ the spec itself says, dated and sourced, in
   `stale` (a bare `stale_after` date: the server-local day has reached it;
   an instant with an offset: `now >= stale_after`; an offset-less datetime
   is ignored — #1357, #1373), and
-  `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
-  prefix, else `machine-confirmed` if `verified` is non-empty, else
-  `unverified`; a bare `verified` mapping is a one-element list, as the
-  spec's single-verifier shorthand requires, at every site that reads
-  the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
-  `sources_count`. Section reads omit the key (no frontmatter to derive
-  from). When inactive, no payload changes at all — the non-OKF baseline
-  is byte-identical.
+  `trust_tier` as a recorded-claim label. Only records with a recognized
+  actor shape and an offset-aware `at` contribute; malformed records never
+  promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
+  evidence and its basis; `review` counts usable and malformed records with
+  `basis: supplied_metadata_only`. Neither certifies truth or applicability.
+  `review_applicability` separately reports unbound supplied entries, absence,
+  or malformed outer input; it never infers snapshot coverage from timestamps.
+  Full reads additionally expose supplied expiry/reviews under `recorded`,
+  preserving parsed values, while compact results omit that projection.
+  The exact contract and supported timestamp subset are in `okf.md` §3.
+  Reads carry the full `sources` list; search hits carry `sources_count`. Section reads omit the key (no frontmatter to derive
+  from). When inactive, these note-read payloads omit the `okf` key.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
@@ -1968,7 +1989,10 @@ the spec itself says, dated and sourced, in
   population `okf_validate` audits). Its `write_configured` reports the
   vault's configured `OKF_WRITE` flag and `write_effective` is true only
   when that flag is enabled, OKF detection is active, and the vault is not
-  read-only. The section remains absent when OKF is inactive.
+  read-only. The section always carries `capabilities`; when OKF is inactive,
+  it contains only that block. `capabilities` reports configured and effective
+  authority, reasons and folder scope, as does `config://vault` under
+  `okf_capabilities` (see `okf.md` §2).
   `config://vault` reports those same values as `okf_write_configured` and
   `okf_write_effective`, including when inactive, and reports `okf_mode` /
   `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
@@ -2010,8 +2034,8 @@ the spec itself says, dated and sourced, in
   conformance as a degree (``conformant_notes`` of ``total_notes``), not
   a verdict — during a migration it is the progress meter. The audit
   (``okf.audit_bundle``) is pure disk I/O on the detection-probe pattern:
-  index-independent, per-file reads capped at the probe's read limit
-  (frontmatter always fits; a wikilink beyond the cap goes uncounted),
+  index-independent, existing checks capped at the probe's read limit
+  (content beyond the cap goes unexamined),
   usable pre-index and pre-declaration. The vault's *effective* exclude
   patterns double as the audit whitelist. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance
@@ -2026,6 +2050,12 @@ the spec itself says, dated and sourced, in
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+  Additional evidence findings distinguish missing expiry (informational),
+  malformed expiry/reviews (format observations), and evidence unavailable
+  due to reading/parsing failures or overflow detected by one-character
+  lookahead. These leave `conformant_notes` unchanged and cover only discovered,
+  non-excluded concepts, not complete traversal or editorial-policy compliance.
+  Existing capped conformance checks and discovery rules are unchanged.
 - **Migration transforms (phase 4, #963)**: three one-shot write tools
   move a vault toward the bundle conventions, each built on the existing
   ``DocumentManager.write`` path (atomic write, read-only gate, index
@@ -3614,6 +3644,78 @@ The main interface. Orchestrates specialized manager modules via dependency
 injection. Vault creates managers in ``__init__`` and delegates all
 operations to them. No manager holds a back-reference to Vault.
 
+#### Selected bundle directory inventory (#1442)
+
+`ReaderFacet.inspect_bundle(BundleInspectionRequest)` delegates through
+`DocumentManager` to `BundleInspector`. The caller explicitly chooses a
+vault-relative root and one root-relative directory. This library-only surface
+observes disk files independently of index admission or readiness: untyped and
+malformed Markdown remain visible, and search state stays `not_evaluated`.
+Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
+candidates) confer no bundle conformance, global OKF activation or writer authority.
+
+Effective index excludes label matching entries `index_excluded` without hiding
+or refusing them. Dot components are labelled `hidden_path`; `.git` and the
+legacy `.markdown_vault_mcp` state directory and configured state directories
+inside the vault are never entered. The configured change-tracker file is
+omitted by exact path, and the keyword index file with its `.lock`, `-wal`,
+`-shm` and `-journal` siblings and the vector store's files are omitted;
+neighboring notes and other same-named siblings stay visible. Live filesystem identity checks
+recognize alternate case and Unicode spellings before opening selected components.
+Directory, attachment and budget-exhausted note candidates receive a no-follow
+open probe; permission refusals make enumeration incomplete and do not reveal
+denied child names. The configured conventions filename has the support role unless it is
+`index.md` or `log.md`, which retain their reserved roles. Non-directory
+filenames retain `ArtifactStore.extensions()` allowlist policy, including
+nonregular candidates. No metadata values, bodies or symlink
+targets are returned. The configured
+source resolves once and its absolute components are opened from the filesystem
+root without following symlinks; selected components and child reads remain
+anchored to no-follow directory descriptors. Symlink/nonregular reads fail closed. Missing
+configured sources and unavailable primitives are unavailable; only contained
+ENOENT/ENOTDIR imply missing. Errors retain explicit incomplete observations. A stat failure for an unknown
+file type hides its name but makes enumeration unavailable, because it could be
+a visible directory.
+
+Enumeration visits at most 100 entries by default (maximum 1000), counting
+omitted entries, plus one lookahead. It sorts only the bounded observations.
+`complete` means immediate policy-visible enumeration, never complete content or
+a whole bundle. Reads cap each Markdown file at the smaller of 64 KiB and a
+nonzero configured note-read cap, plus bounded lookahead, within 1 MiB aggregate
+including failed read reservations. Only complete bytes reach the existing UTF-8
+and frontmatter parsers. An inventory-only YAML event preflight uses the existing
+frontmatter delimiter handler: aliases, more than 4096 events or collection
+depth above 32 stop before metadata construction, preventing exponential merge
+expansion. Such files remain `not_inspected` with `metadata_complexity`, not
+malformed. General scanner parsing, Markdown bodies and other frontmatter
+formats retain their existing semantics. Parser recursion/overflow limits also
+remain uninspected. Known tag/value/shape conversion failures become malformed
+metadata; unexpected parser exceptions instead yield unavailable entries with
+`unexpected_parser_error`, without exception details or loss of sibling results.
+This keeps encoding, input, resource-limit and unexpected failures separate,
+analogous to the scanner's categorized boundary without adopting its admission
+or deterministic-skip policy. Oversize or budget-limited content stays uninspected;
+invalid encoding, malformed metadata and absent/invalid/present type fields are
+separate observations. `inspect_bundle_tree` pages a recursive pre-order walk,
+sorting each directory by component name. Its path cursor resumes after the
+last returned row; additions at or before it require a fresh walk. This is a
+live observation, not a snapshot. Pages contain at most 1000 rows and read at
+most 1 MiB. Each selection covers 32 levels below its selected directory; a
+directory at the limit is returned unavailable with `depth_limit` and is not
+entered. Re-select that directory relative to the same root and page again to
+inspect deeper levels; repeat for further boundary rows. Retain unavailable
+outcomes from every page, and treat unresolved boundary rows as incomplete.
+A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
+following them. There is no navigation synthesis, declaration discovery or
+search-admission claim.
+
+Names outside the file allowlist that are symlinks remain hidden and make
+enumeration unavailable; their target kind cannot be known without following
+them. Resume skips policy checks for earlier siblings but still lists and sorts
+all names in each visited directory on each page. The page limit counts rows,
+not listing work. At the exact cursor, current non-directories are leaves;
+cursor ancestors must still be traversable without following links.
+
 #### Internal Manager Architecture
 
 | Manager | Responsibility | Dependencies |
@@ -4616,7 +4718,13 @@ store dimension, another dimension, a non-finite value, metadata that is
 not JSON (`NaN` and infinity included), a `NUL` character or lone
 surrogate in any string, or a path or folder too long to index raise
 `ValueError` and change nothing, so the reconciler keeps the old rows
-(SQLite would store some of these). The store's tables are taken as
+(SQLite would store some of these). A one-shot generation is validated before
+the write transaction into a private temporary file of normalized rows; all
+document keys are copied before those rows are replayed. The application keeps
+the largest document and path/token bookkeeping in memory. Scratch uses packed float32 vectors and JSON metadata in the system temporary
+directory (which can be controlled by `TMPDIR`); a memory-backed directory also consumes memory.
+Scratch, PostgreSQL storage and WAL are separate capacity costs. The temporary
+file is closed on success or failure. The store's tables are taken as
 existing only after a write publishes, so a conflict that rolled back the
 first write's `CREATE` leaves the next write to create them again. A connection lost
 during `COMMIT` (no reply, or class `08`) raises *unavailable* with
