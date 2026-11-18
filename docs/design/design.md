@@ -3619,8 +3619,11 @@ operations to them. No manager holds a back-reference to Vault.
 `ReaderFacet.inspect_bundle(BundleInspectionRequest)` delegates through
 `DocumentManager` to `BundleInspector`. The caller explicitly chooses a
 vault-relative root and one root-relative directory. This library-only surface
-observes disk files independently of index admission or readiness: untyped and
-malformed Markdown remain visible, and search state stays `not_evaluated`.
+observes disk files independently of index admission: untyped and malformed
+Markdown remain visible. Once the index is queryable, entries project existing
+index membership and tracker skip categories without refreshing or writing either.
+Before readiness and without index knowledge, search state is `not_evaluated`.
+These observations can lag disk changes and do not determine format conformance.
 Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
 candidates) confer no bundle conformance, global OKF activation or writer authority.
 

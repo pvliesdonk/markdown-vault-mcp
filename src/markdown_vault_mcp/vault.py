@@ -714,6 +714,11 @@ class Vault:
             title_field=self._title_field,
             okf_write_enrich=self._okf_write_enrich,
             submodule_guard=self._build_submodule_guard(),
+            inventory_skips=lambda: (
+                self._index_mgr.inventory_skip_categories()
+                if self._coordinator.is_queryable()
+                else None
+            ),
             inspection_policy=InspectionPolicy(
                 settings.conventions_file,
                 () if self._state_path is None else (self._state_path,),

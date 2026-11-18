@@ -93,7 +93,7 @@ and `unavailable`. A missing configured source is `unavailable`; only a missing
 directory within an accessible source is `missing`.
 
 Each entry contains its vault-relative `path`, filename-based `role`, `state`,
-`reason`, `parse_state`, `type_state`, `visibility` and `hidden_path`. Exact
+`reason`, `parse_state`, `type_state`, `visibility`, `hidden_path` and `search_state`. Exact
 `index.md` and `log.md` names mean `navigation` and `history`; the configured
 conventions filename has role `support` unless it is `index.md` or `log.md`;
 other `.md` files are `concept_candidate`.
@@ -139,9 +139,18 @@ Other unexpected parser failures produce `state="unavailable"` with reason
 details are omitted.
 
 `inspect_bundle` is a live observation with no stable truncated subset guarantee.
-It does not descend into child directories, evaluate search admission, detect global
+It does not descend into child directories, detect global
 OKF mode, serve navigation bodies or create navigation files. Unsupported
 no-follow filesystem primitives produce `unavailable`.
+
+When the index is queryable, inspected Markdown entries report `searchable`,
+`non_admitted` (missing a locally required field), `unparseable`,
+`index_excluded`, or `not_indexed_yet` from current exclusion policy and the
+last index observations. Other entries, and all entries before the index is
+ready, report `not_evaluated`. Search state reflects the last index observations and can lag disk changes
+until indexing runs. Format conformance is a separate assessment. Inspection does not
+refresh or write the index or tracker. Direct `BundleInspector` use has no
+index knowledge and reports `not_evaluated`.
 
 For a subtree, page each selection and queue any depth-limit directories for a
 fresh selection. Keep unavailable outcomes from every page, even if a later

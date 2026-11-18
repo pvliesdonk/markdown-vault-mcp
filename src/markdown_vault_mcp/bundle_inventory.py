@@ -25,7 +25,7 @@ from markdown_vault_mcp.utils.fs import (
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
 ScopeState = Literal["inspected", "missing", "unavailable"]
@@ -41,6 +41,14 @@ Role = Literal[
 ]
 ParseState = Literal["not_inspected", "valid", "invalid_encoding", "malformed_metadata"]
 TypeState = Literal["not_inspected", "absent", "invalid", "present"]
+SearchState = Literal[
+    "not_evaluated",
+    "searchable",
+    "non_admitted",
+    "unparseable",
+    "index_excluded",
+    "not_indexed_yet",
+]
 Enumeration = Literal["complete", "entry_limit", "unavailable", "not_inspected"]
 
 
@@ -125,6 +133,7 @@ class BundleEntry:
         type_state: Presence of a nonempty string ``type`` field, not vocabulary validation.
         visibility: Whether the path matches an effective index exclusion.
         hidden_path: Whether any vault-relative component begins with a dot.
+        search_state: Last observed index admission, or not_evaluated.
     """
 
     path: str
@@ -135,6 +144,7 @@ class BundleEntry:
     type_state: TypeState = "not_inspected"
     visibility: Literal["visible", "index_excluded"] = "visible"
     hidden_path: bool = False
+    search_state: SearchState = "not_evaluated"
 
 
 @dataclass(frozen=True)
@@ -158,6 +168,45 @@ class BundleInspection:
     search_state: Literal["not_evaluated"] = "not_evaluated"
     interpretation: Literal["caller_selected"] = "caller_selected"
     next_cursor: str | None = None
+
+
+def project_search_state(
+    inspection: BundleInspection,
+    skips: dict[str, str] | None,
+    indexed: Callable[[str], bool],
+) -> BundleInspection:
+    """Project existing index observations onto inspected Markdown entries.
+
+    Args:
+        inspection: Bounded live inventory.
+        skips: Recorded skip categories, or None when the index is not ready.
+        indexed: Read-only membership lookup.
+
+    Returns:
+        Inventory annotated with search state; no index work is scheduled.
+    """
+    if skips is None:
+        return inspection
+    entries = []
+    for entry in inspection.entries:
+        state: SearchState = "not_evaluated"
+        if entry.state == "inspected" and entry.role in {
+            "navigation",
+            "history",
+            "concept_candidate",
+            "support",
+        }:
+            category = skips.get(entry.path)
+            if entry.visibility == "index_excluded":
+                state = "index_excluded"
+            elif category == "missing_frontmatter":
+                state = "non_admitted"
+            elif category in {"encoding_error", "parse_error"}:
+                state = "unparseable"
+            elif category is None:
+                state = "searchable" if indexed(entry.path) else "not_indexed_yet"
+        entries.append(replace(entry, search_state=state))
+    return replace(inspection, entries=tuple(entries))
 
 
 def _missing(exc: OSError) -> bool:
