@@ -963,8 +963,6 @@ class IndexManager:
         # the per-note loop below on its lazy-load (converge-and-skip)
         # semantics — see test_embedding_convergence.
         stale_excluded, vectors = self._purge_stale_excluded(vectors)
-        if vectors is not None:
-            self._embeddings.purge_skipped(vectors)
         if stale_excluded:
             logger.info(
                 "reindex_purged_stale_excluded count=%d",

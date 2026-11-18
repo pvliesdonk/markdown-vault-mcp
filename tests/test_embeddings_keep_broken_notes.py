@@ -10,7 +10,7 @@ import pytest
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.scanner import HeadingChunker
 from markdown_vault_mcp.vault import Vault
-from tests.fixtures.embedding_providers import CountingProvider as _Counting
+from tests.conftest import MockEmbeddingProvider
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,6 +23,18 @@ BROKEN = {
     "parse_error": ALPHA.replace("title: Alpha", "title: [unclosed"),
     "missing_frontmatter": ALPHA.replace("title: Alpha", "kind: note"),
 }
+
+
+class _Counting(MockEmbeddingProvider):
+    """``mock/mock-dim-32``, counting embedded texts."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.texts: list[str] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.texts.extend(texts)
+        return super().embed(texts)
 
 
 def _vault(tmp_path: Path, provider: Any, **settings: Any) -> Vault:

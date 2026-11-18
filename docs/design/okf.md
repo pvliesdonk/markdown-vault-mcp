@@ -603,7 +603,7 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 
 ### Generated reserved files and the index gate
 
-With `OKF_INDEX` enabled, `index.md` files in designated folders are omitted from the vector index regardless of runtime detection or whether the vault is read-only. They remain in the keyword index; indexes outside those folders and all logs keep their existing embedding inputs. Designation, not authorship, controls the policy. Listed concepts include their title and description in their own vectors, even with an empty body. A note write, an open-store reindex or an embedding build purges old vectors after designation changes; an embedding build restores them after designation is removed. Changing `OKF_INDEX` or its folder scope, including legacy alias upgrades, changes the vector identity and requires a one-time embedding rebuild. A keyword index build alone does not converge vectors. Opening an old store with a different identity rebuilds it or refuses the incompatible store.
+With `OKF_INDEX` enabled, `index.md` files in designated folders are omitted from the vector index regardless of runtime detection or whether the vault is read-only. They remain in the keyword index; indexes outside those folders and all logs keep their existing embedding inputs. Designation, not authorship, controls the policy. Listed concepts include their title and description in their own vectors, even with an empty body. Changing `OKF_INDEX` or its folder scope, including legacy alias upgrades, changes the vector identity: opening an old store rebuilds it once or refuses it when unowned.
 
 In an active OKF vault, `index.md` and `log.md` bypass the
 `required_frontmatter` gate. Concept notes and all notes outside an active

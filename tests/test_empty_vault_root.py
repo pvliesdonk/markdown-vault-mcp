@@ -10,7 +10,7 @@ import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.vault import Vault
-from tests.fixtures.embedding_providers import CountingProvider
+from tests.conftest import MockEmbeddingProvider
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,13 +21,23 @@ NOTES = {
 }
 
 
+class _Counting(MockEmbeddingProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.texts: list[str] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.texts.extend(texts)
+        return super().embed(texts)
+
+
 def _vault(tmp_path: Path, provider: Any = None, **settings: Any) -> Vault:
     return Vault(
         source_dir=tmp_path / "vault",
         settings=VaultSettings(
             index_path=tmp_path / "index.db", read_only=False, **settings
         ),
-        embedding_provider=provider or CountingProvider(),
+        embedding_provider=provider or _Counting(),
     )
 
 
@@ -86,7 +96,7 @@ def test_an_empty_mount_point_removes_nothing_and_recovers(
         vault.close()
     built.rmdir()
     shutil.move(aside, built)  # the volume is back
-    provider = CountingProvider()
+    provider = _Counting()
     again = _vault(tmp_path, provider)
     try:
         result = _boot(again)
@@ -165,9 +175,7 @@ def test_index_force_is_the_deliberate_way_to_empty_a_vault(
     import markdown_vault_mcp.providers as providers_mod
     from markdown_vault_mcp.cli import _ENV_PREFIX, app
 
-    monkeypatch.setattr(
-        providers_mod, "get_embedding_provider", lambda _c: CountingProvider()
-    )
+    monkeypatch.setattr(providers_mod, "get_embedding_provider", lambda _c: _Counting())
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(built))
     monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")

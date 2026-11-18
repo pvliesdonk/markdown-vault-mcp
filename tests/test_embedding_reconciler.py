@@ -858,21 +858,6 @@ class TestRemovalRule:
         assert store.rows_for("b.md") == other
         assert provider.calls == []
 
-    @pytest.mark.parametrize("tombstoned", [False, True])
-    def test_skip_removes_unbacked_vectors(self, tmp_path, tombstoned):
-        probe = _Probe()
-        fts, store, rec = self._orphan(tmp_path, probe=probe)
-        if tombstoned:
-            fts.upsert_tombstone(
-                SkippedFile(path="a.md", category="parse_error", detail="x"),
-                content_hash="h",
-                modified_at=0.0,
-            )
-        rec._skip_embedding = lambda path: path == "a.md"
-        rec.reconcile(store, site="test")
-        assert sorted(metadata_by_path(store)) == ["b.md"]
-        assert probe.asked == []
-
     def test_absent_removes(self, tmp_path):
         _, store, rec = self._orphan(tmp_path, probe=_Probe({"a.md": "absent"}))
         rec.reconcile(store, site="test")
@@ -2175,37 +2160,3 @@ os._exit(137)
     )
     assert child.returncode == 137, child.stderr
     assert list(state.iterdir()) == [], "written scratch survived abrupt process death"
-
-
-def test_sweep_skipped_purges_unrequested_path(tmp_path):
-    _fts, _provider, store, rec = _setup(tmp_path, NOTES)
-    rec.reconcile(store, site="test")
-    rec._skip_embedding = lambda path: path == "a.md"
-    rec.reconcile(store, ["b.md"], site="test")
-    assert store.rows_for("a.md")
-    rec.reconcile(store, ["b.md"], site="test", sweep_skipped=True)
-    assert not store.rows_for("a.md")
-    assert store.rows_for("b.md")
-
-
-def test_sweep_conflict_is_reported_and_next_pass_removes(tmp_path, monkeypatch):
-    _fts, _provider, store, rec = _setup(tmp_path, NOTES)
-    rec.reconcile(store, site="test")
-    rec._skip_embedding = lambda path: path == "a.md"
-    remove = store.remove_document
-    calls = 0
-
-    def conflict_once(path, *, expected_token):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return "conflict"
-        return remove(path, expected_token=expected_token)
-
-    monkeypatch.setattr(store, "remove_document", conflict_once)
-    result = rec.reconcile(store, (), site="test", sweep_skipped=True)
-    assert result.conflicts == {"a.md"}
-    assert store.rows_for("a.md")
-    result = rec.reconcile(store, (), site="test", sweep_skipped=True)
-    assert not result.conflicts
-    assert not store.rows_for("a.md")

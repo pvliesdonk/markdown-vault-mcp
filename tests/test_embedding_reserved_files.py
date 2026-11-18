@@ -49,43 +49,6 @@ def _paths(vault: Vault) -> set[str]:
     return set(metadata_by_path(store))
 
 
-def test_convergence_purges_stale_and_restores_after_designation_removed(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    (root / "generated/index.md").write_text("# Listing\n\nindexed navigation\n")
-    (root / "generated/note.md").write_text("# Note\n\nconcept\n")
-    provider = CountingProvider()
-    before = _persistent_vault(root, tmp_path, provider, enabled=False)
-    try:
-        before.index.build_index()
-        before.index.build_embeddings()
-        assert "generated/index.md" in _paths(before)
-    finally:
-        before.close()
-    after = _persistent_vault(root, tmp_path, provider, enabled=True)
-    try:
-        after.index.build_index()
-        provider.texts.clear()
-        after.index.build_embeddings()
-        assert "generated/index.md" not in _paths(after)
-        after.index.build_embeddings(force=True)
-        assert not any("indexed navigation" in text for text in provider.texts)
-        assert "generated/index.md" not in _paths(after)
-    finally:
-        after.close()
-    restored = _persistent_vault(root, tmp_path, provider, enabled=False)
-    try:
-        restored.index.build_index()
-        provider.texts.clear()
-        restored.index.build_embeddings()
-        assert "generated/index.md" in _paths(restored)
-        assert any("indexed navigation" in text for text in provider.texts)
-    finally:
-        restored.close()
-
-
 def test_externally_changed_designated_index_is_not_embedded(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "generated").mkdir(parents=True)
@@ -224,65 +187,6 @@ def test_designation_is_authority_without_runtime_detection(
         assert "index.md" not in _paths(vault)
         assert "log.md" in _paths(vault)
         assert not any("root navigation" in text for text in provider.texts)
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("route", ["reindex", "write", "cold_reindex", "no_policy"])
-def test_restart_vector_policy_and_lazy_reindex(
-    tmp_path: Path, route: str, monkeypatch
-) -> None:
-    root = tmp_path / "vault"
-    (root / "generated").mkdir(parents=True)
-    (root / "authored").mkdir()
-    (root / "generated/index.md").write_text("# Listing\n\nold navigation\n")
-    (root / "generated/log.md").write_text("# Log\n\ncurated history\n")
-    (root / "generated/concept.md").write_text(
-        "---\ntitle: Concept\ndescription: distinct scope\n---\n\nconcept body\n"
-    )
-    (root / "authored/index.md").write_text("# Authored\n\nhand written\n")
-    provider = CountingProvider()
-    first = _persistent_vault(root, tmp_path, provider, enabled=route != "no_policy")
-    try:
-        first.index.build_index()
-        if route != "no_policy":
-            reconciler = first._index_mgr._embeddings._reconciler
-            assert reconciler is not None
-            reconciler._skip_embedding = lambda _path: False
-        first.index.build_embeddings()
-        assert "generated/index.md" in _paths(first)
-        initial_token = first._embed_builder.format_token()
-    finally:
-        first.close()
-    vault = _persistent_vault(root, tmp_path, provider, enabled=route != "no_policy")
-    try:
-        vault.index.build_index()
-        assert vault._embed_builder.format_token() == initial_token
-        if route == "cold_reindex":
-            assert vault._vector_slot.current() is None
-            vault.index.reindex()
-            assert vault._vector_slot.current() is None
-            return
-        vault.reader.search("navigation", mode="semantic")
-        provider.texts.clear()
-        if route == "no_policy":
-            store = vault._vector_slot.current()
-            assert store is not None
-
-            def unexpected_tokens():
-                raise AssertionError("unchanged reindex scanned vector tokens")
-
-            monkeypatch.setattr(store, "tokens", unexpected_tokens)
-            vault.index.reindex()
-            return
-        if route == "write":
-            vault.writer.write("authored/note.md", "# New\n\nnew concept\n")
-            wait_for_writer_drain(vault)
-            assert any("new concept" in text for text in provider.texts)
-        else:
-            vault.index.reindex()
-        assert "generated/index.md" not in _paths(vault)
-        assert {"generated/log.md", "authored/index.md"} <= _paths(vault)
     finally:
         vault.close()
 

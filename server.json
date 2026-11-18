@@ -254,7 +254,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
-          "description": "Enable automatic index maintenance in designated folders; defaults to false. See docs/use/embeddings.md.",
+          "description": "Enable automatic index maintenance in designated folders; defaults to false.",
           "format": "boolean"
         },
         {
@@ -928,7 +928,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_INDEX",
-          "description": "Enable automatic index maintenance in designated folders; defaults to false. See docs/use/embeddings.md.",
+          "description": "Enable automatic index maintenance in designated folders; defaults to false.",
           "format": "boolean"
         },
         {

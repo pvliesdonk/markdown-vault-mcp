@@ -126,7 +126,6 @@ class EmbeddingsManager:
         self._embed_builder = embed_text_builder
         self._embedding_batch_size = embedding_batch_size
         self._is_path_excluded = is_path_excluded
-        self._skip_embedding = skip_embedding
         if vector_slot is None and embedding_provider is not None:
             from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
             from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
@@ -367,8 +366,8 @@ class EmbeddingsManager:
         reconciled (#665): chunks present in the FTS index but missing
         from the vector index are embedded and added, vectors for
         documents no longer in the FTS index are removed, and documents
-        whose indexed content changed are re-embedded.  After every call
-        the vector index mirrors the FTS chunk set, so external changes
+        whose indexed content changed are re-embedded.  After a successful call
+        the vector index reflects eligible FTS chunks, so external changes
         picked up by the boot reconciliation reindex (while no vector
         index was loaded) cannot accumulate as permanent semantic-search
         drift.  Work scales with the size of the diff, not the size of
@@ -844,9 +843,7 @@ class EmbeddingsManager:
             return
         vectors = self._open_store()
         paths |= self.take_embedding_retries()
-        self.reconcile_paths(
-            vectors, paths, site="flush", sweep_skipped=self._skip_embedding is not None
-        )
+        self.reconcile_paths(vectors, paths, site="flush")
         if self._slot is not None and self._slot.has_suspect():
             self.rebuild_after_fault(_strict=True)
             return
@@ -861,7 +858,6 @@ class EmbeddingsManager:
         paths: Collection[str] | None,
         *,
         site: str,
-        sweep_skipped: bool = False,
     ) -> ReconcileResult:
         """Reconcile *paths* in *vectors* with the keyword index (#1785).
 
@@ -874,7 +870,6 @@ class EmbeddingsManager:
             vectors: The store to write.
             paths: The paths to reconcile; ``None`` for every document.
             site: Which caller, for the log lines.
-            sweep_skipped: Also remove stored paths excluded from embeddings.
 
         Returns:
             What the pass did; conflicts and retries are also recorded here.
@@ -890,7 +885,6 @@ class EmbeddingsManager:
                 paths,
                 site=site,
                 recover_corruption=recover,
-                sweep_skipped=sweep_skipped,
             )
         except StoreCorruptError:
             if self._slot is None or not self._slot.mark_suspect(vectors):
@@ -899,20 +893,6 @@ class EmbeddingsManager:
         self._conflicts |= result.conflicts
         self._retries |= result.retry
         return result
-
-    def purge_skipped(self, vectors: EmbeddingStore) -> None:
-        """Remove designated vectors from an already open store.
-
-        Args:
-            vectors: The writable store already open for this reindex.
-        """
-        if self._skip_embedding is None:
-            return
-        result = self.reconcile_paths(
-            vectors, (), site="designation", sweep_skipped=True
-        )
-        if result.removed:
-            vectors.checkpoint()
 
     def finish_vector_recovery(self) -> None:
         """Recover a suspect store after keyword work, unless deferred."""

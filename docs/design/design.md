@@ -1118,8 +1118,8 @@ canonical chunk set, via `FTSIndex.list_chunks()`, which carries each
 document's `content_hash` as its token) against the stored rows and
 tokens (the store's `tokens()` and `rows_for()`) and reconciles:
 
-- Stored vectors of designated indexes are removed on every dirty flush and open-store reindex (#1498).
-- Documents missing from the vector index are embedded and added.
+- Designated indexes have no vector inputs. Changing the designation changes the store identity: opening an old store rebuilds it or refuses it when unowned (#1498).
+- Eligible documents missing from the vector index are embedded and added.
 - Documents whose per-path `(title, heading, content, start_line,
   preamble)` chunk multiset differs in any way (modified content, changed
   title, re-chunked boundaries) have their rows replaced. The multiset is
