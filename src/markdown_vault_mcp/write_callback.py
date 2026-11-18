@@ -323,7 +323,6 @@ class WriteCallbackDispatcher:
                 )
             group.active += 1
             group.touched = time.monotonic()
-            self._schedule_group(group)
         try:
             with bound_commit_group(group.scope):
                 yield

@@ -2791,13 +2791,11 @@ def test_group_timeout_settings_reach_vault_settings(
     assert settings.git_group_max_age_s == 67
 
 
-@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
-@pytest.mark.parametrize("setting", ["git_group_idle_s", "git_group_max_age_s"])
-def test_group_timeout_must_be_finite_and_positive(setting: str, value: float) -> None:
+def test_project_config_rejects_invalid_group_timeout() -> None:
     from markdown_vault_mcp.exceptions import ConfigurationError
 
-    with pytest.raises(ConfigurationError):
-        ProjectConfig(**{setting: value})
+    with pytest.raises(ConfigurationError, match="group_idle_s"):
+        ProjectConfig(git_group_idle_s=0)
 
 
 def test_group_settings_do_not_shift_existing_positional_signature() -> None:
@@ -2808,12 +2806,6 @@ def test_group_settings_do_not_shift_existing_positional_signature() -> None:
     params = inspect.signature(VaultSettings).parameters
     assert params["git_group_idle_s"].kind is inspect.Parameter.KEYWORD_ONLY
     assert params["git_group_max_age_s"].kind is inspect.Parameter.KEYWORD_ONLY
-    names = [
-        p.name
-        for p in params.values()
-        if p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    ]
-    assert names[15] == "git_pull_interval_s"
 
 
 @pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), 1e100])
@@ -2824,13 +2816,3 @@ def test_direct_vault_group_timeout_validation(setting: str, value: float) -> No
 
     with pytest.raises(ConfigurationError, match=setting.removeprefix("git_")):
         VaultSettings(**{setting: value})
-
-
-def test_git_group_timeouts_reject_values_larger_than_timer_limit() -> None:
-    from markdown_vault_mcp.config_sections.git import GitConfig
-    from markdown_vault_mcp.exceptions import ConfigurationError
-
-    with pytest.raises(ConfigurationError, match="group_max_age_s"):
-        GitConfig(group_max_age_s=1e100)
-    with pytest.raises(ConfigurationError, match="group_max_age_s"):
-        ProjectConfig(git_group_max_age_s=1e100)

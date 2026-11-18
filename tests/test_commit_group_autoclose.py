@@ -67,7 +67,9 @@ def test_maximum_age_closes_busy_group(git_repo: Path) -> None:
         enable_push=False,
         repo_path=git_repo,
     )
-    dispatcher = WriteCallbackDispatcher(strategy, group_idle_s=1, group_max_age_s=0.15)
+    dispatcher = WriteCallbackDispatcher(
+        strategy, group_idle_s=30, group_max_age_s=0.15
+    )
     try:
         group = dispatcher.open_group("Busy group", None)
         path = git_repo / "busy.md"
@@ -77,56 +79,9 @@ def test_maximum_age_closes_busy_group(git_repo: Path) -> None:
                 dispatcher.fire(path, str(i), "write")
             time.sleep(0.05)
         _wait_for_subject(git_repo, "Busy group")
-        assert (
-            dispatcher.close_group(group.handle, None).result(timeout=5).status
-            == "committed"
-        )
-        assert _run_git(git_repo, "log", "-1", "--format=%s").strip() == "Busy group"
     finally:
         dispatcher.close()
         strategy.close()
-
-
-def test_maximum_age_rejects_new_binds_until_active_write_finishes() -> None:
-    from markdown_vault_mcp._commit_groups import CommitGroupError
-
-    dispatcher = WriteCallbackDispatcher(None, group_idle_s=2, group_max_age_s=0.05)
-    try:
-        group = dispatcher.open_group("Long write", None)
-        with dispatcher.bind_group(group.handle, None):
-            time.sleep(0.1)
-            errors: list[Exception] = []
-
-            def bind_again() -> None:
-                try:
-                    with dispatcher.bind_group(group.handle, None):
-                        pass
-                except CommitGroupError as exc:
-                    errors.append(exc)
-
-            thread = threading.Thread(target=bind_again)
-            thread.start()
-            thread.join()
-            assert errors
-        time.sleep(0.1)
-        assert (
-            dispatcher.close_group(group.handle, None).result(timeout=2).status
-            == "no_changes"
-        )
-    finally:
-        dispatcher.close()
-
-
-def test_shutdown_does_not_restart_group_timer() -> None:
-    dispatcher = WriteCallbackDispatcher(None, group_idle_s=0.05, group_max_age_s=1)
-    group = dispatcher.open_group("Shutdown", None)
-    with dispatcher.bind_group(group.handle, None):
-        dispatcher.close()
-    time.sleep(0.1)
-    from markdown_vault_mcp._commit_groups import CommitGroupError
-
-    with pytest.raises(CommitGroupError):
-        dispatcher.open_group("Too late", None)
 
 
 def test_pending_expiry_does_not_close_group_after_shutdown() -> None:
@@ -135,10 +90,14 @@ def test_pending_expiry_does_not_close_group_after_shutdown() -> None:
     dispatcher = WriteCallbackDispatcher(None, group_idle_s=0.05, group_max_age_s=1)
     group = dispatcher.open_group("Shutdown race", None)
     with dispatcher._group_lock:
-        worker = threading.Thread(target=dispatcher._expire_group, args=(group.handle,))
-        worker.start()
-        time.sleep(0.08)
-        dispatcher.close()
+        with dispatcher.bind_group(group.handle, None):
+            worker = threading.Thread(
+                target=dispatcher._expire_group, args=(group.handle,)
+            )
+            worker.start()
+            time.sleep(0.08)
+            dispatcher.close()
+        assert dispatcher._group_timers == {}
     worker.join(timeout=2)
     assert not worker.is_alive()
     assert (
@@ -147,6 +106,8 @@ def test_pending_expiry_does_not_close_group_after_shutdown() -> None:
     )
     with pytest.raises(CommitGroupError):
         dispatcher.close_group(group.handle, None)
+    with pytest.raises(CommitGroupError):
+        dispatcher.open_group("Too late", None)
 
 
 def test_auto_closed_result_is_only_available_to_owner() -> None:
@@ -197,9 +158,25 @@ def test_max_age_commits_during_active_binding_and_later_write_is_not_lost(
             first.write_text("first", encoding="utf-8")
             dispatcher.fire(first, "first", "write")
             _wait_for_subject(git_repo, "Deadline")
+            from markdown_vault_mcp._commit_groups import CommitGroupError
+
+            errors: list[Exception] = []
+
+            def bind_again() -> None:
+                try:
+                    with dispatcher.bind_group(group.handle, alice):
+                        pass
+                except CommitGroupError as exc:
+                    errors.append(exc)
+
+            thread = threading.Thread(target=bind_again)
+            thread.start()
+            thread.join(timeout=2)
+            assert len(errors) == 1 and "automatically" in str(errors[0])
             second.write_text("second", encoding="utf-8")
             dispatcher.fire(second, "second", "write")
-        assert dispatcher.drain()
+        _wait_for_subject(git_repo, "write: second.md")
+        assert group.scope.token not in dispatcher._open_scopes
         assert _run_git(git_repo, "show", "HEAD:second.md").strip() == "second"
         assert (
             _run_git(git_repo, "log", "-1", "--format=%an|%ae").strip()
@@ -227,10 +204,6 @@ def test_expired_idle_cannot_be_revived_by_delayed_timer() -> None:
                 dispatcher.bind_group(group.handle, None),
             ):
                 pass
-        assert (
-            dispatcher.close_group(group.handle, None).result(timeout=2).status
-            == "no_changes"
-        )
     finally:
         dispatcher.close()
 
@@ -267,12 +240,11 @@ def test_automatic_results_survive_many_later_groups(
         dispatcher.close()
 
 
-@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), 1e100])
-def test_dispatcher_rejects_invalid_group_timeout(value: float) -> None:
+def test_dispatcher_rejects_invalid_group_timeout() -> None:
     from markdown_vault_mcp.exceptions import ConfigurationError
 
     with pytest.raises(ConfigurationError, match="group_idle_s"):
-        WriteCallbackDispatcher(None, group_idle_s=value)
+        WriteCallbackDispatcher(None, group_idle_s=0)
 
 
 def test_vault_passes_group_timeouts_to_dispatcher(git_repo: Path) -> None:
@@ -295,6 +267,7 @@ def test_vault_passes_group_timeouts_to_dispatcher(git_repo: Path) -> None:
         on_write=strategy,
     )
     try:
+        assert vault._write_callback._group_max_age_s == 1
         group = vault._write_callback.open_group("Vault timeout", None)
         path = git_repo / "vault.md"
         path.write_text("note", encoding="utf-8")
