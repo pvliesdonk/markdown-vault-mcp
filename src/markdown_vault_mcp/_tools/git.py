@@ -367,7 +367,6 @@ def register(mcp: FastMCP) -> None:
             direction: `pull`, `push` or `both` (default).
             dry_run: Report what a pull would do without changing anything; the push
                 leg reports applied false without contacting the remote.
-
             transaction: Handle to validate and close before syncing. Real sync
                 closes your open transactions and waits for pending closes even
                 when omitted. Omit for dry_run; previews leave transactions open.

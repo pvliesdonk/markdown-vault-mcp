@@ -132,3 +132,30 @@ async def test_all_write_operations_accept_transaction(
                 },
             )
         assert "active writes" not in str(error.value)
+
+
+@pytest.mark.usefixtures("_mcp_env")
+async def test_begin_transaction_keeps_event_loop_responsive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import threading
+
+    from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    loop = asyncio.get_running_loop()
+    heartbeat = threading.Event()
+    observed: list[bool] = []
+    original = WriteCallbackDispatcher.open_group
+
+    def gated(dispatcher, description, principal):
+        loop.call_soon_threadsafe(heartbeat.set)
+        observed.append(heartbeat.wait(1))
+        return original(dispatcher, description, principal)
+
+    monkeypatch.setattr(WriteCallbackDispatcher, "open_group", gated)
+    async with Client(make_server()) as client:
+        result = await client.call_tool("begin_transaction", {"description": "Gate"})
+        assert result.data["handle"]
+        assert observed == [True]

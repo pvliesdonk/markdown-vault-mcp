@@ -336,7 +336,6 @@ def register(mcp: FastMCP) -> None:
             content_base64: An attachment's bytes, base64-encoded; for paths not ending
                 in .md.
             if_match: Etag from read, to replace an existing file; omit for a new file.
-
             transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
@@ -469,7 +468,6 @@ def register(mcp: FastMCP) -> None:
             line_start: First line to replace, counting from 1 over the content read
                 returns, frontmatter included; pass with line_end.
             line_end: Last line to replace, inclusive; pass with line_start.
-
             transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
@@ -564,7 +562,6 @@ def register(mcp: FastMCP) -> None:
                 to append regardless.
             create_if_missing: Create the note with content as its body when path does
                 not exist. Default false, so a mistyped path creates nothing.
-
             transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
@@ -633,7 +630,6 @@ def register(mcp: FastMCP) -> None:
             path: Path of the note or attachment.
             if_match: Etag from read; the file is then deleted only as that version.
                 Omit to delete it as it is.
-
             transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
@@ -693,7 +689,6 @@ def register(mcp: FastMCP) -> None:
             update_links: Rewrite links to old_path in other notes so they point at
                 new_path; attachment references are not tracked. Default false; pass
                 true for every note.
-
             transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
@@ -778,7 +773,6 @@ def register(mcp: FastMCP) -> None:
             old_dir: Folder to move, such as `"drafts"`.
             new_dir: Destination folder, such as `"archive/2026"`; an existing folder is
                 merged into.
-
             transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:

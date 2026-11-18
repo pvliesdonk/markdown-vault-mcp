@@ -58,7 +58,8 @@ async def _await_commits(
     if pending:
         raise ToolError(
             "Transaction commit is still pending and continues in the background; "
-            "no sync leg ran. Retry git_sync to wait for it and check the server log.",
+            "no sync leg ran. Ask the operator to check the server log, Git index and history. "
+            "A later git_sync waits only while the commit is still pending.",
             log_level=logging.WARNING,
         )
     return [future.result() for future in wrapped]
@@ -120,8 +121,9 @@ def register(mcp: FastMCP) -> None:
             Dict with handle (str), to pass to supported writes and end_transaction.
         """
         with _refused():
-            group = vault._write_callback.open_group(
-                description, resolve_mcp_principal()
+            principal = resolve_mcp_principal()
+            group = await asyncio.to_thread(
+                vault._write_callback.open_group, description, principal
             )
         return {"handle": group.handle}
 
@@ -143,7 +145,8 @@ def register(mcp: FastMCP) -> None:
         """Close a transaction and return its commit status, SHA and file count.
 
         If the commit is still pending after 30 seconds, it continues in the
-        background. Call git_sync to wait for it and check the server log.
+        background. Ask the operator to check the server log, Git index and history.
+        A later git_sync waits only while the commit is still pending.
 
         Args:
             handle: Handle returned by begin_transaction.

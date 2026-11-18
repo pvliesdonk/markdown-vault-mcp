@@ -47,7 +47,8 @@ Pass its returned `handle` as `transaction` to each supported write:
 Close a transaction and return its commit status, SHA and file count.
 
 If the commit is still pending after 30 seconds, it continues in the
-background. Call `git_sync` to wait for it and check the server log.
+background. Ask the operator to check the server log, Git index and history.
+A later `git_sync` waits only while the commit is still pending.
 
 **Parameters**
 

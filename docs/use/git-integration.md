@@ -84,10 +84,12 @@ A real `git_sync` closes the caller's open
 groups and waits for their commits already under way. A failed commit stops
 sync; inspect the Git index to recover staged work. Both tools wait up to 30
 seconds; if a commit is still pending, it continues in the background and no
-sync leg runs. Retry `git_sync` to wait for it and check the server log. A
+sync leg runs. Check the server log, Git index and history for the outcome.
+A later `git_sync` waits only while the commit is still pending. A
 `git_sync` dry run leaves groups open; omit the transaction handle for a preview.
 Completed automatic-close results are available to their owner by handle until
 the server restarts; an implicit sync does not inspect earlier results.
+Unauthenticated clients share the local principal and its transaction groups.
 
 Groups close automatically after five minutes of inactivity or one hour after
 opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
