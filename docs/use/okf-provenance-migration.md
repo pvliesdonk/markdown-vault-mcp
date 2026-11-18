@@ -5,7 +5,7 @@ kind: how-to
 
 # Migrate OKF provenance writes
 
-This breaking change affects deployments using `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. Ordinary writes no longer overwrite `generated` or delete `verified`, and credentials no longer supply an author. Existing records stay in the note. A retained review is a claim whose applicability to current content is unknown; it is not a certification of a later edit.
+This breaking change affects deployments using `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. Ordinary writes no longer overwrite `generated` or delete `verified`, and credentials no longer supply an author. Existing records stay in the note. A retained review is a claim whose applicability to current content is unknown; it is not a certification of a later edit. Ordinary writes also store a supplied `verified` entry as given, so any writer can supply a `human:` review claim. `OKF_VERIFY=elicit` guards only the explicit `okf_verify` operation.
 
 Line endings and a BOM follow the existing rules. An edit, append or link rewrite stores the note's existing text with `\n` line endings, as `read` shows it, and keeps an unchanged frontmatter block byte for byte. Text you supply is stored as given, except that a note upload drops a leading BOM.
 

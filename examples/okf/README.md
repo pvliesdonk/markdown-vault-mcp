@@ -12,8 +12,9 @@ the trust model, the migration ratchet, authoring, review, and export).
 OKF is a lightweight convention over markdown-with-frontmatter: every note
 carries a `type`, an optional lifecycle `status`, provenance (`sources`,
 `generated`), and human attestations (`verified`). markdown-vault-mcp reads
-those fields to annotate and rank results, and — when you opt in — to enforce
-provenance on writes. OKF describes *what each note is*; it does not tell you
+those fields to annotate and rank results. Ordinary writes store the
+provenance you supply; `okf_author` records a producer only when you name one,
+and `okf_verify` records a person's review. OKF describes *what each note is*; it does not tell you
 how to organize your vault, so it composes with methods like
 [PARA](../para/README.md) and [Zettelkasten](../zettelkasten/README.md).
 

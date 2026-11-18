@@ -373,19 +373,22 @@ The operator controls explicit authoring, review, index and log maintenance inde
   The authenticated subject is *whose token* is in play, not evidence that a
   human reviewed the note. In an agentic session the model wields the human's
   token, so attributing to the auth subject alone lets the model self-promote a
-  note to `human-reviewed` — which would make the tier meaningless. `okf_verify`
-  is the only vector for this: `derive_trust_tier` reads `verified` exclusively,
-  and supplied `generated` provenance does not affect the
-  tier. So the attestation path is operator-configurable via
-  `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
+  note to `human-reviewed` — which would make the tier meaningless.
+  `derive_trust_tier` reads `verified` exclusively, and supplied `generated`
+  provenance does not affect the tier. `okf_verify` is the server's explicit
+  review operation, but not the only way a `verified` entry arrives: ordinary
+  writes store supplied frontmatter as given (#1443), so any writer, an agent
+  included, can supply a `human:` entry. The attestation path of the explicit
+  operation is operator-configurable via `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
 
   - **`elicit`** (default): the tool issues an MCP **elicitation** asking the
     human to confirm they personally reviewed the note, and writes the
     `verified` entry only on an affirmative reply. **Fails closed** — if the
     client cannot elicit, or the human declines, it raises `ToolError` and
     writes nothing. A model cannot answer an elicitation, so the attestation
-    leaves its control by construction; a headless agent (no human) can never
-    produce a `human-reviewed` entry. The subject stamped is the token's `sub`
+    this tool records leaves its control by construction; a headless agent (no
+    human) cannot produce one through `okf_verify`. The guard covers only this
+    operation, not `verified` supplied on an ordinary write. The subject stamped is the token's `sub`
     when the principal is human, else `local` (including service credentials
     and application-marked tokens) — the elicitation, not the
     token, is the human-presence proof.
