@@ -440,3 +440,32 @@ def test_git_snapshot_nonregular_modes_are_unavailable(tmp_path, kind):
         (e.path, e.state, e.reason) for e in page.entries
     ]
     snapshot.close()
+
+
+def test_snapshot_unavailable_policy_marks_enumeration(tmp_path, monkeypatch):
+    import subprocess
+
+    from markdown_vault_mcp.managers.git_query import git_export_snapshot
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
+        )
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    (tmp_path / "note.md").write_text("note")
+    git("add", "note.md")
+    git("commit", "-qm", "initial")
+    snapshot = git_export_snapshot(tmp_path)
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    original = inspector._prepare_policy
+
+    def unavailable(root):
+        original(root)
+        inspector._unavailable_policy_paths = {tmp_path / "private"}
+
+    monkeypatch.setattr(inspector, "_prepare_policy", unavailable)
+    page = inspector.inspect(BundleTreeRequest(root="", snapshot=snapshot))
+    assert page.enumeration == "unavailable"

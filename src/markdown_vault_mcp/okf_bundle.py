@@ -13,9 +13,11 @@ from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+from markdown_vault_mcp.bundle_inventory import BundleTreeRequest, _parsed
 from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
+from markdown_vault_mcp.git.query import _LFS_POINTER_PREFIX
 from markdown_vault_mcp.managers.git_query import (
+    GitSnapshotUnavailableError,
     git_export_snapshot,
     git_snapshot_changes,
 )
@@ -248,10 +250,12 @@ def _snapshot_outlinks(
     return result
 
 
-def _snapshot_searchable(entry: BundleEntry) -> bool:
-    return entry.visibility == "visible" and (
-        entry.parse_state == "valid" or entry.reason == "note_limit"
-    )
+def _snapshot_searchable(entry: BundleEntry, raw: bytes) -> bool:
+    if entry.visibility != "visible":
+        return False
+    if entry.reason == "note_limit":
+        return _parsed(entry.path, entry.role, raw).parse_state == "valid"
+    return entry.parse_state == "valid"
 
 
 # The public API keeps its established explicit options.
@@ -306,9 +310,6 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
     report = OkfExportReport()
-    inspection_snapshot = (
-        replace(snapshot, changed=set(), flagged={}) if snapshot else None
-    )
     if snapshot is not None:
         report.snapshot.commit = snapshot.commit
     buf = io.BytesIO()
@@ -322,7 +323,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     root=folder,
                     entry_limit=1000,
                     cursor=cursor,
-                    snapshot=inspection_snapshot,
+                    snapshot=snapshot,
                 )
             )
             _require_complete(page, folder)
@@ -362,7 +363,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                             root="",
                             entry_limit=1000,
                             cursor=cursor,
-                            snapshot=inspection_snapshot,
+                            snapshot=snapshot,
                         )
                     )
                     _require_complete(page, "")
@@ -398,9 +399,11 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 if snapshot is None:
                     raise ValueError("Snapshot links require a Git snapshot")
                 snapshot_notes = {
-                    entry.path: snapshot.read(entry.path)
+                    entry.path: raw
                     for entry in root_inventory()
-                    if entry.path.endswith(".md") and _snapshot_searchable(entry)
+                    if entry.path.endswith(".md") and entry.visibility == "visible"
+                    for raw in (snapshot.read(entry.path),)
+                    if _snapshot_searchable(entry, raw)
                 }
                 snapshot_index = _snapshot_link_index(snapshot_notes)
             return _snapshot_outlinks(body, source, snapshot_index, extensions)
@@ -417,6 +420,10 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             )
             if snapshot is None:
                 digests[item.path] = hashlib.sha256(raw).digest()
+            elif raw.startswith(_LFS_POINTER_PREFIX.encode()):
+                raise GitSnapshotUnavailableError(
+                    "Git LFS pointer cannot be exported; use a commit containing the file bytes."
+                )
             name = item.path[len(folder) + 1 :] if folder else item.path
             if item.role == "supporting":
                 _write(zf, name, raw)
@@ -424,7 +431,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             else:
                 _observe_export(item, report)
                 searchable = (
-                    _snapshot_searchable(item)
+                    _snapshot_searchable(item, raw)
                     if snapshot is not None
                     else item.search_state == "searchable"
                 )
@@ -434,15 +441,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     else None
                 )
                 _write(
-                    zf,
-                    name,
-                    _note_bytes(
-                        raw,
-                        (item, name),
-                        paths,
-                        report,
-                        resolver,
-                    ),
+                    zf, name, _note_bytes(raw, (item, name), paths, report, resolver)
                 )
                 notes += 1
     if snapshot is not None:

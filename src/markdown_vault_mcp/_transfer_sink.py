@@ -411,12 +411,10 @@ class VaultTransferSink:
             )
         except GitSnapshotUnavailableError as exc:
             logger.info(
-                "transfer_download_bundle_refused reason=no_commit scope=%s",
+                "transfer_download_bundle_refused reason=snapshot_unavailable scope=%s",
                 scope or "(root)",
             )
-            raise TransferUnavailableError(
-                "vault has no commit to export; commit once and retry"
-            ) from exc
+            raise TransferUnavailableError(str(exc)) from exc
         stem = scope.rsplit("/", 1)[-1] if scope else _OKF_BUNDLE_REF
         logger.info(
             "transfer_download_bundle scope=%s notes=%d attachments=%d bytes=%d",

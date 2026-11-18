@@ -183,7 +183,14 @@ def test_git_query_keeps_literal_names_and_subdirectory_changes(tmp_path: Path) 
     snapshot = git_export_snapshot(vault_root)
     assert snapshot is not None
     assert snapshot.read(name) == b"committed\x00bytes"
-    assert snapshot.changed == {name, "new.md", "ignored.md", "staged.md"}
+    from markdown_vault_mcp.managers.git_query import git_snapshot_changes
+
+    assert git_snapshot_changes(vault_root, snapshot.commit)[0] == {
+        name,
+        "new.md",
+        "ignored.md",
+        "staged.md",
+    }
     snapshot.close()
 
 
@@ -267,6 +274,12 @@ def test_git_snapshot_inventory_paginates_and_reports_scope(tmp_path: Path) -> N
     (tmp_path / "scope" / "a.md").write_text("dirty")
     snapshot = git_export_snapshot(tmp_path)
     assert snapshot is not None
+    from dataclasses import replace
+
+    from markdown_vault_mcp.managers.git_query import git_snapshot_changes
+
+    changed, flagged = git_snapshot_changes(tmp_path, snapshot.commit)
+    snapshot = replace(snapshot, changed=changed, flagged=flagged)
     inspector = BundleInspector(tmp_path, (), frozenset(), 0)
     first = inspector.inspect(
         BundleTreeRequest(root="scope", entry_limit=1, snapshot=snapshot)
@@ -402,13 +415,26 @@ def test_git_inventory_rejects_large_note_without_reading_blob(
     ]
 
 
-def test_git_large_source_and_target_resolve_links(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "case",
+    [
+        "valid",
+        "bad_utf8_target",
+        "bad_yaml_target",
+        "bad_utf8_source",
+        "bad_yaml_source",
+    ],
+)
+def test_git_large_source_and_target_resolve_links(tmp_path: Path, case: str) -> None:
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / "source.md").write_text("[[target]]\n" + "x" * 70000)
+    bad = b"\xff\n" if "utf8" in case else b"---\na: [unterminated\n---\n"
+    source = (bad if case.endswith("source") else b"") + b"[[target]]\n" + b"x" * 70000
+    target = (bad if case.endswith("target") else b"") + b"y" * 70000
+    (tmp_path / "source.md").write_bytes(source)
     (tmp_path / "small.md").write_text("[[target]]\n")
-    (tmp_path / "target.md").write_text("y" * 70000)
+    (tmp_path / "target.md").write_bytes(target)
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "initial")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
@@ -417,8 +443,17 @@ def test_git_large_source_and_target_resolve_links(tmp_path: Path) -> None:
     finally:
         vault.close()
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-        assert archive.read("source.md").startswith(b"[target](/target.md)\n")
-        assert archive.read("small.md") == b"[target](/target.md)\n"
+        if case == "valid":
+            assert archive.read("source.md").startswith(b"[target](/target.md)\n")
+        else:
+            assert archive.read("source.md") == source
+        assert archive.read("small.md") == (
+            b"[[target]]\n" if case.endswith("target") else b"[target](/target.md)\n"
+        )
+
+    if case != "valid":
+        path = "target.md" if case.endswith("target") else "source.md"
+        assert result.report.uninspected[path] == "note_limit"
 
 
 def test_git_assume_unchanged_edit_is_reported(tmp_path: Path) -> None:
@@ -494,3 +529,44 @@ def test_git_flagged_files_are_checked_safely(
     finally:
         vault.close()
     assert ("note.md" in result.report.snapshot.uncommitted_paths) is expected
+
+
+@pytest.mark.parametrize("name", ["note.md", "image.png"])
+def test_git_lfs_pointer_is_refused(tmp_path: Path, name: str) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / name).write_text(
+        "version https://git-lfs.github.com/spec/v1\noid sha256:"
+        + "a" * 64
+        + "\nsize 3\n"
+    )
+    _git(tmp_path, "add", name)
+    _git(tmp_path, "commit", "-qm", "initial")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(ValueError, match="LFS"):
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+
+
+def test_git_untracked_only_folder_exports_empty_commit(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "base.md").write_text("base")
+    _git(tmp_path, "add", "base.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    (tmp_path / "drafts").mkdir()
+    (tmp_path / "drafts" / "new.md").write_text("draft")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="drafts"
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.namelist() == []
+    assert result.report.snapshot.uncommitted_paths == ["drafts/new.md"]

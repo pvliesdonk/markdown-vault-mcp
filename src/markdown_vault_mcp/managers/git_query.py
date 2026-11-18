@@ -52,7 +52,7 @@ _SHA_RE = r"[0-9a-f]{4,64}"
 
 
 class GitSnapshotUnavailableError(ValueError):
-    """A Git repository has no commit available for export."""
+    """The selected Git snapshot cannot be exported as vault content."""
 
 
 @dataclass(frozen=True)
@@ -130,7 +130,7 @@ def _export_git(
 
 # Discovery distinguishes absent Git, unsafe worktrees, and unavailable commits.
 def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901, RUF100
-    """Pin a vault's Git commit and enumerate its blobs and working changes.
+    """Pin a vault's Git commit and enumerate its blobs.
 
     Args:
         source: Vault root, which may be nested within a repository.
@@ -164,10 +164,7 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901
         )
     if head.returncode:
         reason = head.stderr.decode("utf-8", errors="replace").strip()
-        raise ValueError(
-            f"Cannot resolve Git snapshot HEAD for export: {reason}. "
-            "If the repository has no commits, create one with git commit."
-        )
+        raise ValueError(f"Cannot resolve Git snapshot HEAD for export: {reason}")
     try:
         commit = head.stdout.decode("ascii").strip()
         tree = _export_git(
@@ -187,28 +184,34 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901
                     oid.decode("ascii"),
                 )
                 sizes[path[len(prefix) :]] = int(size) if size != b"-" else 0
-        changed, flagged = git_snapshot_changes(source, commit)
-        return GitExportSnapshot(commit, entries, changed, root, sizes, flagged)
+        return GitExportSnapshot(commit, entries, set(), root, sizes)
     except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
         raise ValueError("Cannot read Git snapshot for export") from exc
 
 
 def git_snapshot_changes(source: Path, commit: str) -> tuple[set[str], dict[str, bool]]:
     """Observe changed and index-flagged names against a pinned commit."""
-    options = ("--no-ext-diff", "--no-renames", "--relative", "--name-only", "-z")
-    diff = _export_git(source, "diff", *options, commit, "--", ".").stdout
-    staged = _export_git(source, "diff", "--cached", *options, commit, "--", ".").stdout
-    untracked = _export_git(source, "ls-files", "--others", "-z", "--", ".").stdout
-    flagged_raw = _export_git(source, "ls-files", "-v", "-z", "--", ".").stdout
-    changed = {
-        os.fsdecode(name) for name in (diff + staged + untracked).split(b"\0") if name
-    }
-    flagged = {
-        os.fsdecode(row[2:]): row[:1] in {b"S", b"s"}
-        for row in flagged_raw.split(b"\0")
-        if row[:1] in {b"h", b"S", b"s"}
-    }
-    return changed, flagged
+    try:
+        options = ("--no-ext-diff", "--no-renames", "--relative", "--name-only", "-z")
+        diff = _export_git(source, "diff", *options, commit, "--", ".").stdout
+        staged = _export_git(
+            source, "diff", "--cached", *options, commit, "--", "."
+        ).stdout
+        untracked = _export_git(source, "ls-files", "--others", "-z", "--", ".").stdout
+        flagged_raw = _export_git(source, "ls-files", "-v", "-z", "--", ".").stdout
+        changed = {
+            os.fsdecode(name)
+            for name in (diff + staged + untracked).split(b"\0")
+            if name
+        }
+        flagged = {
+            os.fsdecode(row[2:]): row[:1] in {b"S", b"s"}
+            for row in flagged_raw.split(b"\0")
+            if row[:1] in {b"h", b"S", b"s"}
+        }
+        return changed, flagged
+    except subprocess.SubprocessError as exc:
+        raise ValueError("Cannot read Git snapshot for export") from exc
 
 
 def _reject_nul_date(name: str, value: str | None) -> None:

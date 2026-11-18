@@ -503,9 +503,18 @@ class BundleInspector:
         self, request: BundleTreeRequest, scope: str, snapshot: GitExportSnapshot
     ) -> BundleInspection:
         if scope and not any(path.startswith(scope + "/") for path in snapshot.entries):
-            return BundleInspection(request, "missing")
+            with open_directory_nofollow(
+                self._absolute_source, _components(scope), source_resolved=True
+            ):
+                pass
         entries: list[BundleEntry] = []
         remaining = 1024 * 1024
+        selected = self._absolute_source.joinpath(*_components(scope))
+        if any(
+            path.parent.is_relative_to(selected)
+            for path in self._unavailable_policy_paths
+        ):
+            return BundleInspection(request, "inspected", "unavailable")
         enumeration: Enumeration = "complete"
         for path, (mode, _) in sorted(snapshot.entries.items()):
             if scope and not path.startswith(scope + "/"):

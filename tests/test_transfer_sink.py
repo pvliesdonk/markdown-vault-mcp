@@ -515,6 +515,15 @@ async def test_unborn_bundle_is_retryable(
     git("add", ".")
     git("commit", "-qm", "first")
     assert (await sink.read("okf-bundle")).filename == "okf-bundle.zip"
+    (source_dir / "note.md").write_text(
+        "version https://git-lfs.github.com/spec/v1\noid sha256:"
+        + "a" * 64
+        + "\nsize 3\n"
+    )
+    git("add", "note.md")
+    git("commit", "-qm", "lfs pointer")
+    with pytest.raises(TransferUnavailableError, match="LFS"):
+        await sink.read("okf-bundle")
 
     def collision(*_args, **_kwargs):
         raise ValueError("collision")
