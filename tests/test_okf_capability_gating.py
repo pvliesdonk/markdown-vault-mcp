@@ -191,6 +191,12 @@ def test_explicit_generate_index_retains_recursive_behavior(tmp_path: Path) -> N
         ("a/c", ("a/**/c",), True),
         ("a/b/c", ("a/**/c",), True),
         ("a/b/d", ("a/**/c",), False),
+        ("cafe\u0301", ("café",), True),
+        ("café", ("cafe\u0301",), True),
+        ("a\u0301\u0323", ("a[\u0301]\u0323",), False),
+        ("a\u0301\u0323", ("a?\u0323",), False),
+        ("a\u0301\u0323", ("\u1ea1\u0301",), True),
+        ("\u1ea1\u0301", ("a\u0301\u0323",), True),
     ],
 )
 def test_designation_glob_depth(
