@@ -452,3 +452,178 @@ def test_direct_and_raw_build_sweep_once(tmp_path: Path, monkeypatch) -> None:
         assert len(calls) == 2
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("route", ["direct", "git_sync", "webhook", "tick"])
+def test_successful_noop_pull_observes_external_edit(
+    tmp_path: Path, git_repo_pair, monkeypatch, route: str
+) -> None:
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp._tools.git import _run_pull_leg
+    from markdown_vault_mcp._webhooks import _process_push
+    from markdown_vault_mcp.git import GitWriteStrategy
+
+    source = git_repo_pair.local_path
+    note = source / "README.md"
+    strategy = GitWriteStrategy(
+        token=None, push_delay_s=0, git_lfs=False, repo_path=source
+    )
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(state_path=tmp_path / "state"),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        vault.index.build_index()
+        assert vault.reconcile_index_with_head(source="test") == "reindexed"
+        ledger = vault._index_mgr.observations
+        original = ledger.sweep
+        calls = []
+
+        def sweep():
+            calls.append(True)
+            original()
+
+        monkeypatch.setattr(ledger, "sweep", sweep)
+        note.write_text("external edit")
+        if route == "direct":
+            assert vault.force_pull().applied
+        elif route == "git_sync":
+            assert asyncio.run(_run_pull_leg(strategy, vault, dry_run=False))["applied"]
+        elif route == "webhook":
+            assert (
+                asyncio.run(_process_push(vault, "test", "delivery")).status_code == 200
+            )
+        else:
+            strategy._pull_repo_path = source
+            strategy._on_tick = vault._reconcile_on_tick
+            monkeypatch.setattr(strategy._pull_stop, "wait", lambda **_kwargs: True)
+            strategy._pull_loop()
+        assert (
+            ledger.rows()["README.md"].content_digest
+            == hashlib.sha256(b"external edit").hexdigest()
+        )
+        assert len(calls) == (2 if route == "webhook" else 1)
+    finally:
+        vault.close()
+
+
+def test_pull_reconcile_outcomes_and_failure(
+    tmp_path: Path, git_repo_pair, monkeypatch
+) -> None:
+    from concurrent.futures import Future
+
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from tests.fixtures.git import _run_git
+
+    source = git_repo_pair.local_path
+    strategy = GitWriteStrategy(
+        token=None, push_delay_s=0, git_lfs=False, repo_path=source
+    )
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(state_path=tmp_path / "state"),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        vault.index.build_index()
+        assert vault.reconcile_index_with_head(source="test") == "reindexed"
+        ledger = vault._index_mgr.observations
+        original = ledger.sweep
+        calls = []
+
+        def sweep():
+            calls.append(True)
+            original()
+
+        monkeypatch.setattr(ledger, "sweep", sweep)
+        (source / "new.md").write_text("changed head")
+        _run_git(source, "add", "new.md")
+        _run_git(source, "commit", "-m", "external")
+        assert vault.reconcile_index_with_head(source="test") == "reindexed"
+        assert len(calls) == 1
+        original_digest = ledger.rows()["new.md"].content_digest
+        pending = Future()
+        vault._head_reconciler._pending = pending
+        (source / "new.md").write_text("after pending scan started")
+        assert vault.reconcile_index_with_head(source="test") == "deferred"
+        assert len(calls) == 2
+        assert ledger.rows()["new.md"].content_digest != original_digest
+        pending.set_result(None)
+        monkeypatch.setattr(vault._head_reconciler, "reconcile", lambda **_: "failed")
+        assert vault.reconcile_index_with_head(source="test") == "failed"
+        assert len(calls) == 2
+
+        def fail():
+            raise PermissionError("ledger denied")
+
+        monkeypatch.setattr(ledger, "sweep", fail)
+        monkeypatch.setattr(vault._head_reconciler, "reconcile", lambda **_: "current")
+        with pytest.raises(PermissionError, match="ledger denied"):
+            vault.reconcile_index_with_head(source="test")
+    finally:
+        vault.close()
+
+
+def test_post_pull_observation_failure_is_reported_and_webhook_retries(
+    tmp_path: Path, git_repo_pair, monkeypatch, caplog
+) -> None:
+    import asyncio
+
+    from markdown_vault_mcp._tools.git import _run_pull_leg
+    from markdown_vault_mcp._webhooks import _process_push
+    from markdown_vault_mcp.git import GitWriteStrategy, PullResult
+
+    source = git_repo_pair.local_path
+    strategy = GitWriteStrategy(
+        token=None, push_delay_s=0, git_lfs=False, repo_path=source
+    )
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(state_path=tmp_path / "state"),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        vault.index.build_index()
+        vault.reconcile_index_with_head(source="test")
+        ledger = vault._index_mgr.observations
+        original = ledger.sweep
+        (source / "README.md").write_text("retry edit")
+
+        def fail():
+            raise PermissionError("ledger denied")
+
+        monkeypatch.setattr(ledger, "sweep", fail)
+        with pytest.raises(PermissionError, match="ledger denied"):
+            vault.force_pull()
+        assert "git_pull_observation_failed applied=True" in caplog.text
+        assert asyncio.run(_run_pull_leg(strategy, vault, dry_run=True))["applied"]
+        refused = PullResult(
+            applied=False,
+            fast_forward=False,
+            commits_pulled=0,
+            from_sha="a",
+            to_sha="a",
+            reason="fetch_failed",
+        )
+        with monkeypatch.context() as patch:
+            patch.setattr(strategy, "force_pull", lambda: refused)
+            assert vault.force_pull() is refused
+        assert asyncio.run(_process_push(vault, "test", "one")).status_code == 503
+        result = asyncio.run(_run_pull_leg(strategy, vault, dry_run=False))
+        assert result["applied"] and result["reindex_failed"]
+        monkeypatch.setattr(ledger, "sweep", original)
+        assert asyncio.run(_process_push(vault, "test", "two")).status_code == 200
+        import hashlib
+
+        assert (
+            ledger.rows()["README.md"].content_digest
+            == hashlib.sha256(b"retry edit").hexdigest()
+        )
+    finally:
+        vault.close()

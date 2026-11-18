@@ -1065,7 +1065,13 @@ class Vault:
         """
         if self._head_reconciler is None:
             return "current"
-        return self._head_reconciler.reconcile(source=source)
+        outcome = self._head_reconciler.reconcile(source=source)
+        if (
+            outcome in ("current", "deferred")
+            and self._index_mgr.observations is not None
+        ):
+            self._index_mgr.observations.sweep()
+        return outcome
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.
@@ -1114,7 +1120,20 @@ class Vault:
             return None
         # The strategy now self-quiesces (pause + drain) around the merge (#571),
         # so the previous outer pause_writes() wrap here is redundant.
-        return self._git_strategy.force_pull()
+        result = self._git_strategy.force_pull()
+        if result.applied and self._index_mgr.observations is not None:
+            try:
+                self._index_mgr.observations.sweep()
+            except Exception:
+                logger.exception(
+                    "git_pull_observation_failed applied=%s from_sha=%s to_sha=%s reason=%s",
+                    result.applied,
+                    result.from_sha,
+                    result.to_sha,
+                    result.reason,
+                )
+                raise
+        return result
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the vault.
