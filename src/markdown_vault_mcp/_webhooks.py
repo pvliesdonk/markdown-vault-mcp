@@ -442,7 +442,7 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
     not block delivery. The reconcile that follows defers on an unbuilt
     index; the boot reindex or a later reconcile covers the pulled tree.
 
-    Every settled pull reconciles, including one reported as not applied: a
+    Every enabled pull attempt reconciles, including deferred and not applied: a
     rebase can advance HEAD and still fail to commit its conflict siblings.
 
     Args:
@@ -485,13 +485,13 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         )
         return JSONResponse({"ok": True, "message": "pull disabled"})
 
+    await asyncio.to_thread(_reconcile_after_pull, vault, name)
+
     if pull_result.reason == PULL_REASON_GROUP_OPEN:
         return JSONResponse(
             {"error": "pull deferred", "reason": PULL_REASON_GROUP_OPEN},
             status_code=503,
         )
-
-    await asyncio.to_thread(_reconcile_after_pull, vault, name)
 
     if not pull_result.applied:
         # Transient failures (network, expired token) benefit from retry.

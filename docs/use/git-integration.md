@@ -89,7 +89,9 @@ writes, which can split an open group into multiple commits. Once groups close,
 the next timer tick, subsequent push event, or deliberate sender redelivery
 retries the pull. A webhook-only vault with no subsequent trigger remains
 deferred. Explicit `git_sync` and force pulls continue immediately and can
-also split a group. A deferred webhook returns HTTP 503.
+also split a group. A deferred webhook returns HTTP 503. Deferred timer ticks
+and webhooks still reconcile search with HEAD; generated-index repair waits
+until no group is open.
 
 ## Uncommitted files at startup
 

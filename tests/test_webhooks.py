@@ -260,7 +260,7 @@ def test_webhook_push_triggers_pull_and_reindex():
 
 
 def test_webhook_uses_automatic_deferral() -> None:
-    """A deferred delivery does not reconcile or masquerade as a failed pull."""
+    """A deferred delivery reconciles without masquerading as a failed pull."""
     result = PullResult(False, False, 0, "", "", reason=PULL_REASON_GROUP_OPEN)
     col = _mock_vault(pull_result=result)
     client = _make_client()
@@ -273,7 +273,7 @@ def test_webhook_uses_automatic_deferral() -> None:
         )
     assert resp.status_code == 503
     assert resp.json() == {"error": "pull deferred", "reason": "group_open"}
-    col.reconcile_index_with_head.assert_not_called()
+    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
 
 
 def test_webhook_push_reconciles_when_already_up_to_date():

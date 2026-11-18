@@ -282,7 +282,7 @@ class WriteCallbackDispatcher:
 
     @contextmanager
     def guard_open_groups(self) -> Iterator[bool]:
-        """Prevent groups opening while an automatic pull is decided and run.
+        """Prevent groups opening during automatic pulls and index recovery.
 
         The gate precedes the file-write lock; callers must not open a group
         while holding that lock.

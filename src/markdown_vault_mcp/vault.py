@@ -1070,18 +1070,22 @@ class Vault:
         return outcome
 
     def _regenerate_recovered_indexes(self) -> None:
+        """Repair recovered indexes, leaving them pending while a group is open."""
         if self._okf_convention is None or not isinstance(
             self._git_strategy, GitWriteStrategy
         ):
             return
-        pending = self._git_strategy.take_generated_indexes()
-        if not pending:
-            return
-        try:
-            self._okf_convention.refresh_generated(pending)
-        except Exception:
-            logger.warning("git_pending_index_regeneration_failed", exc_info=True)
-        self._write_callback.drain()
+        with self._write_callback.guard_open_groups() as open_groups:
+            if open_groups:
+                return
+            pending = self._git_strategy.take_generated_indexes()
+            if not pending:
+                return
+            try:
+                self._okf_convention.refresh_generated(pending)
+            except Exception:
+                logger.warning("git_pending_index_regeneration_failed", exc_info=True)
+            self._write_callback.drain()
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.

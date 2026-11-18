@@ -11,6 +11,7 @@ from markdown_vault_mcp._commit_groups import CommitGroup
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import PullResult
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+from tests.fixtures.git import GitRepoPair
 
 
 @pytest.mark.parametrize("back_to_back", [False, True])
@@ -198,4 +199,111 @@ def test_group_idle_clock_starts_after_pull_gate(git_repo: Path) -> None:
             )
     finally:
         dispatcher.close()
+        strategy.close()
+
+
+async def test_deferred_webhook_retries_failed_reindex(
+    git_repo_pair: GitRepoPair, tmp_path: Path
+) -> None:
+    from markdown_vault_mcp._webhooks import _process_push
+    from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+    from markdown_vault_mcp.vault import Vault
+    from tests.fixtures.git import _git_clone, _git_commit, _run_git
+
+    local = git_repo_pair.local_path
+    strategy = GitWriteStrategy(enable_push=False, git_lfs=False, repo_path=local)
+    vault = Vault(
+        source_dir=local,
+        settings=VaultSettings(
+            index_path=tmp_path / "index.db", state_path=tmp_path / "state.json"
+        ),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        vault.index.build_index()
+        vault.mark_index_reconciled(vault.git_head())
+        other = _git_clone(git_repo_pair, tmp_path)
+        _git_commit(other, "remote.md", "# Starfruitquasar\n", "remote")
+        _run_git(other, "push", "origin", "main")
+        with patch.object(
+            vault.index, "reindex", side_effect=RuntimeError("lost reindex")
+        ):
+            assert (
+                await _process_push(vault, "github_webhook", "first")
+            ).status_code == 200
+        assert not vault.reader.search("starfruitquasar", mode="keyword")
+        group = vault._write_callback.open_group("Grouped", None)
+        first = local / "first.md"
+        first.write_text("# First\n")
+        with vault._write_callback.bind_group(group.handle, None):
+            vault._write_callback.fire(first, "# First\n", "write")
+        head = _run_git(local, "rev-parse", "HEAD").strip()
+        assert (
+            await _process_push(vault, "github_webhook", "second")
+        ).status_code == 503
+        assert vault.reader.search("starfruitquasar", mode="keyword")
+        assert _run_git(local, "rev-parse", "HEAD").strip() == head
+        second = local / "second.md"
+        second.write_text("# Second\n")
+        with vault._write_callback.bind_group(group.handle, None):
+            vault._write_callback.fire(second, "# Second\n", "write")
+        assert (
+            vault._write_callback.close_group(group.handle, None)
+            .result(timeout=5)
+            .status
+            == "committed"
+        )
+        assert set(
+            _run_git(local, "show", "--format=", "--name-only", "HEAD").splitlines()
+        ) == {"first.md", "second.md"}
+    finally:
+        vault.close()
+        strategy.close()
+
+
+@pytest.mark.parametrize("trigger", ["timer", "webhook"])
+async def test_pending_generated_recovery_waits_for_group_close(
+    git_repo_pair: GitRepoPair, trigger: str
+) -> None:
+    from markdown_vault_mcp._webhooks import _process_push
+    from tests.fixtures.conflict_recovery import (
+        _setup_generated_conflict,
+        recovery_vault,
+    )
+    from tests.fixtures.git import _run_git
+
+    root, vault_root, index = _setup_generated_conflict(git_repo_pair, False)
+    strategy, vault = recovery_vault(vault_root, build=True)
+    try:
+        assert strategy.force_pull().reason == "rebased"
+        assert index in strategy._pending_generated
+        original = index.read_bytes()
+        group = vault._write_callback.open_group("Grouped", None)
+        note = vault_root / "grouped.md"
+        note.write_text("# Grouped\n")
+        with vault._write_callback.bind_group(group.handle, None):
+            vault._write_callback.fire(note, "# Grouped\n", "write")
+        head = _run_git(root, "rev-parse", "HEAD").strip()
+        if trigger == "timer":
+            assert not strategy.sync_once(vault_root, timer_driven=True)
+            vault._reconcile_on_tick()
+        else:
+            assert (
+                await _process_push(vault, "github_webhook", "deferred")
+            ).status_code == 503
+        assert {n.path for n in vault.reader.list_documents()} >= {"remote.md"}
+        assert index.read_bytes() == original
+        assert _run_git(root, "rev-parse", "HEAD").strip() == head
+        assert index in strategy._pending_generated
+        vault._write_callback.close_group(group.handle, None).result(timeout=5)
+        assert vault.reconcile_index_with_head(source="test") == "current"
+        assert index not in strategy._pending_generated
+        assert "local.md" in index.read_text()
+        assert (
+            "index.md"
+            in _run_git(root, "show", "--format=", "--name-only", "HEAD").splitlines()
+        )
+    finally:
+        vault.close()
         strategy.close()
