@@ -1,13 +1,11 @@
 """Path-valued frontmatter relocates without reserializing the document."""
 
-import io
-import zipfile
-
 import pytest
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.vault import Vault, VaultSettings
+from tests.fixtures.okf_export import export_note
 
 
 def export(tmp_path, text, *, source="a.md", **kwargs):
@@ -17,17 +15,10 @@ def export(tmp_path, text, *, source="a.md", **kwargs):
     (tmp_path / "guides/hidden").mkdir(exist_ok=True)
     (tmp_path / "guides/hidden/.secret").write_text("hidden")
     (tmp_path / "guides/sub/c.md").write_text("# C\n")
-    (tmp_path / "guides" / source).write_bytes(text.encode(errors="surrogateescape"))
-    (tmp_path / "guides/b.md").write_text("# B\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides", **kwargs
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            return archive.read(source).decode(errors="surrogateescape"), result.report
-    finally:
-        vault.close()
+    output, report = export_note(
+        tmp_path, text.encode(errors="surrogateescape"), source=source, **kwargs
+    )
+    return output.decode(errors="surrogateescape"), report
 
 
 def test_fields_preserve_yaml_and_source(tmp_path):
@@ -614,3 +605,33 @@ def test_external_base_flow_scalars_preserve_yaml_values(tmp_path, base, style, 
     assert [(item.path, item.target) for item in report.dependencies] == [
         ("a.md", "../outside.md")
     ]
+
+
+@pytest.mark.parametrize(
+    "field", ["resource", "computation", "executor", "attester", "sources"]
+)
+@pytest.mark.parametrize(
+    "value,is_ambiguous",
+    [
+        ("x://example.org/a", False),
+        ("X://example.org/a?x=1#f", False),
+        ("C:/notes/topic.md", True),
+        (r"C:\notes\topic.md", True),
+    ],
+)
+def test_one_letter_urls_and_drive_paths(tmp_path, field, value, is_ambiguous):
+    scalar = f"'{value}'"
+    if field in {"resource", "computation"}:
+        header = f"{field}: {scalar}"
+    elif field == "sources":
+        header = f"sources: [{{resource: {scalar}}}]"
+    else:
+        header = f"{field}: {{resource: {scalar}}}"
+    text = f"---\n{header}\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert [(item.path, item.target) for item in report.ambiguous_path] == (
+        [("a.md", value)] if is_ambiguous else []
+    )
+    assert not report.dependencies
+    assert not report.transformed

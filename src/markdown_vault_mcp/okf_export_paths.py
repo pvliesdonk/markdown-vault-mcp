@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import OutlinkInfo
 
 _FIELD_PATH = re.compile(r"/|\.\.?(?:[/?#]|$)")
+_FIELD_URL = re.compile(r"[A-Za-z]://")
 _MARKER = re.compile(r"^( *)(?:[-+*]|[0-9]{1,9}[.)])(?= |$)( *)")
 _HTML_OPEN = re.compile(r"^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)", re.I)
 _TICKS = re.compile(r"`+|<!--")
@@ -632,7 +633,7 @@ class ExportPaths:
         for node in _frontmatter_paths(root):
             value = node.value.rstrip("\n") if node.style in ("|", ">") else node.value
             trailing = node.value[len(value) :]
-            if not value or _is_external_target(value):
+            if not value or _is_external_target(value) or _FIELD_URL.match(value):
                 continue
             if not _FIELD_PATH.match(value):
                 ambiguous.append(

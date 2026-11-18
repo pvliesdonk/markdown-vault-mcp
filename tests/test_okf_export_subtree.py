@@ -9,6 +9,7 @@ from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.okf_export_paths import ExportPaths
 from markdown_vault_mcp.vault import Vault, VaultSettings
+from tests.fixtures.okf_export import export_note
 
 
 def test_subtree_relocates_and_reports(tmp_path):
@@ -85,18 +86,7 @@ def test_encoded_delimiters_in_filename(tmp_path, encoded, name):
 
 
 def _export_body(tmp_path, body, **kwargs):
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_bytes(body)
-    (tmp_path / "guides/b.md").write_bytes(b"# B\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides", **kwargs
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            return archive.read("a.md"), result.report
-    finally:
-        vault.close()
+    return export_note(tmp_path, body, **kwargs)
 
 
 @pytest.mark.parametrize(
