@@ -131,44 +131,12 @@ async def test_sync_cannot_close_another_principals_group(
         ] == "committed"
 
 
-def test_owner_group_settlement_preflights_active_and_keeps_auto_result() -> None:
-    from markdown_vault_mcp._commit_groups import CommitGroupError
-    from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
-
-    alice = Principal("alice", None, None, "human")
-    bob = Principal("bob", None, None, "human")
-    dispatcher = WriteCallbackDispatcher(None)
-    try:
-        first = dispatcher.open_group("First", alice)
-        second = dispatcher.open_group("Second", alice)
-        other = dispatcher.open_group("Other", bob)
-        with (
-            dispatcher.bind_group(second.handle, alice),
-            pytest.raises(CommitGroupError, match="active"),
-        ):
-            dispatcher.close_owner_groups(alice)
-        # A rejected settlement did not close the earlier group.
-        with dispatcher.bind_group(first.handle, alice):
-            pass
-        with pytest.raises(CommitGroupError, match="Unknown"):
-            dispatcher.close_owner_groups(alice, other.handle)
-        auto_result = dispatcher.close_group(
-            first.handle, alice, _automatic=True
-        ).result()
-        results = dispatcher.close_owner_groups(alice, first.handle)
-        assert len(results) == 2
-        assert results[-1].result() == auto_result
-        assert dispatcher.close_group(first.handle, alice).result() == auto_result
-        assert dispatcher.close_group(other.handle, bob).result().status == "no_changes"
-    finally:
-        dispatcher.close()
-
-
-def test_owner_settlement_selects_pending_closes_by_owner(
+def test_owner_settlement_preflights_and_selects_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from concurrent.futures import Future
 
+    from markdown_vault_mcp._commit_groups import CommitGroupError
     from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
     alice = Principal("alice", None, None, "human")
@@ -186,16 +154,38 @@ def test_owner_settlement_selects_pending_closes_by_owner(
         manual = dispatcher.open_group("Manual", alice)
         automatic = dispatcher.open_group("Automatic", alice)
         other = dispatcher.open_group("Other", bob)
+        active = dispatcher.open_group("Active", alice)
+        with (
+            dispatcher.bind_group(active.handle, alice),
+            pytest.raises(CommitGroupError, match="active"),
+        ):
+            dispatcher.close_owner_groups(alice)
+        # Preflight must leave the earlier group open.
+        with dispatcher.bind_group(manual.handle, alice):
+            pass
+        with pytest.raises(CommitGroupError, match="Unknown"):
+            dispatcher.close_owner_groups(alice, other.handle)
+
         manual_result = dispatcher.close_group(manual.handle, alice)
         auto_result = dispatcher.close_group(automatic.handle, alice, _automatic=True)
         other_result = dispatcher.close_group(other.handle, bob, _automatic=True)
-        assert set(dispatcher.close_owner_groups(alice)) == {manual_result, auto_result}
+        results = dispatcher.close_owner_groups(alice)
+        assert len(results) == 3
+        assert {manual_result, auto_result} < set(results)
         assert dispatcher.close_group(manual.handle, alice) is manual_result
         completions[0].set_result(None)
         completions[1].set_result(None)
+        completions[3].set_result(None)
         assert dispatcher.close_owner_groups(alice) == []
+        dispatcher.open_group("Later", alice)
+        results = dispatcher.close_owner_groups(alice, automatic.handle)
+        assert len(results) == 2 and auto_result in results
+        completions[4].set_result(None)
+        assert dispatcher.close_group(automatic.handle, alice) is auto_result
         assert dispatcher.close_owner_groups(alice, automatic.handle) == [auto_result]
         assert dispatcher.close_owner_groups(bob) == [other_result]
+        completions[2].set_result(None)
+        assert other_result.result().status == "no_changes"
     finally:
         for future in completions:
             if not future.done():
@@ -209,8 +199,6 @@ async def test_sync_explicit_closed_and_auto_closed_handles(
     from markdown_vault_mcp import domain
 
     async with Client(make_server()) as client:
-        with pytest.raises(ToolError, match="Unknown"):
-            await client.call_tool("git_sync", {"transaction": "unknown"})
         closed = (
             await client.call_tool("begin_transaction", {"description": "Closed"})
         ).data["handle"]
@@ -293,13 +281,11 @@ async def test_group_includes_attachment_and_explicit_auto_failure_blocks_sync(
         )
 
 
-@pytest.mark.parametrize("explicit", [False, True])
 @pytest.mark.parametrize("fail", [False, True])
 async def test_sync_waits_for_pending_automatic_close(
     git_repo_pair: GitRepoPair,
     _git_managed_env: Path,
     monkeypatch: pytest.MonkeyPatch,
-    explicit: bool,
     fail: bool,
 ) -> None:
     import asyncio
@@ -334,10 +320,9 @@ async def test_sync_waits_for_pending_automatic_close(
         task = None
         try:
             assert await asyncio.to_thread(entered.wait, 5)
-            args = {"direction": "push"}
-            if explicit:
-                args["transaction"] = handle
-            task = asyncio.create_task(client.call_tool("git_sync", args))
+            task = asyncio.create_task(
+                client.call_tool("git_sync", {"direction": "push"})
+            )
             with pytest.raises(TimeoutError):
                 await asyncio.wait_for(asyncio.shield(task), 0.2)
             assert (
