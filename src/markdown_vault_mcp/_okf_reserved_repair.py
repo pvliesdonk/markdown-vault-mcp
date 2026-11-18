@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,33 @@ class _PendingRepair:
     etag: str
 
 
+def _snapshot(vault: Vault, path: str) -> str:
+    """Read one reserved file's exact bytes for a one-off repair.
+
+    Unlike an interactive read, this applies no note-size cap and parses no
+    frontmatter, so a large log or an unusual key is repaired or skipped on its
+    own merits.
+
+    Args:
+        vault: Vault whose source directory bounds the path.
+        path: Vault-relative path of the reserved file.
+
+    Returns:
+        The file's exact text.
+
+    Raises:
+        InvalidRequestError: If the path escapes the vault, is not a regular
+            file, or is not UTF-8.
+    """
+    target = vault._doc_mgr._validate_path(path)
+    if not stat.S_ISREG(target.stat().st_mode):
+        raise InvalidRequestError(f"{path!r} is not a regular file")
+    try:
+        return target.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise InvalidRequestError(f"{path!r} is not valid UTF-8") from exc
+
+
 def _strip(
     text: str, required: list[str], title_field: str, title: str
 ) -> tuple[str, tuple[str, ...]]:
@@ -49,7 +77,7 @@ def _strip(
         mapping = yaml.safe_load(header)
         node = yaml.compose(header)
     except (yaml.YAMLError, ValueError):
-        return text, ()
+        raise InvalidRequestError("invalid YAML frontmatter") from None
     if not isinstance(mapping, dict) or not isinstance(node, MappingNode):
         return text, ()
     if node.flow_style:
@@ -91,7 +119,7 @@ def _candidate_edits(
         if isinstance(token, (yaml.AnchorToken, yaml.AliasToken))
     ]
     for key, value in node.value:
-        if not isinstance(key, ScalarNode):
+        if not isinstance(key, ScalarNode) or key.tag != "tag:yaml.org,2002:str":
             raise InvalidRequestError("ambiguous frontmatter needs manual inspection")
         name = key.value
         if name in required and name not in _PROTECTED:
@@ -209,7 +237,7 @@ class ReservedFrontmatterRepair:
 
     def _one(self, path: str) -> _PendingRepair | None:
         vault = self._vault
-        _, original = vault._doc_mgr._okf_author_snapshot(path)
+        original = _snapshot(vault, path)
         etag = compute_etag(original.encode("utf-8"))
         folder = path.rpartition("/")[0]
         title = (

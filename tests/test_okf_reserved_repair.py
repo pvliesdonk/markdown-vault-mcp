@@ -483,3 +483,52 @@ def test_empty_header_removal_keeps_prefix_and_body(
     original: str, expected: str
 ) -> None:
     assert _strip(original, ["title"], "title", "Log") == (expected, ("title",))
+
+
+def test_nonstring_yaml_key_does_not_abort_batch(tmp_path: Path) -> None:
+    for folder in ("a", "b", "c"):
+        (tmp_path / folder).mkdir()
+    bad = tmp_path / "b" / "log.md"
+    original = b"---\ntitle: Log\nyes: null\n---\n# Bad\n"
+    bad.write_bytes(original)
+    for folder in ("a", "c"):
+        (tmp_path / folder / "log.md").write_text("---\ntitle: Log\n---\n# Good\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        repair = ReservedFrontmatterRepair(vault)
+        for apply in (False, True):
+            outcomes = {item.path: item for item in repair.run(apply=apply)}
+            assert outcomes["b/log.md"].skip_reason
+            assert outcomes["a/log.md"].keys == ("title",)
+            assert outcomes["c/log.md"].keys == ("title",)
+        assert bad.read_bytes() == original
+        assert (tmp_path / "a" / "log.md").read_text() == "# Good\n"
+        assert (tmp_path / "c" / "log.md").read_text() == "# Good\n"
+    finally:
+        vault.close()
+
+
+def test_large_log_exceeds_interactive_limit_but_is_repaired(tmp_path: Path) -> None:
+    path = tmp_path / "log.md"
+    body = b"# Log\n" + b"x" * 270000
+    original = b"---\ntitle: Log\n---\n" + body
+    path.write_bytes(original)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        repair = ReservedFrontmatterRepair(vault)
+        assert repair.run()[0].keys == ("title",)
+        assert path.read_bytes() == original
+        assert repair.run(apply=True)[0].keys == ("title",)
+        assert path.read_bytes() == body
+    finally:
+        vault.close()
