@@ -30,6 +30,16 @@ class Citation:
 
 
 @dataclass(frozen=True)
+class CitationEdge:
+    """A literal citation label and its resolved resource, if unique."""
+
+    label: str
+    status: Literal["matched", "unmatched", "ambiguous"]
+    occurrences: int
+    resource: str | None
+
+
+@dataclass(frozen=True)
 class CitationReport:
     """Literal source metadata joined without fetching or evaluating evidence."""
 
@@ -175,13 +185,7 @@ def inspect_citation_text(path: str, content: str) -> CitationReport:
         _source_ids(sources) if "sources" in post.metadata else ({}, [], [])
     )
     markers = _markers(strip_frontmatter_block(text))
-    citations = []
-    for label, occurrences in markers.items():
-        indices = ids.get(label, [])
-        status: Literal["matched", "unmatched", "ambiguous"] = "unmatched"
-        if indices:
-            status = "matched" if len(indices) == 1 else "ambiguous"
-        citations.append(Citation(label, status, occurrences, indices))
+    citations = _join(markers, ids)
     return CitationReport(
         path=path,
         returned_text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
@@ -191,3 +195,42 @@ def inspect_citation_text(path: str, content: str) -> CitationReport:
         duplicate_ids=[label for label, indices in ids.items() if len(indices) > 1],
         unkeyed_source_indices=unkeyed,
     )
+
+
+def _join(markers: dict[str, int], ids: dict[str, list[int]]) -> list[Citation]:
+    citations = []
+    for label, occurrences in markers.items():
+        indices = ids.get(label, [])
+        status: Literal["matched", "unmatched", "ambiguous"] = "unmatched"
+        if indices:
+            status = "matched" if len(indices) == 1 else "ambiguous"
+        citations.append(Citation(label, status, occurrences, indices))
+    return citations
+
+
+def citation_edges(text: str) -> list[CitationEdge]:
+    """Extract indexed citation edges from a single note snapshot.
+
+    Args:
+        text: Full decoded note text.
+
+    Returns:
+        Literal labels, statuses, counts and uniquely matched resources.
+    """
+    if "[^" not in text:
+        return []
+    report = inspect_citation_text("", text)
+    if report.sources is None:
+        return []
+    edges = []
+    for citation in report.citations:
+        resource = None
+        if citation.status == "matched" and isinstance(report.sources, list):
+            source = report.sources[citation.source_indices[0]]
+            value = source.get("resource") if isinstance(source, dict) else None
+            if isinstance(value, str) and value:
+                resource = value
+        edges.append(
+            CitationEdge(citation.id, citation.status, citation.occurrences, resource)
+        )
+    return edges

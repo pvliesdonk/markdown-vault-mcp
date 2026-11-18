@@ -738,6 +738,7 @@ class Vault:
             settings: The resolved construction settings (the OKF write
                 toggle gates the convention maintainer).
         """
+        from markdown_vault_mcp.managers.citations import CitationManager
         from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
         from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
 
@@ -747,6 +748,7 @@ class Vault:
             doc_mgr=self._doc_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
+            citation_mgr=CitationManager(self._fts),
             okf_audit=self._okf_audit,
             okf_write_state=lambda: self.okf_write_state(active=True),
         )

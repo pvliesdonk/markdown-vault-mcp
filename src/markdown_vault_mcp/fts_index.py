@@ -195,6 +195,15 @@ CREATE TABLE IF NOT EXISTS document_tags (
 CREATE INDEX IF NOT EXISTS idx_tags_kv ON document_tags(tag_key, tag_value);
 CREATE INDEX IF NOT EXISTS idx_tags_docid ON document_tags(document_id);
 
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+
 CREATE TABLE IF NOT EXISTS links (
     id INTEGER PRIMARY KEY,
     source_id INTEGER NOT NULL,
@@ -508,7 +517,8 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#1446) fills citation edges from each note snapshot.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):
@@ -1439,6 +1449,55 @@ class FTSIndex:
                 ),
             )
 
+    def _insert_citations(
+        self, cur: sqlite3.Cursor, document_id: int, note: ParsedNote
+    ) -> None:
+        cur.executemany(
+            "INSERT INTO citations (document_id, label, status, occurrences, resource) VALUES (?, ?, ?, ?, ?)",
+            [
+                (document_id, edge.label, edge.status, edge.occurrences, edge.resource)
+                for edge in note.citations
+            ],
+        )
+
+    def get_citation_rows(
+        self, resource: str
+    ) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+        """Return matched edges and unresolved labels in notes declaring a resource.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Matched rows and diagnostic rows in path and label order.
+        """
+        from markdown_vault_mcp.exceptions import IndexUnavailableError
+
+        conn = self._conn()
+        if (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='citations'"
+            ).fetchone()
+            is None
+        ):
+            raise IndexUnavailableError(
+                "Older index lacks citations; a writer must reopen it.", reason="broken"
+            )
+        matched = conn.execute(
+            "SELECT d.path, d.title, c.label, c.occurrences FROM citations c JOIN documents d ON d.id=c.document_id WHERE c.resource=? AND c.status='matched' ORDER BY d.path, c.label",
+            (resource,),
+        ).fetchall()
+        diagnostics = conn.execute(
+            """SELECT d.path, c.label, c.status, c.occurrences FROM citations c
+            JOIN documents d ON d.id=c.document_id
+            WHERE c.status IN ('unmatched', 'ambiguous') AND EXISTS (
+              SELECT 1 FROM json_each(d.frontmatter_json, '$.sources') j
+              WHERE CASE WHEN j.type='object' THEN json_extract(j.value, '$.resource') END = ?
+            ) ORDER BY d.path, c.label""",
+            (resource,),
+        ).fetchall()
+        return matched, diagnostics
+
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
         """Delete a document row (cascade deletes sections, headings, tags,
         and the notes_fts rowid bridge entries) and its notes_fts rows.
@@ -1512,6 +1571,7 @@ class FTSIndex:
                 self._insert_tags(cur, doc_id, note)
                 self._insert_aliases(cur, doc_id, note)
                 self._insert_links(cur, doc_id, note)
+                self._insert_citations(cur, doc_id, note)
                 total_chunks += len(note.chunks)
                 logger.debug(
                     "build_from_notes_indexed_note chunk_count=%d path=%s",
@@ -1545,6 +1605,7 @@ class FTSIndex:
             self._insert_tags(cur, doc_id, note)
             self._insert_aliases(cur, doc_id, note)
             self._insert_links(cur, doc_id, note)
+            self._insert_citations(cur, doc_id, note)
         logger.debug(
             "upsert_note_indexed chunk_count=%d path=%s", len(note.chunks), note.path
         )

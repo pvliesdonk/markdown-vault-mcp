@@ -1964,14 +1964,23 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Reverse citation lookup (#1446)
+
+`find_citing_notes(resource)` reads persisted citation edges derived from the
+same decoded note snapshot as frontmatter. A semantic-version rebuild fills the
+new table. Exact resource matches return non-reserved indexed notes and label
+counts; unresolved and ambiguous labels are diagnostics only in notes declaring
+that resource. Navigation links do not create edges. Missing tables on older
+read-only indexes are unavailable rather than empty. No resource is fetched and
+attribution does not establish support.
+
 ### Exact-note citation inspection (#1446, bounded slice)
 
 `ReaderFacet.inspect_citations(path)` and the additive `inspect_citations` MCP
 tool inspect one explicitly selected `.md` note through the existing whole-note
 reader. There is no index-readiness requirement, bundle declaration gate or
-change to OKF annotations. `okf.py`, link scanning, graph navigation and index
-semantics are unchanged. This is a partial implementation of #1446, not a
-vault-wide evidence audit or reverse dependency engine.
+change to OKF annotations. `okf.py`, link scanning and graph navigation are
+unchanged. This is not a vault-wide evidence audit.
 
 `citations.inspect_citation_text` takes only the returned content string. It
 parses its metadata and body together, never using `NoteContent.frontmatter` or
@@ -1991,7 +2000,7 @@ stable under source reordering; response-local list indices do not.
 
 Scope and syntax limits accompany every result. Nothing fetches sources,
 traverses another note, infers evidentiary support or truth, writes metadata,
-redefines index rows, or widens access. Source strings are data, not instructions.
+or widens access. Source strings are data, not instructions.
 The [user guide](../use/okf.md#inspect-citations-in-one-note) states the supported
 syntax and the [OKF reference](reference/okf-v0.2.md#citation-joins-checked-2026-11-15)
 records the current source/footnote distinction.

@@ -273,3 +273,11 @@ The export reads from the live vault and never changes it. Wikilinks become the 
 It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the **index** currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run `okf_validate`. Run `okf_validate` yourself before you publish, and read `get_index_status.skipped_files` to see what the index is leaving out.
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
+
+### Find notes citing a source
+
+Call `find_citing_notes(resource="https://example.org/source")` to find indexed
+non-reserved notes with literal footnote labels matching a source record for that
+exact resource. The result includes label occurrence counts and unresolved or
+ambiguous labels in notes declaring the resource. Body links alone do not count.
+The lookup does not fetch resources or assess whether they support a claim.

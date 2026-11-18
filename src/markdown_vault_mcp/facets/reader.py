@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any, Literal
 
+    from markdown_vault_mcp.managers.citations import CitationManager
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
@@ -70,6 +71,7 @@ class ReaderFacet:
         doc_mgr: DocumentManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
+        citation_mgr: CitationManager | None = None,
         okf_audit: Callable[[], OkfAuditReport] | None = None,
         okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
@@ -85,6 +87,7 @@ class ReaderFacet:
                 the composition root does not provide one.
             okf_write_state: Configured and effective write-layer projection.
         """
+        self._citation_mgr = citation_mgr
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
         self._git_query_mgr = git_query_mgr
@@ -230,6 +233,20 @@ class ReaderFacet:
                 *section* is empty or names no heading.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def find_citing_notes(self, resource: str) -> dict[str, Any]:
+        """Find indexed notes citing an exact resource.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Citing notes and unresolved label diagnostics.
+        """
+        self._require_built()
+        if self._citation_mgr is None:
+            raise RuntimeError("Citation manager is not wired")
+        return self._citation_mgr.find_citing(resource)
 
     def inspect_citations(self, path: str) -> CitationReport:
         """Inspect exact source attribution in one whole-note text snapshot.

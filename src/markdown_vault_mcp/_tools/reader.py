@@ -261,6 +261,41 @@ def register(mcp: FastMCP) -> None:
         return asdict(report)
 
     @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Find Citing Notes",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    @needs_queryable()
+    async def find_citing_notes(
+        resource: str,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Find indexed notes citing an exact source resource and unresolved labels.
+
+        Args:
+            resource: Exact source resource string from a note's sources.
+            wait_for_pending_writes: Wait for pending writes to reach the index.
+
+        Returns:
+            Citing notes with labels and counts, plus unresolved diagnostics.
+        """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "find_citing_notes"
+        )
+        gen_before = vault.index.write_generation()
+        result = await asyncio.to_thread(vault.reader.find_citing_notes, resource)
+        return _staleness_result(
+            vault, result, drained_on_request=drained, gen_before=gen_before
+        )
+
+    @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
         annotations={
             "title": "List Documents",

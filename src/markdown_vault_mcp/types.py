@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, TypeAlias
 
 if TYPE_CHECKING:
     from markdown_vault_mcp._identity import Principal
+    from markdown_vault_mcp.citations import CitationEdge
     from markdown_vault_mcp.providers import EmbeddingProvider
 
 # The four deterministic, non-excluded skip categories surfaced via
@@ -126,6 +127,7 @@ class ParsedNote:
     links: list[LinkInfo] = field(default_factory=list)
     content_chars: int = 0
     headings: list[TocEntry] = field(default_factory=list)
+    citations: list[CitationEdge] = field(default_factory=list)
 
 
 @dataclass

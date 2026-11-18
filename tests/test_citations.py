@@ -252,3 +252,49 @@ def test_definition_interrupts_paragraph_without_becoming_a_marker() -> None:
         "one.md", "Claim[^a]\n[^definition]: prose[^hidden]\n"
     )
     assert [citation.id for citation in report.citations] == ["a"]
+
+
+def test_indexed_citation_edges_use_exact_yaml_keys() -> None:
+    from markdown_vault_mcp.citations import citation_edges
+
+    text = '---\n"\\x73ources":\n  - id: a\n    resource: urn:one\n---\nClaim[^a] twice[^a] and [^missing].'
+    edges = citation_edges(text)
+    assert [(e.label, e.status, e.occurrences, e.resource) for e in edges] == [
+        ("a", "matched", 2, "urn:one"),
+        ("missing", "unmatched", 1, None),
+    ]
+
+
+def test_reverse_citations_are_distinct_from_links(tmp_path: Path) -> None:
+    resource = "https://example.invalid/source"
+    for name in ("one", "two", "three"):
+        (tmp_path / f"{name}.md").write_text(
+            _note(
+                [{"id": "a", "resource": resource}],
+                "Claim[^a] and again[^a] and [^missing]",
+            ),
+            encoding="utf-8",
+        )
+    (tmp_path / "index.md").write_text(
+        _note([{"id": "a", "resource": resource}], "[^a]"), encoding="utf-8"
+    )
+    (tmp_path / "link.md").write_text(f"[link]({resource})", encoding="utf-8")
+    (tmp_path / "unused.md").write_text(
+        _note([{"id": "a", "resource": resource}], "unused"), encoding="utf-8"
+    )
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        result = vault.reader.find_citing_notes(resource)
+        assert [row["path"] for row in result["citing"]] == [
+            "one.md",
+            "three.md",
+            "two.md",
+        ]
+        assert all(
+            row["labels"] == [{"label": "a", "occurrences": 2}]
+            for row in result["citing"]
+        )
+        assert [row["label"] for row in result["diagnostics"]] == ["missing"] * 3
+    finally:
+        vault.close()

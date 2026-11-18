@@ -22,6 +22,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Reader | [`search`](reader.md#search) | Search Vault | Search notes by keyword and meaning; returns notes ranked by score, each with its best-matching sections as snippets. |
 | Reader | [`read`](reader.md#read) | Read Note | Return a note's text, frontmatter and etag, or an attachment's bytes as base64. |
 | Reader | [`inspect_citations`](reader.md#inspect_citations) | Inspect Note Citations | Join a note's literal footnote labels to its source records. |
+| Reader | [`find_citing_notes`](reader.md#find_citing_notes) | Find Citing Notes | Find indexed notes citing an exact source resource and unresolved labels. |
 | Reader | [`list_documents`](reader.md#list_documents) | List Documents | List notes, and optionally attachments, with path, title and frontmatter but no body text. |
 | Reader | [`list_folders`](reader.md#list_folders) | List Folders | List every folder that holds notes; `""` stands for the top level. |
 | Reader | [`list_tags`](reader.md#list_tags) | List Tags | List the distinct values one indexed frontmatter field takes across the vault. |

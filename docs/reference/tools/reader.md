@@ -189,6 +189,27 @@ exact ID join. Source support remains unchecked. See [syntax coverage](../../use
 
 <!-- DOMAIN-EXAMPLE-inspect_citations-END -->
 
+## `find_citing_notes`
+
+**Find Citing Notes.** Read-only. Idempotent.
+
+Find indexed notes citing an exact source resource and unresolved labels.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `resource` | `string` | required | Exact source resource string from a note's sources. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Citing notes with labels and counts, plus unresolved diagnostics.
+
+<!-- DOMAIN-EXAMPLE-find_citing_notes-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-find_citing_notes-END -->
+
 ## `list_documents`
 
 **List Documents.** Read-only. Idempotent.
