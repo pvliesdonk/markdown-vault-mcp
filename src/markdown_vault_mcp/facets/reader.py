@@ -122,6 +122,8 @@ class ReaderFacet:
     ) -> BundleInspection:
         """Inspect one page of concept candidates without building an index.
 
+        Unavailable directory boundaries remain visible regardless of filters.
+
         Args:
             request: Explicit root, page limit and optional continuation.
             type_state: Filter by observed type presence.
@@ -139,10 +141,13 @@ class ReaderFacet:
             entries=tuple(
                 entry
                 for entry in page.entries
-                if entry.role == "concept_candidate"
-                and (type_state is None or entry.type_state == type_state)
-                and (parse_state is None or entry.parse_state == parse_state)
-                and (search_state is None or entry.search_state == search_state)
+                if (entry.role == "directory" and entry.state == "unavailable")
+                or (
+                    entry.role == "concept_candidate"
+                    and (type_state is None or entry.type_state == type_state)
+                    and (parse_state is None or entry.parse_state == parse_state)
+                    and (search_state is None or entry.search_state == search_state)
+                )
             ),
         )
 

@@ -50,6 +50,9 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Inspect concept candidates in a bundle, including notes outside search.
 
+        Unavailable depth boundaries are returned even when filters do not match;
+        select the boundary path as root to continue below it.
+
         Args:
             root: Vault-relative bundle root; use an empty string for the vault root.
             type_state: Filter by observed type presence, such as absent.

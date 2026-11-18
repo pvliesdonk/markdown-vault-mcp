@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from dataclasses import asdict, replace
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -24,6 +25,8 @@ from markdown_vault_mcp.exceptions import (
     ConfigurationError,
     IndexUnavailableError,
     MarkdownMCPError,
+    StoreCorruptError,
+    StoreUnavailableError,
 )
 
 
@@ -36,11 +39,24 @@ def _local(arguments: dict[str, Any], source: str | None) -> dict[str, Any]:
         summarize_openai_base_url=None,
     )
     path = config.index_path
-    existing = path is not None and str(path) != ":memory:" and path.is_file()
+    same_source = (
+        source is None or Path(source).resolve() == config.source_dir.resolve()
+    )
+    existing = (
+        same_source and path is not None and str(path) != ":memory:" and path.is_file()
+    )
     if not existing:
         state_path = to_vault_settings(config).effective_state_path(config.source_dir)
         config = replace(config, index_path=None, state_path=state_path)
-    built = _build_reader_vault(config, source, False)
+    try:
+        built = _build_reader_vault(config, source, False)
+    except (StoreCorruptError, StoreUnavailableError) as exc:
+        if not existing or exc.backend != "sqlite" or exc.location != str(path):
+            raise
+        state_path = to_vault_settings(config).effective_state_path(config.source_dir)
+        config = replace(config, index_path=None, state_path=state_path)
+        existing = False
+        built = _build_reader_vault(config, source, False)
     try:
         if existing:
             with suppress(IndexUnavailableError):

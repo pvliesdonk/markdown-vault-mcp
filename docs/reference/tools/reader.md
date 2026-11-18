@@ -670,6 +670,9 @@ complete traversal, truth, or editorial-policy compliance.
 
 Inspect concept candidates in a bundle, including notes outside search.
 
+Unavailable depth boundaries are returned even when filters do not match;
+select the boundary path as root to continue below it.
+
 **Parameters**
 
 | Name | Type | Default | Description |
