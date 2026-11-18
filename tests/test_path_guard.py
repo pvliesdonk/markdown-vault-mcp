@@ -562,6 +562,7 @@ def test_rename_backlink_replaced_by_external_symlink_notifies(
         assert not (root / "target.md").exists()
         assert outside.read_text() == "outside"
         assert any({"target.md", "new.md"} <= set(paths) for paths in dirty)
+        assert vault._write_callback.drain(timeout=5)
         assert "rename" in callbacks
     finally:
         vault.close()
