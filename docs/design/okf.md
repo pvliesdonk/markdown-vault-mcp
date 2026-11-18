@@ -769,9 +769,10 @@ audits the final ZIP and reports a `conformant`, `nonconformant` or `incomplete`
 sections of `* [Title](url) - description` entries; §9 describes logs as "a
 flat list of date-grouped entries, newest first". One reading treats these as
 examples or advice; this audit reads §11's requirement that reserved files
-follow §8 and §9 as a format rule. Indexes allow headings and flat bullet
-entries with a nonempty linked title, optionally followed by ` - ` and a
-description. Other blocks, nested lists, and extra paragraphs are findings.
+follow §8 and §9 as a format rule. The audit checks index entry shape only: every list item must be a flat entry
+with a nonempty linked title, optionally followed by ` - ` and a description.
+§8 defines no other body grammar, so introductory prose, headings and other
+non-list blocks are not findings; a nested list or multi-paragraph item is.
 The existing index generator writes descriptions verbatim: a multi-paragraph
 description can therefore produce an index the audit reports nonconformant.
 Logs permit H1 titles before the first date and require valid ISO dates in

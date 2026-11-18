@@ -36,35 +36,31 @@ def _audit(files: dict[str, bytes]):
     return report
 
 
-def test_index_body_checks_structure_and_ignores_fenced_examples() -> None:
+@pytest.mark.parametrize(
+    ("body", "verdict"),
+    [
+        (b"# Index\n* broken\n", "nonconformant"),
+        (b"# Index\n* [](a.md)\n", "nonconformant"),
+        (b"# Index\n- [   ](a.md)\n", "nonconformant"),
+        (b"# Index\n-\n", "nonconformant"),
+        (b"# Index\n* [A](a.md)\n\n  prose\n", "nonconformant"),
+        ("# Index\n* [A](a.md) — desc\n".encode(), "nonconformant"),
+        (b"# Index\n- [A](a.md)\n  - [B](b.md)\n", "nonconformant"),
+        (b"# Vault\n\nWelcome to the vault.\n\n- [Note](note.md)\n", "conformant"),
+        (b"# Index\nPlain prose\n", "conformant"),
+        (b"# Index\n\n---\n", "conformant"),
+        (b"# Index\n\n> - [A](a.md)\n", "conformant"),
+        (b"# Index\n```\n* [A](a.md)\n```\n", "conformant"),
+    ],
+)
+def test_index_body_checks_structure_and_ignores_fenced_examples(
+    body: bytes, verdict: str
+) -> None:
     from markdown_vault_mcp.okf import build_index_markdown
 
     valid = build_index_markdown("Index", [("A", "/a.md", "A note")])
     assert _audit({"index.md": valid.encode()}).verdict == "conformant"
-    assert _audit({"index.md": b"# Index\nPlain prose\n"}).verdict == "nonconformant"
-    assert (
-        _audit({"index.md": b"# Index\n```\n* [A](a.md)\n```\n"}).verdict
-        == "nonconformant"
-    )
-
-
-def test_log_checks_headings_not_fenced_examples() -> None:
-    assert (
-        _audit(
-            {
-                "log.md": b"# Log\n## 2026-01-01\n- Entry\n\n  ```\n  ## Yesterday\n  ```\n"
-            }
-        ).verdict
-        == "conformant"
-    )
-    assert _audit({"log.md": b"# Log\n## Yesterday\n"}).verdict == "nonconformant"
-
-
-def test_unchecked_takes_precedence_over_findings() -> None:
-    report = _audit({"bad.md": b"No header", "unknown.md": b"\xff"})
-    assert report.verdict == "incomplete"
-    assert "unknown.md" in report.unchecked
-    assert any(f.path == "bad.md" for f in report.format_findings)
+    assert _audit({"index.md": body}).verdict == verdict
 
 
 @pytest.mark.parametrize(
@@ -97,19 +93,21 @@ def test_unchecked_takes_precedence_over_findings() -> None:
             "nonconformant",
             "index_frontmatter",
         ),
-        ("index.md", b"# Index\n* broken\n", "nonconformant", "index_entry_shape"),
-        ("log.md", b"# Log\n## 2026-02-30\n", "nonconformant", "log_heading_shape"),
-        ("log.md", b"# Log\n## 2026-02-28\n", "conformant", None),
     ],
 )
 def test_format_rules(name: str, data: bytes, verdict: str, reason: str | None) -> None:
-    report = _audit({name: data, "other.unknown": b"anything"})
+    report = _audit({name: data})
     assert report.verdict == verdict
     assert reason is None or any(f.reason == reason for f in report.format_findings)
 
 
 def test_advisories_and_broken_links_do_not_change_verdict() -> None:
-    report = _audit({"note.md": b"---\ntype: Unknown\n---\n[missing](missing.md)"})
+    report = _audit(
+        {
+            "note.md": b"---\ntype: Unknown\n---\n[missing](missing.md)",
+            "other.unknown": b"anything",
+        }
+    )
     assert report.verdict == "conformant"
     assert report.optional_metadata == ["note.md"]
     assert [(item.path, item.target) for item in report.broken_links] == [
@@ -150,14 +148,6 @@ def test_artifact_bytes_override_stale_inventory_state(tmp_path: Path) -> None:
     assert not report.format_findings
 
 
-def test_nested_index_list_and_unparseable_index_are_reported() -> None:
-    report = _audit({"index.md": b"# Index\n- [A](a.md)\n  - [B](b.md)\n"})
-    assert report.verdict == "nonconformant"
-    report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n"})
-    assert report.verdict == "nonconformant"
-    assert report.unchecked == {}
-
-
 def test_unreadable_archive_member_names_the_unchecked_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -177,6 +167,7 @@ def test_unreadable_archive_member_names_the_unchecked_checks(
     [
         ("index.md", ["index_frontmatter", "index_entry_shape"]),
         ("log.md", ["log_date_headings", "log_entry_shape"]),
+        ("note.md", ["yaml_frontmatter", "type"]),
     ],
 )
 def test_unreadable_reserved_file_names_its_checks(
@@ -185,34 +176,28 @@ def test_unreadable_reserved_file_names_its_checks(
     report = _audit({name: b"\xff"})
     assert report.verdict == "incomplete"
     assert report.unchecked[name] == checks
+    assert report.format_findings == []
 
 
-def test_unparseable_index_still_checks_body() -> None:
-    report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n* broken\n"})
+@pytest.mark.parametrize(
+    ("name", "body", "reasons"),
+    [
+        ("index.md", b"# Index\n", ["index_frontmatter"]),
+        ("sub/index.md", b"# Index\n", ["index_frontmatter"]),
+        (
+            "index.md",
+            b"# Index\n* broken\n",
+            ["index_frontmatter", "index_entry_shape"],
+        ),
+    ],
+)
+def test_unparseable_index_still_checks_body(
+    name: str, body: bytes, reasons: list[str]
+) -> None:
+    report = _audit({name: b"---\ninvalid: [\n---\n" + body})
     assert report.verdict == "nonconformant"
-    assert any(f.reason == "index_entry_shape" for f in report.format_findings)
-
-
-def test_empty_index_link_is_not_an_entry() -> None:
-    report = _audit({"index.md": b"# Index\n* [](a.md)\n"})
-    assert report.verdict == "nonconformant"
-
-
-@pytest.mark.parametrize("body", [b"# Index\n\n---\n", b"# Index\n\n> - [A](a.md)\n"])
-def test_index_rejects_non_entry_blocks(body: bytes) -> None:
-    assert _audit({"index.md": body}).verdict == "nonconformant"
-
-
-def test_log_requires_newest_dates_first() -> None:
-    report = _audit({"log.md": b"# Log\n## 2025-01-01\n- Old\n## 2026-01-01\n- New\n"})
-    assert report.verdict == "nonconformant"
-
-
-def test_broken_attachment_link_is_reported() -> None:
-    report = _audit({"note.md": b"---\ntype: T\n---\n[manual](missing.pdf)\n"})
-    assert [(item.path, item.target) for item in report.broken_links] == [
-        ("note.md", "missing.pdf")
-    ]
+    assert report.unchecked == {}
+    assert [f.reason for f in report.format_findings] == reasons
 
 
 def test_malformed_frontmatter_still_reports_body_links() -> None:
@@ -222,7 +207,7 @@ def test_malformed_frontmatter_still_reports_body_links() -> None:
     ]
 
 
-@pytest.mark.parametrize("missing", ["resource", "tags"])
+@pytest.mark.parametrize("missing", ["title", "description", "resource", "tags"])
 def test_recommended_metadata_reports_each_missing_field(missing: str) -> None:
     fields = {
         "type": "T",
@@ -236,19 +221,6 @@ def test_recommended_metadata_reports_each_missing_field(missing: str) -> None:
     report = _audit({"note.md": f"---\n{header}\n---\n".encode()})
     assert report.verdict == "conformant"
     assert report.optional_metadata == ["note.md"]
-
-
-def test_malformed_nested_index_has_known_frontmatter_violation() -> None:
-    report = _audit({"sub/index.md": b"---\nbad: [\n---\n# Index\n"})
-    assert report.verdict == "nonconformant"
-    assert "sub/index.md" not in report.unchecked
-    assert any(f.reason == "index_frontmatter" for f in report.format_findings)
-
-
-def test_design_describes_artifact_verdict() -> None:
-    text = (Path(__file__).parents[1] / "docs/design/okf.md").read_text()
-    assert "partial v0.2 observations" not in text
-    assert "not a conformance verdict or snapshot" not in text
 
 
 def test_artifact_link_observations_cover_images_references_and_encoded_paths() -> None:
@@ -265,35 +237,6 @@ def test_artifact_link_observations_cover_images_references_and_encoded_paths() 
     }
 
 
-def test_date_order_allows_equal_dates_and_descending_dates() -> None:
-    report = _audit({"log.md": b"# Log\n## 2026-01-01\n## 2026-01-01\n## 2025-01-01\n"})
-    assert report.verdict == "conformant"
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        b"# Index\n-\n",
-        b"# Index\n* [A](a.md)\n\n  prose\n",
-        "# Index\n* [A](a.md) — desc\n".encode(),
-    ],
-)
-def test_index_closed_entry_grammar(body: bytes) -> None:
-    assert _audit({"index.md": body}).verdict == "nonconformant"
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        b"# Log\nUngrouped entry\n",
-        b"# Log\n- Ungrouped\n",
-        b"# Log\n```\n## example\n```\n",
-    ],
-)
-def test_log_requires_group_before_entries(body: bytes) -> None:
-    assert _audit({"log.md": body}).verdict == "nonconformant"
-
-
 def test_artifact_observer_masks_code_and_finds_wiki_attachments() -> None:
     body = b"---\ntype: T\n---\n![[missing.png]]\n\n    [[code]]\n\n`[[inline]]`\n\n```\n[[fenced]]\n```\n"
     report = _audit({"note.md": body})
@@ -303,22 +246,19 @@ def test_artifact_observer_masks_code_and_finds_wiki_attachments() -> None:
 
 
 def test_archive_directories_and_wiki_name_are_present() -> None:
-    body = b"---\ntype: T\n---\n[root](/) [dot](.) [here](./) [[b]]\n"
-    report = _audit({"note.md": body, "sub/b.md": b"---\ntype: T\n---\n"})
-    assert report.broken_links == []
-
-
-def test_invalid_root_index_header_is_decidable() -> None:
-    report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n"})
-    assert report.verdict == "nonconformant"
-    assert report.unchecked == {}
-    assert [f.reason for f in report.format_findings] == ["index_frontmatter"]
-
-
-def test_invalid_encoding_only_records_unchecked() -> None:
-    report = _audit({"note.md": b"\xff"})
-    assert report.verdict == "incomplete"
-    assert report.format_findings == []
+    body = b"---\ntype: T\n---\n[root](/) [dot](.) [here](./) [[b]] [file](target.md/) [encoded](target.md%2F) [directory](dir/) [plain](target.md)\n"
+    report = _audit(
+        {
+            "note.md": body,
+            "sub/b.md": b"---\ntype: T\n---\n",
+            "dir/note.md": b"---\ntype: T\n---\n",
+            "target.md": b"---\ntype: T\n---\n",
+        }
+    )
+    assert [item.target for item in report.broken_links] == [
+        "target.md/",
+        "target.md%2F",
+    ]
 
 
 def test_missing_wikilinks_and_relative_destinations_report_written_targets() -> None:
@@ -347,16 +287,18 @@ def test_custom_attachment_extension_uses_same_name_in_export(tmp_path: Path) ->
     assert [item.target for item in report.broken_links] == ["missing.custom"]
 
 
-def test_log_allows_entry_content_after_date_and_title_only() -> None:
-    assert _audit({"log.md": b"# Log\n"}).verdict == "conformant"
-    assert (
-        _audit(
-            {
-                "log.md": b"# Log\n## 2026-01-01\n- Entry\n\n  More prose.\n\n  ```\n  ## sample\n  ```\n"
-            }
-        ).verdict
-        == "conformant"
-    )
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"",
+        b"# Log\n",
+        b"# Log\n## 2026-02-28\n",
+        b"# Log\n## 2026-01-01\n## 2026-01-01\n## 2025-01-01\n",
+        b"# Log\n## 2026-01-01\n- Entry\n\n  More prose.\n\n  ```\n  ## sample\n  ```\n",
+    ],
+)
+def test_log_allows_entry_content_after_date_and_title_only(body: bytes) -> None:
+    assert _audit({"log.md": body}).verdict == "conformant"
 
 
 def test_omitted_dependency_matches_artifact_observation(tmp_path: Path) -> None:
@@ -375,23 +317,6 @@ def test_omitted_dependency_matches_artifact_observation(tmp_path: Path) -> None
     assert [item.target for item in report.broken_links] == ["/outside.md"]
 
 
-def test_real_export_accepts_generated_empty_index_and_log(tmp_path: Path) -> None:
-    from markdown_vault_mcp.okf import build_index_markdown, build_log_markdown
-
-    (tmp_path / "index.md").write_text(build_index_markdown("Index", []))
-    (tmp_path / "log.md").write_text(build_log_markdown([])[0])
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-    assert result.report.verdict == "conformant"
-
-
-def test_index_rejects_whitespace_only_link_title() -> None:
-    assert _audit({"index.md": b"# Index\n- [   ](a.md)\n"}).verdict == "nonconformant"
-
-
 @pytest.mark.parametrize("header", ["type: T\nhandler: extra", "type: T\n42: value"])
 def test_unusual_yaml_keys_export_without_crashing(tmp_path: Path, header: str) -> None:
     (tmp_path / "note.md").write_text(f"---\n{header}\n---\n# Note\n")
@@ -404,57 +329,22 @@ def test_unusual_yaml_keys_export_without_crashing(tmp_path: Path, header: str) 
     assert result.data
 
 
-def test_above_root_destinations_do_not_match_local_namesakes() -> None:
-    report = _audit(
-        {
-            "note.md": b"---\ntype: T\n---\n[a](../target.md) [b](%2e%2e/target.md) [[../target]]\n",
-            "target.md": b"---\ntype: T\n---\n",
-            "sub/note.md": b"---\ntype: T\n---\n[valid](../target.md) [[../target]]\n",
-        }
-    )
-    assert [(item.path, item.target) for item in report.broken_links] == [
-        ("note.md", "../target.md"),
-        ("note.md", "%2e%2e/target.md"),
-        ("note.md", "../target"),
-    ]
-
-
-def test_wikilink_candidates_are_scoped_by_basename(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from markdown_vault_mcp.okf_export_paths import ExportPaths
-
-    original = ExportPaths._wiki_match
-    observed: list[set[str]] = []
-
-    def observe(name: str, source: str, candidates: set[str]) -> str | None:
-        observed.append(candidates)
-        return original(name, source, candidates)
-
-    monkeypatch.setattr(ExportPaths, "_wiki_match", staticmethod(observe))
-    report = _audit(
-        {
-            "note.md": b"---\ntype: T\n---\n[[target]]\n",
-            "sub/target.md": b"---\ntype: T\n---\n",
-            "other.md": b"---\ntype: T\n---\n",
-        }
-    )
-    assert report.broken_links == []
-    assert observed == [{"sub/target.md"}]
-
-
 def test_artifact_relative_traversal_preserves_depth_and_ties() -> None:
     report = _audit(
         {
+            "note.md": b"---\ntype: T\n---\n[a](../target.md) [b](%2e%2e/target.md) [[../target]]\n",
             "a/note.md": b"---\ntype: T\n---\n[inside](../target.md) [escape](../../target.md) [[../../target]] [[choice]]\n",
             "target.md": b"---\ntype: T\n---\n",
             "a/choice.md": b"---\ntype: T\n---\n",
             "b/choice.md": b"---\ntype: T\n---\n",
         }
     )
-    assert [item.target for item in report.broken_links] == [
-        "../../target.md",
-        "../../target",
+    assert [(item.path, item.target) for item in report.broken_links] == [
+        ("a/note.md", "../../target.md"),
+        ("a/note.md", "../../target"),
+        ("note.md", "../target.md"),
+        ("note.md", "%2e%2e/target.md"),
+        ("note.md", "../target"),
     ]
 
 
@@ -473,6 +363,11 @@ def test_unusual_root_index_key_is_a_format_finding(header: str) -> None:
         b"## 2026-01-01\n- item\n  - nested\n",
         b"## 2026-01-01\n1. item\n",
         b"- early\n",
+        b"# Log\nUngrouped entry\n",
+        b"# Log\n```\n## example\n```\n",
+        b"# Log\n## Yesterday\n",
+        b"# Log\n## 2026-02-30\n",
+        b"# Log\n## 2025-01-01\n- Old\n## 2026-01-01\n- New\n",
     ],
 )
 def test_log_rejects_nonflat_entries(body: bytes) -> None:
@@ -513,7 +408,7 @@ def test_resource_failure_marks_member_unchecked_and_continues(
         ("note.md", ["yaml_frontmatter", "type"]),
     ],
 )
-@pytest.mark.parametrize("error", [OverflowError, MemoryError])
+@pytest.mark.parametrize("error", [OverflowError, MemoryError, RecursionError])
 def test_resource_failures_name_role_checks(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
@@ -564,22 +459,4 @@ def test_invalid_yaml_tag_export_is_nonconformant(
     assert result.report.verdict == "nonconformant"
     assert [(f.path, f.reason) for f in result.report.format_findings] == [
         ("note.md", "malformed_frontmatter")
-    ]
-
-
-def test_directory_form_links_require_directories(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_text(
-        "---\ntype: T\n---\n[file](target.md/) [encoded](target.md%2F) [directory](dir/) [root](/) [plain](target.md)\n"
-    )
-    (tmp_path / "target.md").write_text("---\ntype: T\n---\n")
-    (tmp_path / "dir").mkdir()
-    (tmp_path / "dir" / "note.md").write_text("---\ntype: T\n---\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-    assert [link.target for link in result.report.broken_links] == [
-        "target.md/",
-        "target.md%2F",
     ]

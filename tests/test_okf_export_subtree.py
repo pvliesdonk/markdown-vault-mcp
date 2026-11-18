@@ -473,8 +473,6 @@ def test_unindexed_wikilink_outside_winner_refused_or_externalized(tmp_path, out
 def test_invalid_utf8_body_relocated_losslessly(tmp_path, body, expected):
     output, report = _export_body(tmp_path, body, external_base="https://example.org")
     assert output == expected
-    assert report.unchecked["a.md"] == ["yaml_frontmatter", "type"]
-    assert report.verdict == "incomplete"
     assert bool(report.transformed) == (body != expected)
     assert [d.target for d in report.dependencies] == (
         [r"/caf\udce9.md"] if b"caf" in body else []

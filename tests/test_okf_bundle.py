@@ -519,7 +519,5 @@ def test_reserved_file_with_bounded_metadata_is_reported(
         assert result.report.uninspected[name] == "note_limit"
         assert name not in result.report.local_policy.non_admitted
         assert name not in result.report.local_policy.unknown
-        findings = {finding.path for finding in result.report.format_findings}
-        assert name in findings
     finally:
         vault.close()

@@ -28,31 +28,24 @@ if TYPE_CHECKING:
 _MARKDOWN = MarkdownIt("commonmark")
 
 
+_INDEX_ITEM = [
+    "list_item_open",
+    "paragraph_open",
+    "inline",
+    "paragraph_close",
+    "list_item_close",
+]
+
+
 def _index_body_conforms(body: str) -> bool:
+    """Check every list item is a flat linked entry; other blocks are not entries."""
     tokens = _MARKDOWN.parse(body)
-    index = 0
-    while index < len(tokens):
-        kind = tokens[index].type
-        if kind == "heading_open":
-            index += 3
-        elif kind in {"bullet_list_open", "bullet_list_close"}:
-            index += 1
-        elif kind == "list_item_open":
-            item = tokens[index : index + 5]
-            if [t.type for t in item] != [
-                "list_item_open",
-                "paragraph_open",
-                "inline",
-                "paragraph_close",
-                "list_item_close",
-            ]:
-                return False
-            if not _index_entry_conforms(item[2].children or []):
-                return False
-            index += 5
-        else:
-            return False
-    return True
+    return all(
+        [t.type for t in tokens[i : i + 5]] == _INDEX_ITEM
+        and _index_entry_conforms(tokens[i + 2].children or [])
+        for i, token in enumerate(tokens)
+        if token.type == "list_item_open"
+    )
 
 
 def _index_entry_conforms(children: list[Token]) -> bool:
