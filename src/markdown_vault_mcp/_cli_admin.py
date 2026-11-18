@@ -49,17 +49,21 @@ def strip_seeded_frontmatter(
             )
         )
         try:
-            for item in ReservedFrontmatterRepair(built.vault).run(
+            items = ReservedFrontmatterRepair(built.vault).run(
                 apply=apply, allow_protected=True
-            ):
+            )
+            if not items:
+                typer.echo("Nothing to repair.")
+            action = "Removed" if apply else "Would remove"
+            for item in items:
                 for key in item.keys:
-                    typer.echo(f"{item.path}: {key}")
+                    typer.echo(f"{action} {item.path}: {key}")
         finally:
             built.close()
     except (MarkdownMCPError, OSError) as exc:
         if apply:
             typer.echo(
-                "Earlier files may already have been changed; inspect the vault before retrying.",
+                "This batch has no rollback; inspect the vault before retrying.",
                 err=True,
             )
         typer.echo(f"ERROR: {exc}", err=True)

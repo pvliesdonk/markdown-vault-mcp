@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from markdown_vault_mcp._okf_reserved_repair import ReservedFrontmatterRepair, _strip
 from markdown_vault_mcp.cli import app
-from markdown_vault_mcp.exceptions import ReadOnlyError
+from markdown_vault_mcp.exceptions import InvalidRequestError, ReadOnlyError
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
@@ -45,7 +45,7 @@ def test_preview_and_apply_including_excluded_notes(tmp_path: Path) -> None:
             root.read_text()
             == '---\nokf_version: "0.2"\nconflict_with: null\ncustom: null\n---\n# Index\n'
         )
-        assert log.read_text() == "---\n---\n# Log\n"
+        assert log.read_text() == "# Log\n"
         assert edited.read_text() == "---\ntitle: Hand edited\n---\n# Guide\n"
     finally:
         vault.close()
@@ -70,7 +70,7 @@ def test_read_only_allows_preview_but_refuses_apply(tmp_path: Path) -> None:
 
 def test_surgical_splice_preserves_crlf_and_comments() -> None:
     original = "---\r\ntitle: Log\r\ntype: null # user comment\r\nother: value\r\n---\r\n# Log\r\n"
-    changed, keys = _strip(original, ["title", "type"], "title", "Log")
+    changed, keys = _strip(original, ["title"], "title", "Log")
     assert keys == ("title",)
     assert changed == original.replace("title: Log\r\n", "")
 
@@ -87,11 +87,19 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     runner = CliRunner()
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
     assert result.exit_code == 0, result.output
-    assert "log.md: title" in result.stdout and "log.md: type" in result.stdout
+    assert (
+        "Would remove log.md: title" in result.stdout
+        and "Would remove log.md: type" in result.stdout
+    )
     assert "title: Log" in log.read_text()
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
     assert result.exit_code == 0, result.output
-    assert log.read_text() == "---\n---\n# Log\n"
+    assert "Removed log.md: title" in result.stdout
+    assert log.read_text() == "# Log\n"
+    result = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
+    assert "Nothing to repair" in result.stdout
+    result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
+    assert "Nothing to repair" in result.stdout
 
 
 def test_apply_designated_index_preserves_other_bytes(tmp_path: Path) -> None:
@@ -155,4 +163,143 @@ def test_custom_title_and_concurrent_edit(
 
 def test_ambiguous_yaml_is_left_unchanged() -> None:
     original = "---\ntitle: Log\ntitle: Log\ntype: null\n---\nbody\n"
-    assert _strip(original, ["title", "type"], "title", "Log") == (original, ())
+    with pytest.raises(InvalidRequestError, match="manual"):
+        _strip(original, ["title", "type"], "title", "Log")
+
+
+def test_empty_header_removed_and_audit_passes(tmp_path: Path) -> None:
+    from markdown_vault_mcp.okf import audit_bundle
+
+    folder = tmp_path / "guides"
+    folder.mkdir()
+    path = folder / "index.md"
+    path.write_bytes(b"\xef\xbb\xbf---\ntitle: guides\ntype: null\n---\n\n# guides\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title", "type"]
+        ),
+    )
+    try:
+        assert audit_bundle(tmp_path).index_frontmatter.count == 1
+        assert ReservedFrontmatterRepair(vault).run(apply=True)
+        assert path.read_bytes() == b"\xef\xbb\xbf\n# guides\n"
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("title", ["R&D", "Hello # World", "*star*"])
+def test_literal_yaml_characters_in_title_are_removed(title: str) -> None:
+    import yaml
+
+    encoded = yaml.safe_dump({"title": title}, allow_unicode=True)
+    original = f"---\n{encoded}---\n# Body\n"
+    assert _strip(original, ["title"], "title", title) == ("# Body\n", ("title",))
+
+
+def test_comment_survives_when_last_key_removed() -> None:
+    original = "---\n# Keep this\ntitle: Log\n---\n# Body\n"
+    assert _strip(original, ["title"], "title", "Log") == (
+        "---\n# Keep this\n---\n# Body\n",
+        ("title",),
+    )
+
+
+def test_apply_uses_exact_byte_write_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "log.md"
+    path.write_bytes(b"---\r\ntitle: Log\r\nother: value\r\n---\r\n# Body\r\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        write = vault._doc_mgr.write
+
+        def check(*args: object, **kwargs: object) -> object:
+            assert vault._doc_mgr._exact_bytes
+            return write(*args, **kwargs)
+
+        monkeypatch.setattr(vault._doc_mgr, "write", check)
+        ReservedFrontmatterRepair(vault).run(apply=True)
+        assert path.read_bytes() == b"---\r\nother: value\r\n---\r\n# Body\r\n"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "header", ["{title: Log}", "title: Log\ntitle: Log", "title: Log # review"]
+)
+def test_ambiguous_candidates_are_reported(tmp_path: Path, header: str) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    path = tmp_path / "log.md"
+    path.write_text(f"---\n{header}\n---\n# Body\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match=r"log\.md.*manual"):
+            ReservedFrontmatterRepair(vault).run()
+    finally:
+        vault.close()
+
+
+def test_large_reserved_file_remains_eligible(tmp_path: Path) -> None:
+    path = tmp_path / "log.md"
+    body = "# Log\n" + "x" * 70000
+    path.write_text("---\ntitle: Log\n---\n" + body)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        assert ReservedFrontmatterRepair(vault).run(apply=True)[0].keys == ("title",)
+        assert path.read_text() == body
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("kind", ["symlink", "directory"])
+def test_uninspectable_reserved_path_is_reported(tmp_path: Path, kind: str) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    path = tmp_path / "log.md"
+    if kind == "symlink":
+        path.symlink_to("missing.md")
+    else:
+        path.mkdir()
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match=r"log\.md"):
+            ReservedFrontmatterRepair(vault).run()
+    finally:
+        vault.close()
+
+
+def test_cli_read_only_reports_nontransactional_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "log.md").write_text("---\ntitle: Log\n---\nbody\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
+    assert result.exit_code == 1
+    assert "no rollback" in result.stderr and "read-only" in result.stderr
+    assert "Earlier files" not in result.stderr
