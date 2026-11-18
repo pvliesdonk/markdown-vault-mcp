@@ -27,7 +27,7 @@ throughout.
 - `ci.yml`, `docs.yml`, `codeql.yml` and the automatic review run on pull
   requests that target an `integration/*` branch, and CI also runs on every
   push to one.
-- The local structural and template-conformance gates measure a child branch
+- The local structural gate measures a child branch
   against the integration branch it was cut from, not against `main`.
 - The release workflows ignore integration branches. Nothing is released
   from one, and merging a child pull request releases nothing.
