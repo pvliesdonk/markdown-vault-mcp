@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from markdown_vault_mcp.okf import OKF_ROOT_INDEX_TITLE, build_index_markdown
+from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import open_directory_nofollow, read_regular_nofollow
 from markdown_vault_mcp.utils.text import decode_utf8
 
@@ -44,12 +45,7 @@ def authored_body(text: str) -> str:
     Returns:
         The body, or the original text when no complete block leads it.
     """
-    lines = text.splitlines(keepends=True)
-    if lines and lines[0].rstrip("\r\n") == "---":
-        for index, line in enumerate(lines[1:], 1):
-            if line.rstrip("\r\n") == "---":
-                return "".join(lines[index + 1 :])
-    return text
+    return strip_frontmatter_block(text, preserve_body=True)
 
 
 def read_authored(
@@ -60,17 +56,18 @@ def read_authored(
     Args:
         source: Vault root.
         folder: Validated vault-relative folder.
-        note_limit: Configured byte limit, or zero for the default ceiling.
+        note_limit: Configured byte limit, or zero for unlimited reads.
 
     Returns:
         Text and reason; both are None when the index is absent.
     """
-    limit = min(65536, note_limit) if note_limit > 0 else 65536
     try:
         with open_directory_nofollow(
             source, folder.split("/") if folder else ()
         ) as parent:
-            raw = read_regular_nofollow(parent, "index.md", limit + 1)
+            raw = read_regular_nofollow(
+                parent, "index.md", note_limit + 1 if note_limit > 0 else -1
+            )
     except OSError as exc:
         if exc.errno == errno.ENOENT:
             return None, None
@@ -79,7 +76,7 @@ def read_authored(
             errno.EINVAL: "nonregular",
             errno.EISDIR: "nonregular",
         }.get(exc.errno or 0, "io_error")
-    if len(raw) > limit:
+    if note_limit > 0 and len(raw) > note_limit:
         return None, "note_limit"
     try:
         return decode_utf8(raw), None

@@ -413,7 +413,7 @@ def read_regular_nofollow(parent: int, name: str, limit: int) -> bytes:
     Args:
         parent: Open containing directory descriptor.
         name: One plain filename.
-        limit: Maximum bytes to read, including any caller's lookahead.
+        limit: Maximum bytes to read, including lookahead; -1 reads to EOF.
 
     Raises:
         OSError: Open failure or a symlink/nonregular replacement.
@@ -427,9 +427,10 @@ def read_regular_nofollow(parent: int, name: str, limit: int) -> bytes:
         chunks: list[bytes] = []
         remaining = limit
         while remaining:
-            chunk = stream.read(remaining)
+            chunk = stream.read(65536 if remaining < 0 else min(65536, remaining))
             if not chunk:
                 break
             chunks.append(chunk)
-            remaining -= len(chunk)
+            if remaining > 0:
+                remaining -= len(chunk)
         return b"".join(chunks)

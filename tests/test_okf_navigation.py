@@ -60,7 +60,7 @@ def test_authored_precedes_bounded_inventory(tmp_path):
         result = vault.reader.okf_navigation("", entry_limit=1)
         assert result.source == "authored"
         assert result.body == "  authored\n"
-        assert result.enumeration == "entry_limit"
+        assert result.enumeration == "not_inspected"
         assert result.entries == ()
     finally:
         vault.close()
@@ -71,7 +71,6 @@ def test_authored_precedes_bounded_inventory(tmp_path):
     [
         ("symlink", "symlink"),
         ("nonregular", "nonregular"),
-        ("oversize", "note_limit"),
         ("invalid", "invalid_encoding"),
     ],
 )
@@ -120,7 +119,9 @@ async def test_navigation_tool(tmp_path, monkeypatch):
 
     from tests.server_factory import make_server
 
-    (tmp_path / "index.md").write_text("# authored\n")
+    (tmp_path / "index.md").write_bytes(
+        b"-----\r\nokf_version: 0.2\r\n------ \r\n\r\n# authored\r\n"
+    )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
     vault = Vault(source_dir=tmp_path)
@@ -213,5 +214,118 @@ def test_synthesis_includes_non_admitted_after_index_build(tmp_path):
         entry = next(entry for entry in result.entries if entry.path == "missing.md")
         assert entry.search_state == "non_admitted"
         assert "[missing.md](/missing.md)" in result.body
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("opening,closing", [("--- ", "--- "), ("-----", "------")])
+def test_authored_frontmatter_variants_preserve_body(tmp_path, opening, closing):
+    body = "\r\n  # Heading  \r\n\t\r\n"
+    (tmp_path / "index.md").write_bytes(
+        f'{opening}\r\nokf_version: "0.2"\r\n{closing}\r\n{body}'.encode()
+    )
+    vault = Vault(source_dir=tmp_path)
+    try:
+        assert vault.reader.okf_navigation("").body == body
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "---\n\nIntro\n\n---\n\nBody\n",
+        "---\ntype: [\n---\nBody\n",
+        "---\n- one\n---\nBody\n",
+    ],
+)
+def test_thematic_or_invalid_metadata_is_verbatim(tmp_path, text):
+    (tmp_path / "index.md").write_text(text)
+    vault = Vault(source_dir=tmp_path)
+    try:
+        assert vault.reader.okf_navigation("").body == text
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "limit,size,expected",
+    [
+        (262144, 70000, "authored"),
+        (0, 300000, "authored"),
+        (70000, 70001, None),
+        (70000, 70000, "authored"),
+    ],
+)
+def test_authored_full_note_limit(tmp_path, limit, size, expected):
+    from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+
+    (tmp_path / "index.md").write_bytes(b"x" * size)
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(max_note_read_bytes=limit)
+    )
+    try:
+        result = vault.reader.okf_navigation("")
+        assert result.source == expected
+        assert result.body == ("x" * size if expected else None)
+        assert result.reason == (None if expected else "note_limit")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("value", [True, "2"])
+async def test_tool_rejects_coerced_limit(tmp_path, monkeypatch, value):
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    from tests.server_factory import make_server
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    async with Client(make_server()) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool("okf_navigation", {"entry_limit": value})
+
+
+async def test_invalid_folder_error_explains_root(tmp_path, monkeypatch):
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    from tests.server_factory import make_server
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    async with Client(make_server()) as client:
+        with pytest.raises(ToolError) as error:
+            await client.call_tool("okf_navigation", {"folder": "."})
+        message = str(error.value)
+        assert "okf_navigation" in message and '""' in message and ".." in message
+
+
+def test_whitespace_before_authored_metadata_preserves_suffix(tmp_path):
+    body = "\r\n  Body\t\r\n"
+    (tmp_path / "index.md").write_bytes(
+        (" \r\n  --- \r\nkey: value\r\n--- \r\n" + body).encode()
+    )
+    vault = Vault(source_dir=tmp_path)
+    try:
+        assert vault.reader.okf_navigation("").body == body
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "text,body",
+    [
+        ('{\n"title": "Index"\n}\n\nBody\n', "\nBody\n"),
+        ("---\nkey: value\n---", ""),
+        ("---\nkey: value\n", "---\nkey: value\n"),
+    ],
+)
+def test_other_frontmatter_boundaries(tmp_path, text, body):
+    (tmp_path / "index.md").write_text(text)
+    vault = Vault(source_dir=tmp_path)
+    try:
+        assert vault.reader.okf_navigation("").body == body
     finally:
         vault.close()

@@ -251,7 +251,7 @@ its resolved defaults. See the [configuration reference](../reference/configurat
 
 ## Inspecting bundle inventory
 
-Call `okf_navigation` with a vault-relative folder (or `""` for the vault root) to read its authored `index.md` body. When no index exists, it synthesizes a listing of immediate concepts and subfolders, including untyped and search-excluded notes. The result reports its source and enumeration state. Synthesis visits at most `entry_limit` entries in filesystem order, so `entry_limit` signals a potentially incomplete listing. An unavailable index is reported instead of replaced by a synthesized listing.
+Call `okf_navigation` with a vault-relative folder (or `""` for the vault root) to read its authored `index.md` body. When no index exists, it synthesizes a listing of immediate concepts and subfolders, including readable hidden and search-excluded notes and directories. The result reports its source and enumeration state. Synthesis visits at most `entry_limit` entries in filesystem order, so `entry_limit` signals a potentially incomplete listing. An unavailable index is reported instead of replaced by a synthesized listing.
 
 Call `okf_inventory` with a vault-relative `root` (use `""` for the vault root) to inspect concept candidates, including notes excluded from search. Set `type_state` to `absent` to find untyped candidates; `parse_state` and `search_state` filter parsing and admission observations. Reserved `index.md` and `log.md` are not concept candidates. A blank, null or non-string `type` has `type_state="invalid"`, not `absent`.
 

@@ -184,7 +184,12 @@ class ReaderFacet:
         if reason is not None:
             return replace(result, reason=reason)
         if text is not None:
-            return replace(result, source="authored", body=authored_body(text))
+            return replace(
+                result,
+                source="authored",
+                body=authored_body(text),
+                enumeration="not_inspected",
+            )
         return replace(
             result,
             source="synthesized",
