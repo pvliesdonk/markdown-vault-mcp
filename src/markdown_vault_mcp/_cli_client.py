@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastmcp_pvl_core import env
+from markdown_vault_mcp._pvl_core import env
 
 _PREFIX = "MARKDOWN_VAULT_MCP"
 _TIMEOUT_MESSAGE = "Timeout must be a positive finite number of seconds."

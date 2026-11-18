@@ -1,6 +1,6 @@
 """Shared env-reading helpers for config_sections from_env classmethods.
 
-Imports only fastmcp_pvl_core + stdlib (never config.py) so config.py can
+Imports only pvl-core (through ``_pvl_core``) and stdlib, never config.py, so config.py can
 import these without a cycle.
 """
 
@@ -10,13 +10,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import overload
 
-from fastmcp_pvl_core import (
+from markdown_vault_mcp._pvl_core import (
     env as _core_env,
 )
-from fastmcp_pvl_core import (
+from markdown_vault_mcp._pvl_core import (
     env_float as _core_env_float,
 )
-from fastmcp_pvl_core import (
+from markdown_vault_mcp._pvl_core import (
     env_int as _core_env_int,
 )
 
@@ -125,7 +125,7 @@ def opt_list(raw: str | None) -> tuple[str, ...] | None:
     Returns ``None`` when *raw* is ``None``, empty, or parses to no items —
     the shared empty-as-unset convention for list-valued vars.
     """
-    from fastmcp_pvl_core import parse_list
+    from markdown_vault_mcp._pvl_core import parse_list
 
     items = parse_list(raw or "")
     return tuple(items) if items else None

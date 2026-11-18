@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Literal
 
 import typer
-from fastmcp_pvl_core import (
+
+from markdown_vault_mcp._pvl_core import (
     ConfigurationError,
     build_event_store,
     configure_logging_from_env,
@@ -13,7 +14,6 @@ from fastmcp_pvl_core import (
     normalise_http_path,
     run_http,
 )
-
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
 
 app = typer.Typer(

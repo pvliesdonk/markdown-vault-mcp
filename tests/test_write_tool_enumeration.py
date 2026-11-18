@@ -51,8 +51,8 @@ class TestRegistryLockstep:
         ``_list_tools()``.
         """
         from fastmcp import FastMCP
-        from fastmcp_pvl_core import register_transfer_routes
 
+        from markdown_vault_mcp._pvl_core import register_transfer_routes
         from markdown_vault_mcp._server_apps import register_apps
         from markdown_vault_mcp._transfer_sink import VaultTransferSink
         from markdown_vault_mcp.config import ProjectConfig

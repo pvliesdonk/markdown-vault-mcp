@@ -23,8 +23,8 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import register_long_running_tool
 
+from markdown_vault_mcp._pvl_core import register_long_running_tool
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 
@@ -34,7 +34,8 @@ from ..domain import get_vault
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
-    from fastmcp_pvl_core import Jobs
+
+    from markdown_vault_mcp._pvl_core import Jobs
 
 logger = logging.getLogger(__name__)
 

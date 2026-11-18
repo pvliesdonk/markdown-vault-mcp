@@ -151,8 +151,7 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
     # context to the generic tool descriptions without changing their shape.
     if transport == "stdio" or not config.server.base_url:
         return
-    from fastmcp_pvl_core import register_transfer_routes
-
+    from markdown_vault_mcp._pvl_core import register_transfer_routes
     from markdown_vault_mcp._transfer_sink import VaultTransferSink
 
     transfer_sink = VaultTransferSink(config)
@@ -225,8 +224,7 @@ def _register_jobs(mcp: FastMCP, config: ProjectConfig) -> None:
     # speaks MCP tasks gets native task execution; any other client past
     # the JOBS_SOFT_DEADLINE_S soft deadline gets a job handle to poll via
     # the generic get_job_result tool.
-    from fastmcp_pvl_core import build_jobs, register_job_tools
-
+    from markdown_vault_mcp._pvl_core import build_jobs, register_job_tools
     from markdown_vault_mcp._tools import index as index_tools
     from markdown_vault_mcp._tools import summarize as summarize_tools
 

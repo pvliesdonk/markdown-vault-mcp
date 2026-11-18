@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from fastmcp_pvl_core import ConfigurationError, ServerConfig, build_event_store
 
+from markdown_vault_mcp._pvl_core import (
+    ConfigurationError,
+    ServerConfig,
+    build_event_store,
+)
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
 
 
@@ -16,7 +20,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "fastmcp_pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
+            "markdown_vault_mcp._pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store(_ENV_PREFIX, ServerConfig())
@@ -29,7 +33,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "fastmcp_pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
+            "markdown_vault_mcp._pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=""))

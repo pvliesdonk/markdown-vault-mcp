@@ -270,10 +270,10 @@ def resolve_mcp_principal() -> Principal:
         resolves to a ``"local"`` principal with every field ``None``.
     """
     # Function-local imports are deliberate and load-bearing: tests monkeypatch
-    # ``fastmcp_pvl_core.get_subject`` / ``get_claims`` as package attributes,
+    # ``markdown_vault_mcp._pvl_core.get_subject`` / ``get_claims`` as module attributes,
     # which only takes effect when the lookup happens at call time (the same
     # pattern as ``_okf_write``).
-    from fastmcp_pvl_core import get_claims, get_subject
+    from markdown_vault_mcp._pvl_core import get_claims, get_subject
 
     subject = get_subject()
     claims = get_claims()

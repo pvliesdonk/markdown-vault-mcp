@@ -434,7 +434,7 @@ def test_serve_http_reports_configuration_error_from_event_store() -> None:
     under ``--transport http`` (#1551, fixed upstream in
     fastmcp-server-template v9.0.1).
     """
-    from fastmcp_pvl_core import ConfigurationError
+    from markdown_vault_mcp._pvl_core import ConfigurationError
 
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()

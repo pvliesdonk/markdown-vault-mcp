@@ -9,7 +9,7 @@ construction, the
 chunk-cap heuristic, and the ``from_env`` field validators — lives here instead
 (#900, epic #898).
 
-Imports only fastmcp_pvl_core, stdlib, and sibling domain modules (never
+Imports only pvl-core (through ``_pvl_core``), stdlib, and sibling domain modules (never
 ``config`` at runtime) so ``config.py`` can import these without a cycle.
 
 Module-scope imports here are also bound by the config import floor: every
@@ -30,12 +30,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from fastmcp_pvl_core import parse_bool as _parse_bool
-
 from markdown_vault_mcp._identity import (
     configure_identity_claims,
     configure_service_subjects,
 )
+from markdown_vault_mcp._pvl_core import parse_bool as _parse_bool
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.utils.fs import is_directory

@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastmcp.tools import FunctionTool
-from fastmcp_pvl_core import is_tool_boundary
 
+from markdown_vault_mcp._pvl_core import is_tool_boundary
 from markdown_vault_mcp.server import make_server
 
 if TYPE_CHECKING:

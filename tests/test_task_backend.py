@@ -24,9 +24,9 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import pytest
-from fastmcp_pvl_core import ServerConfig, configure_task_backend
 
 import markdown_vault_mcp.server as server_module
+from markdown_vault_mcp._pvl_core import ServerConfig, configure_task_backend
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.server import make_server
 

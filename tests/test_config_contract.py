@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from fastmcp_pvl_core import ConfigurationError, domain_env_surface
 from typer.testing import CliRunner
 
 from markdown_vault_mcp import config as config_module
+from markdown_vault_mcp._pvl_core import ConfigurationError, domain_env_surface
 from markdown_vault_mcp.cli import app
 from markdown_vault_mcp.config import ProjectConfig
 

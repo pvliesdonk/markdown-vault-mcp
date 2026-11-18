@@ -17,12 +17,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import (
+
+from markdown_vault_mcp._pvl_core import (
     TransferResourceGoneError,
     TransferSinkError,
     TransferUnavailableError,
 )
-
 from markdown_vault_mcp._transfer_sink import VaultTransferSink
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
