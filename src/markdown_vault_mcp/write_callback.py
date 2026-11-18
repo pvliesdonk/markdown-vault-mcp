@@ -393,9 +393,7 @@ class WriteCallbackDispatcher:
         return result
 
     def _schedule_group(self, group: CommitGroup) -> None:
-        old = self._group_timers.pop(group.handle, None)
-        if old is not None:
-            old.cancel()
+        old = self._group_timers.get(group.handle)
         deadline = group.created + self._group_max_age_s
         if not group.active:
             deadline = min(deadline, group.touched + self._group_idle_s)
@@ -405,8 +403,10 @@ class WriteCallbackDispatcher:
             args=(group.handle,),
         )
         timer.daemon = True
-        self._group_timers[group.handle] = timer
         timer.start()
+        self._group_timers[group.handle] = timer
+        if old is not None:
+            old.cancel()
 
     def _expire_group(self, handle: str) -> None:
         with self._group_lock:

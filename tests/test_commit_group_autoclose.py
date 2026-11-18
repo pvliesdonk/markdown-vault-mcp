@@ -270,3 +270,42 @@ def test_vault_passes_group_timeouts_to_dispatcher(git_repo: Path) -> None:
     finally:
         vault.close()
         strategy.close()
+
+
+def test_failed_timer_replacement_preserves_original_deadline(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=git_repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy, group_idle_s=0.4, group_max_age_s=1)
+    try:
+        group = dispatcher.open_group("Preserve deadline", None)
+        original = dispatcher._group_timers[group.handle]
+        path = git_repo / "deadline.md"
+
+        def fail_start(_timer: threading.Timer) -> None:
+            raise RuntimeError("cannot start")
+
+        with (
+            monkeypatch.context() as patch,
+            pytest.raises(RuntimeError, match="cannot start"),
+            dispatcher.bind_group(group.handle, None),
+        ):
+            path.write_text("note", encoding="utf-8")
+            dispatcher.fire(path, "note", "write")
+            patch.setattr(threading.Timer, "start", fail_start)
+        assert dispatcher._group_timers[group.handle] is original
+        _wait_for_subject(git_repo, "Preserve deadline")
+        assert (
+            dispatcher.close_group(group.handle, None).result(timeout=2).status
+            == "committed"
+        )
+    finally:
+        dispatcher.close()
+        strategy.close()
