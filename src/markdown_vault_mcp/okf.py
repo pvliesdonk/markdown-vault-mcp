@@ -45,7 +45,6 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -96,7 +95,7 @@ def is_okf_reserved_file(path: str) -> bool:
 
 
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
-#: builders and the reserved-frontmatter policy so the heading a reader sees
+#: builders so the heading a reader sees
 #: and the title the index resolves cannot drift apart.
 OKF_LOG_TITLE = "Log"
 
@@ -904,7 +903,7 @@ class OkfIndexResult:
         entries: Notes and sub-folder pointers listed.
         frontmatter_preserved: Whether frontmatter already on the file was
             carried over. Not "the file has frontmatter": a file that had
-            none is still written with the vault's required fields seeded
+            none remains body-only
             (#1175), which reports ``False`` here.
         created: Subfolder ``index.md`` files written because the listing
             points at them and they did not exist (#1647), outermost first.
@@ -992,69 +991,6 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
         content, n = pattern.subn(_replace, content)
         converted += n
     return content, converted, skipped
-
-
-@dataclass(frozen=True)
-class ReservedFrontmatterPolicy:
-    """Frontmatter the server's own generated reserved files must carry.
-
-    ``index.md`` and ``log.md`` are written by the server, but the index gate
-    is configured by the operator: with ``required_frontmatter`` set, a
-    generated file carrying no frontmatter is a deterministic
-    ``missing_frontmatter`` skip, so the bundle's own navigation and change
-    history disappear from ``search`` and ``list_documents`` while staying
-    readable from disk (#1174, #1175). The generators consult this policy so
-    what they write satisfies the gate the same server enforces.
-
-    The policy is deliberately *conditional*. With no required fields
-    configured a reserved file needs no frontmatter to be indexed, and
-    :meth:`build` returns ``None`` so the generators keep emitting the
-    body-only files every existing vault already has on disk — closing the
-    defect costs an unconfigured vault no churn.
-
-    Attributes:
-        title_field: The frontmatter key the indexer resolves titles from.
-            The one required field given a derived value rather than a
-            placeholder, since the server knows the title it just wrote.
-        required_fields: The vault's configured ``required_frontmatter``.
-    """
-
-    title_field: str = "title"
-    required_fields: tuple[str, ...] = ()
-
-    def build(
-        self, existing: Mapping[str, Any] | None, *, title: str
-    ) -> dict[str, Any] | None:
-        """Build the frontmatter for a generated reserved file.
-
-        Existing keys always win, so a hand-authored title and the root
-        ``index.md``'s ``okf_version`` declaration survive regeneration
-        untouched and only genuinely absent required fields are added. A
-        required field other than *title_field* is seeded as ``None``: the
-        gate tests presence rather than value
-        (:func:`~markdown_vault_mcp.scanner.parse_note_categorized`), and the
-        server has nothing truthful to put there.
-
-        ``okf_version`` is never synthesized. The conformance audit flags it
-        on any file but the bundle root as ``misplaced``, so seeding it into
-        a folder's generated index would trade one defect for another.
-
-        Args:
-            existing: The file's current frontmatter, or ``None`` when the
-                file does not exist yet or carries none.
-            title: Title for *title_field*, matching the H1 heading the body
-                builders emit for the same file.
-
-        Returns:
-            The frontmatter mapping to write, or ``None`` when the file needs
-            no frontmatter at all.
-        """
-        merged: dict[str, Any] = dict(existing or {})
-        for field in self.required_fields:
-            if field in merged:
-                continue
-            merged[field] = title if field == self.title_field else None
-        return merged or None
 
 
 def build_index_markdown(

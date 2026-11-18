@@ -48,7 +48,6 @@ from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.okf import (
     OkfAuditReport,
     OkfDetector,
-    ReservedFrontmatterPolicy,
     audit_bundle,
 )
 from markdown_vault_mcp.scanner import (
@@ -754,20 +753,12 @@ class Vault:
             okf_audit=self._okf_audit,
             okf_write_state=lambda: self.okf_write_state(active=True),
         )
-        # The reserved files the OKF generators write are subject to this
-        # vault's own required-frontmatter gate, so the generators need the
-        # gate's terms to produce files that survive it (#1174, #1175).
-        reserved_frontmatter = ReservedFrontmatterPolicy(
-            title_field=self._title_field,
-            required_fields=tuple(self._required_frontmatter or ()),
-        )
         self._okf_migrate = OkfMigrationManager(
             doc_mgr=self._doc_mgr,
             link_mgr=self._link_mgr,
             search_mgr=self._search_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
-            reserved_frontmatter=reserved_frontmatter,
         )
         # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
@@ -787,7 +778,6 @@ class Vault:
                 okf_migrate=self._okf_migrate,
                 detector=self._okf,
                 write_lock=self._file_write_lock,
-                reserved_frontmatter=reserved_frontmatter,
                 source_dir=self._source_dir,
                 capabilities=capabilities,
             )

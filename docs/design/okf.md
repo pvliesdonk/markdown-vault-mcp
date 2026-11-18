@@ -540,47 +540,14 @@ state when available and logs `okf_scope_probe_failed`; without a confirmed
 state the indexing pass fails for retry before changing rows. A missing declaration still deactivates auto mode,
 and forced-on mode is unaffected.
 
-`ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
-carry. Both generators and the `OKF_WRITE` maintainer write through it:
+Generators create `index.md` and `log.md` without frontmatter, regardless of
+required concept fields. Regeneration retains existing headers byte-for-byte,
+including a root `okf_version` and legacy seeded fields, and adds no keys. The
+audit still reports disallowed index frontmatter (#1396). Log maintenance edits
+the body through `DocumentManager.edit`, which retains the stored header bytes
+and avoids stacking frontmatter blocks (#1391).
 
-- **Conditional, not unconditional.** With no required fields configured,
-  the policy returns `None` so the generators keep emitting the body-only files existing bundles
-  already have on disk. Closing the defect costs an unaffected vault no churn
-  — and, on a git vault, no commits.
-- **Existing keys win.** A hand-authored title and the root `index.md`'s
-  `okf_version` declaration survive regeneration; only genuinely absent
-  required fields are added.
-- **`title_field` gets the derived title** (the same H1 the body builders
-  emit); any other required field is seeded as `null`, since the gate tests
-  presence rather than value and the server has nothing truthful to put there.
-- **`okf_version` is never synthesized.** The audit flags it on any file but
-  the bundle root as `misplaced`, so seeding it into a folder's index would
-  trade one defect for another.
-
-The audit does not exempt these files. A key the policy seeds into an
-`index.md` is an `index_frontmatter` finding like any hand-written one
-(#1396): the finding describes the file against §8, not who wrote it, and
-changes neither what the policy seeds nor what the gate admits.
-
-The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
-reason: `_append_log` is a
-read-modify-write, so the log's frontmatter has to be carried across the
-rewrite explicitly. Since the maintainer runs after *every* content write, the
-alternative is not a one-time gap but frontmatter stripped again after each
-save — including frontmatter an operator seeded by hand.
-
-The split is the maintainer's own work, and getting it backwards is #1391.
-`DocumentManager.read` returns the *whole file* in `NoteContent.content`,
-block included, while `DocumentManager.write` puts a `frontmatter=` mapping
-above the body it is handed. Feeding the read text straight back therefore
-serialises a second block above the one still in it, once per write; a live
-folder accumulated eighteen. `scanner.strip_frontmatter_block` takes the
-block off first, delegating detection to `python-frontmatter` so it agrees
-with `parse_note` about where the block ends, and returning the remainder
-unnormalised. Only the block that *opens* the text comes off: an identical
-block further down is body, because separating "stacked by the defect" from
-"quoted on purpose" needs a rule about body content that this layer does not
-have. Repairing files the defective releases already stacked is #1403,
+Repairing files the defective releases already stacked is #1403,
 through the deliberate operation below.
 
 ### Deliberate legacy log repair (#1403)

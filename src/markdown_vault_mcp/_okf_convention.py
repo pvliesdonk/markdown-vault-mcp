@@ -32,9 +32,8 @@ from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.managers.document import _head_end
 from markdown_vault_mcp.okf import (
-    OKF_LOG_TITLE,
-    ReservedFrontmatterPolicy,
     append_okf_log_entry,
     is_okf_reserved_file,
 )
@@ -113,7 +112,6 @@ class ConventionMaintainer:
         sync_index: Callable[[], object] | None = None,
         write_lock: AbstractContextManager[object] | None = None,
         today: Callable[[], date] = date.today,
-        reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
         source_dir: Path | None = None,
         capabilities: OkfCapabilities | None = None,
     ) -> None:
@@ -136,10 +134,6 @@ class ConventionMaintainer:
                 ``None`` (tests) serialises nothing.
             today: Date provider (injectable for tests); defaults to
                 :meth:`datetime.date.today`.
-            reserved_frontmatter: Frontmatter policy for the maintained
-                ``log.md``, so the log this maintainer rewrites on every
-                enforced write satisfies the vault's own index gate (#1174).
-                Defaults to the no-required-fields policy.
             source_dir: The vault root, used after a delete, rename or folder
                 move to find which folders already carry an ``index.md``
                 (#1609). ``None`` (tests) treats every folder as having one.
@@ -154,7 +148,6 @@ class ConventionMaintainer:
             write_lock if write_lock is not None else nullcontext()
         )
         self._today = today
-        self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
         self._source_dir = source_dir
         self._capabilities = (
             capabilities or ContentConfig(okf_write=True).okf_capabilities
@@ -373,14 +366,7 @@ class ConventionMaintainer:
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
         """Append a dated ``**Update**`` bullet to the folder's ``log.md``.
 
-        The read-modify-write splits frontmatter from body itself. ``read()``
-        hands back the *whole file*, block included, while ``write()`` puts a
-        ``frontmatter=`` mapping above the body it is given — so the block has
-        to come off the text before the append and be carried across as the
-        mapping, or the log grows one more identical block per write (#1391).
-        Carrying it across at all is #1174: frontmatter an operator seeded by
-        hand to satisfy ``required_frontmatter`` must survive the rewrite, or
-        the vault's own change history stops being indexed.
+        Existing frontmatter is retained byte-for-byte during the body edit.
         """
         log_path = f"{folder}/log.md" if folder else "log.md"
         verb = _OPERATION_VERB.get(operation, operation)
@@ -400,15 +386,16 @@ class ConventionMaintainer:
                 new_text = append_okf_log_entry(
                     body, date=self._today().isoformat(), summary=summary
                 )
-                self._doc_mgr.write(
-                    log_path,
-                    new_text,
-                    frontmatter=self._reserved_frontmatter.build(
-                        existing.frontmatter if existing is not None else None,
-                        title=OKF_LOG_TITLE,
-                    ),
-                    allow_overwrite=True,
-                )
+                if existing is not None and existing.content:
+                    head = existing.content[: _head_end(existing.content)]
+                    separator = "\n" if head and not head.endswith("\n") else ""
+                    self._doc_mgr.edit(
+                        log_path,
+                        old_text=existing.content,
+                        new_text=head + separator + new_text,
+                    )
+                else:
+                    self._doc_mgr.write(log_path, new_text, allow_overwrite=True)
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 

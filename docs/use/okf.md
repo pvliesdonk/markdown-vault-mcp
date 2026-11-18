@@ -88,7 +88,7 @@ Run the `okf_validate` tool to see where the vault stands. It reports conformanc
 
 The evidence findings report missing expiry, malformed expiry or review records, and unavailable assessments. An assessment is unavailable when a discovered concept cannot be read or parsed, or exceeds the read cap. Missing expiry is informational; malformed fields are format observations, not failures of a team's editorial policy. These findings leave the existing conformance ratio unchanged. The report covers discovered, non-excluded paths and does not certify complete traversal or current-review applicability.
 
-The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server currently writes the required fields into them. Existing fields are preserved; reserved files remain indexed in an active OKF vault even without them. A declaration change reaches reserved files on the next indexing pass, and upgrading an older index rebuilds it once.
+The report also lists `index.md` files that carry frontmatter the format does not allow. That includes older generated index files containing seeded fields. Existing fields are preserved; reserved files remain indexed in an active OKF vault even without them. A declaration change reaches reserved files on the next indexing pass, and upgrading an older index rebuilds it once.
 
 ### 2. Declare
 
@@ -113,9 +113,9 @@ Three tools handle the changes you should not make by hand. They are write tools
 
 ### Reserved files on a vault with required fields
 
-If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any listed field are excluded from the index. In an active OKF vault, reserved `index.md` and `log.md` files are indexed without those fields. The generators currently give new reserved files the required fields: the title comes from the heading and other fields are written as `null`. If the root declaration cannot be read and no confirmed admission state is available, indexing fails safely; retry after the read error is resolved.
+If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any listed field are excluded from the index. In an active OKF vault, reserved `index.md` and `log.md` files are indexed without those fields. Generators create reserved files without frontmatter and do not add fields during regeneration. If the root declaration cannot be read and no confirmed admission state is available, indexing fails safely; retry after the read error is resolved.
 
-Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.
+Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. Existing headers, including legacy seeded fields, are retained byte-for-byte; the audit continues to report disallowed index fields.
 
 ## Writing and provenance
 

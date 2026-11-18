@@ -952,7 +952,8 @@ Two methods manage the index:
 
   Version 13 (#1438) rebuilds indexes written with version 12, which shipped
   in v6.1.2, so reserved OKF files can be admitted without required concept
-  fields. See [Generated reserved files and the index gate](okf.md#generated-reserved-files-and-the-index-gate).
+  fields. Generators create body-only reserved files and preserve existing headers
+  byte-for-byte without adding or removing keys. See [Generated reserved files and the index gate](okf.md#generated-reserved-files-and-the-index-gate).
 
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.

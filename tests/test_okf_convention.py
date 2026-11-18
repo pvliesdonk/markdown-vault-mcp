@@ -25,7 +25,6 @@ import pytest
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
-from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 from tests.fixtures.git import make_superproject
@@ -90,6 +89,10 @@ class _FakeDoc:
         raw = fm.dumps(fm.Post(body, **metadata)) if metadata else body
         return type("N", (), {"content": raw, "frontmatter": metadata})()
 
+    def edit(self, path: str, *, old_text: str, new_text: str) -> None:
+        assert self.read(path).content == old_text
+        self.write(path, new_text)
+
     def write(self, path: str, content: str, **kw: object) -> None:
         if self.raise_on_write:
             raise RuntimeError("disk full")
@@ -100,7 +103,6 @@ class _FakeDoc:
 def _maintainer(
     *,
     active: bool = True,
-    reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
 ) -> tuple[ConventionMaintainer, _FakeDoc, _FakeMigrate]:
     doc, migrate = _FakeDoc(), _FakeMigrate()
     m = ConventionMaintainer(
@@ -109,7 +111,6 @@ def _maintainer(
         detector=_FakeDetector(active),  # type: ignore[arg-type]
         sync_index=lambda: None,
         today=lambda: _FIXED,
-        reserved_frontmatter=reserved_frontmatter,
     )
     return m, doc, migrate
 
@@ -209,54 +210,21 @@ class TestMaintainerFailureIsolation:
 
 
 class TestMaintainedLogFrontmatter:
-    """The maintained ``log.md`` keeps satisfying the vault's index gate (#1174).
+    """Maintained logs retain their existing header and never add one."""
 
-    ``_append_log`` is a read-modify-write, so the log's frontmatter has to be
-    carried across the rewrite explicitly — the maintainer runs on *every*
-    enforced write, so getting this wrong strips it again after each save.
-    ``read()`` returns the whole file, block included, and ``write()`` puts
-    the ``frontmatter=`` mapping above the body it is given, so the block also
-    has to come *off* the text before the append (#1391).
-    """
-
-    def test_unconfigured_vault_writes_no_frontmatter(self) -> None:
+    def test_fresh_log_has_no_frontmatter(self) -> None:
         m, doc, _ = _maintainer()
         m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] is None
+        assert doc.writes[0][1].startswith("# Log")
 
-    def test_hand_authored_frontmatter_survives_the_rewrite(self) -> None:
+    def test_existing_header_is_retained(self) -> None:
         m, doc, _ = _maintainer()
         doc.existing = ("# Log\n", {"title": "Change history", "type": "log"})
         m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] == {
+        assert fm.loads(doc.writes[0][1]).metadata == {
             "title": "Change history",
             "type": "log",
         }
-        # ...and comes off the text, or write() serialises a second block
-        # above the one still in it (#1391).
-        assert "---" not in doc.writes[0][1]
-
-    def test_an_empty_block_is_dropped_on_an_unconfigured_vault(self) -> None:
-        """A block with no keys does not survive the rewrite, deliberately.
-
-        Taking the block off is unconditional; putting one back is the
-        policy's call, and with no required fields it returns ``None``. So a
-        hand-seeded ``---\n---`` goes away on the next append. It carried
-        nothing, and leaving it in the body is what stacks (#1391) — a block
-        with keys is still carried across, which is the case #1174 is about.
-        """
-        m, doc, _ = _maintainer()
-        doc.existing = ("---\n---\n# Log\n", {})
-        m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] is None
-        assert "---" not in doc.writes[0][1]
-
-    def test_required_field_is_seeded_on_a_fresh_log(self) -> None:
-        m, doc, _ = _maintainer(
-            reserved_frontmatter=ReservedFrontmatterPolicy(required_fields=("title",))
-        )
-        m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] == {"title": "Log"}
 
 
 # ---------------------------------------------------------------------------
@@ -416,14 +384,7 @@ class TestConventionMaintenanceIntegration:
 
 
 class TestUpkeepUnderRequiredFrontmatter:
-    """End-to-end for #1174 on the path that runs on every save.
-
-    The one-shot ``okf_seed_log`` is not the only generator of a reserved
-    ``log.md``: with ``OKF_WRITE`` on, the maintainer creates and rewrites it
-    after every content write. Under a required-field gate that made the
-    bundle's own history and navigation permanently unlistable, and repairing
-    the files by hand did not survive the next save.
-    """
+    """Generated navigation and history remain indexed without concept fields."""
 
     def test_maintained_reserved_files_are_indexed(self, tmp_path: Path) -> None:
         root = tmp_path / "gated_vault"
@@ -434,16 +395,15 @@ class TestUpkeepUnderRequiredFrontmatter:
             col.writer.write("guides/playbook.md", "---\ntitle: P\n---\n# P\n")
             wait_for_writer_drain(col)
 
-            assert col.reader.read("guides/log.md").frontmatter["title"] == "Log"
+            assert not (root / "guides" / "log.md").read_text().startswith("---")
+            assert col.reader.read("guides/log.md").frontmatter == {}
             indexed = {note.path for note in col.reader.list_documents()}
             assert {"guides/log.md", "guides/index.md"} <= indexed
         finally:
             col.close()
 
-    def test_a_second_write_does_not_strip_the_log_frontmatter(
-        self, tmp_path: Path
-    ) -> None:
-        """The rewrite is the regression: one save seeded it, the next dropped it."""
+    def test_a_second_write_retains_the_log_entries(self, tmp_path: Path) -> None:
+        """Repeated writes keep the generated log body-only and retain entries."""
         root = tmp_path / "gated_vault_twice"
         (root / "guides").mkdir(parents=True)
         (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
@@ -455,7 +415,7 @@ class TestUpkeepUnderRequiredFrontmatter:
             wait_for_writer_drain(col)
 
             log = col.reader.read("guides/log.md")
-            assert log.frontmatter["title"] == "Log"
+            assert log.frontmatter == {}
             # Both bullets are still there — carrying frontmatter across the
             # rewrite must not cost the append its accumulated body.
             assert "wrote `guides/a.md`" in log.content
@@ -464,9 +424,22 @@ class TestUpkeepUnderRequiredFrontmatter:
         finally:
             col.close()
 
-    def test_repeated_writes_keep_exactly_one_frontmatter_block(
-        self, tmp_path: Path
-    ) -> None:
+    def test_log_upkeep_preserves_header_bytes(self, tmp_path: Path) -> None:
+        root = tmp_path / "header_bytes"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        log = root / "guides" / "log.md"
+        header = b"---\r\ntitle: 'Legacy' # retained\r\n---\r\n"
+        log.write_bytes(header + b"# Log\r\n")
+        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        try:
+            col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
+            wait_for_writer_drain(col)
+            assert log.read_bytes().startswith(header)
+        finally:
+            col.close()
+
+    def test_repeated_writes_keep_the_log_body_only(self, tmp_path: Path) -> None:
         """#1391: the read-modify-write stacked one block per write.
 
         ``read()`` hands back the whole file, frontmatter included; the append
@@ -485,14 +458,12 @@ class TestUpkeepUnderRequiredFrontmatter:
                 wait_for_writer_drain(col)
 
             text = (root / "guides" / "log.md").read_text(encoding="utf-8")
-            assert text.count("title: Log") == 1
+            assert "title: Log" not in text
             assert text.count("- **Update**:") == 3
         finally:
             col.close()
 
-    def test_an_empty_seeded_block_is_replaced_not_stacked_above(
-        self, tmp_path: Path
-    ) -> None:
+    def test_empty_header_is_preserved_without_stacking(self, tmp_path: Path) -> None:
         """#1391: an empty block carries no keys but is still a block.
 
         A guard that asked "did the frontmatter parse to anything?" would read
@@ -510,7 +481,7 @@ class TestUpkeepUnderRequiredFrontmatter:
 
             text = (root / "guides" / "log.md").read_text(encoding="utf-8")
             assert text.count("---") == 2
-            assert text.startswith("---\ntitle: Log\n---\n\n# Log\n")
+            assert text.startswith("---\n---\n")
         finally:
             col.close()
 
