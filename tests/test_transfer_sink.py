@@ -524,6 +524,18 @@ async def test_unborn_bundle_is_retryable(
     git("commit", "-qm", "lfs pointer")
     with pytest.raises(TransferUnavailableError, match="LFS"):
         await sink.read("okf-bundle")
+    (source_dir / "note.md").write_text("normal")
+    git("add", "note.md")
+    oid = subprocess.run(
+        ["git", "-C", str(source_dir), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    git("update-index", "--add", "--cacheinfo", f"160000,{oid},missing-child")
+    git("commit", "-qm", "unavailable submodule")
+    with pytest.raises(TransferUnavailableError, match="git submodule update --init"):
+        await sink.read("okf-bundle")
 
     def collision(*_args, **_kwargs):
         raise ValueError("collision")

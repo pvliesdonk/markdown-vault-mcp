@@ -15,7 +15,7 @@ Use this guide to choose and configure the right git mode for your deployment.
 2. **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo)
    The server commits writes (one commit per tool call), but never pulls or pushes.
 3. **No-git** (default)
-   The vault is treated as a plain directory with no git operations.
+   The server makes no automatic Git writes or syncs. [OKF export](okf.md) still reads the enclosing Git commit when the vault is in a repository.
 
 ## Runtime Git version
 

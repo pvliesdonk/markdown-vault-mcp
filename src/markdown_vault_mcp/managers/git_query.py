@@ -31,7 +31,12 @@ from markdown_vault_mcp.utils import (
     validate_history_dir,
     validate_history_path,
 )
-from markdown_vault_mcp.utils.fs import is_directory, is_regular_file, path_exists
+from markdown_vault_mcp.utils.fs import (
+    is_directory,
+    is_regular_file,
+    open_directory_nofollow,
+    path_exists,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -65,9 +70,11 @@ class GitExportSnapshot:
     root: Path
     sizes: dict[str, int]
     flagged: dict[str, bool] = field(default_factory=dict)
+    children: dict[str, tuple[Path, str]] = field(default_factory=dict)
+    repos: dict[str, Path] = field(default_factory=dict)
     _cache: dict[str, bytes] = field(default_factory=dict, repr=False, compare=False)
-    _process: list[subprocess.Popen[bytes]] = field(
-        default_factory=list, repr=False, compare=False
+    _process: dict[Path, subprocess.Popen[bytes]] = field(
+        default_factory=dict, repr=False, compare=False
     )
 
     def read(self, path: str) -> bytes:
@@ -75,23 +82,30 @@ class GitExportSnapshot:
         oid = self.entries[path][1]
         raw = self._cache.get(oid)
         if raw is None:
-            raw = self._read_blob(oid)
+            root = self.repos.get(path, self.root)
+            try:
+                raw = self._read_blob(oid, root)
+            except (OSError, ValueError) as exc:
+                if root != self.root:
+                    raise GitSnapshotUnavailableError(
+                        "Git submodule object is unavailable; run git submodule update --init and retry."
+                    ) from exc
+                raise
             if len(raw) <= 1024 * 1024:
                 self._cache[oid] = raw
         return raw
 
-    def _read_blob(self, oid: str) -> bytes:
-        if not self._process:
+    def _read_blob(self, oid: str, root: Path) -> bytes:
+        if root not in self._process:
             # Only Git-generated object IDs are sent over the batch protocol.
-            self._process.append(
-                subprocess.Popen(  # noqa: S603, RUF100
-                    ["git", "-C", str(self.root), "cat-file", "--batch"],  # noqa: S607, RUF100
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                )
+            self._process[root] = subprocess.Popen(  # noqa: S603, RUF100
+                ["git", "-C", str(root), "cat-file", "--batch"],  # noqa: S607, RUF100
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env={**os.environ, "GIT_NO_LAZY_FETCH": "1"},
             )
-        process = self._process[0]
+        process = self._process[root]
         if process.stdin is None or process.stdout is None:
             raise OSError("Git batch stream unavailable")
         process.stdin.write(oid.encode("ascii") + b"\n")
@@ -107,8 +121,8 @@ class GitExportSnapshot:
 
     def close(self) -> None:
         """Close the batch reader, if started."""
-        if self._process:
-            process = self._process.pop()
+        while self._process:
+            _, process = self._process.popitem()
             if process.stdin is not None:
                 process.stdin.close()
             if process.stdout is not None:
@@ -124,7 +138,12 @@ def _export_git(
         ["git", "-C", str(root), *args],  # noqa: S607, RUF100
         capture_output=True,
         check=check,
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"},
+        env={
+            **os.environ,
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_NO_LAZY_FETCH": "1",
+            "LC_ALL": "C",
+        },
     )
 
 
@@ -184,12 +203,57 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901
                     oid.decode("ascii"),
                 )
                 sizes[path[len(prefix) :]] = int(size) if size != b"-" else 0
-        return GitExportSnapshot(commit, entries, set(), root, sizes)
+        snapshot = GitExportSnapshot(commit, entries, set(), root, sizes)
+        _expand_gitlinks(source, snapshot)
+        return snapshot
     except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
         raise ValueError("Cannot read Git snapshot for export") from exc
 
 
-def git_snapshot_changes(source: Path, commit: str) -> tuple[set[str], dict[str, bool]]:
+def _expand_gitlinks(source: Path, snapshot: GitExportSnapshot) -> None:
+    pending = [path for path, (mode, _) in snapshot.entries.items() if mode == "160000"]
+    while pending:
+        path = pending.pop()
+        oid = snapshot.entries[path][1]
+        parts = tuple(path.split("/"))
+        if len(parts) > 32:
+            continue
+        child = source.joinpath(*parts)
+        try:
+            with open_directory_nofollow(source, parts, source_resolved=True):
+                pass
+            root = _export_git(child, "rev-parse", "--show-toplevel").stdout.rstrip(
+                b"\n"
+            )
+            if Path(os.fsdecode(root)).resolve() != child.resolve():
+                continue
+            _export_git(child, "cat-file", "-e", f"{oid}^{{commit}}")
+            tree = _export_git(
+                child, "ls-tree", "--full-tree", "-r", "-l", "-z", oid
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        del snapshot.entries[path]
+        snapshot.sizes.pop(path)
+        snapshot.children[path] = (child, oid)
+        for record in tree.split(b"\0"):
+            if not record:
+                continue
+            info, name = record.split(b"\t", 1)
+            mode, kind, blob, size = info.split()
+            if kind not in {b"blob", b"commit"}:
+                continue
+            entry_path = path + "/" + os.fsdecode(name)
+            snapshot.entries[entry_path] = (mode.decode("ascii"), blob.decode("ascii"))
+            snapshot.sizes[entry_path] = int(size) if size != b"-" else 0
+            snapshot.repos[entry_path] = child
+            if mode == b"160000":
+                pending.append(entry_path)
+
+
+def git_snapshot_changes(
+    source: Path, commit: str
+) -> tuple[set[str], dict[str, bool], set[str]]:
     """Observe changed and index-flagged names against a pinned commit."""
     try:
         options = ("--no-ext-diff", "--no-renames", "--relative", "--name-only", "-z")
@@ -209,7 +273,8 @@ def git_snapshot_changes(source: Path, commit: str) -> tuple[set[str], dict[str,
             for row in flagged_raw.split(b"\0")
             if row[:1] in {b"h", b"S", b"s"}
         }
-        return changed, flagged
+        staged_names = {os.fsdecode(name) for name in staged.split(b"\0") if name}
+        return changed, flagged, staged_names
     except subprocess.SubprocessError as exc:
         raise ValueError("Cannot read Git snapshot for export") from exc
 

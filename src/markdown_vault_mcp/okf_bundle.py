@@ -309,6 +309,12 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 ) -> OkfBundleResult:
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
+    if snapshot is not None:
+        for path, (mode, _) in snapshot.entries.items():
+            if mode == "160000" and (folder == path or folder.startswith(path + "/")):
+                raise GitSnapshotUnavailableError(
+                    f"Git submodule {path} is unavailable; run git submodule update --init and retry."
+                )
     report = OkfExportReport()
     if snapshot is not None:
         report.snapshot.commit = snapshot.commit
@@ -342,6 +348,10 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     excluded += 1
                     continue
                 if item.state in {"unavailable", "missing"}:
+                    if item.reason == "submodule":
+                        raise GitSnapshotUnavailableError(
+                            f"Git submodule {item.path} is unavailable; run git submodule update --init and retry."
+                        )
                     raise OSError(
                         f"Cannot export {item.path}: {item.reason or item.state}"
                     )
@@ -445,7 +455,33 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 )
                 notes += 1
     if snapshot is not None:
-        changed, flagged = git_snapshot_changes(vault.source_dir, snapshot.commit)
+        changed, flagged, staged = git_snapshot_changes(
+            vault.source_dir, snapshot.commit
+        )
+        for prefix, (child, commit) in snapshot.children.items():
+            if folder and not (
+                prefix == folder
+                or prefix.startswith(folder + "/")
+                or folder.startswith(prefix + "/")
+            ):
+                continue
+            try:
+                with open_directory_nofollow(
+                    vault.source_dir, tuple(prefix.split("/")), source_resolved=True
+                ):
+                    child_changed, child_flagged, child_staged = git_snapshot_changes(
+                        child, commit
+                    )
+            except (OSError, ValueError) as exc:
+                raise GitSnapshotUnavailableError(
+                    f"Git submodule {prefix} is unavailable; run git submodule update --init and retry."
+                ) from exc
+            changed.update(prefix + "/" + path for path in child_changed)
+            staged.update(prefix + "/" + path for path in child_staged)
+            flagged.update(
+                {prefix + "/" + path: absent for path, absent in child_flagged.items()}
+            )
+        changed.update(path + "/" for path in staged if path in snapshot.children)
         page = vault.reader.inspect_bundle_tree(
             BundleTreeRequest(
                 root=folder,

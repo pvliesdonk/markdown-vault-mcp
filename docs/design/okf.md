@@ -763,7 +763,7 @@ followed; dot-path links omitted by policy are counted as hidden. Selected
 symlinks and nonregular entries refuse export. Failure to observe or read a selected file
 aborts export. Reads use the inspected vault root; relocation preserves other frontmatter values. A fixed zip-entry timestamp makes unchanged vaults
 reproducible. Notes are read uncapped, and export never mutates the vault. This
-audits the final ZIP and reports a `conformant`, `nonconformant` or `incomplete` format verdict. Git exports use one commit for membership, bytes and link resolution and report uncommitted paths. They refuse Git LFS pointers rather than export them as file content. Other exports digest selected files and recheck them after packing, reporting changed or unreadable paths; their inventory and link graph remain live observations. The report is not embedded.
+audits the final ZIP and reports a `conformant`, `nonconformant` or `incomplete` format verdict. Git exports use one commit for membership, bytes and link resolution and report uncommitted paths; populated submodules use the child commits recorded by that commit. They refuse Git LFS pointers rather than export them as file content. Other exports digest selected files and recheck them after packing, reporting changed or unreadable paths; their inventory and link graph remain live observations. The report is not embedded.
 
 **Design choice — reserved structure.** OKF v0.2 §8 describes index bodies as
 sections of `* [Title](url) - description` entries; §9 describes logs as "a

@@ -567,21 +567,32 @@ class BundleInspector:
         raw = snapshot.read(path)
         return _parsed(path, role, raw), len(raw)
 
-    def _snapshot_dirty(
+    # Scope, policy, and no-follow checks apply to files and reported directories.
+    def _snapshot_dirty(  # noqa: C901, RUF100
         self, snapshot: GitExportSnapshot, scope: str
     ) -> tuple[str, ...]:
+        from markdown_vault_mcp.managers.git_query import GitSnapshotUnavailableError
+
         visible = []
         for path in sorted(snapshot.changed | snapshot.flagged.keys()):
-            if scope and not path.startswith(scope + "/"):
+            if scope and not (
+                path.startswith(scope + "/")
+                or (path.endswith("/") and scope.startswith(path))
+            ):
                 continue
             try:
-                parts = _components(path)
-                if not self._visible_file(path) or any(
+                parts = _components(path.rstrip("/"))
+                if (not path.endswith("/") and not self._visible_file(path)) or any(
                     self._internal("/".join(parts[:i]))
                     for i in range(1, len(parts) + 1)
                 ):
                     continue
-                if path in snapshot.changed:
+                if path.endswith("/"):
+                    with open_directory_nofollow(
+                        self._absolute_source, parts, source_resolved=True
+                    ):
+                        pass
+                elif path in snapshot.changed:
                     self._check_snapshot_access(self._absolute_source, parts)
                 elif path in snapshot.entries:
                     size = snapshot.sizes[path]
@@ -598,10 +609,14 @@ class BundleInspector:
                         continue
                 else:
                     continue
+            except GitSnapshotUnavailableError:
+                raise
             except (OSError, ValueError):
                 continue
-            visible.append(path)
-        return tuple(visible)
+            visible.append(
+                scope + "/" if path.endswith("/") and scope.startswith(path) else path
+            )
+        return tuple(sorted(set(visible)))
 
     def _walk_page(
         self, parent: int, request: BundleTreeRequest, scope: str
