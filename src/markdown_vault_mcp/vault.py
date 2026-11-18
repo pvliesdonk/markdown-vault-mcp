@@ -953,10 +953,8 @@ class Vault:
                 if not active and not (name == "verify" and self._okf_write_configured):
                     reason = "okf_inactive"
                 elif (
-                    name == "author"
-                    or (name == "verify" and configured not in ("elicit", "trust-auth"))
-                    or (name == "log" and configured != "writes")
-                ):
+                    name == "verify" and configured not in ("elicit", "trust-auth")
+                ) or (name == "log" and configured != "writes"):
                     reason = "not_implemented"
                 elif name in ("index", "log") and not caps.folders:
                     reason = "not_designated"
