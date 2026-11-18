@@ -95,6 +95,7 @@ class EmbeddingsManager:
             :class:`~markdown_vault_mcp.source_probe.FileSourceProbe` over
             ``source_dir`` (#1785).
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
+        skip_embedding: Identifies documents whose vectors should be removed.
         vector_slot: Opens, rebuilds and describes the vector store. ``None``
             with a provider builds a numpy store over ``embeddings_path``
             (in memory when that is ``None``), owned by this manager and
@@ -114,6 +115,7 @@ class EmbeddingsManager:
         vector_slot: VectorStoreSlot | None = None,
         source_probe: SourceProbe | None = None,
         scratch_dir: Path | None = None,
+        skip_embedding: Callable[[str], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -147,6 +149,7 @@ class EmbeddingsManager:
                 source_probe=source_probe or FileSourceProbe(source_dir),
                 is_excluded=is_path_excluded,
                 scratch_dir=scratch_dir,
+                skip_embedding=skip_embedding,
             )
             if embedding_provider is not None
             else None

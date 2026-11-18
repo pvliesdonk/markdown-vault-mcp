@@ -1,0 +1,57 @@
+"""Generated OKF indexes remain keyword searchable without vector requests."""
+
+from pathlib import Path
+
+from markdown_vault_mcp.okf_capabilities import OkfCapabilities
+from markdown_vault_mcp.vault import Vault, VaultSettings
+from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vectors import metadata_by_path
+
+
+class CountingProvider(MockEmbeddingProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.texts: list[str] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.texts.extend(texts)
+        return super().embed(texts)
+
+
+def test_generated_index_is_excluded_from_cold_build(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "generated").mkdir(parents=True)
+    (root / "authored").mkdir()
+    for name, text in {
+        "generated/index.md": "# Generated\n\nuniquegeneratedterm\n",
+        "generated/log.md": "# Log\n\ncurated history\n",
+        "generated/note.md": "# Note\n\nconcept\n",
+        "authored/index.md": "# Authored\n\npersonal meaning\n",
+    }.items():
+        (root / name).write_text(text, encoding="utf-8")
+    provider = CountingProvider()
+    capabilities = OkfCapabilities(False, "elicit", True, "off", ("generated",), False)
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", okf_capabilities=capabilities
+        ),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        store = vault._index_mgr._embeddings._loaded_store()
+        assert store is not None
+        assert set(metadata_by_path(store)) == {
+            "generated/log.md",
+            "generated/note.md",
+            "authored/index.md",
+        }
+        assert not any("uniquegeneratedterm" in text for text in provider.texts)
+        assert any(
+            r.path == "generated/index.md"
+            for r in vault.reader.search("uniquegeneratedterm", mode="keyword")
+        )
+    finally:
+        vault.close()

@@ -267,6 +267,7 @@ class EmbeddingReconciler:
             rows for is still at its source.
         is_excluded: Whether a path matches the vault's exclusions.
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
+        skip_embedding: Identifies documents whose vectors should be removed.
 
     Raises:
         ValueError: If batch_size is less than one.
@@ -282,6 +283,7 @@ class EmbeddingReconciler:
         source_probe: SourceProbe,
         is_excluded: Callable[[str], bool],
         scratch_dir: Path | None = None,
+        skip_embedding: Callable[[str], bool] | None = None,
     ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be at least 1")
@@ -292,6 +294,7 @@ class EmbeddingReconciler:
         self._batch_size = batch_size
         self._source_probe = source_probe
         self._is_excluded = is_excluded
+        self._skip_embedding = skip_embedding or (lambda _path: False)
 
     def documents(self, paths: Collection[str] | None = None) -> dict[str, _Document]:
         """Read *paths*' (or every) document's embedding inputs from the keyword index.
@@ -311,6 +314,8 @@ class EmbeddingReconciler:
 
     def _document(self, path: str, rows: Iterable[dict[str, Any]]) -> _Document:
         """Project grouped rows to one document's embedding inputs."""
+        if self._skip_embedding(path):
+            return _Document(path, "", (), ())
         texts: list[str] = []
         metadata: list[dict[str, Any]] = []
         token = ""
@@ -435,7 +440,7 @@ class EmbeddingReconciler:
         """
         unavailable = 0
         for path in paths:
-            if self._is_excluded(path):
+            if self._is_excluded(path) or self._skip_embedding(path):
                 self._remove(state, path)
                 continue
             if self._fts.get_tombstone(path) is not None:

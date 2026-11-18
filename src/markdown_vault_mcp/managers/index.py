@@ -165,6 +165,7 @@ class IndexManager:
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
         okf_admission_active: Current effective OKF state, if applicable.
+        skip_embedding: Identifies documents whose vectors should be removed.
     """
 
     def __init__(
@@ -188,6 +189,7 @@ class IndexManager:
         vector_slot: VectorStoreSlot | None = None,
         scratch_dir: Path | None = None,
         okf_admission_active: Callable[[], bool | None] | None = None,
+        skip_embedding: Callable[[str], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -224,6 +226,7 @@ class IndexManager:
             is_path_excluded=self._is_path_excluded,
             vector_slot=vector_slot,
             scratch_dir=scratch_dir,
+            skip_embedding=skip_embedding,
         )
 
     @property

@@ -600,6 +600,23 @@ class Vault:
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
 
+        from markdown_vault_mcp._okf_convention import folder_is_designated
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
+
+        def skip_generated_index(path: str) -> bool:
+            parent, _, name = path.rpartition("/")
+            return (
+                capabilities.index
+                and name == "index.md"
+                and self._okf.state().active
+                and folder_is_designated(parent, capabilities.folders)
+            )
+
         self._index_mgr = IndexManager(
             fts=self._fts,
             tracker=self._tracker,
@@ -610,6 +627,7 @@ class Vault:
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
             okf_admission_active=self._reserved_exempt,
+            skip_embedding=skip_generated_index,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
