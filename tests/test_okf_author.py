@@ -275,7 +275,6 @@ async def test_inactive_vault_refuses_authoring(
     [
         "---\nbad: [\n---\nBody\n",
         "---\n[one, two]\n---\nBody\n",
-        "---\n{type: old}\n---\nBody\n",
         "---\nunterminated\n",
     ],
 )
@@ -714,3 +713,79 @@ def test_replan_supported_stale_after_values(value: str) -> None:
 
     result = author_text("---\ntype: Guide\n---\nBody", {"stale_after": value}, None)
     assert parse_frontmatter(result).metadata["stale_after"] == value
+
+
+@pytest.mark.parametrize(
+    ("fields", "producer"),
+    [
+        ({"title": "New"}, None),
+        ({"type": "New"}, None),
+        ({}, "human:alice"),
+        ({"title": "New"}, "human:alice"),
+    ],
+)
+def test_round3_flow_root_read_author_read(
+    tmp_path: Path, fields: dict, producer: str | None
+) -> None:
+    text = "---\n{type: Old, sources: [{resource: /source.md}],\n # evidence\n verified: [{by: human:bob}], x-extra: {keep: true}, generated: {by: old/1, extension: yes}}\n---\nBody\n"
+    path = tmp_path / "note.md"
+    path.write_text(text)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        before = vault.reader.read("note.md")
+        assert before is not None
+        vault.writer.okf_author(
+            "note.md", if_match=before.etag, fields=fields, producer=producer
+        )
+        after = vault.reader.read("note.md")
+        assert after is not None
+        assert after.frontmatter["type"] == fields.get("type", "Old")
+        if "title" in fields:
+            assert after.frontmatter["title"] == "New"
+        assert after.frontmatter["sources"] == [{"resource": "/source.md"}]
+        assert after.frontmatter["verified"] == [{"by": "human:bob"}]
+        assert after.frontmatter["generated"]["by"] == (producer or "old/1")
+        result = path.read_text()
+        assert (
+            "sources: [{resource: /source.md}],\n # evidence\n verified: [{by: human:bob}], x-extra: {keep: true}"
+            in result
+        )
+        assert "extension: yes" in result
+        assert result.endswith("---\nBody\n")
+    finally:
+        vault.close()
+
+
+def test_round3_header_newline_is_independent_of_body() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    original = "---\ntype: Guide\n---\nline1\r\nline2\r\n"
+    result = author_text(original, {"title": "New"}, None)
+    assert result == "---\ntype: Guide\ntitle: New\n---\nline1\r\nline2\r\n"
+
+
+def test_round3_inherited_invalid_generated_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "note.md"
+    original = "---\n<<: {generated: []}\ntype: Guide\n---\nBody\n"
+    path.write_text(original)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        before = vault.reader.read("note.md")
+        assert before is not None
+        with pytest.raises(InvalidRequestError):
+            vault.writer.okf_author(
+                "note.md", if_match=before.etag, fields={}, producer="human:alice"
+            )
+        assert path.read_text() == original
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("mapping", ["{}", "{type: Guide,}"])
+def test_round3_flow_root_adds_producer(mapping: str) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    result = author_text(f"---\n{mapping}\n---\nBody\n", {}, "process:job")
+    assert parse_frontmatter(result).metadata["generated"]["by"] == "process:job"
+    assert result.endswith("---\nBody\n")

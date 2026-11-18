@@ -1174,7 +1174,8 @@ def register(mcp: FastMCP) -> None:
                 omit to leave generation metadata unchanged.
 
         Returns:
-            The written path and etag.
+            The written path, creation flag, previous revision and unresolved links.
+            Read the note again to obtain a fresh etag.
         """
         if (
             not config.content.okf_capabilities.author

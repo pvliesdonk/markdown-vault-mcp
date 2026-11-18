@@ -86,6 +86,20 @@ def _render(value: Any) -> str:
     )
 
 
+def _flow_insertion(
+    source: str, node: MappingNode, additions: list[str]
+) -> tuple[int, int, str]:
+    position = node.end_mark.index - 1
+    tokens = [
+        t
+        for t in yaml.scan(source)
+        if node.start_mark.index <= t.start_mark.index < position
+    ]
+    trailing_comma = tokens and isinstance(tokens[-1], yaml.FlowEntryToken)
+    prefix = ", " if node.value and not trailing_comma else ""
+    return position, position, prefix + ", ".join(additions)
+
+
 def _generated_edits(
     source: str, node: MappingNode, value: dict[str, str]
 ) -> list[tuple[int, int, str]]:
@@ -105,15 +119,7 @@ def _generated_edits(
         else:
             missing.append(f"{child}: {_render(child_value)}")
     if missing and node.flow_style:
-        position = node.end_mark.index - 1
-        tokens = [
-            t
-            for t in yaml.scan(source)
-            if node.start_mark.index <= t.start_mark.index < position
-        ]
-        trailing_comma = tokens and isinstance(tokens[-1], yaml.FlowEntryToken)
-        prefix = ", " if node.value and not trailing_comma else ""
-        edits.append((position, position, prefix + ", ".join(missing)))
+        edits.append(_flow_insertion(source, node, missing))
     elif missing:
         newline = "\r\n" if "\r\n" in source else "\n"
         indent = " " * node.start_mark.column
@@ -193,14 +199,17 @@ def _parse_root(source: str) -> MappingNode:
         raise InvalidRequestError("Cannot author malformed frontmatter") from exc
     if root is None:
         return MappingNode(tag="tag:yaml.org,2002:map", value=[])
-    if not isinstance(root, MappingNode) or root.flow_style:
-        raise InvalidRequestError("Authoring requires block-mapping frontmatter")
+    if not isinstance(root, MappingNode):
+        raise InvalidRequestError("Authoring requires mapping frontmatter")
     return root
 
 
 def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
     root = _parse_root(source)
     edits, additions = _collect_edits(source, root, changes)
+    if additions and root.flow_style:
+        edits.append(_flow_insertion(source, root, additions))
+        additions = []
     for start, end, replacement in sorted(edits, reverse=True):
         source = source[:start] + replacement + source[end:]
     if additions:
@@ -223,8 +232,10 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
     changes = dict(fields)
     if producer is not None:
         changes["generated"] = {"by": producer, "at": okf_timestamp(datetime.now(UTC))}
-    newline = "\r\n" if "\r\n" in text else "\n"
     span = _header_span(text)
+    header = text[: span[1]] if span else text
+    line_end = re.search(r"\r?\n", header[max(0, span[0] - 1) :] if span else header)
+    newline = line_end.group() if line_end else "\n"
     try:
         original = parse_frontmatter(text.removeprefix("\ufeff"))
         if span is None:

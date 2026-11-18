@@ -524,7 +524,8 @@ Set selected editorial fields on an existing OKF concept.
 
 **Returns**
 
-The written path and etag.
+The written path, creation flag, previous revision and unresolved links.
+Read the note again to obtain a fresh etag.
 
 <!-- DOMAIN-EXAMPLE-okf_author-START -->
 Read a concept, then pass its `etag` as `if_match` and the fields to change, such as `fields={"tags": ["guide"]}`. Fields and generation children omitted from the request retain their text; edited lists use flow form and comments inside edited fields move below them. Invalid values, ambiguous frontmatter and edits that cannot preserve the reader’s view are refused. See [authoring a concept](../../use/okf.md#authoring-a-concept).
