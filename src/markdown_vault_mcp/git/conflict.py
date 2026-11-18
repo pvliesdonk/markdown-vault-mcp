@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 import frontmatter
 
+from markdown_vault_mcp._okf_log_merge import merge_log_texts
 from markdown_vault_mcp.git._run import run_git, run_git_capturing
 from markdown_vault_mcp.git.health import log_git_stderr
 from markdown_vault_mcp.git.types import (
@@ -70,6 +71,8 @@ def resolve_rebase_conflicts(
     """
     root = str(git_root)
     saved: dict[str, str] = {}
+    merged: set[str] = set()
+    fallback: set[str] = set()
     max_iterations = 50  # safety limit
 
     for _ in range(max_iterations):
@@ -123,6 +126,16 @@ def resolve_rebase_conflicts(
                     rel_path,
                 )
 
+            if (
+                Path(rel_path).name == "log.md"
+                and show_result.returncode == 0
+                and rel_path not in fallback
+                and _merge_log_conflict(git_root, rel_path, env, show_result.stdout)
+            ):
+                merged.add(rel_path)
+                continue
+            if Path(rel_path).name == "log.md":
+                fallback.add(rel_path)
             _accept_upstream(git_root, rel_path, env, generated_index)
 
         # Continue the rebase.  If another commit conflicts, the loop
@@ -135,7 +148,11 @@ def resolve_rebase_conflicts(
             env={**(env or {}), "GIT_EDITOR": "true"},
         )
         if cont.returncode == 0:
-            # Rebase completed successfully.
+            # Retain provisional resolutions until the rebase has completed.
+            for path in merged - fallback:
+                saved.pop(path, None)
+                if conflicted is not None:
+                    conflicted.discard(path)
             return list(saved.items())
         # returncode != 0 means the next commit also has conflicts —
         # loop around and resolve again.
@@ -153,6 +170,28 @@ def resolve_rebase_conflicts(
         len(saved),
     )
     return list(saved.items())
+
+
+def _merge_log_conflict(
+    git_root: Path, rel_path: str, env: dict[str, str] | None, local: str
+) -> bool:
+    upstream = run_git_capturing(
+        git_root, "show", f":2:{rel_path}", preserve_newlines=True, env=env
+    )
+    if upstream.returncode != 0:
+        return False
+    result = merge_log_texts(upstream.stdout, local)
+    if result.text is None:
+        logger.warning(
+            "git_conflict_log_merge_fallback path=%s reason=%s", rel_path, result.reason
+        )
+        return False
+    atomic_write(git_root / rel_path, result.text.encode("utf-8"))
+    run_git(git_root, "add", pathspecs=[rel_path], env=env)
+    logger.info(
+        "git_conflict_log_merged path=%s entries_added=%d", rel_path, result.added
+    )
+    return True
 
 
 def _accept_upstream(

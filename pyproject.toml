@@ -162,6 +162,7 @@ dependencies = [
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
     "httpx>=0.25",
+    "markdown-it-py>=2.2.0",
     "python-frontmatter>=1.0",
     "requests>=2.33.0",
     # PROJECT-DEPS-END

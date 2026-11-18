@@ -7050,7 +7050,11 @@ Git working-tree root first, so repository-relative conflict paths work when
 the vault is a subdirectory. Returned `conflict_files` and `conflict_with`
 metadata use repository-relative paths; vault tools take vault-relative paths.
 Reserved index and log conflicts never receive conflict metadata: authored
-indexes and logs keep a verbatim local sibling. When upstream deletes an
+indexes keep a verbatim local sibling. Conflicting logs union complete entries
+under date headings during replay when both sides parse safely; incompatible
+frontmatter or preambles and unsupported content fall back to a verbatim local
+sibling. An aborted replay also falls back. Without a merge base, an entry
+deleted on one side can return. When upstream deletes an
 authored index or log, the original stays deleted and the local bytes remain in
 its sibling. An unsaved non-generated conflict reports failure even when other
 paths are regenerated or saved as siblings. Designated generated indexes take

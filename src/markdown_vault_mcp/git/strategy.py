@@ -1274,21 +1274,18 @@ class GitWriteStrategy:
             self._pending_generated.update(git_root / p for p in generated)
         unsaved = recovery.conflicted - generated - {p for p, _ in saved}
         if unsaved or not authored:
-            return self._conflicts_unrecovered(
-                recovery, generated, authored, unsaved
-            ), []
+            return self._conflicts_unrecovered(recovery, authored, unsaved), []
         return None, authored
 
     def _conflicts_unrecovered(
         self,
         recovery: _ConflictRecovery,
-        generated: set[str],
         authored: list[tuple[str, str]],
         unsaved: set[str],
     ) -> PullResult:
         """Report a pull that recovered fewer conflicts than it found.
 
-        A generated-only conflict with the rebase completed is a ``rebased``
+        A fully recovered conflict with the rebase completed is a ``rebased``
         success. Otherwise it is ``conflict_resolution_failed``, even when
         *unsaved* paths (a local deletion or an unreadable local blob, so no
         bytes were saved) accompany saved siblings: those siblings are still
@@ -1296,8 +1293,7 @@ class GitWriteStrategy:
         """
         git_root, env, from_sha = recovery.git_root, recovery.env, recovery.from_sha
         if (
-            generated
-            and not unsaved
+            not unsaved
             and not recovery.rebase_in_progress
             and self.head_sha(git_root) != from_sha
         ):

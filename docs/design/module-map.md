@@ -16,6 +16,7 @@ file, and keeping them true is part of the change that moves the code.
 
 ```
 src/markdown_vault_mcp/
+  _okf_log_merge.py  -- conservative date-grouped log entry union for Git conflict recovery (#1395)
   __init__.py        -- minimal template-skeleton root (docstring + __version__); import from submodules, not the root (#665, #903)
   utils/
     __init__.py        -- shared path-traversal guard (resolve_inside + validate_path variants) + attachment/exclusion helpers re-exported for managers and facets (#876)
