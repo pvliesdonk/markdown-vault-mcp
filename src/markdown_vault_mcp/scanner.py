@@ -843,7 +843,7 @@ def strip_frontmatter_block(text: str, *, preserve_body: bool = False) -> str:
 
     Args:
         text: Raw markdown file text (frontmatter included).
-        preserve_body: Keep body whitespace and require a parseable metadata mapping.
+        preserve_body: Keep body whitespace; strip a mapping or empty/comment-only YAML.
 
     Returns:
         The body. *text* unchanged when it opens with no frontmatter block.
@@ -864,7 +864,7 @@ def strip_frontmatter_block(text: str, *, preserve_body: bool = False) -> str:
 
 
 def _frontmatter_body_verbatim(text: str) -> str:
-    """Strip only a parsed mapping and preserve everything after its closing line."""
+    """Strip a mapping or empty/comment-only YAML, preserving the body suffix."""
     candidate = text.lstrip()
     handler = frontmatter.detect_format(candidate, frontmatter.handlers)
     if handler is None or handler.FM_BOUNDARY is None:
@@ -881,7 +881,7 @@ def _frontmatter_body_verbatim(text: str) -> str:
         if not isinstance(parsed, dict) and not (
             isinstance(handler, frontmatter.default_handlers.YAMLHandler)
             and parsed is None
-            and not metadata.strip()
+            and yaml.compose(metadata) is None
         ):
             return text
     except (ValueError, TypeError, yaml.YAMLError):

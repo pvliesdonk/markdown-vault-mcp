@@ -1137,6 +1137,7 @@ class TestStripFrontmatterBlock:
         "text, expected",
         [
             ("---\n---\n# Authored\n", "# Authored\n"),
+            ("---\r\n  # comment\r\n\r\n---\r\n\r\n  Body\t\r\n", "\r\n  Body\t\r\n"),
             ("---\nnull\n---\nBody\n", "---\nnull\n---\nBody\n"),
             ("---\n~\n---\nBody\n", "---\n~\n---\nBody\n"),
         ],

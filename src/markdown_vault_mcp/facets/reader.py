@@ -86,7 +86,6 @@ class FolderNavigation:
     state: ScopeState
     source: Literal["authored", "synthesized"] | None
     body: str | None
-    index_path: str
     reason: str | None
     enumeration: Enumeration
     next_cursor: str | None = None
@@ -241,7 +240,6 @@ class ReaderFacet:
             inspection.state,
             None,
             None,
-            index_path,
             None,
             inspection.enumeration,
         )
