@@ -544,6 +544,8 @@ class BundleInspector:
         try:
             root = self._source.resolve(strict=True)
             self._prepare_policy(root)
+            if self._internal(""):
+                return {""}
             with open_directory_nofollow(root, (), source_resolved=True) as fd:
                 self._observe_tree(fd, "", visit, blocked)
         except (OSError, RuntimeError):
@@ -570,7 +572,7 @@ class BundleInspector:
             elif not self._internal(path):
                 try:
                     self._observe_child(fd, path, visit, blocked)
-                except OSError:
+                except (OSError, RecursionError):
                     blocked.add(path)
 
     def _observe_child(

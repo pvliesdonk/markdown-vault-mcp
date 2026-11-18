@@ -627,3 +627,105 @@ def test_post_pull_observation_failure_is_reported_and_webhook_retries(
         )
     finally:
         vault.close()
+
+
+# Descriptor fixture and cleanup remain together to exercise real exhaustion.
+def test_deep_resource_failure_blocks_only_its_subtree(  # noqa: PLR0915, RUF100
+    tmp_path: Path, monkeypatch
+) -> None:
+    import os
+    import sys
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "excluded").mkdir()
+    removed = source / "removed.md"
+    changed = source / "changed.md"
+    removed.write_text("remove")
+    changed.write_text("before")
+    parents = [os.open(source / "excluded", os.O_RDONLY | os.O_DIRECTORY)]
+    try:
+        for _ in range(510):
+            os.mkdir("d", dir_fd=parents[-1])
+            parents.append(
+                os.open("d", os.O_RDONLY | os.O_DIRECTORY, dir_fd=parents[-1])
+            )
+        leaf = os.open("leaf.md", os.O_WRONLY | os.O_CREAT, 0o600, dir_fd=parents[-1])
+        os.write(leaf, b"deep")
+        os.close(leaf)
+        vault = Vault(
+            source_dir=source, settings=VaultSettings(exclude_patterns=["excluded/**"])
+        )
+        try:
+            ledger = vault._index_mgr.observations
+            deep = "/".join(["excluded"] + ["d"] * 510 + ["leaf.md"])
+            limit = sys.getrecursionlimit()
+            try:
+                sys.setrecursionlimit(5000)
+                vault.index.build_index()
+            finally:
+                sys.setrecursionlimit(limit)
+            first = ledger.rows()
+            assert deep in first
+            removed.unlink()
+            changed.write_text("after")
+            observed = []
+            original = ledger._inspector.observe_files
+
+            def capture(visit):
+                blocked = original(visit)
+                observed.append(blocked)
+                return blocked
+
+            monkeypatch.setattr(ledger._inspector, "observe_files", capture)
+            vault.index.build_index(force=True)
+            vault.index.reindex()
+            rows = ledger.rows()
+            assert len(observed) == 2
+            assert all(blocked and "" not in blocked for blocked in observed)
+            assert rows[deep] == first[deep]
+            assert rows["removed.md"].presence == "removed"
+            assert (
+                rows["changed.md"].content_digest != first["changed.md"].content_digest
+            )
+        finally:
+            vault.close()
+    finally:
+        os.unlink("leaf.md", dir_fd=parents[-1])
+        for i in range(len(parents) - 1, 0, -1):
+            os.close(parents[i])
+            os.rmdir("d", dir_fd=parents[i - 1])
+        os.close(parents[0])
+
+
+@pytest.mark.parametrize("state_is_ancestor", [False, True])
+def test_observation_refuses_protected_root_without_removals(
+    tmp_path: Path, monkeypatch, state_is_ancestor: bool
+) -> None:
+    from dataclasses import replace
+
+    import markdown_vault_mcp.bundle_inventory as inventory
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "note.md"
+    note.write_text("body")
+    vault = Vault(source_dir=source)
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        first = ledger.rows()["note.md"]
+        note.unlink()
+        inspector = ledger._inspector
+        state = tmp_path if state_is_ancestor else source
+        inspector._policy = replace(inspector._policy, state_paths=(state,))
+
+        def refuse(*_args, **_kwargs):
+            raise AssertionError("protected root opened")
+
+        monkeypatch.setattr(inventory, "open_directory_nofollow", refuse)
+        assert inspector.observe_files(lambda *_args: None) == {""}
+        vault.index.reindex()
+        assert ledger.rows()["note.md"] == first
+    finally:
+        vault.close()
