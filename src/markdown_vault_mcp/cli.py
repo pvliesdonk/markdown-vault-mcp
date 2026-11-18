@@ -6,9 +6,9 @@ from typing import Literal
 
 import typer
 
+from markdown_vault_mcp._kv_store import build_event_store
 from markdown_vault_mcp._pvl_core import (
     ConfigurationError,
-    build_event_store,
     configure_logging_from_env,
     maybe_start_debugpy,
     normalise_http_path,
@@ -99,15 +99,11 @@ def serve(
             http_path=path,
             configure_logging=False,
         )
-        # Inside the guard: since pvl-core 9 ``build_event_store`` raises
+        # Inside the guard: ``build_event_store`` raises
         # ``ConfigurationError`` for a malformed ``MARKDOWN_VAULT_MCP_KV_STORE_URL``
         # or legacy ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``, which must get the
         # same one-line exit as every other operator value (#647).
-        event_store = (
-            build_event_store(_ENV_PREFIX, config.server)
-            if transport == "http"
-            else None
-        )
+        event_store = build_event_store(config.server) if transport == "http" else None
     except ConfigurationError as exc:
         # A malformed or missing operator value is one actionable line on
         # stderr, not Typer's Rich traceback: the message already names the
