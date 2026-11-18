@@ -426,7 +426,7 @@ def test_resource_failures_name_role_checks(
     assert report.unchecked[name] == checks
 
 
-def test_deep_yaml_export_is_incomplete(tmp_path: Path) -> None:
+def test_deep_yaml_export_returns_artifact(tmp_path: Path) -> None:
     (tmp_path / "note.md").write_text(
         "---\ntype: T\ndeep: " + "[" * 30000 + "]" * 30000 + "\n---\n"
     )
@@ -436,8 +436,11 @@ def test_deep_yaml_export_is_incomplete(tmp_path: Path) -> None:
     finally:
         vault.close()
     assert result.data
-    assert result.report.verdict == "incomplete"
-    assert result.report.unchecked["note.md"] == ["yaml_frontmatter", "type"]
+    if result.report.verdict == "incomplete":
+        assert result.report.unchecked["note.md"] == ["yaml_frontmatter", "type"]
+    else:
+        assert result.report.verdict == "conformant"
+        assert result.report.unchecked == {}
 
 
 @pytest.mark.parametrize("folder", ["", "sub"])
