@@ -1585,6 +1585,8 @@ class DocumentManager:
                 if not is_regular_file(abs_path):
                     raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
+                if self._observations is not None:
+                    self._observations.refresh(path)
                 abs_path.unlink()
                 if self._mark_paths_dirty is not None:
                     self._mark_paths_dirty([path])

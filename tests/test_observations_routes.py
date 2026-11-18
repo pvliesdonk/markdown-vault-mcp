@@ -120,3 +120,43 @@ def test_failed_save_keeps_write_evidence_for_retry(
         assert ledger.rows()["a.md"] == first
     finally:
         vault.close()
+
+
+def test_delete_unobserved_source_retains_removal(tmp_path: Path) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    vault = Vault(source_dir=source, settings=VaultSettings(read_only=False))
+    try:
+        vault.index.build_index()
+        (source / "new.md").write_text("unobserved")
+        vault._doc_mgr.delete("new.md")
+        vault._index_mgr.process_dirty_paths({"new.md"})
+        assert vault._index_mgr.observations.rows()["new.md"].presence == "removed"
+    finally:
+        vault.close()
+
+
+def test_version_one_rows_survive_upgrade(tmp_path: Path) -> None:
+    import json
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    state = tmp_path / "state"
+    vault = Vault(source_dir=source, settings=VaultSettings(state_path=state))
+    try:
+        vault.index.build_index()
+        ledger_path = tmp_path / "state.observations.json"
+        data = json.loads(ledger_path.read_text())
+        data["version"] = 1
+        for row in data["rows"].values():
+            del row["moved_from"]
+            del row["moved_to"]
+        ledger_path.write_text(json.dumps(data))
+        before = vault._index_mgr.observations.rows()["a.md"]
+        (source / "b.md").write_text("new")
+        vault.index.reindex()
+        assert vault._index_mgr.observations.rows()["a.md"] == before
+        assert json.loads(ledger_path.read_text())["version"] == 2
+    finally:
+        vault.close()
