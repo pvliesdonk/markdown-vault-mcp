@@ -36,6 +36,10 @@ Check the current state through the `config://vault` resource. Its `okf_write_co
 
 The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether `okf_verify` is available: `OKF_VERIFY=off` can hide that tool while the write layer remains effective. Independent capability reporting is planned in [#1412](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412).
 
+## Authoring a concept
+
+Enable `MARKDOWN_VAULT_MCP_OKF_AUTHOR=true` on a writable, active OKF vault to expose [`okf_author`](../reference/tools/writer.md#okf_author). Read the concept first and pass its `etag` as `if_match`, together with the editorial `fields` to change. The operation keeps the body, reviews, and fields omitted from the request. An explicit `producer` records `generated.by` and a server-generated UTC timestamp; omit it to leave existing generation metadata unchanged. Authentication identifies the caller for commits and does not identify the content producer.
+
 ## What the metadata means
 
 On a recognised bundle, the server reads a few OKF frontmatter families and surfaces them in `search`, `read`, and `get_context` results under an `okf` key:
@@ -230,8 +234,8 @@ It is best-effort packaging rather than a certified publication, in three specif
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
 
-The independent `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
-settings control review and maintenance. `OKF_AUTHOR` is reserved for a
-future authoring tool and does not enable implicit stamping. `OKF_WRITE=true` retains the
+The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
+settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
+implicit stamping. `OKF_WRITE=true` retains the
 existing behavior and logs a deprecation notice; explicit settings override
 its resolved defaults. See the [configuration reference](../reference/configuration.md).

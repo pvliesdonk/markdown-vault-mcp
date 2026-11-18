@@ -149,7 +149,7 @@ placement in `config.py`, wizard metadata via field
 | `MARKDOWN_VAULT_MCP_OKF_INDEX` | bool | `false` | Enables automatic index maintenance in designated folders. |
 | `MARKDOWN_VAULT_MCP_OKF_LOG` | `off` / `events` / `writes` | `off` | Controls logging; `writes` appends for ordinary server writes. |
 | `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | folder globs | `.` | Designates folders for automatic maintenance; `*` matches one level and `**` spans levels. Leading `./` or `/` and trailing `/` are ignored. |
-| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | bool | `false` | Reserves authority for the future explicit authoring tool; it does not enable stamping. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | bool | `false` | Enables explicit concept authoring on an active writable bundle; it does not enable stamping. |
 
 ### Detection
 

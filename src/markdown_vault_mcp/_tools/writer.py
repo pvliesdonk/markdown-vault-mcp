@@ -1179,7 +1179,8 @@ def register(mcp: FastMCP) -> None:
             or not (await asyncio.to_thread(vault.okf.state)).active
         ):
             raise ToolError(
-                "OKF authoring is not active for this vault.", log_level=logging.INFO
+                "OKF authoring is not active for this vault. Ask the operator to enable authoring on an active bundle.",
+                log_level=logging.INFO,
             )
         with write_identity_scope(okf_intent=False):
             result = await asyncio.to_thread(

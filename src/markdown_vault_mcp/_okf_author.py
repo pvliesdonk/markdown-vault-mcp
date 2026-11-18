@@ -49,6 +49,21 @@ def _generated_edits(
     return edits
 
 
+def _comments_in_span(source: str, start: int, end: int) -> str:
+    # Scalar tokens include quoted and block scalars, where # is data.
+    scalars = [
+        (t.start_mark.index, t.end_mark.index)
+        for t in yaml.scan(source)
+        if isinstance(t, yaml.ScalarToken)
+    ]
+    comments = []
+    for match in re.finditer(r"(?m)(?<!\S)#[^\r\n]*", source[start:end]):
+        position = start + match.start()
+        if not any(a <= position < b for a, b in scalars):
+            comments.append(match.group() + "\n")
+    return "".join(comments)
+
+
 def _collect_edits(
     source: str, root: MappingNode, changes: dict[str, Any]
 ) -> tuple[list[tuple[int, int, str]], list[str]]:
@@ -70,8 +85,15 @@ def _collect_edits(
                 raise InvalidRequestError("Existing generated field must be a mapping")
             old = source[node.start_mark.index : node.end_mark.index]
             suffix = "\n" if old.endswith("\n") else ""
+            comments = _comments_in_span(
+                source, node.start_mark.index, node.end_mark.index
+            )
             edits.append(
-                (node.start_mark.index, node.end_mark.index, _render(value) + suffix)
+                (
+                    node.start_mark.index,
+                    node.end_mark.index,
+                    _render(value) + suffix + comments,
+                )
             )
     return edits, additions
 

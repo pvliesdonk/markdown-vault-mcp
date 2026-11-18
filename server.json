@@ -249,7 +249,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_AUTHOR",
-          "description": "Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting.",
+          "description": "Enable explicit OKF concept authoring on an active writable vault; defaults to false.",
           "format": "boolean"
         },
         {
@@ -923,7 +923,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_AUTHOR",
-          "description": "Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting.",
+          "description": "Enable explicit OKF concept authoring on an active writable vault; defaults to false.",
           "format": "boolean"
         },
         {

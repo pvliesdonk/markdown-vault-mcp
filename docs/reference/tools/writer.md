@@ -8,7 +8,7 @@ kind: reference
 # Writer
 
 <!-- DOMAIN-INTRO-START -->
-Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs review enabled.
+Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, `okf_verify` needs review enabled, and `okf_author` needs authoring enabled and an active bundle.
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 New notes and attachments receive the same permissions as a plain file creation in their destination folder. On Linux, a folder's default access control list (ACL) can grant a shared group write access even when the process umask would remove it. Overwriting an existing file preserves its permission bits.
@@ -506,6 +506,29 @@ distinct days), plus:
 - **Start guides** (0c9d8e7)
 ```
 <!-- DOMAIN-EXAMPLE-okf_seed_log-END -->
+
+## `okf_author`
+
+**OKF: Author Concept.** Changes state, not destructive. Tags: `okf`, `okf-author`, `write`.
+
+Set selected editorial fields on an existing OKF concept.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Concept path in the vault. |
+| `if_match` | `string` | required | Etag from a recent read of the concept. |
+| `fields` | `object` | required | Fields to set: type, title, description, tags, status, `stale_after` or sources. Omitted fields are preserved. |
+| `producer` | `string \| null` | `null` | Explicit producer actor, such as codex/6.1 or human:alex; omit to leave generation metadata unchanged. |
+
+**Returns**
+
+The written path and whether it was created.
+
+<!-- DOMAIN-EXAMPLE-okf_author-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-okf_author-END -->
 
 ## `okf_verify`
 
