@@ -639,3 +639,19 @@ class ReaderFacet:
         Delegates to :meth:`DocumentManager.read_attachment`.
         """
         return self._doc_mgr.read_attachment(path)
+
+    def read_attachment_bytes(self, path: str) -> bytes:
+        """Read an attachment as raw bytes via the document manager.
+
+        Args:
+            path: Relative attachment path.
+
+        Returns:
+            The attachment bytes.
+
+        Raises:
+            InvalidRequestError: If the path is invalid.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the stat or read.
+        """
+        return self._doc_mgr.read_attachment_bytes(path)

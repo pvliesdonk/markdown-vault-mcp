@@ -198,10 +198,16 @@ async def test_read_note_serves_raw_content(sink: VaultTransferSink) -> None:
     assert result.filename == "note.md"
 
 
-async def test_read_attachment_serves_bytes(sink: VaultTransferSink) -> None:
+async def test_read_attachment_serves_bytes(
+    sink: VaultTransferSink, vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_path: str) -> None:
+        raise AssertionError("encoded read used")
+
+    monkeypatch.setattr(vault.reader, "read_attachment", fail)
     result = await sink.read("pic.png")
     assert result.body == _PNG
-    assert "png" in result.media_type
+    assert result.media_type == "image/png"
     assert result.filename == "pic.png"
 
 
