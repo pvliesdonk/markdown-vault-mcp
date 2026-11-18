@@ -169,6 +169,8 @@ itself.
 
 ---
 
+Generated `index.md` files in designated folders are omitted from the vector index when OKF is active and `OKF_INDEX` is enabled. They remain in the keyword index; authored indexes outside the designated folders and all logs retain vectors. Reconciliation removes old vectors for designated indexes, and a later build restores them if designation is removed.
+
 ## 3. Layer 1 — read semantics (annotate)
 
 *Active when detection is on. Additive only; no behavior is removed or

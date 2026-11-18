@@ -16,6 +16,8 @@ This guide covers configuring each supported embedding provider for semantic sea
 
 All four providers produce embeddings that enable the `semantic` and `hybrid` search modes in the `search` tool.
 
+In an active OKF vault, when `OKF_INDEX` is enabled, generated `index.md` files in designated `OKF_FOLDERS` do not receive embeddings. They remain available to keyword and hybrid search. Authored indexes outside those folders and all `log.md` files still receive embeddings; the listed concept notes have their own vectors. See [OKF conventions](okf.md).
+
 The server needs the matching package extra: `embeddings` for FastEmbed, `embeddings-api` for Ollama, OpenAI and Voyage (quoted, as in `uv tool install "markdown-vault-mcp[embeddings-api]"`). `[all]` covers both, and the Docker image, the `.mcpb` bundle and the Claude Code plugin install it.
 
 ## Ollama
