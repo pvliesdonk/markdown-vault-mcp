@@ -20,10 +20,7 @@ from markdown_vault_mcp.okf_export_report import (
     FormatFinding,
     OkfExportReport,
 )
-from markdown_vault_mcp.scanner import (
-    parse_frontmatter,
-    strip_frontmatter_block,
-)
+from markdown_vault_mcp.scanner import strip_frontmatter_block
 
 if TYPE_CHECKING:
     from markdown_it.token import Token
@@ -151,14 +148,14 @@ def _inspect(
         _inspect_reserved(path, text, body, {}, report)
         return
     try:
-        post = parse_frontmatter(text)
+        # Parsing directly preserves arbitrary YAML keys without Post's keyword expansion.
+        metadata, _ = frontmatter.parse(text)
     except (yaml.YAMLError, ValueError):
         if role == "index.md":
             _inspect_reserved(path, text, body, {}, report)
         else:
             report.format_findings.append(FormatFinding(path, "malformed_frontmatter"))
         return
-    metadata = dict(post.metadata)
     if role == "index.md":
         _inspect_reserved(path, text, body, metadata, report)
     else:

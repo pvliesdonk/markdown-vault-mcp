@@ -384,3 +384,76 @@ def test_real_export_accepts_generated_empty_index_and_log(tmp_path: Path) -> No
 
 def test_index_rejects_whitespace_only_link_title() -> None:
     assert _audit({"index.md": b"# Index\n- [   ](a.md)\n"}).verdict == "nonconformant"
+
+
+@pytest.mark.parametrize("header", ["type: T\nhandler: extra", "type: T\n42: value"])
+def test_unusual_yaml_keys_export_without_crashing(tmp_path: Path, header: str) -> None:
+    (tmp_path / "note.md").write_text(f"---\n{header}\n---\n# Note\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert result.report.verdict == "conformant"
+    assert result.data
+
+
+def test_above_root_destinations_do_not_match_local_namesakes() -> None:
+    report = _audit(
+        {
+            "note.md": b"---\ntype: T\n---\n[a](../target.md) [b](%2e%2e/target.md) [[../target]]\n",
+            "target.md": b"---\ntype: T\n---\n",
+            "sub/note.md": b"---\ntype: T\n---\n[valid](../target.md) [[../target]]\n",
+        }
+    )
+    assert [(item.path, item.target) for item in report.broken_links] == [
+        ("note.md", "../target.md"),
+        ("note.md", "%2e%2e/target.md"),
+        ("note.md", "../target"),
+    ]
+
+
+def test_wikilink_candidates_are_scoped_by_basename(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+
+    original = ExportPaths._wiki_match
+    observed: list[set[str]] = []
+
+    def observe(name: str, source: str, candidates: set[str]) -> str | None:
+        observed.append(candidates)
+        return original(name, source, candidates)
+
+    monkeypatch.setattr(ExportPaths, "_wiki_match", staticmethod(observe))
+    report = _audit(
+        {
+            "note.md": b"---\ntype: T\n---\n[[target]]\n",
+            "sub/target.md": b"---\ntype: T\n---\n",
+            "other.md": b"---\ntype: T\n---\n",
+        }
+    )
+    assert report.broken_links == []
+    assert observed == [{"sub/target.md"}]
+
+
+def test_artifact_relative_traversal_preserves_depth_and_ties() -> None:
+    report = _audit(
+        {
+            "a/note.md": b"---\ntype: T\n---\n[inside](../target.md) [escape](../../target.md) [[../../target]] [[choice]]\n",
+            "target.md": b"---\ntype: T\n---\n",
+            "a/choice.md": b"---\ntype: T\n---\n",
+            "b/choice.md": b"---\ntype: T\n---\n",
+        }
+    )
+    assert [item.target for item in report.broken_links] == [
+        "../../target.md",
+        "../../target",
+    ]
+
+
+@pytest.mark.parametrize("header", ["handler: extra", "42: value"])
+def test_unusual_root_index_key_is_a_format_finding(header: str) -> None:
+    report = _audit({"index.md": f"---\n{header}\n---\n# Index\n".encode()})
+    assert report.verdict == "nonconformant"
+    assert [item.reason for item in report.format_findings] == ["index_frontmatter"]

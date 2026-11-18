@@ -2153,7 +2153,8 @@ the spec itself says, dated and sourced, in
   index frontmatter and entry structure, and ISO log date headings. The format
   verdict is `conformant`, `nonconformant`, or `incomplete` when a required
   check cannot run, even if findings are present. Admission, recommended
-  metadata and broken links are separate observations and do not affect it. Descriptor-relative no-follow raw reads protect
+  metadata and broken links are separate observations and do not affect it.
+  Descriptor-relative no-follow raw reads protect
   notes and attachments after inventory (#1448, #2167).
 - **Reserved-file classification**: `okf.is_okf_reserved_file` owns the
   lexical, exact-case basename check for already scoped vault-relative POSIX

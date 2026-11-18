@@ -778,6 +778,8 @@ Logs permit headings before the first date but no ungrouped entry, and require
 valid ISO dates in non-increasing order. After a date, entry content is free.
 The shared frontmatter parser also rejects impossible implicit YAML dates;
 the export reports that parser failure without substituting another dialect.
+An undecodable Markdown member leaves the checks that need its text unchecked,
+so the verdict is incomplete rather than asserting a format finding.
 
 ---
 
@@ -793,7 +795,7 @@ onto `sources`. Three documented frictions, resolved at guide level:
 |---|---|
 | `status` vocabulary: PARA `active/archived` (workflow) vs OKF `draft/stable/deprecated` (lifecycle) | Different meanings — do **not** map (archived ≠ deprecated). PARA workflow state moves to its own extension key (OKF preserves unknown keys); `status` is reserved for OKF lifecycle. |
 | PARA `0-Inbox/` notes are deliberately untyped until triage | Captures get placeholder `type: Capture` (conformant immediately; triage overwrites). Fallback: audit-whitelist the inbox via exclude patterns. |
-| Zettelkasten/Obsidian wikilink dialect vs OKF standard-link convention | Not a conformance issue (conformance is frontmatter-only). Internal graph parses both dialects; export converts resolvable links only for searchable notes using the existing graph. |
+| Zettelkasten/Obsidian wikilink dialect vs OKF standard-link convention | Link spelling is not a format conformance rule; reserved-file structure also counts. Internal graph parses both dialects; export converts resolvable links only for searchable notes using the existing graph. |
 
 Deliverables (docs phase): `docs/guides/okf.md`; "Using X with OKF" interop
 sections in `para.md` and `zettelkasten.md`; `examples/okf/` (templates +

@@ -748,6 +748,20 @@ class ArtifactLinks:
     members: set[str]
     directories: set[str]
     extensions: frozenset[str]
+    _candidates: dict[str, set[str]] = field(default_factory=dict, init=False)
+
+    def __post_init__(self) -> None:
+        for member in self.members:
+            self._candidates.setdefault(member.rpartition("/")[2], set()).add(member)
+
+    def _resolve(self, path: str, source: str) -> str:
+        if not path.startswith("/"):
+            normalized = posixpath.normpath(
+                posixpath.join(posixpath.dirname(source), path)
+            )
+            if normalized == ".." or normalized.startswith("../"):
+                return normalized
+        return _resolve_link_path(path, source)[0]
 
     def unresolved(self, body: str, source: str) -> list[str]:
         """Return unresolved local destinations as written, in first-seen order.
@@ -776,15 +790,16 @@ class ArtifactLinks:
             path, _ = _path_and_suffix(raw)
             if not path or _is_external_target(path):
                 return None
-            return _resolve_link_path(path, source)[0]
+            return self._resolve(path, source)
         name = (
             raw
             if names_attachment(raw, self.extensions) or raw.lower().endswith(".md")
             else raw + ".md"
         )
         if name.startswith(("./", "../")):
-            return _resolve_link_path(name, source)[0]
-        return ExportPaths._wiki_match(name, source, self.members) or name
+            return self._resolve(name, source)
+        candidates = self._candidates.get(name.rpartition("/")[2], set())
+        return ExportPaths._wiki_match(name, source, candidates) or name
 
 
 class _ExportCollision(ValueError):
