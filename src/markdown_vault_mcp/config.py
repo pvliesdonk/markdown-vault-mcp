@@ -468,7 +468,8 @@ class ProjectConfig:
                 "leaving attestation to external tooling. "
                 "Unset resolves to off, or elicit with OKF_WRITE enabled. An explicit "
                 "elicit or trust-auth with OKF_MODE=off is a configuration error. "
-                "Review is available independently of OKF_WRITE."
+                "Review is available independently of OKF_WRITE; it requires an active "
+                "OKF vault and a writable server."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},

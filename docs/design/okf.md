@@ -137,20 +137,19 @@ Explicitly rejected alternatives:
 
 ### Config surface
 
-Three settings today and two proposed (§6.0), standard `CONFIG-*` sentinel
+OKF settings use standard `CONFIG-*` sentinel
 placement in `config.py`, wizard metadata via field
 `metadata={"help": ..., "tags": (...)}`:
 
 | Env var | Values | Default | Meaning |
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: never apply OKF semantics (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
-| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Stamp provenance on the server's own writes and expose `okf_verify` (§6). Requires effective read mode on (declared under `auto`, or mode `on`); `true` with mode `off` is a config validation error. In the shipped code it also switches on reserved-file maintenance, which §6.0 gives its own switch. |
-| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `off` (or `elicit` with alias) | How `okf_verify` attributes a human review (§6). The configured capability resolves independently, but the tool remains gated by `OKF_WRITE` during the transition. |
-| `MARKDOWN_VAULT_MCP_OKF_MAINTAIN` (proposed, #1412) | bool | `false` | The server is the maintainer of `index.md` / `log.md` (§6.0). Same read-mode requirement as `OKF_WRITE`. |
-| `MARKDOWN_VAULT_MCP_OKF_RECONCILE` (proposed, #1412) | bool | `false` | The server may repair provenance on notes it did not write (§6.0). Same read-mode requirement. |
-
-The names of the two proposed settings are candidates; the `config-contract`
-skill fixes them at implementation.
+| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Deprecated alias that preserves legacy stamping, review and maintenance defaults; explicit settings take precedence. |
+| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `off` (or `elicit` with alias) | Independently enables review and selects how a human review is attributed. |
+| `MARKDOWN_VAULT_MCP_OKF_INDEX` | bool | `false` | Enables automatic index maintenance in designated folders. |
+| `MARKDOWN_VAULT_MCP_OKF_LOG` | `off` / `events` / `writes` | `off` | Controls logging; `writes` appends for ordinary server writes. |
+| `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | folder globs | `.` | Designates folders for automatic maintenance; `**` selects all folders. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | bool | `false` | Reserves authority for the future explicit authoring tool; it does not enable stamping. |
 
 ### Detection
 
@@ -162,8 +161,7 @@ mode, declared version and active state, as well as `okf_write_configured`
 and `okf_write_effective`. Active `stats.okf` reports the configured and
 effective write layer as `write_configured` and `write_effective`; it is
 absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
-OKF is active, and the vault is not read-only. Independent services remain
-the subject of #1412.
+OKF is active, and the vault is not read-only. This legacy flag does not report each independent capability.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -340,13 +338,11 @@ byte-identical.
 
 Everything here changes bytes or write outcomes; all of it is operator-gated
 by one of the switches in §6.0, none of it is implied by vault declaration,
-and each behaviour below names the switch that owns it. Until §6.0 lands,
-`OKF_WRITE` is the only switch and owns all of it; the section was headed
-"enforced write layer (`OKF_WRITE=true`)" for that reason.
+and each behaviour below names the switch that owns it. The resolved capabilities gate review and maintenance independently; legacy stamping remains tied to `OKF_WRITE`.
 
 ### 6.0 Ownership: three independent switches (proposed, #1412)
 
-**Status:** design, 2026-09-09; not implemented. Supersedes the single
+**Status:** historical proposal, 2026-09-09; superseded by the independent capabilities in the config surface above and the OKF roadmap. Supersedes the single
 `OKF_WRITE` ladder (`off|stamp|maintain|own`) that #1412 was filed for and
 that both earlier ownership drafts (PR #1426, PR #1429) carried. This
 section says what to build; how to get there from the shipped code is
