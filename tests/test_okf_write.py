@@ -604,13 +604,15 @@ class TestServiceTokenOkf:
         path = okf_alias_env / "guides" / "playbook.md"
         before = path.read_bytes()
         async with Client(make_server()) as client:
-            with pytest.raises(ToolError, match="no human identity"):
+            with pytest.raises(
+                ToolError, match="service principal cannot record human-review"
+            ):
                 await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert path.read_bytes() == before
 
     @pytest.mark.parametrize("legacy", [False, True])
-    async def test_elicit_attributes_confirmed_review_to_local_human(
+    async def test_elicit_refuses_service_human_review(
         self, okf_alias_env: Path, legacy: bool
     ) -> None:
         async with Client(
@@ -618,17 +620,9 @@ class TestServiceTokenOkf:
             mode="legacy" if legacy else "auto",
             elicitation_handler=_accept_review,
         ) as client:
-            result = await client.call_tool(
-                "okf_verify", review_args("guides/playbook.md")
-            )
-            await wait_for_mcp_writer_drain(client)
-        assert _parse_tool_data(result)["verifier"] == "human:local"
-        (entry,) = _verified_meta(okf_alias_env / "guides" / "playbook.md")
-        assert entry["by"] == "human:local"
-
-    async def test_elicit_decline_does_not_verify(self, okf_alias_env: Path) -> None:
-        async with Client(make_server(), elicitation_handler=_decline_review) as client:
-            with pytest.raises(ToolError, match="not confirmed"):
+            with pytest.raises(
+                ToolError, match="service principal cannot record human-review"
+            ):
                 await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None

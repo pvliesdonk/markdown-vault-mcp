@@ -51,6 +51,7 @@ class ContentConfig:
     okf_mode: str = "auto"
     okf_write: bool = False
     okf_verify: str = DEFAULT_VERIFY
+    okf_machine_review: bool = False
     service_subjects: Sequence[str] | None = None
     okf_author: bool | None = None
     okf_index: bool | None = None

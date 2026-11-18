@@ -12,7 +12,7 @@ import contextlib
 import json
 import logging
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1230,7 +1230,7 @@ def register(mcp: FastMCP) -> None:
     async def okf_verify(
         path: str,
         reviewed_snapshot: dict[str, str],
-        check: Literal["human-review"] = "human-review",
+        check: str = "human-review",
         ctx: Context = CurrentContext(),
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
@@ -1243,14 +1243,14 @@ def register(mcp: FastMCP) -> None:
         Args:
             path: Path of the note the user reviewed.
             reviewed_snapshot: Snapshot from the whole-note read that was reviewed.
-            check: Review performed; defaults to human-review.
+            check: human-review, schema, links, source-comparison, or an x- prefixed check.
 
         Returns:
             On the modern protocol's first round, an input request asking the
             client for human confirmation. After confirmation, a dict with:
 
             - `path`: the verified note.
-            - `verifier`: the `human:<subject>` actor recorded.
+            - `verifier`: the `human:<subject>` or `process:<subject>` actor recorded.
             - `verified_count`: the number of verification entries after the
               append.
             - remote (dict, optional): present only while the vault's git clone
@@ -1262,7 +1262,8 @@ def register(mcp: FastMCP) -> None:
                 changed since it was read; read and review the current text before
                 calling okf_verify again. Under `elicit` the gate needs a client that can
                 ask the user, and the user's confirmation; under `trust-auth`,
-                an authenticated identity.
+                an authenticated identity. Service principals need machine review
+                enabled and cannot record human-review.
             DocumentNotFoundError: If the note does not exist.
             InvalidRequestError: If the path is protected.
         """
@@ -1279,13 +1280,54 @@ def register(mcp: FastMCP) -> None:
                 f"Could not read note {path!r} or the local review receipt state, "
                 "so nothing was written. Ask the operator to check the server's files."
             ) from exc
-        subject_or_request = await _resolve_verify_mode_subject(
-            mode=config.content.okf_capabilities.verify,
-            ctx=ctx,
-            path=path,
-            snapshot=reviewed_snapshot,
-            check=check,
-        )
+        principal = resolve_mcp_principal()
+        actor = None
+        subject_or_request: str | InputRequiredResult
+        if principal.kind == "service":
+            if check == "human-review":
+                raise ToolError(
+                    "A service principal cannot record human-review.",
+                    log_level=logging.INFO,
+                )
+            if not config.content.okf_machine_review:
+                raise ToolError(
+                    "Machine reviews require OKF_MACHINE_REVIEW=true.",
+                    log_level=logging.INFO,
+                )
+            if not principal.subject or any(c.isspace() for c in principal.subject):
+                raise ToolError(
+                    "A service principal needs a usable identity to record a machine review.",
+                    log_level=logging.INFO,
+                )
+            actor = f"process:{principal.subject}"
+            subject_or_request = principal.subject
+        else:
+            if check != "human-review":
+                raise ToolError(
+                    "Named machine checks require a service principal.",
+                    log_level=logging.INFO,
+                )
+            subject_or_request = await _resolve_verify_mode_subject(
+                mode=config.content.okf_capabilities.verify,
+                ctx=ctx,
+                path=path,
+                snapshot=reviewed_snapshot,
+                check=check,
+            )
+        if check not in {
+            "human-review",
+            "schema",
+            "links",
+            "source-comparison",
+        } and not (
+            check.startswith("x-")
+            and len(check) > 2
+            and not any(c.isspace() for c in check)
+        ):
+            raise ToolError(
+                "Unknown check; use schema, links, source-comparison, or x- followed by a name.",
+                log_level=logging.INFO,
+            )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
         await _require_review_authority(config, vault)
@@ -1297,6 +1339,7 @@ def register(mcp: FastMCP) -> None:
                     subject_or_request,
                     reviewed_snapshot,
                     check,
+                    actor=actor,
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(

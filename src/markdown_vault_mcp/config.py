@@ -481,14 +481,26 @@ class ProjectConfig:
             "wizard": {"group": "Content"},
         },
     )
+    okf_machine_review: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Allow service principals to record named machine checks with "
+                "okf_verify. Off by default; OKF_VERIFY must also enable review. "
+                "Service principals cannot record human-review."
+            ),
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
     service_subjects: Sequence[str] | None = field(
         default=None,
         metadata={
             "help": (
                 "Comma-separated token sub values that belong to applications, "
                 "not people. A caller whose sub is listed is a service: "
-                "okf_verify records its review as local (elicit) or refuses it "
-                "(trust-auth). Entries match the token's sub exactly. Use it "
+                "okf_verify refuses human review and permits named machine checks only "
+                "when OKF_MACHINE_REVIEW is enabled. Entries match the token's sub exactly. Use it "
                 "for issuers whose "
                 "client-credentials tokens carry nothing that marks them as an "
                 "application's, such as a Keycloak, authentik or Zitadel "
@@ -1251,6 +1263,7 @@ class ProjectConfig:
             okf_mode=self.okf_mode,
             okf_write=self.okf_write,
             okf_verify=self.okf_verify,
+            okf_machine_review=self.okf_machine_review,
             okf_author=self.okf_author,
             okf_index=self.okf_index,
             okf_log=self.okf_log,
@@ -1515,6 +1528,9 @@ class ProjectConfig:
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
             okf_verify=read_okf_verify(_ENV_PREFIX),
+            okf_machine_review=to_bool(
+                env(_ENV_PREFIX, "OKF_MACHINE_REVIEW"), default=False
+            ),
             okf_author=to_bool(raw_author, default=False)
             if (raw_author := env(_ENV_PREFIX, "OKF_AUTHOR")) is not None
             else None,

@@ -1143,18 +1143,19 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
-def append_okf_verification(
+def append_okf_verification(  # noqa: PLR0913, RUF100 - optional actor preserves the public API
     text: str,
     *,
     subject: str,
     now: _dt.datetime,
     reviewed_snapshot: dict[str, str] | None = None,
     check: str = "human-review",
+    actor: str | None = None,
 ) -> str:
-    """Append a ``human:<subject>`` entry to a note's ``verified`` list.
+    """Append a review actor to a note's ``verified`` list.
 
-    The ``okf_verify`` tool's core transform (design §6): records an attributable
-    human attestation, promoting the note's trust tier to ``human-reviewed``.
+    By default the actor is ``human:<subject>``. An explicit actor can
+    identify a machine check.
     Preserves other frontmatter values and mapping order, including nested
     mappings. A new ``verified`` field appends; an existing field retains its
     slot. The entry keeps the ``{by, at}`` shape :func:`derive_trust_tier` reads.
@@ -1168,6 +1169,7 @@ def append_okf_verification(
             :func:`okf_timestamp`).
         reviewed_snapshot: Optional reviewed snapshot to bind in x-mvmcp.reviews.
         check: Name of the review performed.
+        actor: Explicit reviewer actor, or None to use the human subject.
 
     Returns:
         The note text with the appended verification.
@@ -1175,7 +1177,10 @@ def append_okf_verification(
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     verified = list(verified_entries(meta))
-    entry = {"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)}
+    entry = {
+        "by": actor if actor is not None else f"{_HUMAN_ACTOR_PREFIX}{subject}",
+        "at": okf_timestamp(now),
+    }
     if reviewed_snapshot is None:
         meta["verified"] = [*verified, entry]
         return fm.dumps(fm.Post(post.content, **meta), sort_keys=False)

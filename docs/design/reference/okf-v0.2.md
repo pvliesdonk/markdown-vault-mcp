@@ -41,7 +41,7 @@ sources:
 
 # Open Knowledge Format v0.2
 
-On 2026-11-18, sections 5, 8, 9 and 11 of the public [neutral repository v0.3 draft](https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md) were rechecked. Its verification events do not bind a snapshot or check kind (§5.2). [source: neutral-v03-draft] This project retains the v0.2 baseline below; its snapshot digest is a project extension.
+On 2026-11-18, sections 5, 8, 9 and 11 of the public [neutral repository v0.3 specification](https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md) were rechecked. Its verification events do not bind a snapshot or check kind (§5.2). [source: neutral-v03-draft] This project retains the approved v0.2 baseline below; its snapshot digest is a project extension. v0.3 §5.3 considers verification current relative to `generated.at`; adopting that rule is separate work.
 
 What the OKF specification (`okf/SPEC.md` in
 `GoogleCloudPlatform/knowledge-catalog`) requires of a bundle and of a

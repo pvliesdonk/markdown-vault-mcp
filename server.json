@@ -252,6 +252,12 @@
           "default": "false"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW",
+          "description": "Allow service principals to record named machine checks with okf_verify. Off by default; OKF_VERIFY must also enable review. Service principals cannot record human-review.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_OKF_AUTHOR",
           "description": "Enable explicit OKF concept authoring on an active writable vault; defaults to false, or true with OKF_WRITE.",
           "format": "boolean"
@@ -271,7 +277,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
-          "description": "Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name)."
+          "description": "Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: okf_verify refuses human review and permits named machine checks only when OKF_MACHINE_REVIEW is enabled. Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name)."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",
@@ -942,6 +948,12 @@
           "default": "false"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW",
+          "description": "Allow service principals to record named machine checks with okf_verify. Off by default; OKF_VERIFY must also enable review. Service principals cannot record human-review.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_OKF_AUTHOR",
           "description": "Enable explicit OKF concept authoring on an active writable vault; defaults to false, or true with OKF_WRITE.",
           "format": "boolean"
@@ -961,7 +973,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS",
-          "description": "Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name)."
+          "description": "Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: okf_verify refuses human review and permits named machine checks only when OKF_MACHINE_REVIEW is enabled. Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name)."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",

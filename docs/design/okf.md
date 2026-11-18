@@ -145,6 +145,7 @@ placement in `config.py`, wizard metadata via field
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: never apply OKF semantics (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
 | `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Deprecated alias enabling authoring, review and maintenance defaults; explicit settings take precedence. |
+| `MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW` | boolean | `false` | Allows service principals to record named machine checks when review is enabled. |
 | `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `off` (or `elicit` with alias) | Independently enables review and selects how a human review is attributed. |
 | `MARKDOWN_VAULT_MCP_OKF_INDEX` | bool | `false` | Enables automatic index maintenance in designated folders. |
 | `MARKDOWN_VAULT_MCP_OKF_LOG` | `off` / `events` / `writes` | `off` | Controls logging; `writes` appends for ordinary server writes. |
@@ -392,9 +393,8 @@ The operator controls explicit authoring, review, index and log maintenance inde
     this tool records leaves its control by construction; a headless agent (no
     human) cannot produce one through `okf_verify`. The guard covers only this
     operation, not `verified` supplied on an ordinary write. The subject stamped is the token's `sub`
-    when the principal is human, else `local` (including service credentials
-    and application-marked tokens) — the elicitation, not the
-    token, is the human-presence proof.
+    when the principal is human, else `local` without authenticated identity.
+    Service principals cannot record human reviews.
   - **`off`**: hides the tool entirely (via the `okf-enforce` tag disable), so
     `verified` is set only by external tooling (CLI / git-hook / CI) beyond the
     model's reach.
@@ -404,6 +404,11 @@ The operator controls explicit authoring, review, index and log maintenance inde
     marks as an application's or whose `sub` is in `SERVICE_SUBJECTS` (#1480).
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
+
+  With `OKF_MACHINE_REVIEW=true`, a service principal may instead record `schema`,
+  `links`, `source-comparison`, or an `x-` named check as `process:<subject>`.
+  This uses the same snapshot guard and receipt. Machine-only entries yield
+  `machine-confirmed`; an existing human entry keeps `human-reviewed`.
 
   Trust caveat: `elicit` asks a human to confirm this tool’s entry, but the
   tier also classifies supplied metadata and establishes neither reviewer
@@ -694,3 +699,5 @@ phase owns.
 ### Snapshot-bound review recording
 
 `okf_verify` validates the reviewed snapshot before confirmation and again after confirmation, then uses the fresh read etag for the write. Portable `verified` entries retain `{by, at}`; `x-mvmcp.reviews` appends the check and snapshot as supplied claims. A matching instance-local receipt is stored beside the observation ledger, outside the bundle. Bound reviews require YAML frontmatter (or no frontmatter); JSON and TOML must be converted to YAML. The snapshot excludes `verified` and `x-mvmcp`. Receipts must be outside the vault, and last only for the process without a state path. A receipt failure after the note write leaves the claim without local evidence and raises an error identifying the partial outcome. Review applicability presentation remains separate work.
+
+As of 2026-11-18, [OKF v0.3](https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md) is public. This implementation retains the approved v0.2 tier semantics; adopting v0.3 is separate work.
