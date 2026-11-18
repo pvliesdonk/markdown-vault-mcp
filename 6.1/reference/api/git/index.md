@@ -31,6 +31,20 @@ vault.close()
 strategy.close()
 ```
 
+## Settings object
+
+Group configuration in `GitWriteSettings` and pass the repository path separately:
+
+```
+from pathlib import Path
+from markdown_vault_mcp.git import GitWriteSettings, GitWriteStrategy
+
+settings = GitWriteSettings(token="ghp_your_token", push_delay_s=30)
+strategy = GitWriteStrategy(settings=settings, repo_path=Path("/path/to/vault"))
+```
+
+Legacy flat arguments remain supported. With `settings`, flat arguments must have their default values. The settings object takes precedence over default-valued flat arguments.
+
 ## Migrating from 4.x
 
 `GitWriteStrategy` no longer accepts `commit_name_claim` or `commit_email_claim`. Remove these constructor arguments. The remaining `git_lfs` and `repo_path` options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:
@@ -52,7 +66,28 @@ The older startup warning about missing `git config user.email` is removed. The 
 
 ## API Reference
 
-## `GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None)`
+## `GitWriteSettings(*, token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, git_lfs=True)`
+
+Grouped configuration for a :class:`GitWriteStrategy`.
+
+Each field mirrors the :class:`GitWriteStrategy` constructor argument of the same name and has the same default. The instance is frozen and its `repr` omits `token`.
+
+Attributes:
+
+| Name           | Type    | Description                                                                                           |
+| -------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `token`        | \`str   | None\`                                                                                                |
+| `username`     | `str`   | Username used with token auth (GitHub-compatible default).                                            |
+| `repo_url`     | \`str   | None\`                                                                                                |
+| `managed`      | `bool`  | When True, the strategy clones into an empty repo_path or validates origin on an existing repository. |
+| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                  |
+| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                        |
+| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on close).                            |
+| `commit_name`  | \`str   | None\`                                                                                                |
+| `commit_email` | \`str   | None\`                                                                                                |
+| `git_lfs`      | `bool`  | Run git lfs pull during lazy initialisation.                                                          |
+
+## `GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None, settings=None)`
 
 Stateful git strategy: commit per tool call, deferred push.
 
@@ -62,7 +97,7 @@ On each callback invocation:
 1. Commits with an auto-generated message (`"operation: path"`).
 1. Resets the push timer — push fires after `push_delay_s` of idle.
 
-Writes fired by one MCP tool call are grouped by the dispatcher (#1264) and arrive at :meth:`on_write_batch`, which stages every path the same scoped way and commits them once as `"<tool>: N files"`. A call that touched a single file commits under that file's own path instead, so ordinary writes read in `git log` exactly as they always have. A write with no owning tool call takes the per-write path above.
+Writes fired by one MCP tool call are grouped by the dispatcher (#1264) and arrive at :meth:`on_write_batch`, which stages every path the same scoped way and commits them once as `"<tool>: N files"`. A call touching a single file ordinarily names that file instead; folder moves name their roots even for one file. A write with no owning tool call takes the per-write path above.
 
 Push is deferred to a background `threading.Timer` that resets on each write. When the timer fires (no writes for `push_delay_s`), all accumulated local commits are pushed in a single `git push`.
 
@@ -70,19 +105,28 @@ On startup, any unpushed local commits (from a previous crash) are pushed immedi
 
 Parameters:
 
-| Name           | Type    | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                                                                           |
-| -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `token`        | \`str   | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                                                                                  |
-| `username`     | `str`   | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                                                                                |
-| `repo_url`     | \`str   | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                                                                              |
-| `managed`      | `bool`  | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                                                                           |
-| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                                                                            |
-| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                                                                            |
-| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                                                                            |
-| `commit_name`  | \`str   | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                                                                        |
-| `commit_email` | \`str   | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                                                                                      |
-| `git_lfs`      | `bool`  | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                                                                            |
-| `repo_path`    | \`Path  | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation and reporting uncommitted files without modifying them. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
+| Name           | Type               | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                                                                           |
+| -------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token`        | \`str              | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                                                                                  |
+| `username`     | `str`              | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                                                                                |
+| `repo_url`     | \`str              | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                                                                              |
+| `managed`      | `bool`             | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                                                                           |
+| `enable_pull`  | `bool`             | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                                                                            |
+| `enable_push`  | `bool`             | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                                                                            |
+| `push_delay_s` | `float`            | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                                                                            |
+| `commit_name`  | \`str              | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                                                                        |
+| `commit_email` | \`str              | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                                                                                      |
+| `git_lfs`      | `bool`             | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                                                                            |
+| `repo_path`    | \`Path             | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation and reporting uncommitted files without modifying them. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
+| `settings`     | \`GitWriteSettings | None\`                                                                                                                                                                                                                | Preferred grouped configuration. When given, it replaces every flat configuration argument above except repo_path, and those flat arguments must stay at their defaults.                                                                                          |
+
+Raises:
+
+| Type         | Description                                                                                                                                     |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ValueError` | settings is given together with a flat configuration argument that differs from its default; the message names the arguments, not their values. |
+
+Prefer `settings` for configuration. Flat parameters remain for compatibility; future settings are added only to :class:`GitWriteSettings`. Non-default flat parameters cannot be combined with `settings`.
 
 Author identity arrives per write as a resolved `principal`. OIDC claim-key registration belongs to :func:`markdown_vault_mcp._identity.configure_identity_claims`, not this constructor. The removed claim keywords raise :exc:`TypeError`; `git_lfs` and `repo_path` must be passed by keyword (#1236).
 
@@ -109,7 +153,7 @@ Validate git settings and report uncommitted startup work.
 
 Commit every write from one tool call as a single commit.
 
-Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary differs, and for a call that wrote a single file not even that — see :func:`_stage_and_commit_batch`. The author identity is taken from the first item's principal: one tool call has one acting principal, so the items cannot legitimately disagree.
+Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary differs; an ordinary single-file call keeps its file subject, while a folder move names its roots — see :func:`_stage_and_commit_batch`. The author identity is taken from the first item's principal: one tool call has one acting principal, so the items cannot legitimately disagree.
 
 Parameters:
 
@@ -460,3 +504,5 @@ Returns:
 | ---- | ------------------ | ----------------------------------------------- |
 | `A`  | `GitWriteStrategy` | class:GitWriteStrategy instance (also satisfies |
 |      | `GitWriteStrategy` | data:~markdown_vault_mcp.types.WriteCallback).  |
+
+The optional `BatchAwareWriteCallback` protocol in `markdown_vault_mcp.types` describes the batch opt-in. `Versioner` remains the per-write contract.

@@ -1066,6 +1066,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#separate-search-data-from-persistent-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Separate search data from persistent state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#git" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3203,6 +3214,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#separate-search-data-from-persistent-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Separate search data from persistent state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#git" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3633,7 +3655,83 @@ directories (default 1000/1000).</p>
 <h3 id="looking-things-up-from-the-host">Looking things up from the host<a class="headerlink" href="#looking-things-up-from-the-host" title="Permanent link">&para;</a></h3>
 <p>The image carries the <code>markdown-vault-mcp</code> command, so you can search and read the running vault with <code>docker exec</code>, as the <code>appuser</code> user. <a href="../../use/terminal/#inside-the-servers-docker-container">Query a vault from the terminal</a> has the command and an alias.</p>
 <h3 id="what-datastate-holds">What <code>/data/state</code> holds<a class="headerlink" href="#what-datastate-holds" title="Permanent link">&para;</a></h3>
-<p>This server keeps its search index (<code>index.db</code>), its embeddings and the FastEmbed model cache under <code>/data/state</code>, beside the server's own state. It writes nothing to <code>/data/service</code>. The notes live only in the vault: the index and embeddings under <code>/data/state</code> are rebuilt when lost, at the cost of a full reindex. Keep the <code>state-data</code> volume on a local disk, not a network share: the index is SQLite in WAL mode (<a href="../../use/storage/">Index storage and SQLite</a>).</p>
+<p>By default, this server keeps its search index (<code>index.db</code>), its embeddings and the FastEmbed model cache under <code>/data/state</code>, beside the server's own state. It writes nothing to <code>/data/service</code>. The notes live only in the vault: the index and embeddings under <code>/data/state</code> are rebuilt when lost, at the cost of a full reindex. Keep the <code>state-data</code> volume on a local disk, not a network share: the index is SQLite in WAL mode (<a href="../../use/storage/">Index storage and SQLite</a>).</p>
+<h3 id="separate-search-data-from-persistent-state">Separate search data from persistent state<a class="headerlink" href="#separate-search-data-from-persistent-state" title="Permanent link">&para;</a></h3>
+<p>For an opt-in separation, keep the existing <code>state-data</code> volume for the
+default file-backed KV store and FastMCP state, and put search
+data on a second local volume. This preserves the existing auth, session and
+other KV state when switching an existing deployment. The vault remains on
+its own mount. External KV or PostgreSQL embedding stores retain their own
+storage and are not reset by this recipe.</p>
+<p>Save this as <code>compose.override.yml</code> beside <code>compose.yml</code>. If that file already
+exists, merge these entries into it and keep its existing settings:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">search-data:/data/search</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_INDEX_PATH</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/search/index.db</span>
+<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_STATE_PATH</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/search/index.db.state.json</span>
+<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/search/embeddings/embeddings</span>
+<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/search/fastembed</span>
+
+<span class="nt">volumes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">search-data</span><span class="p">:</span>
+</code></pre></div>
+<p>The four paths hold the SQLite index, change tracker, local embeddings and
+FastEmbed model cache, respectively. The tracker normally defaults to
+<code>index.db.state.json</code> beside the index. The overlay overrides any values for
+these paths in <code>.env</code> or <code>compose.yml</code>; adjust it if you have customised them.
+It leaves <code>FASTMCP_HOME</code> at <code>/data/state/fastmcp</code> and the default
+<code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code> at <code>file:///data/state</code>. If either was
+customised, keep its persistent storage mounted and backed up separately.</p>
+<p>The normal root-started image changes ownership of root-owned directories
+under <code>/data</code>, including the new volume, before dropping privileges to
+<code>PUID</code>/<code>PGID</code>. With a Compose <code>user:</code> override, provision the new volume as
+writable by that user yourself; the entrypoint cannot fix its ownership.</p>
+<p>With default file selection, Compose loads <code>compose.override.yml</code>
+automatically. If you select files with <code>COMPOSE_FILE</code> or <code>-f</code>, include the
+override in that selection on every command. Before starting, this recipe
+chooses a cold rebuild on an empty <code>search-data</code> volume: local vectors are
+generated again, and a metered embedding provider can charge for them again.
+The cold reset below repeats that work and cost.</p>
+<p>Start or recreate the service, including after later changes:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>The server rebuilds search data from the vault; model downloads and embedding
+generation can take time. The old search files remain unused in <code>state-data</code>;
+keep them until you have verified the new index.</p>
+<p>Use the configured full paths above for backups. With the default SQLite
+embedding store, the file is <code>/data/search/embeddings/embeddings.sqlite3</code>.
+Stop the service before file-level copies, or use SQLite's online backup.
+Once the split is verified, resetting auth and session data on <code>state-data</code>
+leaves the active search data on <code>search-data</code> untouched.</p>
+<p>A normal reindex is the usual way to rebuild search; the following cold reset
+is for testing a fresh search volume. Before resetting, use
+<code>docker compose config</code> to confirm the <code>/data/search</code> mount and all four paths
+above. The reset
+deletes everything on <code>/data/search</code>, so use it only with the overlay above
+and no other data on that volume:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>stop
+docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--no-deps<span class="w"> </span>--entrypoint<span class="w"> </span>sh<span class="w"> </span>markdown-vault-mcp<span class="w"> </span>-c<span class="w"> </span><span class="s1">'find /data/search -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'</span>
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>The reset leaves <code>state-data</code> and the vault mounted, preserving their contents.</p>
+<p>To reset local persistent state while keeping the active search data, first
+use <code>docker compose config</code> to confirm the <code>/data/state</code> mount,
+<code>FASTMCP_HOME=/data/state/fastmcp</code>, and the <code>/data/search</code> mount and four
+search paths above. Confirm the KV URL is <code>file:///data/state</code>, or that both
+<code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code> and the legacy
+<code>MARKDOWN_VAULT_MCP_EVENT_STORE_URL</code> are unset, which selects that default.
+This deletes <strong>all</strong>
+contents of <code>state-data</code>, including local auth, session and other KV state
+and any unused old search files. Use it only when those contents can be lost;
+custom or external KV stores are not reset by this procedure:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>stop
+docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--no-deps<span class="w"> </span>--entrypoint<span class="w"> </span>sh<span class="w"> </span>markdown-vault-mcp<span class="w"> </span>-c<span class="w"> </span><span class="s1">'find /data/state -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'</span>
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>The active index and local embeddings on <code>search-data</code> remain in place.</p>
 <h3 id="git">Git<a class="headerlink" href="#git" title="Permanent link">&para;</a></h3>
 <p>The image includes <code>git</code> and <code>git-lfs</code>. For a vault that commits and pushes the changes made through the server, set the variables in <a href="../../use/git-integration/#managed-mode-recommended-for-containerized-deployments">Git integration</a>. An empty vault folder plus <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> is cloned at the first start.</p>
 <p>After a fetch, pull or commit, git's automatic maintenance detaches into the background, and the <a href="#init-process">init process</a> reaps it once it exits. Images up to 5.1.0 have no init: there each pull left one zombie <code>git</code> process, until the container could start no more processes. If you run 5.1.0 or earlier with git sync on, add <code>init: true</code> to the service in <code>compose.yml</code>, or <code>--init</code> to <code>docker run</code>.</p>

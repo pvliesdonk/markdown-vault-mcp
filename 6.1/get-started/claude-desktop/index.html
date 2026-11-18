@@ -2955,6 +2955,7 @@ where.exe<span class="w"> </span>markdown-vault-mcp<span class="w">    </span><s
 <p>Claude Desktop passes every value as written, so paths are absolute (<code>~</code> is not expanded). Keep the JSON valid: no trailing commas. Settings for the server go in <code>env</code>, one environment variable per key; the <a href="../../reference/configuration/">configuration reference</a> lists them all.</p>
 <h3 id="what-this-server-needs">What this server needs<a class="headerlink" href="#what-this-server-needs" title="Permanent link">&para;</a></h3>
 <!-- DOMAIN-CLAUDE-DESKTOP-START -->
+<p>In the <code>.mcpb</code> install screen, leave <strong>Embedding provider</strong>, API keys and Git settings empty when you do not need them. The bundle supplies empty defaults for these optional fields, so skipped fields do not become literal <code>${user_config.*}</code> values. Existing model and host defaults remain unchanged.</p>
 <p>The server needs one setting: <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>, the absolute path of the folder that holds your notes. For a first run, also set <code>MARKDOWN_VAULT_MCP_READ_ONLY</code> to <code>true</code>. Claude then gets the tools that search and read, and none of the tools that change files:</p>
 <div class="config highlight" data-expect="read_only=True"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>

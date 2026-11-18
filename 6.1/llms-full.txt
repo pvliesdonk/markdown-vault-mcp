@@ -193,6 +193,8 @@ Claude Desktop passes every value as written, so paths are absolute (`~` is not 
 
 ### What this server needs
 
+In the `.mcpb` install screen, leave **Embedding provider**, API keys and Git settings empty when you do not need them. The bundle supplies empty defaults for these optional fields, so skipped fields do not become literal `${user_config.*}` values. Existing model and host defaults remain unchanged.
+
 The server needs one setting: `MARKDOWN_VAULT_MCP_SOURCE_DIR`, the absolute path of the folder that holds your notes. For a first run, also set `MARKDOWN_VAULT_MCP_READ_ONLY` to `true`. Claude then gets the tools that search and read, and none of the tools that change files:
 
 ```
@@ -395,6 +397,30 @@ For result fields and error handling, see the [MCP tool-result contract](https:/
 
 The synthetic HTTP contract tests exercise the native vault server and these whole-result shapes expected by an Executor caller. They do not establish acceptance by an installed Executor runtime or verify a personal connection. Use the operator's [authentication instructions](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) for credentials. The contract tests use only synthetic notes.
 
+### VS Code: connect to this vault
+
+Use the operator's full MCP endpoint, such as `https://mcp.example.com/mcp`, with server ID `markdown-vault-mcp` in [VS Code's add-server flow](https://code.visualstudio.com/docs/agent-customization/mcp-servers#add-a-server-by-url-or-command). Choose HTTP, then complete the operator's sign-in or bearer-token setup. Ask Copilot to search the vault for a known note to check the connection.
+
+For this deployment's authentication mode, follow [Which mode](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc/#which-mode), [provider setup](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc-providers/index.md), and [VS Code's authorization guidance](https://code.visualstudio.com/api/extension-guides/ai/mcp#authorization). Check `MARKDOWN_VAULT_MCP_BASE_URL` using the [reverse-proxy checklist](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/reverse-proxy/#what-the-server-needs-from-the-proxy).
+
+### Goose Desktop: connect to this vault
+
+For a vault on your own machine, start with the [read-only local Goose configuration](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/get-started/installation/#goose-desktop-local-vault). For a hosted vault, use this extension entry in Goose's configuration; replace the example URL with the endpoint the operator supplied:
+
+```
+extensions:
+  markdown-vault-mcp:
+    name: Markdown Vault MCP
+    type: streamable_http
+    uri: https://mcp.example.com/mcp
+    enabled: true
+    timeout: 300
+```
+
+This entry targets the server's `http` transport, not its `sse` transport. It does not supply a credential. Complete the operator's [authentication setup](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) using [Goose's current extension guidance](https://goose-docs.ai/docs/getting-started/using-extensions/), including its pre-registered OAuth client settings when needed. For a bearer deployment, the extension's `headers` mapping can carry `Authorization: "Bearer <operator-provided-token>"`; keep the real token out of shared configuration and source control. [Goose's extension schema](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/extension.rs) also accepts `available_tools: [get_server_info, search, read]` to limit this vault's tool list. This client-side selection does not replace the server's read-only setting.
+
+These examples were checked against the server configuration and primary client documentation on November 16, 2026, not against installed clients or a live identity provider. Confirm a read-only search before relying on a remote session; older client issue reports do not establish current compatibility with this deployment.
+
 ## Next
 
 - [Deploy](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/index.md): run a server like this one yourself.
@@ -510,6 +536,27 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin install `[all]`. The `mcp` extra stays for older install commands; the plain package already includes the server. [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md) explains choosing a provider.
+
+### Goose Desktop: local vault
+
+After [installing the command](#as-a-command-on-your-machine), add this entry to `extensions` in `~/.config/goose/config.yaml`, preserving any existing entries. Replace both paths with absolute paths on your machine; `uv tool dir --bin` locates the installed command.
+
+```
+extensions:
+  markdown-vault-mcp:
+    name: Markdown Vault MCP
+    type: stdio
+    cmd: /Users/me/.local/bin/markdown-vault-mcp
+    args: [serve, --transport, stdio]
+    enabled: true
+    timeout: 300
+    envs:
+      MARKDOWN_VAULT_MCP_SOURCE_DIR: /Users/me/Documents/Notes
+      MARKDOWN_VAULT_MCP_READ_ONLY: "true"
+      MARKDOWN_VAULT_MCP_EXCLUDE: .obsidian/**,.trash/**
+```
+
+This starts a local, read-only vault over stdio, without an HTTP listener. The settings folder and trash of an Obsidian vault stay out of searches. Ask Goose to find a known note. See [Goose's extension setup](https://goose-docs.ai/docs/getting-started/using-extensions/) for adding the entry through Desktop instead. The [remote client examples](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/get-started/http-client/#vs-code-connect-to-this-vault) cover VS Code and a hosted vault in Goose. This local setup does not need HTTP authentication; a public HTTP server does.
 # Deploy
 
 # Deploy
@@ -871,7 +918,64 @@ The image carries the `markdown-vault-mcp` command, so you can search and read t
 
 ### What `/data/state` holds
 
-This server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/storage/index.md)).
+By default, this server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex. Keep the `state-data` volume on a local disk, not a network share: the index is SQLite in WAL mode ([Index storage and SQLite](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/storage/index.md)).
+
+### Separate search data from persistent state
+
+For an opt-in separation, keep the existing `state-data` volume for the default file-backed KV store and FastMCP state, and put search data on a second local volume. This preserves the existing auth, session and other KV state when switching an existing deployment. The vault remains on its own mount. External KV or PostgreSQL embedding stores retain their own storage and are not reset by this recipe.
+
+Save this as `compose.override.yml` beside `compose.yml`. If that file already exists, merge these entries into it and keep its existing settings:
+
+```
+services:
+  markdown-vault-mcp:
+    volumes:
+      - search-data:/data/search
+    environment:
+      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/search/index.db
+      MARKDOWN_VAULT_MCP_STATE_PATH: /data/search/index.db.state.json
+      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/search/embeddings/embeddings
+      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/search/fastembed
+
+volumes:
+  search-data:
+```
+
+The four paths hold the SQLite index, change tracker, local embeddings and FastEmbed model cache, respectively. The tracker normally defaults to `index.db.state.json` beside the index. The overlay overrides any values for these paths in `.env` or `compose.yml`; adjust it if you have customised them. It leaves `FASTMCP_HOME` at `/data/state/fastmcp` and the default `MARKDOWN_VAULT_MCP_KV_STORE_URL` at `file:///data/state`. If either was customised, keep its persistent storage mounted and backed up separately.
+
+The normal root-started image changes ownership of root-owned directories under `/data`, including the new volume, before dropping privileges to `PUID`/`PGID`. With a Compose `user:` override, provision the new volume as writable by that user yourself; the entrypoint cannot fix its ownership.
+
+With default file selection, Compose loads `compose.override.yml` automatically. If you select files with `COMPOSE_FILE` or `-f`, include the override in that selection on every command. Before starting, this recipe chooses a cold rebuild on an empty `search-data` volume: local vectors are generated again, and a metered embedding provider can charge for them again. The cold reset below repeats that work and cost.
+
+Start or recreate the service, including after later changes:
+
+```
+docker compose up -d
+```
+
+The server rebuilds search data from the vault; model downloads and embedding generation can take time. The old search files remain unused in `state-data`; keep them until you have verified the new index.
+
+Use the configured full paths above for backups. With the default SQLite embedding store, the file is `/data/search/embeddings/embeddings.sqlite3`. Stop the service before file-level copies, or use SQLite's online backup. Once the split is verified, resetting auth and session data on `state-data` leaves the active search data on `search-data` untouched.
+
+A normal reindex is the usual way to rebuild search; the following cold reset is for testing a fresh search volume. Before resetting, use `docker compose config` to confirm the `/data/search` mount and all four paths above. The reset deletes everything on `/data/search`, so use it only with the overlay above and no other data on that volume:
+
+```
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/search -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
+```
+
+The reset leaves `state-data` and the vault mounted, preserving their contents.
+
+To reset local persistent state while keeping the active search data, first use `docker compose config` to confirm the `/data/state` mount, `FASTMCP_HOME=/data/state/fastmcp`, and the `/data/search` mount and four search paths above. Confirm the KV URL is `file:///data/state`, or that both `MARKDOWN_VAULT_MCP_KV_STORE_URL` and the legacy `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` are unset, which selects that default. This deletes **all** contents of `state-data`, including local auth, session and other KV state and any unused old search files. Use it only when those contents can be lost; custom or external KV stores are not reset by this procedure:
+
+```
+docker compose stop
+docker compose run --rm --no-deps --entrypoint sh markdown-vault-mcp -c 'find /data/state -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+docker compose up -d
+```
+
+The active index and local embeddings on `search-data` remain in place.
 
 ### Git
 
@@ -2108,6 +2212,8 @@ That still works, and it is what the [`voyage`](#voyage-ai) provider does intern
 
 Each request carries only `model` and `input`. The server never sends `dimensions` or `user`, and it leaves `encoding_format` to the `openai` SDK, whose base64 default is widely accepted. This narrow request shape is why strict endpoints work: Voyage answers HTTP 400 to `dimensions`, to `user`, and to `encoding_format="float"`. An endpoint that requires a field outside `model` and `input` cannot be driven this way.
 
+From the response, the server reads each item's `embedding` and puts the items back in input order by their `index`. An item with no `index` counts as the first one: Gemini's compatibility endpoint, `https://generativelanguage.googleapis.com/v1beta/openai/`, leaves the field out of the first item of every batch. When two items claim the same position, the batch fails with an error instead of storing a vector against the wrong note.
+
 The one addition is vendor-specific and reached only through a named provider: [`voyage`](#voyage-ai) also sends `input_type`. Driving Voyage through this `openai` recipe instead sends no `input_type`, so it does not get the query/document asymmetry. That is one more reason to prefer the named provider.
 
 ### Caveats worth knowing
@@ -2158,7 +2264,7 @@ Regardless of which provider you choose:
 - **Back up the stored vectors before you risk them:** [Backing up](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embedding-state/#backing-up) gives the command for each store, and [Restoring](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embedding-state/#restoring) shows how a restore embeds only the notes changed since.
 - Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
 - **A failed model change fails the search.** When a changed model or vector size requires a rebuild and no new embeddings are saved, semantic and hybrid searches report an error. The previous stored vectors remain untouched; they cannot answer queries from the new model. Later searches retry the rebuild and recover once the provider works again. A completed rebuild of an empty vault still returns no matches.
-- **A damaged `numpy` or `sqlite` store is set aside, not overwritten.** When the vectors' files no longer read back, at startup, during a search or before a full rebuild, the server renames them with a `.corrupt-<time>` suffix (such as `index-db-embeddings.v2.json.corrupt-20261024T120000Z`) and builds the vectors again; the log line `vector_store_moved_aside` names the renamed files. If the 5.x files from an upgrade are still there, it copies every vector whose note text is unchanged from them instead of embedding it again. The renamed copies are yours to inspect or delete; the server never touches them again. A store in a read-only folder cannot be renamed: the server leaves it in place, and searches by meaning fail until the folder is writable.
+- **A damaged `numpy` or `sqlite` store is set aside, not overwritten.** When the vectors' files no longer read back, at startup, during a search, while updating embeddings or before a full rebuild, the server renames them with a `.corrupt-<time>` suffix (such as `index-db-embeddings.v2.json.corrupt-20261024T120000Z`) and builds the vectors again; the log line `vector_store_moved_aside` names the renamed files. If the 5.x files from an upgrade are still there, it copies every vector whose note text is unchanged from them instead of embedding it again. If an update finds a `sqlite` store damaged after it opened and recovery cannot build every vector, the job reports an error and keeps every note for the next embedding update, which embeds the ones still missing once the provider answers; nothing retries on its own while the provider is down. To finish the rebuild at once, run [`build_embeddings`](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/tools/indexing/#build_embeddings), or restart the server if a failed full index build left the tool unavailable; startup builds the index, then the missing vectors. The renamed copies are yours to inspect or delete; the server never touches them again. A store in a read-only folder cannot be renamed: the server leaves it in place, and searches by meaning fail until the folder is writable.
 - **A note that stops parsing keeps its embeddings.** A note whose frontmatter does not parse, that lacks a field `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` asks for, or that is not valid UTF-8 is left out of the index and listed in `get_index_status`'s `skipped_files`. Its embeddings stay stored but never appear in search results. Once you fix the note, only the sections whose text changed are embedded again; a changed title counts as a change to every section. Deleting, renaming or excluding the note removes them; a full rebuild while it is broken drops them too.
 - The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/tools/indexing/#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
@@ -2303,7 +2409,7 @@ The defaults (`BAAI/bge-small-en-v1.5` for FastEmbed, `nomic-embed-text` for Oll
 
 # Choosing an embedding store
 
-With an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md) configured, the server keeps one vector per section of every note so it can search by meaning. `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them, and `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH` how a search reads them. This page is for the operator deciding between them: which store suits a vault, and what each one was measured to cost at two vault sizes.
+With an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md) configured, the server keeps one vector per section of every note so it can search by meaning. `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them, and `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH` how a search reads them. Use the measurements at two vault sizes to choose a store.
 
 ## Which store suits your vault
 
@@ -2325,6 +2431,8 @@ At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAU
 - `postgres` keeps them in the schema `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA` names.
 
 A streamed search reads the vectors from the database in batches of `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB` (1 MiB by default) instead of holding them all. The workspace bounds one batch of a search, not the server's memory. `postgres` is always streamed and scores in the database; `numpy` is always resident. `numpy` with `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed`, or `postgres` with `resident`, refuses to start. The `embeddings_status` tool reports the mode the store runs in, its workspace, the size of its files (`stored_bytes`) and the bytes of vectors it holds in memory (`resident_vector_bytes`). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.
+
+When `postgres` publishes a whole generation, it first writes the validated rows to a private temporary file and then copies them into the database. Allow space in the system temporary directory, independently of the database and its write-ahead log. `TMPDIR` can select that directory. The scratch file contains packed float32 vectors plus metadata; a memory-backed temporary directory also uses memory. The file is removed when publication finishes or fails.
 
 ## What each store costs
 
@@ -2352,10 +2460,16 @@ The figures below come from running the whole server on one host at two vault si
 How to read it:
 
 - **Memory.** A streamed store's search memory barely moves with the vault. `numpy` keeps every vector in memory, beside each section's text and metadata, so its memory grows with sections × dimensions. At the larger size that came to about 1.25 GB above the server's own memory, 0.93 GB of it vectors. The PostgreSQL service itself used about 530 MB at rest at the smaller size and 580 MB at the larger, on top of the server.
-- **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` streams too, but scores in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
+- **Speed.** Resident search stays fast at both sizes. A streamed search reads every vector, so its time grows with the vault: about 0.15 s at the smaller size, about a second at the larger. `postgres` also streams; scoring happens in the database. In these runs the `sqlite` store stayed in the kernel's page cache; a server without spare memory for it reads disk on every search and is slower.
 - **Edits.** `sqlite`'s figure counts the edited note's pages and the keyword index together; `postgres` writes its WAL in the database and the keyword index locally; `numpy` rewrites the whole store on every save.
 - **Restarts.** No store embeds an unchanged note again after a restart or a crash. At each start the server checks every note against the store; `postgres` reads what it holds for 500 notes at a time, so it comes back in a time comparable to a local store's. Its figures come from restarts measured on their own, not in a whole run, so they are not directly comparable with the other columns. A database across a network adds a round trip to each of those reads.
-- **The first build.** The measured October envelope peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). The keyword scan releases completed note bodies and frontmatter as it indexes them; path and title bookkeeping still grows with the vault. Preparing and publishing embeddings has separate memory costs, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
+- **The first build.** The measured October envelope peaked at 360 to 470 MB at the smaller size and 2.4 to 3.6 GB at the larger, on every store, which is more than any store needs once it serves ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). The keyword scan releases completed note bodies and frontmatter as it indexes them; path and title bookkeeping still grows with the vault.
+
+Completed embedding windows go to scratch disk beside the configured state file, including `/data/state` with the shipped Docker Compose configuration. Without a state file they use `TMPDIR`; a memory-backed directory counts against memory. Allow headroom for repeated section text, metadata, JSON escaping and base64-encoded vectors; actual space depends on the content. A scratch location that is full or cannot be written to fails preparation. Compatible and owned stores retain their previous vectors. An incompatible injected store is emptied before the build, so a later failure cannot preserve those vectors. Cleanup failures are logged.
+
+Scratch uses operating-system temporary files that are removed when their handles close, including on process termination. On platforms that create a name before removing its name, a forced termination during that brief creation interval can leave a file behind.
+
+Built-in publishers still materialize generation copies, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.
 
@@ -2690,6 +2804,8 @@ Only one process at a time writes a given index. While a server has it open, the
 - A second server started on the same `MARKDOWN_VAULT_MCP_INDEX_PATH` starts with the vault unavailable. Every tool says that another process is writing the index. The second server opens the vault within a few seconds of the first one exiting.
 - `markdown-vault-mcp search` and other commands that only read are never blocked.
 
+If an admin command cannot open a store for another reason, it exits with an `ERROR:` message describing the failure. Use the reported cause to correct the problem before retrying.
+
 The lock is not taken on Windows. A lock across a network share or a virtual machine's shared folder may not hold, so in those setups make sure only one process writes the index yourself.
 
 At shutdown, the server waits up to 30 seconds for indexing work in progress. It doesn't wait for work still running after that: it logs a warning, `index_close_skipped`, leaves the index open to that work, and the work stops when the process exits. What it had committed stays; run `markdown-vault-mcp admin reindex` if it was a long rebuild.
@@ -2733,13 +2849,19 @@ Use this guide to choose and configure the right git mode for your deployment.
 1. **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo) The server commits writes (one commit per tool call), but never pulls or pushes.
 1. **No-git** (default) The vault is treated as a plain directory with no git operations.
 
+## Runtime Git version
+
+For a Git-backed vault, startup logs `git_runtime_version` at INFO with the output of `git --version`. This identifies the Git executable on the server's `PATH`, not Git on your MCP client's computer. Include that value when reporting a Git problem. A container uses Git inside the container, so do not substitute the host's version.
+
+The diagnostic does not enforce a minimum version or certify compatibility. A failed version probe is logged at DEBUG and does not block startup. A plain-directory vault does not emit this diagnostic.
+
 ## Filenames from outside the server
 
 Notes created through Git or directly on disk can carry carriage returns (`CR`) or carriage-return/newline pairs (`CRLF`) in their filenames. History, rename tracking, revision reads and conflict recovery preserve those characters, along with newlines, tabs and supported non-ASCII names. Ignored filenames retain the same spelling when Git decides which paths to stage.
 
 ## What a commit covers
 
-In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many primary files, such as `move_folder` or `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit`, `append` or `delete` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path. A single-note rename names both paths: `rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites backlinks or OKF refreshes index listings. Those derived writes stay in the same commit. A `move_folder` call that moves several files still uses the batch summary.
+In both git modes, the commit boundary is the MCP tool call, not the file. A call that wrote one file commits under that file's path (`write: notes/one.md`), so an ordinary vault's log reads as it always did. A call that touched many primary files, such as `okf_convert_links`, produces one commit with the subject `<tool>: N files`, where a per-file boundary produced one commit per file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). With `OKF_WRITE` enabled, a single-note `write`, `edit`, `append` or `delete` keeps that note's path in the subject. Its automatic index and log updates remain in the same commit; they do not replace the note's subject with a file count. Direct writes to `index.md` or `log.md` still name their own path. A single-note rename names both paths: `rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites backlinks or OKF refreshes index listings. Those derived writes stay in the same commit. A folder move names its source and destination relative to the Git working tree root, or as an absolute path if a root lies outside it: `move_folder: drafts -> archive/2026`. Moved files, backlink rewrites, and OKF updates share that commit. Folder names with control characters, boundary whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped to keep the subject identifiable on one line.
 
 No setting changes this. In managed mode, the deferred push sends whatever commits accumulated during the idle delay, however many calls produced them.
 
@@ -3282,7 +3404,9 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off`            | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on`             | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own.                                              |
 
-Check the current state at any time through the `okf` section of the `stats` tool, or the `config://vault` resource.
+Check the current state through the `config://vault` resource. Its `okf_write_configured` field reports the configured `OKF_WRITE` flag, and `okf_write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the `stats` tool's `okf` section reports the same values as `write_configured` and `write_effective`. The section is absent when OKF is inactive; use `config://vault` to inspect that state. Detection reflects changes to the declaration on the next call.
+
+The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether `okf_verify` is available: `OKF_VERIFY=off` can hide that tool while the write layer remains effective. Independent capability reporting is planned in [#1412](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412).
 
 ## What the metadata means
 
@@ -3352,7 +3476,9 @@ Anything already in the file wins, so a title you wrote yourself and the root `i
 
 ## The enforced write layer
 
-The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before. On a read-only deployment the flag is accepted and does nothing: the write tools are hidden, so there is no write for the layer to act on.
+The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.
+
+Enabling `OKF_WRITE` on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Stamping, verification invalidation, reserved-file upkeep, and `okf_verify` are inactive regardless of `OKF_VERIFY`; OKF read semantics remain available. Startup logs `okf_write_inert` at INFO, and `config://vault` reports `okf_write_effective=false`.
 
 With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
 
@@ -5092,11 +5218,15 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 
 For HTTP authentication, a static bearer token is the simplest option. OIDC configuration and deployment examples are covered in the [authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) and [OIDC deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc/index.md).
 
-The subsections below follow the order of the variable tables after them.
+The interaction subsections below follow the order of the variable tables after them.
 
 #### Write safety
 
-`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`. Whole-file `write` operations (notes and attachments) and `fetch` operations over an existing path require the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
+`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool.
+
+On a read-only server, `OKF_WRITE` is valid but inactive; see the [OKF write layer](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/#the-enforced-write-layer) for the startup diagnostic and affected operations.
+
+Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`. Whole-file `write` operations (notes and attachments) and `fetch` operations over an existing path require the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
 
 Upload links have no `if_match` option. With protection enabled, `create_upload_link` rejects existing destinations; the upload also fails if the file appears before the bytes arrive. Use a new path, or set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites. See [transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/transfer-links/#upload-destinations).
 
@@ -5157,6 +5287,21 @@ One-time transfer links require HTTP or SSE transport plus `BASE_URL`. Their ung
 #### Jobs
 
 Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native background tasks when the client supports them. Other clients receive an inline result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with `get_job_result`. A Redis tasks backend is durable and shared across workers; the default memory backend is process-local and does not survive restarts.
+
+### Cross-instance note links
+
+When an agent connects to several vault servers, give each server a distinct name and describe the URL prefix for its own vault. Configure one server with:
+
+```
+MARKDOWN_VAULT_MCP_SERVER_NAME=corpus-mcp
+MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION="Contains craft notes. This instance serves files available at this GitHub URL: https://github.com/pvliesdonk/corpus/blob/main/"
+```
+
+Configure each other server independently with its own name and URL prefix. Keep any existing description text in the same value, adding the URL sentence to it. The sentence describes this instance's notes; it need not name other instances. A client that passes the server instructions to its model can use the prefix to choose the server and infer the vault-relative path.
+
+The prefix represents the vault root: a link ending in `blob/main/craft/note.md` maps to `craft/note.md`. If the vault serves a repository subfolder, include that subfolder in the prefix. Update the prefix if the publication branch or folder moves. Never include a token in the URL: the description reaches connected clients.
+
+An unset description adds nothing. Restart the server and reconnect after changing the value. The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement suppresses the description; see [Server](#server) for precedence and the instruction budget.
 
 ### Vault
 
@@ -5595,7 +5740,7 @@ Dict with the following fields:
 - `link_count` (int): Total number of indexed links. 0 may mean no links exist or link tracking not yet built (call 'reindex').
 - `broken_link_count` (int): Links pointing to missing documents. Call '`get_broken_links`' if non-zero.
 - `orphan_count` (int): Notes with no inbound or outbound links. Call '`get_orphan_notes`' if non-zero.
-- okf (dict, optional): Present only when the vault is an active OKF (Open Knowledge Format) bundle. Carries mode, `declared_version`, a per-`type` histogram plus `untyped_count`, status and trust-tier breakdowns, and `stale_count`. Those cover the note population '`okf_validate`' audits; the reserved `index.md` / `log.md` files are counted apart as `reserved_count`.
+- okf (dict, optional): Present only when the vault is an active OKF (Open Knowledge Format) bundle. Carries mode, `declared_version`, a per-`type` histogram plus `untyped_count`, status and trust-tier breakdowns, and `stale_count`. Those cover the note population '`okf_validate`' audits; the reserved `index.md` / `log.md` files are counted apart as `reserved_count`. `write_configured` is the configured OKF write flag; `write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only.
 
 Index freshness rides in the response's `_meta.index_stale` field: True when the IndexWriter was non-idle, a write completed inside the read window, or `wait_for_pending_writes` timed out; False otherwise.
 
@@ -6317,9 +6462,11 @@ On inline completion, a dict with `"status": "completed"` and `chunks_embedded` 
 
 # Writer
 
+Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit, append and OKF verification retain surviving fields in their existing order when serializing a header. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
+
 Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/security-model/index.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
 
-A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
+A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed. New notes and attachments receive the same permissions as a plain file creation in their destination folder. On Linux, a folder's default access control list (ACL) can grant a shared group write access even when the process umask would remove it. Overwriting an existing file preserves its permission bits.
 
 ## `write`
 
@@ -7222,7 +7369,7 @@ A resource is data this server serves at a URI, for a client to attach to the co
 
 `config://vault` (application/json)
 
-The vault's settings: read-only mode, indexed fields, exclusions, OKF state.
+Vault settings, indexed fields, exclusions, and OKF detection and write state.
 
 ## `vault_stats`
 
@@ -8300,6 +8447,22 @@ The attachment context-size cap in MB (`0` = unlimited).
 
 Enforced by the `read` / `write` / `fetch` MCP tools, not by the vault library itself.
 
+### `okf_write_state(*, active)`
+
+Return configured and effective OKF write-layer state.
+
+Parameters:
+
+| Name     | Type   | Description                       | Default    |
+| -------- | ------ | --------------------------------- | ---------- |
+| `active` | `bool` | The current OKF detection result. | *required* |
+
+Returns:
+
+| Type                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `tuple[bool, bool]` | Configured OKF write flag and whether the layer is effective. |
+
 ### `pause_writes()`
 
 Block file-mutation write operations until the context exits.
@@ -8397,7 +8560,7 @@ Safe to call multiple times. A no-op if no pull loop was started. The SQLite con
 
 Close a tool call's commit scope, grouping its writes into one commit.
 
-Called by :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware` when a tool call returns. Never blocks: the marker is queued behind the writes that call fired, and the dispatcher flushes it in order.
+Called by :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware` when a tool call returns. Never blocks: the marker is queued behind the writes that call fired, and the dispatcher flushes it in order.
 
 Parameters:
 
@@ -8463,7 +8626,7 @@ Exact paths rank first. Literal prefix matches rank ahead of matches within a pa
 
 Invalid indexed fields raise `InvalidRequestError`. Existing ranked search continues to support computed OKF filters.
 
-## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None)`
+## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None, okf_write_state=None)`
 
 Read-only queries over the shared managers.
 
@@ -8471,13 +8634,14 @@ Hold the managers the read methods delegate to.
 
 Parameters:
 
-| Name            | Type                             | Description                                                    | Default                                                                                     |
-| --------------- | -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `search_mgr`    | `SearchManager`                  | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
-| `doc_mgr`       | `DocumentManager`                | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
-| `git_query_mgr` | `GitQueryManager`                | Git history / diff / revision reads.                           | *required*                                                                                  |
-| `require_built` | `Callable[[], None]`             | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
-| `okf_audit`     | \`Callable\[[], OkfAuditReport\] | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
+| Name              | Type                                | Description                                                    | Default                                                                                     |
+| ----------------- | ----------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `search_mgr`      | `SearchManager`                     | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
+| `doc_mgr`         | `DocumentManager`                   | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
+| `git_query_mgr`   | `GitQueryManager`                   | Git history / diff / revision reads.                           | *required*                                                                                  |
+| `require_built`   | `Callable[[], None]`                | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
+| `okf_audit`       | \`Callable\[[], OkfAuditReport\]    | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
+| `okf_write_state` | \`Callable\[[], tuple[bool, bool]\] | None\`                                                         | Configured and effective write-layer projection.                                            |
 
 ### `okf_validate()`
 
@@ -8920,12 +9084,13 @@ Returns:
 
 Return the OKF statistics section, or `None` when inactive.
 
-Delegates to :meth:`SearchManager.okf_stats`.
+Adds the vault's write state to :meth:`SearchManager.okf_stats`.
 
 Returns:
 
 | Type             | Description |
 | ---------------- | ----------- |
+| \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
@@ -9870,7 +10035,7 @@ Remove every row and the token of *path*, with the same condition.
 
 Replace the whole store with *documents* under *identity*, in one step.
 
-A reader sees the previous generation until this returns; an interrupted publication leaves the previous generation in place.
+A reader sees the previous generation until this returns; an interrupted publication leaves the previous generation in place. *documents* is re-iterable; it does not promise a length, indexing, or a meaningful truth value.
 
 ## `EmbeddingStore`
 
@@ -10257,6 +10422,20 @@ A build's final sweep and exclusion purge need each live note's path, title, has
 
 Return `path`, `title`, `content_hash` and `modified_at` per live note.
 
+## Chunk traversal
+
+`IteratesChunks` optionally yields the same grouped rows in the same order as `list_chunks()`. Full embedding builds use it to release completed document windows. The built-in FTS reader reads atomic whole-document pages in path order. Concurrent changes between pages may be observed or missed; convergence reconciles later edits. Custom indexes without it retain the eager `list_chunks()` fallback. A custom index's non-scalar metadata stays resident through publication so its objects retain their types and values; this applies to both reader paths.
+
+## `IteratesChunks`
+
+Bases: `Protocol`
+
+Optional ordered, document-grouped traversal of all indexed chunks.
+
+### `iter_chunks()`
+
+Yield `list_chunks()` rows in its order, grouped by path.
+
 # Git Integration
 
 The `git` module provides:
@@ -10290,6 +10469,20 @@ vault.close()
 strategy.close()
 ```
 
+## Settings object
+
+Group configuration in `GitWriteSettings` and pass the repository path separately:
+
+```
+from pathlib import Path
+from markdown_vault_mcp.git import GitWriteSettings, GitWriteStrategy
+
+settings = GitWriteSettings(token="ghp_your_token", push_delay_s=30)
+strategy = GitWriteStrategy(settings=settings, repo_path=Path("/path/to/vault"))
+```
+
+Legacy flat arguments remain supported. With `settings`, flat arguments must have their default values. The settings object takes precedence over default-valued flat arguments.
+
 ## Migrating from 4.x
 
 `GitWriteStrategy` no longer accepts `commit_name_claim` or `commit_email_claim`. Remove these constructor arguments. The remaining `git_lfs` and `repo_path` options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:
@@ -10311,7 +10504,28 @@ The older startup warning about missing `git config user.email` is removed. The 
 
 ## API Reference
 
-## `GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None)`
+## `GitWriteSettings(*, token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, git_lfs=True)`
+
+Grouped configuration for a :class:`GitWriteStrategy`.
+
+Each field mirrors the :class:`GitWriteStrategy` constructor argument of the same name and has the same default. The instance is frozen and its `repr` omits `token`.
+
+Attributes:
+
+| Name           | Type    | Description                                                                                           |
+| -------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `token`        | \`str   | None\`                                                                                                |
+| `username`     | `str`   | Username used with token auth (GitHub-compatible default).                                            |
+| `repo_url`     | \`str   | None\`                                                                                                |
+| `managed`      | `bool`  | When True, the strategy clones into an empty repo_path or validates origin on an existing repository. |
+| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                  |
+| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                        |
+| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on close).                            |
+| `commit_name`  | \`str   | None\`                                                                                                |
+| `commit_email` | \`str   | None\`                                                                                                |
+| `git_lfs`      | `bool`  | Run git lfs pull during lazy initialisation.                                                          |
+
+## `GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None, settings=None)`
 
 Stateful git strategy: commit per tool call, deferred push.
 
@@ -10321,7 +10535,7 @@ On each callback invocation:
 1. Commits with an auto-generated message (`"operation: path"`).
 1. Resets the push timer — push fires after `push_delay_s` of idle.
 
-Writes fired by one MCP tool call are grouped by the dispatcher (#1264) and arrive at :meth:`on_write_batch`, which stages every path the same scoped way and commits them once as `"<tool>: N files"`. A call that touched a single file commits under that file's own path instead, so ordinary writes read in `git log` exactly as they always have. A write with no owning tool call takes the per-write path above.
+Writes fired by one MCP tool call are grouped by the dispatcher (#1264) and arrive at :meth:`on_write_batch`, which stages every path the same scoped way and commits them once as `"<tool>: N files"`. A call touching a single file ordinarily names that file instead; folder moves name their roots even for one file. A write with no owning tool call takes the per-write path above.
 
 Push is deferred to a background `threading.Timer` that resets on each write. When the timer fires (no writes for `push_delay_s`), all accumulated local commits are pushed in a single `git push`.
 
@@ -10329,19 +10543,28 @@ On startup, any unpushed local commits (from a previous crash) are pushed immedi
 
 Parameters:
 
-| Name           | Type    | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                                                                           |
-| -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `token`        | \`str   | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                                                                                  |
-| `username`     | `str`   | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                                                                                |
-| `repo_url`     | \`str   | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                                                                              |
-| `managed`      | `bool`  | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                                                                           |
-| `enable_pull`  | `bool`  | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                                                                            |
-| `enable_push`  | `bool`  | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                                                                            |
-| `push_delay_s` | `float` | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                                                                            |
-| `commit_name`  | \`str   | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                                                                        |
-| `commit_email` | \`str   | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                                                                                      |
-| `git_lfs`      | `bool`  | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                                                                            |
-| `repo_path`    | \`Path  | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation and reporting uncommitted files without modifying them. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
+| Name           | Type               | Description                                                                                                                                                                                                           | Default                                                                                                                                                                                                                                                           |
+| -------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token`        | \`str              | None\`                                                                                                                                                                                                                | PAT for HTTPS push via GIT_ASKPASS. None uses SSH or pre-configured credentials.                                                                                                                                                                                  |
+| `username`     | `str`              | Username used with token auth. Defaults to "x-access-token" (GitHub-compatible).                                                                                                                                      | `'x-access-token'`                                                                                                                                                                                                                                                |
+| `repo_url`     | \`str              | None\`                                                                                                                                                                                                                | Remote URL expected in managed mode.                                                                                                                                                                                                                              |
+| `managed`      | `bool`             | When True, ensure the repo exists under repo_path: clone into an empty directory or validate origin on existing repos.                                                                                                | `False`                                                                                                                                                                                                                                                           |
+| `enable_pull`  | `bool`             | Enable fetch + ff-only sync methods.                                                                                                                                                                                  | `True`                                                                                                                                                                                                                                                            |
+| `enable_push`  | `bool`             | Enable deferred push behavior.                                                                                                                                                                                        | `True`                                                                                                                                                                                                                                                            |
+| `push_delay_s` | `float`            | Seconds of idle before pushing. 0 disables the timer (push only on :meth:close).                                                                                                                                      | `30.0`                                                                                                                                                                                                                                                            |
+| `commit_name`  | \`str              | None\`                                                                                                                                                                                                                | Git committer name; defaults to :attr:DEFAULT_COMMIT_NAME.                                                                                                                                                                                                        |
+| `commit_email` | \`str              | None\`                                                                                                                                                                                                                | Git committer email; defaults to :attr:DEFAULT_COMMIT_EMAIL.                                                                                                                                                                                                      |
+| `git_lfs`      | `bool`             | When True (default), run git lfs pull during lazy initialisation so LFS pointers are resolved before the first write is committed. Requires git-lfs to be on PATH; failures are logged at ERROR and never propagated. | `True`                                                                                                                                                                                                                                                            |
+| `repo_path`    | \`Path             | None\`                                                                                                                                                                                                                | Optional repository path used for startup validation and reporting uncommitted files without modifying them. When set together with token, startup raises :class:~markdown_vault_mcp.exceptions.ConfigurationError if origin uses SSH transport instead of HTTPS. |
+| `settings`     | \`GitWriteSettings | None\`                                                                                                                                                                                                                | Preferred grouped configuration. When given, it replaces every flat configuration argument above except repo_path, and those flat arguments must stay at their defaults.                                                                                          |
+
+Raises:
+
+| Type         | Description                                                                                                                                     |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ValueError` | settings is given together with a flat configuration argument that differs from its default; the message names the arguments, not their values. |
+
+Prefer `settings` for configuration. Flat parameters remain for compatibility; future settings are added only to :class:`GitWriteSettings`. Non-default flat parameters cannot be combined with `settings`.
 
 Author identity arrives per write as a resolved `principal`. OIDC claim-key registration belongs to :func:`markdown_vault_mcp._identity.configure_identity_claims`, not this constructor. The removed claim keywords raise :exc:`TypeError`; `git_lfs` and `repo_path` must be passed by keyword (#1236).
 
@@ -10368,7 +10591,7 @@ Validate git settings and report uncommitted startup work.
 
 Commit every write from one tool call as a single commit.
 
-Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary differs, and for a call that wrote a single file not even that — see :func:`_stage_and_commit_batch`. The author identity is taken from the first item's principal: one tool call has one acting principal, so the items cannot legitimately disagree.
+Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary differs; an ordinary single-file call keeps its file subject, while a folder move names its roots — see :func:`_stage_and_commit_batch`. The author identity is taken from the first item's principal: one tool call has one acting principal, so the items cannot legitimately disagree.
 
 Parameters:
 
@@ -10719,6 +10942,8 @@ Returns:
 | ---- | ------------------ | ----------------------------------------------- |
 | `A`  | `GitWriteStrategy` | class:GitWriteStrategy instance (also satisfies |
 |      | `GitWriteStrategy` | data:~markdown_vault_mcp.types.WriteCallback).  |
+
+The optional `BatchAwareWriteCallback` protocol in `markdown_vault_mcp.types` describes the batch opt-in. `Versioner` remains the per-write contract.
 
 # Configuration
 

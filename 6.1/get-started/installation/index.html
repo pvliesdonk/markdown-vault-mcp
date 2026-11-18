@@ -807,6 +807,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Notes for this server">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#goose-desktop-local-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goose Desktop: local vault
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2906,6 +2923,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Notes for this server">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#goose-desktop-local-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goose Desktop: local vault
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -3026,6 +3060,32 @@ uv<span class="w"> </span>run<span class="w"> </span>markdown-vault-mcp<span cla
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span><span class="s2">"markdown-vault-mcp[all]"</span>
 </code></pre></div>
 <p>The Docker image, the <code>.mcpb</code> bundle and the Claude Code plugin install <code>[all]</code>. The <code>mcp</code> extra stays for older install commands; the plain package already includes the server. <a href="../../use/embeddings/">Embeddings</a> explains choosing a provider.</p>
+<h3 id="goose-desktop-local-vault">Goose Desktop: local vault<a class="headerlink" href="#goose-desktop-local-vault" title="Permanent link">&para;</a></h3>
+<p>After <a href="#as-a-command-on-your-machine">installing the command</a>, add this
+entry to <code>extensions</code> in <code>~/.config/goose/config.yaml</code>, preserving any
+existing entries. Replace both paths with absolute paths on your machine;
+<code>uv tool dir --bin</code> locates the installed command.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">extensions</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Markdown Vault MCP</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
+<span class="w">    </span><span class="nt">cmd</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/Users/me/.local/bin/markdown-vault-mcp</span>
+<span class="w">    </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">serve</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">--transport</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">stdio</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
+<span class="w">    </span><span class="nt">envs</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/Users/me/Documents/Notes</span>
+<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_READ_ONLY</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_EXCLUDE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.obsidian/**,.trash/**</span>
+</code></pre></div>
+<p>This starts a local, read-only vault over stdio, without an HTTP listener.
+The settings folder and trash of an Obsidian vault stay out of searches.
+Ask Goose to find a known note. See
+<a href="https://goose-docs.ai/docs/getting-started/using-extensions/">Goose's extension setup</a>
+for adding the entry through Desktop instead.
+The <a href="../http-client/#vs-code-connect-to-this-vault">remote client examples</a>
+cover VS Code and a hosted vault in Goose. This local setup does not need
+HTTP authentication; a public HTTP server does.</p>
 <!-- DOMAIN-INSTALL-EXTRA-END -->
 
 

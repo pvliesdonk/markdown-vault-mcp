@@ -3506,7 +3506,9 @@ serves and the frontmatter fields search can filter on.</p>
   status and trust-tier breakdowns, and <code>stale_count</code>. Those cover
   the note population '<code>okf_validate</code>' audits; the reserved
   <code>index.md</code> / <code>log.md</code> files are counted apart as
-  <code>reserved_count</code>.</li>
+  <code>reserved_count</code>. <code>write_configured</code> is the configured OKF write
+  flag; <code>write_effective</code> is true when that flag is enabled, OKF
+  is active, and the vault is not read-only.</li>
 </ul>
 <p>Index freshness rides in the response's <code>_meta.index_stale</code>
 field: True when the IndexWriter was non-idle, a write completed

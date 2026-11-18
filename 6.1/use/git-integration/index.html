@@ -1303,6 +1303,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#runtime-git-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime Git version
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#filenames-from-outside-the-server" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2993,6 +3004,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#runtime-git-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime Git version
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#filenames-from-outside-the-server" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3261,6 +3283,15 @@
 <li><strong>No-git</strong> (default)
    The vault is treated as a plain directory with no git operations.</li>
 </ol>
+<h2 id="runtime-git-version">Runtime Git version<a class="headerlink" href="#runtime-git-version" title="Permanent link">&para;</a></h2>
+<p>For a Git-backed vault, startup logs <code>git_runtime_version</code> at INFO with the
+output of <code>git --version</code>. This identifies the Git executable on the server's
+<code>PATH</code>, not Git on your MCP client's computer. Include that value when
+reporting a Git problem. A container uses Git inside the container, so do not
+substitute the host's version.</p>
+<p>The diagnostic does not enforce a minimum version or certify compatibility.
+A failed version probe is logged at DEBUG and does not block startup. A
+plain-directory vault does not emit this diagnostic.</p>
 <h2 id="filenames-from-outside-the-server">Filenames from outside the server<a class="headerlink" href="#filenames-from-outside-the-server" title="Permanent link">&para;</a></h2>
 <p>Notes created through Git or directly on disk can carry carriage returns
 (<code>CR</code>) or carriage-return/newline pairs (<code>CRLF</code>) in their filenames.
@@ -3271,7 +3302,7 @@ filenames retain the same spelling when Git decides which paths to stage.</p>
 <p>In both git modes, the commit boundary is the MCP tool call, not the file.
 A call that wrote one file commits under that file's path
 (<code>write: notes/one.md</code>), so an ordinary vault's log reads as it always
-did. A call that touched many primary files, such as <code>move_folder</code> or
+did. A call that touched many primary files, such as
 <code>okf_convert_links</code>, produces one commit with the
 subject <code>&lt;tool&gt;: N files</code>, where a per-file boundary produced one commit per
 file (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264">#1264</a>).
@@ -3283,8 +3314,12 @@ Direct writes to <code>index.md</code> or <code>log.md</code> still name their o
 A single-note rename names both paths:
 <code>rename: notes/old.md -&gt; notes/new.md</code>, even when <code>update_links=True</code> rewrites
 backlinks or OKF refreshes index listings. Those derived writes stay in the
-same commit. A <code>move_folder</code> call that moves several files still uses the
-batch summary.</p>
+same commit. A folder move names its source and destination relative to the
+Git working tree root, or as an absolute path if a root lies outside it:
+<code>move_folder: drafts -&gt; archive/2026</code>. Moved files, backlink rewrites, and
+OKF updates share that commit. Folder names with control characters, boundary
+whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
+to keep the subject identifiable on one line.</p>
 <p>No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.</p>

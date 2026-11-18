@@ -64,6 +64,30 @@ For result fields and error handling, see the [MCP tool-result contract](https:/
 
 The synthetic HTTP contract tests exercise the native vault server and these whole-result shapes expected by an Executor caller. They do not establish acceptance by an installed Executor runtime or verify a personal connection. Use the operator's [authentication instructions](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) for credentials. The contract tests use only synthetic notes.
 
+### VS Code: connect to this vault
+
+Use the operator's full MCP endpoint, such as `https://mcp.example.com/mcp`, with server ID `markdown-vault-mcp` in [VS Code's add-server flow](https://code.visualstudio.com/docs/agent-customization/mcp-servers#add-a-server-by-url-or-command). Choose HTTP, then complete the operator's sign-in or bearer-token setup. Ask Copilot to search the vault for a known note to check the connection.
+
+For this deployment's authentication mode, follow [Which mode](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc/#which-mode), [provider setup](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc-providers/index.md), and [VS Code's authorization guidance](https://code.visualstudio.com/api/extension-guides/ai/mcp#authorization). Check `MARKDOWN_VAULT_MCP_BASE_URL` using the [reverse-proxy checklist](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/reverse-proxy/#what-the-server-needs-from-the-proxy).
+
+### Goose Desktop: connect to this vault
+
+For a vault on your own machine, start with the [read-only local Goose configuration](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/get-started/installation/#goose-desktop-local-vault). For a hosted vault, use this extension entry in Goose's configuration; replace the example URL with the endpoint the operator supplied:
+
+```
+extensions:
+  markdown-vault-mcp:
+    name: Markdown Vault MCP
+    type: streamable_http
+    uri: https://mcp.example.com/mcp
+    enabled: true
+    timeout: 300
+```
+
+This entry targets the server's `http` transport, not its `sse` transport. It does not supply a credential. Complete the operator's [authentication setup](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) using [Goose's current extension guidance](https://goose-docs.ai/docs/getting-started/using-extensions/), including its pre-registered OAuth client settings when needed. For a bearer deployment, the extension's `headers` mapping can carry `Authorization: "Bearer <operator-provided-token>"`; keep the real token out of shared configuration and source control. [Goose's extension schema](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/extension.rs) also accepts `available_tools: [get_server_info, search, read]` to limit this vault's tool list. This client-side selection does not replace the server's read-only setting.
+
+These examples were checked against the server configuration and primary client documentation on November 16, 2026, not against installed clients or a live identity provider. Confirm a read-only search before relying on a remote session; older client issue reports do not establish current compatibility with this deployment.
+
 ## Next
 
 - [Deploy](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/index.md): run a server like this one yourself.

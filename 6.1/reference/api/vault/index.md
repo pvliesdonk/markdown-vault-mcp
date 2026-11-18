@@ -307,6 +307,22 @@ The attachment context-size cap in MB (`0` = unlimited).
 
 Enforced by the `read` / `write` / `fetch` MCP tools, not by the vault library itself.
 
+### `okf_write_state(*, active)`
+
+Return configured and effective OKF write-layer state.
+
+Parameters:
+
+| Name     | Type   | Description                       | Default    |
+| -------- | ------ | --------------------------------- | ---------- |
+| `active` | `bool` | The current OKF detection result. | *required* |
+
+Returns:
+
+| Type                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `tuple[bool, bool]` | Configured OKF write flag and whether the layer is effective. |
+
 ### `pause_writes()`
 
 Block file-mutation write operations until the context exits.
@@ -404,7 +420,7 @@ Safe to call multiple times. A no-op if no pull loop was started. The SQLite con
 
 Close a tool call's commit scope, grouping its writes into one commit.
 
-Called by :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware` when a tool call returns. Never blocks: the marker is queued behind the writes that call fired, and the dispatcher flushes it in order.
+Called by :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware` when a tool call returns. Never blocks: the marker is queued behind the writes that call fired, and the dispatcher flushes it in order.
 
 Parameters:
 

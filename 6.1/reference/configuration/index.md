@@ -126,11 +126,15 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 
 For HTTP authentication, a static bearer token is the simplest option. OIDC configuration and deployment examples are covered in the [authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/authentication/index.md) and [OIDC deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/oidc/index.md).
 
-The subsections below follow the order of the variable tables after them.
+The interaction subsections below follow the order of the variable tables after them.
 
 #### Write safety
 
-`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`. Whole-file `write` operations (notes and attachments) and `fetch` operations over an existing path require the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
+`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool.
+
+On a read-only server, `OKF_WRITE` is valid but inactive; see the [OKF write layer](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/#the-enforced-write-layer) for the startup diagnostic and affected operations.
+
+Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`. Whole-file `write` operations (notes and attachments) and `fetch` operations over an existing path require the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
 
 Upload links have no `if_match` option. With protection enabled, `create_upload_link` rejects existing destinations; the upload also fails if the file appears before the bytes arrive. Use a new path, or set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites. See [transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/transfer-links/#upload-destinations).
 
@@ -191,6 +195,21 @@ One-time transfer links require HTTP or SSE transport plus `BASE_URL`. Their ung
 #### Jobs
 
 Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native background tasks when the client supports them. Other clients receive an inline result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with `get_job_result`. A Redis tasks backend is durable and shared across workers; the default memory backend is process-local and does not survive restarts.
+
+### Cross-instance note links
+
+When an agent connects to several vault servers, give each server a distinct name and describe the URL prefix for its own vault. Configure one server with:
+
+```
+MARKDOWN_VAULT_MCP_SERVER_NAME=corpus-mcp
+MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION="Contains craft notes. This instance serves files available at this GitHub URL: https://github.com/pvliesdonk/corpus/blob/main/"
+```
+
+Configure each other server independently with its own name and URL prefix. Keep any existing description text in the same value, adding the URL sentence to it. The sentence describes this instance's notes; it need not name other instances. A client that passes the server instructions to its model can use the prefix to choose the server and infer the vault-relative path.
+
+The prefix represents the vault root: a link ending in `blob/main/craft/note.md` maps to `craft/note.md`. If the vault serves a repository subfolder, include that subfolder in the prefix. Update the prefix if the publication branch or folder moves. Never include a token in the URL: the description reaches connected clients.
+
+An unset description adds nothing. Restart the server and reconnect after changing the value. The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement suppresses the description; see [Server](#server) for precedence and the instruction budget.
 
 ### Vault
 

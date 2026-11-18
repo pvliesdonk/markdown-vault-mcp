@@ -2242,6 +2242,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-object" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings object
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-from-4x" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2257,6 +2268,17 @@
     <span class="md-ellipsis">
       
         API Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteSettings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitWriteSettings
       
     </span>
   </a>
@@ -3042,6 +3064,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-object" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings object
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-from-4x" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3057,6 +3090,17 @@
     <span class="md-ellipsis">
       
         API Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteSettings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitWriteSettings
       
     </span>
   </a>
@@ -3371,6 +3415,15 @@
 <span class="n">vault</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 <span class="n">strategy</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </code></pre></div>
+<h2 id="settings-object">Settings object<a class="headerlink" href="#settings-object" title="Permanent link">&para;</a></h2>
+<p>Group configuration in <code>GitWriteSettings</code> and pass the repository path separately:</p>
+<div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.git</span><span class="w"> </span><span class="kn">import</span> <span class="n">GitWriteSettings</span><span class="p">,</span> <span class="n">GitWriteStrategy</span>
+
+<span class="n">settings</span> <span class="o">=</span> <span class="n">GitWriteSettings</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="s2">"ghp_your_token"</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+<span class="n">strategy</span> <span class="o">=</span> <span class="n">GitWriteStrategy</span><span class="p">(</span><span class="n">settings</span><span class="o">=</span><span class="n">settings</span><span class="p">,</span> <span class="n">repo_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/vault"</span><span class="p">))</span>
+</code></pre></div>
+<p>Legacy flat arguments remain supported. With <code>settings</code>, flat arguments must have their default values. The settings object takes precedence over default-valued flat arguments.</p>
 <h2 id="migrating-from-4x">Migrating from 4.x<a class="headerlink" href="#migrating-from-4x" title="Permanent link">&para;</a></h2>
 <p><code>GitWriteStrategy</code> no longer accepts <code>commit_name_claim</code> or <code>commit_email_claim</code>. Remove these constructor arguments. The remaining <code>git_lfs</code> and <code>repo_path</code> options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:</p>
 <div class="fragment highlight"><pre><span></span><code><span class="n">strategy</span> <span class="o">=</span> <span class="n">GitWriteStrategy</span><span class="p">(</span>
@@ -3391,8 +3444,189 @@
 
 
 
+<h2 id="markdown_vault_mcp.git.GitWriteSettings" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">GitWriteSettings</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="s1">'x-access-token'</span><span class="p">,</span> <span class="n">repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">managed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">enable_pull</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">enable_push</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">commit_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.git.GitWriteSettings" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Grouped configuration for a :class:<code>GitWriteStrategy</code>.</p>
+<p>Each field mirrors the :class:<code>GitWriteStrategy</code> constructor argument of
+the same name and has the same default. The instance is frozen and its
+<code>repr</code> omits <code>token</code>.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.token">token</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>PAT for HTTPS push via <code>GIT_ASKPASS</code>.  <code>None</code> uses SSH or
+pre-configured credentials.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.username">username</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Username used with token auth (GitHub-compatible default).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.repo_url">repo_url</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Remote URL expected in managed mode.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.managed">managed</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, the strategy clones into an empty
+<code>repo_path</code> or validates <code>origin</code> on an existing repository.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.enable_pull">enable_pull</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Enable fetch + ff-only sync methods.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.enable_push">enable_push</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Enable deferred push behavior.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.push_delay_s">push_delay_s</span></code></td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Seconds of idle before pushing.  <code>0</code> disables the
+timer (push only on close).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.commit_name">commit_name</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Git committer name; <code>None</code> or empty falls back to
+:attr:<code>GitWriteStrategy.DEFAULT_COMMIT_NAME</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.commit_email">commit_email</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Git committer email; <code>None</code> or empty falls back to
+:attr:<code>GitWriteStrategy.DEFAULT_COMMIT_EMAIL</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.git.GitWriteSettings.git_lfs">git_lfs</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Run <code>git lfs pull</code> during lazy initialisation.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
 <h2 id="markdown_vault_mcp.git.GitWriteStrategy" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">GitWriteStrategy</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="s1">'x-access-token'</span><span class="p">,</span> <span class="n">repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">managed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">enable_pull</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">enable_push</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">commit_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">repo_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">GitWriteStrategy</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="s1">'x-access-token'</span><span class="p">,</span> <span class="n">repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">managed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">enable_pull</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">enable_push</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">commit_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">repo_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">settings</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.git.GitWriteStrategy" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -3410,9 +3644,9 @@
 </ol>
 <p>Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
 and arrive at :meth:<code>on_write_batch</code>, which stages every path the same
-scoped way and commits them once as <code>"&lt;tool&gt;: N files"</code>. A call that
-touched a single file commits under that file's own path instead, so
-ordinary writes read in <code>git log</code> exactly as they always have. A write
+scoped way and commits them once as <code>"&lt;tool&gt;: N files"</code>. A call
+touching a single file ordinarily names that file instead; folder moves
+name their roots even for one file. A write
 with no owning tool call takes the per-write path above.</p>
 <p>Push is deferred to a background <code>threading.Timer</code> that resets on
 each write.  When the timer fires (no writes for <code>push_delay_s</code>),
@@ -3620,9 +3854,59 @@ if <code>origin</code> uses SSH transport instead of HTTPS.</p>
                   <code>None</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>settings</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="GitWriteSettings(*, token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, git_lfs=True)
+
+  
+      dataclass
+   (markdown_vault_mcp.git.strategy.GitWriteSettings)" href="#markdown_vault_mcp.git.GitWriteSettings">GitWriteSettings</a> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Preferred grouped configuration.  When given, it replaces
+every flat configuration argument above except <code>repo_path</code>,
+and those flat arguments must stay at their defaults.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
       </tbody>
     </table>
-        <p>Author identity arrives per write as a resolved <code>principal</code>. OIDC
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>settings</code> is given together with a flat configuration
+argument that differs from its default; the message names the
+arguments, not their values.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+        <p>Prefer <code>settings</code> for configuration. Flat parameters remain for compatibility;
+future settings are added only to :class:<code>GitWriteSettings</code>. Non-default flat
+parameters cannot be combined with <code>settings</code>.</p>
+<p>Author identity arrives per write as a resolved <code>principal</code>. OIDC
 claim-key registration belongs to
 :func:<code>markdown_vault_mcp._identity.configure_identity_claims</code>, not this
 constructor. The removed claim keywords raise :exc:<code>TypeError</code>;
@@ -3711,10 +3995,10 @@ private attribute before the promotion.</p>
 
         <p>Commit every write from one tool call as a single commit.</p>
 <p>Mirrors :meth:<code>__call__</code>'s guards and push scheduling; only the commit
-boundary differs, and for a call that wrote a single file not even
-that — see :func:<code>_stage_and_commit_batch</code>. The author identity is
-taken from the first item's principal: one tool call has one acting
-principal, so the items cannot legitimately disagree.</p>
+boundary differs; an ordinary single-file call keeps its file subject,
+while a folder move names its roots — see :func:<code>_stage_and_commit_batch</code>.
+The author identity is taken from the first item's principal: one tool
+call has one acting principal, so the items cannot legitimately disagree.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -5606,7 +5890,7 @@ but never closes the strategy (#1765).</p>
       <tbody>
           <tr class="doc-section-item">
 <td><code>A</code></td>            <td>
-                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
+                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None, settings=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5616,7 +5900,7 @@ but never closes the strategy (#1765).</p>
           </tr>
           <tr class="doc-section-item">
 <td></td>            <td>
-                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
+                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None, settings=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5631,6 +5915,9 @@ but never closes the strategy (#1765).</p>
     </div>
 
 </div><!-- vale on -->
+
+<p>The optional <code>BatchAwareWriteCallback</code> protocol in <code>markdown_vault_mcp.types</code>
+describes the batch opt-in. <code>Versioner</code> remains the per-write contract.</p>
 
 
 

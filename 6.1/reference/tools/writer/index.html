@@ -3004,8 +3004,10 @@
 
 <h1 id="writer">Writer<a class="headerlink" href="#writer" title="Permanent link">&para;</a></h1>
 <!-- DOMAIN-INTRO-START -->
+<p>Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit, append and OKF verification retain surviving fields in their existing order when serializing a header. This preserves mapping order and values; YAML comments, quoting and whitespace may change.</p>
 <p>Every tool on this page changes the vault, so a server with <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> lists none of them; the <a href="../../../security-model/">security model</a> says what they reach. The <code>okf_*</code> tools also need Open Knowledge Format support on, and <code>okf_verify</code> needs OKF writes on.</p>
-<p>A write saves the file and queues the index update. A following <code>read</code> sees the new file, while search and graph reads may lag behind until the index catches up: pass <code>wait_for_pending_writes=true</code> on the read tools that take it, and check <code>_meta.index_stale</code>. No <code>reindex</code> is needed.</p>
+<p>A write saves the file and queues the index update. A following <code>read</code> sees the new file, while search and graph reads may lag behind until the index catches up: pass <code>wait_for_pending_writes=true</code> on the read tools that take it, and check <code>_meta.index_stale</code>. No <code>reindex</code> is needed.
+New notes and attachments receive the same permissions as a plain file creation in their destination folder. On Linux, a folder's default access control list (ACL) can grant a shared group write access even when the process umask would remove it. Overwriting an existing file preserves its permission bits.</p>
 <!-- DOMAIN-INTRO-END -->
 
 <h2 id="write"><code>write</code><a class="headerlink" href="#write" title="Permanent link">&para;</a></h2>
