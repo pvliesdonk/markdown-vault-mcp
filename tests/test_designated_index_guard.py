@@ -227,12 +227,12 @@ def test_directory_named_index_is_not_reserved(tmp_path: Path) -> None:
     [
         ("GUIDES/index.md", ("guides",), "case"),
         ("guides/INDEX.md", ("guides",), "case"),
-        ("cafe\u0301/index.md", ("café",), "unicode"),
-        ("e\u0301/index.md", ("é",), "unicode"),
+        ("cafe\u0301/index.md", ("café",), "always"),
+        ("e\u0301/index.md", ("é",), "always"),
         ("INDEX.md", (".",), "case"),
         ("123/INDEX.md", ("123",), "case"),
         ("guides/NEW/INDEX.md", ("guides/**",), "case"),
-        ("cafe\u0301/NEW/INDEX.md", ("café/**",), "both"),
+        ("cafe\u0301/NEW/INDEX.md", ("café/**",), "case"),
         ("link/index.md", ("link",), "never"),
     ],
 )
@@ -251,11 +251,9 @@ def test_designated_index_follows_filesystem_identity(
     outside.mkdir()
     (root / "link").symlink_to(outside, target_is_directory=True)
     case_aliases = (root / "GUIDES").exists()
-    unicode_aliases = (root / "cafe\u0301").exists()
     want = {
         "case": case_aliases,
-        "unicode": unicode_aliases,
-        "both": case_aliases and unicode_aliases,
+        "always": True,
         "never": False,
     }[expected]
     assert designated_index_path(root, path, folders) is want
@@ -355,13 +353,14 @@ def test_policy_with_simulated_folding_axes(
 
 
 @pytest.mark.parametrize("pattern", ["?", "[é]"])
+@pytest.mark.parametrize("unicode_axis", [False, True])
 def test_nfc_designation_protects_case_alias_with_simulated_axes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pattern: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pattern: str, unicode_axis: bool
 ) -> None:
     from markdown_vault_mcp.okf_capabilities import designated_index_path
 
     monkeypatch.setattr(
-        "markdown_vault_mcp.okf_capabilities._probe", lambda _p: (True, True)
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _p: (True, unicode_axis)
     )
     assert designated_index_path(tmp_path, "e\u0301/INDEX.md", (pattern,))
 
