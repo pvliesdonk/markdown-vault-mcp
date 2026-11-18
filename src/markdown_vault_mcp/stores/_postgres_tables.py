@@ -30,7 +30,7 @@ from markdown_vault_mcp.stores._postgres import (
 from markdown_vault_mcp.types import ANY_TOKEN, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from markdown_vault_mcp.types import EmbeddingIdentity, ExpectedToken
 
@@ -241,7 +241,7 @@ def load_generation(
     schema: str,
     identity: EmbeddingIdentity,
     documents: Sequence[tuple[str, str | None]],
-    chunks: Sequence[tuple[str, int, str, Any, Jsonb]],
+    chunks: Iterable[tuple[str, int, str, Any, Jsonb]],
 ) -> int:
     """Load *documents* and *chunks* into emptied tables and record *identity*.
 
