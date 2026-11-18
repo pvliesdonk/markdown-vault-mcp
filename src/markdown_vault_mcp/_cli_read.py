@@ -279,7 +279,7 @@ def read_payload(
             raise DocumentUnreadableError(path, str(exc)) from exc
         if active:
             data["okf"]["observation"] = vault.reader.review_observation(
-                note.path, note.frontmatter, note.etag, data["okf"]["snapshot"]
+                note.path, note.frontmatter, data["okf"]["snapshot"]
             )
     return data
 

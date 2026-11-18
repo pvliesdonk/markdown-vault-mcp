@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,6 +17,11 @@ from markdown_vault_mcp.exceptions import (
     StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.indexing.observations import _LEDGER_LOCKS
+from markdown_vault_mcp.okf import (
+    _parse_stale_after,
+    _review_recorded,
+    verified_entries,
+)
 
 
 class ReceiptNotRecordedError(Exception):
@@ -92,6 +99,64 @@ class ReceiptStore:
             )
         with self._lock:
             self._load()
+
+    def review_observation(
+        self, path: str, metadata: dict[str, Any], snapshot: dict[str, str] | None
+    ) -> dict[str, Any]:
+        """Compare the current concept with the latest locally recorded review.
+
+        Args:
+            path: Vault-relative note path.
+            metadata: Supplied note metadata.
+            snapshot: Current concept digest, if available.
+
+        Returns:
+            An available comparison, or unavailable when local evidence is missing.
+        """
+        entries = [
+            entry for entry in verified_entries(metadata) if _review_recorded(entry)
+        ]
+        if not entries or snapshot is None:
+            return {"state": "unavailable"}
+        latest = max(
+            value
+            for entry in entries
+            if isinstance((value := _parse_stale_after(entry["at"])), datetime)
+        )
+        latest_entries = [
+            entry for entry in entries if _parse_stale_after(entry["at"]) == latest
+        ]
+        try:
+            with self._lock:
+                rows = self._load()
+        except (OSError, StoreUnsupportedSchemaError):
+            return {"state": "unavailable"}
+        matching = [
+            row
+            for row in rows
+            if row.get("path") == path
+            and any(
+                row.get("by") == entry["by"] and row.get("at") == entry["at"]
+                for entry in latest_entries
+            )
+        ]
+        if any(
+            not any(
+                row.get("by") == entry["by"] and row.get("at") == entry["at"]
+                for row in matching
+            )
+            for entry in latest_entries
+        ):
+            return {"state": "unavailable"}
+        baseline = matching[-1].get("snapshot")
+        if (
+            not isinstance(baseline, dict)
+            or baseline.get("algo") != snapshot.get("algo")
+            or not isinstance(baseline.get("digest"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", baseline["digest"]) is None
+        ):
+            return {"state": "unavailable"}
+        return {"state": "available", "later_change_observed": baseline != snapshot}
 
     def append(self, receipt: dict[str, Any]) -> None:
         """Record the receipt of a review already written to its note.

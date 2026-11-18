@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any, Literal
 
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
     from markdown_vault_mcp.bundle_inventory import (
         BundleInspection,
         Enumeration,
@@ -185,6 +186,25 @@ def _selected(
     )
 
 
+def _removed_candidates(
+    request: BundleTreeRequest, rows: dict[str, Observation]
+) -> list[str]:
+    scope = tuple(filter(None, (request.root + "/" + request.directory).split("/")))
+    cursor = tuple(request.cursor.split("/")) if request.cursor else ()
+    return sorted(
+        (
+            path
+            for path, row in rows.items()
+            if row.presence == "removed"
+            and row.role == "concept_candidate"
+            and tuple(path.split("/"))[: len(scope)] == scope
+            and len(path.split("/")) > len(scope)
+            and tuple(path.split("/")) > cursor
+        ),
+        key=lambda path: tuple(path.split("/")),
+    )
+
+
 class ReaderFacet:
     """Read-only queries over the shared managers."""
 
@@ -196,6 +216,7 @@ class ReaderFacet:
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
         citation_mgr: CitationManager | None = None,
+        receipt_store: ReceiptStore | None = None,
         okf_audit: Callable[[], OkfAuditReport] | None = None,
         okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
@@ -208,10 +229,12 @@ class ReaderFacet:
             git_query_mgr: Git history / diff / revision reads.
             require_built: Index-readiness gate for the bucket-3 methods.
             citation_mgr: Reverse citation lookup manager, when wired.
+            receipt_store: Local review receipts, when wired.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
             okf_write_state: Configured and effective write-layer projection.
         """
+        self._receipt_store = receipt_store
         self._citation_mgr = citation_mgr
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
@@ -322,15 +345,12 @@ class ReaderFacet:
         """
         ledger = self._doc_mgr._observations
         rows = ledger.rows() if ledger else {}
-        has_removals = any(
-            row.presence == "removed" and row.role == "concept_candidate"
-            for row in rows.values()
-        )
+        candidates = _removed_candidates(request, rows)
         page = self._inventory_with_removals(
             self.inspect_bundle_tree(
-                replace(request, entry_limit=500 if has_removals else 1000)
+                replace(request, entry_limit=500 if candidates else 1000)
             ),
-            rows,
+            candidates,
         )
         matching = tuple(
             entry
@@ -352,10 +372,10 @@ class ReaderFacet:
         )
 
     def _inventory_with_removals(
-        self, page: BundleInspection, rows: dict[str, Observation]
+        self, page: BundleInspection, candidates: list[str]
     ) -> BundleInspection:
         if (
-            not rows
+            not candidates
             or page.state != "inspected"
             or not isinstance(page.request, BundleTreeRequest)
         ):
@@ -368,24 +388,11 @@ class ReaderFacet:
             manager._max_note_read_bytes,
             manager._inspection_policy,
         )
-        scope = tuple(
-            filter(None, (page.request.root + "/" + page.request.directory).split("/"))
-        )
-        cursor = tuple(page.request.cursor.split("/")) if page.request.cursor else ()
         boundary = tuple(page.next_cursor.split("/")) if page.next_cursor else None
-        candidates = sorted(
-            (
-                path
-                for path, row in rows.items()
-                if row.presence == "removed"
-                and row.role == "concept_candidate"
-                and tuple(path.split("/"))[: len(scope)] == scope
-                and len(path.split("/")) > len(scope)
-                and tuple(path.split("/")) > cursor
-                and (boundary is None or tuple(path.split("/")) <= boundary)
-            ),
-            key=lambda path: tuple(path.split("/")),
-        )
+        if boundary is not None:
+            candidates = [
+                path for path in candidates if tuple(path.split("/")) <= boundary
+            ]
         budget = 1000 - len(page.entries)
         truncated = len(candidates) > budget
         checked = candidates[:budget]
@@ -556,32 +563,21 @@ class ReaderFacet:
         return self._doc_mgr.read(path, section=section)
 
     def review_observation(
-        self,
-        path: str,
-        metadata: dict[str, Any],
-        etag: str | None,
-        snapshot: dict[str, str] | None = None,
+        self, path: str, metadata: dict[str, Any], snapshot: dict[str, str] | None
     ) -> dict[str, Any]:
-        """Compare a whole-note read with this instance's observation ledger.
+        """Compare current concept content with a local review receipt.
 
         Args:
             path: Vault-relative path of the returned note.
             metadata: Supplied note metadata.
-            etag: Digest of the returned whole-note bytes.
             snapshot: Current concept snapshot, when available.
 
         Returns:
             An available comparison or an unavailable observation.
-
-        Raises:
-            ValueError: If the current concept snapshot has an invalid shape.
         """
-        from markdown_vault_mcp._okf_observed import review_observation
-
-        ledger = self._doc_mgr._observations
-        return review_observation(
-            metadata, ledger.rows().get(path) if ledger else None, etag, snapshot
-        )
+        if self._receipt_store is None:
+            return {"state": "unavailable"}
+        return self._receipt_store.review_observation(path, metadata, snapshot)
 
     def find_citing_notes(self, resource: str) -> dict[str, Any]:
         """Find indexed notes citing an exact resource.
