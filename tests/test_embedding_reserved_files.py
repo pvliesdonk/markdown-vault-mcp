@@ -504,3 +504,44 @@ def test_widened_folder_reaches_unchanged_empty_concept_before_embedding_build(
         )
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("backend", ["numpy", "sqlite"])
+def test_legacy_alias_upgrades_v1_store(tmp_path: Path, backend: str) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "index.md").write_text("# Listing\n\nlegacy listing\n")
+    (root / "concept.md").write_text(
+        "---\ntitle: Concept\ndescription: legacy description\n---\n"
+    )
+    provider = CountingProvider()
+    old = _persistent_vault(root, tmp_path, provider, enabled=False, backend=backend)
+    try:
+        old.index.build_index()
+        old.index.build_embeddings()
+        assert "index.md" in _paths(old)
+    finally:
+        old.close()
+    provider.texts.clear()
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_write=True,
+            embedding_store=backend,
+            index_path=tmp_path / "index.db",
+            state_path=tmp_path / "state.json",
+            embeddings_path=tmp_path / "vectors",
+        ),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert "index.md" not in _paths(vault)
+        assert "concept.md" in _paths(vault)
+        assert any("legacy description" in text for text in provider.texts)
+        assert vault._embed_builder.format_token().startswith("v1;listed;scope=")
+    finally:
+        vault.close()
