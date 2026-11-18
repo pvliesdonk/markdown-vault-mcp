@@ -412,10 +412,11 @@ commits) reports `would_apply=false`. The push leg has no safe local
     conflict metadata. A `log.md` conflict unions complete entries by date
     when both versions have compatible frontmatter and preambles and supported
     bullet lists. Identical complete entries under the same date are
-    deduplicated. Reference definitions and invalid or out-of-order dates
-    cause a fallback. If the merge is unsafe or the rebase aborts, the local log
+    deduplicated. Equal reference definitions are supported; differing definitions
+    and invalid or out-of-order dates cause a fallback. Git converts the merged
+    content to worktree form before staging. If the merge is unsafe or the rebase aborts, the local log
     is saved as a verbatim sibling. The union has no merge base, so an entry
-    deleted on one side can return.
+    edited or deleted on one side can return.
     A designated generated index takes the upstream copy when present and is regenerated
     after the search index catches up. A generated-only conflict, including a
     deletion on either side, reports `rebased` with no siblings. When upstream

@@ -13,6 +13,14 @@ verified:
 stale_after: 2027-03-06
 status: stable
 sources:
+  - id: git-cat-file
+    title: git-cat-file(1)
+    resource: https://git-scm.com/docs/git-cat-file
+    accessed: 2026-11-18
+  - id: gitattributes
+    title: gitattributes(5)
+    resource: https://git-scm.com/docs/gitattributes
+    accessed: 2026-11-18
   - id: git-ls-files
     title: git-ls-files(1)
     resource: https://git-scm.com/docs/git-ls-files
@@ -167,6 +175,8 @@ repositories under `/tmp/gitref/`.
 - The detached process is a new session leader (`sid == pid`, `ps` state `Zs` once it exits) that outlives the `git` that started it, so it is re-parented to the nearest subreaper or PID 1. On 2.47.3 and 2.55.0 one `fetch` and one `pull` each leave exactly one, in a repository with nothing for gc to do; `-c maintenance.autoDetach=false -c gc.autoDetach=false` leaves none. On 2.43.0 neither command left one in the same repository: there `gc --auto` detaches only when it decides it has work (`--detach` "overrides the gc.autoDetach config"). [source: git-gc] (`--detach`, `--auto`) [observed: git 2.43.0, 2.47.3 in the published container, 2.55.0, with a child-subreaper Python counting the orphans it reaps]
 
 ### Conflicted rebase state (`conflict.py`)
+
+- `git cat-file --filters --path=<path> <blob>` applies worktree filters, including smudge and end-of-line conversion, for the given path. Git applies the clean filter on staging. [source: git-cat-file] [source: gitattributes] [pins: tests/test_okf_log_merge.py::test_git_filter_preserves_readable_worktree]
 
 - `diff --name-only -z --diff-filter=U` lists unmerged paths NUL-terminated and unquoted; without `-z` a non-ASCII name renders `"n\303\266 te.md"`. [source: git-diff] (`--diff-filter`, `-z`) [observed: git 2.43.0] [pins: tests/test_git.py::TestConflictPathsAreUsable::test_a_non_ascii_conflict_is_resolved_and_saved]
 - `REBASE_HEAD` is the commit being replayed and `REBASE_HEAD:<path>` reads its version; the ref outlives a successful `--continue`, so it is no in-progress signal. [source: gitrevisions] [source: git-rebase] [observed: git 2.43.0] [pins: tests/test_git.py::TestRebaseInProgress::test_ignores_stale_rebase_head_ref]

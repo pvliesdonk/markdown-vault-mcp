@@ -188,7 +188,36 @@ def _merge_log_conflict(
             "git_conflict_log_merge_fallback path=%s reason=%s", rel_path, result.reason
         )
         return False
-    atomic_write(git_root / rel_path, result.text.encode("utf-8"))
+    blob = run_git_capturing(
+        git_root,
+        "hash-object",
+        "-w",
+        "--stdin",
+        "--no-filters",
+        input=result.text,
+        preserve_newlines=True,
+        env=env,
+    )
+    if blob.returncode == 0:
+        converted = run_git_capturing(
+            git_root,
+            "cat-file",
+            "--filters",
+            f"--path={rel_path}",
+            blob.stdout.strip(),
+            preserve_newlines=True,
+            env=env,
+        )
+    else:
+        converted = blob
+    if converted.returncode != 0:
+        logger.warning(
+            "git_conflict_log_merge_fallback path=%s reason=%s",
+            rel_path,
+            "worktree_conversion",
+        )
+        return False
+    atomic_write(git_root / rel_path, os.fsencode(converted.stdout))
     run_git(git_root, "add", pathspecs=[rel_path], env=env)
     logger.info(
         "git_conflict_log_merged path=%s entries_added=%d", rel_path, result.added

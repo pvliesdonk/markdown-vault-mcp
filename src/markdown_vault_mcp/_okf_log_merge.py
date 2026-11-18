@@ -5,11 +5,15 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import re
+from typing import TYPE_CHECKING, Any
 
 from markdown_it import MarkdownIt
 
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
 from markdown_vault_mcp.scanner import strip_frontmatter_block
+
+if TYPE_CHECKING:
+    from markdown_it.token import Token
 
 
 @dataclasses.dataclass(frozen=True)
@@ -36,19 +40,42 @@ class _Log:
     preamble: str
     lines: list[str]
     sections: list[_Section]
+    refs: dict[str, tuple[str, str]]
 
 
 def _lines(text: str) -> list[str]:
     return re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", text)[:-1]
 
 
+def _heading_date(
+    markup: str, content: str, sections: list[_Section]
+) -> tuple[str, str]:
+    match = _LOG_HEADING_RE.fullmatch(f"## {content}")
+    if not match or markup != "##":
+        return "", "non_date_heading"
+    date = match.group(1)
+    try:
+        datetime.date.fromisoformat(date)
+    except ValueError:
+        return "", "invalid_date"
+    if any(section.date == date for section in sections):
+        return "", "duplicate_date"
+    if sections and sections[-1].date < date:
+        return "", "date_order"
+    return date, ""
+
+
+def _capture_entry(section: _Section, lines: list[str], span: list[int]) -> None:
+    item = lines[span[0] : span[1]]
+    while item and not item[-1].strip(" \t\r\n"):
+        item.pop()
+    section.entries.append(tuple(line.rstrip("\r\n") for line in item))
+    section.spans.append((span[0], span[0] + len(item)))
+
+
 def _read_sections(
-    lines: list[str], body: str
+    lines: list[str], tokens: list[Token]
 ) -> tuple[list[_Section], int, set[int], str]:
-    env: dict[str, object] = {}
-    tokens = MarkdownIt("commonmark").parse(body, env)
-    if env.get("references"):
-        return [], 0, set(), "reference_definitions"
     sections: list[_Section] = []
     first = len(lines)
     accounted: set[int] = set()
@@ -59,23 +86,16 @@ def _read_sections(
             and token.tag == "h2"
             and token.map
         ):
-            heading = tokens[index + 1].content
-            match = _LOG_HEADING_RE.fullmatch(f"## {heading}")
-            if not match or token.markup != "##":
-                return [], 0, set(), "non_date_heading"
-            try:
-                datetime.date.fromisoformat(match.group(1))
-            except ValueError:
-                return [], 0, set(), "invalid_date"
-            if any(section.date == match.group(1) for section in sections):
-                return [], 0, set(), "duplicate_date"
+            date, reason = _heading_date(
+                token.markup, tokens[index + 1].content, sections
+            )
+            if reason:
+                return [], 0, set(), reason
             if sections:
-                if sections[-1].date < match.group(1):
-                    return [], 0, set(), "date_order"
                 sections[-1].end = token.map[0]
             accounted.update(range(*token.map))
             first = min(first, token.map[0])
-            sections.append(_Section(match.group(1), token.map[0], len(lines), [], []))
+            sections.append(_Section(date, token.map[0], len(lines), [], []))
         elif (
             token.type == "list_item_open"
             and token.level == 1
@@ -84,11 +104,7 @@ def _read_sections(
             and sections
         ):
             accounted.update(range(*token.map))
-            item = lines[token.map[0] : token.map[1]]
-            while item and not item[-1].strip(" \t\r\n"):
-                item.pop()
-            sections[-1].entries.append(tuple(line.rstrip("\r\n") for line in item))
-            sections[-1].spans.append((token.map[0], token.map[0] + len(item)))
+            _capture_entry(sections[-1], lines, token.map)
     return sections, first, accounted, ""
 
 
@@ -100,7 +116,13 @@ def _parse(text: str) -> tuple[_Log | None, str]:
     body = strip_frontmatter_block(text)
     prefix = text[: len(text) - len(body)]
     lines = _lines(body)
-    sections, first, accounted, reason = _read_sections(lines, body)
+    env: dict[str, Any] = {}
+    tokens = MarkdownIt("commonmark").parse(body, env)
+    refs = {
+        label: (ref["href"], ref["title"])
+        for label, ref in env.get("references", {}).items()
+    }
+    sections, first, accounted, reason = _read_sections(lines, tokens)
     if reason:
         return None, reason
     if not sections:
@@ -114,7 +136,7 @@ def _parse(text: str) -> tuple[_Log | None, str]:
     preamble = lines[:first]
     while preamble and not preamble[-1].strip(" \t\r\n"):
         preamble.pop()
-    return _Log(prefix, "".join(preamble).rstrip("\r\n"), lines, sections), ""
+    return _Log(prefix, "".join(preamble).rstrip("\r\n"), lines, sections, refs), ""
 
 
 def _insertions(
@@ -181,9 +203,15 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
     if right is None:
         return LogMerge(None, 0, reason)
     mismatch = (
-        "frontmatter_differs" if left.prefix != right.prefix else "preamble_differs"
+        "reference_definitions"
+        if left.refs != right.refs
+        else "frontmatter_differs"
+        if left.prefix != right.prefix
+        else "preamble_differs"
+        if left.preamble != right.preamble
+        else ""
     )
-    if left.prefix != right.prefix or left.preamble != right.preamble:
+    if mismatch:
         return LogMerge(None, 0, mismatch)
     eol_match = re.search(r"\r\n|\r|\n", upstream)
     eol = eol_match.group() if eol_match else "\n"
@@ -200,8 +228,10 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
         output[pos:pos] = insertions[pos]
     merged = left.prefix + "".join(output)
     check, reason = _parse(merged)
-    if check is None or not known <= {
-        (s.date, e) for s in check.sections for e in s.entries
-    }:
+    if (
+        check is None
+        or check.refs != left.refs
+        or not known <= {(s.date, e) for s in check.sections for e in s.entries}
+    ):
         return LogMerge(None, 0, "self_check_" + reason)
     return LogMerge(merged, added, "")

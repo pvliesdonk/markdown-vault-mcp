@@ -8,8 +8,9 @@ kind: reference
 # Git
 
 <!-- DOMAIN-INTRO-START -->
-Generated index conflicts can return `rebased` without siblings; authored
-indexes and logs retain a local sibling without injected conflict metadata.
+Generated index conflicts and compatible log conflicts can return `rebased`
+without siblings. Authored indexes and unsafe logs retain a local sibling
+without injected conflict metadata.
 See [Git integration](../../use/git-integration.md) for recovery details.
 <!-- DOMAIN-INTRO-END -->
 
