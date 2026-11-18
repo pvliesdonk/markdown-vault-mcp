@@ -6906,6 +6906,11 @@ route). `tests/test_write_remote_health.py` partitions
 Whether a warning should ever escalate to refusing the write is left to
 [#1299](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299).
 
+`GitWriteStrategy` accepts configuration through `GitWriteSettings`; legacy flat
+parameters remain supported at their present set, and non-default flat values
+cannot be mixed with settings. `repo_path` and collaborators stay direct
+keywords. Settings exclude the token from `repr`.
+
 **Strategy collaborators (#893)**: `GitWriteStrategy` composes the
 collaborators extracted from the class, following the Versioner/Syncer
 seams of the decoupling-and-layering study (#879), plus the sync-health
