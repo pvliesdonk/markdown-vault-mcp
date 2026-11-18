@@ -181,8 +181,12 @@ def _facet_payload(
     data = _plain(result)
     if tool == "stats":
         okf = vault.reader.okf_stats()
-        if okf is not None:
-            data["okf"] = okf
+        if okf is None:
+            okf = {}
+        okf["capabilities"] = vault.okf_capability_report(
+            active=vault.okf.state().active
+        )
+        data["okf"] = okf
     if tool == "get_context":
         _context_annotations(vault, data, arguments["path"])
     return data

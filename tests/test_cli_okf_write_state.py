@@ -54,12 +54,17 @@ def test_stats_capabilities_when_inactive(monkeypatch: pytest.MonkeyPatch) -> No
     }
 
 
-@pytest.mark.usefixtures("discovery_source")
+@pytest.mark.parametrize("declared", [False, True])
 @pytest.mark.parametrize("remote", [False, True])
 def test_cli_matches_config_capabilities(
-    monkeypatch: pytest.MonkeyPatch, remote: bool
+    discovery_source: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remote: bool,
+    declared: bool,
 ) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    if declared:
+        (discovery_source / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
 
     async def resource_report() -> dict:
         async with Client(make_server()) as client:

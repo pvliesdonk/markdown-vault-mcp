@@ -151,7 +151,6 @@ def test_capability_report_matrix(
                 "effective": effective,
                 "reason": reason,
             }
-        assert vault.reader.okf_stats()["capabilities"] == report
     finally:
         vault.close()
 
@@ -180,10 +179,46 @@ def test_capabilities_follow_live_declaration(tmp_path: Path) -> None:
     )
     try:
         assert (
-            vault.reader.okf_stats()["capabilities"]["index"]["reason"]
+            vault.okf_capability_report(active=vault.okf.state().active)["index"][
+                "reason"
+            ]
             == "okf_inactive"
         )
         (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-        assert vault.reader.okf_stats()["capabilities"]["index"]["effective"] is True
+        assert (
+            vault.okf_capability_report(active=vault.okf.state().active)["index"][
+                "effective"
+            ]
+            is True
+        )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("declared", [False, True])
+def test_library_okf_stats_preserves_original_shape(
+    tmp_path: Path, declared: bool
+) -> None:
+    if declared:
+        (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        section = vault.reader.okf_stats()
+        if not declared:
+            assert section is None
+        else:
+            assert section is not None
+            assert set(section) == {
+                "mode",
+                "declared_version",
+                "types",
+                "untyped_count",
+                "status",
+                "trust",
+                "stale_count",
+                "reserved_count",
+                "write_configured",
+                "write_effective",
+            }
     finally:
         vault.close()

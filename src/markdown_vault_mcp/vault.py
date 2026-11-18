@@ -773,9 +773,6 @@ class Vault:
             require_built=self._require_built,
             okf_audit=self._okf_audit,
             okf_write_state=lambda: self.okf_write_state(active=True),
-            okf_capabilities=lambda: self.okf_capability_report(
-                active=self._okf.state().active
-            ),
         )
         # The reserved files the OKF generators write are subject to this
         # vault's own required-frontmatter gate, so the generators need the
