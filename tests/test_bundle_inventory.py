@@ -529,7 +529,7 @@ def test_allowlist_also_hides_nonregular_and_stat_failures(
 
     monkeypatch.setattr(inventory.os, "stat", refused)
     result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
-    assert result.entries == ()
+    assert all(e.path == "linked.exe" for e in result.entries)
     assert result.enumeration == "unavailable"
 
 

@@ -285,22 +285,54 @@ def test_directory_listing_refusal_marks_enumeration(tmp_path, monkeypatch):
     assert page.enumeration == "unavailable" and page.entries == ()
 
 
-def test_hidden_symlink_marks_both_enumerations_incomplete(tmp_path):
+def test_hidden_symlink_is_reported_without_following(tmp_path):
+    from dataclasses import asdict
+
     from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
 
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    (bundle / "escape.dir").symlink_to(tmp_path, target_is_directory=True)
-    (bundle / "escape").symlink_to(tmp_path, target_is_directory=True)
-    (bundle / "link.md").symlink_to(tmp_path / "outside")
+    target = tmp_path / "private-target"
+    target.mkdir()
+    (target / "secret.md").write_text("secret")
+    (bundle / "escape.dir").symlink_to(target, target_is_directory=True)
+    (bundle / "escape").symlink_to(target, target_is_directory=True)
+    (bundle / "link.md").symlink_to(target / "secret.md")
     inspector = BundleInspector(tmp_path, (), frozenset(), 0)
     for request in (BundleInspectionRequest("bundle"), BundleTreeRequest("bundle")):
         page = inspector.inspect(request)
-        assert page.enumeration == "unavailable"
-        assert [(e.path, e.reason) for e in page.entries] == [
-            ("bundle/escape", "symlink"),
-            ("bundle/link.md", "symlink"),
+        assert page.enumeration == "complete"
+        assert [(e.path, e.state, e.reason) for e in page.entries] == [
+            ("bundle/escape", "unavailable", "symlink"),
+            ("bundle/escape.dir", "unavailable", "hidden_symlink"),
+            ("bundle/link.md", "unavailable", "symlink"),
         ]
+        assert "secret" not in str(asdict(page))
+
+
+def test_hidden_symlink_pages_through_hidden_directory(tmp_path):
+    bundle = tmp_path / "bundle"
+    (bundle / ".venv" / "bin").mkdir(parents=True)
+    (bundle / ".venv" / "bin" / "python3.14").symlink_to(tmp_path / "target")
+    (bundle / "z.md").write_text("z")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    cursor = None
+    entries = []
+    while True:
+        page = inspector.inspect(
+            BundleTreeRequest("bundle", entry_limit=1, cursor=cursor)
+        )
+        entries.extend(page.entries)
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+    assert [e.path for e in entries] == [
+        "bundle/.venv",
+        "bundle/.venv/bin",
+        "bundle/.venv/bin/python3.14",
+        "bundle/z.md",
+    ]
+    assert entries[2].reason == "hidden_symlink"
 
 
 def test_exact_cursor_symlink_is_a_leaf(tmp_path):

@@ -128,7 +128,8 @@ class BundleEntry:
         path: Original vault-relative spelling.
         role: Filename/physical role only, never conformance or write authority.
         state: Whether content was inspected, absent, refused or deliberately unread.
-        reason: Stable reason for an uninspected or unavailable entry.
+        reason: Stable reason for an uninspected or unavailable entry, including
+            ``hidden_symlink`` for a link outside the file allowlist.
         parse_state: Outcome of decoding and parsing complete Markdown bytes.
         type_state: Presence of a nonempty string ``type`` field, not vocabulary validation.
         visibility: Whether the path matches an effective index exclusion.
@@ -220,10 +221,6 @@ def project_search_state(
 
 def _missing(exc: OSError) -> bool:
     return exc.errno in {errno.ENOENT, errno.ENOTDIR}
-
-
-class _HiddenSymlinkError(OSError):
-    """A hidden link has an unknowable target kind without following it."""
 
 
 def _role(name: str, conventions_file: str | None) -> Role:
@@ -525,9 +522,7 @@ class BundleInspector:
                             parent, child.name, path, remaining
                         )
                     except OSError as exc:
-                        if not isinstance(
-                            exc, _HiddenSymlinkError
-                        ) and exc.errno not in {
+                        if exc.errno not in {
                             errno.EACCES,
                             errno.EPERM,
                         }:
@@ -570,9 +565,8 @@ class BundleInspector:
     ) -> tuple[BundleEntry | None, int]:
         if stat.S_ISLNK(mode):
             visible = self._visible_file(path) or "." not in path.rsplit("/", 1)[-1]
-            if not visible:
-                raise _HiddenSymlinkError()
-            return BundleEntry(path, state="unavailable", reason="symlink"), 0
+            reason = "symlink" if visible else "hidden_symlink"
+            return BundleEntry(path, state="unavailable", reason=reason), 0
         if stat.S_ISDIR(mode):
             name = path.rsplit("/", 1)[-1]
             descriptor = os.open(
