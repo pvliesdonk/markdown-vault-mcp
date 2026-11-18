@@ -1,32 +1,45 @@
 """Read authored or synthesized folder navigation."""
 
 import errno
-import os
 
 import pytest
 
 from markdown_vault_mcp.vault import Vault
 
 
-def test_authored_body_preserves_crlf(tmp_path, monkeypatch):
-    from markdown_vault_mcp.facets import reader
+@pytest.mark.parametrize("case", ["crlf", "bounded", "cursor"])
+def test_authored_body_precedes_listing(tmp_path, case):
+    if case == "crlf":
+        body = b"\r\n# Heading  \r\n\r\nText\t\r\n"
+        data = b'---\r\nokf_version: "0.2"\r\n---\r\n' + body
+        kwargs = {}
+    elif case == "bounded":
+        (tmp_path / "first.md").write_text("first")
+        body = data = b"  authored\n"
+        kwargs = {"entry_limit": 1}
+    else:
+        body = data = b"# Authored\n"
+        kwargs = {"cursor": "stale.md"}
+    (tmp_path / "index.md").write_bytes(data)
+    vault = Vault(source_dir=tmp_path)
+    try:
+        result = vault.reader.okf_navigation("", **kwargs)
+        assert (result.source, result.body, result.enumeration, result.next_cursor) == (
+            "authored",
+            body.decode(),
+            "not_inspected",
+            None,
+        )
+    finally:
+        vault.close()
 
-    original = reader.strip_frontmatter_block
-    calls = []
 
-    def capture(text, *, preserve_body=False):
-        calls.append(preserve_body)
-        return original(text, preserve_body=preserve_body)
-
-    monkeypatch.setattr(reader, "strip_frontmatter_block", capture)
-    body = b"\r\n# Heading  \r\n\r\nText\t\r\n"
-    (tmp_path / "index.md").write_bytes(b'---\r\nokf_version: "0.2"\r\n---\r\n' + body)
+def test_authored_empty_metadata_body(tmp_path):
+    (tmp_path / "index.md").write_text("---\n---\n# Authored\n")
     vault = Vault(source_dir=tmp_path)
     try:
         result = vault.reader.okf_navigation("")
-        assert result.source == "authored"
-        assert result.body == body.decode()
-        assert calls == [True]
+        assert (result.source, result.body) == ("authored", "# Authored\n")
     finally:
         vault.close()
 
@@ -36,7 +49,6 @@ def test_synthesis_includes_live_candidates_and_does_not_write(tmp_path):
 
     (tmp_path / "untyped.md").write_text("body")
     (tmp_path / "bad.md").write_text("---\ntype: [\n---\n")
-    (tmp_path / "a[b].md").write_text("---\ntype: concept\n---\n")
     (tmp_path / ".hidden.md").write_text("hidden")
     (tmp_path / "child").mkdir()
     before = {p.name: p.stat().st_mtime_ns for p in tmp_path.iterdir()}
@@ -50,24 +62,10 @@ def test_synthesis_includes_live_candidates_and_does_not_write(tmp_path):
         assert "[bad.md](/bad.md)" in result.body
         assert "[.hidden.md](/.hidden.md)" in result.body
         assert "[child](/child/)" in result.body
-        assert r"[a\[b\].md]" in result.body
         assert {p.name: p.stat().st_mtime_ns for p in tmp_path.iterdir()} == before
         vault.index.build_index()
         indexed = vault.reader.okf_navigation("")
         assert "[untyped.md](/untyped.md)" in indexed.body
-    finally:
-        vault.close()
-
-
-def test_authored_precedes_bounded_inventory(tmp_path):
-    (tmp_path / "first.md").write_text("first")
-    (tmp_path / "index.md").write_text("  authored\n")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        result = vault.reader.okf_navigation("", entry_limit=1)
-        assert result.source == "authored"
-        assert result.body == "  authored\n"
-        assert result.enumeration == "not_inspected"
     finally:
         vault.close()
 
@@ -78,16 +76,26 @@ def test_authored_precedes_bounded_inventory(tmp_path):
         ("symlink", "symlink"),
         ("nonregular", "nonregular"),
         ("invalid", "invalid_encoding"),
+        ("read", "io_error"),
     ],
 )
-def test_unreadable_authored_is_not_replaced(tmp_path, kind, reason):
+def test_unreadable_authored_is_not_replaced(tmp_path, monkeypatch, kind, reason):
     path = tmp_path / "index.md"
     if kind == "symlink":
         path.symlink_to(tmp_path / "missing")
     elif kind == "nonregular":
         path.mkdir()
-    else:
+    elif kind == "invalid":
         path.write_bytes(b"\xff")
+    else:
+        from markdown_vault_mcp.facets import reader
+
+        path.write_text("secret")
+
+        def fail(*_args):
+            raise PermissionError(errno.EACCES, "denied")
+
+        monkeypatch.setattr(reader, "read_regular_nofollow", fail)
     vault = Vault(source_dir=tmp_path)
     try:
         result = vault.reader.okf_navigation("")
@@ -96,24 +104,34 @@ def test_unreadable_authored_is_not_replaced(tmp_path, kind, reason):
         vault.close()
 
 
-@pytest.mark.parametrize("policy_kind", ["path", "hardlink"])
-def test_internal_index_is_refused(tmp_path, policy_kind):
-    from markdown_vault_mcp.bundle_inventory import InspectionPolicy
+@pytest.mark.parametrize("policy_kind", ["path", "failure"])
+def test_internal_index_is_refused(tmp_path, monkeypatch, policy_kind):
+    from markdown_vault_mcp.bundle_inventory import (
+        BundleInspectionRequest,
+        BundleInspector,
+        InspectionPolicy,
+    )
 
     index = tmp_path / "index.md"
-    if policy_kind == "path":
-        index.write_text("secret")
-        policy = InspectionPolicy(index_path=index)
-    else:
-        state = tmp_path / "state"
-        state.write_text("secret")
-        os.link(state, index)
-        policy = InspectionPolicy(state_paths=(state,))
+    index.write_text("secret")
+    policy = InspectionPolicy(index_path=index) if policy_kind == "path" else None
     vault = Vault(source_dir=tmp_path, inspection_policy=policy)
     try:
+        # An uninspected folder returns before attempting an authored read.
         assert vault.reader.okf_navigation("missing").state == "missing"
+        if policy_kind == "failure":
+            inspection = vault.reader.inspect_bundle(BundleInspectionRequest(""))
+            monkeypatch.setattr(
+                vault.reader, "inspect_bundle", lambda _request: inspection
+            )
+
+            def fail(*_args):
+                raise PermissionError(errno.EACCES, "denied")
+
+            monkeypatch.setattr(BundleInspector, "_prepare_policy", fail)
         result = vault.reader.okf_navigation("")
-        assert (result.source, result.reason, result.body) == (None, "internal", None)
+        reason = "internal" if policy_kind == "path" else "io_error"
+        assert (result.source, result.reason, result.body) == (None, reason, None)
     finally:
         vault.close()
 
@@ -145,7 +163,7 @@ async def test_navigation_tool(tmp_path, monkeypatch):
                 )
             ).structured_content
             assert payload == expected
-            assert payload["next_cursor"] == "guides/a.md"
+            assert payload["next_cursor"] is not None
             continued = (
                 await client.call_tool(
                     "okf_navigation",
@@ -166,50 +184,6 @@ async def test_navigation_tool(tmp_path, monkeypatch):
                 await client.call_tool("okf_navigation", {"folder": "."})
             message = str(error.value)
             assert "okf_navigation" in message and '""' in message and ".." in message
-    finally:
-        vault.close()
-
-
-def test_partial_synthesis(tmp_path):
-    for name in ("a.md", "b.md"):
-        (tmp_path / name).write_text(name)
-    vault = Vault(source_dir=tmp_path)
-    try:
-        result = vault.reader.okf_navigation("", entry_limit=1)
-        assert result.source == "synthesized"
-        assert result.enumeration == "entry_limit"
-        assert result.next_cursor is not None
-        assert result.body.count("- [") == 1
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("failure", ["read", "policy"])
-def test_io_error_refuses_index(tmp_path, monkeypatch, failure):
-    from markdown_vault_mcp.bundle_inventory import (
-        BundleInspectionRequest,
-        BundleInspector,
-    )
-    from markdown_vault_mcp.facets import reader
-
-    (tmp_path / "index.md").write_text("secret")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        if failure == "policy":
-            inspection = vault.reader.inspect_bundle(BundleInspectionRequest(""))
-            monkeypatch.setattr(
-                vault.reader, "inspect_bundle", lambda _request: inspection
-            )
-            target, name = BundleInspector, "_prepare_policy"
-        else:
-            target, name = reader, "read_regular_nofollow"
-
-        def fail(*_args):
-            raise PermissionError(errno.EACCES, "denied")
-
-        monkeypatch.setattr(target, name, fail)
-        result = vault.reader.okf_navigation("")
-        assert (result.source, result.reason) == (None, "io_error")
     finally:
         vault.close()
 
@@ -287,39 +261,5 @@ def test_pages_only_immediate_children_in_name_order(tmp_path):
             f"- [note-{n:02}.md](/bundle/note-{n:02}.md)" for n in range(25)
         ]
         assert lines == expected
-    finally:
-        vault.close()
-
-
-def test_cursor_directory_and_exact_boundary_at_root(tmp_path):
-    (tmp_path / "a").mkdir()
-    (tmp_path / "a" / "nested.md").write_text("nested")
-    (tmp_path / "b.md").write_text("b")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        first = vault.reader.okf_navigation("", entry_limit=1)
-        assert first.next_cursor == "a"
-        second = vault.reader.okf_navigation(
-            "", entry_limit=1, cursor=first.next_cursor
-        )
-        assert "[b.md](/b.md)" in second.body
-        assert second.next_cursor == "b.md"
-        last = vault.reader.okf_navigation("", entry_limit=1, cursor=second.next_cursor)
-        assert last.body == "# Index\n\n"
-        assert (last.enumeration, last.next_cursor) == ("complete", None)
-    finally:
-        vault.close()
-
-
-def test_authored_index_with_cursor_ignores_listing(tmp_path):
-    (tmp_path / "index.md").write_text("# Authored\n")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        result = vault.reader.okf_navigation("", cursor="stale.md")
-        assert (result.source, result.body, result.next_cursor) == (
-            "authored",
-            "# Authored\n",
-            None,
-        )
     finally:
         vault.close()

@@ -877,7 +877,12 @@ def _frontmatter_body_verbatim(text: str) -> str:
         return text
     try:
         metadata, _ = handler.split(candidate)
-        if not isinstance(handler.load(metadata), dict):
+        parsed = handler.load(metadata)
+        if not isinstance(parsed, dict) and not (
+            isinstance(handler, frontmatter.default_handlers.YAMLHandler)
+            and parsed is None
+            and not metadata.strip()
+        ):
             return text
     except (ValueError, TypeError, yaml.YAMLError):
         return text

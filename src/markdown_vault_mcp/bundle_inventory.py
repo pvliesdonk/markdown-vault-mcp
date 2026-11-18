@@ -122,7 +122,11 @@ class BundleTreeRequest(BundleInspectionRequest):
 
 @dataclass(frozen=True)
 class BundleChildrenRequest(BundleTreeRequest):
-    """Select one folder's immediate children, paged by cursor."""
+    """Select immediate children by cursor without inspecting note metadata.
+
+    Notes retain filename roles and report uninspected metadata with the
+    ``byte_budget`` reason. Access and internal-path policies still apply.
+    """
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -676,7 +680,7 @@ class _TreeWalk:
             return
         try:
             entry, consumed = self.inspector._observe(
-                fd, parts[-1], path, self.remaining
+                fd, parts[-1], path, 0 if self.children_only else self.remaining
             )
         except OSError:
             self.enumeration = "unavailable"

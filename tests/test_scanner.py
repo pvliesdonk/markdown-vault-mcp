@@ -1133,6 +1133,17 @@ class TestStripFrontmatterBlock:
     def test_preserve_body(self, text: str, expected: str) -> None:
         assert strip_frontmatter_block(text, preserve_body=True) == expected
 
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("---\n---\n# Authored\n", "# Authored\n"),
+            ("---\nnull\n---\nBody\n", "---\nnull\n---\nBody\n"),
+            ("---\n~\n---\nBody\n", "---\n~\n---\nBody\n"),
+        ],
+    )
+    def test_empty_metadata_and_explicit_null(self, text: str, expected: str) -> None:
+        assert strip_frontmatter_block(text, preserve_body=True) == expected
+
     def test_the_opening_block_comes_off_with_its_separator(self) -> None:
         assert strip_frontmatter_block("---\ntitle: Log\n---\n\n# Log\n") == "# Log\n"
 
