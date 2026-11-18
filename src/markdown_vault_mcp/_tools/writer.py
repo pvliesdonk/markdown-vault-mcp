@@ -1166,13 +1166,15 @@ def register(mcp: FastMCP) -> None:
         Args:
             path: Concept path in the vault.
             if_match: Etag from a recent read of the concept.
-            fields: Fields to set: type, title, description, tags, status,
-                stale_after or sources. Omitted fields are preserved.
+            fields: Non-empty type, title and description strings; tags as a list
+                of strings; status as draft, stable or deprecated; stale_after
+                as an ISO date or offset datetime; sources as a list of mappings
+                with a non-empty resource string. Omitted fields are preserved.
             producer: Explicit producer actor, such as codex/6.1 or human:alex;
                 omit to leave generation metadata unchanged.
 
         Returns:
-            The written path and whether it was created.
+            The written path and etag.
         """
         if (
             not config.content.okf_capabilities.author

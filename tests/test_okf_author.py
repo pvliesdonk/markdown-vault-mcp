@@ -57,7 +57,7 @@ def test_author_requires_matching_etag_and_valid_producer(tmp_path: Path) -> Non
         with pytest.raises(InvalidRequestError):
             vault.writer.okf_author("note.md", if_match="", fields={})
         with pytest.raises(ConcurrentModificationError):
-            vault.writer.okf_author("note.md", if_match="stale", fields={})
+            vault.writer.okf_author("note.md", if_match="stale", fields={"type": "new"})
         vault.writer.okf_author(
             "note.md", if_match=note.etag, fields={"title": "Title"}
         )
@@ -583,3 +583,134 @@ def test_invalid_new_field_is_refused_before_write(
         assert (tmp_path / "note.md").read_text() == original
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("delimiter", ["----", "--- "])
+def test_replan_reader_delimiters_preserve_metadata(delimiter: str) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    text = f"\n{delimiter}\ntype: Old\nverified: [{{by: human:a}}]\nsources: [{{resource: x}}]\n{delimiter}\nBody\n"
+    result = author_text(text, {"type": "New"}, None)
+    assert result.startswith(f"\n{delimiter}\n")
+    assert parse_frontmatter(result).metadata == {
+        "type": "New",
+        "verified": [{"by": "human:a"}],
+        "sources": [{"resource": "x"}],
+    }
+    assert result.endswith(f"{delimiter}\nBody\n")
+
+
+@pytest.mark.parametrize(
+    "field,old,value",
+    [
+        ("tags", "- one\n- two", ["new"]),
+        ("sources", "- resource: old", [{"resource": "new", "extra": 1}]),
+    ],
+)
+def test_replan_indentless_sequences(field: str, old: str, value: object) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    result = author_text(
+        f"---\n{field}:\n{old}\nother: keep\n---\nBody\n", {field: value}, None
+    )
+    assert parse_frontmatter(result).metadata == {field: value, "other": "keep"}
+    assert "other: keep\n---\nBody\n" in result
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"sources": ["bad"]},
+        {"sources": [{}]},
+        {"sources": [{"resource": ""}]},
+        {"tags": [1]},
+        {"status": "bogus"},
+        {"stale_after": "soon"},
+        {"title": None},
+    ],
+)
+def test_replan_invalid_values(fields: dict) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    with pytest.raises(InvalidRequestError):
+        author_text("---\ntype: Existing\n---\nBody", fields, None)
+
+
+def test_replan_existing_invalid_sources_untouched_and_date_valid() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    result = author_text(
+        "---\nsources: [legacy]\n---\nBody", {"stale_after": "2027-03-06"}, None
+    )
+    assert "sources: [legacy]" in result
+    assert parse_frontmatter(result).metadata["stale_after"] == "2027-03-06"
+
+
+def test_replan_unrelated_anchor_and_extension_stay_intact() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    text = "---\nshared: &x value\ncopy: *x\ngenerated:\n  by: old/1 # attribution\n  extension: &e [a, b] # untouched\n---\nBody\n"
+    result = author_text(text, {"type": "Guide"}, "human:alice")
+    assert "shared: &x value\ncopy: *x\n" in result
+    assert "  extension: &e [a, b] # untouched\n" in result
+    assert "# attribution" in result
+    assert parse_frontmatter(result).metadata["generated"]["by"] == "human:alice"
+
+
+def test_replan_bom_stays_at_file_start_and_reader_body_is_unchanged() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    original = "\ufeff# Body\n\ufeffinside\n"
+    result = author_text(original, {"title": "New"}, None)
+    assert result.startswith("\ufeff---\n")
+    assert result.endswith("# Body\n\ufeffinside\n")
+    assert (
+        parse_frontmatter(result.removeprefix("\ufeff")).content
+        == parse_frontmatter(original.removeprefix("\ufeff")).content
+    )
+
+
+def test_replan_bom_on_existing_header_uses_reader(tmp_path: Path) -> None:
+    path = tmp_path / "note.md"
+    path.write_bytes("\ufeff---\ntype: Old\n---\nBody\n".encode())
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        before = vault.reader.read("note.md")
+        assert before is not None
+        vault.writer.okf_author(
+            "note.md", if_match=before.etag, fields={"title": "New"}
+        )
+        after = vault.reader.read("note.md")
+        assert after is not None
+        assert after.frontmatter["type"] == "Old"
+        assert after.frontmatter["title"] == "New"
+        assert path.read_bytes().startswith(b"\xef\xbb\xbf---")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "text", ["+++\ntitle = 'Old'\n+++\nBody", '{\n"title": "Old"\n}\nBody']
+)
+def test_replan_non_yaml_headers_are_refused(text: str) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    with pytest.raises(InvalidRequestError, match="YAML"):
+        author_text(text, {"title": "New"}, None)
+
+
+@pytest.mark.parametrize(
+    "value", ["2027-03-06", "2027-03-06T12:30:00Z", "2027-03-06T12:30:00+01:00"]
+)
+def test_replan_supported_stale_after_values(value: str) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    result = author_text("---\ntype: Guide\n---\nBody", {"stale_after": value}, None)
+    assert parse_frontmatter(result).metadata["stale_after"] == value

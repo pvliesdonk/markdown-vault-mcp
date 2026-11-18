@@ -519,15 +519,15 @@ Set selected editorial fields on an existing OKF concept.
 |---|---|---|---|
 | `path` | `string` | required | Concept path in the vault. |
 | `if_match` | `string` | required | Etag from a recent read of the concept. |
-| `fields` | `object` | required | Fields to set: type, title, description, tags, status, `stale_after` or sources. Omitted fields are preserved. |
+| `fields` | `object` | required | Non-empty type, title and description strings; tags as a list of strings; status as draft, stable or deprecated; `stale_after` as an ISO date or offset datetime; sources as a list of mappings with a non-empty resource string. Omitted fields are preserved. |
 | `producer` | `string \| null` | `null` | Explicit producer actor, such as codex/6.1 or human:alex; omit to leave generation metadata unchanged. |
 
 **Returns**
 
-The written path and whether it was created.
+The written path and etag.
 
 <!-- DOMAIN-EXAMPLE-okf_author-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+Read a concept, then pass its `etag` as `if_match` and the fields to change, such as `fields={"tags": ["guide"]}`. Fields and generation children omitted from the request retain their text; edited lists use flow form and comments inside edited fields move below them. Invalid values, ambiguous frontmatter and edits that cannot preserve the reader’s view are refused. See [authoring a concept](../../use/okf.md#authoring-a-concept).
 <!-- DOMAIN-EXAMPLE-okf_author-END -->
 
 ## `okf_verify`

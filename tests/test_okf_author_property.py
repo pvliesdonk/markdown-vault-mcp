@@ -9,7 +9,9 @@ from markdown_vault_mcp._okf_author import author_text
 
 @settings(max_examples=60, deadline=None, database=None)
 @given(
-    title=st.text(alphabet="abcdefghijklmnopqrstuvwxyz ABC012", max_size=30),
+    title=st.text(
+        alphabet="abcdefghijklmnopqrstuvwxyz ABC012", min_size=1, max_size=30
+    ).filter(str.strip),
     body=st.text(alphabet="abcdefghijklmnopqrstuvwxyz 012", max_size=80),
 )
 def test_author_preserves_unselected_evidence_and_body(title: str, body: str) -> None:

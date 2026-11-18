@@ -197,8 +197,6 @@ class WriterFacet:
 
         if not if_match:
             raise InvalidRequestError("if_match is required")
-        if is_okf_reserved_file(path):
-            raise InvalidRequestError("Cannot author a reserved OKF file as a concept")
         self._doc_mgr.ensure_writable()
         with self._doc_mgr.write_scope():
             canonical, original = self._doc_mgr._okf_author_snapshot(path)

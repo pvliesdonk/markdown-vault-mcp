@@ -6,17 +6,76 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+import frontmatter
 import yaml
 from yaml.nodes import MappingNode
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.okf import okf_timestamp
+from markdown_vault_mcp.okf import OKF_STATUS_VALUES, _parse_stale_after, okf_timestamp
+from markdown_vault_mcp.scanner import parse_frontmatter
 
 _FIELDS = frozenset(
     {"type", "title", "description", "tags", "status", "stale_after", "sources"}
 )
-_ACTOR = re.compile(r"^(?:human:.+|process:.+|[^/]+/.+)$")
-_HEADER = re.compile(r"\A---\r?\n(.*?)^---[ \t]*(?:\r?\n|$)", re.MULTILINE | re.DOTALL)
+_ACTOR = re.compile(r"(?:human:|process:)\S+|[^\s/]+/\S+")
+
+
+def _valid_sources(value: Any) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, dict)
+        and isinstance(item.get("resource"), str)
+        and bool(item["resource"].strip())
+        for item in value
+    )
+
+
+def _valid_field(key: str, value: Any) -> bool:
+    if key in {"type", "title", "description"}:
+        return isinstance(value, str) and bool(value.strip())
+    if key == "tags":
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+    if key == "sources":
+        return _valid_sources(value)
+    if key == "status":
+        return isinstance(value, str) and value in OKF_STATUS_VALUES
+    if key == "stale_after":
+        return _parse_stale_after(value) is not None
+    return False
+
+
+def _validate(fields: dict[str, Any], producer: str | None) -> None:
+    if fields.keys() - _FIELDS:
+        raise InvalidRequestError("Only OKF editorial fields can be authored")
+    if producer is not None and not _ACTOR.fullmatch(producer):
+        raise InvalidRequestError(
+            "Producer must be a human:<id>, process:<id>, or <producer>/<version> actor"
+        )
+    if not fields and producer is None:
+        raise InvalidRequestError("At least one field or producer is required")
+    for key, value in fields.items():
+        if not _valid_field(key, value):
+            raise InvalidRequestError(f"Invalid value for {key}")
+
+
+def _header_span(text: str) -> tuple[int, int] | None:
+    offset = int(text.startswith("\ufeff"))
+    candidate = text[offset:]
+    offset += len(candidate) - len(candidate.lstrip())
+    candidate = text[offset:]
+    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    if handler is None and re.match(r"^\+{3,}[ \t]*(?:\r?\n|$)", candidate):
+        raise InvalidRequestError("Authoring requires YAML frontmatter")
+    if handler is None:
+        return None
+    if not isinstance(handler, frontmatter.default_handlers.YAMLHandler):
+        raise InvalidRequestError("Authoring requires YAML frontmatter")
+    boundary = handler.FM_BOUNDARY
+    if boundary is None:
+        raise InvalidRequestError("Cannot locate frontmatter")
+    matches = list(boundary.finditer(candidate))
+    if len(matches) < 2:
+        raise InvalidRequestError("Cannot author unclosed frontmatter")
+    return offset + matches[0].end(), offset + matches[1].start()
 
 
 def _render(value: Any) -> str:
@@ -36,12 +95,11 @@ def _generated_edits(
     for child, child_value in value.items():
         if child in nested:
             key, n = nested[child]
-            _check_editable(source, key, n)
             edits.append(
                 (
-                    n.start_mark.index,
+                    key.start_mark.index,
                     n.end_mark.index,
-                    _replacement(source, n, child_value),
+                    _replacement(source, key, n, child_value),
                 )
             )
         else:
@@ -84,25 +142,15 @@ def _comments_in_span(source: str, start: int, end: int) -> str:
     return "".join(comments)
 
 
-def _replacement(source: str, node: Any, value: Any) -> str:
-    old = source[node.start_mark.index : node.end_mark.index]
+def _replacement(source: str, key: Any, node: Any, value: Any) -> str:
+    if node.end_mark.index < key.end_mark.index:
+        raise InvalidRequestError("Cannot safely apply authoring changes")
+    old = source[key.start_mark.index : node.end_mark.index]
     trailing = re.search(r"\r?\n[ \t]*$", old)
     indent = trailing.group().lstrip("\r\n") if trailing else ""
-    comments = _comments_in_span(source, node.start_mark.index, node.end_mark.index)
+    comments = _comments_in_span(source, key.start_mark.index, node.end_mark.index)
     suffix = ("\r\n" if "\r\n" in source else "\n") if trailing else ""
-    prefix = " " if node.start_mark.index == node.end_mark.index else ""
-    return prefix + _render(value) + suffix + comments + indent
-
-
-def _check_editable(source: str, key: Any, node: Any) -> None:
-    if node.start_mark.index < key.end_mark.index:
-        raise InvalidRequestError("Cannot replace an aliased field")
-    if any(
-        isinstance(t, yaml.AnchorToken)
-        and node.start_mark.index <= t.start_mark.index < node.end_mark.index
-        for t in yaml.scan(source)
-    ):
-        raise InvalidRequestError("Cannot replace an anchored field")
+    return f"{key.value}: {_render(value)}" + suffix + comments + indent
 
 
 def _collect_edits(
@@ -128,12 +176,11 @@ def _collect_edits(
         elif key == "generated" and node.tag != "tag:yaml.org,2002:null":
             raise InvalidRequestError("Existing generated field must be a mapping")
         else:
-            _check_editable(source, key_node, node)
             edits.append(
                 (
-                    node.start_mark.index,
+                    key_node.start_mark.index,
                     node.end_mark.index,
-                    _replacement(source, node, value),
+                    _replacement(source, key_node, node, value),
                 )
             )
     return edits, additions
@@ -151,20 +198,8 @@ def _parse_root(source: str) -> MappingNode:
     return root
 
 
-def _verify_header(source: str, expected: dict[str, Any]) -> None:
-    try:
-        parsed = yaml.safe_load(source)
-    except yaml.YAMLError as exc:
-        raise InvalidRequestError("Cannot safely apply authoring changes") from exc
-    if parsed != expected:
-        raise InvalidRequestError("Cannot safely apply authoring changes")
-
-
-def _edit_header(
-    source: str, fields: dict[str, Any], changes: dict[str, Any], newline: str
-) -> str:
+def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
     root = _parse_root(source)
-    original = yaml.safe_load(source) or {}
     edits, additions = _collect_edits(source, root, changes)
     for start, end, replacement in sorted(edits, reverse=True):
         source = source[:start] + replacement + source[end:]
@@ -179,47 +214,49 @@ def _edit_header(
         )
         insertion = "".join(item + newline for item in additions)
         source = source[:end] + insertion + source[end:]
-    expected = dict(original)
-    expected.update(fields)
-    if "generated" in changes:
-        generated = dict(expected.get("generated") or {})
-        generated.update(changes["generated"])
-        expected["generated"] = generated
-    _verify_header(source, expected)
     return source
 
 
 def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
     """Apply named fields and optional producer without reserializing the note."""
-    if fields.keys() - _FIELDS:
-        raise InvalidRequestError("Only OKF editorial fields can be authored")
-    if producer is not None and (
-        not _ACTOR.fullmatch(producer)
-        or producer != producer.strip()
-        or "\n" in producer
-        or "\r" in producer
-    ):
-        raise InvalidRequestError(
-            "Producer must be a human:<id>, process:<id>, or <producer>/<version> actor"
-        )
+    _validate(fields, producer)
     changes = dict(fields)
     if producer is not None:
-        changes["generated"] = {
-            "by": producer,
-            "at": okf_timestamp(datetime.now(UTC)),
-        }
-    if not changes:
-        return text
-    text = text.removeprefix("\ufeff")
+        changes["generated"] = {"by": producer, "at": okf_timestamp(datetime.now(UTC))}
     newline = "\r\n" if "\r\n" in text else "\n"
-    match = _HEADER.match(text)
-    if not match:
-        if text.startswith("---\n") or text.startswith("---\r\n"):
-            raise InvalidRequestError("Cannot author unclosed frontmatter")
-        source = "".join(
-            f"{key}: {_render(value)}" + newline for key, value in changes.items()
-        )
-        _verify_header(source, changes)
-        return "---" + newline + source + "---" + newline + text
-    source = _edit_header(match.group(1), fields, changes, newline)
-    return text[: match.start(1)] + source + text[match.end(1) :]
+    span = _header_span(text)
+    try:
+        original = parse_frontmatter(text.removeprefix("\ufeff"))
+        if span is None:
+            prefix = "\ufeff" if text.startswith("\ufeff") else ""
+            source = "".join(
+                f"{key}: {_render(value)}" + newline for key, value in changes.items()
+            )
+            result = (
+                prefix
+                + "---"
+                + newline
+                + source
+                + "---"
+                + newline
+                + text.removeprefix("\ufeff")
+            )
+        else:
+            start, end = span
+            source = _edit_header(text[start:end], changes, newline)
+            result = text[:start] + source + text[end:]
+        parsed = parse_frontmatter(result.removeprefix("\ufeff"))
+        expected = dict(original.metadata)
+        expected.update(fields)
+        if producer is not None:
+            previous = expected.get("generated")
+            if previous is not None and not isinstance(previous, dict):
+                raise InvalidRequestError("Existing generated field must be a mapping")
+            generated = dict(previous or {})
+            generated.update(changes["generated"])
+            expected["generated"] = generated
+        if parsed.metadata != expected or parsed.content != original.content:
+            raise InvalidRequestError("Cannot safely apply authoring changes")
+        return result
+    except (yaml.YAMLError, ValueError, TypeError) as exc:
+        raise InvalidRequestError("Cannot safely apply authoring changes") from exc
