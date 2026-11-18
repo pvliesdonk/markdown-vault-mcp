@@ -19,6 +19,7 @@ import pytest
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.interfaces import (
     GraphStore,
+    IteratesChunks,
     KeywordGraphIndex,
     KeywordIndex,
     ListsNoteStates,
@@ -51,6 +52,7 @@ class TestFTSIndexConformance:
             RunsExactQueries,
             ListsNoteStates,
             ReportsRowState,
+            IteratesChunks,
         ],
         ids=[
             "keyword",
@@ -59,6 +61,7 @@ class TestFTSIndexConformance:
             "exact-queries",
             "note-states",
             "row-state",
+            "chunk-pages",
         ],
     )
     def test_satisfies_facet(self, fts: FTSIndex, protocol: type) -> None:
@@ -107,6 +110,7 @@ class TestFacetsAreIndependent:
         assert not isinstance(object(), RunsExactQueries)
         assert not isinstance(object(), ListsNoteStates)
         assert not isinstance(object(), ReportsRowState)
+        assert not isinstance(object(), IteratesChunks)
 
 
 class TestManagersAcceptAnyConformingStore:

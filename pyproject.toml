@@ -177,14 +177,14 @@ mcp = ["fastmcp>=4,<5"]
 # update-lockfile's out-of-range fallback.
 embeddings-api = ["httpx>=0.25", "numpy", "openai>=1.45"]
 embeddings = ["fastembed>=0.3", "numpy"]
-file-watcher = ["watchdog>=4.0"]
+file-watcher = ["watchdog>=4.0.2"]
 # LLM-backed summarize tool (OpenAI-compatible chat-completions backend:
 # OpenAI, Ollama, Anthropic's compat endpoint, vLLM, ...).
 summarize = ["openai>=1.45"]
 # PostgreSQL/pgvector embedding store (#1504): psycopg 3 and its pool, and
 # pgvector's adapter. numpy is unbounded here for the same reason as above.
 postgres = ["psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5", "numpy"]
-all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45", "psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5"]
+all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0.2", "openai>=1.45", "psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
@@ -492,6 +492,10 @@ ignore = ["E501"]
 # reproducible synthetic notes, not secrets (S311). Gate-only rules, so a
 # `# noqa` would be stripped (RUF100).
 "scripts/envelope/*.py" = ["S311", "S603"]
+# The PostgreSQL image currency check (#1853) reads Docker Hub with urlopen only
+# on https://hub.docker.com URLs it checks (S310) and runs `gh`, resolved by
+# shutil.which, with fixed argv and no shell (S603). Gate-only, as above.
+"scripts/check_postgres_images.py" = ["S310", "S603"]
 # PROJECT-RUFF-IGNORES-END
 
 [tool.ruff.lint.isort]

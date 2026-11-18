@@ -619,6 +619,9 @@ class Vault:
             attachment_extensions=self._attachment_extensions,
             embed_text_builder=self._embed_builder,
             embedding_batch_size=self._embedding_batch_size,
+            scratch_dir=self._state_path.parent
+            if self._state_path is not None
+            else None,
         )
         # Index-write orchestration: owns the single-owner IndexWriter
         # thread + the build-readiness state machine (#576).  Constructed
@@ -1109,8 +1112,8 @@ class Vault:
         """Close a tool call's commit scope, grouping its writes into one commit.
 
         Called by
-        :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware` when a
-        tool call returns. Never blocks: the marker is queued behind the writes
+        :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
+        when a tool call returns. Never blocks: the marker is queued behind the writes
         that call fired, and the dispatcher flushes it in order.
 
         Args:

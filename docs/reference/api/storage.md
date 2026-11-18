@@ -126,3 +126,15 @@ unevaluated. `FTSIndex` provides the capability without writing the index.
 <!-- vale off -->
 ::: markdown_vault_mcp.interfaces.ReportsRowState
 <!-- vale on -->
+
+## Chunk traversal
+
+`IteratesChunks` optionally yields the same grouped rows in the same order as
+`list_chunks()`. Full embedding builds use it to release completed document
+windows. The built-in FTS reader reads atomic whole-document pages in path order. Concurrent changes between pages may be observed or missed; convergence reconciles later edits. Custom indexes without it retain the eager `list_chunks()` fallback.
+A custom index's non-scalar metadata stays resident through publication so its
+objects retain their types and values; this applies to both reader paths.
+
+<!-- vale off -->
+::: markdown_vault_mcp.interfaces.IteratesChunks
+<!-- vale on -->
