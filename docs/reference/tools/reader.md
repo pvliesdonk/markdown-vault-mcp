@@ -746,7 +746,7 @@ directory boundaries remain visible so they can be selected as root.
 
 **Returns**
 
-Observations, scope and enumeration states, and an optional `next_cursor`.
+Observations, scope and enumeration states, `removal_history`, and an optional `next_cursor`.
 Locally recorded removals carry presence=removed. Live entries and
 removal probes share the 1,000-observation page budget.
 

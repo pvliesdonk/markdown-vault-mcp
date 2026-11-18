@@ -88,7 +88,7 @@ backslashes and empty or dot components are rejected with `ValueError`.
 
 The frozen `BundleInspection` contains the request, sorted `BundleEntry` values,
 `state`, `enumeration`, `interpretation="caller_selected"`, and
-`search_state="not_evaluated"`. This legacy scope-level field is unchanged;
+`search_state="not_evaluated"`, and `removal_history="not_inspected"` for generic tree inspections. This legacy scope-level search field is unchanged;
 each entry carries its own search state. Scope states distinguish `inspected`, `missing`
 and `unavailable`. A missing configured source is `unavailable`; only a missing
 directory within an accessible source is `missing`.
@@ -207,7 +207,7 @@ an inaccessible cursor ancestor makes enumeration incomplete.
 To select concept candidates from the same bounded observation, call
 `vault.reader.okf_inventory(BundleTreeRequest(root="knowledge"), type_state="absent")`.
 
-Locally observed removed concepts appear with `presence="removed"`, subject to current access policy. Live entries and removal probes share the 1,000-observation page budget. An unusable ledger keeps live entries and reports `enumeration="unavailable"`. See [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews).
+Locally observed removed concepts appear with `presence="removed"`, subject to current access policy. Live entries and removal probes share the 1,000-observation page budget. `removal_history` reports `available` when the local ledger is usable and `unavailable` when it is not; it does not establish complete history. Ledger availability does not overwrite `enumeration`. See [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews).
 
 Each call filters up to 1,000 observations and returns at most the requested
 limit; continue with `next_cursor` even when no entries match. Reserved files named `index.md` and `log.md` are excluded. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. An absent type has no `type` key; blank, null and non-string values are invalid.

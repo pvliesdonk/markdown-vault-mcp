@@ -101,6 +101,11 @@ def test_mixed_inventory_pages_and_reappearing_path(tmp_path: Path) -> None:
         for name in ("b.md", "c.md", "d.md"):
             (tmp_path / name).write_text("new")
         page = vault.reader.okf_inventory(BundleTreeRequest(root=""))
+        assert page.removal_history == "available"
+        assert (
+            vault.reader.inspect_bundle_tree(BundleTreeRequest(root="")).removal_history
+            == "not_inspected"
+        )
         entries = [(e.path, e.presence) for e in page.entries]
         assert entries == [
             ("a.md", "removed"),
@@ -204,22 +209,25 @@ def test_removal_outside_scope_does_not_reduce_live_page(tmp_path: Path) -> None
         vault.close()
 
 
+@pytest.mark.parametrize("receipts", [1, 2])
 @pytest.mark.parametrize(
     "extra",
     [
         {"by": "human:bob", "at": "2021-01-01T00:00:00Z"},
         {"by": "human:bob", "at": "2020-01-01T00:00:00Z"},
+        {"by": "human:alice", "at": "2020-01-01T00:00:00+00:00"},
     ],
 )
 def test_latest_unreceipted_review_makes_comparison_unknown(
-    tmp_path: Path, extra: dict[str, str]
+    tmp_path: Path, extra: dict[str, str], receipts: int
 ) -> None:
     from markdown_vault_mcp._okf_receipts import ReceiptStore
 
     store = ReceiptStore(None, tmp_path)
     snapshot = {"algo": "mvmcp-concept-v1", "digest": "a" * 64}
     alice = {"by": "human:alice", "at": "2020-01-01T00:00:00Z"}
-    store.append({"path": "note.md", **alice, "snapshot": snapshot})
+    for _ in range(receipts):
+        store.append({"path": "note.md", **alice, "snapshot": snapshot})
     current = {**snapshot, "digest": "b" * 64}
     assert store.review_observation(
         "note.md", {"verified": [alice, extra]}, current
@@ -227,6 +235,50 @@ def test_latest_unreceipted_review_makes_comparison_unknown(
     assert store.review_observation("other.md", {"verified": [alice]}, current) == {
         "state": "unavailable"
     }
+
+
+def test_failed_second_same_instant_review_receipt_stays_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    import markdown_vault_mcp.facets.writer as writer
+    from markdown_vault_mcp._okf_receipts import ReceiptNotRecordedError
+    from markdown_vault_mcp._okf_review import concept_snapshot
+    from markdown_vault_mcp.vault import VaultSettings
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: ARG003 -- same signature as datetime.now
+            return cls(2026, 11, 18, 12, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(writer, "datetime", FixedDatetime)
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
+    original = "---\ntype: concept\n---\nBody\n"
+    (source / "note.md").write_text(original)
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
+        before = read_payload(vault, "note.md")
+        vault.writer.edit("note.md", "Body", "Changed", if_match=before["etag"])
+        changed = read_payload(vault, "note.md")
+
+        def fail(_receipt):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(vault.writer._receipt_store, "append", fail)
+        with pytest.raises(ReceiptNotRecordedError):
+            vault.writer.okf_verify("note.md", "alice", changed["okf"]["snapshot"])
+        after = read_payload(vault, "note.md")
+        assert len(after["frontmatter"]["verified"]) == 2
+        assert after["okf"]["observation"] == {"state": "unavailable"}
+    finally:
+        vault.close()
 
 
 async def test_mcp_read_exposes_receipt_observation(
@@ -268,6 +320,8 @@ def test_receipt_read_error_is_unavailable(
 
 
 def test_latest_receipt_is_used_for_matching_identity(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
     from markdown_vault_mcp._okf_receipts import ReceiptStore
 
     store = ReceiptStore(None, tmp_path)
@@ -275,30 +329,74 @@ def test_latest_receipt_is_used_for_matching_identity(tmp_path: Path) -> None:
     second = {"algo": "mvmcp-concept-v1", "digest": "b" * 64}
     review = {"by": "human:a", "at": "2020-01-01T00:00:00Z"}
     store.append({"path": "note.md", **review, "snapshot": first})
-    store.append({"path": "note.md", **review, "snapshot": second})
-    assert store.review_observation("note.md", {"verified": review}, second) == {
+    assert store.review_observation("note.md", {"verified": review}, first) == {
         "state": "unavailable"
     }
-    assert store.review_observation("note.md", {"verified": review}, first) == {
+    assert store.review_observation("note.md", {"verified": review}, second) == {
         "state": "available",
         "later_change_observed": True,
     }
     assert store.review_observation("note.md", {"verified": review}, None) == {
         "state": "unavailable"
     }
-    from datetime import UTC, datetime
-
     dated_review = {**review, "at": datetime(2020, 1, 1, tzinfo=UTC)}
-    assert store.review_observation("note.md", {"verified": dated_review}, first) == {
+    assert store.review_observation("note.md", {"verified": dated_review}, second) == {
         "state": "available",
         "later_change_observed": True,
     }
-    unknown_algorithm = {"algo": "future-concept-v2", "digest": "c" * 64}
-    store.append({"path": "note.md", **review, "snapshot": unknown_algorithm})
-    assert store.review_observation("note.md", {"verified": review}, first) == {
+    store.append({"path": "note.md", **review, "snapshot": second})
+    third = {"algo": "mvmcp-concept-v1", "digest": "c" * 64}
+    assert store.review_observation("note.md", {"verified": review}, third) == {
+        "state": "unavailable"
+    }
+    unknown = ReceiptStore(None, tmp_path)
+    unknown.append(
+        {
+            "path": "note.md",
+            **review,
+            "snapshot": {"algo": "future-concept-v2", "digest": "c" * 64},
+        }
+    )
+    assert unknown.review_observation("note.md", {"verified": review}, first) == {
         "state": "unavailable"
     }
     assert store.review_observation("note.md", {}, first) == {"state": "unavailable"}
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("case", ["equal_any", "all_different", "invalid"])
+def test_tied_distinct_reviews_compare_every_receipt(
+    tmp_path: Path, reverse: bool, case: str
+) -> None:
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+
+    store = ReceiptStore(None, tmp_path)
+
+    def snapshot(digest: str) -> dict[str, str]:
+        return {"algo": "mvmcp-concept-v1", "digest": digest * 64}
+
+    reviews = [
+        {"by": f"human:{name}", "at": "2020-01-01T00:00:00Z"}
+        for name in ("alice", "bob")
+    ]
+    snapshots = [snapshot("a"), snapshot("b")]
+    if case == "invalid":
+        snapshots[1] = {"algo": "future-concept-v2", "digest": "b" * 64}
+    rows = [
+        {"path": "note.md", **review, "snapshot": baseline}
+        for review, baseline in zip(reviews, snapshots, strict=True)
+    ]
+    for row in reversed(rows) if reverse else rows:
+        store.append(row)
+    current = snapshot("a" if case == "equal_any" else "c")
+    expected = (
+        {"state": "available", "later_change_observed": True}
+        if case == "all_different"
+        else {"state": "unavailable"}
+    )
+    assert (
+        store.review_observation("note.md", {"verified": reviews}, current) == expected
+    )
 
 
 @pytest.mark.parametrize("existing_target", [True, False])
@@ -344,7 +442,7 @@ def test_removed_folder_paging_and_blocked_scope(
         vault.close()
 
 
-@pytest.mark.parametrize("failure", ["newer", "corrupt", "unreadable"])
+@pytest.mark.parametrize("failure", ["missing", "newer", "corrupt", "unreadable"])
 def test_inventory_without_usable_ledger_keeps_live_entries(
     tmp_path: Path, failure: str
 ) -> None:
@@ -358,7 +456,7 @@ def test_inventory_without_usable_ledger_keeps_live_entries(
     ledger = tmp_path / "state.observations.json"
     if failure == "unreadable":
         ledger.mkdir()
-    else:
+    elif failure != "missing":
         ledger.write_text(
             "not json" if failure == "corrupt" else '{"version": 99, "rows": {}}'
         )
@@ -368,6 +466,64 @@ def test_inventory_without_usable_ledger_keeps_live_entries(
         assert [(entry.path, entry.presence) for entry in page.entries] == [
             ("live.md", "present")
         ]
-        assert page.enumeration == "unavailable"
+        assert page.enumeration == "complete"
+        assert page.removal_history == "unavailable"
+    finally:
+        vault.close()
+
+
+def test_interleaved_review_receipt_order_does_not_assert_later_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    import markdown_vault_mcp.facets.writer as writer
+    from markdown_vault_mcp._okf_review import concept_snapshot
+    from markdown_vault_mcp.vault import VaultSettings
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: ARG003 -- same signature as datetime.now
+            return cls(2026, 11, 18, 12, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(writer, "datetime", FixedDatetime)
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
+    note = source / "note.md"
+    original = "---\ntype: concept\n---\nBody\n"
+    note.write_text(original)
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        store = vault.writer._receipt_store
+        original_append = store.append
+        first = True
+
+        def interleaved_append(receipt):
+            nonlocal first
+            if first:
+                first = False
+                after_alice = read_payload(vault, "note.md")
+                vault.writer.edit(
+                    "note.md", "Body", "Changed", if_match=after_alice["etag"]
+                )
+                reviewed_by_bob = read_payload(vault, "note.md")
+                vault.writer.okf_verify(
+                    "note.md", "bob", reviewed_by_bob["okf"]["snapshot"]
+                )
+            original_append(receipt)
+
+        monkeypatch.setattr(store, "append", interleaved_append)
+        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
+        current = read_payload(vault, "note.md")
+        assert [r["by"] for r in current["frontmatter"]["verified"]] == [
+            "human:alice",
+            "human:bob",
+        ]
+        assert [r["by"] for r in store._load()] == ["human:bob", "human:alice"]
+        assert current["okf"]["observation"] == {"state": "unavailable"}
     finally:
         vault.close()

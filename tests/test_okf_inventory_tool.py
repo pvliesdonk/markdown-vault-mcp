@@ -507,5 +507,6 @@ async def test_unavailable_ledger_is_visible_through_tool_and_cli(
         cli = CliRunner().invoke(app, ["okf-inventory", "", "--local", "--json"])
         assert cli.exit_code == 0, cli.output
         for result in (payload, json.loads(cli.stdout)):
-            assert result["enumeration"] == "unavailable"
+            assert result["enumeration"] == "complete"
+            assert result["removal_history"] == "unavailable"
             assert any(entry["path"] == "live.md" for entry in result["entries"])

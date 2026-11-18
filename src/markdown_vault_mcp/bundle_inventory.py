@@ -55,6 +55,7 @@ SearchState = Literal[
     "not_indexed_yet",
 ]
 Enumeration = Literal["complete", "entry_limit", "unavailable", "not_inspected"]
+RemovalHistory = Literal["not_inspected", "available", "unavailable"]
 
 
 def _components(path: str) -> tuple[str, ...]:
@@ -184,6 +185,7 @@ class BundleInspection:
             search results appear on each entry.
         interpretation: Selection by the caller, without global OKF mode detection.
         next_cursor: Last returned tree path when another page may remain.
+        removal_history: Ledger availability; set only by okf_inventory.
     """
 
     request: BundleInspectionRequest
@@ -193,6 +195,7 @@ class BundleInspection:
     search_state: Literal["not_evaluated"] = "not_evaluated"
     interpretation: Literal["caller_selected"] = "caller_selected"
     next_cursor: str | None = None
+    removal_history: RemovalHistory = "not_inspected"
 
 
 _SKIP_STATE: dict[str, SearchState] = {

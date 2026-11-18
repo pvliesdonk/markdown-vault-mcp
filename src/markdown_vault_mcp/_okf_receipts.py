@@ -126,6 +126,9 @@ class ReceiptStore:
         latest_entries = [
             entry for entry in entries if _parse_stale_after(entry["at"]) == latest
         ]
+        actors = {entry["by"] for entry in latest_entries}
+        if len(actors) != len(latest_entries):
+            return {"state": "unavailable"}
         try:
             with self._lock:
                 rows = self._load()
@@ -136,23 +139,20 @@ class ReceiptStore:
             for row in rows
             if row.get("path") == path
             and _parse_stale_after(row.get("at")) == latest
-            and any(row.get("by") == entry["by"] for entry in latest_entries)
+            and row.get("by") in actors
         ]
-        if any(
-            not any(row.get("by") == entry["by"] for row in matching)
-            for entry in latest_entries
-        ):
+        if len(matching) != len(actors) or {row["by"] for row in matching} != actors:
             return {"state": "unavailable"}
-        baseline = matching[-1].get("snapshot")
-        if (
-            not isinstance(baseline, dict)
-            or baseline.get("algo") != snapshot.get("algo")
-            or not isinstance(baseline.get("digest"), str)
-            or re.fullmatch(r"[0-9a-f]{64}", baseline["digest"]) is None
-        ):
-            return {"state": "unavailable"}
-        if baseline["digest"] == snapshot.get("digest"):
-            return {"state": "unavailable"}
+        for row in matching:
+            baseline = row.get("snapshot")
+            if (
+                not isinstance(baseline, dict)
+                or baseline.get("algo") != snapshot.get("algo")
+                or not isinstance(baseline.get("digest"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", baseline["digest"]) is None
+                or baseline["digest"] == snapshot.get("digest")
+            ):
+                return {"state": "unavailable"}
         return {"state": "available", "later_change_observed": True}
 
     def append(self, receipt: dict[str, Any]) -> None:

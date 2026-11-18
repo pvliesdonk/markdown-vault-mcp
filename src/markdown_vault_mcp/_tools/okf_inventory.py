@@ -62,7 +62,7 @@ def register(mcp: FastMCP) -> None:
             cursor: Pass next_cursor from the previous page to continue, even if it was empty.
 
         Returns:
-            Observations, scope and enumeration states, and an optional next_cursor.
+            Observations, scope and enumeration states, removal_history, and an optional next_cursor.
             Locally recorded removals carry presence=removed. Live entries and
             removal probes share the 1,000-observation page budget.
         """

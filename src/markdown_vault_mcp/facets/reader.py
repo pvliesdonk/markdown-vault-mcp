@@ -381,7 +381,7 @@ class ReaderFacet:
             ),
             candidates,
         )
-        return page if usable else replace(page, enumeration="unavailable")
+        return replace(page, removal_history="available" if usable else "unavailable")
 
     def _inventory_with_removals(
         self, page: BundleInspection, candidates: list[str]
