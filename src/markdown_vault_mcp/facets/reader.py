@@ -24,6 +24,9 @@ if TYPE_CHECKING:
         BundleInspection,
         BundleInspectionRequest,
         BundleTreeRequest,
+        ParseState,
+        SearchState,
+        TypeState,
     )
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -108,6 +111,48 @@ class ReaderFacet:
             Live observations and an optional continuation cursor.
         """
         return self._doc_mgr.inspect_bundle(request)
+
+    def okf_inventory(
+        self,
+        root: str,
+        *,
+        type_state: TypeState | None = None,
+        parse_state: ParseState | None = None,
+        search_state: SearchState | None = None,
+        entry_limit: int = 100,
+        cursor: str | None = None,
+    ) -> BundleInspection:
+        """Inspect one page of concept candidates without building an index.
+
+        Args:
+            root: Vault-relative root; an empty string selects the vault.
+            type_state: Filter by observed type presence.
+            parse_state: Filter by metadata parsing outcome.
+            search_state: Filter by observed index admission.
+            entry_limit: Maximum observations visited in this page.
+            cursor: Continuation from the previous page.
+
+        Returns:
+            The bounded page with matching concepts and the original continuation.
+        """
+        from dataclasses import replace
+
+        from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+
+        page = self.inspect_bundle_tree(
+            BundleTreeRequest(root=root, entry_limit=entry_limit, cursor=cursor)
+        )
+        return replace(
+            page,
+            entries=tuple(
+                entry
+                for entry in page.entries
+                if entry.role == "concept_candidate"
+                and (type_state is None or entry.type_state == type_state)
+                and (parse_state is None or entry.parse_state == parse_state)
+                and (search_state is None or entry.search_state == search_state)
+            ),
+        )
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).

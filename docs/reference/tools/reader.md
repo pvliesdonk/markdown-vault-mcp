@@ -664,6 +664,31 @@ complete traversal, truth, or editorial-policy compliance.
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-okf_validate-END -->
 
+## `okf_inventory`
+
+**Inspect Bundle Inventory.** Read-only. Idempotent.
+
+Inspect concept candidates in a bundle, including notes outside search.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `root` | `string` | required | Vault-relative bundle root; use an empty string for the vault root. |
+| `type_state` | `not_inspected \| absent \| invalid \| present \| null` | `null` | Filter by observed type presence, such as absent. |
+| `parse_state` | `not_inspected \| valid \| invalid_encoding \| malformed_metadata \| null` | `null` | Filter by metadata parsing outcome. |
+| `search_state` | `not_evaluated \| searchable \| non_admitted \| unparseable \| index_excluded \| not_indexed_yet \| null` | `null` | Filter by observed search admission; `not_evaluated` means unknown. |
+| `entry_limit` | `integer` | `100` | Maximum observations per page, from 1 to 1000. |
+| `cursor` | `string \| null` | `null` | Pass `next_cursor` from the previous page to continue, even if it was empty. |
+
+**Returns**
+
+Observations, scope and enumeration states, and an optional `next_cursor`.
+
+<!-- DOMAIN-EXAMPLE-okf_inventory-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-okf_inventory-END -->
+
 ## `query_documents`
 
 **Query Notes.** Read-only. Idempotent.

@@ -7701,3 +7701,7 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 `OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
 resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
 remains tied to `OKF_WRITE`.
+
+### Bundle inventory surfaces
+
+The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Filters select concept candidates after each bounded page; the underlying cursor and enumeration state remain intact even when the filtered page is empty. Search admission remains an observation and can be unknown without an index.

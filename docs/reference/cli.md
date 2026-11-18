@@ -324,6 +324,28 @@ Collect note links, neighbors, folder peers and conventions.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
+## `markdown-vault-mcp okf-inventory`
+
+Inspect concept candidates, including notes outside search.
+
+| Argument | Description |
+|---|---|
+| `ROOT` | Vault-relative bundle root; empty for vault root. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--type-state` |  |  |  |
+| `--parse-state` |  |  |  |
+| `--search-state` |  |  |  |
+| `--entry-limit` |  | 100 |  |
+| `--cursor` |  |  |  |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False |  |
+| `--agent` |  | False | Return escaped agent records. |
+
 ## `markdown-vault-mcp links`
 
 Follow and audit the links between notes.

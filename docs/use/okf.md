@@ -248,3 +248,10 @@ settings control review and maintenance. `OKF_AUTHOR` is reserved for a
 future authoring tool and does not enable implicit stamping. `OKF_WRITE=true` retains the
 existing behavior and logs a deprecation notice; explicit settings override
 its resolved defaults. See the [configuration reference](../reference/configuration.md).
+
+
+## Inspecting bundle inventory
+
+Call `okf_inventory` with a vault-relative `root` (use `""` for the vault root) to inspect concept candidates, including notes excluded from search. Set `type_state` to `absent` to find untyped candidates; `parse_state` and `search_state` filter parsing and admission observations. Reserved `index.md` and `log.md` are not concept candidates.
+
+Pass `next_cursor` into the next call, including after an empty filtered page. The limit bounds observations before filtering. A `not_evaluated` search state means the index was not available, not that a note is excluded. The read-only `okf-inventory` CLI command accepts the same selection and `--json` returns the structured report. Neither interface builds an index for inventory.
