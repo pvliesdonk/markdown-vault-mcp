@@ -174,6 +174,7 @@ class ObservationLedger:
                 self._save(result)
 
     def _save(self, rows: dict[str, Observation]) -> None:
+        # Private type invariant for persistent ledgers, not an authorization check.
         assert self._path is not None  # noqa: S101, RUF100
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(
