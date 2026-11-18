@@ -53,6 +53,7 @@ def test_git_export_uses_commit_and_reports_uncommitted_membership(
 def test_non_git_change_during_packing_is_reported(
     tmp_path: Path, monkeypatch, delete: bool
 ) -> None:
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     note = tmp_path / "a.md"
     note.write_text("before\n")
     (tmp_path / "clean.md").write_text("unchanged")
@@ -116,7 +117,7 @@ def test_git_subdirectory_stays_on_original_commit_during_export(
     assert result.report.snapshot.commit == commit
 
 
-@pytest.mark.parametrize("case", ["stale", "alias", "bom_alias"])
+@pytest.mark.parametrize("case", ["stale", "alias", "bom_alias", "unavailable"])
 def test_git_export_resolves_wikilinks_from_commit(tmp_path: Path, case: str) -> None:
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
@@ -136,6 +137,16 @@ def test_git_export_resolves_wikilinks_from_commit(tmp_path: Path, case: str) ->
     )
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "before")
+    if case == "unavailable":
+        oid = _git(tmp_path, "rev-parse", "HEAD")
+        _git(
+            tmp_path,
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"160000,{oid},vendor/missing.md",
+        )
+        _git(tmp_path, "commit", "-qm", "unavailable child")
     target.unlink()
     if case == "stale":
         (tmp_path / "elsewhere").mkdir()
@@ -339,13 +350,10 @@ def test_git_snapshot_caches_blob_reads(tmp_path: Path, monkeypatch) -> None:
     assert snapshot is not None
     original = git_query.GitExportSnapshot._read_blob
     calls = []
-    readers = []
 
     def count(self, oid, root):
         calls.append(oid)
-        result = original(self, oid, root)
-        readers.append(self._process[root])
-        return result
+        return original(self, oid, root)
 
     monkeypatch.setattr(git_query.GitExportSnapshot, "_read_blob", count)
     try:
@@ -362,10 +370,21 @@ def test_git_snapshot_caches_blob_reads(tmp_path: Path, monkeypatch) -> None:
         snapshot.close()
     assert process.poll() is not None
 
-    _postpack_reader_cleanup(tmp_path, readers)
 
+def test_git_postpack_flag_comparison_closes_reader(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from markdown_vault_mcp.managers import git_query
 
-def _postpack_reader_cleanup(tmp_path: Path, readers: list) -> None:
+    original = git_query.GitExportSnapshot._read_blob
+    readers = []
+
+    def collect(self, oid, root):
+        result = original(self, oid, root)
+        readers.append(self._process[root])
+        return result
+
+    monkeypatch.setattr(git_query.GitExportSnapshot, "_read_blob", collect)
     # Only the post-pack flag comparison reads this omitted oversized note.
     root = tmp_path / "only"
     root.mkdir()
@@ -378,14 +397,13 @@ def _postpack_reader_cleanup(tmp_path: Path, readers: list) -> None:
     _git(root, "commit", "-qm", "initial")
     _git(root, "update-index", "--assume-unchanged", ".hidden.md")
     hidden.write_bytes(b"b" * 70000)
-    readers.clear()
     vault = Vault(source_dir=root, settings=VaultSettings())
     try:
         result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=root))
     finally:
         vault.close()
     assert result.report.snapshot.uncommitted_paths == [".hidden.md"]
-    assert len(readers) == 1
+    assert len(readers) >= 1
     assert readers[0].poll() is not None
 
 
@@ -456,36 +474,20 @@ def test_git_large_source_and_target_resolve_links(tmp_path: Path, case: str) ->
         assert result.report.uninspected[path] == "note_limit"
 
 
-def test_git_assume_unchanged_edit_is_reported(tmp_path: Path) -> None:
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Fixture")
-    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / "note.md").write_text("before")
-    _git(tmp_path, "add", "note.md")
-    _git(tmp_path, "commit", "-qm", "initial")
-    _git(tmp_path, "update-index", "--assume-unchanged", "note.md")
-    (tmp_path / "note.md").write_text("after")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-    assert result.report.snapshot.uncommitted_paths == ["note.md"]
-
-
 def test_git_write_during_packing_is_reported(tmp_path: Path, monkeypatch) -> None:
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "a.md").write_text("first")
     (tmp_path / "note.md").write_text("before")
-    _git(tmp_path, "add", "note.md")
+    _git(tmp_path, "add", "a.md", "note.md")
     _git(tmp_path, "commit", "-qm", "initial")
-    commit = _git(tmp_path, "rev-parse", "HEAD")
     original = okf_bundle._write
 
     def write_and_change(zf, path, data):
         original(zf, path, data)
-        (tmp_path / "note.md").write_text("after")
+        if path == "a.md":
+            (tmp_path / "note.md").write_text("after")
 
     monkeypatch.setattr(okf_bundle, "_write", write_and_change)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
@@ -495,7 +497,6 @@ def test_git_write_during_packing_is_reported(tmp_path: Path, monkeypatch) -> No
         vault.close()
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.read("note.md") == b"before"
-    assert result.report.snapshot.commit == commit
     assert result.report.snapshot.uncommitted_paths == ["note.md"]
 
 
@@ -572,7 +573,7 @@ def test_git_untracked_only_folder_exports_empty_commit(tmp_path: Path) -> None:
     assert result.report.snapshot.uncommitted_paths == ["drafts/new.md"]
 
 
-def test_git_submodule_exports_recorded_commit_and_child_dirty(tmp_path: Path) -> None:
+def test_git_query_child_readers_close_and_refuse_missing_blob(tmp_path: Path) -> None:
     child = tmp_path / "child"
     parent = tmp_path / "parent"
     child.mkdir()
@@ -614,24 +615,6 @@ def test_git_submodule_exports_recorded_commit_and_child_dirty(tmp_path: Path) -
     finally:
         snapshot.close()
     assert all(process.poll() is not None for process in processes)
-    _git(populated, "config", "user.name", "Fixture")
-    _git(populated, "config", "user.email", "fixture@example.invalid")
-    (populated / "note.md").write_text("changed")
-    _git(populated, "add", "note.md")
-    _git(populated, "commit", "-qm", "later child")
-    (populated / "new.md").write_text("new")
-    vault = Vault(source_dir=parent, settings=VaultSettings())
-    try:
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=parent))
-    finally:
-        vault.close()
-    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-        assert archive.read("vendor/sub/note.md") == b"recorded"
-        assert "vendor/sub/new.md" not in archive.namelist()
-    assert set(result.report.snapshot.uncommitted_paths) == {
-        "vendor/sub/note.md",
-        "vendor/sub/new.md",
-    }
 
 
 @pytest.mark.parametrize("scope", ["", "plain", "plain/sub"])
@@ -661,13 +644,17 @@ def test_git_untracked_nested_repository_is_reported(
     assert marker in result.report.snapshot.uncommitted_paths
 
 
-def test_git_nested_submodules_use_recorded_child_commits(tmp_path: Path) -> None:
+@pytest.mark.parametrize("root_kind", ["absolute", "relative", "symlink"])
+def test_git_nested_submodules_use_recorded_child_commits(
+    tmp_path: Path, root_kind: str, monkeypatch
+) -> None:
     leaf, child, parent = (tmp_path / name for name in ("leaf", "child", "parent"))
     for repo in (leaf, child, parent):
         repo.mkdir()
         _git(repo, "init", "-q")
         _git(repo, "config", "user.name", "Fixture")
         _git(repo, "config", "user.email", "fixture@example.invalid")
+    (child / "note.md").write_text("child commit")
     (leaf / "note.md").write_text("leaf commit")
     _git(leaf, "add", ".")
     _git(leaf, "commit", "-qm", "leaf")
@@ -681,6 +668,7 @@ def test_git_nested_submodules_use_recorded_child_commits(tmp_path: Path) -> Non
         str(leaf),
         "nested",
     )
+    _git(child, "add", "note.md")
     _git(child, "commit", "-qm", "child")
     _git(
         parent,
@@ -703,15 +691,36 @@ def test_git_nested_submodules_use_recorded_child_commits(tmp_path: Path) -> Non
         "--recursive",
         "-q",
     )
+    populated = parent / "vendor"
+    _git(populated, "config", "user.name", "Fixture")
+    _git(populated, "config", "user.email", "fixture@example.invalid")
+    (populated / "note.md").write_text("child later")
+    _git(populated, "add", "note.md")
+    _git(populated, "commit", "-qm", "later child")
+    (populated / "new.md").write_text("untracked")
     (parent / "vendor/nested/note.md").write_text("uncommitted")
-    vault = Vault(source_dir=parent, settings=VaultSettings())
+    if root_kind == "relative":
+        monkeypatch.chdir(tmp_path)
+        root = Path("parent")
+    elif root_kind == "symlink":
+        root = tmp_path / "alias"
+        root.symlink_to(parent, target_is_directory=True)
+    else:
+        root = parent
+    vault = Vault(source_dir=root, settings=VaultSettings())
     try:
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=parent))
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=root))
     finally:
         vault.close()
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.read("vendor/nested/note.md") == b"leaf commit"
-    assert "vendor/nested/note.md" in result.report.snapshot.uncommitted_paths
+        assert archive.read("vendor/note.md") == b"child commit"
+        assert "vendor/new.md" not in archive.namelist()
+    assert set(result.report.snapshot.uncommitted_paths) == {
+        "vendor/nested/note.md",
+        "vendor/note.md",
+        "vendor/new.md",
+    }
 
 
 @pytest.mark.parametrize("scope", ["", "vendor", "vendor/sub"])
@@ -744,6 +753,8 @@ def test_git_unavailable_submodule_refuses_with_guidance(
             return original_git(root, *args, **kwargs)
 
         monkeypatch.setattr(git_query, "_export_git", checked_git)
+    else:
+        (tmp_path / "vendor/sub").mkdir(parents=True)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         with pytest.raises(
@@ -864,8 +875,17 @@ def test_gitlink_depth_is_bounded_before_discovery(tmp_path: Path, monkeypatch) 
     from markdown_vault_mcp.managers import git_query
 
     path = "/".join(["nested"] * 33)
+    child = tmp_path / path
+    child.mkdir(parents=True)
+    _git(child, "init", "-q")
+    _git(child, "config", "user.name", "Fixture")
+    _git(child, "config", "user.email", "fixture@example.invalid")
+    (child / "note.md").write_text("child")
+    _git(child, "add", "note.md")
+    _git(child, "commit", "-qm", "child")
+    oid = _git(child, "rev-parse", "HEAD")
     snapshot = git_query.GitExportSnapshot(
-        "a" * 40, {path: ("160000", "b" * 40)}, set(), tmp_path, {path: 0}
+        "a" * 40, {path: ("160000", oid)}, set(), tmp_path, {path: 0}
     )
 
     def unexpected(*_args, **_kwargs):

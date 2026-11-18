@@ -39,7 +39,7 @@ from markdown_vault_mcp.utils.fs import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from markdown_vault_mcp.git import HistorySource
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
@@ -147,6 +147,20 @@ def _export_git(
     )
 
 
+def _tree_entries(root: Path, commit: str) -> Iterator[tuple[str, str, str, int]]:
+    tree = _export_git(root, "ls-tree", "--full-tree", "-r", "-l", "-z", commit).stdout
+    for record in tree.split(b"\0"):
+        if record:
+            info, name = record.split(b"\t", 1)
+            mode, _kind, oid, size = info.split()
+            yield (
+                os.fsdecode(name),
+                mode.decode("ascii"),
+                oid.decode("ascii"),
+                (int(size) if size != b"-" else 0),
+            )
+
+
 # Discovery distinguishes absent Git, unsafe worktrees, and unavailable commits.
 def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901, RUF100
     """Pin a vault's Git commit and enumerate its blobs.
@@ -186,23 +200,12 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901
         raise ValueError(f"Cannot resolve Git snapshot HEAD for export: {reason}")
     try:
         commit = head.stdout.decode("ascii").strip()
-        tree = _export_git(
-            root, "ls-tree", "--full-tree", "-r", "-l", "-z", commit
-        ).stdout
         entries: dict[str, tuple[str, str]] = {}
         sizes: dict[str, int] = {}
-        for record in tree.split(b"\0"):
-            if not record:
-                continue
-            info, name = record.split(b"\t", 1)
-            mode, kind, oid, size = info.split()
-            path = os.fsdecode(name)
-            if path.startswith(prefix) and kind in {b"blob", b"commit"}:
-                entries[path[len(prefix) :]] = (
-                    mode.decode("ascii"),
-                    oid.decode("ascii"),
-                )
-                sizes[path[len(prefix) :]] = int(size) if size != b"-" else 0
+        for path, mode, oid, size in _tree_entries(root, commit):
+            if path.startswith(prefix):
+                entries[path[len(prefix) :]] = (mode, oid)
+                sizes[path[len(prefix) :]] = size
         snapshot = GitExportSnapshot(commit, entries, set(), root, sizes)
         _expand_gitlinks(source, snapshot)
         return snapshot
@@ -220,7 +223,7 @@ def _expand_gitlinks(source: Path, snapshot: GitExportSnapshot) -> None:
             continue
         child = source.joinpath(*parts)
         try:
-            with open_directory_nofollow(source, parts, source_resolved=True):
+            with open_directory_nofollow(source, parts):
                 pass
             root = _export_git(child, "rev-parse", "--show-toplevel").stdout.rstrip(
                 b"\n"
@@ -228,26 +231,18 @@ def _expand_gitlinks(source: Path, snapshot: GitExportSnapshot) -> None:
             if Path(os.fsdecode(root)).resolve() != child.resolve():
                 continue
             _export_git(child, "cat-file", "-e", f"{oid}^{{commit}}")
-            tree = _export_git(
-                child, "ls-tree", "--full-tree", "-r", "-l", "-z", oid
-            ).stdout
+            tree = list(_tree_entries(child, oid))
         except (OSError, subprocess.SubprocessError):
             continue
         del snapshot.entries[path]
         snapshot.sizes.pop(path)
         snapshot.children[path] = (child, oid)
-        for record in tree.split(b"\0"):
-            if not record:
-                continue
-            info, name = record.split(b"\t", 1)
-            mode, kind, blob, size = info.split()
-            if kind not in {b"blob", b"commit"}:
-                continue
-            entry_path = path + "/" + os.fsdecode(name)
-            snapshot.entries[entry_path] = (mode.decode("ascii"), blob.decode("ascii"))
-            snapshot.sizes[entry_path] = int(size) if size != b"-" else 0
+        for name, mode, blob, size in tree:
+            entry_path = path + "/" + name
+            snapshot.entries[entry_path] = (mode, blob)
+            snapshot.sizes[entry_path] = size
             snapshot.repos[entry_path] = child
-            if mode == b"160000":
+            if mode == "160000":
                 pending.append(entry_path)
 
 

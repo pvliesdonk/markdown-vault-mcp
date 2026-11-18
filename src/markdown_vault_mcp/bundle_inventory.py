@@ -109,6 +109,7 @@ class BundleTreeRequest(BundleInspectionRequest):
     Attributes:
         entry_limit: Maximum returned rows per page (1-1000), not names visited.
         cursor: Last returned path, strictly below the selected scope.
+        snapshot: Optional committed tree supplying the inventory.
     """
 
     cursor: str | None = None
@@ -153,7 +154,7 @@ class BundleEntry:
 
 @dataclass(frozen=True)
 class BundleInspection:
-    """One bounded live observation of a directory or subtree page.
+    """One bounded observation of a directory or subtree page.
 
     Attributes:
         request: Explicit selected root and relative directory.
@@ -164,6 +165,7 @@ class BundleInspection:
             search results appear on each entry.
         interpretation: Selection by the caller, without global OKF mode detection.
         next_cursor: Last returned tree path when another page may remain.
+        uncommitted: Policy-visible changed paths observed for a Git snapshot.
     """
 
     request: BundleInspectionRequest
@@ -468,7 +470,7 @@ class BundleInspector:
             return None
 
     def inspect(self, request: BundleInspectionRequest) -> BundleInspection:
-        """Observe one directory independently of index admission.
+        """Observe a directory or snapshot subtree under current policy.
 
         Args:
             request: Explicit validated selection and entry bound.
@@ -571,8 +573,6 @@ class BundleInspector:
     def _snapshot_dirty(  # noqa: C901, RUF100
         self, snapshot: GitExportSnapshot, scope: str
     ) -> tuple[str, ...]:
-        from markdown_vault_mcp.managers.git_query import GitSnapshotUnavailableError
-
         visible = []
         for path in sorted(snapshot.changed | snapshot.flagged.keys()):
             if scope and not (
@@ -609,8 +609,6 @@ class BundleInspector:
                         continue
                 else:
                     continue
-            except GitSnapshotUnavailableError:
-                raise
             except (OSError, ValueError):
                 continue
             visible.append(

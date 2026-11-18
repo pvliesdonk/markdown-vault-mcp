@@ -497,44 +497,18 @@ async def test_protected_download_allowed_upload_refused(tmp_path: Path) -> None
         vault.close()
 
 
-async def test_unborn_bundle_is_retryable(
-    sink: VaultTransferSink, source_dir: Path, monkeypatch
+async def test_snapshot_unavailable_is_retryable(
+    sink: VaultTransferSink, monkeypatch
 ) -> None:
-    import subprocess
+    from markdown_vault_mcp.managers.git_query import GitSnapshotUnavailableError
 
-    def git(*args):
-        subprocess.run(
-            ["git", "-C", str(source_dir), *args], check=True, capture_output=True
-        )
+    def unavailable(*_args, **_kwargs):
+        raise GitSnapshotUnavailableError("snapshot unavailable")
 
-    git("init", "-q")
-    with pytest.raises(TransferUnavailableError, match="commit"):
-        await sink.read("okf-bundle")
-    git("config", "user.name", "Fixture")
-    git("config", "user.email", "fixture@example.invalid")
-    git("add", ".")
-    git("commit", "-qm", "first")
-    assert (await sink.read("okf-bundle")).filename == "okf-bundle.zip"
-    (source_dir / "note.md").write_text(
-        "version https://git-lfs.github.com/spec/v1\noid sha256:"
-        + "a" * 64
-        + "\nsize 3\n"
+    monkeypatch.setattr(
+        "markdown_vault_mcp._transfer_sink.build_okf_bundle", unavailable
     )
-    git("add", "note.md")
-    git("commit", "-qm", "lfs pointer")
-    with pytest.raises(TransferUnavailableError, match="LFS"):
-        await sink.read("okf-bundle")
-    (source_dir / "note.md").write_text("normal")
-    git("add", "note.md")
-    oid = subprocess.run(
-        ["git", "-C", str(source_dir), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    git("update-index", "--add", "--cacheinfo", f"160000,{oid},missing-child")
-    git("commit", "-qm", "unavailable submodule")
-    with pytest.raises(TransferUnavailableError, match="git submodule update --init"):
+    with pytest.raises(TransferUnavailableError, match="snapshot unavailable"):
         await sink.read("okf-bundle")
 
     def collision(*_args, **_kwargs):

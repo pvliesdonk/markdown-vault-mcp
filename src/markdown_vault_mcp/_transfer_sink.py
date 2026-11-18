@@ -393,8 +393,9 @@ class VaultTransferSink:
             A :class:`~fastmcp_pvl_core.TransferReadResult` carrying the zip.
 
         Raises:
-            TransferUnavailableError: The vault is unavailable or has no readable Git
-                commit (retryable 503).
+            TransferUnavailableError: The vault is unavailable, or the snapshot
+                cannot supply supported content (unborn commit, LFS pointer, or
+                unavailable child object); retryable 503.
             TransferResourceGoneError: A folder scope validated at mint time has
                 since been removed (410 Gone), mirroring the single-file path
                 rather than serving an empty archive.

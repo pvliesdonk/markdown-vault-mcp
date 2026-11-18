@@ -412,6 +412,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     entry.path: raw
                     for entry in root_inventory()
                     if entry.path.endswith(".md") and entry.visibility == "visible"
+                    if entry.parse_state == "valid" or entry.reason == "note_limit"
                     for raw in (snapshot.read(entry.path),)
                     if _snapshot_searchable(entry, raw)
                 }
@@ -467,7 +468,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 continue
             try:
                 with open_directory_nofollow(
-                    vault.source_dir, tuple(prefix.split("/")), source_resolved=True
+                    vault.source_dir, tuple(prefix.split("/"))
                 ):
                     child_changed, child_flagged, child_staged = git_snapshot_changes(
                         child, commit
