@@ -11,8 +11,8 @@ single-writer index path and git-commit callback as any other write (they are
 issued through :class:`DocumentManager`), and any failure degrades to a logged
 ``WARNING`` without disturbing the already-committed primary write.
 
-The maintainer is built only when ``OKF_WRITE`` is enabled (mirroring the
-enricher's gating), and it re-checks ``detector.state().active`` on every call
+The maintainer is built when index or log maintenance is enabled, and it
+re-checks ``detector.state().active`` on every call
 because an OKF declaration can flip mid-session. The secondary writes are done
 under :func:`okf_write_suppressed` so the reserved files are not themselves
 provenance-stamped or verification-cleared.
@@ -24,11 +24,14 @@ import logging
 import os
 from contextlib import nullcontext
 from datetime import date
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
+from markdown_vault_mcp.config_sections.content import ContentConfig
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     ReservedFrontmatterPolicy,
@@ -36,7 +39,7 @@ from markdown_vault_mcp.okf import (
     is_okf_reserved_file,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
-from markdown_vault_mcp.utils import folder_of
+from markdown_vault_mcp.utils import folder_of, normalize_folder, resolve_inside
 from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
@@ -46,12 +49,56 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
     from markdown_vault_mcp.okf import OkfDetector
+    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
     from markdown_vault_mcp.types import WriteOperation
 
 logger = logging.getLogger(__name__)
 
 #: Human-readable verb per maintained operation, for the ``log.md`` bullet.
 _OPERATION_VERB: dict[str, str] = {"write": "wrote", "edit": "edited"}
+
+
+def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
+    """Return whether a folder matches the configured designation globs.
+
+    ``a/**`` does not designate ``a`` itself. The empty folder is root.
+    Leading ``./`` or ``/`` and trailing ``/`` in patterns are ignored.
+
+    Args:
+        folder: Vault-relative folder, or an empty string for the root.
+        patterns: Configured folder globs.
+
+    Returns:
+        Whether any pattern matches the folder.
+    """
+
+    def matches(parts: tuple[str, ...], glob: tuple[str, ...]) -> bool:
+        if not glob:
+            return not parts
+        if glob[0] == "**":
+            if not glob[1:]:
+                return bool(parts)
+            return matches(parts, glob[1:]) or (
+                bool(parts) and matches(parts[1:], glob)
+            )
+        return (
+            bool(parts)
+            and fnmatchcase(parts[0], glob[0])
+            and matches(parts[1:], glob[1:])
+        )
+
+    for pattern in patterns:
+        glob = tuple(
+            part
+            for part in (normalize_folder(pattern) or "").split("/")
+            if part and part != "."
+        )
+        if not folder:
+            if not glob or glob == ("**",):
+                return True
+        elif matches(tuple(folder.split("/")), glob):
+            return True
+    return False
 
 
 class ConventionMaintainer:
@@ -68,6 +115,7 @@ class ConventionMaintainer:
         today: Callable[[], date] = date.today,
         reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
         source_dir: Path | None = None,
+        capabilities: OkfCapabilities | None = None,
     ) -> None:
         """Hold the collaborators the secondary writes delegate to.
 
@@ -95,6 +143,8 @@ class ConventionMaintainer:
             source_dir: The vault root, used after a delete, rename or folder
                 move to find which folders already carry an ``index.md``
                 (#1609). ``None`` (tests) treats every folder as having one.
+            capabilities: Resolved maintenance authority and folder scope.
+                ``None`` preserves the legacy all-folders behavior.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
@@ -106,11 +156,104 @@ class ConventionMaintainer:
         self._today = today
         self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
         self._source_dir = source_dir
+        self._capabilities = (
+            capabilities or ContentConfig(okf_write=True).okf_capabilities
+        )
+
+    def _canonical(self, path: str) -> str:
+        """Return the vault-relative identity of *path* after validation's resolution.
+
+        Reuses the shared traversal guard, so ``.``/``..`` segments and symlink
+        aliases fold to the same note or folder every write already targets.
+        Designation, anchor choice and generated writes decide on this identity,
+        never on the caller's spelling. The vault root is ``""``.
+        """
+        rel = Path(path)
+        if self._source_dir is not None:
+            rel = resolve_inside(path, self._source_dir)
+            rel = rel.relative_to(self._source_dir.resolve())
+        return "" if rel == Path() else rel.as_posix()
+
+    def _designated(self, folder: str) -> bool:
+        return folder_is_designated(self._canonical(folder), self._capabilities.folders)
+
+    def _is_reserved(self, path: str) -> bool:
+        """Whether *path* is a reserved file by its own spelling or its target's."""
+        return is_okf_reserved_file(Path(path).as_posix()) or is_okf_reserved_file(
+            self._canonical(path)
+        )
+
+    def _destination_ok(self, folder: str, name: str) -> bool:
+        """Whether *folder*'s generated reserved file *name* lands where it says.
+
+        The resolved destination must be *name* in the folder's own canonical
+        identity, so a leaf alias to a concept, another reserved file or
+        another folder's file is never written through, existing or not.
+        A folder reached through a directory alias still resolves to itself.
+        """
+        home = self._canonical(folder)
+        try:
+            return self._canonical(f"{folder}/{name}" if folder else name) == (
+                f"{home}/{name}" if home else name
+            )
+        except InvalidRequestError:
+            return False
+
+    def _may_index(self, folder: str) -> bool:
+        """Whether *folder*'s ``index.md`` may be generated automatically."""
+        return self._designated(folder) and self._destination_ok(folder, "index.md")
+
+    def generated_index(self, path: Path) -> bool:
+        """Return whether this vault may regenerate the given index path.
+
+        Args:
+            path: Absolute candidate path.
+
+        Returns:
+            Whether this active vault designates the index for generation.
+        """
+        if (
+            self._source_dir is None
+            or path.name != "index.md"
+            or not self._capabilities.index
+        ):
+            return False
+        try:
+            folder = self._canonical(str(path.parent))
+            return self._detector.state().active and self._may_index(folder)
+        except (ValueError, InvalidRequestError):
+            return False
+
+    def refresh_generated(self, paths: list[Path]) -> None:
+        """Regenerate still-designated, existing pending index paths.
+
+        Args:
+            paths: Absolute paths awaiting regeneration.
+        """
+        with okf_write_suppressed(), auxiliary_commit_writes():
+            for path in paths:
+                if not self.generated_index(path):
+                    continue
+                folder = self._canonical(str(path.parent))
+                if self._has_index(folder):
+                    self._refresh_index(folder)
+
+    def _may_log(self, folder: str) -> bool:
+        """Whether a write into *folder* may append to its ``log.md``."""
+        return self._capabilities.log == "writes" and self._destination_ok(
+            folder, "log.md"
+        )
+
+    def _maintain_index(self, folder: str) -> None:
+        """Refresh the nearest indexed level at or above *folder* if allowed."""
+        anchor = self.indexed_anchor(folder)
+        if self._may_index(anchor):
+            self._refresh_index(anchor)
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and its listing.
 
-        The listing refreshed is the folder's ``index.md``, or, when the
+        For a designated folder, the listing refreshed is its ``index.md``, or, when the
         folder has none, the nearest indexed ancestor's, which creates an
         ``index.md`` at each missing level down to the note (#1647).
 
@@ -131,16 +274,20 @@ class ConventionMaintainer:
             # A suppressed write (okf_verify's attestation, a mechanical
             # transform) gets neither provenance stamping nor maintenance.
             return
-        if is_okf_reserved_file(Path(path).as_posix()):
+        if self._is_reserved(path):
             return
         if not self._detector.state().active:
             return
-        folder = folder_of(path)
+        folder = folder_of(path := self._canonical(path))
+        if not self._designated(folder):
+            return
         with okf_write_suppressed(), auxiliary_commit_writes():
-            self._append_log(folder, path, operation)
+            if self._may_log(folder):
+                self._append_log(folder, path, operation)
             # A note in a folder without an index is listed from the nearest
             # indexed level, which indexes every missing level below (#1647).
-            self._refresh_index(self.indexed_anchor(folder))
+            if self._capabilities.index:
+                self._maintain_index(folder)
 
     def refresh_indexes(
         self,
@@ -151,12 +298,12 @@ class ConventionMaintainer:
     ) -> None:
         """Refresh folder ``index.md`` files after a delete, rename or move.
 
-        A folder in *folders* is refreshed only if it already has an
+        A designated folder in *folders* is refreshed only if it already has an
         ``index.md``: the change can only have made that listing stale. A
         folder in *create* is refreshed regardless, as a folder a note was
         written into is (#1609). The same guards as :meth:`maintain` apply:
         nothing on an inactive vault or under a suppressed intent, and nothing
-        when every *trigger_paths* entry is a reserved file, whose change never
+        when any *trigger_paths* entry is a reserved file, whose change never
         triggers its own regeneration (#1414). ``log.md`` is left to the log
         design; only the listings are kept current here. Never raises.
 
@@ -166,12 +313,14 @@ class ConventionMaintainer:
             create: Folders a note arrived in, refreshed even without an
                 ``index.md`` yet.
         """
-        if not self._maintains_after(trigger_paths):
+        if not self._capabilities.index or not self._maintains_after(trigger_paths):
             return
-        wanted = [f for f in folders if self._has_index(f)]
+        wanted = [f for f in folders if self._may_index(f) and self._has_index(f)]
         with okf_write_suppressed(), auxiliary_commit_writes():
-            for folder in dict.fromkeys([*wanted, *create]):
-                self._refresh_index(folder)
+            for folder in dict.fromkeys(
+                [*wanted, *(f for f in create if self._may_index(f))]
+            ):
+                self._refresh_index(self._canonical(folder))
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.
@@ -221,9 +370,12 @@ class ConventionMaintainer:
         Returns:
             The anchor folder, or ``""`` when no level has an index.
         """
-        current = folder
+        current = self._canonical(folder)
         while current != "" and not self._has_index(current):
-            current = folder_of(current)
+            parent = folder_of(current)
+            if not self._designated(parent):
+                break
+            current = parent
         return current
 
     def _maintains_after(self, trigger_paths: Iterable[str]) -> bool:
@@ -231,7 +383,7 @@ class ConventionMaintainer:
         intent = current_okf_intent()
         if intent is not None and intent.suppress:
             return False
-        if all(is_okf_reserved_file(Path(p).as_posix()) for p in trigger_paths):
+        if any(self._is_reserved(p) for p in trigger_paths):
             return False
         return self._detector.state().active
 
@@ -301,7 +453,7 @@ class ConventionMaintainer:
         try:
             if self._sync_index is not None:
                 self._sync_index()
-            self._okf_migrate.generate_index(folder=folder)
+            self._okf_migrate.generate_index(folder=folder, designated=self._may_index)
         except Exception:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True

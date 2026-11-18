@@ -1783,8 +1783,8 @@ class TestGitSyncOnce:
                 )
             # git show REBASE_HEAD:README.md: return fake MCP content.
             if "show" in cmd:
-                return SimpleNamespace(
-                    returncode=0, stdout="# MCP content\n", stderr=""
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout=b"# MCP content\n", stderr=b""
                 )
             # git checkout --ours: succeed silently.
             if "checkout" in cmd:
@@ -2249,8 +2249,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
 
@@ -2308,8 +2310,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
 
@@ -2351,8 +2355,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
 
@@ -2395,8 +2401,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
         monkeypatch.setattr(strategy, "sync_once", lambda _repo, **_: True)
@@ -2432,8 +2440,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
         monkeypatch.setattr(strategy, "sync_once", lambda _repo, **_: True)
@@ -2530,8 +2540,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
         monkeypatch.setattr(strategy, "sync_once", lambda _p, **_: True)
@@ -6771,3 +6783,75 @@ class TestZBlockFraming:
 
         assert _split_z_block("", 5) is None
         assert _split_z_block("sha\0short\0", 5) is None
+
+
+def test_resolve_conflicts_collector_preserves_return_contract_across_replays(
+    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Collect both replay conflicts, including a missing local blob."""
+    from tests.fixtures.git import _run_git
+
+    root = git_repo_pair.local_path
+    (root / "first.md").write_text("first base\n")
+    (root / "deleted.md").write_text("deleted base\n")
+    _run_git(root, "add", "first.md", "deleted.md")
+    _run_git(root, "commit", "-m", "seed")
+    _run_git(root, "push", "origin", "main")
+    other = root.parent / "other"
+    subprocess.run(
+        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _run_git(other, "config", "user.name", "Other")
+    _run_git(other, "config", "user.email", "other@example.com")
+    (other / "first.md").write_text("first remote\n")
+    (other / "deleted.md").write_text("deleted remote\n")
+    _run_git(other, "add", "first.md", "deleted.md")
+    _run_git(other, "commit", "-m", "remote")
+    _run_git(other, "push", "origin", "main")
+    (root / "first.md").write_text("first local\n")
+    _run_git(root, "add", "first.md")
+    _run_git(root, "commit", "-m", "first local")
+    _run_git(root, "rm", "deleted.md")
+    _run_git(root, "commit", "-m", "delete local")
+    results = []
+    real_capture = conflict.run_git_capturing
+    for use_collector in (False, True):
+        clone = root.parent / ("collector" if use_collector else "default")
+        subprocess.run(
+            ["git", "clone", str(root), str(clone)], check=True, capture_output=True
+        )
+        _run_git(clone, "config", "user.name", "Test")
+        _run_git(clone, "config", "user.email", "test@example.com")
+        _run_git(clone, "remote", "add", "upstream", str(git_repo_pair.remote_path))
+        _run_git(clone, "fetch", "upstream")
+        rebase = subprocess.run(
+            ["git", "-C", str(clone), "rebase", "upstream/main"], capture_output=True
+        )
+        assert rebase.returncode != 0
+        assert (
+            _run_git(clone, "diff", "--name-only", "--diff-filter=U").strip()
+            == "first.md"
+        )
+        observed: list[list[str]] = []
+
+        def capture(*args: Any, seen: list[list[str]] = observed, **kwargs: Any) -> Any:
+            result = real_capture(*args, **kwargs)
+            if "--diff-filter=U" in args:
+                seen.append([p for p in result.stdout.split("\0") if p])
+            return result
+
+        with monkeypatch.context() as patch:
+            patch.setattr(conflict, "run_git_capturing", capture)
+            paths: set[str] = set()
+            if use_collector:
+                result = conflict.resolve_rebase_conflicts(
+                    clone, None, conflicted=paths
+                )
+                assert paths == {"first.md", "deleted.md"}
+            else:
+                result = conflict.resolve_rebase_conflicts(clone, None)
+        assert observed[:2] == [["first.md"], ["deleted.md"]]
+        results.append(result)
+    assert results == [[("first.md", "first local\n")]] * 2
