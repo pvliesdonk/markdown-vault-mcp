@@ -451,10 +451,11 @@ reads `.copier-answers.yml`, and left the upstream routing in `CONTRIBUTING.md`
 and the `TEMPLATE-OWNED` banners on the skills in place. The release-flow tests
 that failed in the same trial fail identically without the detach in that
 environment, so the detach does not touch them.
-pvl-core 10.2.0 is about 11,700 lines with about 15,800 lines of tests, and this
-project imports 59 of its 96 public names. Figures and method are in the epic
-bodies of [#2240][2240] and [#2241][2241], and in [#2246][2246] for the
-config-surface check.
+pvl-core 10.2.0 is about 11,700 lines with about 15,800 lines of tests.
+Figures and method are in the epic bodies of [#2240][2240] and [#2241][2241],
+and in [#2246][2246] for the config-surface check. The refinement's import scan
+([#2274][2274]) corrects the epic's file counts: this project uses 53 of the 96
+public names, from 21 source files, 23 test files and one script.
 
 `evidenced` — Order: the template first. pvl-core is imported outside sentinel
 blocks in `server.py`, `cli.py`, `config.py` and `_server_apps.py`, and the
@@ -462,14 +463,30 @@ blocks in `server.py`, `cli.py`, `config.py` and `_server_apps.py`, and the
 `PROJECT-DEPS` block. Every core child therefore edits template-owned lines,
 which the conformance push hook rejects until the detach lands.
 
-`derived` — Within the core epic: an import shim first, then the vendored copy,
-then dissolution area by area. The shim is the only change that touches many
-files and changes no behaviour, so it can land quickly between the open
-contributed pull requests; the vendoring then swaps what sits behind it without
-touching call sites. Folding pvl-core into the server side also serves
-[#1471][1471]'s library free of pvl-core, and brings the coupling left in
-[#2016][2016] (pvl-core's errors and environment helpers,
-fastmcp-pvl-core#543) into this repository.
+`stated` — At refinement the owner chose, from the options proposed, to dissolve
+pvl-core area by area directly instead of vendoring a copy first, and ruled that
+`ConfigurationError` becoming this project's own class is not breaking
+(18 November 2026).
+
+`derived` — Within the core epic: the import shim ([#2274][2274]) first, because
+it is the only change that touches many files, and afterwards each area changes
+only the shim and its own call sites. Then the eight areas, in any order:
+configuration and environment ([#2275][2275]), logging ([#2276][2276]), auth
+([#2277][2277]), serving ([#2278][2278]), state stores ([#2279][2279]), the tool
+boundary and instructions ([#2280][2280]), jobs ([#2281][2281]) and transfer
+([#2282][2282]). Dropping the dependency ([#2283][2283]) comes last, and it
+meets the epic's "Done when". Copying core in only to delete it again was the
+cost the owner declined. The price is that core stays a dependency until the
+last area lands. Folding pvl-core into the server side also serves
+[#1471][1471]'s library free of pvl-core. [#2275][2275] resolves the coupling
+left in [#2016][2016] (pvl-core's errors and environment helpers,
+fastmcp-pvl-core#543).
+
+`derived` — Known unknown: which names in each area are thin FastMCP wrappers
+and which are helpers with their own logic, and so whether an area fits one pull
+request. Each area feature answers this before coding and splits if needed.
+[#2273][2273] may shrink what the configuration area has to keep, for example
+the config-surface generator's provenance layers.
 
 `stated` — This work goes first: the template part as package `010`, the
 pvl-core part as `015`, ahead of every other open package (18 November 2026).
@@ -489,8 +506,8 @@ child of [#2241][2241].
 
 `derived` — Coverage falls short in one place, and the criterion stays as
 frozen: while pvl-core is a dependency, fixes to its behaviour still go
-upstream, so "the only place fixes go" holds only once [#2241][2241]'s vendored
-copy lands. [#2240][2240] stays open until then.
+upstream, so "the only place fixes go" holds only once [#2283][2283] drops the
+dependency. [#2240][2240] stays open until then.
 
 `derived` — The sentinel blocks stay. Five generators and the config-contract
 test parse them; only the ownership wording around them goes. The detach keeps
@@ -530,13 +547,13 @@ title, 18 November 2026).
 [#2235][2235]. Most of it is `chore`, `ci` and `docs`, which cut no release on
 their own; its kind follows whatever user-facing commit the final sync
 ([#2245][2245]) brings, and the template's v11.7.0 changes are features. The
-epic itself carries no package: it stays open until `015`'s vendored copy
-lands (§ Independence from the template and pvl-core).
+epic itself carries no package: it stays open until `015` drops the pvl-core
+dependency ([#2283][2283]; § Independence from the template and pvl-core).
 
-`derived` — **015 pvl-core-fold** carries [refinement #2243][2243] and the
-features it files, up to the vendored copy without the dependency. Dissolving
-the copy area by area is later work, packaged once refined. Its kind waits on
-the known unknown about pvl-core types in the public library interface.
+`derived` — **015 pvl-core-fold** carries the whole fold: the import shim, the
+eight area features and the dependency drop ([#2274][2274] to [#2283][2283]).
+Its kind is not major: the owner ruled that the one candidate break,
+`ConfigurationError` becoming this project's own class, is not breaking.
 
 `derived` — Because the release workflow closes the lowest open package at a
 stable cut, `010` and then `015` are what the next stable cuts consume. A
@@ -763,9 +780,7 @@ verified implementation findings.
 | Question | Resolved by | Consequence for order |
 | --- | --- | --- |
 | Which support for several lockstep distributions must this project build itself, and which parts of the folded-in pvl-core (client, authentication, non-MCP API) does the split reuse? | [Refinement #2251][2251] of [#1471][1471]; [fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855) no longer gates it | Decides when the split can ship; the import-independence work in `020` does not wait for it. |
-| Is any pvl-core type, such as `ConfigurationError`, part of this project's public library interface? | The import-shim child of [#2241][2241], once [refinement #2243][2243] files it | Decides whether a core child carries `!`. |
-| Do pvl-core's tests pass unchanged once vendored, and what do they add to CI time? | The vendoring child of [#2241][2241] | Effort only; not the order. |
-| Which pvl-core areas are thin wrappers around FastMCP, and which are helpers to keep under this project's names? | [Refinement #2243][2243] | Shapes the dissolution children; not needed before the vendoring. |
+| Which names in each pvl-core area are thin wrappers around FastMCP, and which are helpers to keep under this project's names, and does each area fit one pull request? | Each area feature, [#2275][2275] to [#2282][2282], before it codes | Effort and splitting only; the areas run in any order. |
 | What documentation and consumer validation make the library independently adoptable? | [Refinement #1472][1472], using [#1436][1436] and the research verdict | The package must deliver a supported consumer experience, not only a list of public names. |
 | How should Obsidian lookup coexist with source-relative links? | The compatibility decision in [#1383][1383] | Leave this defect outside the cut until its desired semantics are settled; the choice is not supplied by its old priority proposal. |
 | What is the smallest useful bundle-inventory boundary, and which later services can use it? | [#1442][1442] and [refinement #1467][1467] | Answer before committing the foundation package; the adopted outcome remains fixed. |
@@ -1168,6 +1183,12 @@ re-refinements moved to their own epics: [refinement #2251][2251] under
 [#1471][1471], and [#1728][1728] now waits on [#2246][2246]. The trial detach
 answered the known unknown on template-coupled tests, so its row is removed.
 
+### 18 November 2026 — refine [#2241][2241]
+
+`stated` — The owner chose direct dissolution over a vendored copy, and ruled that the `ConfigurationError` change is not breaking (§ Independence from the template and pvl-core).
+
+`derived` — Ten features cover the core epic: the shim, eight areas and the dependency drop. The vendor-then-dissolve order in the epic body is superseded, and the epic's file counts are corrected. [#2016][2016] is resolved by [#2275][2275]. The known-unknowns rows on pvl-core types in the public interface and on vendored tests are removed: the owner's ruling settles the first, and the second no longer applies.
+
 ### 18 November 2026 — put the independence work first
 
 `stated` — The owner placed the template part as package `010` and the pvl-core
@@ -1337,3 +1358,14 @@ until they ship (§ Packages).
 [2249]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2249
 [2250]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2250
 [2251]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2251
+[2273]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2273
+[2274]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2274
+[2275]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2275
+[2276]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2276
+[2277]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2277
+[2278]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2278
+[2279]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2279
+[2280]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2280
+[2281]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2281
+[2282]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2282
+[2283]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2283
