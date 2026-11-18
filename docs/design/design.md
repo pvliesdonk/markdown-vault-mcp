@@ -7652,7 +7652,7 @@ only; explicit protected paths remain enforced. Name variants follow the disk’
 case and Unicode identity. For ambiguous spellings, a hidden scratch directory
 is created in the nearest existing folder and removed immediately; an unwritable
 folder is refused. On a case-folding disk `[!a]*` also reserves `a`, because
-`A` matches; `[!aA]*` excludes both spellings. A glob that places a class or
-`?` among combining marks is judged in canonical mark order. A leaf symlink to an authored note is editable, while an alias
+`A` matches; `[!aA]*` excludes both spellings. A glob that is not in canonical mark order, or places a class or `?` among
+combining marks, is judged in canonical mark order. A leaf symlink to an authored note is editable, while an alias
 to a designated index remains protected. Library callers retain the
 explicit `allow_protected` override. Other indexes and logs remain editable.

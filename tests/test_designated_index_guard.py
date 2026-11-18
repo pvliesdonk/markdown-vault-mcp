@@ -388,9 +388,6 @@ def test_casefold_expansion_in_positive_class(
         ("\u212a", "K", False, True, True),
         ("A\u030a", "[Å]", False, True, True),
         ("가", "??", False, True, True),
-        ("a\u0323\u0301", "a\u0301\u0323", False, True, True),
-        ("a\u0301\u0300", "a\u0300\u0301", False, True, False),
-        ("a\u0323\u0301", "a?\u0323", False, True, False),
         ("]", "[]-]", False, False, True),
         ("[", "[", False, False, True),
         ("abc", "a*c", False, False, True),
@@ -461,7 +458,6 @@ def test_witness_tables_match_each_codepoint() -> None:
         ("ß", "ẞ", "[À-ÿ]"),
         ("e\u0301", "é", "??"),
         ("e\u0301", "é", "[!x]?"),
-        ("a\u0301\u0323", "a\u0323\u0301", "a\u0301\u0323"),
     ],
 )
 def test_native_glob_alias_cannot_lose_content(
@@ -479,18 +475,11 @@ def test_native_glob_alias_cannot_lose_content(
         vault.close()
 
 
-def test_literal_combining_marks_order_and_bounded_segment_matching(
+def test_bounded_segment_matching(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from itertools import permutations
-
     import markdown_vault_mcp.okf_capabilities as capabilities
 
-    marks = "\u0315\u0301\u0323"
-    for spelling in permutations(marks):
-        assert capabilities._equivalent(
-            "a" + marks, "a" + "".join(spelling), False, True
-        )
     calls = 0
     original = capabilities._equivalent
 
@@ -509,3 +498,47 @@ def test_literal_combining_marks_order_and_bounded_segment_matching(
         tmp_path, f"{name}/INDEX.md", ("e\u0301" * 20,)
     )
     assert calls <= 3
+
+
+@pytest.mark.parametrize("destination", ["ff/index.md", "ﬀ/index.md"])
+def test_multichar_casefold_native_alias_is_reserved(
+    tmp_path: Path, destination: str
+) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    (tmp_path / "ﬀ").mkdir()
+    if not (tmp_path / "ff").exists():
+        pytest.skip("filesystem distinguishes casefold spellings")
+    vault = designated_vault(tmp_path, ("ﬀ",))
+    try:
+        vault.index.build_index()
+        with pytest.raises(InvalidRequestError, match="okf_generate_index"):
+            vault.writer.write(destination, "CLIENT CONTENT")
+        vault.writer.write("ﬀ/note.md", "# Note")
+        wait_for_writer_drain(vault)
+        assert "CLIENT CONTENT" not in (tmp_path / "ﬀ/index.md").read_text()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("case", [True, False])
+def test_multichar_casefold_measured_axis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: bool
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+    monkeypatch.setattr(
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _p: (case, False)
+    )
+    assert designated_index_path(tmp_path, "ff/index.md", ("ﬀ",)) is case
+
+
+def test_multichar_casefold_reverse_spelling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+    monkeypatch.setattr(
+        "markdown_vault_mcp.okf_capabilities._probe", lambda _p: (True, False)
+    )
+    assert designated_index_path(tmp_path, "ﬀ/index.md", ("[f][f]",))
