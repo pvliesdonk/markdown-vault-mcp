@@ -236,7 +236,8 @@ async def _resolve_verify_mode_subject(
     ``trust-auth`` requires a human principal (refuses service credentials
     and auth mode ``none``); any other mode is treated as ``elicit`` and requires an
     affirmative elicitation before attributing to the authenticated subject (or
-    the local sentinel). ``off`` never reaches here — the server hides the tool.
+    the local sentinel). The caller refuses service principals before this gate.
+    ``off`` never reaches here — the server hides the tool.
 
     Raises:
         ToolError: If the mode's gate is not satisfied.

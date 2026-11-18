@@ -212,9 +212,10 @@ client ID in every access token, so a `sub_mode` that yields usernames makes
 ## Where this project departs from the subject
 
 The [write-identity design](../design.md) determines OKF
-attribution. Client-ID-only callers are service principals and use the tool
-actor, including single, custom and mapped bearer credentials. Elicitation
-can confirm a human review without identifying the person; that review uses
+attribution. Client-ID-only callers are service principals, including single,
+custom and mapped bearer credentials. The tool refuses their human reviews;
+with `OKF_MACHINE_REVIEW=true` and review enabled, they can record named
+machine checks. Elicitation can confirm an unauthenticated human review as
 `human:local`. `trust-auth` requires a human principal.
 
 A token with a usable `sub` is a service principal when the issuer marks it

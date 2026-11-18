@@ -96,9 +96,9 @@ def resolve_human_subject() -> str | None:
 def resolve_verify_subject() -> str:
     """Return the subject to stamp once an elicit-mode review is confirmed.
 
-    The human principal's subject when present, else the ``local`` sentinel. Under
-    ``OKF_VERIFY=elicit`` the elicitation — not the token — is the
-    human-presence proof, so a human using no auth or a service credential
-    records an attributable ``human:local`` entry after confirming through the client UI.
+    The human principal's subject when present, else the ``local`` sentinel.
+    The MCP tool separately refuses service principals before calling this helper.
+    Under ``OKF_VERIFY=elicit``, a confirmed unauthenticated review uses
+    ``human:local``.
     """
     return resolve_human_subject() or _LOCAL_SUBJECT

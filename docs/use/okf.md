@@ -196,7 +196,7 @@ One subtlety is worth understanding before you rely on the `human-reviewed` tier
 - **`off`** hides the tool entirely. Use this when reviews are recorded only by tooling outside the server (a CLI step, a git hook, or a CI job that writes `verified` directly) and you want no in-session path to the tier at all.
 - **`trust-auth`** attributes to a token's `sub` with no confirmation. It refuses static bearer credentials, other client-ID-only identities, OAuth tokens the issuer marks as an application's or whose `sub` is listed in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` (see above), and callers without auth. Choose it only when the sole caller of `okf_verify` is a human-driven interface rather than an agent.
 
-**Upgrading bearer-based review clients:** use a human principal with a client that presents confirmation to a person. Existing provenance and verification entries are not rewritten.
+**Upgrading service-based review clients:** earlier versions allowed a person to confirm a human review through service credentials, recording `human:local`. That path is removed. Use a human principal with a client that presents confirmation to a person, or enable machine review for named service checks. Existing provenance and verification entries are not rewritten.
 
 The verification mode controls how this tool records a review claim. The `human-reviewed` tier itself only reports a `human:` prefix in supplied metadata, which can also arrive from other editors or imports. It does not prove that a person reviewed the note or that its content is correct.
 

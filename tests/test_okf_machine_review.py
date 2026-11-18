@@ -9,30 +9,17 @@ from fastmcp import Client
 from markdown_vault_mcp._okf_review import concept_snapshot
 from markdown_vault_mcp.okf import derive_trust_tier
 from tests.conftest import _parse_tool_data, wait_for_mcp_writer_drain
+from tests.fixtures.okf_machine_review import NOTE
+from tests.fixtures.okf_machine_review import machine_review_env as machine_review_env
 from tests.server_factory import make_server
 
 
 @pytest.mark.parametrize("check", ["links", "schema", "source-comparison", "x-local"])
 async def test_service_records_machine_check(
-    _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, check: str
+    machine_review_env: Path, check: str
 ) -> None:
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Bundle\n')
-    note = root / "note.md"
-    original = "---\ntype: concept\n---\nBody\n"
-    note.write_text(original)
-    for key, value in {
-        "SOURCE_DIR": str(root),
-        "READ_ONLY": "false",
-        "OKF_WRITE": "true",
-        "OKF_MACHINE_REVIEW": "true",
-    }.items():
-        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{key}", value)
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "checker")
-    monkeypatch.setattr(
-        "fastmcp_pvl_core.get_claims", lambda: {"sub": "checker", "idtyp": "app"}
-    )
+    note = machine_review_env / "note.md"
+    original = NOTE
     snapshot = concept_snapshot(original)
     async with Client(make_server()) as client:
         result = await client.call_tool(
@@ -58,8 +45,7 @@ async def test_service_records_machine_check(
     ],
 )
 async def test_service_refusals(
-    _clear_env: None,
-    tmp_path: Path,
+    machine_review_env: Path,
     monkeypatch: pytest.MonkeyPatch,
     check: str,
     enabled: bool,
@@ -67,23 +53,9 @@ async def test_service_refusals(
 ) -> None:
     from fastmcp.exceptions import ToolError
 
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Bundle\n')
-    note = root / "note.md"
-    original = "---\ntype: concept\n---\nBody\n"
-    note.write_text(original)
-    for key, value in {
-        "SOURCE_DIR": str(root),
-        "READ_ONLY": "false",
-        "OKF_WRITE": "true",
-        "OKF_MACHINE_REVIEW": str(enabled),
-    }.items():
-        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{key}", value)
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "checker")
-    monkeypatch.setattr(
-        "fastmcp_pvl_core.get_claims", lambda: {"sub": "checker", "idtyp": "app"}
-    )
+    note = machine_review_env / "note.md"
+    original = NOTE
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW", str(enabled))
     async with Client(make_server()) as client:
         with pytest.raises(ToolError, match=expected):
             await client.call_tool(
@@ -134,23 +106,12 @@ def test_machine_receipt_and_existing_human_tier(tmp_path: Path) -> None:
 
 
 async def test_machine_setting_does_not_bypass_human_confirmation(
-    _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    machine_review_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from fastmcp.exceptions import ToolError
 
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Bundle\n')
-    note = root / "note.md"
-    original = "---\ntype: concept\n---\nBody\n"
-    note.write_text(original)
-    for key, value in {
-        "SOURCE_DIR": str(root),
-        "READ_ONLY": "false",
-        "OKF_WRITE": "true",
-        "OKF_MACHINE_REVIEW": "true",
-    }.items():
-        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{key}", value)
+    note = machine_review_env / "note.md"
+    original = NOTE
     monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "alice")
     monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "alice"})
     async with Client(make_server(), mode="legacy") as client:
@@ -171,8 +132,7 @@ async def test_machine_setting_does_not_bypass_human_confirmation(
     ],
 )
 async def test_machine_checks_require_service_with_usable_identity(
-    _clear_env: None,
-    tmp_path: Path,
+    machine_review_env: Path,
     monkeypatch: pytest.MonkeyPatch,
     subject: str,
     claims: dict[str, str],
@@ -180,19 +140,8 @@ async def test_machine_checks_require_service_with_usable_identity(
 ) -> None:
     from fastmcp.exceptions import ToolError
 
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Bundle\n')
-    original = "---\ntype: concept\n---\nBody\n"
-    note = root / "note.md"
-    note.write_text(original)
-    for key, value in {
-        "SOURCE_DIR": str(root),
-        "READ_ONLY": "false",
-        "OKF_WRITE": "true",
-        "OKF_MACHINE_REVIEW": "true",
-    }.items():
-        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{key}", value)
+    note = machine_review_env / "note.md"
+    original = NOTE
     monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: subject)
     monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: claims)
     async with Client(make_server()) as client:
@@ -207,3 +156,52 @@ async def test_machine_checks_require_service_with_usable_identity(
             )
         await wait_for_mcp_writer_drain(client)
     assert note.read_text() == original
+
+
+async def test_machine_check_preserves_human_tier_through_tool(
+    machine_review_env: Path,
+) -> None:
+    note = machine_review_env / "note.md"
+    original = '---\ntype: concept\nverified: [{by: "human:alice", at: "2026-01-01T00:00:00Z"}]\n---\nBody\n'
+    note.write_text(original)
+    async with Client(make_server()) as client:
+        await client.call_tool(
+            "okf_verify",
+            {
+                "path": "note.md",
+                "reviewed_snapshot": concept_snapshot(original),
+                "check": "links",
+            },
+        )
+        await wait_for_mcp_writer_drain(client)
+    metadata = frontmatter.loads(note.read_text()).metadata
+    assert metadata["verified"][-1]["by"] == "process:checker"
+    assert derive_trust_tier(metadata) == "human-reviewed"
+
+
+@pytest.mark.usefixtures("machine_review_env")
+async def test_trust_auth_allows_service_machine_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "trust-auth")
+    async with Client(make_server()) as client:
+        result = await client.call_tool(
+            "okf_verify",
+            {
+                "path": "note.md",
+                "reviewed_snapshot": concept_snapshot(NOTE),
+                "check": "links",
+            },
+        )
+        await wait_for_mcp_writer_drain(client)
+    assert _parse_tool_data(result)["verifier"] == "process:checker"
+
+
+async def test_verify_off_hides_machine_review(
+    machine_review_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "off")
+    async with Client(make_server()) as client:
+        assert "okf_verify" not in [tool.name for tool in await client.list_tools()]
+        await wait_for_mcp_writer_drain(client)
+    assert (machine_review_env / "note.md").read_text() == NOTE
