@@ -18,9 +18,12 @@ def test_bulk_retry_reaches_later_unprotected_notes(tmp_path: Path) -> None:
     )
     try:
         vault.index.build_index()
-        for _ in range(2):
-            with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS"):
+        for count in (2, 0):
+            with pytest.raises(InvalidRequestError, match="PROTECTED_PATHS") as exc:
                 vault.writer.okf_convert_links()
+            assert f"Converted {count} notes" in str(exc.value)
+            assert "policy.md" in str(exc.value)
+            assert (tmp_path / "a.md").read_text() == "[z](/z.md)"
             assert (tmp_path / "y.md").read_text() == "[z](/z.md)"
         assert (tmp_path / "policy.md").read_text() == "[[z]]"
     finally:
