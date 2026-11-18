@@ -371,7 +371,7 @@ The operator controls explicit authoring, review, index and log maintenance inde
 
 - **Provenance preservation**: ordinary writes, edits, appends, uploads and link rewrites preserve supplied `generated` and `verified`. Body-only changes retain the frontmatter bytes. The authenticated principal remains commit context and does not establish authorship. Explicit `okf_author` records a producer only when supplied. `OKF_WRITE` enables `OKF_AUTHOR` unless explicitly overridden; it never stamps or clears metadata.
 - **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
-  promoting the note's tier. The required `reviewed_snapshot` must match before confirmation. The write appends a snapshot and check claim under `x-mvmcp.reviews` and a matching instance-local receipt. The note etag guards the confirmation interval. Reads currently report unbound applicability without evaluating these claims. `destructiveHint=False`, `idempotentHint=False`.
+  promoting the note's tier. The required `reviewed_snapshot` must match before confirmation. The write appends a snapshot and check claim under `x-mvmcp.reviews` and a matching instance-local receipt. The facet rechecks the snapshot after confirmation and an etag guards the final write. Reads currently report unbound applicability without evaluating these claims. `destructiveHint=False`, `idempotentHint=False`.
 
   The authenticated subject is *whose token* is in play, not evidence that a
   human reviewed the note. In an agentic session the model wields the human's
@@ -693,4 +693,4 @@ phase owns.
 
 ### Snapshot-bound review recording
 
-`okf_verify` validates the reviewed snapshot before confirmation and uses the read etag for the subsequent write. Portable `verified` entries retain `{by, at}`; `x-mvmcp.reviews` appends the check and snapshot as supplied claims. A matching instance-local receipt is stored beside the observation ledger, outside the bundle. A failed receipt write can leave the portable claim without local evidence. Review applicability presentation remains separate work.
+`okf_verify` validates the reviewed snapshot before confirmation and again after confirmation, then uses the fresh read etag for the write. Portable `verified` entries retain `{by, at}`; `x-mvmcp.reviews` appends the check and snapshot as supplied claims. A matching instance-local receipt is stored beside the observation ledger, outside the bundle. Bound reviews require YAML frontmatter (or no frontmatter); JSON and TOML must be converted to YAML. The snapshot excludes `verified` and `x-mvmcp`. Receipts must be outside the vault, and last only for the process without a state path. A failed receipt prevents the note write; a lost write race can leave an unmatched receipt. Review applicability presentation remains separate work.

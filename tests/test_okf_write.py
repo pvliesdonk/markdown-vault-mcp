@@ -402,7 +402,9 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="Document not found"):
-                await client.call_tool("okf_verify", review_args("nope.md"))
+                await client.call_tool(
+                    "okf_verify", {"path": "nope.md", "reviewed_snapshot": {}}
+                )
 
     async def test_aborts_on_concurrent_modification(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -417,10 +419,15 @@ class TestOkfVerifyTrustAuth:
 
         real_append = writer_mod.append_okf_verification
 
+        calls = 0
+
         def racing_append(text: str, *, subject: str, now: Any, **kwargs: Any) -> str:
-            (trust_auth_env / "guides" / "playbook.md").write_text(
-                "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
-            )
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                (trust_auth_env / "guides" / "playbook.md").write_text(
+                    "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
+                )
             return real_append(text, subject=subject, now=now, **kwargs)
 
         monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)

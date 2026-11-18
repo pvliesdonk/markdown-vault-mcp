@@ -113,8 +113,8 @@ src/markdown_vault_mcp/
   okf_capabilities.py  -- resolve OKF authority, the legacy alias, and designated index paths
   _cli_bundle.py       -- CLI adapter for bounded OKF inventory
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
-  _okf_review.py       -- versioned concept snapshot digest for full reads and review validation
-  _okf_receipts.py     -- local receipts for recorded snapshot-bound reviews
+  _okf_review.py       -- versioned concept snapshot digest and lossless YAML review binding
+  _okf_receipts.py     -- versioned local JSON receipts for snapshot-bound reviews
   _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter
   _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _okf_write.py        -- review subject resolution and maintenance suppression context

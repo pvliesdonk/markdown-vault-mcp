@@ -1174,58 +1174,12 @@ def append_okf_verification(
     """
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
-    if (
-        reviewed_snapshot is not None
-        and "verified" in meta
-        and not isinstance(meta["verified"], (list, dict))
-    ):
-        raise InvalidRequestError("Existing verified field must be a list or mapping")
     verified = list(verified_entries(meta))
-    verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
-    meta["verified"] = verified
+    entry = {"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)}
     if reviewed_snapshot is None:
+        meta["verified"] = [*verified, entry]
         return fm.dumps(fm.Post(post.content, **meta), sort_keys=False)
-    from markdown_vault_mcp._okf_author import _edit_header, _header_span, _render
-    from markdown_vault_mcp._okf_review import edit_json_review_header
+    from markdown_vault_mcp._okf_review import bind_review
 
-    extension = meta.get("x-mvmcp", {})
-    if not isinstance(extension, dict) or not isinstance(
-        extension.get("reviews", []), list
-    ):
-        raise InvalidRequestError(
-            "Existing x-mvmcp reviews must be a mapping with a list"
-        )
-    extension = dict(extension)
-    extension["reviews"] = [
-        *extension.get("reviews", []),
-        {**verified[-1], "check": check, "snapshot": dict(reviewed_snapshot)},
-    ]
-    changes = {"verified": verified, "x-mvmcp": extension}
-    json_result = edit_json_review_header(text, changes)
-    if json_result is not None:
-        return json_result
-    try:
-        span = _header_span(text)
-    except InvalidRequestError as exc:
-        raise InvalidRequestError(
-            "Verification requires YAML or JSON frontmatter"
-        ) from exc
-    newline = "\r\n" if "\r\n" in text else "\n"
-    if span is None:
-        prefix = "\ufeff" if text.startswith("\ufeff") else ""
-        header = "".join(
-            f"{key}: {_render(value)}{newline}" for key, value in changes.items()
-        )
-        return (
-            prefix
-            + "---"
-            + newline
-            + header
-            + "---"
-            + newline
-            + text.removeprefix("\ufeff")
-        )
-    start, end = span
-    return text[:start] + _edit_header(text[start:end], changes, newline) + text[end:]
+    claim = {**entry, "check": check, "snapshot": dict(reviewed_snapshot)}
+    return bind_review(text, entry, claim)

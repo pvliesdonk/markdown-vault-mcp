@@ -582,9 +582,9 @@ async def test_review_binds_snapshot_and_receipt(
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
-    store = ReceiptStore(None)
+    store = ReceiptStore(None, okf_vault)
     monkeypatch.setattr(
-        "markdown_vault_mcp._okf_receipts.receipts_for", lambda _: store
+        "markdown_vault_mcp._okf_receipts.ReceiptStore", lambda *_: store
     )
     path = okf_vault / "guides" / "plain.md"
     snapshot = concept_snapshot(path.read_text(encoding="utf-8"))
@@ -607,11 +607,11 @@ async def test_review_binds_snapshot_and_receipt(
     entry = metadata["verified"][-1]
     claim = metadata["x-mvmcp"]["reviews"][-1]
     assert claim == {**entry, "check": "human-review", "snapshot": snapshot}
-    receipt = store.rows()[0]
-    assert {k: receipt[k] for k in ("by", "at", "check", "digest")} == {
+    receipt = store._rows[0]
+    assert {k: receipt[k] for k in ("by", "at", "check", "snapshot")} == {
         **entry,
         "check": "human-review",
-        "digest": snapshot["digest"],
+        "snapshot": snapshot,
     }
     assert "guides/plain.md" in prompts[0] and snapshot["digest"][:12] in prompts[0]
     assert "human-review" in prompts[0]
@@ -668,7 +668,7 @@ async def test_review_refuses_edit_during_confirmation(
     async with Client(
         make_server(), mode="legacy", elicitation_handler=confirm
     ) as client:
-        with pytest.raises(ToolError, match="changed"):
+        with pytest.raises(ToolError, match="snapshot"):
             await client.call_tool(
                 "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
             )
@@ -697,10 +697,9 @@ async def test_review_modern_confirmation(
 
 
 @pytest.mark.usefixtures("_okf_env")
-async def test_modern_review_rejects_metadata_edit_during_confirmation(
+async def test_modern_review_allows_excluded_metadata_edit_during_confirmation(
     okf_vault: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from fastmcp.exceptions import ToolError
 
     from markdown_vault_mcp._okf_review import concept_snapshot
 
@@ -717,11 +716,10 @@ async def test_modern_review_rejects_metadata_edit_during_confirmation(
         return True
 
     async with Client(make_server(), elicitation_handler=confirm) as client:
-        with pytest.raises(ToolError, match="not confirmed"):
-            await client.call_tool(
-                "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
-            )
-    assert path.read_text(encoding="utf-8") == changed
+        await client.call_tool(
+            "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
+        )
+    assert "other: true" in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.usefixtures("_okf_env")
@@ -738,14 +736,14 @@ async def test_receipt_failure_reports_completed_note_write(
     snapshot = concept_snapshot(path.read_text(encoding="utf-8"))
 
     class BrokenStore:
-        def prepare(self) -> None:
+        def check(self) -> None:
             pass
 
         def append(self, _receipt: dict[str, str]) -> None:
             raise OSError("storage unavailable")
 
     monkeypatch.setattr(
-        "markdown_vault_mcp._okf_receipts.receipts_for", lambda _: BrokenStore()
+        "markdown_vault_mcp._okf_receipts.ReceiptStore", lambda *_: BrokenStore()
     )
 
     async def confirm(*_args: Any) -> bool:
@@ -754,41 +752,81 @@ async def test_receipt_failure_reports_completed_note_write(
     async with Client(
         make_server(), mode="legacy", elicitation_handler=confirm
     ) as client:
-        with pytest.raises(ToolError, match=r"review was written.*local receipt"):
+        with pytest.raises(ToolError, match="nothing was written"):
             await client.call_tool(
                 "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
             )
-    assert "verified:" in path.read_text(encoding="utf-8")
+    assert "verified:" not in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.usefixtures("_okf_env")
-async def test_documented_review_flow_with_json_frontmatter(
+async def test_bad_receipt_state_refused_before_prompt(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    state = tmp_path / "state.json"
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(state))
+    receipt = tmp_path / "state.json.receipts.json"
+    receipt.write_text('{"version": 2, "rows": []}')
+    path = okf_vault / "guides" / "plain.md"
+    original = path.read_text()
+    called = False
+
+    async def confirm(*_args: Any) -> bool:
+        nonlocal called
+        called = True
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=confirm
+    ) as client:
+        with pytest.raises(ToolError, match="receipt"):
+            await client.call_tool(
+                "okf_verify",
+                {
+                    "path": "guides/plain.md",
+                    "reviewed_snapshot": concept_snapshot(original),
+                },
+            )
+    assert not called
+    assert path.read_text() == original
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_non_yaml_refused_before_prompt(
     okf_vault: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import frontmatter
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
     path = okf_vault / "guides" / "plain.md"
-    path.write_text('{\n"type": "concept",\n"ratio": 1.00\n}\nBody\n', encoding="utf-8")
+    text = '{\n"type": "concept"\n}\nBody\n'
+    path.write_text(text)
+    called = False
 
     async def confirm(*_args: Any) -> bool:
+        nonlocal called
+        called = True
         return True
 
     async with Client(
         make_server(), mode="legacy", elicitation_handler=confirm
     ) as client:
-        read = _parse_tool_data(
-            await client.call_tool("read", {"path": "guides/plain.md"})
-        )
-        snapshot = read["okf"]["snapshot"]
-        result = await client.call_tool(
-            "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
-        )
-    assert _parse_tool_data(result)["verified_count"] == 1
-    text = path.read_text(encoding="utf-8")
-    assert '"ratio": 1.00' in text
-    assert (
-        frontmatter.loads(text).metadata["x-mvmcp"]["reviews"][0]["snapshot"]
-        == snapshot
-    )
+        with pytest.raises(ToolError, match=r"convert.*YAML"):
+            await client.call_tool(
+                "okf_verify",
+                {
+                    "path": "guides/plain.md",
+                    "reviewed_snapshot": concept_snapshot(text),
+                },
+            )
+    assert not called
+    assert path.read_text() == text

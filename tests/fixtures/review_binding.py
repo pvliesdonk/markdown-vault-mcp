@@ -5,10 +5,7 @@ def review_args(path: str) -> dict[str, object]:
 
     from markdown_vault_mcp._okf_review import concept_snapshot
 
-    try:
-        text = (Path(os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"]) / path).read_text(
-            encoding="utf-8"
-        )
-    except (OSError, ValueError):
-        text = ""
+    text = (Path(os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"]) / path).read_text(
+        encoding="utf-8"
+    )
     return {"path": path, "reviewed_snapshot": concept_snapshot(text)}

@@ -19,7 +19,7 @@ authenticated caller with no prompt (and refuses when the server has no auth).
 
 Call `read(path=$path)`. Note its `okf` annotation — in particular the current
 `trust_tier` and whether it is `stale` or `deprecated`. Save the full read’s
-`okf.snapshot` as `reviewed_snapshot`. Reads currently report review applicability
+`okf.snapshot` as `reviewed_snapshot`. Reviews require YAML frontmatter or a body-only note; convert JSON or TOML to YAML before reading and reviewing. The snapshot excludes `verified` and `x-mvmcp`. Reads currently report review applicability
 as `unbound`; they do not evaluate saved binding claims.
 
 ## Step 2: Review the content, do not rubber-stamp

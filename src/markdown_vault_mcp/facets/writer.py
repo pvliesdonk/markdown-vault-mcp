@@ -9,17 +9,13 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar
 
-from markdown_vault_mcp._okf_receipts import ReceiptWriteError
 from markdown_vault_mcp._okf_review import concept_snapshot, validate_reviewed_snapshot
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import (
-    ConcurrentModificationError,
     InvalidRequestError,
-    StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.okf import (
     append_okf_verification,
@@ -39,7 +35,6 @@ if TYPE_CHECKING:
         LogRepairResult,
     )
     from markdown_vault_mcp._okf_receipts import ReceiptStore
-    from markdown_vault_mcp._okf_review import ReviewRequest
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
@@ -52,6 +47,7 @@ if TYPE_CHECKING:
         DeleteResult,
         EditResult,
         MoveFolderResult,
+        NoteContent,
         RenameResult,
         WriteResult,
     )
@@ -71,7 +67,7 @@ class WriterFacet:
         convention_maintainer: ConventionMaintainer | None = None,
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
-        receipt_store: Callable[[], ReceiptStore] | None = None,
+        receipt_store: ReceiptStore | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -105,68 +101,67 @@ class WriterFacet:
         self._link_reporter = link_reporter
         self._receipt_store = receipt_store
 
-    def okf_verify(
-        self, path: str, subject: str, review: ReviewRequest
-    ) -> dict[str, Any]:
-        """Record a review of an exact snapshot and its local receipt.
+    def require_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
+        """Read a current note and check receipt storage before confirmation."""
+        from markdown_vault_mcp.exceptions import DocumentNotFoundError
 
-        Args:
-            path: Vault-relative note path.
-            subject: Non-empty human reviewer identifier.
-            review: Reviewed snapshot, exact etag and non-empty check.
-
-        Returns:
-            The note path, verifier and number of portable reviews.
-
-        Raises:
-            ConcurrentModificationError: If the note changed since the read.
-            InvalidRequestError: If the snapshot or note cannot be safely reviewed.
-            ReceiptWriteError: If the note was written but the receipt failed.
-        """
-        if not isinstance(subject, str) or not subject.strip():
-            raise InvalidRequestError("Reviewer subject must not be empty")
-        if not isinstance(review.check, str) or not review.check.strip():
-            raise InvalidRequestError("Review check must not be empty")
         note = self._doc_mgr.read(path)
-        if note is None or note.etag != review.etag:
-            raise ConcurrentModificationError(
-                path, review.etag, note.etag or "" if note else ""
-            )
-        snapshot = validate_reviewed_snapshot(note.content, review.snapshot)
+        if note is None:
+            raise DocumentNotFoundError.note(path)
+        validate_reviewed_snapshot(note.content, snapshot)
         if self._receipt_store is None:
             raise InvalidRequestError("Local review receipt storage is not configured")
-        store = self._receipt_store()
-        store.prepare()
+        self._receipt_store.check()
+        # Check format and safe edits before elicitation as well.
+        append_okf_verification(
+            note.content,
+            subject="local",
+            now=datetime.now(UTC),
+            reviewed_snapshot=snapshot,
+        )
+        return note
+
+    def okf_verify(
+        self,
+        path: str,
+        subject: str,
+        snapshot: dict[str, str],
+        check: str = "human-review",
+    ) -> dict[str, Any]:
+        """Record a reviewed snapshot and its local receipt."""
+        if not isinstance(subject, str) or not subject.strip():
+            raise InvalidRequestError("Reviewer subject must not be empty")
+        if not isinstance(check, str) or not check.strip():
+            raise InvalidRequestError("Review check must not be empty")
+        note = self.require_reviewable(path, snapshot)
         now = datetime.now(UTC)
         text = append_okf_verification(
             note.content,
             subject=subject,
             now=now,
             reviewed_snapshot=snapshot,
-            check=review.check,
+            check=check,
         )
         if concept_snapshot(text) != snapshot:
             raise InvalidRequestError(
                 "Cannot safely preserve this note while recording the review"
             )
-        with okf_write_suppressed():
-            self.write(path, text, if_match=review.etag)
+        store = self._receipt_store
+        if store is None:
+            raise InvalidRequestError("Local review receipt storage is not configured")
         actor = f"human:{subject}"
-        try:
-            store.append(
-                {
-                    "path": note.path,
-                    "by": actor,
-                    "at": okf_timestamp(now),
-                    "check": review.check,
-                    "digest": snapshot["digest"],
-                    "recorded_at": okf_timestamp(datetime.now(UTC)),
-                }
-            )
-        except (OSError, sqlite3.Error, StoreUnsupportedSchemaError) as exc:
-            raise ReceiptWriteError(
-                "The note was written but its local receipt failed"
-            ) from exc
+        store.append(
+            {
+                "path": note.path,
+                "by": actor,
+                "at": okf_timestamp(now),
+                "check": check,
+                "snapshot": dict(snapshot),
+                "recorded_at": okf_timestamp(datetime.now(UTC)),
+            }
+        )
+        with okf_write_suppressed():
+            self.write(path, text, if_match=note.etag)
         return {
             "path": path,
             "verifier": actor,

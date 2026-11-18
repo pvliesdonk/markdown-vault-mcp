@@ -8,7 +8,7 @@ kind: reference
 # Writer
 
 <!-- DOMAIN-INTRO-START -->
-Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit, append and OKF verification retain surviving fields in their existing order when serializing a header. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
+Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit and append retain surviving fields in their existing order when serializing a header. Bound OKF verification preserves existing review metadata source text. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
 
 Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, `okf_verify` needs review enabled, and `okf_author` needs authoring enabled and an active bundle.
 
@@ -556,7 +556,8 @@ Read a concept, then pass its `etag` as `if_match` and the fields to change, suc
 
 Record a review of a note snapshot; returns the verifier recorded.
 
-The user may be asked to confirm the review.
+Reviews apply to YAML-frontmatter or body-only notes. The snapshot excludes
+verified and x-mvmcp. The user may be asked to confirm the review.
 
 **Parameters**
 
@@ -586,6 +587,6 @@ client for human confirmation. After confirmation, a dict with:
 - InvalidRequestError: If the path is protected.
 
 <!-- DOMAIN-EXAMPLE-okf_verify-START -->
-Read `guides/setup.md` in full and review its content. Pass the returned `okf.snapshot` as `reviewed_snapshot` to `okf_verify(path="guides/setup.md", reviewed_snapshot=<snapshot>)`. After confirmation, the result includes the `verifier` and `verified_count`. The note gains a portable `{by, at}` entry in `verified` and a matching claim under `x-mvmcp.reviews` with the check and snapshot. The server keeps a receipt in local state outside the bundle. Reads currently report review applicability as `unbound` and do not evaluate saved binding claims.
+Read `guides/setup.md` in full and review its content. Pass the returned `okf.snapshot` as `reviewed_snapshot` to `okf_verify(path="guides/setup.md", reviewed_snapshot=<snapshot>)`. After confirmation, the result includes the `verifier` and `verified_count`. The note gains a portable `{by, at}` entry in `verified` and a matching claim under `x-mvmcp.reviews` with the check and snapshot. Bound reviews require YAML frontmatter or a body-only note; convert JSON or TOML frontmatter to YAML first. The snapshot excludes `verified` and `x-mvmcp`. The server keeps a receipt outside the vault, or in memory until restart when no state path is configured. Reads currently report review applicability as `unbound` and do not evaluate saved binding claims.
 
 <!-- DOMAIN-EXAMPLE-okf_verify-END -->

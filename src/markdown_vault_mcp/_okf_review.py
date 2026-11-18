@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import re
-from dataclasses import dataclass
 from typing import Any, cast
 
 import frontmatter
@@ -131,14 +129,7 @@ def validate_reviewed_snapshot(text: str, snapshot: dict[str, str]) -> dict[str,
     """
     from markdown_vault_mcp.exceptions import InvalidRequestError
 
-    if (
-        not isinstance(snapshot, dict)
-        or set(snapshot) != {"algo", "digest"}
-        or snapshot.get("algo") != "mvmcp-concept-v1"
-        or not isinstance(snapshot.get("digest"), str)
-        or not re.fullmatch(r"[0-9a-f]{64}", snapshot["digest"])
-        or concept_snapshot(text) != snapshot
-    ):
+    if concept_snapshot(text) != snapshot:
         raise InvalidRequestError(
             "The reviewed snapshot is invalid or no longer current. Read the full "
             "note, review it, and pass its snapshot to okf_verify."
@@ -146,77 +137,158 @@ def validate_reviewed_snapshot(text: str, snapshot: dict[str, str]) -> dict[str,
     return snapshot
 
 
-@dataclass(frozen=True)
-class ReviewRequest:
-    """Reviewed snapshot and exact bytes to verify as one operation."""
+def _review_sequence(source: str, node: SequenceNode, value: dict[str, Any]) -> str:
+    from markdown_vault_mcp._okf_author import _render
 
-    snapshot: dict[str, str]
-    etag: str
-    check: str = "human-review"
+    if node.flow_style:
+        pos = node.end_mark.index - 1
+        tokens = [
+            token
+            for token in yaml.scan(source)
+            if node.start_mark.index <= token.start_mark.index < pos
+        ]
+        trailing_comma = tokens and isinstance(tokens[-1], yaml.FlowEntryToken)
+        prefix = ", " if node.value and not trailing_comma else ""
+        return source[:pos] + prefix + _render(value) + source[pos:]
+    pos = node.end_mark.index
+    newline = "\r\n" if "\r\n" in source else "\n"
+    return (
+        source[:pos]
+        + " " * node.start_mark.column
+        + "- "
+        + _render(value)
+        + newline
+        + source[pos:]
+    )
 
 
-def _json_space(source: str, position: int) -> int:
-    tail = source[position:]
-    return position + len(tail) - len(tail.lstrip())
-
-
-def edit_json_review_header(text: str, changes: dict[str, Any]) -> str | None:
-    """Update review fields in JSON frontmatter without rewriting other values.
-
-    Args:
-        text: Complete note, including frontmatter.
-        changes: Top-level review fields to replace or add.
-
-    Returns:
-        Updated note, or None when its frontmatter is not JSON.
-    """
+def _review_nodes(node: MappingNode) -> dict[str, Any]:
     from markdown_vault_mcp.exceptions import InvalidRequestError
 
-    offset = len(text) - len(text.lstrip("\ufeff \t\r\n"))
-    candidate = text[offset:]
-    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
-    if not isinstance(handler, JSONHandler):
-        return None
-    source, _ = handler.split(candidate)
-    source_length = len(source)
-    decoder = json.JSONDecoder()
-    decoder.raw_decode(source)  # Validate delimiters before scanning individual values.
-    pos = 1
-    edits: list[tuple[int, int, str]] = []
-    seen: set[str] = set()
-    while True:
-        pos = _json_space(source, pos)
-        if source[pos] == "}":
-            break
-        key, end = decoder.raw_decode(source, pos)
-        pos = _json_space(source, _json_space(source, end) + 1)
-        start = pos
-        _, pos = decoder.raw_decode(source, pos)
-        if key in changes:
-            if key in seen:
-                raise InvalidRequestError(
-                    "Duplicate review fields cannot be safely updated"
-                )
-            seen.add(key)
-            edits.append((start, pos, json.dumps(changes[key], ensure_ascii=False)))
-        pos = _json_space(source, pos)
-        pos += int(source[pos] == ",")
-    additions = [
-        f"{json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}"
-        for k, v in changes.items()
-        if k not in seen
-    ]
-    if additions:
-        separator = ", " if source[1:pos].strip() else ""
-        edits.append(
-            (
-                pos,
-                pos,
-                separator
-                + ", ".join(additions)
-                + ("\r\n" if "\r\n" in source else "\n"),
+    result = {}
+    for key, value in node.value:
+        if not isinstance(key, ScalarNode) or key.value in result:
+            raise InvalidRequestError(
+                "Duplicate review fields cannot be safely updated"
             )
+        if value.start_mark.index < key.end_mark.index:
+            raise InvalidRequestError("Cannot safely update an aliased review field")
+        result[key.value] = value
+    return result
+
+
+def _bind_yaml_header(
+    text: str,
+    span: tuple[int, int] | None,
+    expected: dict[str, Any],
+    entry: dict[str, Any],
+    claim: dict[str, Any],
+) -> str:
+    from markdown_vault_mcp._okf_author import (
+        _edit_header,
+        _generated_edits,
+        _parse_root,
+        _render,
+    )
+
+    ext = expected["x-mvmcp"]
+    newline = "\r\n" if "\r\n" in text else "\n"
+    if span is None:
+        prefix = "\ufeff" if text.startswith("\ufeff") else ""
+        header = "".join(
+            f"{key}: {_render(expected[key])}{newline}"
+            for key in ("verified", "x-mvmcp")
         )
-    for start, end, replacement in sorted(edits, reverse=True):
-        source = source[:start] + replacement + source[end:]
-    return text[:offset] + source + candidate[source_length:]
+        result = (
+            prefix
+            + "---"
+            + newline
+            + header
+            + "---"
+            + newline
+            + text.removeprefix("\ufeff")
+        )
+    else:
+        start, end = span
+        source = text[start:end]
+        root = _parse_root(source)
+        nodes = _review_nodes(root)
+        node = nodes.get("verified")
+        if isinstance(node, SequenceNode):
+            source = _review_sequence(source, node, entry)
+        elif isinstance(node, MappingNode):
+            a, b = node.start_mark.index, node.end_mark.index
+            old_mapping = source[a:b]
+            if node.flow_style:
+                replacement = "[" + old_mapping + ", " + _render(entry) + "]"
+            else:
+                indent = " " * node.start_mark.column
+                lines = old_mapping.splitlines(keepends=True)
+                replacement = (
+                    "- " + lines[0] + "".join("  " + line for line in lines[1:])
+                )
+                replacement += indent + "- " + _render(entry) + newline
+            source = source[:a] + replacement + source[b:]
+        else:
+            source = _edit_header(source, {"verified": expected["verified"]}, newline)
+        root = _parse_root(source)
+        nodes = _review_nodes(root)
+        node = nodes.get("x-mvmcp")
+        if not isinstance(node, MappingNode):
+            source = _edit_header(source, {"x-mvmcp": ext}, newline)
+        else:
+            nested = _review_nodes(node)
+            review_node = nested.get("reviews")
+            if isinstance(review_node, SequenceNode):
+                source = _review_sequence(source, review_node, claim)
+            else:
+                for a, b, replacement in sorted(
+                    _generated_edits(source, node, {"reviews": ext["reviews"]}),
+                    reverse=True,
+                ):
+                    source = source[:a] + replacement + source[b:]
+        result = text[:start] + source + text[end:]
+    return result
+
+
+def bind_review(text: str, entry: dict[str, Any], claim: dict[str, Any]) -> str:
+    """Append review evidence while preserving other source text."""
+    from markdown_vault_mcp._okf_author import _header_span
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    original = parse_frontmatter(text.removeprefix("\ufeff"))
+    old = dict(original.metadata)
+    verified = old.get("verified")
+    extension = old.get("x-mvmcp")
+    if verified is not None and not isinstance(verified, (list, dict)):
+        raise InvalidRequestError("Existing verified field must be a list or mapping")
+    if extension is not None and not isinstance(extension, dict):
+        raise InvalidRequestError(
+            "Existing x-mvmcp reviews must be a mapping with a list"
+        )
+    ext = dict(extension or {})
+    reviews = ext.get("reviews")
+    if reviews is not None and not isinstance(reviews, list):
+        raise InvalidRequestError(
+            "Existing x-mvmcp reviews must be a mapping with a list"
+        )
+    expected = dict(old)
+    expected["verified"] = (
+        [verified] if isinstance(verified, dict) else list(verified or [])
+    ) + [entry]
+    ext["reviews"] = [*list(reviews or []), claim]
+    expected["x-mvmcp"] = ext
+    try:
+        span = _header_span(text)
+    except InvalidRequestError as exc:
+        raise InvalidRequestError(
+            "Only closed YAML frontmatter can record a review; convert this note to YAML"
+        ) from exc
+    result = _bind_yaml_header(text, span, expected, entry, claim)
+    parsed = parse_frontmatter(result.removeprefix("\ufeff"))
+    if parsed.metadata != expected or parsed.content != original.content:
+        raise InvalidRequestError(
+            "Cannot safely preserve this note while recording the review"
+        )
+    return result

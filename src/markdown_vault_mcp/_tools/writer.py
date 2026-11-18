@@ -34,16 +34,14 @@ from mcp.types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from markdown_vault_mcp._okf_receipts import ReceiptWriteError
-from markdown_vault_mcp._okf_review import ReviewRequest, validate_reviewed_snapshot
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
-    DocumentNotFoundError,
     EditConflictError,
     FolderMoveInterruptedError,
     InvalidRequestError,
+    StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.text import decode_utf8
@@ -229,7 +227,7 @@ async def _require_review_elicitation(
 
 
 async def _resolve_verify_mode_subject(
-    *, mode: str, ctx: Context, path: str, review: ReviewRequest
+    *, mode: str, ctx: Context, path: str, snapshot: dict[str, str], check: str
 ) -> str | InputRequiredResult:
     """Resolve the ``human:`` subject to stamp, enforcing *mode*'s gate.
 
@@ -257,21 +255,19 @@ async def _resolve_verify_mode_subject(
         and request_context.protocol_version in MODERN_PROTOCOL_VERSIONS
     ):
         token = hashlib.sha256(
-            f"{path}\0{review.snapshot['digest']}\0{review.check}\0{review.etag}".encode()
+            f"{path}\0{snapshot['digest']}\0{check}".encode()
         ).hexdigest()
         request = _require_modern_review(
             ctx,
             path,
-            review.snapshot["digest"],
-            review.check,
+            snapshot["digest"],
+            check,
             f"{_REVIEW_RESPONSE_KEY}_{token}",
         )
         if request is not None:
             return request
     else:
-        await _require_review_elicitation(
-            ctx, path, review.snapshot["digest"], review.check
-        )
+        await _require_review_elicitation(ctx, path, snapshot["digest"], check)
     return resolve_verify_subject()
 
 
@@ -1248,7 +1244,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any] | InputRequiredResult:
         """Record a review of a note snapshot; returns the verifier recorded.
 
-        The user may be asked to confirm the review.
+        Reviews apply to YAML-frontmatter or body-only notes. The snapshot excludes
+        verified and x-mvmcp. The user may be asked to confirm the review.
 
         Args:
             path: Path of the note the user reviewed.
@@ -1278,21 +1275,24 @@ def register(mcp: FastMCP) -> None:
         """
         await _require_review_authority(config, vault)
         await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
-        note = await asyncio.to_thread(vault.reader.read, path)
-        if note is None:
-            raise DocumentNotFoundError.note(path)
-        snapshot = validate_reviewed_snapshot(note.content, reviewed_snapshot)
-        if not note.etag:
-            raise InvalidRequestError("Read the complete note before verifying it")
+        try:
+            await asyncio.to_thread(
+                vault.writer.require_reviewable, path, reviewed_snapshot
+            )
+        except (OSError, StoreUnsupportedSchemaError) as exc:
+            raise ToolError(
+                "Local review receipt storage is unavailable; nothing was written. Ask the operator to check local state.",
+                log_level=logging.INFO,
+            ) from exc
         subject_or_request = await _resolve_verify_mode_subject(
             mode=config.content.okf_capabilities.verify,
             ctx=ctx,
             path=path,
-            review=ReviewRequest(snapshot, note.etag, check),
+            snapshot=reviewed_snapshot,
+            check=check,
         )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
-        subject = subject_or_request
         await _require_review_authority(config, vault)
         try:
             with write_identity_scope():
@@ -1301,8 +1301,9 @@ def register(mcp: FastMCP) -> None:
                     None,
                     vault.writer.okf_verify,
                     path,
-                    subject,
-                    ReviewRequest(snapshot, note.etag, check),
+                    subject_or_request,
+                    reviewed_snapshot,
+                    check,
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(
@@ -1310,11 +1311,9 @@ def register(mcp: FastMCP) -> None:
                 "was written. Read and review the current text before retrying.",
                 log_level=logging.INFO,
             ) from exc
-        except ReceiptWriteError as exc:
+        except (OSError, StoreUnsupportedSchemaError) as exc:
             raise ToolError(
-                "The review was written to the note, but its local receipt could "
-                "not be saved. Tell the operator to check local state storage; "
-                "read the note before taking further action.",
-                log_level=logging.WARNING,
+                "Local review receipt storage is unavailable; nothing was written. Ask the operator to check local state.",
+                log_level=logging.INFO,
             ) from exc
         return attach_remote_health(vault, result)
