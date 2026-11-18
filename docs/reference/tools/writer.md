@@ -439,6 +439,8 @@ Dict with:
 - `frontmatter_preserved` (bool): true when the file already had
   a frontmatter block, including an empty block, which is kept;
   false when it had none. No fields are added.
+- warning (str or null): indexing notice when required fields exclude
+  a generated file outside OKF scope.
 - created (list[str]): index.md files written for subfolders that
   had none, outermost first.
 - remote (dict, optional): present only while the vault's git clone
@@ -483,6 +485,8 @@ vault without git history gets an empty log.
 Dict with path (str), commits (int) and dates (int, the number of
 distinct days), plus:
 
+- warning (str or null): indexing notice when required fields exclude
+  the generated file outside OKF scope.
 - remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.

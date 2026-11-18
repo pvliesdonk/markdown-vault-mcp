@@ -759,6 +759,12 @@ class Vault:
             search_mgr=self._search_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
+            reserved_unindexed=lambda metadata: (
+                self._reserved_exempt() is False
+                and any(
+                    field not in metadata for field in self._required_frontmatter or ()
+                )
+            ),
         )
         # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None

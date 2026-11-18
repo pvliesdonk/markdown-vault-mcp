@@ -602,3 +602,72 @@ class TestUnreadableReservedFiles:
         with pytest.raises(DocumentUnreadableError):
             vault.writer.okf_generate_index(folder="guides")
         assert (source_dir / "guides" / "index.md").read_bytes() == _UNREADABLE
+
+
+class TestReservedGenerationWarnings:
+    @pytest.mark.parametrize(
+        "mode,required,warning",
+        [("auto", ["title"], True), ("on", ["title"], False), ("auto", [], False)],
+    )
+    def test_generated_files_report_inactive_gate(
+        self, tmp_path: Path, mode: str, required: list[str], warning: bool
+    ) -> None:
+        col = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(
+                read_only=False, okf_mode=mode, required_frontmatter=required
+            ),
+        )
+        try:
+            col.index.build_index()
+            index = col.writer.okf_generate_index()
+            log = col.writer.okf_seed_log()
+            assert bool(index.warning) is warning
+            assert bool(log.warning) is warning
+            if warning:
+                assert "not indexed" in index.warning
+                assert "OKF" in log.warning
+                wait_for_writer_drain(col)
+                assert not {"index.md", "log.md"} & _indexed_paths(col)
+        finally:
+            col.close()
+
+    def test_complete_existing_header_needs_no_warning(self, tmp_path: Path) -> None:
+        (tmp_path / "index.md").write_text("---\ntitle: Existing\n---\n# Old\n")
+        col = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
+        )
+        try:
+            col.index.build_index()
+            assert col.writer.okf_generate_index().warning is None
+        finally:
+            col.close()
+
+    def test_excluded_created_child_warns_when_parent_satisfies_gate(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "index.md").write_text("---\ntitle: Root\n---\n# Old\n")
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "note.md").write_text("---\ntitle: Note\n---\n# Note\n")
+        col = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
+        )
+        try:
+            col.index.build_index()
+            result = col.writer.okf_generate_index()
+            assert result.created == ("guides/index.md",)
+            assert result.warning and "not indexed" in result.warning
+        finally:
+            col.close()
+
+    def test_scope_probe_error_is_not_inactive(
+        self, gated_vault: Vault, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def unreadable() -> bool | None:
+            raise OSError("unreadable")
+
+        monkeypatch.setattr(gated_vault, "_reserved_exempt", unreadable)
+        assert gated_vault.writer.okf_generate_index().warning is None
+        assert gated_vault.writer.okf_seed_log().warning is None

@@ -30,7 +30,7 @@ same rewrite the tool does (#1401).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import DocumentUnreadableError
 from markdown_vault_mcp.okf import (
@@ -67,6 +67,7 @@ class OkfMigrationManager:
         search_mgr: SearchManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
+        reserved_unindexed: Callable[[dict[str, Any]], bool],
     ) -> None:
         """Hold the collaborators the transforms delegate to.
 
@@ -79,12 +80,28 @@ class OkfMigrationManager:
             git_query_mgr: Vault-wide history for the log seeder.
             require_built: Index-readiness gate; the link/TOC-dependent
                 transforms call it first.
+            reserved_unindexed: Whether missing required fields exclude this file.
         """
         self._doc_mgr = doc_mgr
         self._link_mgr = link_mgr
         self._search_mgr = search_mgr
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
+        self._reserved_unindexed = reserved_unindexed
+
+    def _index_warning(self, metadata: dict[str, Any]) -> str | None:
+        """Report a confirmed field-gate exclusion without guessing on probe error."""
+        try:
+            excluded = self._reserved_unindexed(metadata)
+        except OSError:
+            return None
+        if not excluded:
+            return None
+        return (
+            "Generated reserved files missing required fields are not indexed while "
+            "OKF scope is inactive. Set MARKDOWN_VAULT_MCP_OKF_MODE=on or use "
+            "auto mode with a root okf_version declaration, then reindex."
+        )
 
     def convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links.
@@ -232,6 +249,7 @@ class OkfMigrationManager:
             (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
         ]
         created: list[str] = []
+        child_warning = None
         for sub in sorted(subfolders):
             # A kept submodule subfolder has an index, so it is never generated.
             if not self._has_index(f"{prefix}{sub}"):
@@ -239,6 +257,7 @@ class OkfMigrationManager:
                     folder=f"{prefix}{sub}", designated=designated
                 )
                 created += [child.path, *child.created]
+                child_warning = child_warning or child.warning
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         existing = self._doc_mgr.read(index_path)
@@ -252,6 +271,8 @@ class OkfMigrationManager:
             entries=len(entries),
             frontmatter_preserved=preserved,
             created=tuple(created),
+            warning=self._index_warning(existing.frontmatter if existing else {})
+            or child_warning,
         )
 
     def _has_index(self, folder: str) -> bool:
@@ -307,4 +328,6 @@ class OkfMigrationManager:
         history = self._git_query_mgr.get_history(path=folder or None, limit=limit)
         body, commits, dates = build_log_markdown(history)
         self._doc_mgr.write(log_path, body)
-        return OkfLogResult(path=log_path, commits=commits, dates=dates)
+        return OkfLogResult(
+            path=log_path, commits=commits, dates=dates, warning=self._index_warning({})
+        )
