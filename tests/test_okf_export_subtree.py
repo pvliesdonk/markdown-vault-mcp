@@ -69,3 +69,19 @@ def test_reference_image_and_code(tmp_path):
             )
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("encoded,name", [("%23", "#"), ("%3F", "?")])
+def test_encoded_delimiters_in_filename(tmp_path, encoded, name):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text(f"[x](/guides/b{encoded}c.md?q=1#h)")
+    (tmp_path / f"guides/b{name}c.md").write_text("# B")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md").decode() == f"[x](/b{encoded}c.md?q=1#h)"
+    finally:
+        vault.close()

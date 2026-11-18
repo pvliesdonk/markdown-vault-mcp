@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
-from markdown_vault_mcp.okf_export_paths import relocate_body
+from markdown_vault_mcp.okf_export_paths import ExportPaths
 from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
@@ -139,12 +139,10 @@ def _note_bytes(
     raw: bytes,
     item: BundleEntry,
     vault: Vault,
-    folder: str,
-    members: set[str],
+    paths: ExportPaths,
     report: OkfExportReport,
-    external_base: str | None,
 ) -> bytes:
-    """Convert indexed graph links while preserving every other byte."""
+    """Convert graph links and relocate body paths, preserving frontmatter."""
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -155,7 +153,7 @@ def _note_bytes(
         body, _, _ = convert_wikilinks_to_markdown(
             body, vault.graph.get_outlinks(item.path)
         )
-    body, dependencies = relocate_body(body, item.path, folder, members, external_base)
+    body, dependencies = paths.relocate(body, item.path)
     report.dependencies.extend(dependencies)
     result = (prefix + body).encode("utf-8")
     if result != raw:
@@ -187,7 +185,8 @@ def build_okf_bundle(
 
     Raises:
         ValueError: If the scope is invalid or inventory cannot enumerate it,
-            including failures under otherwise omitted hidden paths.
+            including failures under otherwise omitted hidden paths, or if an
+            outside body destination collides with an exported file.
         OSError: If a selected file cannot be read.
     """
     folder = _scope(folder)
@@ -222,6 +221,7 @@ def build_okf_bundle(
             break
         cursor = page.next_cursor
     members = {item.path for item in selected}
+    paths = ExportPaths(folder, members, external_base)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for item in selected:
             raw = _read_safe(vault.source_dir, item.path)
@@ -234,9 +234,7 @@ def build_okf_bundle(
                 _write(
                     zf,
                     name,
-                    _note_bytes(
-                        raw, item, vault, folder, members, report, external_base
-                    ),
+                    _note_bytes(raw, item, vault, paths, report),
                 )
                 notes += 1
     logger.info(
