@@ -54,6 +54,9 @@ def test_alias_and_explicit_overrides():
         legacy.log,
         legacy.folders,
     ) == (True, "elicit", True, "writes", ("**",))
+    assert (
+        ContentConfig(okf_write=True, okf_author=False).okf_capabilities.author is False
+    )
 
 
 @pytest.mark.parametrize(

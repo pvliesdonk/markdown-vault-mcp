@@ -207,9 +207,7 @@ def test_read_limit_and_missing_or_invalid_file(
         manager.okf_preview_log_repair("log.md")
 
 
-def test_notifications_precede_target_and_do_not_stamp(
-    manager: DocumentManager, tmp_path: Path
-) -> None:
+def test_notifications_precede_target(manager: DocumentManager, tmp_path: Path) -> None:
     seen: list[str] = []
 
     def notify(path: Path, content: str, operation: str) -> None:

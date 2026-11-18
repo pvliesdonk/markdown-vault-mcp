@@ -377,17 +377,6 @@ class TestConventionMaintenanceIntegration:
         for i in range(n):
             assert f"wrote `guides/n{i}.md`" in log
 
-    def test_reserved_files_are_not_provenance_stamped(
-        self, enforced_vault: Vault
-    ) -> None:
-        enforced_vault.writer.write("guides/note.md", "# N\n")
-        wait_for_writer_drain(enforced_vault)
-        # The secondary writes are suppressed: no generated/verified churn.
-        log_note = enforced_vault.reader.read("guides/log.md")
-        index_note = enforced_vault.reader.read("guides/index.md")
-        assert log_note is not None and "generated" not in log_note.frontmatter
-        assert index_note is not None and "generated" not in index_note.frontmatter
-
     def test_editing_a_reserved_file_does_not_recurse(
         self, enforced_vault: Vault
     ) -> None:

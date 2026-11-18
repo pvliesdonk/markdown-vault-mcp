@@ -74,25 +74,11 @@ def _frontmatter_of(vault: Vault, path: str) -> dict[str, object]:
 class TestTransformsAreMechanicalThroughEveryEntryPoint:
     """#1401: the suppression belongs to the transform, not to the tool layer.
 
-    The enforced-write layer stamps `generated` and clears `verified` on a
-    content write. A mechanical rewrite is exempt — `docs/design/okf.md` says
-    so without qualifying it by caller — but the suppression was entered in the
-    MCP tool handlers only, so a library caller got its bundle stamped.
+    A mechanical rewrite triggers no convention maintenance and keeps the
+    note's own provenance, whichever entry point calls it. The suppression was
+    once entered in the MCP tool handlers only, so a library caller did not
+    get it.
     """
-
-    def test_generated_index_is_not_stamped(self, enforced_vault: Vault) -> None:
-        _write(enforced_vault, "guides/note.md", "---\ntitle: N\n---\n# N\n")
-
-        enforced_vault.writer.okf_generate_index(folder="guides")
-        wait_for_writer_drain(enforced_vault)
-
-        assert "generated" not in _frontmatter_of(enforced_vault, "guides/index.md")
-
-    def test_seeded_log_is_not_stamped(self, enforced_vault: Vault) -> None:
-        enforced_vault.writer.okf_seed_log()
-        wait_for_writer_drain(enforced_vault)
-
-        assert "generated" not in _frontmatter_of(enforced_vault, "log.md")
 
     def test_converted_links_keep_the_note_s_own_provenance(
         self, enforced_vault: Vault
