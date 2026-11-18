@@ -69,6 +69,15 @@ No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
+## Write group deadlines
+
+Write groups close automatically after five minutes of inactivity or one hour
+after opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
+`MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
+bounds. A write already in progress can finish after the deadline; its later
+writes commit separately. The owner can retrieve an automatic close result for
+the lifetime of the server process; results do not survive a restart.
+
 ## Uncommitted files at startup
 
 Startup inspects the repository's working tree and staging area in both git
@@ -646,8 +655,3 @@ MARKDOWN_VAULT_MCP_GIT_LFS=false
 ## Legacy Compatibility
 
 `GIT_TOKEN` without `GIT_REPO_URL` still works for backward compatibility and logs a deprecation warning.
-
-Write groups close automatically after five minutes of inactivity or one hour
-after opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
-`MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
-bounds. A write already in progress finishes before the group closes.

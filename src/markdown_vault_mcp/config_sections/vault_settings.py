@@ -250,8 +250,8 @@ class VaultSettings:
     state_path: Path | None = None
     indexed_frontmatter_fields: Sequence[str] | None = None
     required_frontmatter: Sequence[str] | None = None
-    git_group_idle_s: float = 300
-    git_group_max_age_s: float = 3600
+    git_group_idle_s: float = dataclasses.field(default=300, kw_only=True)
+    git_group_max_age_s: float = dataclasses.field(default=3600, kw_only=True)
     git_pull_interval_s: int = 0
     protected_paths: Sequence[str] | None = dataclasses.field(
         default=None, kw_only=True
@@ -283,6 +283,9 @@ class VaultSettings:
 
     def __post_init__(self) -> None:
         """Validate protected-path policy for direct library callers."""
+        from markdown_vault_mcp.config_sections.git import validate_group_timeouts
+
+        validate_group_timeouts(self.git_group_idle_s, self.git_group_max_age_s)
         object.__setattr__(
             self, "protected_paths", normalize_protected_paths(self.protected_paths)
         )

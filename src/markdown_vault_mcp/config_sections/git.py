@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
+
+
+def validate_group_timeouts(group_idle_s: float, group_max_age_s: float) -> None:
+    """Reject deadlines that cannot be represented by a timer."""
+    for name, value in (
+        ("group_idle_s", group_idle_s),
+        ("group_max_age_s", group_max_age_s),
+    ):
+        if not 0 < value <= threading.TIMEOUT_MAX:
+            raise ConfigurationError(
+                f"{name} must be positive and at most {threading.TIMEOUT_MAX}"
+            )
 
 
 @dataclass(frozen=True)
@@ -34,10 +47,7 @@ class GitConfig:
             ConfigurationError: If a sync cadence is negative or a group
                 deadline is nonpositive or nonfinite.
         """
-        if not (0 < self.group_idle_s < float("inf")) or not (
-            0 < self.group_max_age_s < float("inf")
-        ):
-            raise ConfigurationError("Group timeouts must be finite and positive")
+        validate_group_timeouts(self.group_idle_s, self.group_max_age_s)
         if self.push_delay_s < 0:
             raise ConfigurationError(
                 f"push_delay_s must be >= 0, got {self.push_delay_s}"
