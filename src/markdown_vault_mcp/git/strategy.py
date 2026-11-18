@@ -2784,14 +2784,14 @@ def _stage_and_commit_batch(
 
     A one-item batch without folder provenance delegates to
     :func:`_stage_and_commit`, so the commit subject stays that file's own
-    path rather than becoming the pathless ``"write: 1 file"``; *tool_name*
-    is unused on that branch.
+    path rather than becoming the pathless ``"write: 1 file"``. The
+    *tool_name* still identifies the tool in the commit trailer.
 
     Args:
         git_root: Git repository root.
         items: The tool call's writes, in the order they were fired.
-        tool_name: MCP tool that produced them, used as the commit subject
-            when the batch holds more than one write without a single primary.
+        tool_name: MCP tool that produced them, recorded in the commit trailer
+            and used in the subject when the batch has no single primary.
         identity: Committer and author identity for the commit.
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
