@@ -42,17 +42,23 @@ def _witnesses(unicode: bool) -> dict[str, tuple[str, ...]]:
     return {key: tuple(value) for key, value in result.items()}
 
 
-def _advance(tokens: list[str], positions: set[int], text: str) -> set[int]:
+def _advance(
+    tokens: list[str], positions: set[int], text: str, cases: dict[str, tuple[str, ...]]
+) -> set[int]:
     """Advance the existing glob automaton through one spelling witness."""
     current = positions.copy()
     for char in text:
         for pos in range(len(tokens)):
             if pos in current and tokens[pos] == "*":
                 current.add(pos + 1)
+        folded = char.casefold()
+        variants = (char, *cases.get(folded, ()))
+        if cases and len(folded) == 1:
+            variants += (folded,)
         current = {
             pos if tokens[pos] == "*" else pos + 1
             for pos in current
-            if pos < len(tokens) and fnmatchcase(char, tokens[pos])
+            if pos < len(tokens) and any(fnmatchcase(v, tokens[pos]) for v in variants)
         }
     return current
 
@@ -87,7 +93,9 @@ def _equivalent(name: str, pattern: str, case: bool, unicode: bool) -> bool:
                     variants.update(cases.get(folded, ()))
                     variants.add(folded)
             for variant in variants:
-                states[offset + length].update(_advance(tokens, positions, variant))
+                states[offset + length].update(
+                    _advance(tokens, positions, variant, cases)
+                )
     return len(tokens) in states[-1]
 
 
